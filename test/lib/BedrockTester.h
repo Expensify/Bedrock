@@ -55,7 +55,7 @@ class BedrockTester {
     // Takes a list of requests, and returns a corresponding list of responses.
     // Uses `connections` parallel connections to the server to send the requests.
     // If `control` is set, sends the message to the control port.
-    vector<SData> executeWaitMultipleData(vector<SData> requests, int connections = 10, bool control = false, bool returnOnDisconnect = false, int* errorCode = nullptr);
+    vector<SData> executeWaitMultipleData(vector<SData> requests, int64_t connections = 10, bool control = false, bool returnOnDisconnect = false, int* errorCode = nullptr);
 
     // Sends a single request, returning the response content.
     // If the response method line doesn't begin with the expected result, throws.
@@ -90,7 +90,7 @@ class BedrockTester {
     map<string, string> _args;
 
     // Stores the process ID of the running bedrock server while it's online, so that we can signal it to shut down.
-    int _serverPID = 0;
+    int64_t _serverPID = 0;
 
     // Each new tester registers itself in this set on creation, and removes itself on destruction. This exists to
     // faciliate `stopAll` tearing down all existing servers in case we need to shutdown, for instance in the case

@@ -12,7 +12,7 @@ class SFastBuffer;
 
 struct SSSLState {
     // Attributes
-    int s;
+    int64_t s;
     mbedtls_entropy_context ec;
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_ssl_config conf;
@@ -23,12 +23,12 @@ struct SSSLState {
 };
 
 // SSL helpers
-extern SSSLState* SSSLOpen(int s, SX509* x509);
-extern int SSSLSend(SSSLState* ssl, const char* buffer, int length);
-extern int SSSLSend(SSSLState* ssl, const SFastBuffer& buffer);
+extern SSSLState* SSSLOpen(int64_t s, SX509* x509);
+extern int64_t SSSLSend(SSSLState* ssl, const char* buffer, int64_t length);
+extern int64_t SSSLSend(SSSLState* ssl, const SFastBuffer& buffer);
 extern bool SSSLSendConsume(SSSLState* ssl, SFastBuffer& sendBuffer);
 extern bool SSSLSendAll(SSSLState* ssl, const string& buffer);
-extern int SSSLRecv(SSSLState* ssl, char* buffer, int length);
+extern int64_t SSSLRecv(SSSLState* ssl, char* buffer, int64_t length);
 extern bool SSSLRecvAppend(SSSLState* ssl, SFastBuffer& recvBuffer);
 extern string SSSLGetState(SSSLState* ssl);
 extern void SSSLShutdown(SSSLState* ssl);

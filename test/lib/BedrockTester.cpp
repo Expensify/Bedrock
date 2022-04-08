@@ -20,7 +20,7 @@ string BedrockTester::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
     char buffer[templateStr.size() + 1];
     strcpy(buffer, templateStr.c_str());
-    int filedes = mkstemps(buffer, 3);
+    int64_t filedes = mkstemps(buffer, 3);
     close(filedes);
     return buffer;
 }
@@ -86,7 +86,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
     for (auto& row : args) {
         _args[row.first] = row.second;
     }
-    
+
     // If the DB file doesn't exist, create it.
     if (!SFileExists(_args["-db"])) {
         SFileSave(_args["-db"], "");
@@ -99,7 +99,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         sqlite3_initialize();
         sqlite3_open_v2(_args["-db"].c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
         for (string query : queries) {
-            int error = sqlite3_exec(db, query.c_str(), 0, 0, 0);
+            int64_t error = sqlite3_exec(db, query.c_str(), 0, 0, 0);
             if (error) {
                 cout << "Init Query: " << query << ", FAILED. Error: " << error << endl;
             }
@@ -142,7 +142,7 @@ string BedrockTester::startServer(bool wait) {
     // This expects that `bedrock` exists in the current path. It may need to be added.
     string serverName = "bedrock";
 
-    int childPID = fork();
+    int64_t childPID = fork();
     if (childPID == -1) {
         cout << "Fork failed, acting like server died." << endl;
         exit(1);
@@ -162,7 +162,7 @@ string BedrockTester::startServer(bool wait) {
 
 
         // Make sure the ports we need are free.
-        int portsFree = 0;
+        int64_t portsFree = 0;
         portsFree |= ports.waitForPort(_serverPort);
         portsFree |= ports.waitForPort(_nodePort);
         portsFree |= ports.waitForPort(_controlPort);
@@ -192,7 +192,7 @@ string BedrockTester::startServer(bool wait) {
 
         // Convert our c++ strings to old-school C strings for exec.
         char* cargs[args.size() + 1];
-        int count = 0;
+        int64_t count = 0;
         for(string arg : args) {
             char* newstr = (char*)malloc(arg.size() + 1);
             strcpy(newstr, arg.c_str());
@@ -229,7 +229,7 @@ string BedrockTester::startServer(bool wait) {
                 break;
             }
             if (needSocket) {
-                int socket = 0;
+                int64_t socket = 0;
                 socket = S_socket(wait ? _args["-serverHost"] : _args["-controlPort"], true, false, true);
                 if (socket == -1) {
                     usleep(100000); // 0.1 seconds.
@@ -295,7 +295,7 @@ STable BedrockTester::executeWaitVerifyContentTable(SData request, const string&
     return SParseJSONObject(result);
 }
 
-vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect, int* errorCode) {
+vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int64_t connections, bool control, bool returnOnDisconnect, int* errorCode) {
     // Synchronize dequeuing requests, and saving results.
     recursive_mutex listLock;
 
@@ -304,7 +304,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
     results.resize(requests.size());
 
     // This is the next index of `requests` that needs processing.
-    int currentIndex = 0;
+    int64_t currentIndex = 0;
 
     // This is the list of threads that we'll use for each connection.
     list <thread> threads;
@@ -317,11 +317,11 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
     // Spawn a thread for each connection.
     for (int i = 0; i < connections; i++) {
         threads.emplace_back([&, i](){
-            int socket = 0;
+            int64_t socket = 0;
 
             // This continues until there are no more requests to process.
             bool timedOut = false;
-            int timeoutAutoRetries = 0;
+            int64_t timeoutAutoRetries = 0;
             size_t myIndex = 0;
             SData myRequest;
             while (true) {
@@ -354,7 +354,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         usleep(100'000);
                         continue;
                     }
-                    
+
                     // Socket is successfully created. We can exit this loop.
                     break;
                 }
@@ -405,7 +405,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                 SFastBuffer recvBuffer("");
                 string methodLine, content;
                 STable headers;
-                int count = 0;
+                int64_t count = 0;
                 uint64_t recvStart = STimeNow();
                 while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
                     // Poll the socket, so we get a timeout.

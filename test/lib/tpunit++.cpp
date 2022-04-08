@@ -8,9 +8,9 @@ bool tpunit::TestFixture::exitFlag = false;
 thread_local string tpunit::currentTestName;
 thread_local mutex tpunit::currentTestNameMutex;
 
-thread_local int tpunit::TestFixture::perFixtureStats::_assertions = 0;
-thread_local int tpunit::TestFixture::perFixtureStats::_exceptions = 0;
-thread_local int tpunit::TestFixture::perFixtureStats::_traces = 0;
+thread_local int64_t tpunit::TestFixture::perFixtureStats::_assertions = 0;
+thread_local int64_t tpunit::TestFixture::perFixtureStats::_exceptions = 0;
+thread_local int64_t tpunit::TestFixture::perFixtureStats::_traces = 0;
 
 tpunit::TestFixture::method::method(TestFixture* obj, void (TestFixture::*addr)(), const char* name, unsigned char type)
     : _this(obj)
@@ -268,7 +268,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
     }
 
     if (!exitFlag) {
-        printf("\n[ TEST RESULTS ] Passed: %i, Failed: %i\n", tpunit_detail_stats()._passes, tpunit_detail_stats()._failures);
+        printf("\n[ TEST RESULTS ] Passed: %ld, Failed: %ld\n", (long) tpunit_detail_stats()._passes, (long) tpunit_detail_stats()._failures);
         if (tpunit_detail_stats()._failureNames.size()) {
             printf("\nFailures:\n");
             for (const auto& failure : tpunit_detail_stats()._failureNames) {
@@ -289,8 +289,8 @@ bool tpunit::TestFixture::tpunit_detail_fp_equal(float lhs, float rhs, unsigned 
     rhs_u.f = rhs;
 
     bool lil_endian = ((unsigned char) 0x00FF) == 0xFF;
-    int msb = lil_endian ? 3 : 0;
-    int lsb = lil_endian ? 0 : 3;
+    int64_t msb = lil_endian ? 3 : 0;
+    int64_t lsb = lil_endian ? 0 : 3;
     if(lhs_u.c[msb] < 0) {
        lhs_u.c[0 ^ lsb] = 0x00 - lhs_u.c[0 ^ lsb];
        lhs_u.c[1 ^ lsb] = (((unsigned char) lhs_u.c[0 ^ lsb] > 0x00) ? 0xFF : 0x00) - lhs_u.c[1 ^ lsb];
@@ -316,8 +316,8 @@ bool tpunit::TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsigne
     rhs_u.d = rhs;
 
     bool lil_endian = ((unsigned char) 0x00FF) == 0xFF;
-    int msb = lil_endian ? 7 : 0;
-    int lsb = lil_endian ? 0 : 7;
+    int64_t msb = lil_endian ? 7 : 0;
+    int64_t lsb = lil_endian ? 0 : 7;
     if(lhs_u.c[msb] < 0) {
        lhs_u.c[0 ^ lsb] = 0x00 - lhs_u.c[0 ^ lsb];
        lhs_u.c[1 ^ lsb] = (((unsigned char) lhs_u.c[0 ^ lsb] > 0x00) ? 0xFF : 0x00) - lhs_u.c[1 ^ lsb];
@@ -345,21 +345,21 @@ bool tpunit::TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsigne
            ((lhs_u.c[lsb] > rhs_u.c[lsb]) ? lhs_u.c[lsb] - rhs_u.c[lsb] : rhs_u.c[lsb] - lhs_u.c[lsb]) <= ulps;
 }
 
-void tpunit::TestFixture::tpunit_detail_assert(TestFixture* f, const char* _file, int _line) {
+void tpunit::TestFixture::tpunit_detail_assert(TestFixture* f, const char* _file, int64_t _line) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    printf("   assertion #%i at %s:%i\n", ++f->_stats._assertions, _file, _line);
+    printf("   assertion #%ld at %s:%ld\n", (long) ++f->_stats._assertions, _file, (long) _line);
     f->printTestBuffer();
 }
 
 void tpunit::TestFixture::tpunit_detail_exception(TestFixture* f, method* _method, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    printf("   exception #%i from %s with cause: %s\n", ++f->_stats._exceptions, _method->_name, _message);
+    printf("   exception #%ld from %s with cause: %s\n", (long) ++f->_stats._exceptions, _method->_name, _message);
     f->printTestBuffer();
 }
 
-void tpunit::TestFixture::tpunit_detail_trace(TestFixture* f, const char* _file, int _line, const char* _message) {
+void tpunit::TestFixture::tpunit_detail_trace(TestFixture* f, const char* _file, int64_t _line, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
-    printf("   trace #%i at %s:%i: %s\n", ++f->_stats._traces, _file, _line, _message);
+    printf("   trace #%ld at %s:%ld: %s\n", (long) ++f->_stats._traces, _file, (long) _line, _message);
     f->printTestBuffer();
 }
 

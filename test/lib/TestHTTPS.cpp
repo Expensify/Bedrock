@@ -13,7 +13,7 @@ bool TestHTTPS::_onRecv(Transaction* transaction) {
     size_t offset = methodLine.find_first_of(' ', 0);
     offset = methodLine.find_first_not_of(' ', offset);
     if (offset != string::npos) {
-        int status = SToInt(methodLine.substr(offset));
+        int64_t status = SToInt64(methodLine.substr(offset));
         if (status) {
             transaction->response = status;
         }

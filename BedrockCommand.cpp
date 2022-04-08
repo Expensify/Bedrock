@@ -22,7 +22,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
 {
     // Initialize the priority, if supplied.
     if (request.isSet("priority")) {
-        int tempPriority = request.calc("priority");
+        int64_t tempPriority = request.calc("priority");
         switch (tempPriority) {
             // For any valid case, we just set the value directly.
             case BedrockCommand::PRIORITY_MIN:

@@ -207,14 +207,14 @@ namespace tpunit {
          struct perFixtureStats {
             perFixtureStats();
 
-            static thread_local int _assertions;
-            static thread_local int _exceptions;
-            static thread_local int _traces;
+            static thread_local int64_t _assertions;
+            static thread_local int64_t _exceptions;
+            static thread_local int64_t _traces;
          };
 
          perFixtureStats  _stats;
          recursive_mutex* _mutex;
-         int _threadID;
+         int64_t _threadID;
 
       protected:
          // Test buffer for printing to stdout if a test were to fail.
@@ -248,8 +248,8 @@ namespace tpunit {
          struct stats {
             stats();
 
-            int _failures;
-            int _passes;
+            int64_t _failures;
+            int64_t _passes;
             set<string> _failureNames;
          };
 
@@ -353,11 +353,11 @@ namespace tpunit {
           */
          static bool tpunit_detail_fp_equal(double lhs, double rhs, unsigned char ulps);
 
-         static void tpunit_detail_assert(TestFixture* f, const char* _file, int _line);
+         static void tpunit_detail_assert(TestFixture* f, const char* _file, int64_t _line);
 
          static void tpunit_detail_exception(TestFixture* f, method* _method, const char* _message);
 
-         static void tpunit_detail_trace(TestFixture* f, const char* _file, int _line, const char* _message);
+         static void tpunit_detail_trace(TestFixture* f, const char* _file, int64_t _line, const char* _message);
 
          const char* _name;
 

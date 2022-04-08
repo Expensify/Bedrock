@@ -27,7 +27,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
             // Start a thread.
             BedrockClusterTester* localTester = tester;
             threads.emplace_back([localTester, i, &mu, &done, &allresults, &counts, &commandID]() {
-                int currentNodeIndex = i % 3;
+                int64_t currentNodeIndex = i % 3;
                 while(!done.load()) {
                     // Send some read or some write commands.
                     vector<SData> requests;
@@ -37,8 +37,8 @@ struct GracefulFailoverTest : tpunit::TestFixture {
                         // Every 10th client makes HTTPS requests (1/5th as many, cause they take forever).
                         // We ask for `756` responses to verify we don't accidentally get back something besides what
                         // we expect (some default value).
-                        int randNum = SRandom::rand64();
-                        int randNum2 = SRandom::rand64();
+                        int64_t randNum = SRandom::rand64();
+                        int64_t randNum2 = SRandom::rand64();
                         if (randNum % 10 == 0) {
                             if (randNum2 % 5 == 0) {
                                 SData query("sendrequest" + randCommand);
@@ -179,7 +179,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
             ASSERT_TRUE(p.first == "202" || p.first == "756");
             cout << "[GracefulFailoverTest] method: " << p.first << ", count: " << p.second << endl;
         }
-        
+
         // Now that we've verified that, we can start spamming again, and verify failover works in a crash situation.
         startClientThreads(*threads, done, *counts, commandID, mu, *allresults);
 

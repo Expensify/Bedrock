@@ -181,7 +181,7 @@ struct FinishJobTest : tpunit::TestFixture {
 
         // Confirm that the FINISHED and CANCELLED children are deleted
         clusterTester->getTester(0).readDB("SELECT count(*) FROM jobs WHERE jobID != " + parentID + " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;", result);
-        ASSERT_EQUAL(SToInt(result[0][0]), 0);
+        ASSERT_EQUAL(SToInt64(result[0][0]), 0);
     }
 
     // Update the job data if new data is passed
@@ -267,7 +267,7 @@ struct FinishJobTest : tpunit::TestFixture {
                 ASSERT_EQUAL(row[1], "QUEUED");
             } else if (row[0] == cancelledChildID) {
                 ASSERT_EQUAL(row[1], "QUEUED");
-            } else { 
+            } else {
                 ASSERT_TRUE(false);
             }
         }

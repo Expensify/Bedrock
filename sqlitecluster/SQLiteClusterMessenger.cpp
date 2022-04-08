@@ -69,7 +69,7 @@ bool SQLiteClusterMessenger::sendToLeader(BedrockCommand& command) {
 bool SQLiteClusterMessenger::_onRecv(Transaction* transaction)
 {
     // Bedrock returns responses like `200 OK` rather than `HTTP/1.1 200 OK`, so we don't use getHTTPResponseCode
-    transaction->response = SToInt(transaction->fullResponse.methodLine);
+    transaction->response = SToInt64(transaction->fullResponse.methodLine);
 
     // TODO: Demote this to DEBUG after we're confident in this code.
     SINFO("Finished HTTP escalation of " << transaction->fullRequest.methodLine << " command with response " << transaction->response);

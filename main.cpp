@@ -22,11 +22,11 @@
 /////////////////////////////////////////////////////////////////////////////
 void RetrySystem(const string& command) {
     // We might be waiting for some threads to unlink, so retry a few times
-    int numRetries = 3;
+    int64_t numRetries = 3;
     SINFO("Trying to run '" << command << "' up to " << numRetries << " times...");
     while (numRetries--) {
         // Try it and see if it works
-        int returnCode = system(command.c_str());
+        int64_t returnCode = system(command.c_str());
         if (returnCode) {
             // Didn't work
             SWARN("'" << command << "' failed with return code " << returnCode << ", waiting 5s and retrying "
@@ -174,7 +174,7 @@ int main(int argc, char* argv[]) {
     // Fork if requested
     if (args.isSet("-fork")) {
         // Do the fork
-        int pid = fork();
+        int64_t pid = fork();
         SASSERT(pid >= 0);
         if (pid > 0) {
             // Successful fork -- write the pidfile (if requested) and exit

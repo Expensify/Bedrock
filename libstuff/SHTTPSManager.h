@@ -19,7 +19,7 @@ class SStandaloneHTTPSManager : public STCPManager {
         uint64_t timeoutAt;
         SData fullRequest;
         SData fullResponse;
-        int response;
+        int64_t response;
         STable values;
         SStandaloneHTTPSManager& manager;
         uint64_t sentTime;
@@ -39,7 +39,7 @@ class SStandaloneHTTPSManager : public STCPManager {
     // Close a transaction and remove it from our internal lists.
     void closeTransaction(Transaction* transaction);
 
-    static int getHTTPResponseCode(const string& methodLine);
+    static int64_t getHTTPResponseCode(const string& methodLine);
 
     virtual void validate() {
         // The constructor for a transaction needs to call this on it's manager. It can then throw in cases where this

@@ -31,18 +31,18 @@ atomic<uint64_t> _SSignal_pendingSignalBitMask(0);
 // the process exits otherwise.
 thread _SSignal_signalThread;
 
-// Each thread gets an int it can store a signal number in. Since all signals caught by threads result in
+// Each thread gets an int64_t it can store a signal number in. Since all signals caught by threads result in
 // `abort()`, this records the original signal number until the signal handler for abort has a chance to log it.
-thread_local int _SSignal_threadCaughtSignalNumber = 0;
+thread_local int64_t _SSignal_threadCaughtSignalNumber = 0;
 
-bool SCheckSignal(int signum) {
+bool SCheckSignal(int64_t signum) {
     uint64_t signals = _SSignal_pendingSignalBitMask.load();
     signals >>= signum;
     bool result = signals & 1;
     return result;
 }
 
-bool SGetSignal(int signum) {
+bool SGetSignal(int64_t signum) {
     uint64_t signals = _SSignal_pendingSignalBitMask.fetch_and(~(1 << signum));
     signals >>= signum;
     bool result = signals & 1;
@@ -55,7 +55,7 @@ uint64_t SGetSignals() {
 
 string SGetSignalDescription() {
     list<string> descriptions;
-    for (int i = 0; i < 64; i++) {
+    for (int64_t i = 0; i < 64; i++) {
         if (SCheckSignal(i)) {
             descriptions.push_back(strsignal(i));
         }
@@ -132,7 +132,7 @@ void _SSignal_signalHandlerThreadFunc() {
         struct timespec timeout;
         timeout.tv_sec = 1;
         timeout.tv_nsec = 0;
-        int result = -1;
+        int64_t result = -1;
         while (result == -1) {
             result = sigtimedwait(&signals, &siginfo, &timeout);
             if (_SSignal_threadStopFlag) {
@@ -179,11 +179,11 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
 
             // Build the callstack. Not signal-safe, so hopefully it works.
             void* callstack[100];
-            int depth = backtrace(callstack, 100);
+            int64_t depth = backtrace(callstack, 100);
 
             // Log it to a file. Everything in this block should be signal-safe, if we managed to generate the
             // backtrace in the first place.
-            int fd = creat("/tmp/bedrock_crash.log", 0666);
+            int64_t fd = creat("/tmp/bedrock_crash.log", 0666);
             if (fd != -1) {
                 backtrace_symbols_fd(callstack, depth, fd);
                 close(fd);

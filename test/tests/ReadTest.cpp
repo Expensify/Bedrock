@@ -24,7 +24,7 @@ struct ReadTest : tpunit::TestFixture {
         SData status("Query");
         status["query"] = "SELECT 1;";
         string response = tester->executeWaitVerifyContent(status);
-        int val = SToInt(response);
+        int64_t val = SToInt64(response);
         ASSERT_EQUAL(val, 1);
     }
 
@@ -32,7 +32,7 @@ struct ReadTest : tpunit::TestFixture {
         SData status("Query / HTTP/1.1");
         status["query"] = "SELECT 1;";
         string response = tester->executeWaitVerifyContent(status);
-        int val = SToInt(response);
+        int64_t val = SToInt64(response);
         ASSERT_EQUAL(val, 1);
     }
 

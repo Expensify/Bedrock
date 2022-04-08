@@ -88,8 +88,8 @@ class BedrockCommand : public SQLiteCommand {
     Priority priority;
 
     // We track how many times we `peek` and `process` each command.
-    int peekCount;
-    int processCount;
+    int64_t peekCount;
+    int64_t processCount;
 
     // A plugin can optionally handle a command for which the reply to the caller was undeliverable.
     // Note that it gets no reference to the DB, this happens after the transaction is already complete.

@@ -104,7 +104,7 @@ STCPManager::Socket* STCPNode::acceptSocket() {
 
     // Try to accept on the port and wrap in a socket
     sockaddr_in addr;
-    int s = S_accept(port->s, addr, false);
+    int64_t s = S_accept(port->s, addr, false);
     if (s > 0) {
         // Received a socket, wrap
         SDEBUG("Accepting socket from '" << addr << "' on port '" << port->host << "'");
@@ -158,7 +158,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
             // Still alive; try to login
             SData message;
-            int messageSize = message.deserialize(socket->recvBuffer);
+            int64_t messageSize = message.deserialize(socket->recvBuffer);
             if (messageSize) {
                 // What is it?
                 socket->recvBuffer.consumeFront(messageSize);
@@ -221,7 +221,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // See if there is anything new.
                 peer->failedConnections = 0; // Success; reset failures
                 SData message;
-                int messageSize = 0;
+                int64_t messageSize = 0;
                 try {
                     // peer->socket->lastRecvTime is always set, it's initialized to STimeNow() at creation.
                     if (peer->socket->lastRecvTime + recvTimeout < STimeNow()) {
@@ -247,7 +247,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         }
                         if (peer->socket->recvBuffer.size() > 10'000) {
                             // Make in known if this buffer ever gets big.
-                            PINFO("Received '" << message.methodLine << "'(size: " << messageSize << ") with " 
+                            PINFO("Received '" << message.methodLine << "'(size: " << messageSize << ") with "
                                   << (peer->socket->recvBuffer.size()) << " bytes remaining in message buffer.");
                         } else {
                             PDEBUG("Received '" << message.methodLine << "'.");
@@ -267,7 +267,7 @@ void STCPNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             // We set a lower bound on this at 1, because even though it should be pretty impossible
                             // for this to be 0 (it's in us), we rely on it being non-zero in order to connect to
                             // peers.
-                            peer->latency = max(STimeNow() - message.calc64("Timestamp"), (uint64_t)1);
+                            peer->latency = max(STimeNow() - message.calc64("Timestamp"), (uint64_t) 1);
                             SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/1000 << "ms latency)");
                         } else {
                             // Not a PING or PONG; pass to the child class

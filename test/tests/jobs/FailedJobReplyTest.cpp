@@ -109,7 +109,7 @@ struct FailedJobReplyTest : tpunit::TestFixture {
             string response;
 
             // Give it a few tries for the command to get requeued.
-            int retries = 3;
+            int64_t retries = 3;
             while (retries) {
                 try {
                     response = tester->executeWaitVerifyContent(command);

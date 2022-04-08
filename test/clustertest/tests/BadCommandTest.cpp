@@ -7,14 +7,14 @@ struct BadCommandTest : tpunit::TestFixture {
 
     void test()
     {
-        int successfulRunCount = 0;
+        int64_t successfulRunCount = 0;
         for (int i = 0; i < 5; i++) {
             try {
                 BedrockClusterTester tester;
                 BedrockTester& leader = tester.getTester(0);
                 BedrockTester& follower = tester.getTester(1);
 
-                int userID = 31;
+                int64_t userID = 31;
 
                 // Make sure unhandled exceptions send an error response, but don't crash the server.
                 SData cmd("exceptioninpeek");
@@ -40,7 +40,7 @@ struct BadCommandTest : tpunit::TestFixture {
                 // This tests cases where keeping leader alive isn't feasible.
                 bool testFailed = false;
                 for (auto commandName : {"generatesegfaultpeek", "generateassertpeek", "generatesegfaultprocess"}) {
-                    
+
                     // Create the command with the current userID.
                     userID++;
                     SData command(commandName);

@@ -9,7 +9,7 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
 
     // Create a bunch of trivial write commands.
     void runTrivialWrites(int writeCount, BedrockTester& node) {
-        int count = 0;
+        int64_t count = 0;
 
         SData genericRequest("Query");
         genericRequest["query"] = "UPDATE test SET value=value + 1 WHERE id=12345;";

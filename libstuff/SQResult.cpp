@@ -53,7 +53,7 @@ bool SQResult::deserialize(const string& json) {
         // Add the rows
         list<string> jsonRows = SParseJSONArray(content["rows"]);
         rows.resize(jsonRows.size());
-        int rowIndex = 0;
+        int64_t rowIndex = 0;
         for (string& jsonRowStr : jsonRows) {
             // Get the row and make sure it has the right number of columns
             list<string> jsonRow = SParseJSONArray(jsonRowStr);

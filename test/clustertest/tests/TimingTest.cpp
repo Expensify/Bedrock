@@ -16,7 +16,7 @@ struct TimingTest : tpunit::TestFixture {
             SData query("idcollision h");
             query["writeConsistency"] = "ASYNC";
             query["value"] = "default";
-            int retries = 3;
+            int64_t retries = 3;
             SData result;
             while (retries) {
                 auto results = brtester.executeWaitMultipleData({query});

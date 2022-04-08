@@ -348,7 +348,7 @@ struct CreateJobTest : tpunit::TestFixture {
         }
 
         // Try and get it repeatedly. Should fail a couple times and then succeed.
-        int retries = 9;
+        int64_t retries = 9;
         bool success = false;
         while (retries-- > 0) {
             try {

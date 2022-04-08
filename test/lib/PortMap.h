@@ -20,7 +20,7 @@ class PortMap {
 
     // Waits for a particular port to be free to bind to. This is useful when we've killed a server, because sometimes
     // it takes the OS a few seconds to make the port available again.
-    int waitForPort(uint16_t port);
+    int64_t waitForPort(uint16_t port);
 
   private:
     uint16_t _from;

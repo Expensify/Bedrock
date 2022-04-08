@@ -45,17 +45,17 @@ void PortMap::returnPort(uint16_t port)
     _returned.insert(port);
 }
 
-int PortMap::waitForPort(uint16_t port) {
-    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    int i = 1;
+int64_t PortMap::waitForPort(uint16_t port) {
+    int64_t sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    int64_t i = 1;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(i));
     sockaddr_in addr = {0};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-    int result = 0;
-    int count = 0;
+    int64_t result = 0;
+    int64_t count = 0;
     uint64_t start = STimeNow();
     do {
         result = ::bind(sock, (sockaddr*)&addr, sizeof(addr));

@@ -57,7 +57,7 @@ template<typename T>
 SSynchronizedQueue<T>::SSynchronizedQueue() {
     // Open up a pipe for communication and set the non-blocking reads.
     SASSERT(0 == pipe(_pipeFD));
-    int flags = fcntl(_pipeFD[0], F_GETFL, 0);
+    int64_t flags = fcntl(_pipeFD[0], F_GETFL, 0);
     fcntl(_pipeFD[0], F_SETFL, flags | O_NONBLOCK);
 }
 
@@ -86,7 +86,7 @@ void SSynchronizedQueue<T>::postPoll(fd_map& fdm) {
         // Read until there is nothing left to read.
         while (true) {
             char readbuffer[1];
-            int ret = read(_pipeFD[0], readbuffer, sizeof(readbuffer));
+            int64_t ret = read(_pipeFD[0], readbuffer, sizeof(readbuffer));
 
             // Since the pipe is set to non-blocking reads, read() will return -1
             // when there is no data to read  and will set errno to EAGAIN/EWOULDBLOCK

@@ -38,7 +38,7 @@ class ClusterTester {
   private:
 
     // The number of nodes in the cluster.
-    int _size;
+    int64_t _size;
 
     // A list of all our testers that make up our cluster.
     list<T> _cluster;

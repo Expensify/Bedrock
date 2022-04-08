@@ -226,7 +226,7 @@ bool BedrockJobsCommand::peek(SQLite& db) {
 
         for (auto& job : jsonJobs) {
             // If no priority set, set it
-            int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : BedrockPlugin_Jobs::JOBS_DEFAULT_PRIORITY;
+            int64_t priority = SContains(job, "jobPriority") ? SToInt64(job["jobPriority"]) : BedrockPlugin_Jobs::JOBS_DEFAULT_PRIORITY;
 
             // We'd initially intended for any value to be allowable here, but for
             // performance reasons, we currently will only allow specific values to
@@ -521,7 +521,7 @@ void BedrockJobsCommand::process(SQLite& db) {
             }
 
             // If no priority set, set it
-            int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : (SContains(job, "priority") ? SToInt(job["priority"]) : BedrockPlugin_Jobs::JOBS_DEFAULT_PRIORITY);
+            int64_t priority = SContains(job, "jobPriority") ? SToInt64(job["jobPriority"]) : (SContains(job, "priority") ? SToInt64(job["priority"]) : BedrockPlugin_Jobs::JOBS_DEFAULT_PRIORITY);
 
             // Validate the priority passed in
             _validatePriority(priority);
@@ -643,7 +643,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         // works!
         SQResult result;
         const list<string> nameList = SParseList(request["name"]);
-        string safeNumResults = SQ(max(request.calc("numResults"),1));
+        string safeNumResults = SQ(max(request.calc("numResults"), (int64_t) 1));
         mockRequest = mockRequest || request.isSet("getMockedJobs");
         string selectQuery;
         if (request.isSet("jobPriority")) {
@@ -806,7 +806,7 @@ void BedrockJobsCommand::process(SQLite& db) {
             }
 
             STable jobData = SParseJSONObject(job["data"]);
-            if (SToInt(jobData["retryAfterCount"]) >= 10) {
+            if (SToInt64(jobData["retryAfterCount"]) >= 10) {
                 // We will fail this job, don't return it.
                 continue;
             }
@@ -828,7 +828,7 @@ void BedrockJobsCommand::process(SQLite& db) {
             for (auto job : retriableJobs) {
                 SDEBUG("Updating job with retryAfter " << job["jobID"]);
                 STable jobData = SParseJSONObject(job["data"]);
-                if (SToInt(jobData["retryAfterCount"]) >= 10) {
+                if (SToInt64(jobData["retryAfterCount"]) >= 10) {
                     SINFO("Job " << job["jobID"] << " has retried 10 times, marking it as FAILED.");
                     string failQuery = "UPDATE jobs "
                                        "SET state='FAILED' "

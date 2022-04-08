@@ -21,7 +21,7 @@ uint64_t SRandom::rand64() {
 string SRandom::randStr(uint& length) {
     string str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     string newstr;
-    int pos;
+    int64_t pos;
     while(newstr.size() != length) {
         pos = (rand64() % (str.size() - 1));
         newstr += str.substr(pos,1);

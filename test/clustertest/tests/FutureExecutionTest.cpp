@@ -31,7 +31,7 @@ struct FutureExecutionTest : tpunit::TestFixture {
         // Three seconds from now.
         query["commandExecuteTime"] = to_string(STimeNow() + 3000000);
         query["Query"] = "INSERT INTO test VALUES(" + SQ(50011) + ", " + SQ("sent_by_leader") + ");";
-        string result = brtester.executeWaitVerifyContent(query, "202"); 
+        string result = brtester.executeWaitVerifyContent(query, "202");
 
         // Ok, Now let's wait a second
         sleep(1);
@@ -47,7 +47,7 @@ struct FutureExecutionTest : tpunit::TestFixture {
         sleep(3);
 
         // And now it should be there, but we'll give it a couple tries.
-        int retries = 3;
+        int64_t retries = 3;
         bool success = false;
         while (retries) {
             result = brtester.executeWaitVerifyContent(query);

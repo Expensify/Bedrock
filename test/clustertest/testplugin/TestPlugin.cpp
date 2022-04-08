@@ -197,11 +197,11 @@ bool TestPluginCommand::peek(SQLite& db) {
             // Only start HTTPS requests on leader, otherwise, we'll escalate.
             return false;
         }
-        int requestCount = 1;
+        int64_t requestCount = 1;
         if (request.isSet("httpsRequestCount")) {
-            requestCount = max(request.calc("httpsRequestCount"), 1);
+            requestCount = max(request.calc("httpsRequestCount"), (int64_t) 1);
         }
-        for (int i = 0; i < requestCount; i++) {
+        for (int64_t i = 0; i < requestCount; i++) {
             SData newRequest("GET / HTTP/1.1");
             string host = request["Host"];
             if (host.empty()) {
@@ -212,15 +212,15 @@ bool TestPluginCommand::peek(SQLite& db) {
         }
         return false; // Not complete.
     } else if (SStartsWith(request.methodLine, "slowquery")) {
-        int size = 100000000;
-        int count = 1;
+        int64_t size = 100000000;
+        int64_t count = 1;
         if (request.isSet("size")) {
-            size = SToInt(request["size"]);
+            size = SToInt64(request["size"]);
         }
         if (request.isSet("count")) {
-            count = SToInt(request["count"]);
+            count = SToInt64(request["count"]);
         }
-        for (int i = 0; i < count; i++) {
+        for (int64_t i = 0; i < count; i++) {
             string query = "WITH RECURSIVE cnt(x) AS ( SELECT random() UNION ALL SELECT x+1 FROM cnt LIMIT " + SQ(size) + ") SELECT MAX(x) FROM cnt;";
             SQResult result;
             db.read(query, result);
@@ -249,7 +249,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         throw 1;
     } else if (SStartsWith(request.methodLine, "generatesegfaultpeek")) {
         int* i = 0;
-        int x = *i;
+        int64_t x = *i;
         response["invalid"] = to_string(x);
     } else if (SStartsWith(request.methodLine, "generateassertpeek")) {
         SASSERT(0);
@@ -359,7 +359,7 @@ void TestPluginCommand::process(SQLite& db) {
             SQResult result;
             db.read("SELECT MAX(id) FROM test", result);
             SASSERT(result.size());
-            int nextID = SToInt(result[0][0]) + 1;
+            int64_t nextID = SToInt64(result[0][0]) + 1;
             SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(request["value"]) + ");"));
         }
 
@@ -370,7 +370,7 @@ void TestPluginCommand::process(SQLite& db) {
         SQResult result;
         db.read("SELECT MAX(id) FROM test", result);
         SASSERT(result.size());
-        int nextID = SToInt(result[0][0]) + 1;
+        int64_t nextID = SToInt64(result[0][0]) + 1;
         SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(request["value"]) + ");"));
 
         if (!request["response"].empty()) {
@@ -384,20 +384,20 @@ void TestPluginCommand::process(SQLite& db) {
         SQResult result;
         db.read("SELECT MAX(id) FROM test", result);
         SASSERT(result.size());
-        int nextID = SToInt(result[0][0]) + 1;
+        int64_t nextID = SToInt64(result[0][0]) + 1;
 
-        int size = 1;
-        int count = 1;
+        int64_t size = 1;
+        int64_t count = 1;
         if (request.isSet("size")) {
-            size = SToInt(request["size"]);
+            size = SToInt64(request["size"]);
         }
         if (request.isSet("count")) {
-            count = SToInt(request["count"]);
+            count = SToInt64(request["count"]);
         }
 
-        for (int i = 0; i < count; i++) {
+        for (int64_t i = 0; i < count; i++) {
             string query = "INSERT INTO test (id, value) VALUES ";
-            for (int j = 0; j < size; j++) {
+            for (int64_t j = 0; j < size; j++) {
                 if (j) {
                     query += ", ";
                 }
@@ -411,7 +411,7 @@ void TestPluginCommand::process(SQLite& db) {
         throw 2;
     } else if (SStartsWith(request.methodLine, "generatesegfaultprocess")) {
         int* i = 0;
-        int x = *i;
+        int64_t x = *i;
         response["invalid"] = to_string(x);
     } else if (SStartsWith(request.methodLine, "ineffectiveUpdate")) {
         // This command does nothing on purpose so that we can run it in 10x mode and verify it replicates OK.
@@ -442,7 +442,7 @@ bool TestHTTPSManager::_onRecv(Transaction* transaction) {
     size_t offset = methodLine.find_first_of(' ', 0);
     offset = methodLine.find_first_not_of(' ', offset);
     if (offset != string::npos) {
-        int status = SToInt(methodLine.substr(offset));
+        int64_t status = SToInt64(methodLine.substr(offset));
         if (status) {
             transaction->response = status;
         }

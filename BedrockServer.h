@@ -310,7 +310,7 @@ class BedrockServer : public SQLiteServer {
     void syncWrapper();
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
-    void worker(int threadId);
+    void worker(int64_t threadId);
 
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.

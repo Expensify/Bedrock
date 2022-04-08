@@ -46,13 +46,13 @@ struct WriteTest : tpunit::TestFixture {
         string response = tester->executeWaitVerifyContent(query);
         // Skip the header line.
         string secondLine = response.substr(response.find('\n') + 1);
-        int val = SToInt(secondLine);
+        int64_t val = SToInt64(secondLine);
         ASSERT_EQUAL(val, 50);
     }
 
     void parallelInsert() {
         vector<SData> requests;
-        int numCommands = 50;
+        int64_t numCommands = 50;
         for (int i = 0; i < numCommands; i++) {
             SData query("Query");
             query["writeConsistency"] = "ASYNC";
@@ -62,11 +62,11 @@ struct WriteTest : tpunit::TestFixture {
         }
         auto results = tester->executeWaitMultipleData(requests);
 
-        int success = 0;
-        int failure = 0;
+        int64_t success = 0;
+        int64_t failure = 0;
 
         for (auto& row : results) {
-            if (SToInt(row.methodLine) == 200) {
+            if (SToInt64(row.methodLine) == 200) {
                 success++;
             } else {
                 failure++;
@@ -81,7 +81,7 @@ struct WriteTest : tpunit::TestFixture {
         string response = tester->executeWaitVerifyContent(query);
         // Skip the header line.
         string secondLine = response.substr(response.find('\n') + 1);
-        int val = SToInt(secondLine);
+        int64_t val = SToInt64(secondLine);
         ASSERT_EQUAL(val, numCommands);
     }
 

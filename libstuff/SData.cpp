@@ -58,7 +58,7 @@ bool SData::isSet(const string& name) const {
     return SContains(nameValueMap, name);
 }
 
-int SData::calc(const string& name) const {
+int64_t SData::calc(const string& name) const {
     return min((long)calc64(name), (long)0x7fffffffL);
 }
 
@@ -97,11 +97,11 @@ string SData::serialize() const {
     return SComposeHTTP(methodLine, nameValueMap, content);
 }
 
-int SData::deserialize(const string& fromString) {
+int64_t SData::deserialize(const string& fromString) {
     return deserialize(fromString.c_str(), fromString.size());
 }
 
-int SData::deserialize(const char* buffer, size_t length) {
+int64_t SData::deserialize(const char* buffer, size_t length) {
     auto result = SParseHTTP(buffer, length, methodLine, nameValueMap, content);
 
     // Why do this? It's to enable these values to be parsed quickly with simdjson, which requires up to 32 bytes of
@@ -118,13 +118,13 @@ int SData::deserialize(const char* buffer, size_t length) {
 
 SData SData::create(const string& fromString) {
     SData data;
-    int header = data.deserialize(fromString);
+    int64_t header = data.deserialize(fromString);
     if (header && data.content.empty()) {
         data.content = fromString.substr(header);
     }
     return data;
 }
 
-int SData::deserialize(const SFastBuffer& buf) {
+int64_t SData::deserialize(const SFastBuffer& buf) {
     return deserialize(buf.c_str(), buf.size());
 }

@@ -74,8 +74,8 @@ struct SData {
     // Returns whether or not a particular value has been set
     bool isSet(const string& name) const;
 
-    // Return as an int value.
-    int calc(const string& name) const;
+    // Return as an int64_t value.
+    int64_t calc(const string& name) const;
 
     // Return as a 64-bit value
     int64_t calc64(const string& name) const;
@@ -97,13 +97,13 @@ struct SData {
     string serialize() const;
 
     // Deserializes from a string
-    int deserialize(const string& rhs);
+    int64_t deserialize(const string& rhs);
 
     // Deserializes from a buffer
-    int deserialize(const char* buffer, size_t length);
+    int64_t deserialize(const char* buffer, size_t length);
 
     // Deserializes from an SFastBuffer.
-    int deserialize(const SFastBuffer& buf);
+    int64_t deserialize(const SFastBuffer& buf);
 
     // Initializes a new SData from a string. If there is no content provided,
     // then use whatever data remains in the string as the content

@@ -46,14 +46,14 @@ void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction) {
     delete transaction;
 }
 
-int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine) {
+int64_t SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine) {
     // This code looks for the first space in the methodLine, and then for the first non-space
     // after that, and *then* parses the response code. If we fail to find such a code, or can't parse it as an
     // integer, we default to 400.
     size_t offset = methodLine.find_first_of(' ', 0);
     offset = methodLine.find_first_not_of(' ', offset);
     if (offset != string::npos) {
-        int status = SToInt(methodLine.substr(offset));
+        int64_t status = SToInt64(methodLine.substr(offset));
         if (status) {
             return status;
         }
@@ -89,7 +89,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
 
     //See if we got a response.
     uint64_t now = STimeNow();
-    int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
+    int64_t size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
     if (size) {
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
@@ -120,7 +120,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         //    the whole server on a single stuck network request.
         // 2. If the transaction's timeout (which is likely it's associated command's timeout) has passed.
         if ((transaction.s->state.load() > Socket::CONNECTED) ||
-            (now > transaction.s->lastSendTime + timeoutMS * 1000) || 
+            (now > transaction.s->lastSendTime + timeoutMS * 1000) ||
             (now > transaction.timeoutAt)) {
             SWARN("Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
             transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;

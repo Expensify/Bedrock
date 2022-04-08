@@ -30,11 +30,11 @@ int main(int argc, char* argv[]) {
     set<string> exclude;
     list<string> before;
     list<string> after;
-    int threads = 1;
-    int repeatCount = 1;
+    int64_t threads = 1;
+    int64_t repeatCount = 1;
 
     if (args.isSet("-repeatCount")) {
-        repeatCount = max(1, SToInt(args["-repeatCount"]));
+        repeatCount = max((int64_t) 1, SToInt64(args["-repeatCount"]));
     }
 
     if (args.isSet("-only")) {
@@ -62,7 +62,7 @@ int main(int argc, char* argv[]) {
         }
     }
     if (args.isSet("-threads")) {
-        threads = SToInt(args["-threads"]);
+        threads = SToInt64(args["-threads"]);
     }
 
     // Perf is excluded unless specified explicitly.
@@ -82,8 +82,8 @@ int main(int argc, char* argv[]) {
         cin >> temp;
     }
 
-    int retval = 0;
-    for (int i = 0; i < repeatCount; i++) {
+    int64_t retval = 0;
+    for (int64_t i = 0; i < repeatCount; i++) {
         try {
             retval = tpunit::Tests::run(include, exclude, before, after, threads);
         } catch (...) {

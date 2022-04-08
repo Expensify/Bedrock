@@ -51,7 +51,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
 
     // Get a list of prepared statements from the database.
     list<sqlite3_stmt*> statements;
-    int prepareResult = db.getPreparedStatements(query, statements);
+    int64_t prepareResult = db.getPreparedStatements(query, statements);
 
     // Check each one to see if it's a write, and then release it.
     bool write = false;

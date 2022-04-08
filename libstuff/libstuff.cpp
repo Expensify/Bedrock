@@ -87,7 +87,7 @@ thread_local string SProcessName;
 // This is a set of reusable sockets, each with an associated mutex, to allow for parallel logging directly to the
 // syslog socket, rather than going through the syslog() system call, which goes through journald.
 const size_t S_LOG_SOCKET_MAX = 500;
-int SLogSocketFD[S_LOG_SOCKET_MAX] = {};
+int64_t SLogSocketFD[S_LOG_SOCKET_MAX] = {};
 mutex SLogSocketMutex[S_LOG_SOCKET_MAX];
 atomic<size_t> SLogSocketCurrentOffset(0);
 struct sockaddr_un SLogSocketAddr;
@@ -136,7 +136,7 @@ void SLogSetThreadName(const string& logName) {
 }
 
 SException::SException(const string& file,
-                       int line,
+                       int64_t line,
                        bool generateCallstack,
                        const string& _method,
                        const STable& _headers,
@@ -153,14 +153,14 @@ const char* SException::what() const noexcept {
     return method.c_str();
 }
 
-vector<string> SGetCallstack(int depth, void* const* callstack) noexcept {
+vector<string> SGetCallstack(int64_t depth, void* const* callstack) noexcept {
     // Symbols for each stack frame.
     char** symbols = nullptr;
     symbols = backtrace_symbols(callstack, depth);
 
     vector<string> details(depth + 1);
     int status = 0;
-    for (int i = 0; i < depth; i++) {
+    for (int64_t i = 0; i < depth; i++) {
         // Demangle them if possible.
         string temp = symbols[i];
         size_t start = temp.find_first_of('(');
@@ -222,7 +222,7 @@ void SSyslogSocketDirect(int priority, const char *format, ...) {
         strcpy(messageBuffer, messageHeader.c_str());
         va_list argptr;
         va_start(argptr, format);
-        int bytesWritten = vsnprintf(messageBuffer + messageHeader.size(), MAX_MESSAGE_SIZE - messageHeader.size(), format, argptr);
+        int64_t bytesWritten = vsnprintf(messageBuffer + messageHeader.size(), MAX_MESSAGE_SIZE - messageHeader.size(), format, argptr);
         va_end(argptr);
 
 
@@ -249,11 +249,11 @@ void SSyslogSocketDirect(int priority, const char *format, ...) {
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
-string SToHex(uint64_t value, int digits) {
+string SToHex(uint64_t value, int64_t digits) {
     // Allocate the string and fill from back to front
     string working;
     working.resize(digits);
-    for (int c = digits - 1; c >= 0; --c) {
+    for (int64_t c = digits - 1; c >= 0; --c) {
         // Get the hex digit and add
         char digit = (char)(value % 16);
         value /= 16;
@@ -283,7 +283,7 @@ string SToHex(uint32_t value) {
 uint64_t SFromHex(const string& value) {
     // Convert one digit at a time
     uint64_t binValue = 0;
-    for (int c = 0; c < (int)value.size(); ++c) {
+    for (int64_t c = 0; c < (int)value.size(); ++c) {
         // Shift over the previous and add this byte
         binValue <<= 4;
         if ('0' <= value[c] && value[c] <= '9')
@@ -312,9 +312,9 @@ string SStrFromHex(const string& buffer) {
 
 string SBase32HexStringFromBase32(const string& buffer) {
     static const char map[] = "QRSTUV\0\0\0\0\0\0\0\0\0""0123456789ABCDEFGHIJKLMNOP";
-    static const int mapLength = sizeof(map);
+    static const int64_t mapLength = sizeof(map);
     string out = buffer;
-    int shiftedIndex;
+    int64_t shiftedIndex;
     for (size_t i = 0; i < out.size(); i++) {
         shiftedIndex = out[i] - 50;
         if (mapLength < shiftedIndex || map[shiftedIndex] == 0) {
@@ -490,8 +490,8 @@ string SUnescape(const char* lhs, char escaper) {
                 // Scan the UTF-8 value into an int.
                 // NOTE: JSON only supports 4 hex digits in escaped unicode sequences.
                 char utfCode[5] = {0};
-                unsigned int utfValue = 0;
-                int additionalBytes = 0;
+                int utfValue = 0;
+                int64_t additionalBytes = 0;
                 strncpy(utfCode, lhs + 1, 4);
                 sscanf(utfCode, "%04x", &utfValue);
                 lhs += 4;
@@ -607,9 +607,9 @@ string SReplaceAll(const string& value, const string& unsafeChars, char replaceC
 }
 
 // --------------------------------------------------------------------------
-int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates) {
+int64_t SStateNameToInt(const char* states[], const string& stateName, int64_t numStates) {
     // Converts an array of state names back to the index
-    for (int i = 0; i < (int)numStates; i++)
+    for (int64_t i = 0; i < (int)numStates; i++)
         if (SIEquals(states[i], stateName))
             return i;
     return -1;
@@ -688,11 +688,11 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
     return (!component.empty());
 }
 
-STable SParseCommandLine(int argc, char* argv[]) {
+STable SParseCommandLine(int64_t argc, char* argv[]) {
     // Just walk across and find the pairs, then put the remainder on a list in the method
     STable results;
     string name;
-    for (int c = 1; c < argc; ++c) {
+    for (int64_t c = 1; c < argc; ++c) {
         // Does this look like a name or value?
         bool isName = SStartsWith(argv[c], "-");
         if (name.empty()) {
@@ -742,7 +742,7 @@ const char* _SParseHTTP_GetUpToNext(const char* start, const char* lineEnd, char
         --end;
 
     // If there's anything left, that's the output
-    int length = (int)(end - start);
+    int64_t length = (int)(end - start);
     if (length > 0) {
         // Found, output
         out.resize(length);
@@ -760,7 +760,7 @@ void _SParseHTTP_GetUpToEnd(const char* start, const char* end, string& out) {
         ++start;
     while (*(end - 1) == ' ')
         --end;
-    int length = (int)(end - start);
+    int64_t length = (int)(end - start);
     if (length > 0) {
         // Copy the output
         out.resize(length);
@@ -769,7 +769,7 @@ void _SParseHTTP_GetUpToEnd(const char* start, const char* end, string& out) {
 }
 
 // --------------------------------------------------------------------------
-int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content) {
+int64_t SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content) {
     // Clear the output
     methodLine.clear();
     nameValueMap.clear();
@@ -807,7 +807,7 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                     // then return the total length.
                     SASSERTWARN(lastChunkFound);
                     const char* parseEnd = lineEnd;
-                    int numEOLs = 2;
+                    int64_t numEOLs = 2;
                     while (parseEnd < inputEnd && (*parseEnd == '\r' || *parseEnd == '\n') && numEOLs--)
                         ++parseEnd;
                     return (int)(parseEnd - buffer);
@@ -818,13 +818,13 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                     // We have a method -- we're done.  Figure out the end of the message
                     // by consuming up to 2 EOL characters, then return the total length.
                     const char* parseEnd = lineEnd;
-                    int numEOLs = 2;
+                    int64_t numEOLs = 2;
                     while (parseEnd < inputEnd && (*parseEnd == '\r' || *parseEnd == '\n') && numEOLs--)
                         ++parseEnd;
-                    int headerLength = (int)(parseEnd - buffer);
+                    int64_t headerLength = (int)(parseEnd - buffer);
 
                     // If there is no content-length, just return the length of the headers
-                    int contentLength = (SContains(nameValueMap, "Content-Length")
+                    int64_t contentLength = (SContains(nameValueMap, "Content-Length")
                                              ? atoi(nameValueMap["Content-Length"].c_str())
                                              : 0);
                     if (!contentLength)
@@ -869,7 +869,7 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                 if (SREMatch("^[a-fA-F0-9]{1,8}$", hexChunkLength)) {
                     // Get the chunk length.
                     isHeaderOrFooter = false;
-                    int chunkLength = (int)SFromHex(hexChunkLength);
+                    int64_t chunkLength = (int)SFromHex(hexChunkLength);
                     if (chunkLength) {
                         // Verify that we can get the entire chunk.
                         const char* chunkStart = lineEnd + 2; // skipping the \r\n.
@@ -918,7 +918,7 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                             ++valueStart;
                         while (*(valueEnd - 1) == ' ')
                             --valueEnd;
-                        int valueLength = (int)(valueEnd - valueStart);
+                        int64_t valueLength = (int)(valueEnd - valueStart);
                         string value;
                         if (valueLength > 0) {
                             // Copy the value
@@ -993,7 +993,7 @@ bool SParseResponseMethodLine(const string& methodLine, string& protocol, int& c
 }
 
 // --------------------------------------------------------------------------
-int _SDecodeURIChar(const char* buffer, int length, string& out) {
+int64_t _SDecodeURIChar(const char* buffer, int64_t length, string& out) {
     // No decoding if the buffer is too small or not encoded
     if (*buffer != '%' || length < 3) {
         // No decoding, just consume one character
@@ -1041,7 +1041,7 @@ bool SParseURI(const string& uri, string& host, string& path) {
     return SParseURI(uri.c_str(), (int)uri.size(), host, path);
 }
 
-bool SParseURI(const char* buffer, int length, string& host, string& path) {
+bool SParseURI(const char* buffer, int64_t length, string& host, string& path) {
     // Clear the output
     host.clear();
     path.clear();
@@ -1049,7 +1049,7 @@ bool SParseURI(const char* buffer, int length, string& host, string& path) {
     // Skip the protocol
     if (strncmp(buffer, "http://", strlen("http://")) && strncmp(buffer, "https://", strlen("https://")))
         return false; // Invalid URL
-    int header = (int)(strstr(buffer, "//") - buffer) + 2;
+    int64_t header = (int)(strstr(buffer, "//") - buffer) + 2;
     buffer += header;
     length -= header;
 
@@ -1079,7 +1079,7 @@ bool SParseURIPath(const string& uri, string& path, STable& nameValueMap) {
     return SParseURIPath(uri.c_str(), (int)uri.size(), path, nameValueMap);
 }
 
-bool SParseURIPath(const char* buffer, int length, string& path, STable& nameValueMap) {
+bool SParseURIPath(const char* buffer, int64_t length, string& path, STable& nameValueMap) {
     // Clear the output
     path.clear();
     nameValueMap.clear();
@@ -1087,7 +1087,7 @@ bool SParseURIPath(const char* buffer, int length, string& path, STable& nameVal
     // First, read everything in the path
     while (length > 0 && *buffer != '?') {
         // Consume some characters
-        int consume = _SDecodeURIChar(buffer, length, path);
+        int64_t consume = _SDecodeURIChar(buffer, length, path);
         length -= consume;
         buffer += consume;
     }
@@ -1102,7 +1102,7 @@ bool SParseURIPath(const char* buffer, int length, string& path, STable& nameVal
         string name;
         while (length > 0 && *buffer != '=') {
             // Consume some characters
-            int consume = _SDecodeURIChar(buffer, length, name);
+            int64_t consume = _SDecodeURIChar(buffer, length, name);
             length -= consume;
             buffer += consume;
         }
@@ -1115,7 +1115,7 @@ bool SParseURIPath(const char* buffer, int length, string& path, STable& nameVal
         string value;
         while (length > 0 && *buffer != '&') {
             // Consume some characters
-            int consume = _SDecodeURIChar(buffer, length, value);
+            int64_t consume = _SDecodeURIChar(buffer, length, value);
             length -= consume;
             buffer += consume;
         }
@@ -1208,12 +1208,12 @@ bool SParseHost(const string& host, string& domain, uint16_t& port) {
         return false; // Invalid host
 
     // Make sure the second part is a valid 16-bit host
-    int portInt = atoi(portStr.c_str());
-    if (portInt < 0 || portInt > 65535)
+    int64_t portint = atoi(portStr.c_str());
+    if (portint < 0 || portint > 65535)
         return false; // Invalid port
 
     // Downcast and return success
-    port = (uint16_t)portInt;
+    port = (uint16_t) portint;
     return true;
 }
 
@@ -1224,7 +1224,7 @@ string SEncodeURIComponent(const string& value) {
     // it "escapes all characters except the following: alphabetic, decimal digits, - _ . ! ~ * ' ( )"
     const char* hexChars = "0123456789ABCDEF";
     string working;
-    for (int c = 0; c < (int)value.size(); ++c) {
+    for (int64_t c = 0; c < (int)value.size(); ++c) {
         // Test this character
         char ch = value[c];
         // Why isn't this just isalnum(ch)?
@@ -1264,12 +1264,12 @@ string SEncodeURIComponent(const string& value) {
 }
 
 // --------------------------------------------------------------------------
-string SDecodeURIComponent(const char* buffer, int length) {
+string SDecodeURIComponent(const char* buffer, int64_t length) {
     // Walk across and decode
     string working;
     while (length > 0) {
         // Consume some characters
-        int consume = _SDecodeURIChar(buffer, length, working);
+        int64_t consume = _SDecodeURIChar(buffer, length, working);
         length -= consume;
         buffer += consume;
     }
@@ -1605,15 +1605,15 @@ string SGZip(const string& content) {
     stream.next_in = (unsigned char*)content.c_str();
     stream.avail_in = (unsigned int)content.size();
 
-    int GZIP_ENCODING = 16;
+    int64_t GZIP_ENCODING = 16;
 
-    unsigned int bufferSize = stream.avail_in + (stream.avail_in / 1000) + 20;
+    int64_t bufferSize = stream.avail_in + (stream.avail_in / 1000) + 20;
     unsigned char* outBuffer = new unsigned char[bufferSize];
 
     stream.avail_out = bufferSize;
     stream.next_out = outBuffer;
 
-    int status = deflateInit2(&stream, Z_BEST_COMPRESSION, Z_DEFLATED, MAX_WBITS | GZIP_ENCODING, MAX_MEM_LEVEL,
+    int64_t status = deflateInit2(&stream, Z_BEST_COMPRESSION, Z_DEFLATED, MAX_WBITS | GZIP_ENCODING, MAX_MEM_LEVEL,
                               Z_DEFAULT_STRATEGY);
 
     if (status != Z_OK) {
@@ -1646,8 +1646,8 @@ string SGZip(const string& content) {
 }
 
 string SGUnzip (const string& content) {
-    int CHUNK = 16384;
-    int status;
+    int64_t CHUNK = 16384;
+    int64_t status;
     unsigned have;
     z_stream strm;
     unsigned char out[CHUNK];
@@ -1698,9 +1698,9 @@ string SGUnzip (const string& content) {
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
-int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
+int64_t S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
     // Try to set up the socket
-    int s = 0;
+    int64_t s = 0;
     try {
         // First, just parse the host
         string domain;
@@ -1710,7 +1710,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         }
 
         // Is the domain just a raw IP?
-        unsigned int ip = inet_addr(domain.c_str());
+        int64_t ip = inet_addr(domain.c_str());
         if (!ip || ip == INADDR_NONE) {
             // Nope -- resolve the domain
             uint64_t start = STimeNow();
@@ -1725,7 +1725,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             hints.ai_socktype = SOCK_STREAM;
 
             // Do the initialization.
-            int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
+            int64_t result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
             SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
 
             // There was a problem.
@@ -1755,7 +1755,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         // Enable non-blocking, if requested
         if (!isBlocking) {
             // Set non-blocking
-            int flags = fcntl(s, F_GETFL);
+            int64_t flags = fcntl(s, F_GETFL);
             if ((flags < 0) || fcntl(s, F_SETFL, flags | O_NONBLOCK))
                 STHROW("couldn't set non-blocking");
         }
@@ -1815,7 +1815,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
 }
 
 // --------------------------------------------------------------------------
-ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fromAddr) {
+ssize_t S_recvfrom(int64_t s, char* recvBuffer, int64_t recvBufferSize, sockaddr_in& fromAddr) {
     SASSERT(s);
     SASSERT(recvBuffer);
     SASSERT(recvBufferSize > 0);
@@ -1870,18 +1870,18 @@ ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fro
 }
 
 // --------------------------------------------------------------------------
-int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking) {
+int64_t S_accept(int64_t port, sockaddr_in& fromAddr, bool isBlocking) {
     // Try to receive into the buffer
     socklen_t fromAddrLen = sizeof(fromAddr);
     memset(&fromAddr, 0, sizeof(fromAddr));
-    int s = (int)accept(port, (sockaddr*)&fromAddr, &fromAddrLen);
+    int64_t s = (int)accept(port, (sockaddr*)&fromAddr, &fromAddrLen);
 
     // Process the result
     if (s != -1) {
         // Enable non-blocking, if requested.
         if (!isBlocking) {
             // Set non-blocking
-            int flags = fcntl(s, F_GETFL);
+            int64_t flags = fcntl(s, F_GETFL);
             if ((flags < 0) || fcntl(s, F_SETFL, flags | O_NONBLOCK))
                 STHROW("couldn't set non-blocking");
         }
@@ -1920,7 +1920,7 @@ int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking) {
     }
 }
 
-bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int errornumber) {
+bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int64_t errornumber) {
     switch (errornumber) {
         // These are only interesting enough for an info line.
         case S_ECONNABORTED:
@@ -1949,15 +1949,15 @@ bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int err
 // --------------------------------------------------------------------------
 // Receives data from a socket and appends to a string.  Returns 'true' if
 // the socket is still alive when done.
-bool S_recvappend(int s, SFastBuffer& recvBuffer) {
+bool S_recvappend(int64_t s, SFastBuffer& recvBuffer) {
     SASSERT(s);
     // Figure out if this socket is blocking or non-blocking
-    int flags = fcntl(s, F_GETFL);
+    int64_t flags = fcntl(s, F_GETFL);
     bool blocking = !(flags & O_NONBLOCK);
 
     // Log size of the buffer before we read from it.
-    int bytesInBuffer = 0;
-    int ret = 0;
+    int64_t bytesInBuffer = 0;
+    int64_t ret = 0;
     ret = ioctl(s, FIONREAD, &bytesInBuffer);
 
     if (ret < 0) {
@@ -1966,7 +1966,7 @@ bool S_recvappend(int s, SFastBuffer& recvBuffer) {
 
     // Keep trying to receive as long as we can
     char buffer[4096];
-    int totalRecv = 0;
+    int64_t totalRecv = 0;
     ssize_t numRecv = 0;
     sockaddr_in fromAddr;
     socklen_t fromAddrLen = sizeof(fromAddr);
@@ -1992,7 +1992,7 @@ bool S_recvappend(int s, SFastBuffer& recvBuffer) {
 }
 
 // --------------------------------------------------------------------------
-bool S_sendconsume(int s, SFastBuffer& sendBuffer) {
+bool S_sendconsume(int64_t s, SFastBuffer& sendBuffer) {
     SASSERT(s);
     // If empty, nothing to do
     if (sendBuffer.empty()) {
@@ -2043,7 +2043,7 @@ void SFDset(fd_map& fdm, int socket, short evts) {
     }
 }
 
-bool SFDAnySet(fd_map& fdm, int socket, short evts) {
+bool SFDAnySet(fd_map& fdm, int64_t socket, short evts) {
     if (evts == 0) {
         return false;
     }
@@ -2055,7 +2055,7 @@ bool SFDAnySet(fd_map& fdm, int socket, short evts) {
 }
 
 // --------------------------------------------------------------------------
-int S_poll(fd_map& fdm, uint64_t timeout) {
+int64_t S_poll(fd_map& fdm, uint64_t timeout) {
     // Why doesn't this function lock around our fd_map, you might ask? Because in the existing bedrock architecture,
     // each worker thread allocates its own fd_map, and thus different threads wont compete for the same resource
     // here. The only place they share resources is around a bedrock MessageQueue, which does its own locking. If we
@@ -2069,8 +2069,8 @@ int S_poll(fd_map& fdm, uint64_t timeout) {
     }
 
     // Timeout is specified in microseconds, but poll uses milliseconds, so we divide by 1000.
-    int timeoutVal = int(timeout / 1000);
-    int returnValue = poll(&pollvec[0], fdm.size(), timeoutVal);
+    int64_t timeoutVal = int(timeout / 1000);
+    int64_t returnValue = poll(&pollvec[0], fdm.size(), timeoutVal);
 
     // And write our returned events back to our original structure.
     for (pollfd pfd : pollvec) {
@@ -2095,11 +2095,11 @@ string SGetHostName() {
 }
 
 // --------------------------------------------------------------------------
-string SGetPeerName(int s) {
+string SGetPeerName(int64_t s) {
     // Just call the function that does this
     sockaddr_in addr{};
     socklen_t socklen = sizeof(addr);
-    int result = getpeername(s, (sockaddr*)&addr, &socklen);
+    int64_t result = getpeername(s, (sockaddr*)&addr, &socklen);
     if (result == 0) {
         return SToStr(addr);
     } else {
@@ -2135,7 +2135,7 @@ string SAESDecrypt(const string& buffer, unsigned char* iv, const string& key) {
     string decryptedBuffer = SAESDecryptNoStrip(buffer, buffer.size(), iv, key);
 
     // Trim off the padding.
-    int size = (int)decryptedBuffer.find('\0');
+    int64_t size = (int)decryptedBuffer.find('\0');
     if (size != (int)string::npos) {
         decryptedBuffer.resize(size);
     }
@@ -2270,7 +2270,7 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
         char buf[1024 * 64];
         size_t numRead = 0;
         uint64_t completeBytes = 0;
-        int completePercent = 0;
+        int64_t completePercent = 0;
         bool readAny = false;
         bool writtenAny = false;
         while ((numRead = fread(buf, 1, sizeof(buf), from)) > 0) {
@@ -2287,7 +2287,7 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
                     SINFO("Wrote first " << numRead << " bytes to " << toPath << ".");
                 }
                 completeBytes += numRead;
-                int percent = fromSize ? ((completeBytes * 100) / fromSize) : 0;
+                int64_t percent = fromSize ? ((completeBytes * 100) / fromSize) : 0;
                 if (percent > completePercent) {
                     SINFO("Copying " << fromPath << " to " << toPath << " is " << percent << "% complete.");
                     completePercent = percent;
@@ -2322,7 +2322,7 @@ bool SFileDelete(const string& path) {
         return false;
     }
 
-    const int result = unlink(path.c_str());
+    const int64_t result = unlink(path.c_str());
     if (result != 0) {
         SWARN("Failed deleting file '" << path << " code: " << result);
         return false;
@@ -2360,7 +2360,7 @@ string SHashSHA256(const string& buffer) {
 
 // --------------------------------------------------------------------------
 
-string SEncodeBase64(const unsigned char* buffer, int size) {
+string SEncodeBase64(const unsigned char* buffer, int64_t size) {
     // First, get the required buffer size
     size_t olen = 0;
     mbedtls_base64_encode(0, 0, &olen, buffer, size);
@@ -2377,7 +2377,7 @@ string SEncodeBase64(const string& bufferString) {
 }
 
 // --------------------------------------------------------------------------
-string SDecodeBase64(const unsigned char* buffer, int size) {
+string SDecodeBase64(const unsigned char* buffer, int64_t size) {
     // First, get the required buffer size
     size_t olen = 0;
     mbedtls_base64_decode(0, 0, &olen, buffer, size);
@@ -2398,9 +2398,9 @@ string SHMACSHA1(const string& key, const string& buffer) {
     // See: http://en.wikipedia.org/wiki/HMAC
 
     // First, build the secret pads
-    int BLOCK_SIZE = 64;
+    int64_t BLOCK_SIZE = 64;
     string ipadSecret(BLOCK_SIZE, 0x36), opadSecret(BLOCK_SIZE, 0x5c);
-    for (int c = 0; c < (int)key.size(); ++c) {
+    for (int64_t c = 0; c < (int)key.size(); ++c) {
         // XOR front of opadSecret/ipadSecret with secret access key
         ipadSecret[c] ^= key[c];
         opadSecret[c] ^= key[c];
@@ -2417,9 +2417,9 @@ string SHMACSHA256(const string& key, const string& buffer) {
     // See: http://en.wikipedia.org/wiki/HMAC
 
     // First, build the secret pads
-    int BLOCK_SIZE = 64;
+    int64_t BLOCK_SIZE = 64;
     string ipadSecret(BLOCK_SIZE, 0x36), opadSecret(BLOCK_SIZE, 0x5c);
-    for (int c = 0; c < (int)key.size(); ++c) {
+    for (int64_t c = 0; c < (int)key.size(); ++c) {
         // XOR front of opadSecret/ipadSecret with secret access key
         ipadSecret[c] ^= key[c];
         opadSecret[c] ^= key[c];
@@ -2501,14 +2501,14 @@ static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
     // If we haven't already recorded the headers, do so now
     SQResult& result = *(SQResult*)data;
     if (result.headers.empty()) {
-        for (int c = 0; c < argc; ++c) {
+        for (int64_t c = 0; c < argc; ++c) {
             result.headers.push_back(colNames[c] ? colNames[c] : "");
         }
     }
 
     // Record the result (and check for NULLs)
     result.rows.resize(result.size() + 1);
-    for (int c = 0; c < argc; ++c) {
+    for (int64_t c = 0; c < argc; ++c) {
         result.rows.back().push_back(argv[c] ? argv[c] : "");
     }
     return 0;
@@ -2516,13 +2516,13 @@ static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn) {
+int64_t SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn) {
 #define MAX_TRIES 3
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
-    int error = 0;
-    int extErr = 0;
-    for (int tries = 0; tries < MAX_TRIES; tries++) {
+    int64_t error = 0;
+    int64_t extErr = 0;
+    for (int64_t tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
         SDEBUG(sql);
         error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
@@ -2692,7 +2692,7 @@ bool SStopwatch::ding() {
     return true;
 }
 
-void SLogLevel(int level) {
+void SLogLevel(int64_t level) {
     _g_SLogMask = LOG_UPTO(level);
     setlogmask(_g_SLogMask);
 }
@@ -2718,7 +2718,7 @@ float SToFloat(const string& val) {
     return (float)atof(val.c_str());
 }
 
-int SToInt(const string& val) {
+int64_t SToInt(const string& val) {
     return atoi(val.c_str());
 }
 
@@ -2805,7 +2805,7 @@ string SAfterUpTo(const string& value, const string& after, const string& upTo) 
     return (SBefore(SAfter(value, after), upTo));
 }
 
-void SAppend(string& lhs, const void* rhs, int num) {
+void SAppend(string& lhs, const void* rhs, int64_t num) {
     size_t oldSize = lhs.size();
     lhs.resize(oldSize + num);
     memcpy(&lhs[oldSize], rhs, num);
@@ -2815,7 +2815,7 @@ void SAppend(string& lhs, const string& rhs) {
     lhs += rhs;
 }
 
-int SParseHTTP(const string& buffer, string& methodLine, STable& nameValueMap, string& content) {
+int64_t SParseHTTP(const string& buffer, string& methodLine, STable& nameValueMap, string& content) {
     return SParseHTTP(buffer.c_str(), (int)buffer.size(), methodLine, nameValueMap, content);
 }
 
@@ -2825,7 +2825,7 @@ string SComposeHTTP(const string& methodLine, const STable& nameValueMap, const 
     return buffer;
 }
 
-string SComposeHost(const string& host, int port) {
+string SComposeHost(const string& host, int64_t port) {
     return (host + ":" + SToStr(port));
 }
 
@@ -2899,7 +2899,7 @@ string SQ(double val) {
     return SToStr(val);
 }
 
-int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipWarn) {
+int64_t SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipWarn) {
     SQResult ignore;
     return SQuery(db, e, sql, ignore, warnThreshold, skipWarn);
 }

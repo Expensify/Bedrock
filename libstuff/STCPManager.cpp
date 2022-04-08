@@ -84,7 +84,7 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
         }
 
         // Tagged as writable; check SO_ERROR to see if the connect failed
-        int result = 0;
+        int64_t result = 0;
         socklen_t size = sizeof(result);
         SASSERTWARN(!getsockopt(socket.s, SOL_SOCKET, SO_ERROR, &result, &size));
         if (result) {
@@ -198,7 +198,7 @@ void STCPManager::Socket::shutdown(Socket::State toState) {
     state.store(toState);
 }
 
-STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)
+STCPManager::Socket::Socket(int64_t sock, STCPManager::Socket::State state_, SX509* x509)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509),
     sentBytes(0), recvBytes(0)
@@ -333,10 +333,10 @@ bool STCPManager::Socket::recv() {
     return result;
 }
 
-unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host, int remainingTries) {
+unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host, int64_t remainingTries) {
     // Open a port on the requested host
     SASSERT(SHostIsValid(host));
-    int s;
+    int64_t s;
     while (remainingTries--) {
         s = S_socket(host, true, true, false);
         if (s == -1) {
@@ -360,7 +360,7 @@ unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host, int rema
     return make_unique<Port>(s, host);
 }
 
-STCPManager::Port::Port(int _s, string _host) : s(_s), host(_host)
+STCPManager::Port::Port(int64_t _s, string _host) : s(_s), host(_host)
 {
 }
 

@@ -45,7 +45,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
 
         // This exposes just enough to test the peer selection logic.
         strcpy(filename, filenameTemplate);
-        int fd = mkstemp(filename);
+        int64_t fd = mkstemp(filename);
         close(fd);
         shared_ptr<SQLitePool> dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0);
         TestServer server;
@@ -55,7 +55,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         // Do a base test, with one peer with no latency.
         SQLiteNode::Peer* fastest = nullptr;
         for (auto peer : testNode.peerList) {
-            int peerNum = peer->name[4] - 48;
+            int64_t peerNum = peer->name[4] - 48;
             peer->loggedIn = true;
             peer->setCommit(10000000 + peerNum, "");
 

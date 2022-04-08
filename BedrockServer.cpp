@@ -161,7 +161,7 @@ void BedrockServer::sync()
 {
     // Parse out the number of worker threads we'll use. The DB needs to know this because it will expect a
     // corresponding number of journal tables. "-readThreads" exists only for backwards compatibility.
-    int workerThreads = args.calc("-workerThreads");
+    int64_t workerThreads = args.calc("-workerThreads");
 
     // TODO: remove when nothing uses readThreads.
     workerThreads = workerThreads ? workerThreads : args.calc("-readThreads");
@@ -178,7 +178,7 @@ void BedrockServer::sync()
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
 
     // We use fewer FDs on test machines that have other resource restrictions in place.
-    int fdLimit = args.isSet("-live") ? 25'000 : 250;
+    int64_t fdLimit = args.isSet("-live") ? 25'000 : 250;
     SINFO("Setting dbPool size to: " << fdLimit);
     _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-pageLogging"));
     SQLite& db = _dbPool->getBase();
@@ -199,7 +199,7 @@ void BedrockServer::sync()
     // it's running, and our workers will have to maintain awareness of that state anyway.
     SINFO("Starting " << workerThreads << " worker threads.");
     list<thread> workerThreadList;
-    for (int threadId = 0; threadId < workerThreads; threadId++) {
+    for (int64_t threadId = 0; threadId < workerThreads; threadId++) {
         workerThreadList.emplace_back(&BedrockServer::worker, this, threadId);
     }
 
@@ -379,8 +379,8 @@ void BedrockServer::sync()
             // we can just re-queue them, they will get re-checked once things clear up, and then they'll get
             // processed here, or escalated to the new leader. Commands initiated on followers just get dropped,
             // they will need to be re-escalated, potentially to a different leader.
-            int requeued = 0;
-            int dropped = 0;
+            int64_t requeued = 0;
+            int64_t dropped = 0;
             try {
                 while (true) {
                     // Reset this to blank. This releases the existing command and allows it to get cleaned up.
@@ -471,7 +471,7 @@ void BedrockServer::sync()
                         // This is a command that came from a peer. Have the sync node send the response back to the peer.
                         _finishPeerCommand(command);
                     } else {
-                        // The only other option is this came from a client, so respond via the 
+                        // The only other option is this came from a client, so respond via the
                         _reply(command);
                     }
                 } else {
@@ -697,7 +697,7 @@ void BedrockServer::sync()
     }
 
     // Wait for the worker threads to finish.
-    int threadId = 0;
+    int64_t threadId = 0;
     for (auto& workerThread : workerThreadList) {
         SINFO("Joining worker thread '" << "worker" << threadId << "'");
         threadId++;
@@ -732,7 +732,7 @@ void BedrockServer::sync()
     _syncThreadComplete.store(true);
 }
 
-void BedrockServer::worker(int threadId)
+void BedrockServer::worker(int64_t threadId)
 {
     // Worker 0 is the "blockingCommit" thread.
     SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
@@ -960,7 +960,7 @@ void BedrockServer::worker(int threadId)
             }
 
             // We'll retry on conflict up to this many times.
-            int retry = _maxConflictRetries.load();
+            int64_t retry = _maxConflictRetries.load();
             while (retry) {
                 // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
                 // command has specifically asked for that.
@@ -1906,7 +1906,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             SQLite::fullCheckpointPageMin.store(command->request.calc("fullCheckpointPageMin"));
         }
         if (command->request.isSet("MaxConflictRetries")) {
-            int retries = command->request.calc("MaxConflictRetries");
+            int64_t retries = command->request.calc("MaxConflictRetries");
             if (retries > 0 && retries <= 100) {
                 SINFO("Updating _maxConflictRetries to: " << retries);
                 _maxConflictRetries.store(retries);
@@ -2118,7 +2118,7 @@ void BedrockServer::_acceptSockets() {
         // Accept as many sockets as we can.
         while (true) {
             sockaddr_in addr;
-            int s = S_accept(port->s, addr, true); // Note that this sets the newly accepted socket to be blocking.
+            int64_t s = S_accept(port->s, addr, true); // Note that this sets the newly accepted socket to be blocking.
 
             // If we got an error or no socket, done accepting for now.
             if (s <= 0) {
@@ -2224,7 +2224,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
         // socket at some point, so what we do is `poll` with a 1 second timeout, and if we ever hit the timeout and
         // are in a `shutting down` state, then we finish up and exit. In any other case, we just wait in `poll` again
         // until we get some data or a disconnection.
-        int pollResult = 0;
+        int64_t pollResult = 0;
         struct pollfd pollStruct = { socket.s, POLLIN, 0 };
 
         // As long as `poll` returns 0 we've timed out, indicating that we're still waiting for something to happen. In
@@ -2234,7 +2234,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
                 SINFO("Socket thread exiting because no data and shutting down.");
                 socket.shutdown(Socket::CLOSED);
                 break;
-            } 
+            }
         }
 
         // If the above loop didn't close the socket due to inactivity at shutdown, let's handle the activity.
@@ -2268,7 +2268,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
                 }
             } else {
                 // Otherwise, handle any default request.
-                int requestSize = request.deserialize(socket.recvBuffer);
+                int64_t requestSize = request.deserialize(socket.recvBuffer);
                 socket.recvBuffer.consumeFront(requestSize);
             }
 

@@ -28,7 +28,7 @@ string MySQLPacket::serialize() {
     return header + payload;
 }
 
-int MySQLPacket::deserialize(const char* packet, const size_t size) {
+int64_t MySQLPacket::deserialize(const char* packet, const size_t size) {
     // Does it have a header?
     if (size < 4) {
         return 0;
@@ -112,7 +112,7 @@ string MySQLPacket::serializeHandshake() {
     SAppend(handshake.payload, &capability_flags_2, 2); // capability_flags_2 (high 2 bytes)
 
     // The first byte is the length of the auth_plugin_name string. Followed by 10 NULL
-    // characters for the "reserved" field. Since we don't support CLIENT_SECURE_CONNECTION 
+    // characters for the "reserved" field. Since we don't support CLIENT_SECURE_CONNECTION
     // in our capabilities we can skip auth-plugin-data-part-2
     // https://dev.mysql.com/doc/internals/en/client-wants-native-server-wants-old.html
     // (Initial Handshake Packet)
@@ -245,7 +245,7 @@ void BedrockPlugin_MySQL::onPortAccept(STCPManager::Socket* s) {
 
 void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
     // Get any new MySQL requests
-    int packetSize = 0;
+    int64_t packetSize = 0;
     MySQLPacket packet;
     while ((packetSize = packet.deserialize(s->recvBuffer.c_str(), s->recvBuffer.size()))) {
         // Got a packet, process it
@@ -349,7 +349,7 @@ void BedrockPlugin_MySQL::onPortRequestComplete(const BedrockCommand& command, S
     // Only one request supported: Query.
     SASSERT(SIEquals(command.request.methodLine, "Query"));
     SASSERT(command.request.isSet("sequenceID"));
-    if (SToInt(command.response.methodLine) == 200) {
+    if (SToInt64(command.response.methodLine) == 200) {
         // Success!  Were there any results?
         if (command.response.content.empty()) {
             // Just send OK
@@ -362,7 +362,7 @@ void BedrockPlugin_MySQL::onPortRequestComplete(const BedrockCommand& command, S
         }
     } else {
         // Failure -- pass along the message
-        s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), SToInt(command.response.methodLine),
+        s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), SToInt64(command.response.methodLine),
                                           command.response["error"]));
     }
 }

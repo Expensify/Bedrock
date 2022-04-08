@@ -22,7 +22,7 @@ SSSLState::~SSSLState() {
 }
 
 // --------------------------------------------------------------------------
-SSSLState* SSSLOpen(int s, SX509* x509) {
+SSSLState* SSSLOpen(int64_t s, SX509* x509) {
     // Initialize the SSL state
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
@@ -46,10 +46,10 @@ SSSLState* SSSLOpen(int s, SX509* x509) {
 }
 
 // --------------------------------------------------------------------------
-int SSSLSend(SSSLState* sslState, const char* buffer, int length) {
+int64_t SSSLSend(SSSLState* sslState, const char* buffer, int64_t length) {
     // Send as much as possible and report what happened
     SASSERT(sslState && buffer);
-    const int numSent = mbedtls_ssl_write(&sslState->ssl, (unsigned char*)buffer, length);
+    const int64_t numSent = mbedtls_ssl_write(&sslState->ssl, (unsigned char*)buffer, length);
     if (numSent > 0) {
         return numSent;
     }
@@ -71,10 +71,10 @@ int SSSLSend(SSSLState* sslState, const char* buffer, int length) {
 }
 
 // --------------------------------------------------------------------------
-int SSSLRecv(SSSLState* sslState, char* buffer, int length) {
+int64_t SSSLRecv(SSSLState* sslState, char* buffer, int64_t length) {
     // Receive as much as we can and report what happened
     SASSERT(sslState && buffer);
-    const int numRecv = mbedtls_ssl_read(&sslState->ssl, (unsigned char*)buffer, length);
+    const int64_t numRecv = mbedtls_ssl_read(&sslState->ssl, (unsigned char*)buffer, length);
     if (numRecv > 0) {
         return numRecv;
     }
@@ -151,7 +151,7 @@ void SSSLClose(SSSLState* ssl) {
 }
 
 // --------------------------------------------------------------------------
-int SSSLSend(SSSLState* ssl, const SFastBuffer& buffer) {
+int64_t SSSLSend(SSSLState* ssl, const SFastBuffer& buffer) {
     // Unwind the buffer
     return SSSLSend(ssl, buffer.c_str(), (int)buffer.size());
 }
@@ -164,7 +164,7 @@ bool SSSLSendConsume(SSSLState* ssl, SFastBuffer& sendBuffer) {
     }
 
     // Nothing to send, assume we're alive
-    int numSent = SSSLSend(ssl, sendBuffer);
+    int64_t numSent = SSSLSend(ssl, sendBuffer);
     if (numSent > 0) {
         sendBuffer.consumeFront(numSent);
     }
@@ -177,9 +177,9 @@ bool SSSLSendConsume(SSSLState* ssl, SFastBuffer& sendBuffer) {
 bool SSSLSendAll(SSSLState* ssl, const string& buffer) {
     // Keep sending until there is an error or we're done
     SASSERT(ssl);
-    int totalSent = 0;
+    int64_t totalSent = 0;
     while (totalSent < (int)buffer.size()) {
-        int numSent = SSSLSend(ssl, &buffer[totalSent], (int)buffer.size() - totalSent);
+        int64_t numSent = SSSLSend(ssl, &buffer[totalSent], (int)buffer.size() - totalSent);
         if (numSent == -1) {
             return false;
         }
@@ -193,8 +193,8 @@ bool SSSLRecvAppend(SSSLState* ssl, SFastBuffer& recvBuffer) {
     // Keep trying to receive as long as we can
     SASSERT(ssl);
     char buffer[1024 * 16];
-    int totalRecv = 0;
-    int numRecv = 0;
+    int64_t totalRecv = 0;
+    int64_t numRecv = 0;
     while ((numRecv = SSSLRecv(ssl, buffer, sizeof(buffer))) > 0) {
         // Got some more data
         recvBuffer.append(buffer, numRecv);

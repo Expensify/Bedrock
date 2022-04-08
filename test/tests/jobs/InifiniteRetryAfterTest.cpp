@@ -36,7 +36,7 @@ struct InfiniteRetryAfterJobTest : tpunit::TestFixture {
             tester.readDB("SELECT state, JSON_EXTRACT(data, '$.retryAfterCount') FROM jobs WHERE jobID = " + SQ(jobID) + ";", result);
             ASSERT_FALSE(result.empty());
             const string state = result[0][0];
-            const size_t retryAfterCount = SToInt(result[0][1]);
+            const size_t retryAfterCount = SToInt64(result[0][1]);
             if (i == 10) {
                 // For the last loop, after the 10th time, it should be FAILED (and the jobs isn't returned, since it gets failed)
                 EXPECT_EQUAL(state, "FAILED");
@@ -77,7 +77,7 @@ struct InfiniteRetryAfterJobTest : tpunit::TestFixture {
             tester.readDB("SELECT state, JSON_EXTRACT(data, '$.retryAfterCount') FROM jobs WHERE jobID = " + SQ(jobID) + ";", result);
             ASSERT_FALSE(result.empty());
             const string state = result[0][0];
-            const size_t retryAfterCount = SToInt(result[0][1]);
+            const size_t retryAfterCount = SToInt64(result[0][1]);
             EXPECT_EQUAL(retryAfterCount, i + 1);
             EXPECT_EQUAL(state, "RUNQUEUED");
 

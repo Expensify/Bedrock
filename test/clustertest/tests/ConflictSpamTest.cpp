@@ -52,7 +52,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 SData query("idcollision b");
                 // What if we throw in a few sync commands?
                 query["writeConsistency"] = "ASYNC";
-                int cmdNum = cmdID.fetch_add(1);
+                int64_t cmdNum = cmdID.fetch_add(1);
                 query["value"] = "sent-" + to_string(cmdNum);
 
                 // Ok, send.
@@ -61,7 +61,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         }
 
         // Now see if they all match. If they don't, give them a few seconds to sync.
-        int tries = 0;
+        int64_t tries = 0;
         bool success = false;
         while (tries < 10) {
             vector<string> results(3);
@@ -97,11 +97,11 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
                 // Let's make ourselves 20 commands to spam at each node.
                 vector<SData> requests;
-                int numCommands = 200;
+                int64_t numCommands = 200;
                 for (int j = 0; j < numCommands; j++) {
                     SData query("idcollision b2");
                     query["writeConsistency"] = "ASYNC";
-                    int cmdNum = cmdID.fetch_add(1);
+                    int64_t cmdNum = cmdID.fetch_add(1);
                     query["value"] = "sent-" + to_string(cmdNum);
                     requests.push_back(query);
                 }
@@ -109,10 +109,10 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 // Ok, send them all!
                 auto results = brtester.executeWaitMultipleData(requests);
 
-                int failures = 0;
+                int64_t failures = 0;
                 for (auto row : results) {
-                    if (SToInt(row.methodLine) != 200) {
-                        cout << "[ConflictSpamTest] Node " << i << " Expected 200, got: " << SToInt(row.methodLine) << endl;
+                    if (SToInt64(row.methodLine) != 200) {
+                        cout << "[ConflictSpamTest] Node " << i << " Expected 200, got: " << SToInt64(row.methodLine) << endl;
                         cout << "[ConflictSpamTest] " << row.content << endl;
                         failures++;
                     }
@@ -152,7 +152,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
         // Build a list of journal tables on each node.
         vector<list<string>> tables(3);
-        int i = 0;
+        int64_t i = 0;
         for (auto result : allResults) {
             list<string> lines = SParseList(result, '\n');
             list<string> output;
@@ -168,7 +168,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
         // We'll let this go a couple of times. It's feasible that these won't match if the whole journal hasn't
         // replicated yet.
-        int tries = 0;
+        int64_t tries = 0;
         while(tries++ < 60) {
 
             // Now lets compose a query for the journal of each node.
@@ -235,7 +235,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
             for (size_t i = 0; i < results.size(); i++) {
                 // Make sure they all succeeded.
-                ASSERT_TRUE(SToInt(results[i].methodLine) == 200);
+                ASSERT_TRUE(SToInt64(results[i].methodLine) == 200);
                 list<string> lines = SParseList(results[i].content, '\n');
                 lines.pop_front();
             }
@@ -300,9 +300,9 @@ struct ConflictSpamTest : tpunit::TestFixture {
         // And that they're all 66.
         list<string> resultCount = SParseList(allResults[0], '\n');
         resultCount.pop_front();
-        ASSERT_EQUAL(cmdID.load(), SToInt(resultCount.front()));
+        ASSERT_EQUAL(cmdID.load(), SToInt64(resultCount.front()));
 
-        int fail = totalRequestFailures.load();
+        int64_t fail = totalRequestFailures.load();
         if (fail > 0) {
             cout << "[ConflictSpamTest] Total failures: " << fail << endl;
         }

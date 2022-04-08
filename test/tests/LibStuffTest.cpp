@@ -379,7 +379,7 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(c["d"], "4");
         ASSERT_EQUAL(c["e"], "char*");
         ASSERT_EQUAL(c["f"], "string");
-        ASSERT_EQUAL(SToInt(c["g"]), 97);
+        ASSERT_EQUAL(SToInt64(c["g"]), 97);
     }
 
     void testSTable() {

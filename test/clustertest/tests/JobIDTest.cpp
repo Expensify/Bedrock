@@ -38,7 +38,7 @@ struct JobIDTest : tpunit::TestFixture {
         // Stop leader
         tester->stopNode(0);
 
-        int count = 0;
+        int64_t count = 0;
         bool success = false;
         while (count++ < 50) {
             SData cmd("Status");

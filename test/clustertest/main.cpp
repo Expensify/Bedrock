@@ -22,7 +22,7 @@ void sigclean(int sig) {
 
 // This is a bit of a hack and assumes various things about syslogd
 void log() {
-    int pid = getpid();
+    int64_t pid = getpid();
     cout << "Starting log recording with pid: " << pid << endl;
     unlink("log.txt");
     execl("/bin/bash", "/bin/bash", "-c", "tail -f /var/log/syslog | grep --line-buffered bedrock > log.txt", (char *)NULL);
@@ -38,11 +38,11 @@ int main(int argc, char* argv[]) {
     set<string> exclude;
     list<string> before;
     list<string> after;
-    int threads = 1;
-    int repeatCount = 1;
+    int64_t threads = 1;
+    int64_t repeatCount = 1;
 
     if (args.isSet("-repeatCount")) {
-        repeatCount = max(1, SToInt(args["-repeatCount"]));
+        repeatCount = max((int64_t) 1, SToInt64(args["-repeatCount"]));
     }
 
     if (args.isSet("-only")) {
@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
         }
     }
     if (args.isSet("-threads")) {
-        threads = SToInt(args["-threads"]);
+        threads = SToInt64(args["-threads"]);
     }
 
 

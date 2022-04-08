@@ -19,7 +19,7 @@ string SComposeTime(const string& format, uint64_t when) {
     return string(buf, length);
 }
 
-int SDaysInMonth(int year, int month) {
+int64_t SDaysInMonth(int64_t year, int64_t month) {
     // 30 days hath September...
     if (month == 4 || month == 6 || month == 9 || month == 11) {
         return 30;
@@ -64,7 +64,7 @@ string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
     list<string> parts = SParseList(timeStamp, '-');
 
     // Initialize to all 0's
-    struct tm t = {0};  
+    struct tm t = {0};
     int64_t year;
 
     try {
@@ -92,7 +92,7 @@ string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
     }
 
     t.tm_mday = 1;
-    
+
     char buf[256] = {};
     size_t length = strftime(buf, sizeof(buf), "%Y-%m-%d", &t);
     return string(buf, length);

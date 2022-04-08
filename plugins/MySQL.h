@@ -33,7 +33,7 @@ struct MySQLPacket {
      * @param size length of packet
      * @return       Number of bytes deserialized, or 0 on failure
      */
-    int deserialize(const char* packet, const size_t size);
+    int64_t deserialize(const char* packet, const size_t size);
 
     /**
      * Creates a MySQL length-encoded integer

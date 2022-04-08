@@ -22,7 +22,7 @@ struct STCPManager {
       public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
         Socket(const string& host, SX509* x509 = nullptr);
-        Socket(int sock = 0, State state_ = CONNECTING, SX509* x509 = nullptr);
+        Socket(int64_t sock = 0, State state_ = CONNECTING, SX509* x509 = nullptr);
         Socket(Socket&& from);
         ~Socket();
         // Attributes
@@ -71,11 +71,11 @@ struct STCPManager {
 
     class Port {
       public:
-        Port(int _s, string _host);
+        Port(int64_t _s, string _host);
         ~Port();
 
         // Attributes
-        const int s;
+        const int64_t s;
         const string host;
     };
 
@@ -84,5 +84,5 @@ struct STCPManager {
     static void prePoll(fd_map& fdm, Socket& socket);
     static void postPoll(fd_map& fdm, Socket& socket);
 
-    static unique_ptr<Port> openPort(const string& host, int remainingTries = 1);
+    static unique_ptr<Port> openPort(const string& host, int64_t remainingTries = 1);
 };

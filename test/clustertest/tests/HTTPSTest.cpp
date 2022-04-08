@@ -13,7 +13,7 @@
  *
  * However, to actually verify that you saw a conflict during the test, you can look at the logs for something like:
  *
- * Feb 22 00:32:16 vagrant-ubuntu-trusty-64 bedrock: brcluster_node_0 (SQLiteNode.cpp:1298) update [sync] [warn] 
+ * Feb 22 00:32:16 vagrant-ubuntu-trusty-64 bedrock: brcluster_node_0 (SQLiteNode.cpp:1298) update [sync] [warn]
  *     {brcluster_node_0/LEADING} ROLLBACK, conflicted on sync: brcluster_node_0#109 : sendrequest
  */
 struct HTTPSTest : tpunit::TestFixture {
@@ -57,7 +57,7 @@ struct HTTPSTest : tpunit::TestFixture {
         mutex m;
 
         // Every 10th request on leader is an HTTP request.
-        int nthHasRequest = 10;
+        int64_t nthHasRequest = 10;
 
         // Let's spin up three threads, each spamming commands at one of our nodes.
         list<thread> threads;
@@ -99,10 +99,10 @@ struct HTTPSTest : tpunit::TestFixture {
             } else {
                 ASSERT_FALSE(body.size());
             }
-            if (SToInt(code) != 200) {
+            if (SToInt64(code) != 200) {
                 cout << "[HTTPSTest] Bad code: " << code << endl;
             }
-            ASSERT_EQUAL(SToInt(code), 200);
+            ASSERT_EQUAL(SToInt64(code), 200);
         }
     }
 } __HTTPSTest;

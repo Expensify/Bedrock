@@ -121,15 +121,15 @@ typedef map<string, SString, STableComp> STable;
 #define STHROW_STACK(...) throw SException(__FILE__, __LINE__, true, __VA_ARGS__)
 class SException : public exception {
   private:
-    static const int CALLSTACK_LIMIT = 100;
+    static const int64_t CALLSTACK_LIMIT = 100;
     const string _file;
-    const int _line;
+    const int64_t _line;
     void* _callstack[CALLSTACK_LIMIT];
-    int _depth = 0;
+    int64_t _depth = 0;
 
   public:
     SException(const string& file = "unknown",
-               int line = 0,
+               int64_t line = 0,
                bool generateCallstack = false,
                const string& _method = "",
                const STable& _headers = {},
@@ -143,7 +143,7 @@ class SException : public exception {
 };
 
 // Utility function for generating pretty callstacks.
-vector<string> SGetCallstack(int depth = 0, void* const* callstack = nullptr) noexcept;
+vector<string> SGetCallstack(int64_t depth = 0, void* const* callstack = nullptr) noexcept;
 
 // --------------------------------------------------------------------------
 // Time stuff TODO: Replace with std::chrono
@@ -158,7 +158,7 @@ vector<string> SGetCallstack(int depth = 0, void* const* callstack = nullptr) no
 // Various helper time functions
 uint64_t STimeNow();
 uint64_t STimeThisMorning(); // Timestamp for this morning at midnight GMT
-int SDaysInMonth(int year, int month);
+int64_t SDaysInMonth(int64_t year, int64_t month);
 string SComposeTime(const string& format, uint64_t when);
 timeval SToTimeval(uint64_t when);
 string SFirstOfMonth(const string& timeStamp, const int64_t& offset = 0);
@@ -192,10 +192,10 @@ struct SStopwatch {
 void SInitializeSignals();
 
 // Returns true if the given signal has been raised. Clears the value of the given signal.
-bool SGetSignal(int signum);
+bool SGetSignal(int64_t signum);
 
 // Checks whether the given signal has been raised without clearing it.
-bool SCheckSignal(int signum);
+bool SCheckSignal(int64_t signum);
 
 // Return the current set of signals.
 uint64_t SGetSignals();
@@ -217,7 +217,7 @@ void STerminateHandler(void);
 // --------------------------------------------------------------------------
 // Log level management
 extern atomic<int> _g_SLogMask;
-void SLogLevel(int level);
+void SLogLevel(int64_t level);
 
 // Stack trace logging
 void SLogStackTrace();
@@ -328,7 +328,7 @@ namespace std {
 // Math stuff
 // --------------------------------------------------------------------------
 // Converting between various bases
-string SToHex(uint64_t value, int digits = 16);
+string SToHex(uint64_t value, int64_t digits = 16);
 string SToHex(uint32_t value);
 string SToHex(const string& buffer);
 uint64_t SFromHex(const string& value);
@@ -352,7 +352,7 @@ template <class T> inline string SToStr(const T& t) {
 
 // Numeric conversion
 float SToFloat(const string& val);
-int SToInt(const string& val);
+int64_t SToInt64(const string& val);
 int64_t SToInt64(const string& val);
 uint64_t SToUInt64(const string& val);
 
@@ -369,7 +369,7 @@ template <class A> inline bool SContains(const set<A>& valueList, const A& value
 
 bool SContains(const list<string>& valueList, const char* value);
 bool SContains(const string& haystack, const string& needle);
-bool SContains(const string& haystack, char needle); 
+bool SContains(const string& haystack, char needle);
 bool SContains(const STable& nameValueMap, const string& name);
 
 bool SIsValidSQLiteDateModifier(const string& modifier);
@@ -379,7 +379,7 @@ bool SIEquals(const string& lhs, const string& rhs);
 bool SIContains(const string& haystack, const string& needle);
 bool SStartsWith(const string& haystack, const string& needle);
 bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize);
-bool SEndsWith(const string& haystack, const string& needle); 
+bool SEndsWith(const string& haystack, const string& needle);
 bool SConstantTimeEquals(const string& secret, const string& userInput);
 bool SConstantTimeIEquals(const string& secret, const string& userInput);
 
@@ -410,27 +410,27 @@ string SAfterUpTo(const string& value, const string& after, const string& upTo);
 string SReplace(const string& value, const string& find, const string& replace);
 string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar);
 string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar);
-int SStateNameToInt(const char* states[], const string& stateName, unsigned int numStates);
-void SAppend(string& lhs, const void* rhs, int num);
+int64_t SStateNameToInt(const char* states[], const string& stateName, int64_t numStates);
+void SAppend(string& lhs, const void* rhs, int64_t num);
 void SAppend(string& lhs, const string& rhs);
 
 // HTTP message management
-int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content);
-int SParseHTTP(const string& buffer, string& methodLine, STable& nameValueMap, string& content);
+int64_t SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content);
+int64_t SParseHTTP(const string& buffer, string& methodLine, STable& nameValueMap, string& content);
 bool SParseRequestMethodLine(const string& methodLine, string& method, string& uri);
 bool SParseResponseMethodLine(const string& methodLine, string& protocol, int& code, string& reason);
-bool SParseURI(const char* buffer, int length, string& host, string& path);
+bool SParseURI(const char* buffer, int64_t length, string& host, string& path);
 bool SParseURI(const string& uri, string& host, string& path);
-bool SParseURIPath(const char* buffer, int length, string& path, STable& nameValueMap);
+bool SParseURIPath(const char* buffer, int64_t length, string& path, STable& nameValueMap);
 bool SParseURIPath(const string& uri, string& path, STable& nameValueMap);
 void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameValueMap, const string& content);
 string SComposeHTTP(const string& methodLine, const STable& nameValueMap, const string& content);
 string SComposePOST(const STable& nameValueMap);
-string SComposeHost(const string& host, int port);
+string SComposeHost(const string& host, int64_t port);
 bool SParseHost(const string& host, string& domain, uint16_t& port);
 bool SHostIsValid(const string& host);
 string SGetDomain(const string& host);
-string SDecodeURIComponent(const char* buffer, int length);
+string SDecodeURIComponent(const char* buffer, int64_t length);
 string SDecodeURIComponent(const string& value);
 string SEncodeURIComponent(const string& value);
 
@@ -501,22 +501,22 @@ void SFDset(fd_map& fdm, int socket, short evts);
 
 // Returns true if *ANY* of the bits in evts are set as returned value for this socket.
 // Returns false otherwise, or if this socket isn't in this fd_set, or if evts is 0.
-bool SFDAnySet(fd_map& fdm, int socket, short evts);
+bool SFDAnySet(fd_map& fdm, int64_t socket, short evts);
 
 // Socket helpers
-int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking);
-int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);
-ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fromAddr);
-bool S_recvappend(int s, SFastBuffer& recvBuffer);
-bool S_sendconsume(int s, SFastBuffer& sendBuffer);
-int S_poll(fd_map& fdm, uint64_t timeout);
+int64_t S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking);
+int64_t S_accept(int64_t port, sockaddr_in& fromAddr, bool isBlocking);
+ssize_t S_recvfrom(int64_t s, char* recvBuffer, int64_t recvBufferSize, sockaddr_in& fromAddr);
+bool S_recvappend(int64_t s, SFastBuffer& recvBuffer);
+bool S_sendconsume(int64_t s, SFastBuffer& sendBuffer);
+int64_t S_poll(fd_map& fdm, uint64_t timeout);
 
 // Network helpers
 string SGetHostName();
-string SGetPeerName(int s);
+string SGetPeerName(int64_t s);
 
 // Common error checking/logging.
-bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int errornumber);
+bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int64_t errornumber);
 
 // --------------------------------------------------------------------------
 // File stuff
@@ -538,9 +538,9 @@ string SHashSHA1(const string& buffer);
 string SHashSHA256(const string& buffer);
 
 // Various encoding/decoding functions
-string SEncodeBase64(const unsigned char* buffer, const int size);
+string SEncodeBase64(const unsigned char* buffer, const int64_t size);
 string SEncodeBase64(const string& buffer);
-string SDecodeBase64(const unsigned char* buffer, const int size);
+string SDecodeBase64(const unsigned char* buffer, const int64_t size);
 string SDecodeBase64(const string& buffer);
 
 // HMAC (for use with Amazon S3)
@@ -581,8 +581,8 @@ void SQueryLogOpen(const string& logFilename);
 void SQueryLogClose();
 
 // Returns an SQLite result code.
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false);
-int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false);
+int64_t SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false);
+int64_t SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false);
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
 bool SQVerifyTableExists(sqlite3* db, const string& tableName);
 
@@ -601,6 +601,6 @@ string SGZip(const string& content);
 string SGUnzip(const string& content);
 
 // Command-line helpers
-STable SParseCommandLine(int argc, char* argv[]);
+STable SParseCommandLine(int64_t argc, char* argv[]);
 
 #endif	// LIBSTUFF_H

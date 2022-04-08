@@ -31,7 +31,7 @@ struct LeadingTest : tpunit::TestFixture {
 
         // Get the status from each node.
         bool success = false;
-        int count = 0;
+        int64_t count = 0;
         while (count++ < 50) {
             for (int i : {0, 1, 2}) {
                 BedrockTester& brtester = tester->getTester(i);
@@ -59,7 +59,7 @@ struct LeadingTest : tpunit::TestFixture {
         tester->stopNode(0);
         BedrockTester& newLeader = tester->getTester(1);
 
-        int count = 0;
+        int64_t count = 0;
         bool success = false;
         while (count++ < 50) {
             SData cmd("Status");
@@ -91,7 +91,7 @@ struct LeadingTest : tpunit::TestFixture {
         tester->startNode(0);
 
         mutex m;
-        int count = 0;
+        int64_t count = 0;
         while (count++ < 10) {
             list<thread> threads;
             vector<string> responses(3);
@@ -136,7 +136,7 @@ struct LeadingTest : tpunit::TestFixture {
 
         // Create a bunch of commands.
         vector<SData> requests(5000);
-        int count = 0;
+        int64_t count = 0;
         for (auto& request : requests) {
             request.methodLine = "Query";
             request["writeConsistency"] = "ASYNC";
@@ -159,7 +159,7 @@ struct LeadingTest : tpunit::TestFixture {
 
         // Verify it goes SYNCHRONIZING and then FOLLOWING.
         BedrockTester& follower = tester->getTester(1);
-        int tries = 0;
+        int64_t tries = 0;
         while (1) {
             SData status("Status");
             auto result = follower.executeWaitVerifyContent(status, "200", true);
