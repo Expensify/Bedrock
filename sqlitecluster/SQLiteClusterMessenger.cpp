@@ -38,7 +38,7 @@ bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimest
     } catch (const out_of_range& e) {}
 
     while (true) {
-        int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
+        int64_t result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
         if (!result) {
             if (_shutDownBy) {
                 SINFO("[HTTPESC] Giving up because shutting down.");
@@ -181,7 +181,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
             responseStr.append(response, bytesRead);
 
             // Are we done? We've only sent one command so we can only get one response.
-            int size = SParseHTTP(responseStr, command.response.methodLine, command.response.nameValueMap, command.response.content);
+            int64_t size = SParseHTTP(responseStr, command.response.methodLine, command.response.nameValueMap, command.response.content);
             if (size) {
                 break;
             }
