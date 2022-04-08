@@ -1632,7 +1632,10 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
         }
 
         // If `Connection: close` was set, shut down the socket, in case the caller ignores us.
-        if (SIEquals(command->request["Connection"], "close") || _shutdownState.load() != RUNNING) {
+        if (SIEquals(command->request["Connection"], "close") || _shutdownState.load() != RUNNING || _suppressCommandPort) {
+            // TODO: If we're doing this because of the command port being suppressed, we should really only close the
+            // socket if it came in on the public command port. This doesn't matter much though until escalations reuse
+            // sockets.
             command->socket->shutdown();
         }
     } else {
@@ -2240,7 +2243,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
                 SINFO("Socket thread exiting because no data and shutting down.");
                 socket.shutdown(Socket::CLOSED);
                 break;
-            } 
+            }
         }
 
         // If the above loop didn't close the socket due to inactivity at shutdown, let's handle the activity.
