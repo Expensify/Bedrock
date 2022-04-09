@@ -11,7 +11,7 @@ _server(server)
 // RAII-style mechanism for automatically setting and unsetting query rewriting
 class AutoScopeRewrite {
   public:
-    AutoScopeRewrite(bool enable, SQLite& db, bool (*handler)(int, const char*, string&)) : _enable(enable), _db(db), _handler(handler) {
+    AutoScopeRewrite(bool enable, SQLite& db, bool (*handler)(int64_t, const char*, string&)) : _enable(enable), _db(db), _handler(handler) {
         if (_enable) {
             _db.setRewriteHandler(_handler);
             _db.enableRewrite(true);
@@ -26,7 +26,7 @@ class AutoScopeRewrite {
   private:
     bool _enable;
     SQLite& _db;
-    bool (*_handler)(int, const char*, string&);
+    bool (*_handler)(int64_t, const char*, string&);
 };
 
 uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing) {
@@ -200,7 +200,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
 
         // Process the command.
         {
-            bool (*handler)(int, const char*, string&) = nullptr;
+            bool (*handler)(int64_t, const char*, string&) = nullptr;
             bool enable = command->shouldEnableQueryRewriting(_db, &handler);
             AutoScopeRewrite rewrite(enable, _db, handler);
             try {

@@ -47,7 +47,7 @@ class SQLite {
     // Because the existing codes all use values in the first and second bytes of the int (they're or'ed with values
     // left shifted by 8 bits, see SQLITE_ERROR_MISSING_COLLSEQ in sqlite.h for an example), we left shift by 16 for
     // this to avoid any overlap.
-    static const int COMMIT_DISABLED = (1 << 16) | 1;
+    static const int64_t COMMIT_DISABLED = (1 << 16) | 1;
 
     // minJournalTables: Creates journal tables through the specified number. If `-1` is passed, only `journal` is
     //                   created. If some value larger than -1 is passed, then journals `journal0000 through
@@ -55,13 +55,13 @@ class SQLite {
     //                   passed, no tables are created.
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
-    SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
+    SQLite(const string& filename, int64_t cacheSize, int64_t maxJournalSize, int64_t minJournalTables,
            const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
 
     // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
-    SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
+    SQLite(const string& filename, int64_t cacheSize, int64_t maxJournalSize, int64_t minJournalTables, int64_t synchronous) :
         SQLite(filename, cacheSize, maxJournalSize, minJournalTables, "") {}
-    
+
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
     // exist because we already have a SQLite object for this file.
@@ -147,16 +147,16 @@ class SQLite {
     // should be returned.
     // This function is only called when enableRewrite is true.
     // Important: there can be only one re-write handler for a given DB at once.
-    void setRewriteHandler(bool (*handler)(int, const char*, string&));
+    void setRewriteHandler(bool (*handler)(int64_t, const char*, string&));
 
     // Commits the current transaction to disk. Returns an sqlite3 result code.
-    int commit(const string& description = "UNSPECIFIED");
+    int64_t commit(const string& description = "UNSPECIFIED");
 
     // Cancels the current transaction and rolls it back.
     void rollback();
 
     // Returns the total number of changes on this database
-    int getChangeCount() { return sqlite3_total_changes(_db); }
+    int64_t getChangeCount() { return sqlite3_total_changes(_db); }
 
     // Returns the timing of the last command
     uint64_t getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
@@ -217,8 +217,8 @@ class SQLite {
 
     // These are the minimum thresholds for the WAL file, in pages, that will cause us to trigger either a full or
     // passive checkpoint. They're public, non-const, and atomic so that they can be configured on the fly.
-    static atomic<int> passiveCheckpointPageMin;
-    static atomic<int> fullCheckpointPageMin;
+    static atomic<int64_t> passiveCheckpointPageMin;
+    static atomic<int64_t> fullCheckpointPageMin;
 
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
@@ -227,7 +227,7 @@ class SQLite {
     uint64_t getDBCountAtStart() const;
 
     // This is the callback function we use to log SQLite's internal errors.
-    static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
+    static void _sqliteLogCallback(void* pArg, int64_t iErrCode, const char* zMsg);
 
     // If commits are disabled, calling commit() will return an error without committing. This can be used to guarantee
     // no commits can happen "late" from slow threads that could otherwise write to a DB being shutdown.
@@ -241,7 +241,7 @@ class SQLite {
     // possible that a string contains multiple queries separated by semicolons.
     // Note: It's up to the caller to free these prepared statements by calling `sqlite3_finalize()` on them.
     // This returns an sqlite error code. It will stop parsing multiple statements after the first error.
-    int getPreparedStatements(const string& query, list<sqlite3_stmt*>& statements);
+    int64_t getPreparedStatements(const string& query, list<sqlite3_stmt*>& statements);
 
     // Set this DB handle to be query-only to prevent accidental writes in places we don't expect them.
     void setQueryOnly(bool enabled);
@@ -308,7 +308,7 @@ class SQLite {
     static string initializeFilename(const string& filename);
     static SharedData& initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames);
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB);
-    static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
+    static vector<string> initializeJournal(sqlite3* db, int64_t minJournalTables);
     static uint64_t initializeJournalSize(sqlite3* db, const vector<string>& journalNames);
     void commonConstructorInitialization();
 
@@ -397,7 +397,7 @@ class SQLite {
     bool _enableRewrite = false;
 
     // Pointer to the current handler to determine if a query needs to be rewritten.
-    bool (*_rewriteHandler)(int, const char*, string&);
+    bool (*_rewriteHandler)(int64_t, const char*, string&);
 
     // When the rewrite handler indicates a query needs to be re-written, the new query is set here.
     string _rewrittenQuery;
@@ -422,7 +422,7 @@ class SQLite {
     void _checkInterruptErrors(const string& error);
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
-    int _authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4);
+    int64_t _authorize(int64_t actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4);
 
     // It's possible for certain transactions (namely, timing out a write operation, see here:
     // https://sqlite.org/c3ref/interrupt.html) to cause a transaction to be automatically rolled back. If this
@@ -456,7 +456,7 @@ class SQLite {
     int64_t _currentTransactionAttemptCount = -1;
 
     // Copies of parameters used to initialize the DB that we store if we make child objects based on this one.
-    int _cacheSize;
+    int64_t _cacheSize;
     const string _synchronous;
     int64_t _mmapSizeGB;
 };

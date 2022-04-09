@@ -11,8 +11,8 @@
 atomic<int64_t> SQLite::_transactionAttemptCount(0);
 mutex SQLite::_pageLogMutex;
 
-atomic<int> SQLite::passiveCheckpointPageMin(2500); // Approx 10mb
-atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are assumed to be 4kb)
+atomic<int64_t> SQLite::passiveCheckpointPageMin(2500); // Approx 10mb
+atomic<int64_t> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are assumed to be 4kb)
 
 // Tracing can only be enabled or disabled globally, not per object.
 atomic<bool> SQLite::enableTrace(false);
@@ -104,18 +104,18 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB) {
     return db;
 }
 
-vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables) {
+vector<string> SQLite::initializeJournal(sqlite3* db, int64_t minJournalTables) {
     // Make sure we don't try and create more journals than we can name.
     SASSERT(minJournalTables < 10'000);
 
     // First, we create all of the tables through `minJournalTables` if they don't exist.
-    for (int currentJounalTable = -1; currentJounalTable <= minJournalTables; currentJounalTable++) {
+    for (int64_t currentJournalTable = -1; currentJournalTable <= minJournalTables; currentJournalTable++) {
         char tableName[27] = {0};
-        if (currentJounalTable < 0) {
+        if (currentJournalTable < 0) {
             // The `-1` entry is just plain "journal".
             snprintf(tableName, 27, "journal");
         } else {
-            snprintf(tableName, 27, "journal%04i", currentJounalTable);
+            snprintf(tableName, 27, "journal%04ld", (long) currentJournalTable);
         }
         if (SQVerifyTable(db, tableName, "CREATE TABLE " + string(tableName) + " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
             SHMMM("Created " << tableName << " table.");
@@ -124,20 +124,20 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables) {
 
     // And we'll figure out which journal tables actually exist, which may be more than we require. They must be
     // sequential.
-    int currentJounalTable = -1;
+    int64_t currentJournalTable = -1;
     vector<string> journalNames;
     while (true) {
         char tableName[27] = {0};
-        if (currentJounalTable < 0) {
+        if (currentJournalTable < 0) {
             // The `-1` entry is just plain "journal".
             snprintf(tableName, 27, "journal");
         } else {
-            snprintf(tableName, 27, "journal%04i", currentJounalTable);
+            snprintf(tableName, 27, "journal%04ld", (long) currentJournalTable);
         }
 
         if (SQVerifyTableExists(db, tableName)) {
             journalNames.push_back(tableName);
-            currentJounalTable++;
+            currentJournalTable++;
         } else {
             break;
         }
@@ -210,8 +210,8 @@ void SQLite::commonConstructorInitialization() {
     }
 }
 
-SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled) :
+SQLite::SQLite(const string& filename, int64_t cacheSize, int64_t maxJournalSize,
+               int64_t minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB)),
@@ -257,7 +257,7 @@ int SQLite::_progressHandlerCallback(void* arg) {
     return 0;
 }
 
-void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
+void SQLite::_sqliteLogCallback(void* pArg, int64_t iErrCode, const char* zMsg) {
     SSYSLOG(LOG_INFO, "[info] " << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
 }
 
@@ -440,7 +440,7 @@ bool SQLite::read(const string& query, SQResult& result) {
 void SQLite::_checkInterruptErrors(const string& error) {
 
     // Local error code.
-    int errorCode = 0;
+    int64_t errorCode = 0;
     uint64_t time = 0;
 
     // Check timeout.
@@ -505,7 +505,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     // Try to execute the query
     uint64_t before = STimeNow();
     bool usedRewrittenQuery = false;
-    int resultCode = 0;
+    int64_t resultCode = 0;
     if (_enableRewrite) {
         resultCode = SQuery(_db, "read/write transaction", query, 2000 * STIME_US_PER_MS, true);
         if (resultCode == SQLITE_AUTH) {
@@ -570,7 +570,7 @@ bool SQLite::prepare() {
     // These are the values we're currently operating on, until we either commit or rollback.
     _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
 
-    int result = SQuery(_db, "updating journal", query);
+    int64_t result = SQuery(_db, "updating journal", query);
     _prepareElapsed += STimeNow() - before;
     if (result) {
         // Couldn't insert into the journal; roll back the original commit
@@ -586,7 +586,7 @@ bool SQLite::prepare() {
     return true;
 }
 
-int SQLite::commit(const string& description) {
+int64_t SQLite::commit(const string& description) {
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
         return COMMIT_DISABLED;
@@ -594,7 +594,7 @@ int SQLite::commit(const string& description) {
 
     SASSERT(_insideTransaction);
     SASSERT(!_uncommittedHash.empty()); // Must prepare first
-    int result = 0;
+    int64_t result = 0;
 
     // Do we need to truncate as we go?
     uint64_t newJournalSize = _journalSize + 1;
@@ -675,7 +675,7 @@ int SQLite::commit(const string& description) {
         int walSizeFrames = 0;
         int framesCheckpointed = 0;
         uint64_t start = STimeNow();
-        int result = sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
+        int64_t result = sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
         SDEBUG("[checkpoint] Checkpoint complete. Result: " << result << ". Total frames checkpointed: "
               << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
         SINFO(description << " COMMIT complete in " << time << ". Wrote " << (endPages - startPages)
@@ -817,7 +817,7 @@ uint64_t SQLite::getCommitCount() {
 }
 
 size_t SQLite::getLastWriteChangeCount() {
-    int count = sqlite3_changes(_db);
+    int64_t count = sqlite3_changes(_db);
     return count > 0 ? (size_t)count : 0;
 }
 
@@ -825,7 +825,7 @@ void SQLite::enableRewrite(bool enable) {
     _enableRewrite = enable;
 }
 
-void SQLite::setRewriteHandler(bool (*handler)(int, const char*, string&)) {
+void SQLite::setRewriteHandler(bool (*handler)(int64_t, const char*, string&)) {
     _rewriteHandler = handler;
 }
 
@@ -836,7 +836,7 @@ int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const cha
     return db->_authorize(actionCode, detail1, detail2, detail3, detail4);
 }
 
-int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4) {
+int64_t SQLite::_authorize(int64_t actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4) {
     // If we've enabled re-writing, see if we need to re-write this query.
     if (_enableRewrite && !_currentlyRunningRewritten && (*_rewriteHandler)(actionCode, detail1, _rewrittenQuery)) {
         // Deny the original query, we'll re-run on the re-written version.
@@ -981,7 +981,7 @@ void SQLite::setCommitEnabled(bool enable) {
     _sharedData.setCommitEnabled(enable);
 }
 
-int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& statements) {
+int64_t SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& statements) {
     // We need a pointer to a prepared statement.
     sqlite3_stmt* ppStmt = nullptr;
 
@@ -992,7 +992,7 @@ int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& stat
     // Now loop as long as pzTail doesn't point at a null terminator.
     while (*pzTail != 0) {
         // Run prepare on the query.
-        int result = sqlite3_prepare_v3(_db, pzTail, -1, 0, &ppStmt, &pzTail);
+        int64_t result = sqlite3_prepare_v3(_db, pzTail, -1, 0, &ppStmt, &pzTail);
 
         // If it generated a statement, add it to our list.
         if (ppStmt != nullptr) {

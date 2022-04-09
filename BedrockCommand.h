@@ -64,7 +64,7 @@ class BedrockCommand : public SQLiteCommand {
     // Bedrock will call this before each `processCommand` (note: not `peekCommand`) for each plugin to allow it to
     // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
     // set the rewriteHandler it would like to use.
-    virtual bool shouldEnableQueryRewriting(const SQLite& db, bool (**rewriteHandler)(int, const char*, string&)) {
+    virtual bool shouldEnableQueryRewriting(const SQLite& db, bool (**rewriteHandler)(int64_t, const char*, string&)) {
         return false;
     }
 
@@ -155,7 +155,7 @@ class BedrockCommand : public SQLiteCommand {
     static size_t getCommandCount() { return _commandCount.load(); }
 
     // True if this command should be escalated immediately. This can be true for any command that does all of its work
-    // in `process` instead of peek, as it will always be escalated to leader 
+    // in `process` instead of peek, as it will always be escalated to leader
     const bool escalateImmediately;
 
     // Record the state we were acting under in the last call to `peek` or `process`.
