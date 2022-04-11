@@ -60,8 +60,8 @@ struct STCPNode : public STCPManager {
     static State stateFromName(const string& name);
 
     // Updates all peers
-    void prePoll(fd_map& fdm);
-    void postPoll(fd_map& fdm, uint64_t& nextActivity);
+    virtual void prePoll(fd_map& fdm);
+    virtual void postPoll(fd_map& fdm, uint64_t& nextActivity);
     Socket* acceptSocket();
 
     // Represents a single peer in the database cluster

@@ -1095,6 +1095,10 @@ void BedrockServer::worker(int threadId)
                             }
                         }
                         if (commitSuccess) {
+                            // Tell the sync node that there's been a commit so that it can jump out of it's "poll"
+                            // loop and send it to followers. NOTE: we don't check for null here, that should be
+                            // impossible inside a worker thread.
+                            _syncNode->notifyCommit();
                             SINFO("Successfully committed " << command->request.methodLine << " on worker thread. blocking: "
                                   << (threadId ? "false" : "true"));
                             // So we must still be leading, and at this point our commit has succeeded, let's
@@ -1975,12 +1979,7 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
 
     // Just clear this, it doesn't matter what the contents are.
     _newCommandsWaiting.postPoll(fdm);
-    try {
-        while (true) {
-            _newCommandsWaiting.pop();
-        }
-    } catch (const out_of_range& e) {
-    }
+    _newCommandsWaiting.clear();
 
     // Because we modify this list as we walk across it, we use an iterator to our current position.
     auto it = _outstandingHTTPSCommands.begin();
