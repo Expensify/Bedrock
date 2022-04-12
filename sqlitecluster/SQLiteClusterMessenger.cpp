@@ -190,6 +190,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
 
     // If we got here, the command is complete.
     command.complete = true;
+    command.escalated = true;
 
     // Finish our escalation timing.
     command.escalationTimeUS = STimeNow() - command.escalationTimeUS;

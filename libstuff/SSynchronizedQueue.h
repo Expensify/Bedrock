@@ -18,6 +18,9 @@ class SSynchronizedQueue {
     void prePoll(fd_map& fdm);
     void postPoll(fd_map& fdm);
 
+    // Erases all elements from the container.
+    void clear() noexcept;
+
     // Returns true if the queue is empty.
     bool empty() const;
 
@@ -98,6 +101,12 @@ void SSynchronizedQueue<T>::postPoll(fd_map& fdm) {
             }
         }
     }
+}
+
+template<typename T>
+void SSynchronizedQueue<T>::clear() noexcept {
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
+    _queue.clear();
 }
 
 template<typename T>

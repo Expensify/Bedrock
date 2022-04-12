@@ -121,7 +121,7 @@ TestPluginCommand::~TestPluginCommand()
         // check simply that we're not leading, because this should also fail if we end up in some weird state (we
         // don't want the test to pass if our follower is actually `WAITING` or something strange).
         if (serverState != SQLiteNode::stateName(SQLiteNode::LEADING)) {
-            // SASSERT(escalated); TODO: Remove this flag.
+            SASSERT(escalated);
             string fileContents = fileLockAndLoad(request["tempFile"]);
             SFileDelete(request["tempFile"]);
 

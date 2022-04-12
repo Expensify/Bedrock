@@ -1095,6 +1095,10 @@ void BedrockServer::worker(int threadId)
                             }
                         }
                         if (commitSuccess) {
+                            // Tell the sync node that there's been a commit so that it can jump out of it's "poll"
+                            // loop and send it to followers. NOTE: we don't check for null here, that should be
+                            // impossible inside a worker thread.
+                            _syncNode->notifyCommit();
                             SINFO("Successfully committed " << command->request.methodLine << " on worker thread. blocking: "
                                   << (threadId ? "false" : "true"));
                             // So we must still be leading, and at this point our commit has succeeded, let's
@@ -1633,9 +1637,13 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
 
         // If `Connection: close` was set, shut down the socket, in case the caller ignores us.
         if (SIEquals(command->request["Connection"], "close") || _shutdownState.load() != RUNNING || _suppressCommandPort) {
-            // TODO: If we're doing this because of the command port being suppressed, we should really only close the
-            // socket if it came in on the public command port. This doesn't matter much though until escalations reuse
-            // sockets.
+            // Ideally, for cases in which we're doing this because `_suppressCommandPort` is true, we would instead do
+            // this only if the port that this command was received on is closed. The idea is that someone has closed a
+            // port, and thus the sockets created on that port should close, not continue to receive commands indefinitely.
+            // However, there currently isn't a mechanism to get the port that a command came from, so we've just decided
+            // to close all connections when the command port is closed. This means that commands received on the control
+            // port or private command port also have their sockets closed after command completion, even if those
+            // ports are still open.
             command->socket->shutdown();
         }
     } else {
@@ -1971,12 +1979,7 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
 
     // Just clear this, it doesn't matter what the contents are.
     _newCommandsWaiting.postPoll(fdm);
-    try {
-        while (true) {
-            _newCommandsWaiting.pop();
-        }
-    } catch (const out_of_range& e) {
-    }
+    _newCommandsWaiting.clear();
 
     // Because we modify this list as we walk across it, we use an iterator to our current position.
     auto it = _outstandingHTTPSCommands.begin();

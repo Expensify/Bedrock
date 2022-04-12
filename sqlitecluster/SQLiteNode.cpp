@@ -2824,3 +2824,20 @@ string SQLiteNode::replaceAddressPort(const string& hostPart, const string& port
     SINFO("Combined " << hostPart << " and " << portPart << " to get " << result);
     return result;
 }
+
+void SQLiteNode::prePoll(fd_map& fdm) {
+    STCPNode::prePoll(fdm);
+    _commitsToSend.prePoll(fdm);
+}
+
+void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    STCPNode::postPoll(fdm, nextActivity);
+
+    // Just clear this, it doesn't matter what the contents are.
+    _commitsToSend.postPoll(fdm);
+    _commitsToSend.clear();
+}
+
+void SQLiteNode::notifyCommit() {
+    _commitsToSend.push(true);
+}
