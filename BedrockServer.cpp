@@ -1656,7 +1656,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     }
 }
 
-void BedrockServer::suppressCommandPort(const string& reason, bool suppress, bool manualOverride) {
+void BedrockServer::suppressCommandPort(const string& reason, bool suppress, bool manualOverride, const CommandPortSuppressionType type) {
     // If we've set the manual override flag, then we'll only actually make this change if we've specified it again.
     if (_suppressCommandPortManualOverride && !manualOverride) {
         return;
@@ -1669,6 +1669,7 @@ void BedrockServer::suppressCommandPort(const string& reason, bool suppress, boo
     }
     // Process accordingly
     _suppressCommandPort = suppress;
+    _suppressCommandPortType = type;
     if (suppress) {
         // Close the command port, and all plugin's ports. Won't reopen.
         SHMMM("Suppressing command port");
@@ -2154,11 +2155,16 @@ void BedrockServer::_acceptSockets() {
                 // And start up this socket's thread.
                 _outstandingSocketThreads++;
                 thread t;
-                try {
-                    t = thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort);
-                } catch (const system_error& e) {
-                    SALERT("Caught system_error in thread constructor: " << e.code() << ", message: " << e.what());
-                    throw;
+                bool threadStarted = false;
+                while (!threadStarted) {
+                    try {
+                        t = thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort);
+                        threadStarted = true;
+                    } catch (const system_error& e) {
+                        SWARN("Caught system_error in thread constructor (with " << _outstandingSocketThreads << " threads): " << e.code() << ", message: " << e.what());
+                        suppressCommandPort("Not enough threads available", true);
+                        sleep(1);
+                    }
                 }
                 try {
                     t.detach();
@@ -2396,6 +2402,11 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
     // Note that we never return early, we always want to hit this code and decrement our counter and clean up our socket.
     _outstandingSocketThreads--;
     SINFO("Socket thread complete (" << _outstandingSocketThreads << " remaining).");
+
+    if (_outstandingSocketThreads < 50 && _suppressCommandPort && _suppressCommandPortType == CommandPortSuppressionType::THREAD_LIMIT) {
+        // TODO: the above line is a race condition. suppressCommandPort in general is very racy.
+        suppressCommandPort("Thread count under limit", false);
+    }
 }
 
 void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {

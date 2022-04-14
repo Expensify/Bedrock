@@ -8,6 +8,13 @@
 #include "BedrockTimeoutCommandQueue.h"
 
 class BedrockServer : public SQLiteServer {
+
+    enum struct CommandPortSuppressionType {
+        NONE,
+        UNSPECIFIED,
+        THREAD_LIMIT,
+    };
+
   public:
 
     // Shutting Down and Standing Down a BedrockServer.
@@ -208,7 +215,7 @@ class BedrockServer : public SQLiteServer {
 
     // Control the command port. The server will toggle this as necessary, unless manualOverride is set,
     // in which case the `suppress` setting will be forced.
-    void suppressCommandPort(const string& reason, bool suppress, bool manualOverride = false);
+    void suppressCommandPort(const string& reason, bool suppress, bool manualOverride = false, const CommandPortSuppressionType type = CommandPortSuppressionType::UNSPECIFIED);
 
     // This will return true if there's no outstanding writable activity that we're waiting on. It's called by an
     // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
@@ -279,6 +286,7 @@ class BedrockServer : public SQLiteServer {
     // These control whether or not the command port is currently opened.
     bool _suppressCommandPort;
     bool _suppressCommandPortManualOverride;
+    CommandPortSuppressionType _suppressCommandPortType = CommandPortSuppressionType::NONE;
 
     // This is a map of open listening ports to the plugin objects that created them.
     map<unique_ptr<Port>, BedrockPlugin*> _portPluginMap;
