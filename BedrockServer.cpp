@@ -1627,15 +1627,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
         }
 
         // If `Connection: close` was set, shut down the socket, in case the caller ignores us.
-        if (SIEquals(command->request["Connection"], "close") || _shutdownState.load() != RUNNING || _commandPortBlockReasons.size()) {
-            // TODO: the above line is a race condition, we need to lock _portMutex to access _commandPortBlockReasons.
-            // Ideally, for cases in which we're doing this because the command port is blocked, we would instead do
-            // this only if the port that this command was received on is closed. The idea is that someone has closed a
-            // port, and thus the sockets created on that port should close, not continue to receive commands indefinitely.
-            // However, there currently isn't a mechanism to get the port that a command came from, so we've just decided
-            // to close all connections when the command port is closed. This means that commands received on the control
-            // port or private command port also have their sockets closed after command completion, even if those
-            // ports are still open.
+        if (SIEquals(command->request["Connection"], "close") || _shutdownState.load() != RUNNING) {
             command->socket->shutdown();
         }
     } else {
@@ -1661,11 +1653,15 @@ void BedrockServer::blockCommandPort(const string& reason) {
 
 void BedrockServer::unblockCommandPort(const string& reason) {
     lock_guard<mutex> lock(_portMutex);
+    _commandPortLikelyBlocked = true;
     auto it = _commandPortBlockReasons.find(reason);
     if (it == _commandPortBlockReasons.end()) {
         SWARN("Tried to unblock command port because: " << reason << ", but it wasn't blocked for that reason!");
     } else {
         _commandPortBlockReasons.erase(it);
+    }
+    if (_commandPortBlockReasons.empty()) {
+        _commandPortLikelyBlocked = false;
     }
 }
 
@@ -2156,7 +2152,7 @@ void BedrockServer::_acceptSockets() {
                 bool threadStarted = false;
                 while (!threadStarted) {
                     try {
-                        t = thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort);
+                        t = thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
                         threadStarted = true;
                     } catch (const system_error& e) {
                         // We don't care about this lock here from a performance perspective, it only happens when we
@@ -2249,11 +2245,12 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     return command;
 }
 
-void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
+void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fromPublicCommandPort, bool fromPrivateCommandPort) {
     shared_lock<shared_mutex> controlPortLock(_controlPortExclusionMutex, defer_lock);
-    if (isControlPort) {
+    if (fromControlPort) {
         controlPortLock.lock();
     }
+
     // Initialize and get a unique thread ID.
     SInitialize("socket" + to_string(_socketThreadNumber++));
     SINFO("Socket thread starting");
@@ -2316,6 +2313,12 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
                 // Otherwise, handle any default request.
                 int requestSize = request.deserialize(socket.recvBuffer);
                 socket.recvBuffer.consumeFront(requestSize);
+
+                // If this socket was accepted from the public command port, and that's supposed to be closed now, set
+                // `Connection: close` so that we don't keep doing a bunch of activity on it.
+                if (fromPublicCommandPort && _commandPortLikelyBlocked) {
+                    request["Connection"] = "close";
+                }
             }
 
             // If we have a populated request, from either a plugin or our default handling, we'll queue up the
@@ -2333,7 +2336,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
                     // If it's a status or control command, we handle it specially above. If not, we'll queue it for
                     // later processing below.
 
-                    if (isControlPort && _shutdownState != RUNNING) {
+                    if (fromControlPort && _shutdownState != RUNNING) {
                         // Don't handle non-control commands on the control port if we're shutting down. As the control
                         // port can remain open through shutdown (in the case of detaching) and can expect DB access,
                         // which is being turned off, these could cause weird crashes. Instead, just return an error.

@@ -253,7 +253,7 @@ class BedrockServer : public SQLiteServer {
     const SData args;
 
     // This is the thread that handles a new socket, parses a command, and queues it for work.
-    void handleSocket(Socket&& s, bool isControlPort);
+    void handleSocket(Socket&& socket, bool fromControlPort, bool fromPublicCommandPort, bool fromPrivateCommandPort);
 
   private:
     // The name of the sync thread.
@@ -286,6 +286,14 @@ class BedrockServer : public SQLiteServer {
 
     // These control whether or not the command port is currently opened.
     multiset<string> _commandPortBlockReasons;
+
+    // This indicates if `_commandPortBlockReasons` is empty, *mostly*. It exists so that it can be checked without
+    // having to lock, like we do for _commandPortBlockReasons, and so it's feasible it gets out of sync for a few ms
+    // as we add and remove things from _commandPortBlockReasons, but it is only used as an optimization - we will
+    // close connections after commands complete if this is true, and not if it is false, so the worst-case scenario of
+    // this being wrong is we accept an extra command as the port is blocked, or cause a client to reconnect after a
+    // command is it's unblocked.
+    atomic<bool> _commandPortLikelyBlocked;
 
     // This is a map of open listening ports to the plugin objects that created them.
     map<unique_ptr<Port>, BedrockPlugin*> _portPluginMap;
