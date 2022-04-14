@@ -8,13 +8,6 @@
 #include "BedrockTimeoutCommandQueue.h"
 
 class BedrockServer : public SQLiteServer {
-
-    enum struct CommandPortSuppressionType {
-        NONE,
-        UNSPECIFIED,
-        THREAD_LIMIT,
-    };
-
   public:
 
     // Shutting Down and Standing Down a BedrockServer.
@@ -213,9 +206,17 @@ class BedrockServer : public SQLiteServer {
     // When a peer node logs in, we'll send it our crash command list.
     void onNodeLogin(SQLiteNode::Peer* peer);
 
-    // Control the command port. The server will toggle this as necessary, unless manualOverride is set,
-    // in which case the `suppress` setting will be forced.
-    void suppressCommandPort(const string& reason, bool suppress, bool manualOverride = false, const CommandPortSuppressionType type = CommandPortSuppressionType::UNSPECIFIED);
+    // You must block and unblock the command port with *identical strings*.
+    void blockCommandPort(const string& reason);
+    void unblockCommandPort(const string& reason);
+
+    // Legacy version of above.
+    void suppressCommandPort(const string& reason, bool suppress, bool manualOverride = false);
+
+    // Reasons for each request so close the command port mapped to the instance of commandPortSuppressionCount that
+    // created them.
+    // Not atomic because it's only accessed with a lock on _portMutex.
+    list<string> commandPortSuppressionReasons;
 
     // This will return true if there's no outstanding writable activity that we're waiting on. It's called by an
     // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
@@ -284,9 +285,7 @@ class BedrockServer : public SQLiteServer {
     BedrockTimeoutCommandQueue _syncNodeQueuedCommands;
 
     // These control whether or not the command port is currently opened.
-    bool _suppressCommandPort;
-    bool _suppressCommandPortManualOverride;
-    CommandPortSuppressionType _suppressCommandPortType = CommandPortSuppressionType::NONE;
+    multiset<string> _commandPortBlockReasons;
 
     // This is a map of open listening ports to the plugin objects that created them.
     map<unique_ptr<Port>, BedrockPlugin*> _portPluginMap;
