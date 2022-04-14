@@ -487,6 +487,10 @@ class BedrockServer : public SQLiteServer {
     // This records how many outstanding socket threads there are so we can wait for them to complete before exiting.
     atomic<uint64_t> _outstandingSocketThreads;
 
+    // If we hit the point where we're unable to create new socket threads, we block doing so.
+    bool _newSocketThreadsBlocked; 
+    mutex _newSocketThreadBlockedMutex;
+
     // This mutex prevents the check for whether there are outstanding commands preventing shutdown from running at the
     // same time a control port command is running (which would indicate that there is a command blocking shutdown -
     // the current control command).

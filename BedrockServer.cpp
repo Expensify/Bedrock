@@ -1282,7 +1282,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0),
-    _outstandingSocketThreads(0), _escalateOverHTTP(args.test("-escalateOverHTTP"))
+    _outstandingSocketThreads(0), _newSocketThreadsBlocked(false), _escalateOverHTTP(args.test("-escalateOverHTTP"))
 {
     _version = VERSION;
 
@@ -2159,8 +2159,19 @@ void BedrockServer::_acceptSockets() {
                         t = thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort);
                         threadStarted = true;
                     } catch (const system_error& e) {
-                        SWARN("Caught system_error in thread constructor (with " << _outstandingSocketThreads << " threads): " << e.code() << ", message: " << e.what());
-                        blockCommandPort("NOT_ENOUGH_THREADS");
+                        // We don't care about this lock here from a performance perspective, it only happens when we
+                        // are unable to do any work anyway (i.e., we can't start threads).
+                        lock_guard<mutex> lock(_newSocketThreadBlockedMutex);
+                        if (!_newSocketThreadsBlocked) {
+                            // Block any new socket threads and warn.
+                            _newSocketThreadsBlocked = true;
+                            SWARN("Caught system_error in thread constructor (with " << _outstandingSocketThreads
+                                  << " threads): " << e.code() << ", message: " << e.what() << ", blocking new socket threads.");
+                            blockCommandPort("NOT_ENOUGH_THREADS");
+                        }
+
+                        // We just loop until socket threads are unblocked.
+                        SINFO("Waiting 1 more second for socket threads to be available.");
                         sleep(1);
                     }
                 }
@@ -2401,9 +2412,18 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
     _outstandingSocketThreads--;
     SINFO("Socket thread complete (" << _outstandingSocketThreads << " remaining).");
 
-    if (_outstandingSocketThreads < 50 && _commandPortBlockReasons.size()) {
-        // TODO: the above line is a race condition, we need to lock _portMutex to access _commandPortBlockReasons.
-        unblockCommandPort("NOT_ENOUGH_THREADS");
+    // Check to see if we need to unblock creating new socket threads. We do this each time we cross having 50 active
+    // threads. We are guaranteed to hit this as the thread count decrements to 0, as _newSocketThreadsBlocked is
+    // atomic and every value must be hit as threads complete.
+    // Note that if we were to start blocking the command port for NOT_ENOUGH_THREADS with less than 50 threads, we
+    // will never hit this unlock case, but we only ever see this problem with thousands of threads, so we don't have
+    // to try and handle that case, and don't need to lock this mutex on every thread's completion then.
+    if (_outstandingSocketThreads == 50) {
+        lock_guard<mutex> lock(_newSocketThreadBlockedMutex);
+        if (_newSocketThreadsBlocked) {
+            _newSocketThreadsBlocked = false;
+            unblockCommandPort("NOT_ENOUGH_THREADS");
+        }
     }
 }
 
