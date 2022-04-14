@@ -1644,7 +1644,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
 void BedrockServer::blockCommandPort(const string& reason) {
     lock_guard<mutex> lock(_portMutex);
     _commandPortBlockReasons.insert(reason);
-    if (reason.size() == 1) {
+    if (_commandPortBlockReasons.size() == 1) {
         _commandPortPublic = nullptr;
         _portPluginMap.clear();
     }
