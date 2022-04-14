@@ -1644,11 +1644,11 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
 void BedrockServer::blockCommandPort(const string& reason) {
     lock_guard<mutex> lock(_portMutex);
     _commandPortBlockReasons.insert(reason);
-    if (_commandPortBlockReasons.size() == 1) {
+    if (reason.size() == 1) {
         _commandPortPublic = nullptr;
         _portPluginMap.clear();
     }
-    SINFO("Blocking command port due to: " <<  reason << (_commandPortBlockReasons.size() > 1 ? " (but it was already blocked)" : "") << ".");
+    SINFO("Blocking command port due to: " <<  reason << (_commandPortBlockReasons.size() > 1 ? " (already blocked)" : "") << ".");
 }
 
 void BedrockServer::unblockCommandPort(const string& reason) {
@@ -1659,7 +1659,7 @@ void BedrockServer::unblockCommandPort(const string& reason) {
         SWARN("Tried to unblock command port because: " << reason << ", but it wasn't blocked for that reason!");
     } else {
         _commandPortBlockReasons.erase(it);
-        SINFO("Unblocking command port due to: " <<  reason << ".");
+        SINFO("Unblocking command port due to: " <<  reason << (_commandPortBlockReasons.size() > 0 ? " (blocks remaining)" : "") << ".");
     }
     if (_commandPortBlockReasons.empty()) {
         _commandPortLikelyBlocked = false;
