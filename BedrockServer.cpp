@@ -2106,52 +2106,71 @@ void BedrockServer::_finishPeerCommand(unique_ptr<BedrockCommand>& command) {
 }
 
 void BedrockServer::_acceptSockets() {
-    // Make a list of ports to accept on.
-    // We'll check the control port, command port, and any plugin ports for new connections.
-    list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPortPublic, _commandPortPrivate, _controlPort};
+    // Try block because we sometimes catch `std::system_error` from in here (likely from the thread code) and we're
+    // trying to diagnose exactly what's happening.
+    try {
+        // Make a list of ports to accept on.
+        // We'll check the control port, command port, and any plugin ports for new connections.
+        list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPortPublic, _commandPortPrivate, _controlPort};
 
-    // Lock _portMutex so suppressing the port does not cause it to be null
-    // in the middle of this function.
-    lock_guard<mutex> lock(_portMutex);
+        // Lock _portMutex so suppressing the port does not cause it to be null
+        // in the middle of this function.
+        lock_guard<mutex> lock(_portMutex);
 
-    for (auto& p : _portPluginMap) {
-        portList.push_back(reference_wrapper<const unique_ptr<Port>>(p.first));
-    }
-
-    // Try each port.
-    for (auto portWrapper : portList) {
-        const unique_ptr<Port>& port = portWrapper.get();
-
-        // Skip null ports (if the command or control port are closed).
-        if (!port) {
-            continue;
+        for (auto& p : _portPluginMap) {
+            portList.push_back(reference_wrapper<const unique_ptr<Port>>(p.first));
         }
 
-        // Accept as many sockets as we can.
-        while (true) {
-            sockaddr_in addr;
-            int s = S_accept(port->s, addr, true); // Note that this sets the newly accepted socket to be blocking.
+        // Try each port.
+        for (auto portWrapper : portList) {
+            const unique_ptr<Port>& port = portWrapper.get();
 
-            // If we got an error or no socket, done accepting for now.
-            if (s <= 0) {
-                break;
+            // Skip null ports (if the command or control port are closed).
+            if (!port) {
+                continue;
             }
 
-            // Otherwise create the object for this new socket.
-            SDEBUG("Accepting socket from '" << addr << "' on port '" << port->host << "'");
-            Socket socket(s, Socket::CONNECTED);
-            socket.addr = addr;
+            // Accept as many sockets as we can.
+            while (true) {
+                sockaddr_in addr;
+                int s = S_accept(port->s, addr, true); // Note that this sets the newly accepted socket to be blocking.
 
-            // If it came from a plugin, record that.
-            auto plugin = _portPluginMap.find(port);
-            if (plugin != _portPluginMap.end()) {
-                socket.data = plugin->second;
+                // If we got an error or no socket, done accepting for now.
+                if (s <= 0) {
+                    break;
+                }
+
+                // Otherwise create the object for this new socket.
+                SDEBUG("Accepting socket from '" << addr << "' on port '" << port->host << "'");
+                Socket socket(s, Socket::CONNECTED);
+                socket.addr = addr;
+
+                // If it came from a plugin, record that.
+                auto plugin = _portPluginMap.find(port);
+                if (plugin != _portPluginMap.end()) {
+                    socket.data = plugin->second;
+                }
+
+                // And start up this socket's thread.
+                _outstandingSocketThreads++;
+                thread t;
+                try {
+                    t = thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort);
+                } catch (const system_error& e) {
+                    SALERT("Caught system_error in thread constructor: " << e.code() << ", message: " << e.what());
+                    throw;
+                }
+                try {
+                    t.detach();
+                } catch (const system_error& e) {
+                    SALERT("Caught system_error in thread detach: " << e.code() << ", message: " << e.what());
+                    throw;
+                }
             }
-
-            // And start up this socket's thread.
-            _outstandingSocketThreads++;
-            thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort).detach();
         }
+    } catch (const system_error& e) {
+        SALERT("Caught system_error outside thread startup: " << e.code() << ", message: " << e.what());
+        throw;
     }
 }
 
