@@ -1644,7 +1644,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
 void BedrockServer::blockCommandPort(const string& reason) {
     lock_guard<mutex> lock(_portMutex);
     _commandPortBlockReasons.insert(reason);
-    if (reason.size() == 1) {
+    if (_commandPortBlockReasons.size() == 1) {
         _commandPortPublic = nullptr;
         _portPluginMap.clear();
     }
@@ -2317,7 +2317,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
                 // If this socket was accepted from the public command port, and that's supposed to be closed now, set
                 // `Connection: close` so that we don't keep doing a bunch of activity on it.
-                if (fromPublicCommandPort && _commandPortLikelyBlocked) {
+                if (requestSize && fromPublicCommandPort && _commandPortLikelyBlocked) {
                     request["Connection"] = "close";
                 }
             }
