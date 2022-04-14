@@ -1792,7 +1792,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
 
         {
             lock_guard<mutex> lock(_portMutex);
-            content["commandPortBlockReasons"] = SComposeList(_commandPortBlockReasons);
+            content["commandPortBlockReasons"] = SComposeJSONArray(_commandPortBlockReasons);
         }
 
         // We can use the `each` functionality to pass a lambda that will grab each method line in
