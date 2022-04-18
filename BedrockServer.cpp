@@ -1250,9 +1250,9 @@ void BedrockServer::_resetServer() {
     _replicationState = SQLiteNode::SEARCHING;
     _upgradeInProgress = false;
     if (_commandPortBlockReasons.size()) {
-        SWARN("Clearing leftover command port blocks in resetServer.");
+        SWARN("Clearing leftover command port blocks in resetServer (" << _commandPortBlockReasons.size() << " blocks remaining).");
+        _commandPortBlockReasons.clear();
     }
-    _commandPortBlockReasons.clear();
     _syncThreadComplete = false;
     atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
     _shutdownState = RUNNING;
@@ -1644,6 +1644,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
 void BedrockServer::blockCommandPort(const string& reason) {
     lock_guard<mutex> lock(_portMutex);
     _commandPortBlockReasons.insert(reason);
+    _commandPortLikelyBlocked = true;
     if (_commandPortBlockReasons.size() == 1) {
         _commandPortPublic = nullptr;
         _portPluginMap.clear();
@@ -1653,7 +1654,6 @@ void BedrockServer::blockCommandPort(const string& reason) {
 
 void BedrockServer::unblockCommandPort(const string& reason) {
     lock_guard<mutex> lock(_portMutex);
-    _commandPortLikelyBlocked = true;
     auto it = _commandPortBlockReasons.find(reason);
     if (it == _commandPortBlockReasons.end()) {
         SWARN("Tried to unblock command port because: " << reason << ", but it wasn't blocked for that reason!");
