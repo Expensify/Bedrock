@@ -1,4 +1,6 @@
 #pragma once
+#include <libstuff/libstuff.h>
+#include <libstuff/SSynchronizedQueue.h>
 #include <libstuff/STCPNode.h>
 #include <sqlitecluster/SQLite.h>
 #include <sqlitecluster/SQLitePool.h>
@@ -72,6 +74,10 @@ class SQLiteNode : public STCPNode {
     // Call this if you want to shut down the node.
     void beginShutdown(uint64_t usToWait);
 
+    // Override the base class.
+    virtual void prePoll(fd_map& fdm) override;
+    virtual void postPoll(fd_map& fdm, uint64_t& nextActivity) override;
+
     // Call this to check if the node's completed shutting down.
     bool shutdownComplete();
 
@@ -110,6 +116,10 @@ class SQLiteNode : public STCPNode {
     // Takes two string in the form of `host:port` (i.e., `www.expensify.com:80` or `127.0.0.1:443`) and creates a
     // similar string with the host from hostPart and the port from portPart .
     string replaceAddressPort(const string& hostPart, const string& portPart);
+
+    // Tell the node a commit has been made by another thread, so that we can interrupt our poll loop if we're waiting
+    // for data, and send the new commit.
+    void notifyCommit();
 
   private:
     // STCPNode API: Peer handling framework functions
@@ -284,4 +294,8 @@ class SQLiteNode : public STCPNode {
     // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command
     // port".
     const string _commandAddress;
+
+    // This is just here to allow `poll` to get interrupted when there are new commits to send. We don't want followers
+    // to wait up to a full second for them.
+    SSynchronizedQueue<bool> _commitsToSend;
 };
