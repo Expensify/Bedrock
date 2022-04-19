@@ -40,6 +40,7 @@ int main(int argc, char* argv[]) {
     list<string> after;
     int threads = 1;
     int repeatCount = 1;
+    bool dieOnFailure = false;
 
     if (args.isSet("-repeatCount")) {
         repeatCount = max(1, SToInt(args["-repeatCount"]));
@@ -72,7 +73,9 @@ int main(int argc, char* argv[]) {
     if (args.isSet("-threads")) {
         threads = SToInt(args["-threads"]);
     }
-
+    if (args.isSet("-dieOnFailure")) {
+            dieOnFailure = true;
+    }
 
 
     int retval = 0;
@@ -83,6 +86,9 @@ int main(int argc, char* argv[]) {
             } catch (...) {
                 cout << "Unhandled exception running tests!" << endl;
                 retval = 1;
+            }
+            if(retval > 0 && dieOnFailure) {
+                break;
             }
         }
     }
