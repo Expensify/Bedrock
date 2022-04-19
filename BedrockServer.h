@@ -213,7 +213,7 @@ class BedrockServer : public SQLiteServer {
     // Legacy version of above.
     void suppressCommandPort(const string& reason, bool suppress, bool manualOverride = false);
 
-    // Reasons for each request so close the command port mapped to the instance of commandPortSuppressionCount that
+    // Reasons for each request to close the command port mapped to the instance of commandPortSuppressionCount that
     // created them.
     // Not atomic because it's only accessed with a lock on _portMutex.
     list<string> commandPortSuppressionReasons;
