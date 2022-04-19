@@ -1656,10 +1656,10 @@ void BedrockServer::unblockCommandPort(const string& reason) {
     lock_guard<mutex> lock(_portMutex);
     auto it = _commandPortBlockReasons.find(reason);
     if (it == _commandPortBlockReasons.end()) {
-        SWARN("Tried to unblock command port because: " << reason << ", but it wasn't blocked for that reason!");
+        SWARN("Tried to remove command port block because: " << reason << ", but it wasn't blocked for that reason!");
     } else {
         _commandPortBlockReasons.erase(it);
-        SINFO("Unblocking command port due to: " <<  reason << (_commandPortBlockReasons.size() > 0 ? " (blocks remaining)" : "") << ".");
+        SINFO("Removing command port block due to: " <<  reason << (_commandPortBlockReasons.size() > 0 ? " (blocks remaining)" : "") << ".");
     }
     if (_commandPortBlockReasons.empty()) {
         _isCommandPortLikelyBlocked = false;
