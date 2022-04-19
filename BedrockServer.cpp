@@ -1282,7 +1282,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0),
-    _outstandingSocketThreads(0), _newSocketThreadsBlocked(false), _escalateOverHTTP(args.test("-escalateOverHTTP"))
+    _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _escalateOverHTTP(args.test("-escalateOverHTTP"))
 {
     _version = VERSION;
 
@@ -1644,7 +1644,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
 void BedrockServer::blockCommandPort(const string& reason) {
     lock_guard<mutex> lock(_portMutex);
     _commandPortBlockReasons.insert(reason);
-    _commandPortLikelyBlocked = true;
+    _isCommandPortLikelyBlocked = true;
     if (_commandPortBlockReasons.size() == 1) {
         _commandPortPublic = nullptr;
         _portPluginMap.clear();
@@ -1662,7 +1662,7 @@ void BedrockServer::unblockCommandPort(const string& reason) {
         SINFO("Unblocking command port due to: " <<  reason << (_commandPortBlockReasons.size() > 0 ? " (blocks remaining)" : "") << ".");
     }
     if (_commandPortBlockReasons.empty()) {
-        _commandPortLikelyBlocked = false;
+        _isCommandPortLikelyBlocked = false;
     }
 }
 
@@ -2168,9 +2168,9 @@ void BedrockServer::_acceptSockets() {
                             // the behavior we saw here before handling `system_error`).
                             SERROR("Got system_error creating thread with only " << _outstandingSocketThreads << " threads!");
                         }
-                        if (!_newSocketThreadsBlocked) {
+                        if (!_shouldBlockNewSocketThreads) {
                             // Block any new socket threads and warn.
-                            _newSocketThreadsBlocked = true;
+                            _shouldBlockNewSocketThreads = true;
                             SWARN("Caught system_error in thread constructor (with " << _outstandingSocketThreads
                                   << " threads): " << e.code() << ", message: " << e.what() << ", blocking new socket threads.");
                             blockCommandPort("NOT_ENOUGH_THREADS");
@@ -2326,7 +2326,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
                 // If this socket was accepted from the public command port, and that's supposed to be closed now, set
                 // `Connection: close` so that we don't keep doing a bunch of activity on it.
-                if (requestSize && fromPublicCommandPort && _commandPortLikelyBlocked) {
+                if (requestSize && fromPublicCommandPort && _isCommandPortLikelyBlocked) {
                     request["Connection"] = "close";
                 }
             }
@@ -2426,15 +2426,15 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
     SINFO("Socket thread complete (" << _outstandingSocketThreads << " remaining).");
 
     // Check to see if we need to unblock creating new socket threads. We do this each time we cross having 50 active
-    // threads. We are guaranteed to hit this as the thread count decrements to 0, as _newSocketThreadsBlocked is
+    // threads. We are guaranteed to hit this as the thread count decrements to 0, as _shouldBlockNewSocketThreads is
     // atomic and every value must be hit as threads complete.
     // Note that if we were to start blocking the command port for NOT_ENOUGH_THREADS with less than 50 threads, we
     // will never hit this unlock case, but we only ever see this problem with thousands of threads, so we don't have
     // to try and handle that case, and don't need to lock this mutex on every thread's completion then.
     if (_outstandingSocketThreads == 50) {
         lock_guard<mutex> lock(_newSocketThreadBlockedMutex);
-        if (_newSocketThreadsBlocked) {
-            _newSocketThreadsBlocked = false;
+        if (_shouldBlockNewSocketThreads) {
+            _shouldBlockNewSocketThreads = false;
             unblockCommandPort("NOT_ENOUGH_THREADS");
         }
     }

@@ -253,6 +253,8 @@ class BedrockServer : public SQLiteServer {
     const SData args;
 
     // This is the thread that handles a new socket, parses a command, and queues it for work.
+    // One of the three 'Port' parameters will be true and the other two false, indicating whether the socket was
+    // accepted on _controlPort, _commandPortPublic, or _commandPortPrivate.
     void handleSocket(Socket&& socket, bool fromControlPort, bool fromPublicCommandPort, bool fromPrivateCommandPort);
 
   private:
@@ -293,7 +295,7 @@ class BedrockServer : public SQLiteServer {
     // close connections after commands complete if this is true, and not if it is false, so the worst-case scenario of
     // this being wrong is we accept an extra command as the port is blocked, or cause a client to reconnect after a
     // command is it's unblocked.
-    atomic<bool> _commandPortLikelyBlocked;
+    atomic<bool> _isCommandPortLikelyBlocked;
 
     // This is a map of open listening ports to the plugin objects that created them.
     map<unique_ptr<Port>, BedrockPlugin*> _portPluginMap;
@@ -496,7 +498,7 @@ class BedrockServer : public SQLiteServer {
     atomic<uint64_t> _outstandingSocketThreads;
 
     // If we hit the point where we're unable to create new socket threads, we block doing so.
-    bool _newSocketThreadsBlocked; 
+    bool _shouldBlockNewSocketThreads; 
     mutex _newSocketThreadBlockedMutex;
 
     // This mutex prevents the check for whether there are outstanding commands preventing shutdown from running at the
