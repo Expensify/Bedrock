@@ -395,6 +395,7 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
     while(t) {
         testThreads.push_back(thread([t, f]() {
             recursive_mutex& m = *(f->_mutex);
+            currentTestName = f->_name;
             f->_stats._assertions = 0;
             f->_stats._exceptions = 0;
             f->testOutputBuffer = "";
