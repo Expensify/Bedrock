@@ -1649,7 +1649,7 @@ void BedrockServer::blockCommandPort(const string& reason) {
         _commandPortPublic = nullptr;
         _portPluginMap.clear();
     }
-    SINFO("Blocking command port due to: " <<  reason << (_commandPortBlockReasons.size() > 1 ? " (already blocked)" : "") << ".");
+    SINFO("Blocking command port due to: " << reason << (_commandPortBlockReasons.size() > 1 ? " (already blocked)" : "") << ".");
 }
 
 void BedrockServer::unblockCommandPort(const string& reason) {
