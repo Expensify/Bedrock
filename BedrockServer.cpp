@@ -2159,6 +2159,15 @@ void BedrockServer::_acceptSockets() {
                         // We don't care about this lock here from a performance perspective, it only happens when we
                         // are unable to do any work anyway (i.e., we can't start threads).
                         lock_guard<mutex> lock(_newSocketThreadBlockedMutex);
+                        if (_outstandingSocketThreads < 100) {
+                            // We don't expect this to ever happen - we only seem to get `system_error` here when we
+                            // have lots (thousands) of threads running. Because of this, our handling of this in
+                            // `handleSocket` only works correctly if this happens with greater than 50 threads, and if
+                            // we were to block new threads with less than 50 threads already running, we'd never
+                            // unblock new threads. Instead, if that happens, we throw this error and crash (which was
+                            // the behavior we saw here before handling `system_error`).
+                            SERROR("Got system_error creating thread with only " << _outstandingSocketThreads << " threads!");
+                        }
                         if (!_newSocketThreadsBlocked) {
                             // Block any new socket threads and warn.
                             _newSocketThreadsBlocked = true;
