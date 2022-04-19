@@ -2166,6 +2166,11 @@ void BedrockServer::_acceptSockets() {
                             // we were to block new threads with less than 50 threads already running, we'd never
                             // unblock new threads. Instead, if that happens, we throw this error and crash (which was
                             // the behavior we saw here before handling `system_error`).
+                            // We check for 100 threads here instead of the 50 we check for in `handleSocket` to
+                            // minimize the risk of race conditions pushing this number through `50` (either up or
+                            // down) as we're checking this. For such a race condition to happen here, we'd need to
+                            // increment/decrement all the way from 50-100 (or vice versa) to hit such a race condition,
+                            // which is theoretically possible but exceedingly unlikely.
                             SERROR("Got system_error creating thread with only " << _outstandingSocketThreads << " threads!");
                         }
                         if (!_shouldBlockNewSocketThreads) {
