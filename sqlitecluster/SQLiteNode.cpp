@@ -112,7 +112,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _legacyReplication("legacy-replication"),
       _onMessageTimer("_onMESSAGE"),
       _escalateTimer("escalateCommand"),
-      _commandAddress(replaceAddressPort(port->host, commandPort))
+      _commandAddress(commandPort)
     {
 
     SASSERT(priority >= 0);
@@ -2810,19 +2810,6 @@ bool SQLiteNode::hasQuorum() {
         }
     }
     return (numFullFollowers * 2 >= numFullPeers);
-}
-
-string SQLiteNode::replaceAddressPort(const string& hostPart, const string& portPart) {
-    string hostToUse;
-    string hostToDiscard;
-    uint16_t portToUse = 0;
-    uint16_t portToDiscard = 0;
-    if (!SParseHost(hostPart, hostToUse, portToDiscard) || !SParseHost(portPart, hostToDiscard, portToUse)) {
-        STHROW("Couldn't combine " + hostPart + " with " + portPart);
-    }
-    string result = hostToUse + ":" + to_string(portToUse);
-    SINFO("Combined " << hostPart << " and " << portPart << " to get " << result);
-    return result;
 }
 
 void SQLiteNode::prePoll(fd_map& fdm) {
