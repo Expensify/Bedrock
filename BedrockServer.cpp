@@ -1249,8 +1249,10 @@ void BedrockServer::_resetServer() {
     _requestCount = 0;
     _replicationState = SQLiteNode::SEARCHING;
     _upgradeInProgress = false;
-    _suppressCommandPort = false;
-    _suppressCommandPortManualOverride = false;
+    if (_commandPortBlockReasons.size()) {
+        SWARN("Clearing leftover command port blocks in resetServer (" << _commandPortBlockReasons.size() << " blocks remaining).");
+        _commandPortBlockReasons.clear();
+    }
     _syncThreadComplete = false;
     atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
     _shutdownState = RUNNING;
@@ -1275,12 +1277,12 @@ BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_)
 
 BedrockServer::BedrockServer(const SData& args_)
   : SQLiteServer(), shutdownWhileDetached(false), args(args_), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
-    _upgradeInProgress(false), _suppressCommandPort(false), _suppressCommandPortManualOverride(false),
+    _upgradeInProgress(false),
     _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(_syncNode), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0),
-    _outstandingSocketThreads(0), _escalateOverHTTP(args.test("-escalateOverHTTP"))
+    _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _escalateOverHTTP(args.test("-escalateOverHTTP"))
 {
     _version = VERSION;
 
@@ -1471,7 +1473,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     SQLiteNode::State state = _replicationState.load();
     {
         lock_guard<mutex> lock(_portMutex);
-        if (!_suppressCommandPort && (state == SQLiteNode::LEADING || state == SQLiteNode::FOLLOWING) && _shutdownState.load() == RUNNING) {
+        if (_commandPortBlockReasons.empty() && (state == SQLiteNode::LEADING || state == SQLiteNode::FOLLOWING) && _shutdownState.load() == RUNNING) {
 
             // Open the port
             if (!_commandPortPublic) {
@@ -1518,18 +1520,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Is the OS trying to communicate with us?
     if (SGetSignals()) {
-        if (SGetSignal(SIGTTIN)) {
-            // Suppress command port, but only if we haven't already cleared it
-            if (!SCheckSignal(SIGTTOU)) {
-                suppressCommandPort("SIGTTIN", true, true);
-            }
-        } else if (SGetSignal(SIGTTOU)) {
-            // Clear command port suppression
-            suppressCommandPort("SIGTTOU", false, true);
-        } else {
-            // For any other signal, just shutdown.
-            _beginShutdown(SGetSignalDescription());
-        }
+        _beginShutdown(SGetSignalDescription());
     }
 
     // Accept any new connections
@@ -1636,14 +1627,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
         }
 
         // If `Connection: close` was set, shut down the socket, in case the caller ignores us.
-        if (SIEquals(command->request["Connection"], "close") || _shutdownState.load() != RUNNING || _suppressCommandPort) {
-            // Ideally, for cases in which we're doing this because `_suppressCommandPort` is true, we would instead do
-            // this only if the port that this command was received on is closed. The idea is that someone has closed a
-            // port, and thus the sockets created on that port should close, not continue to receive commands indefinitely.
-            // However, there currently isn't a mechanism to get the port that a command came from, so we've just decided
-            // to close all connections when the command port is closed. This means that commands received on the control
-            // port or private command port also have their sockets closed after command completion, even if those
-            // ports are still open.
+        if (SIEquals(command->request["Connection"], "close") || _shutdownState.load() != RUNNING) {
             command->socket->shutdown();
         }
     } else {
@@ -1656,30 +1640,37 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     }
 }
 
-void BedrockServer::suppressCommandPort(const string& reason, bool suppress, bool manualOverride) {
-    // If we've set the manual override flag, then we'll only actually make this change if we've specified it again.
-    if (_suppressCommandPortManualOverride && !manualOverride) {
-        return;
-    }
-    SINFO((suppress ? "Suppressing" : "Clearing") << " command port due to: " << reason);
 
-    // Save the state of manual override. Note that it's set to *suppress* on purpose.
-    if (manualOverride) {
-        _suppressCommandPortManualOverride = suppress;
+void BedrockServer::blockCommandPort(const string& reason) {
+    lock_guard<mutex> lock(_portMutex);
+    _commandPortBlockReasons.insert(reason);
+    _isCommandPortLikelyBlocked = true;
+    if (_commandPortBlockReasons.size() == 1) {
+        _commandPortPublic = nullptr;
+        _portPluginMap.clear();
     }
-    // Process accordingly
-    _suppressCommandPort = suppress;
-    if (suppress) {
-        // Close the command port, and all plugin's ports. Won't reopen.
-        SHMMM("Suppressing command port");
-        {
-            lock_guard<mutex> lock(_portMutex);
-            _commandPortPublic = nullptr;
-            _portPluginMap.clear();
-        }
+    SINFO("Blocking command port due to: " << reason << (_commandPortBlockReasons.size() > 1 ? " (already blocked)" : "") << ".");
+}
+
+void BedrockServer::unblockCommandPort(const string& reason) {
+    lock_guard<mutex> lock(_portMutex);
+    auto it = _commandPortBlockReasons.find(reason);
+    if (it == _commandPortBlockReasons.end()) {
+        SWARN("Tried to remove command port block because: " << reason << ", but it wasn't blocked for that reason!");
     } else {
-        // Clearing past suppression, but don't reopen (It's always safe to close, but not always safe to open).
-        SHMMM("Clearing command port suppression");
+        _commandPortBlockReasons.erase(it);
+        SINFO("Removing command port block due to: " <<  reason << (_commandPortBlockReasons.size() > 0 ? " (blocks remaining)" : "") << ".");
+    }
+    if (_commandPortBlockReasons.empty()) {
+        _isCommandPortLikelyBlocked = false;
+    }
+}
+
+void BedrockServer::suppressCommandPort(const string& reason, bool suppress, bool manualOverride) {
+    if (suppress) {
+        blockCommandPort("LEGACY_" + reason);
+    } else {
+        unblockCommandPort("LEGACY_" + reason);
     }
 }
 
@@ -1799,6 +1790,11 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
             peerList.push_back(SComposeJSONObject(peerTable));
         }
 
+        {
+            lock_guard<mutex> lock(_portMutex);
+            content["commandPortBlockReasons"] = SComposeJSONArray(_commandPortBlockReasons);
+        }
+
         // We can use the `each` functionality to pass a lambda that will grab each method line in
         // `_syncNodeQueuedCommands`.
         list<string> syncNodeQueuedMethods;
@@ -1887,9 +1883,9 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         _shouldBackup = true;
         _beginShutdown("Detach", true);
     } else if (SIEquals(command->request.methodLine, "SuppressCommandPort")) {
-        suppressCommandPort("SuppressCommandPort", true, true);
+        blockCommandPort("MANUAL");
     } else if (SIEquals(command->request.methodLine, "ClearCommandPort")) {
-        suppressCommandPort("ClearCommandPort", false, true);
+        unblockCommandPort("MANUAL");
     } else if (SIEquals(command->request.methodLine, "ClearCrashCommands")) {
         unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
         _crashCommands.clear();
@@ -2106,52 +2102,101 @@ void BedrockServer::_finishPeerCommand(unique_ptr<BedrockCommand>& command) {
 }
 
 void BedrockServer::_acceptSockets() {
-    // Make a list of ports to accept on.
-    // We'll check the control port, command port, and any plugin ports for new connections.
-    list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPortPublic, _commandPortPrivate, _controlPort};
+    // Try block because we sometimes catch `std::system_error` from in here (likely from the thread code) and we're
+    // trying to diagnose exactly what's happening.
+    try {
+        // Make a list of ports to accept on.
+        // We'll check the control port, command port, and any plugin ports for new connections.
+        list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPortPublic, _commandPortPrivate, _controlPort};
 
-    // Lock _portMutex so suppressing the port does not cause it to be null
-    // in the middle of this function.
-    lock_guard<mutex> lock(_portMutex);
+        // Lock _portMutex so suppressing the port does not cause it to be null
+        // in the middle of this function.
+        lock_guard<mutex> lock(_portMutex);
 
-    for (auto& p : _portPluginMap) {
-        portList.push_back(reference_wrapper<const unique_ptr<Port>>(p.first));
-    }
-
-    // Try each port.
-    for (auto portWrapper : portList) {
-        const unique_ptr<Port>& port = portWrapper.get();
-
-        // Skip null ports (if the command or control port are closed).
-        if (!port) {
-            continue;
+        for (auto& p : _portPluginMap) {
+            portList.push_back(reference_wrapper<const unique_ptr<Port>>(p.first));
         }
 
-        // Accept as many sockets as we can.
-        while (true) {
-            sockaddr_in addr;
-            int s = S_accept(port->s, addr, true); // Note that this sets the newly accepted socket to be blocking.
+        // Try each port.
+        for (auto portWrapper : portList) {
+            const unique_ptr<Port>& port = portWrapper.get();
 
-            // If we got an error or no socket, done accepting for now.
-            if (s <= 0) {
-                break;
+            // Skip null ports (if the command or control port are closed).
+            if (!port) {
+                continue;
             }
 
-            // Otherwise create the object for this new socket.
-            SDEBUG("Accepting socket from '" << addr << "' on port '" << port->host << "'");
-            Socket socket(s, Socket::CONNECTED);
-            socket.addr = addr;
+            // Accept as many sockets as we can.
+            while (true) {
+                sockaddr_in addr;
+                int s = S_accept(port->s, addr, true); // Note that this sets the newly accepted socket to be blocking.
 
-            // If it came from a plugin, record that.
-            auto plugin = _portPluginMap.find(port);
-            if (plugin != _portPluginMap.end()) {
-                socket.data = plugin->second;
+                // If we got an error or no socket, done accepting for now.
+                if (s <= 0) {
+                    break;
+                }
+
+                // Otherwise create the object for this new socket.
+                SDEBUG("Accepting socket from '" << addr << "' on port '" << port->host << "'");
+                Socket socket(s, Socket::CONNECTED);
+                socket.addr = addr;
+
+                // If it came from a plugin, record that.
+                auto plugin = _portPluginMap.find(port);
+                if (plugin != _portPluginMap.end()) {
+                    socket.data = plugin->second;
+                }
+
+                // And start up this socket's thread.
+                _outstandingSocketThreads++;
+                thread t;
+                bool threadStarted = false;
+                while (!threadStarted) {
+                    try {
+                        t = thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
+                        threadStarted = true;
+                    } catch (const system_error& e) {
+                        // We don't care about this lock here from a performance perspective, it only happens when we
+                        // are unable to do any work anyway (i.e., we can't start threads).
+                        lock_guard<mutex> lock(_newSocketThreadBlockedMutex);
+                        if (_outstandingSocketThreads < 100) {
+                            // We don't expect this to ever happen - we only seem to get `system_error` here when we
+                            // have lots (thousands) of threads running. Because of this, our handling of this in
+                            // `handleSocket` only works correctly if this happens with greater than 50 threads, and if
+                            // we were to block new threads with less than 50 threads already running, we'd never
+                            // unblock new threads. Instead, if that happens, we throw this error and crash (which was
+                            // the behavior we saw here before handling `system_error`).
+                            // We check for 100 threads here instead of the 50 we check for in `handleSocket` to
+                            // minimize the risk of race conditions pushing this number through `50` (either up or
+                            // down) as we're checking this. For such a race condition to happen here, we'd need to
+                            // increment/decrement all the way from 50-100 (or vice versa) to hit such a race condition,
+                            // which is theoretically possible but exceedingly unlikely.
+                            SERROR("Got system_error creating thread with only " << _outstandingSocketThreads << " threads!");
+                        }
+                        if (!_shouldBlockNewSocketThreads) {
+                            // Block any new socket threads and warn.
+                            _shouldBlockNewSocketThreads = true;
+                            SWARN("Caught system_error in thread constructor (with " << _outstandingSocketThreads
+                                  << " threads): " << e.code() << ", message: " << e.what() << ", blocking new socket threads.");
+                            blockCommandPort("NOT_ENOUGH_THREADS");
+                        }
+
+                        // We just loop until socket threads are unblocked.
+                        SINFO("Waiting 1 more second for socket threads to be available.");
+                        sleep(1);
+                    }
+                }
+                try {
+                    t.detach();
+                } catch (const system_error& e) {
+                    SALERT("Caught system_error in thread detach: " << e.code() << ", message: " << e.what());
+                    throw;
+                }
             }
-
-            // And start up this socket's thread.
-            _outstandingSocketThreads++;
-            thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort).detach();
         }
+    } catch (const system_error& e) {
+        SALERT("Caught system_error outside thread startup: " << e.code() << ", message: " << e.what());
+        throw;
     }
 }
 
@@ -2215,11 +2260,12 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     return command;
 }
 
-void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
+void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fromPublicCommandPort, bool fromPrivateCommandPort) {
     shared_lock<shared_mutex> controlPortLock(_controlPortExclusionMutex, defer_lock);
-    if (isControlPort) {
+    if (fromControlPort) {
         controlPortLock.lock();
     }
+
     // Initialize and get a unique thread ID.
     SInitialize("socket" + to_string(_socketThreadNumber++));
     SINFO("Socket thread starting");
@@ -2282,6 +2328,12 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
                 // Otherwise, handle any default request.
                 int requestSize = request.deserialize(socket.recvBuffer);
                 socket.recvBuffer.consumeFront(requestSize);
+
+                // If this socket was accepted from the public command port, and that's supposed to be closed now, set
+                // `Connection: close` so that we don't keep doing a bunch of activity on it.
+                if (requestSize && fromPublicCommandPort && _isCommandPortLikelyBlocked) {
+                    request["Connection"] = "close";
+                }
             }
 
             // If we have a populated request, from either a plugin or our default handling, we'll queue up the
@@ -2299,7 +2351,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
                     // If it's a status or control command, we handle it specially above. If not, we'll queue it for
                     // later processing below.
 
-                    if (isControlPort && _shutdownState != RUNNING) {
+                    if (fromControlPort && _shutdownState != RUNNING) {
                         // Don't handle non-control commands on the control port if we're shutting down. As the control
                         // port can remain open through shutdown (in the case of detaching) and can expect DB access,
                         // which is being turned off, these could cause weird crashes. Instead, just return an error.
@@ -2377,6 +2429,20 @@ void BedrockServer::handleSocket(Socket&& socket, bool isControlPort) {
     // Note that we never return early, we always want to hit this code and decrement our counter and clean up our socket.
     _outstandingSocketThreads--;
     SINFO("Socket thread complete (" << _outstandingSocketThreads << " remaining).");
+
+    // Check to see if we need to unblock creating new socket threads. We do this each time we cross having 50 active
+    // threads. We are guaranteed to hit this as the thread count decrements to 0, as _shouldBlockNewSocketThreads is
+    // atomic and every value must be hit as threads complete.
+    // Note that if we were to start blocking the command port for NOT_ENOUGH_THREADS with less than 50 threads, we
+    // will never hit this unlock case, but we only ever see this problem with thousands of threads, so we don't have
+    // to try and handle that case, and don't need to lock this mutex on every thread's completion then.
+    if (_outstandingSocketThreads == 50) {
+        lock_guard<mutex> lock(_newSocketThreadBlockedMutex);
+        if (_shouldBlockNewSocketThreads) {
+            _shouldBlockNewSocketThreads = false;
+            unblockCommandPort("NOT_ENOUGH_THREADS");
+        }
+    }
 }
 
 void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
