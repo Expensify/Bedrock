@@ -47,7 +47,6 @@ bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimest
                 SINFO("[HTTPESC] Timeout waiting for socket.");
                 return false;
             }
-            SINFO("[HTTPESC] Socket waiting to be ready (" << type << ").");
         } else if (result == 1) {
             if (fdspec.revents & POLLERR || fdspec.revents & POLLHUP || fdspec.revents & POLLNVAL) {
                 SINFO("[HTTPESC] Socket disconnected while waiting to be ready (" << type << ").");
@@ -100,7 +99,6 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     command.escalationTimeUS = STimeNow();
 
     // TODO: remove the super-verbose logging before this is in normal production.
-    SINFO("[HTTPESC] Socket opening.");
     unique_ptr<SHTTPSManager::Socket> s;
     try {
         // TODO: Future improvement - socket pool so these are reused.
@@ -112,7 +110,6 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
         SINFO("[HTTPESC] Socket failed to open.");
         return false;
     }
-    SINFO("[HTTPESC] Socket opened.");
 
     // This is what we need to send.
     SData request = command.request;
