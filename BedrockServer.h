@@ -206,9 +206,17 @@ class BedrockServer : public SQLiteServer {
     // When a peer node logs in, we'll send it our crash command list.
     void onNodeLogin(SQLiteNode::Peer* peer);
 
-    // Control the command port. The server will toggle this as necessary, unless manualOverride is set,
-    // in which case the `suppress` setting will be forced.
+    // You must block and unblock the command port with *identical strings*.
+    void blockCommandPort(const string& reason);
+    void unblockCommandPort(const string& reason);
+
+    // Legacy version of above.
     void suppressCommandPort(const string& reason, bool suppress, bool manualOverride = false);
+
+    // Reasons for each request to close the command port mapped to the instance of commandPortSuppressionCount that
+    // created them.
+    // Not atomic because it's only accessed with a lock on _portMutex.
+    list<string> commandPortSuppressionReasons;
 
     // This will return true if there's no outstanding writable activity that we're waiting on. It's called by an
     // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
@@ -245,7 +253,9 @@ class BedrockServer : public SQLiteServer {
     const SData args;
 
     // This is the thread that handles a new socket, parses a command, and queues it for work.
-    void handleSocket(Socket&& s, bool isControlPort);
+    // One of the three 'Port' parameters will be true and the other two false, indicating whether the socket was
+    // accepted on _controlPort, _commandPortPublic, or _commandPortPrivate.
+    void handleSocket(Socket&& socket, bool fromControlPort, bool fromPublicCommandPort, bool fromPrivateCommandPort);
 
   private:
     // The name of the sync thread.
@@ -277,8 +287,15 @@ class BedrockServer : public SQLiteServer {
     BedrockTimeoutCommandQueue _syncNodeQueuedCommands;
 
     // These control whether or not the command port is currently opened.
-    bool _suppressCommandPort;
-    bool _suppressCommandPortManualOverride;
+    multiset<string> _commandPortBlockReasons;
+
+    // This indicates if `_commandPortBlockReasons` is empty, *mostly*. It exists so that it can be checked without
+    // having to lock, like we do for _commandPortBlockReasons, and so it's feasible it gets out of sync for a few ms
+    // as we add and remove things from _commandPortBlockReasons, but it is only used as an optimization - we will
+    // close connections after commands complete if this is true, and not if it is false, so the worst-case scenario of
+    // this being wrong is we accept an extra command as the port is blocked, or cause a client to reconnect after a
+    // command is it's unblocked.
+    atomic<bool> _isCommandPortLikelyBlocked;
 
     // This is a map of open listening ports to the plugin objects that created them.
     map<unique_ptr<Port>, BedrockPlugin*> _portPluginMap;
@@ -479,6 +496,10 @@ class BedrockServer : public SQLiteServer {
 
     // This records how many outstanding socket threads there are so we can wait for them to complete before exiting.
     atomic<uint64_t> _outstandingSocketThreads;
+
+    // If we hit the point where we're unable to create new socket threads, we block doing so.
+    bool _shouldBlockNewSocketThreads; 
+    mutex _newSocketThreadBlockedMutex;
 
     // This mutex prevents the check for whether there are outstanding commands preventing shutdown from running at the
     // same time a control port command is running (which would indicate that there is a command blocking shutdown -
