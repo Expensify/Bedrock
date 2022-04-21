@@ -852,10 +852,9 @@ void BedrockServer::worker(int threadId)
             // the `_futureCommitCommands` queue.
             if (state == SQLiteNode::FOLLOWING && command->escalateImmediately && !command->complete) {
                 if (_escalateOverHTTP) {
-                    SINFO("Beginning immediately escalating " << command->request.methodLine << " to leader.");
                     if (_clusterMessenger.runOnLeader(*command)) {
                         // command->complete is now true for this command. It will get handled a few lines below.
-                        SINFO("Finished immediately escalating " << command->request.methodLine << " to leader.");
+                        SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
                     } else {
                         SWARN("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
                         _commandQueue.push(move(command));
