@@ -113,10 +113,6 @@ class SQLiteNode : public STCPNode {
     // This will broadcast a message to all peers, or a specific peer.
     void broadcast(const SData& message, Peer* peer = nullptr);
 
-    // Takes two string in the form of `host:port` (i.e., `www.expensify.com:80` or `127.0.0.1:443`) and creates a
-    // similar string with the host from hostPart and the port from portPart .
-    string replaceAddressPort(const string& hostPart, const string& portPart);
-
     // Tell the node a commit has been made by another thread, so that we can interrupt our poll loop if we're waiting
     // for data, and send the new commit.
     void notifyCommit();
