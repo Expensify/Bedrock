@@ -76,84 +76,91 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
 }
 
 bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
-    // Ok, we want to retry this for up to 5 seconds if we can't get the address.
-    // Ideally, we let SQLiteNode notify us of changes here, but we can probably just wait for now.
-    string leaderAddress = _node->leaderCommandAddress();
-    if (leaderAddress.empty()) {
-        SINFO("[HTTPESC] No leader address.");
-        return false;
-    }
+    auto start = chrono::steady_clock::now();
+    bool sent = false;
 
-    // So the above needs a few things to run correctly:
-    // 1. There must be a leader.
-    // 2. It must actually be *leading*, not standingdown.
-    // 3. It's port must be opened, this is not the case as it begins shutting down.
-    //
-    // Because the way we create sockets is non-blocking, the creation never fails, we fail in attempting to send.
-    //
-    // When we fail to connect cause leader's command  port is closed, we get:
-    // 2022-04-21T22:10:22.317146+00:00 db2.lax bedrock: 6GLDGj sps.workforce@collectivesolution.net (SQLiteClusterMessenger.cpp:53) waitForReady [worker87] [info] [HTTPESC] Socket disconnected while waiting to be ready (recv).
-
-    // SParseURI expects a typical http or https scheme.
-    string url = "http://" + leaderAddress;
-    string host, path;
-    if (!SParseURI(url, host, path) || !SHostIsValid(host)) {
-        return false;
-    }
-
-    // Start our escalation timing.
-    command.escalationTimeUS = STimeNow();
-
-    // TODO: remove the super-verbose logging before this is in normal production.
     unique_ptr<SHTTPSManager::Socket> s;
-    try {
-        // TODO: Future improvement - socket pool so these are reused.
-        // TODO: Also, allow S_socket to take a parsed address instead of redoing all the parsing above.
-        s = unique_ptr<SHTTPSManager::Socket>(new SHTTPSManager::Socket(host, nullptr));
-    } catch (const SException& exception) {
-        // Finish our escalation.
-        command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
-        SINFO("[HTTPESC] Socket failed to open.");
-        return false;
-    }
+    while (chrono::steady_clock::now() < (start + 5s) && !sent) {
+        // Ok, we want to retry this for up to 5 seconds if we can't get the address.
+        // Ideally, we let SQLiteNode notify us of changes here, but we can probably just wait for now.
+        string leaderAddress = _node->leaderCommandAddress();
+        if (leaderAddress.empty()) {
+            SINFO("[HTTPESC] No leader address.");
+            usleep(500'000);
+            continue;
+        }
 
-    // This is what we need to send.
-    SData request = command.request;
-    request.nameValueMap["ID"] = command.id;
-    SFastBuffer buf(request.serialize());
-
-    // We only have one FD to poll.
-    pollfd fdspec = {s->s, POLLOUT, 0};
-    while (true) {
-        if (waitForReady(fdspec, command.timeout()) != WaitForReadyResult::OK) {
+        // SParseURI expects a typical http or https scheme.
+        string url = "http://" + leaderAddress;
+        string host, path;
+        if (!SParseURI(url, host, path) || !SHostIsValid(host)) {
             return false;
         }
 
-        ssize_t bytesSent = send(s->s, buf.c_str(), buf.size(), 0);
-        if (bytesSent == -1) {
-            switch (errno) {
-                case EAGAIN:
-                case EINTR:
-                    // these are ok. try again.
-                    SINFO("[HTTPESC] Got error (send): " << errno << ", trying again.");
-                    break;
-                default:
-                    SINFO("[HTTPESC] Got error (send): " << errno << ", fatal.");
-                    return false;
-            }
-        } else {
-            buf.consumeFront(bytesSent);
-            if (buf.empty()) {
-                // Everything has sent, we're done with this loop.
+        // Start our escalation timing.
+        command.escalationTimeUS = STimeNow();
+
+        try {
+            // TODO: Future improvement - socket pool so these are reused.
+            // TODO: Also, allow S_socket to take a parsed address instead of redoing all the parsing above.
+            s = unique_ptr<SHTTPSManager::Socket>(new SHTTPSManager::Socket(host, nullptr));
+        } catch (const SException& exception) {
+            // Finish our escalation.
+            command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
+            SINFO("[HTTPESC] Socket failed to open.");
+            return false;
+        }
+
+        // This is what we need to send.
+        SData request = command.request;
+        request.nameValueMap["ID"] = command.id;
+        SFastBuffer buf(request.serialize());
+
+        // We only have one FD to poll.
+        pollfd fdspec = {s->s, POLLOUT, 0};
+        while (true) {
+            WaitForReadyResult result = waitForReady(fdspec, command.timeout());
+            if (result == WaitForReadyResult::DISCONNECTED_IN) {
+                // This is the case we're likely to get if the leader's port is closed.
+                // We break this loop and let the top loop (with the timer) start over.
+                // But first we sleep 1/2 second to make this not spam a million times.
+                usleep(500'000);
                 break;
+            } else if (result != WaitForReadyResult::OK) {
+                return false;
+            }
+
+            ssize_t bytesSent = send(s->s, buf.c_str(), buf.size(), 0);
+            if (bytesSent == -1) {
+                switch (errno) {
+                    case EAGAIN:
+                    case EINTR:
+                        // these are ok. try again.
+                        SINFO("[HTTPESC] Got error (send): " << errno << ", trying again.");
+                        break;
+                    default:
+                        SINFO("[HTTPESC] Got error (send): " << errno << ", fatal.");
+                        return false;
+                }
+            } else {
+                buf.consumeFront(bytesSent);
+                if (buf.empty()) {
+                    // Everything has sent, we're done with this loop.
+                    sent = true;
+                    break;
+                }
             }
         }
+    }
+    if (!sent) {
+        SINFO("[HTTPESC] Failed to send to leader after timeout establishing connnection.");
+        return false;
     }
 
     // If we fail before here, we can try again. If we fail after here, we should return an error.
 
     // Ok, now we need to receive the response.
-    fdspec.events = POLLIN;
+    pollfd fdspec = {s->s, POLLIN, 0};
     string responseStr;
     char response[4096] = {0};
     while (true) {
