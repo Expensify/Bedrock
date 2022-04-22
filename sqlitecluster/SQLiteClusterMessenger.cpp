@@ -78,6 +78,7 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
 bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     auto start = chrono::steady_clock::now();
     bool sent = false;
+    size_t sleepsDueToFailures = 0;
 
     unique_ptr<SHTTPSManager::Socket> s;
     while (chrono::steady_clock::now() < (start + 5s) && !sent) {
@@ -86,6 +87,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
         string leaderAddress = _node->leaderCommandAddress();
         if (leaderAddress.empty()) {
             SINFO("[HTTPESC] No leader address.");
+            sleepsDueToFailures++;
             usleep(500'000);
             continue;
         }
@@ -124,6 +126,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
                 // This is the case we're likely to get if the leader's port is closed.
                 // We break this loop and let the top loop (with the timer) start over.
                 // But first we sleep 1/2 second to make this not spam a million times.
+                sleepsDueToFailures++;
                 usleep(500'000);
                 break;
             } else if (result != WaitForReadyResult::OK) {
@@ -155,6 +158,9 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     if (!sent) {
         SINFO("[HTTPESC] Failed to send to leader after timeout establishing connnection.");
         return false;
+    }
+    if (sleepsDueToFailures) {
+        SINFO("[HTTPESC] Escalation to leader blocked. Slept " << sleepsDueToFailures << " times, but succeeded.");
     }
 
     // If we fail before here, we can try again. If we fail after here, we should return an error.
