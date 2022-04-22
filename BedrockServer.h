@@ -483,7 +483,7 @@ class BedrockServer : public SQLiteServer {
     static thread_local atomic<SQLiteNode::State> _nodeStateSnapshot;
 
     // Setup a new command from a bare request.
-    unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket& s);
+    unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket& s, bool shouldTreatAsLocalhost);
 
     // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
     // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on

@@ -2199,7 +2199,7 @@ void BedrockServer::_acceptSockets() {
     }
 }
 
-unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& request, Socket& socket) {
+unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& request, Socket& socket, bool shouldTreatAsLocalhost) {
     SAUTOPREFIX(request);
 
     bool fireAndForget = false;
@@ -2223,9 +2223,11 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
 
     // Get the source ip of the command.
     char *ip = inet_ntoa(socket.addr.sin_addr);
-    if (ip != "127.0.0.1"s) {
-        // We only add this if it's not localhost because existing code expects commands that come from
-        // localhost to have it blank.
+    if (!shouldTreatAsLocalhost && ip != "127.0.0.1"s) {
+        // Auth checks to see that this value is missing/blank as a security check, so we leave it out for anything
+        // originating on 127.0.0.1, or for which we've specified shouldTreatAsLocalhost (which are commands escalated
+        // via the private command port). This is the *only* use of the `_source` attribute, so the only consideration
+        // we need to make for this.
         request["_source"] = ip;
     }
 
@@ -2339,7 +2341,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
             // command.
             if (!request.empty()) {
                 // Make a command from our request.
-                unique_ptr<BedrockCommand> command = buildCommandFromRequest(move(request), socket);
+                unique_ptr<BedrockCommand> command = buildCommandFromRequest(move(request), socket, fromPrivateCommandPort);
 
                 if (!command) {
                     // If we couldn't build a command, this was some sort of unusual exception case (like trying to
