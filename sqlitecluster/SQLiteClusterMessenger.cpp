@@ -27,7 +27,7 @@ void SQLiteClusterMessenger::reset() {
 }
 
 // Returns true on ready or false on error or timeout.
-bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) {
+SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) {
     static const map <int, string> labels = {
         {POLLOUT, "send"},
         {POLLIN, "recv"},
@@ -42,23 +42,23 @@ bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimest
         if (!result) {
             if (_shutDownBy) {
                 SINFO("[HTTPESC] Giving up because shutting down.");
-                return false;
+                return WaitForReadyResult::SHUTTING_DOWN;
             } else if (timeoutTimestamp && timeoutTimestamp < STimeNow()) {
                 SINFO("[HTTPESC] Timeout waiting for socket.");
-                return false;
+                return WaitForReadyResult::TIMEOUT;
             }
         } else if (result == 1) {
             if (fdspec.revents & POLLERR || fdspec.revents & POLLHUP || fdspec.revents & POLLNVAL) {
                 SINFO("[HTTPESC] Socket disconnected while waiting to be ready (" << type << ").");
                 // This case in particular happens if we try and escalate to a leader with a closed command port. Maybe
                 // we should wait and retry?
-                return false;
+                return fdspec.events == POLLIN ? WaitForReadyResult::DISCONNECTED_IN : WaitForReadyResult::DISCONNETED_OUT;
             } else if ((fdspec.events & POLLIN && fdspec.revents & POLLIN) || (fdspec.events & POLLOUT && fdspec.revents & POLLOUT)) {
                 // Expected case.
-                return true;
+                return WaitForReadyResult::OK;
             } else {
                 SWARN("[HTTPESC] Neither error nor success?? (" << type << ").");
-                return false;
+                return WaitForReadyResult::UNSPECIFIED;
             }
         } else if (result < 0) {
             if (errno == EAGAIN || errno == EINTR) {
@@ -67,7 +67,7 @@ bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimest
             } else {
                 // Anything else should be fatal.
                 SWARN("[HTTPESC] poll error (" << type << "): " << errno);
-                return false;
+                return WaitForReadyResult::POLL_ERROR;
             }
         } else {
             SERROR("[HTTPESC] We have more than 1 file ready????");
@@ -91,8 +91,8 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     //
     // Because the way we create sockets is non-blocking, the creation never fails, we fail in attempting to send.
     //
-    // When we fail to connect cause leader's command  port is closed, we get: SINFO("[HTTPESC] Socket disconnected while waiting to be ready (" << type << ").");
-    //
+    // When we fail to connect cause leader's command  port is closed, we get:
+    // 2022-04-21T22:10:22.317146+00:00 db2.lax bedrock: 6GLDGj sps.workforce@collectivesolution.net (SQLiteClusterMessenger.cpp:53) waitForReady [worker87] [info] [HTTPESC] Socket disconnected while waiting to be ready (recv).
 
     // SParseURI expects a typical http or https scheme.
     string url = "http://" + leaderAddress;
@@ -125,7 +125,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     // We only have one FD to poll.
     pollfd fdspec = {s->s, POLLOUT, 0};
     while (true) {
-        if (!waitForReady(fdspec, command.timeout())) {
+        if (waitForReady(fdspec, command.timeout()) != WaitForReadyResult::OK) {
             return false;
         }
 
@@ -157,7 +157,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     string responseStr;
     char response[4096] = {0};
     while (true) {
-        if (!waitForReady(fdspec, command.timeout())) {
+        if (waitForReady(fdspec, command.timeout()) != WaitForReadyResult::OK) {
             setErrorResponse(command);
             return false;
         }
