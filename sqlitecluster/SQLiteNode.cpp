@@ -2003,16 +2003,12 @@ void SQLiteNode::broadcast(const SData& message, Peer* peer) {
 }
 
 void SQLiteNode::_changeState(SQLiteNode::State newState) {
-    // Did we actually change _state?
-    State oldState = _state;
-
-    // Not sure if this is entirely adequate.
     SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
     _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
-    if (newState != oldState) {
+    if (newState != _state) {
         // If we were following, and now we're not, we give up an any replications.
-        if (oldState == FOLLOWING) {
+        if (_state == FOLLOWING) {
             _replicationThreadsShouldExit = true;
             uint64_t cancelAfter = _leaderCommitNotifier.getValue();
             SINFO("Replication threads should exit, canceling commits after current leader commit " << cancelAfter);
@@ -2057,7 +2053,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         _stateTimeout = STimeNow() + timeout;
 
         // Additional logic for some old states
-        if (SWITHIN(LEADING, oldState, STANDINGDOWN) && !SWITHIN(LEADING, newState, STANDINGDOWN)) {
+        if (SWITHIN(LEADING, _state, STANDINGDOWN) && !SWITHIN(LEADING, newState, STANDINGDOWN)) {
             // If we stop leading, unset _leaderVersion from our own _version.
             // It will get re-set to the version on the new leader.
             _leaderVersion = "";
@@ -2616,6 +2612,16 @@ SQLiteNode::State SQLiteNode::leaderState() const {
     return State::UNKNOWN;
 }
 
+string SQLiteNode::leaderCommandAddress() const {
+    // TODO: Make shared mutex.
+    lock_guard<mutex> leadPeerLock(_leadPeerMutex);
+    if (_leadPeer && _leadPeer.load()->state == State::LEADING) {
+        if (_leadPeer.load()->state == State::LEADING) {
+            return _leadPeer.load()->commandAddress;
+        }
+    }
+    return "";
+}
 
 void SQLiteNode::handleSerialBeginTransaction(Peer* peer, const SData& message) {
     AutoScopedWallClockTimer timer(_syncTimer);

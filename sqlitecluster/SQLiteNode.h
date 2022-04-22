@@ -117,6 +117,9 @@ class SQLiteNode : public STCPNode {
     // for data, and send the new commit.
     void notifyCommit();
 
+    // Return the command address of the current leader, if there is one (empty string otherwise).
+    string leaderCommandAddress() const;
+
   private:
     // STCPNode API: Peer handling framework functions
     void _onConnect(Peer* peer);

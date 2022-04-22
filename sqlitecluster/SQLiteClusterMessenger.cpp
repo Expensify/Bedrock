@@ -50,6 +50,8 @@ bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimest
         } else if (result == 1) {
             if (fdspec.revents & POLLERR || fdspec.revents & POLLHUP || fdspec.revents & POLLNVAL) {
                 SINFO("[HTTPESC] Socket disconnected while waiting to be ready (" << type << ").");
+                // This case in particular happens if we try and escalate to a leader with a closed command port. Maybe
+                // we should wait and retry?
                 return false;
             } else if ((fdspec.events & POLLIN && fdspec.revents & POLLIN) || (fdspec.events & POLLOUT && fdspec.revents & POLLOUT)) {
                 // Expected case.
@@ -74,19 +76,23 @@ bool SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimest
 }
 
 bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
-    string leaderAddress;
-    auto _nodeCopy = atomic_load(&_node);
-    if (_nodeCopy) {
-        // peerList is const, so we can safely read from it in  multiple threads without locking, similarly,
-        // peer->commandAddress is atomic.
-        for (SQLiteNode::Peer* peer : _nodeCopy->peerList) {
-            string peerCommandAddress = peer->commandAddress;
-            if (peer->state == STCPNode::LEADING && !peerCommandAddress.empty()) {
-                leaderAddress = peerCommandAddress;
-                break;
-            }
-        }
+    // Ok, we want to retry this for up to 5 seconds if we can't get the address.
+    // Ideally, we let SQLiteNode notify us of changes here, but we can probably just wait for now.
+    string leaderAddress = _node->leaderCommandAddress();
+    if (leaderAddress.empty()) {
+        SINFO("[HTTPESC] No leader address.");
+        return false;
     }
+
+    // So the above needs a few things to run correctly:
+    // 1. There must be a leader.
+    // 2. It must actually be *leading*, not standingdown.
+    // 3. It's port must be opened, this is not the case as it begins shutting down.
+    //
+    // Because the way we create sockets is non-blocking, the creation never fails, we fail in attempting to send.
+    //
+    // When we fail to connect cause leader's command  port is closed, we get: SINFO("[HTTPESC] Socket disconnected while waiting to be ready (" << type << ").");
+    //
 
     // SParseURI expects a typical http or https scheme.
     string url = "http://" + leaderAddress;
