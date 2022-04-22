@@ -2615,9 +2615,7 @@ SQLiteNode::State SQLiteNode::leaderState() const {
 string SQLiteNode::leaderCommandAddress() const {
     shared_lock<shared_mutex> leadPeerLock(_leadPeerMutex);
     if (_leadPeer && _leadPeer.load()->state == State::LEADING) {
-        if (_leadPeer.load()->state == State::LEADING) {
-            return _leadPeer.load()->commandAddress;
-        }
+        return _leadPeer.load()->commandAddress;
     }
     return "";
 }
