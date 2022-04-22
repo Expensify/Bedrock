@@ -856,7 +856,7 @@ void BedrockServer::worker(int threadId)
                         // command->complete is now true for this command. It will get handled a few lines below.
                         SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
                     } else {
-                        SWARN("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
+                        SINFO("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
                         _commandQueue.push(move(command));
                         continue;
                     }
@@ -1042,7 +1042,7 @@ void BedrockServer::worker(int threadId)
                             } else {
                                 // TODO: Something less naive that considers how these failures happen rather than a simple
                                 // endless loop of requeue and retry.
-                                SWARN("Couldn't escalate command " << command->request.methodLine << " to leader. We are in state: " << STCPNode::stateName(state));
+                                SINFO("Couldn't escalate command " << command->request.methodLine << " to leader. We are in state: " << STCPNode::stateName(state));
                                 _commandQueue.push(move(command));
                             }
                         } else {
