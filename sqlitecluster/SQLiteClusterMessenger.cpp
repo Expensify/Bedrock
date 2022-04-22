@@ -160,7 +160,8 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
         return false;
     }
     if (sleepsDueToFailures) {
-        SINFO("[HTTPESC] Escalation to leader blocked. Slept " << sleepsDueToFailures << " times, but succeeded.");
+        auto msElapsed = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count();
+        SINFO("[HTTPESC] Problems connecting for escalation but succeeded in " << msElapsed << "ms.");
     }
 
     // If we fail before here, we can try again. If we fail after here, we should return an error.
