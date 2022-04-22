@@ -50,8 +50,6 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
         } else if (result == 1) {
             if (fdspec.revents & POLLERR || fdspec.revents & POLLHUP || fdspec.revents & POLLNVAL) {
                 SINFO("[HTTPESC] Socket disconnected while waiting to be ready (" << type << ").");
-                // This case in particular happens if we try and escalate to a leader with a closed command port. Maybe
-                // we should wait and retry?
                 return fdspec.events == POLLIN ? WaitForReadyResult::DISCONNECTED_IN : WaitForReadyResult::DISCONNECTED_OUT;
             } else if ((fdspec.events & POLLIN && fdspec.revents & POLLIN) || (fdspec.events & POLLOUT && fdspec.revents & POLLOUT)) {
                 // Expected case.
@@ -82,8 +80,6 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
 
     unique_ptr<SHTTPSManager::Socket> s;
     while (chrono::steady_clock::now() < (start + 5s) && !sent) {
-        // Ok, we want to retry this for up to 5 seconds if we can't get the address.
-        // Ideally, we let SQLiteNode notify us of changes here, but we can probably just wait for now.
         string leaderAddress = _node->leaderCommandAddress();
         if (leaderAddress.empty()) {
             SINFO("[HTTPESC] No leader address.");
