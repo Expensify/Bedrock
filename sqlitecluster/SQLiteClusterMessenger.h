@@ -11,7 +11,7 @@ class SQLiteClusterMessenger {
         SHUTTING_DOWN,
         TIMEOUT,
         DISCONNECTED_IN,
-        DISCONNETED_OUT,
+        DISCONNECTED_OUT,
         UNSPECIFIED,
         POLL_ERROR,
     };

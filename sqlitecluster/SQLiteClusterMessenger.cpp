@@ -52,7 +52,7 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
                 SINFO("[HTTPESC] Socket disconnected while waiting to be ready (" << type << ").");
                 // This case in particular happens if we try and escalate to a leader with a closed command port. Maybe
                 // we should wait and retry?
-                return fdspec.events == POLLIN ? WaitForReadyResult::DISCONNECTED_IN : WaitForReadyResult::DISCONNETED_OUT;
+                return fdspec.events == POLLIN ? WaitForReadyResult::DISCONNECTED_IN : WaitForReadyResult::DISCONNECTED_OUT;
             } else if ((fdspec.events & POLLIN && fdspec.revents & POLLIN) || (fdspec.events & POLLOUT && fdspec.revents & POLLOUT)) {
                 // Expected case.
                 return WaitForReadyResult::OK;
@@ -122,7 +122,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
         pollfd fdspec = {s->s, POLLOUT, 0};
         while (true) {
             WaitForReadyResult result = waitForReady(fdspec, command.timeout());
-            if (result == WaitForReadyResult::DISCONNECTED_IN) {
+            if (result == WaitForReadyResult::DISCONNECTED_OUT) {
                 // This is the case we're likely to get if the leader's port is closed.
                 // We break this loop and let the top loop (with the timer) start over.
                 // But first we sleep 1/2 second to make this not spam a million times.
