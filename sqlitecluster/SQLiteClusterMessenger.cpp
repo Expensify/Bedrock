@@ -82,6 +82,14 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     while (chrono::steady_clock::now() < (start + 5s) && !sent) {
         string leaderAddress = _node->leaderCommandAddress();
         if (leaderAddress.empty()) {
+            // If there's no leader, it's possible we're supposed to be the leader. In this case, we can exit early.
+            auto myState = _node->getState();
+            if (myState == STCPNode::LEADING || myState == STCPNode::STANDINGUP) {
+                SINFO("[HTTPESC] I'm the leader now! Exiting early.");
+                return false;
+            }
+
+            // Otherwise, just wait until there is a leader.
             SINFO("[HTTPESC] No leader address.");
             sleepsDueToFailures++;
             usleep(500'000);
