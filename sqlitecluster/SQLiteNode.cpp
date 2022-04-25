@@ -3167,9 +3167,6 @@ SQLiteNode::State SQLiteNode::stateFromName(const string& name) {
     }
 }
 
-#undef SLOGPREFIX
-#define SLOGPREFIX "{" << name << "} "
-
 SQLiteNode::Peer::Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
   : name(name_), host(host_), id(id_), params(params_), permaFollower(isPermafollower(params)),
     commitCount(0),
@@ -3187,9 +3184,7 @@ SQLiteNode::Peer::Peer(const string& name_, const string& host_, const STable& p
 { }
 
 SQLiteNode::Peer::~Peer() {
-    if (socket) {
-        delete socket;
-    }
+    delete socket;
 }
 
 bool SQLiteNode::Peer::connected() const {
@@ -3202,9 +3197,7 @@ void SQLiteNode::Peer::reset() {
     latency = 0;
     loggedIn = false;
     priority = 0;
-    if (socket) {
-        delete socket;
-    }
+    delete socket;
     socket = nullptr;
     state = SEARCHING;
     standupResponse = Response::NONE;
@@ -3212,15 +3205,6 @@ void SQLiteNode::Peer::reset() {
     transactionResponse = Response::NONE;
     version = "";
     setCommit(0, "");
-}
-
-void SQLiteNode::Peer::sendMessage(const SData& message) {
-    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
-    if (socket) {
-        socket->send(message.serialize());
-    } else {
-        SWARN("Tried to send " << message.methodLine << " to peer, but not available.");
-    }
 }
 
 string SQLiteNode::Peer::responseName(Response response) {
@@ -3287,6 +3271,18 @@ bool SQLiteNode::Peer::isPermafollower(const STable& params) {
         return true;
     }
     return false;
+}
+
+#undef SLOGPREFIX
+#define SLOGPREFIX "{" << name << "} "
+
+void SQLiteNode::Peer::sendMessage(const SData& message) {
+    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
+    if (socket) {
+        socket->send(message.serialize());
+    } else {
+        SWARN("Tried to send " << message.methodLine << " to peer, but not available.");
+    }
 }
 
 ostream& operator<<(ostream& os, const atomic<SQLiteNode::Peer::Response>& response)
