@@ -5,6 +5,17 @@ class BedrockCommand;
 
 class SQLiteClusterMessenger {
   public:
+
+    enum class WaitForReadyResult {
+        OK,
+        SHUTTING_DOWN,
+        TIMEOUT,
+        DISCONNECTED_IN,
+        DISCONNECTED_OUT,
+        UNSPECIFIED,
+        POLL_ERROR,
+    };
+
     SQLiteClusterMessenger(shared_ptr<SQLiteNode>& node);
 
     // Attempts to make a TCP connection to the leader, and run the given command there, setting the appropriate
@@ -24,7 +35,7 @@ class SQLiteClusterMessenger {
     // This takes a pollfd with either POLLIN or POLLOUT set, and waits for the socket to be ready to read or write,
     // respectively. It returns true if ready, or false if error or timeout. The timeout is specified as a timestamp in
     // microseconds.
-    bool waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp);
+    WaitForReadyResult waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp);
 
     // This sets a command as a 500 and marks it as complete.
     void setErrorResponse(BedrockCommand& command);

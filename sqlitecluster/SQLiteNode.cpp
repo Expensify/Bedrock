@@ -434,7 +434,7 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
 
 void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget) {
     AutoTimerTime time(_escalateTimer);
-    lock_guard<mutex> leadPeerLock(_leadPeerMutex);
+    unique_lock<shared_mutex> leadPeerLock(_leadPeerMutex);
     // Send this to the leader
     SASSERT(_leadPeer);
 
@@ -758,7 +758,7 @@ bool SQLiteNode::update() {
         if (currentLeader && _priority < highestPriorityPeer->priority && currentLeader->state == LEADING) {
             // Subscribe to the leader
             SINFO("Subscribing to leader '" << currentLeader->name << "'");
-            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
+            unique_lock<shared_mutex> leadPeerLock(_leadPeerMutex);
             _leadPeer = currentLeader;
             _leaderVersion = _leadPeer.load()->version;
             _sendToPeer(currentLeader, SData("SUBSCRIBE"));
@@ -1172,7 +1172,7 @@ bool SQLiteNode::update() {
         if (STimeNow() > _stateTimeout) {
             // Give up
             SHMMM("Timed out waiting for SUBSCRIPTION_APPROVED, reconnecting to leader and re-SEARCHING.");
-            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
+            unique_lock<shared_mutex> leadPeerLock(_leadPeerMutex);
             _reconnectPeer(_leadPeer);
             _leadPeer = nullptr;
             _changeState(SEARCHING);
@@ -1881,7 +1881,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
         PHMMM("Lost our LEADER, re-SEARCHING.");
         SASSERTWARN(_state == SUBSCRIBING || _state == FOLLOWING);
         {
-            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
+            unique_lock<shared_mutex> leadPeerLock(_leadPeerMutex);
             _leadPeer = nullptr;
         }
         if (!_db.getUncommittedHash().empty()) {
@@ -2003,16 +2003,12 @@ void SQLiteNode::broadcast(const SData& message, Peer* peer) {
 }
 
 void SQLiteNode::_changeState(SQLiteNode::State newState) {
-    // Did we actually change _state?
-    State oldState = _state;
-
-    // Not sure if this is entirely adequate.
     SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
     _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
-    if (newState != oldState) {
+    if (newState != _state) {
         // If we were following, and now we're not, we give up an any replications.
-        if (oldState == FOLLOWING) {
+        if (_state == FOLLOWING) {
             _replicationThreadsShouldExit = true;
             uint64_t cancelAfter = _leaderCommitNotifier.getValue();
             SINFO("Replication threads should exit, canceling commits after current leader commit " << cancelAfter);
@@ -2057,7 +2053,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         _stateTimeout = STimeNow() + timeout;
 
         // Additional logic for some old states
-        if (SWITHIN(LEADING, oldState, STANDINGDOWN) && !SWITHIN(LEADING, newState, STANDINGDOWN)) {
+        if (SWITHIN(LEADING, _state, STANDINGDOWN) && !SWITHIN(LEADING, newState, STANDINGDOWN)) {
             // If we stop leading, unset _leaderVersion from our own _version.
             // It will get re-set to the version on the new leader.
             _leaderVersion = "";
@@ -2082,7 +2078,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         // Clear some state if we can
         if (newState < SUBSCRIBING) {
             // We're no longer SUBSCRIBING or FOLLOWING, so we have no leader
-            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
+            unique_lock<shared_mutex> leadPeerLock(_leadPeerMutex);
             _leadPeer = nullptr;
         }
 
@@ -2523,7 +2519,7 @@ void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& m
             response["NewCount"] = SToStr(db.getCommitCount() + 1);
             response["NewHash"] = success ? db.getUncommittedHash() : message["NewHash"];
             response["ID"] = message["ID"];
-            lock_guard<mutex> leadPeerLock(_leadPeerMutex);
+            unique_lock<shared_mutex> leadPeerLock(_leadPeerMutex);
             if (!_leadPeer) {
                 STHROW("no leader?");
             }
@@ -2609,13 +2605,20 @@ void SQLiteNode::handleRollbackTransaction(SQLite& db, Peer* peer, const SData& 
 }
 
 SQLiteNode::State SQLiteNode::leaderState() const {
-    lock_guard<mutex> leadPeerLock(_leadPeerMutex);
+    shared_lock<shared_mutex> leadPeerLock(_leadPeerMutex);
     if (_leadPeer) {
         return _leadPeer.load()->state;
     }
     return State::UNKNOWN;
 }
 
+string SQLiteNode::leaderCommandAddress() const {
+    shared_lock<shared_mutex> leadPeerLock(_leadPeerMutex);
+    if (_leadPeer && _leadPeer.load()->state == State::LEADING) {
+        return _leadPeer.load()->commandAddress;
+    }
+    return "";
+}
 
 void SQLiteNode::handleSerialBeginTransaction(Peer* peer, const SData& message) {
     AutoScopedWallClockTimer timer(_syncTimer);

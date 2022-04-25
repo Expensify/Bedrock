@@ -117,6 +117,9 @@ class SQLiteNode : public STCPNode {
     // for data, and send the new commit.
     void notifyCommit();
 
+    // Return the command address of the current leader, if there is one (empty string otherwise).
+    string leaderCommandAddress() const;
+
   private:
     // STCPNode API: Peer handling framework functions
     void _onConnect(Peer* peer);
@@ -158,7 +161,7 @@ class SQLiteNode : public STCPNode {
     // There's a mutex here to lock around changes to this, or any complex operations that expect leader to remain
     // unchanged throughout, notably, _sendToPeer. This is sort of a mess, but replication threads need to send
     // acknowledgments to the lead peer, but the main sync loop can update that at any time.
-    mutable mutex _leadPeerMutex;
+    mutable shared_mutex _leadPeerMutex;
 
     // Timestamp that, if we pass with no activity, we'll give up on our current state, and start over from SEARCHING.
     uint64_t _stateTimeout;
