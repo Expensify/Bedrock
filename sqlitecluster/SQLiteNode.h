@@ -467,9 +467,6 @@ class SQLiteNode : public STCPManager {
     // to wait up to a full second for them.
     SSynchronizedQueue<bool> _commitsToSend;
 
-    // Override dead function
-    void postPoll(fd_map& ignore) { SERROR("Don't call."); }
-
     // Helper functions
     void _sendPING(Peer* peer);
 };
