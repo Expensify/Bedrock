@@ -1,22 +1,173 @@
 #pragma once
 #include <libstuff/libstuff.h>
 #include <libstuff/SSynchronizedQueue.h>
-#include <libstuff/STCPNode.h>
+#include <libstuff/STCPManager.h>
 #include <sqlitecluster/SQLite.h>
 #include <sqlitecluster/SQLitePool.h>
 #include <sqlitecluster/SQLiteSequentialNotifier.h>
 #include <WallClockTimer.h>
 #include <SynchronizedMap.h>
 
+// Convenience class for maintaining connections with a mesh of peers
+#define PDEBUG(_MSG_) SDEBUG("->{" << peer->name << "} " << _MSG_)
+#define PINFO(_MSG_) SINFO("->{" << peer->name << "} " << _MSG_)
+#define PHMMM(_MSG_) SHMMM("->{" << peer->name << "} " << _MSG_)
+#define PWARN(_MSG_) SWARN("->{" << peer->name << "} " << _MSG_)
+
+// Diagnostic class for timing what fraction of time happens in certain blocks.
+class AutoTimer {
+  public:
+    AutoTimer(string name) : _name(name), _intervalStart(chrono::steady_clock::now()), _countedTime(0) { }
+    void start() { _instanceStart = chrono::steady_clock::now(); };
+    void stop() {
+        auto stopped = chrono::steady_clock::now();
+        _countedTime += stopped - _instanceStart;
+        if (stopped > (_intervalStart + 10s)) {
+            auto counted = chrono::duration_cast<chrono::milliseconds>(_countedTime).count();
+            auto elapsed = chrono::duration_cast<chrono::milliseconds>(stopped - _intervalStart).count();
+            static char percent[10] = {0};
+            snprintf(percent, 10, "%.2f", static_cast<double>(counted) / static_cast<double>(elapsed) * 100.0);
+            SINFO("[performance] AutoTimer (" << _name << "): " << counted << "/" << elapsed << " ms timed, " << percent << "%");
+            _intervalStart = stopped;
+            _countedTime = chrono::microseconds::zero();
+        }
+    };
+
+  private:
+    string _name;
+    chrono::steady_clock::time_point _intervalStart;
+    chrono::steady_clock::time_point _instanceStart;
+    chrono::steady_clock::duration _countedTime;
+};
+
+class AutoTimerTime {
+  public:
+    AutoTimerTime(AutoTimer& t) : _t(t) { _t.start(); }
+    ~AutoTimerTime() { _t.stop(); }
+
+  private:
+    AutoTimer& _t;
+};
+
 class SQLiteCommand;
 class SQLiteServer;
 
 // Distributed, leader/follower, failover, transactional DB cluster
-class SQLiteNode : public STCPNode {
+class SQLiteNode : public STCPManager {
+  public:
+
+    // Possible states of a node in a DB cluster
+    enum State {
+        UNKNOWN,
+        SEARCHING,     // Searching for peers
+        SYNCHRONIZING, // Synchronizing with highest priority peer
+        WAITING,       // Waiting for an opportunity to leader or follower
+        STANDINGUP,    // Taking over leadership
+        LEADING,       // Acting as leader node
+        STANDINGDOWN,  // Giving up leader role
+        SUBSCRIBING,   // Preparing to follow the leader
+        FOLLOWING      // Following the leader node
+    };
+
+    // Represents a single peer in the database cluster
+    class Peer {
+      public:
+
+        // Possible responses from a peer.
+        enum class Response {
+            NONE,
+            APPROVE,
+            DENY
+        };
+
+        // Const (and thus implicitly thread-safe) attributes of this Peer.
+        const string name;
+        const string host;
+        const uint64_t id;
+        const STable params;
+        const bool permaFollower;
+
+        // This is const because it's public, and we don't want it to be changed outside of this class, as it needs to
+        // be synchronized with `hash`. However, it's often useful just as it is, so we expose it like this and update
+        // it with `const_cast`. `hash` is only used in few places, so is private, and can only be accessed with
+        // `getCommit`, thus reducing the risk of anyone getting out-of-sync commitCount and hash.
+        const atomic<uint64_t> commitCount;
+
+        // The rest of these are atomic so they can be read by multiple threads, but there's no special synchronization
+        // required between them.
+        atomic<int> failedConnections;
+        atomic<uint64_t> latency;
+        atomic<bool> loggedIn;
+        atomic<uint64_t> nextReconnect;
+        atomic<int> priority;
+        atomic<State> state;
+        atomic<Response> standupResponse;
+        atomic<bool> subscribed;
+        atomic<Response> transactionResponse;
+        atomic<string> version;
+
+        // An address on which this peer can accept commands.
+        atomic<string> commandAddress;
+
+        // Constructor.
+        Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
+        ~Peer();
+
+        // Atomically set commit and hash.
+        void setCommit(uint64_t count, const string& hashString);
+
+        // Atomically get commit and hash.
+        void getCommit(uint64_t& count, string& hashString);
+
+        // Gets an STable representation of this peer's current state in order to display status info.
+        STable getData() const;
+
+        // Returns true if there's an active connection to this Peer.
+        bool connected() const;
+
+        // Reset a peer, as if disconnected and starting the connection over.
+        void reset();
+
+        // Send a message to this peer. Thread-safe.
+        void sendMessage(const SData& message);
+
+        // Get a string name for a Response object.
+        static string responseName(Response response);
+
+      private:
+        // The hash corresponding to commitCount.
+        atomic<string> hash;
+
+        // This allows direct access to the socket from the node object that should actually be managing peer
+        // connections, which should always be handled by a single thread, and thus safe. Ideally, this isn't required,
+        // but for the time being, the amount of refactoring required to fix that is too high.
+        friend class SQLiteNode;
+        Socket* socket = nullptr;
+
+        // Mutex for locking around non-atomic member access (for set/getCommit, accessing socket, etc).
+        mutable recursive_mutex _stateMutex;
+
+        // For initializing the permafollower value from the params list.
+        static bool isPermafollower(const STable& params);
+    };
+
     // This exists to expose internal state to a test harness. It is not used otherwise.
     friend class SQLiteNodeTester;
 
-  public:
+    static const string& stateName(State state);
+    static State stateFromName(const string& name);
+
+    Socket* acceptSocket();
+
+    // Do we need a mutex protecting this? Depends.
+    list<STCPManager::Socket*> socketList;
+
+    // Attributes
+    string name;
+    uint64_t recvTimeout;
+    const vector<Peer*> peerList;
+    list<Socket*> acceptedSocketList;
+
     // Receive timeout for 'normal' SQLiteNode messages
     static const uint64_t SQL_NODE_DEFAULT_RECV_TIMEOUT;
 
@@ -74,9 +225,11 @@ class SQLiteNode : public STCPNode {
     // Call this if you want to shut down the node.
     void beginShutdown(uint64_t usToWait);
 
-    // Override the base class.
-    virtual void prePoll(fd_map& fdm) override;
-    virtual void postPoll(fd_map& fdm, uint64_t& nextActivity) override;
+    // Prepare a set of sockets to wait for read/write.
+    void prePoll(fd_map& fdm);
+
+    // Handle any read/write events that occurred.
+    void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Call this to check if the node's completed shutting down.
     bool shutdownComplete();
@@ -121,9 +274,25 @@ class SQLiteNode : public STCPNode {
     string leaderCommandAddress() const;
 
   private:
-    // STCPNode API: Peer handling framework functions
+    AutoTimer _deserializeTimer;
+    AutoTimer _sConsumeFrontTimer;
+    AutoTimer _sAppendTimer;
+
+    // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
+    Peer* getPeerByID(uint64_t id);
+
+    // Inverse of the above function. If the peer is not found, returns 0.
+    uint64_t getIDByPeer(Peer* peer);
+
+    unique_ptr<Port> port;
+
+    // Called when we first establish a connection with a new peer
     void _onConnect(Peer* peer);
+
+    // Called when we lose connection with a peer
     void _onDisconnect(Peer* peer);
+
+    // Called when the peer sends us a message; throw an SException to reconnect.
     void _onMESSAGE(Peer* peer, const SData& message);
 
     // This is a pool of DB handles that this node can use for any DB access it needs. Currently, it hands them out to
@@ -297,4 +466,11 @@ class SQLiteNode : public STCPNode {
     // This is just here to allow `poll` to get interrupted when there are new commits to send. We don't want followers
     // to wait up to a full second for them.
     SSynchronizedQueue<bool> _commitsToSend;
+
+    // Helper functions
+    void _sendPING(Peer* peer);
 };
+
+// serialization for Responses.
+ostream& operator<<(ostream& os, const atomic<SQLiteNode::Peer::Response>& response);
+
