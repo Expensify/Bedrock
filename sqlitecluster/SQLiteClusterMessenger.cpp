@@ -40,7 +40,7 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
     while (true) {
         int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
         if (!result) {
-            if (_shutDownBy) {
+            if (_shutDownBy && STimeNow() > _shutDownBy) {
                 SINFO("[HTTPESC] Giving up because shutting down.");
                 return WaitForReadyResult::SHUTTING_DOWN;
             } else if (timeoutTimestamp && timeoutTimestamp < STimeNow()) {
