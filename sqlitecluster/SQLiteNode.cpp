@@ -10,9 +10,8 @@
 
 // Introduction
 // ------------
-// SQLiteNode builds atop STCPNode and SQLite to provide a distributed transactional SQL database. The STCPNode base
-// class establishes and maintains connections with all peers: if any connection fails, it forever attempts to
-// re-establish. This frees the SQLiteNode layer to focus on the high-level distributed database state machine.
+// SQLiteNode builds atop SQLite to provide a distributed transactional SQL database. It establishes and maintains
+// connections with all peers: if any connection fails, it forever attempts to re-establish.
 //
 // FIXME: Handle the case where two nodes have conflicting databases. Should find where they fork, tag the affected
 //        accounts for manual review, and adopt the higher-priority
