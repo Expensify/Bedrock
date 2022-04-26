@@ -69,7 +69,6 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-v", ""},
         {"-quorumCheckpoint", "50"},
         {"-enableMultiWrite", "true"},
-        {"-escalateOverHTTP", "true"},
         {"-cacheSize", "1000"},
         {"-parallelReplication", "true"},
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?

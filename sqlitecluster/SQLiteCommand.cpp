@@ -24,7 +24,6 @@ SData SQLiteCommand::preprocessRequest(SData&& request) {
 SQLiteCommand::SQLiteCommand(SData&& _request) : 
     privateRequest(move(preprocessRequest(move(_request)))),
     request(privateRequest),
-    initiatingPeerID(0),
     initiatingClientID(0),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
@@ -54,7 +53,6 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
 SQLiteCommand::SQLiteCommand(SQLiteCommand&& from) : 
     privateRequest(move(from.privateRequest)),
     request(privateRequest),
-    initiatingPeerID(from.initiatingPeerID),
     initiatingClientID(from.initiatingClientID),
     id(move(from.id)),
     jsonContent(move(from.jsonContent)),
@@ -70,7 +68,6 @@ SQLiteCommand::SQLiteCommand(SQLiteCommand&& from) :
 SQLiteCommand::SQLiteCommand() :
     privateRequest(),
     request(privateRequest),
-    initiatingPeerID(0),
     initiatingClientID(0),
     writeConsistency(SQLiteNode::ASYNC),
     complete(false),
