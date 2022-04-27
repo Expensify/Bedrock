@@ -8,12 +8,6 @@
 #include <WallClockTimer.h>
 #include <SynchronizedMap.h>
 
-// Convenience class for maintaining connections with a mesh of peers
-#define PDEBUG(_MSG_) SDEBUG("->{" << peer->name << "} " << _MSG_)
-#define PINFO(_MSG_) SINFO("->{" << peer->name << "} " << _MSG_)
-#define PHMMM(_MSG_) SHMMM("->{" << peer->name << "} " << _MSG_)
-#define PWARN(_MSG_) SWARN("->{" << peer->name << "} " << _MSG_)
-
 // Diagnostic class for timing what fraction of time happens in certain blocks.
 class AutoTimer {
   public:
@@ -56,6 +50,9 @@ class SQLiteServer;
 class SQLiteNode : public STCPManager {
   public:
 
+    // This exists to expose internal state to a test harness. It is not used otherwise.
+    friend class SQLiteNodeTester;
+
     // Possible states of a node in a DB cluster
     enum State {
         UNKNOWN,
@@ -67,6 +64,23 @@ class SQLiteNode : public STCPManager {
         STANDINGDOWN,  // Giving up leader role
         SUBSCRIBING,   // Preparing to follow the leader
         FOLLOWING      // Following the leader node
+    };
+
+    // Write consistencies available
+    enum ConsistencyLevel {
+        ASYNC,  // Fully asynchronous write, no follower approval required.
+        ONE,    // Require exactly one approval (likely from a peer on the same LAN)
+        QUORUM, // Require majority approval
+        NUM_CONSISTENCY_LEVELS
+    };
+
+    // These are the possible states a transaction can be in.
+    enum class CommitState {
+        UNINITIALIZED,
+        WAITING,
+        COMMITTING,
+        SUCCESS,
+        FAILED
     };
 
     // Represents a single peer in the database cluster
@@ -151,22 +165,8 @@ class SQLiteNode : public STCPManager {
         static bool isPermafollower(const STable& params);
     };
 
-    // This exists to expose internal state to a test harness. It is not used otherwise.
-    friend class SQLiteNodeTester;
-
     static const string& stateName(State state);
     static State stateFromName(const string& name);
-
-    Socket* acceptSocket();
-
-    // Do we need a mutex protecting this? Depends.
-    list<STCPManager::Socket*> socketList;
-
-    // Attributes
-    string name;
-    uint64_t recvTimeout;
-    const vector<Peer*> peerList;
-    list<Socket*> acceptedSocketList;
 
     // Receive timeout for 'normal' SQLiteNode messages
     static const uint64_t SQL_NODE_DEFAULT_RECV_TIMEOUT;
@@ -174,23 +174,14 @@ class SQLiteNode : public STCPManager {
     // Separate timeout for receiving and applying synchronization commits.
     static const uint64_t SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT;
 
-    // Write consistencies available
-    enum ConsistencyLevel {
-        ASYNC,  // Fully asynchronous write, no follower approval required.
-        ONE,    // Require exactly one approval (likely from a peer on the same LAN)
-        QUORUM, // Require majority approval
-        NUM_CONSISTENCY_LEVELS
-    };
     static const string consistencyLevelNames[NUM_CONSISTENCY_LEVELS];
 
-    // These are the possible states a transaction can be in.
-    enum class CommitState {
-        UNINITIALIZED,
-        WAITING,
-        COMMITTING,
-        SUCCESS,
-        FAILED
-    };
+    // This is a static function that can 'peek' a command initiated by a peer, but can be called by any thread.
+    // Importantly for thread safety, this cannot depend on the current state of the cluster or a specific node.
+    // Returns false if the node can't peek the command.
+    static bool peekPeerCommand(shared_ptr<SQLiteNode>, SQLite& db, SQLiteCommand& command);
+
+    //Every non-const method below needs to lock exlusive. Every other method can lock shared.
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,
@@ -198,35 +189,60 @@ class SQLiteNode : public STCPManager {
                const string& commandPort = "localhost:8890");
     ~SQLiteNode();
 
-    const vector<Peer*> initPeers(const string& peerList);
-
-    // Simple Getters. See property definitions for details.
-    State         getState()         { return _state; }
-    int           getPriority()      { return _priority; }
-    const string& getLeaderVersion() { return _leaderVersion; }
-    const string& getVersion()       { return _version; }
-    uint64_t      getCommitCount()   { return _db.getCommitCount(); }
+    // Const methods.
+    State getState() const { return _state; }
+    int getPriority() const { return _priority; }
+    const string& getLeaderVersion() const { return _leaderVersion; }
+    const string& getVersion() const { return _version; }
+    uint64_t getCommitCount() const { return _db.getCommitCount(); }
 
     // Returns whether we're in the process of gracefully shutting down.
-    bool gracefulShutdown() { return (_gracefulShutdownTimeout.alarmDuration != 0); }
+    bool gracefulShutdown() const { return (_gracefulShutdownTimeout.alarmDuration != 0); }
 
     // True from when we call 'startCommit' until the commit has been sent to (and, if it required replication,
     // acknowledged by) peers.
-    bool commitInProgress() { return (_commitState == CommitState::WAITING || _commitState == CommitState::COMMITTING); }
+    bool commitInProgress() const { return (_commitState == CommitState::WAITING || _commitState == CommitState::COMMITTING); }
 
     // Returns true if the last commit was successful. If called while `commitInProgress` would return true, it returns
     // false.
-    bool commitSucceeded() { return _commitState == CommitState::SUCCESS; }
+    bool commitSucceeded() const { return _commitState == CommitState::SUCCESS; }
+
+    // Return the state of the lead peer. Returns UNKNOWN if there is no leader, or if we are the leader.
+    State leaderState() const;
 
     // Returns true if we're LEADING with enough FOLLOWERs to commit a quorum transaction. Not thread-safe to call
     // outside the sync thread.
-    bool hasQuorum();
+    bool hasQuorum() const;
+
+    // Tell the node a commit has been made by another thread, so that we can interrupt our poll loop if we're waiting
+    // for data, and send the new commit.
+    void notifyCommit() const;
+
+    // Return the command address of the current leader, if there is one (empty string otherwise).
+    string leaderCommandAddress() const;
+
+    // Prepare a set of sockets to wait for read/write.
+    void prePoll(fd_map& fdm) const;
+
+    // non-const methods
+    Socket* acceptSocket();
+
+    // If we have a command that can't be handled on a follower, we can escalate it to the leader node. The SQLiteNode
+    // takes ownership of the command until it receives a response from the follower. When the command completes, it will
+    // be re-queued in the SQLiteServer (_server), but its `complete` field will be set to true.
+    // If the 'forget' flag is set, we will not expect a response from leader for this command.
+    [[deprecated("Use HTTP escalation")]]
+    void escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget = false);
+
+    // This takes a completed command and sends the response back to the originating peer. If we're not the leader
+    // node, or if this command doesn't have an `initiatingPeerID`, then calling this function is an error.
+    [[deprecated("Use HTTP escalation")]]
+    void sendResponse(const SQLiteCommand& command);
+
+    const vector<Peer*> initPeers(const string& peerList);
 
     // Call this if you want to shut down the node.
     void beginShutdown(uint64_t usToWait);
-
-    // Prepare a set of sockets to wait for read/write.
-    void prePoll(fd_map& fdm);
 
     // Handle any read/write events that occurred.
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
@@ -238,53 +254,68 @@ class SQLiteNode : public STCPManager {
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
 
-    // Return the state of the lead peer. Returns UNKNOWN if there is no leader, or if we are the leader.
-    State leaderState() const;
-
     // Begins the process of committing a transaction on this SQLiteNode's database. When this returns,
     // commitInProgress() will return true until the commit completes.
     void startCommit(ConsistencyLevel consistency);
 
-    // If we have a command that can't be handled on a follower, we can escalate it to the leader node. The SQLiteNode
-    // takes ownership of the command until it receives a response from the follower. When the command completes, it will
-    // be re-queued in the SQLiteServer (_server), but its `complete` field will be set to true.
-    // If the 'forget' flag is set, we will not expect a response from leader for this command.
-    void escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget = false);
-
-    // This takes a completed command and sends the response back to the originating peer. If we're not the leader
-    // node, or if this command doesn't have an `initiatingPeerID`, then calling this function is an error.
-    void sendResponse(const SQLiteCommand& command);
-
-    // This is a static function that can 'peek' a command initiated by a peer, but can be called by any thread.
-    // Importantly for thread safety, this cannot depend on the current state of the cluster or a specific node.
-    // Returns false if the node can't peek the command.
-    static bool peekPeerCommand(shared_ptr<SQLiteNode>, SQLite& db, SQLiteCommand& command);
-
-    // This exists so that the _server can inspect internal state for diagnostic purposes.
-    list<string> getEscalatedCommandRequestMethodLines();
-
     // This will broadcast a message to all peers, or a specific peer.
     void broadcast(const SData& message, Peer* peer = nullptr);
 
-    // Tell the node a commit has been made by another thread, so that we can interrupt our poll loop if we're waiting
-    // for data, and send the new commit.
-    void notifyCommit();
+    // Attributes
+    string name;
+    uint64_t recvTimeout;
+    const vector<Peer*> peerList;
 
-    // Return the command address of the current leader, if there is one (empty string otherwise).
-    string leaderCommandAddress() const;
+    // What is this?
+    list<Socket*> acceptedSocketList;
 
   private:
-    AutoTimer _deserializeTimer;
-    AutoTimer _sConsumeFrontTimer;
-    AutoTimer _sAppendTimer;
+    // Utility class that can decrement _replicationThreadCount when objects go out of scope.
+    template <typename CounterType>
+    class ScopedDecrement {
+      public:
+        ScopedDecrement(CounterType& counter) : _counter(counter) {} 
+        ~ScopedDecrement() {
+            --_counter;
+        }
+      private:
+        CounterType& _counter;
+    };
+
+    // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
+    // any new committed transactions to peers, and update this value.
+    static uint64_t _lastSentTransactionID;
+
+    // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
+    // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
+    // thread with a different DB object) - which is why this is static.
+    static void _queueSynchronize(SQLiteNode* node, Peer* peer, SQLite& db, SData& response, bool sendAll);
+
+    // Monotonically increasing thread counter, used for thread IDs for logging purposes.
+    static atomic<int64_t> _currentCommandThreadID;
+
+    // This is the main replication loop that's run in the replication threads. It's instantiated in a new thread for
+    // each new relevant replication command received by the sync thread.
+    //
+    // There are three commands we currently handle here BEGIN_TRANSACTION, ROLLBACK_TRANSACTION, and
+    // COMMIT_TRANSACTION.
+    // ROLLBACK_TRANSACTION and COMMIT_TRANSACTION are trivial, they record the new highest commit number from LEADER,
+    // or instruct the node to go SEARCHING and reconnect if a distributed ROLLBACK happens.
+    //
+    // BEGIN_TRANSACTION is where the interesting case is. This starts all transactions in parallel, and then waits
+    // until each previous transaction is committed such that the final commit order matches LEADER. It also handles
+    // commit conflicts by re-running the transaction from the beginning. Most of the logic for making sure
+    // transactions are ordered correctly is done in `SQLiteSequentialNotifier`, which is worth reading.
+    //
+    // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
+    // which happens when a node stops FOLLOWING.
+    static void replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex);
 
     // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
     Peer* getPeerByID(uint64_t id);
 
     // Inverse of the above function. If the peer is not found, returns 0.
     uint64_t getIDByPeer(Peer* peer);
-
-    unique_ptr<Port> port;
 
     // Called when we first establish a connection with a new peer
     void _onConnect(Peer* peer);
@@ -295,6 +326,47 @@ class SQLiteNode : public STCPManager {
     // Called when the peer sends us a message; throw an SException to reconnect.
     void _onMESSAGE(Peer* peer, const SData& message);
 
+    // Choose the best peer to synchronize from. If no other peer is logged in, or no logged in peer has a higher
+    // commitCount that we do, this will return null.
+    void _updateSyncPeer();
+
+    // Helper methods
+    void _sendToPeer(Peer* peer, const SData& message);
+    void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
+    void _changeState(State newState);
+
+    void _recvSynchronize(Peer* peer, const SData& message);
+    void _reconnectPeer(Peer* peer);
+    void _reconnectAll();
+    bool _isQueuedCommandMapEmpty();
+    bool _isNothingBlockingShutdown();
+    bool _majoritySubscribed();
+
+    // Replicates any transactions that have been made on our database by other threads to peers.
+    void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
+
+    // Handler for transaction messages.
+    void handleBeginTransaction(SQLite& db, Peer* peer, const SData& message, bool wasConflict);
+    void handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message);
+    int handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
+    void handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message);
+    
+    // Legacy versions of the above functions for serial replication.
+    void handleSerialBeginTransaction(Peer* peer, const SData& message);
+    void handleSerialCommitTransaction(Peer* peer, const SData& message);
+    void handleSerialRollbackTransaction(Peer* peer, const SData& message);
+
+    // Helper functions
+    void _sendPING(Peer* peer);
+
+    // A bunch of private properties.
+    list<STCPManager::Socket*> _socketList;
+
+    AutoTimer _deserializeTimer;
+    AutoTimer _sConsumeFrontTimer;
+    AutoTimer _sAppendTimer;
+    unique_ptr<Port> port;
+
     // This is a pool of DB handles that this node can use for any DB access it needs. Currently, it hands them out to
     // replication threads as required. It's passed in via the constructor.
     shared_ptr<SQLitePool> _dbPool;
@@ -304,14 +376,7 @@ class SQLiteNode : public STCPManager {
     // to commit and replicate them.
     SQLite& _db;
 
-    // Choose the best peer to synchronize from. If no other peer is logged in, or no logged in peer has a higher
-    // commitCount that we do, this will return null.
-    void _updateSyncPeer();
     Peer* _syncPeer;
-
-    // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
-    // any new committed transactions to peers, and update this value.
-    static uint64_t _lastSentTransactionID;
 
     // Our priority, with respect to other nodes in the cluster. This is passed in to our constructor. The node with
     // the highest priority in the cluster will attempt to become the leader.
@@ -361,28 +426,10 @@ class SQLiteNode : public STCPManager {
     // The timestamp of the (end of) the last quorum commit.
     uint64_t _lastQuorumTime;
 
-    // Helper methods
-    void _sendToPeer(Peer* peer, const SData& message);
-    void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
-    void _changeState(State newState);
-
-    // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
-    // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
-    // thread with a different DB object) - which is why this is static.
-    static void _queueSynchronize(SQLiteNode* node, Peer* peer, SQLite& db, SData& response, bool sendAll);
-    void _recvSynchronize(Peer* peer, const SData& message);
-    void _reconnectPeer(Peer* peer);
-    void _reconnectAll();
-    bool _isQueuedCommandMapEmpty();
-    bool _isNothingBlockingShutdown();
-    bool _majoritySubscribed();
-
     // When we're a follower, we can escalate a command to the leader. When we do so, we store that command in the
     // following map of commandID to Command until the follower responds.
     SynchronizedMap<string, unique_ptr<SQLiteCommand>> _escalatedCommandMap;
 
-    // Replicates any transactions that have been made on our database by other threads to peers.
-    void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
 
     // The server object to which we'll pass incoming escalated commands.
     SQLiteServer& _server;
@@ -395,17 +442,6 @@ class SQLiteNode : public STCPManager {
     // Last time we recorded network stats.
     chrono::steady_clock::time_point _lastNetStatTime;
 
-    // Handler for transaction messages.
-    void handleBeginTransaction(SQLite& db, Peer* peer, const SData& message, bool wasConflict);
-    void handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message);
-    int handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
-    void handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message);
-    
-    // Legacy versions of the above functions for serial replication.
-    void handleSerialBeginTransaction(Peer* peer, const SData& message);
-    void handleSerialCommitTransaction(Peer* peer, const SData& message);
-    void handleSerialRollbackTransaction(Peer* peer, const SData& message);
-
     WallClockTimer _syncTimer;
     atomic<uint64_t> _handledCommitCount;
 
@@ -415,23 +451,6 @@ class SQLiteNode : public STCPManager {
     SQLiteSequentialNotifier _localCommitNotifier;
     SQLiteSequentialNotifier _leaderCommitNotifier;
 
-    // This is the main replication loop that's run in the replication threads. It's instantiated in a new thread for
-    // each new relevant replication command received by the sync thread.
-    //
-    // There are three commands we currently handle here BEGIN_TRANSACTION, ROLLBACK_TRANSACTION, and
-    // COMMIT_TRANSACTION.
-    // ROLLBACK_TRANSACTION and COMMIT_TRANSACTION are trivial, they record the new highest commit number from LEADER,
-    // or instruct the node to go SEARCHING and reconnect if a distributed ROLLBACK happens.
-    //
-    // BEGIN_TRANSACTION is where the interesting case is. This starts all transactions in parallel, and then waits
-    // until each previous transaction is committed such that the final commit order matches LEADER. It also handles
-    // commit conflicts by re-running the transaction from the beginning. Most of the logic for making sure
-    // transactions are ordered correctly is done in `SQLiteSequentialNotifier`, which is worth reading.
-    //
-    // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
-    // which happens when a node stops FOLLOWING.
-    static void replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex);
-
     // Counter of the total number of currently active replication threads. This is used to let us know when all
     // threads have finished.
     atomic<int64_t> _replicationThreadCount;
@@ -439,20 +458,6 @@ class SQLiteNode : public STCPManager {
     // Indicates whether this node is configured for parallel replication.
     const bool _useParallelReplication;
 
-    // Monotonically increasing thread counter, used for thread IDs for logging purposes.
-    static atomic<int64_t> _currentCommandThreadID;
-
-    // Utility class that can decrement _replicationThreadCount when objects go out of scope.
-    template <typename CounterType>
-    class ScopedDecrement {
-      public:
-        ScopedDecrement(CounterType& counter) : _counter(counter) {} 
-        ~ScopedDecrement() {
-            --_counter;
-        }
-      private:
-        CounterType& _counter;
-    };
 
     AutoTimer _multiReplicationThreadSpawn;
     AutoTimer _legacyReplication;
@@ -465,10 +470,8 @@ class SQLiteNode : public STCPManager {
 
     // This is just here to allow `poll` to get interrupted when there are new commits to send. We don't want followers
     // to wait up to a full second for them.
-    SSynchronizedQueue<bool> _commitsToSend;
+    mutable SSynchronizedQueue<bool> _commitsToSend;
 
-    // Helper functions
-    void _sendPING(Peer* peer);
 };
 
 // serialization for Responses.

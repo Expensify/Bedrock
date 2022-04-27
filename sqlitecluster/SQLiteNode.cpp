@@ -8,6 +8,12 @@
 #include <sqlitecluster/SQLiteCommand.h>
 #include <sqlitecluster/SQLiteServer.h>
 
+// Convenience class for maintaining connections with a mesh of peers
+#define PDEBUG(_MSG_) SDEBUG("->{" << peer->name << "} " << _MSG_)
+#define PINFO(_MSG_) SINFO("->{" << peer->name << "} " << _MSG_)
+#define PHMMM(_MSG_) SHMMM("->{" << peer->name << "} " << _MSG_)
+#define PWARN(_MSG_) SWARN("->{" << peer->name << "} " << _MSG_)
+
 // Introduction
 // ------------
 // SQLiteNode builds atop SQLite to provide a distributed transactional SQL database. It establishes and maintains
@@ -154,7 +160,7 @@ SQLiteNode::~SQLiteNode() {
     for (Peer* peer : peerList) {
         // Shut down the peer
         if (peer->socket) {
-            socketList.remove(peer->socket);
+            _socketList.remove(peer->socket);
         }
         delete peer;
     }
@@ -492,15 +498,6 @@ void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forge
 
     // And send to leader.
     _sendToPeer(_leadPeer, escalate);
-}
-
-list<string> SQLiteNode::getEscalatedCommandRequestMethodLines() {
-    list<string> returnList;
-    auto lock = _escalatedCommandMap.scopedLock();
-    for (auto& commandPair : _escalatedCommandMap) {
-        returnList.push_back(commandPair.second->request.methodLine);
-    }
-    return returnList;
 }
 
 // --------------------------------------------------------------------------
@@ -2821,7 +2818,7 @@ void SQLiteNode::handleSerialRollbackTransaction(Peer* peer, const SData& messag
     _db.rollback();
 }
 
-bool SQLiteNode::hasQuorum() {
+bool SQLiteNode::hasQuorum() const {
     if (_state != LEADING && _state != STANDINGDOWN) {
         return false;
     }
@@ -2838,11 +2835,11 @@ bool SQLiteNode::hasQuorum() {
     return (numFullFollowers * 2 >= numFullPeers);
 }
 
-void SQLiteNode::prePoll(fd_map& fdm) {
+void SQLiteNode::prePoll(fd_map& fdm) const {
     if (port) {
         SFDset(fdm, port->s, SREADEVTS);
     }
-    for (auto& s : socketList) {
+    for (auto& s : _socketList) {
         STCPManager::prePoll(fdm, *s);
     }
     _commitsToSend.prePoll(fdm);
@@ -2861,7 +2858,7 @@ STCPManager::Socket* SQLiteNode::acceptSocket() {
         socket = new Socket(s, Socket::CONNECTED);
         socket->addr = addr;
         // Pretty sure these leak.
-        socketList.push_back(socket);
+        _socketList.push_back(socket);
 
         // Try to read immediately
         S_recvappend(socket->s, socket->recvBuffer);
@@ -2874,7 +2871,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Process the sockets
     {
         AutoTimerTime appendTime(_sAppendTimer);
-        for (auto& s : socketList) {
+        for (auto& s : _socketList) {
             STCPManager::postPoll(fdm, *s);
         }
     }
@@ -2946,7 +2943,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             } else {
                 SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), send='" << socket->sendBufferCopy() << "'");
             }
-            socketList.remove(socket);
+            _socketList.remove(socket);
             acceptedSocketList.erase(socketIt);
             delete socket;
         }
@@ -3044,7 +3041,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 if (peer->socket->connectFailure) {
                     peer->failedConnections++;
                 }
-                socketList.remove(peer->socket);
+                _socketList.remove(peer->socket);
                 peer->reset();
                 peer->nextReconnect = STimeNow() + delay;
                 nextActivity = min(nextActivity, peer->nextReconnect.load());
@@ -3064,7 +3061,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 peer->reset();
                 try {
                     peer->socket = new Socket(peer->host);
-                    socketList.push_back(peer->socket);
+                    _socketList.push_back(peer->socket);
 
                     // Try to log in now.  Send a PING immediately after so we
                     // can get a fast estimate of latency.
@@ -3091,7 +3088,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     _commitsToSend.clear();
 }
 
-void SQLiteNode::notifyCommit() {
+void SQLiteNode::notifyCommit() const {
     _commitsToSend.push(true);
 }
 

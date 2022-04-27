@@ -1810,9 +1810,6 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
             // Set some information about this node.
             content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
             content["priority"] = to_string(_syncNodeCopy->getPriority());
-
-            // Get any escalated commands that are waiting to be processed.
-            content["escalatedCommandList"] = SComposeJSONArray(_syncNodeCopy->getEscalatedCommandRequestMethodLines());
             _syncNodeCopy = nullptr;
         } else {
             content["syncNodeAvailable"] = "false";
