@@ -260,13 +260,6 @@ class SQLiteNode : public STCPManager {
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
 
-// DONE ABOVE HERE
-    // Attributes
-    const string name;
-
-    // What is this?
-    list<Socket*> acceptedSocketList;
-
   private:
     // Utility class that can decrement _replicationThreadCount when objects go out of scope.
     template <typename CounterType>
@@ -357,7 +350,6 @@ class SQLiteNode : public STCPManager {
     void _reconnectPeer(Peer* peer);
     void _reconnectAll();
 
-
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
 
@@ -375,11 +367,14 @@ class SQLiteNode : public STCPManager {
     // Helper functions
     void _sendPING(Peer* peer);
 
-    const uint64_t _recvTimeout;
+    const string _name;
     const vector<Peer*> _peerList;
+    const uint64_t _recvTimeout;
 
     // A bunch of private properties.
     list<STCPManager::Socket*> _socketList;
+    // TODO:: These are redundant and probably contain the same thing. Or one is empty? Either way it's confusing.
+    list<Socket*> _acceptedSocketList;
 
     AutoTimer _deserializeTimer;
     AutoTimer _sConsumeFrontTimer;
@@ -476,7 +471,6 @@ class SQLiteNode : public STCPManager {
     // Indicates whether this node is configured for parallel replication.
     const bool _useParallelReplication;
 
-
     AutoTimer _multiReplicationThreadSpawn;
     AutoTimer _legacyReplication;
     AutoTimer _onMessageTimer;
@@ -489,7 +483,6 @@ class SQLiteNode : public STCPManager {
     // This is just here to allow `poll` to get interrupted when there are new commits to send. We don't want followers
     // to wait up to a full second for them.
     mutable SSynchronizedQueue<bool> _commitsToSend;
-
 };
 
 // serialization for Responses.

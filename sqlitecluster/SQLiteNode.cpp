@@ -59,7 +59,7 @@
 //                   optimizing replication.
 
 #undef SLOGPREFIX
-#define SLOGPREFIX "{" << name << "/" << SQLiteNode::stateName(_state) << "} "
+#define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
 
 // Initializations for static vars.
 const uint64_t SQLiteNode::SQL_NODE_DEFAULT_RECV_TIMEOUT = STIME_US_PER_M * 1;
@@ -102,9 +102,9 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
                        const string& host, const string& peerList, int priority, uint64_t firstTimeout,
                        const string& version, const bool useParallelReplication, const string& commandPort)
     : STCPManager(),
-      name(name),
-      _recvTimeout(max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
+      _name(name),
       _peerList(_initPeers(peerList)),
+      _recvTimeout(max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _deserializeTimer("SQLiteNode::deserialize"),
       _sConsumeFrontTimer("SQLiteNode::SConsumeFront"),
       _sAppendTimer("SQLiteNode::append"),
@@ -152,10 +152,10 @@ SQLiteNode::~SQLiteNode() {
     SASSERTWARN(!commitInProgress());
 
     // Clean up all the sockets and peers
-    for (Socket* socket : acceptedSocketList) {
+    for (Socket* socket : _acceptedSocketList) {
         delete socket;
     }
-    acceptedSocketList.clear();
+    _acceptedSocketList.clear();
 
     for (Peer* peer : _peerList) {
         // Shut down the peer
@@ -181,7 +181,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
 
         // These make the logging macros work, as they expect these variables to be in scope.
         auto _state = node._state.load();
-        string name = node.name;
+        string _name = node._name;
         SDEBUG("Replicate thread started: " << command.methodLine);
         if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
             uint64_t newCount = command.calcU64("NewCount");
@@ -1566,7 +1566,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             request["peerID"] = to_string(_getIDByPeer(peer));
 
             // The following properties are only used to expand out our log macros.
-            request["name"] = name;
+            request["name"] = _name;
             request["peerName"] = peer->name;
 
             // Create a command from this request and pass it on to the server to handle.
@@ -2191,7 +2191,7 @@ void SQLiteNode::_queueSynchronize(SQLiteNode* node, Peer* peer, SQLite& db, SDa
     // function. However, if you pass a null pointer here, we can't set these, so we'll fail. We also can't log that,
     // so we are just going to rely on the signal handling for sigsegv to log that for you. Don't do that.
     auto _state = node->_state.load();
-    auto name = node->name;
+    auto _name = node->_name;
 
     uint64_t peerCommitCount = 0;
     string peerHash;
@@ -2915,12 +2915,12 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Accept any new peers
     Socket* socket = nullptr;
     while ((socket = _acceptSocket())) {
-        acceptedSocketList.push_back(socket);
+        _acceptedSocketList.push_back(socket);
     }
 
     // Process the incoming sockets
-    list<Socket*>::iterator nextSocketIt = acceptedSocketList.begin();
-    while (nextSocketIt != acceptedSocketList.end()) {
+    list<Socket*>::iterator nextSocketIt = _acceptedSocketList.begin();
+    while (nextSocketIt != _acceptedSocketList.end()) {
         // See if we've logged in (we know we're already connected because
         // we're accepting an inbound connection)
         list<Socket*>::iterator socketIt = nextSocketIt++;
@@ -2949,7 +2949,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                                 PINFO("Attaching incoming socket");
                                 peer->socket = socket;
                                 peer->failedConnections = 0;
-                                acceptedSocketList.erase(socketIt);
+                                _acceptedSocketList.erase(socketIt);
                                 foundIt = true;
 
                                 // Send our own PING back so we can estimate latency
@@ -2980,7 +2980,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), send='" << socket->sendBufferCopy() << "'");
             }
             _socketList.remove(socket);
-            acceptedSocketList.erase(socketIt);
+            _acceptedSocketList.erase(socketIt);
             delete socket;
         }
     }
@@ -3102,7 +3102,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // Try to log in now.  Send a PING immediately after so we
                     // can get a fast estimate of latency.
                     SData login("NODE_LOGIN");
-                    login["Name"] = name;
+                    login["Name"] = _name;
                     peer->socket->send(login.serialize());
                     _sendPING(peer);
                     _onConnect(peer);
