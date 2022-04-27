@@ -218,13 +218,12 @@ class SQLiteNode : public STCPManager {
     // Prepare a set of sockets to wait for read/write.
     void prePoll(fd_map& fdm) const;
 
-// ******* HANDLED ABOVE HERE *****
+    // Call this if you want to shut down the node.
+    void beginShutdown(uint64_t usToWait);
 
-    // Constructor/Destructor
-    SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,
-               const string& peerList, int priority, uint64_t firstTimeout, const string& version, const bool useParallelReplication = false,
-               const string& commandPort = "localhost:8890");
-    ~SQLiteNode();
+    // This will broadcast a message to all peers, or a specific peer.
+    [[deprecated("Use HTTP escalation")]]
+    void broadcast(const SData& message, Peer* peer = nullptr);
 
     // If we have a command that can't be handled on a follower, we can escalate it to the leader node. The SQLiteNode
     // takes ownership of the command until it receives a response from the follower. When the command completes, it will
@@ -233,34 +232,32 @@ class SQLiteNode : public STCPManager {
     [[deprecated("Use HTTP escalation")]]
     void escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget = false);
 
+    // Handle any read/write events that occurred.
+    void postPoll(fd_map& fdm, uint64_t& nextActivity);
+
     // This takes a completed command and sends the response back to the originating peer. If we're not the leader
     // node, or if this command doesn't have an `initiatingPeerID`, then calling this function is an error.
     [[deprecated("Use HTTP escalation")]]
     void sendResponse(const SQLiteCommand& command);
 
-    // Call this if you want to shut down the node.
-    void beginShutdown(uint64_t usToWait);
-
-    // Handle any read/write events that occurred.
-    void postPoll(fd_map& fdm, uint64_t& nextActivity);
-
     // Call this to check if the node's completed shutting down.
     bool shutdownComplete();
 
-    // Updates the internal state machine. Returns true if it wants immediate re-updating. Returns false to indicate it
-    // would be a good idea for the caller to read any new commands or traffic from the network.
-    bool update();
+    // Constructor/Destructor
+    SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,
+               const string& peerList, int priority, uint64_t firstTimeout, const string& version, const bool useParallelReplication = false,
+               const string& commandPort = "localhost:8890");
+    ~SQLiteNode();
 
     // Begins the process of committing a transaction on this SQLiteNode's database. When this returns,
     // commitInProgress() will return true until the commit completes.
     void startCommit(ConsistencyLevel consistency);
 
-    // This will broadcast a message to all peers, or a specific peer.
-    [[deprecated("Use HTTP escalation")]]
-    void broadcast(const SData& message, Peer* peer = nullptr);
+    // Updates the internal state machine. Returns true if it wants immediate re-updating. Returns false to indicate it
+    // would be a good idea for the caller to read any new commands or traffic from the network.
+    bool update();
 
-// ***** END OG WHAT WE'RE DOING NOW ******
-
+// DONE ABOVE HERE
     // Attributes
     string name;
     uint64_t recvTimeout;

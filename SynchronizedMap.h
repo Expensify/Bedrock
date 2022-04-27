@@ -55,7 +55,7 @@ class SynchronizedMap {
         lock_guard <decltype(_m)> lock(_m);
         return _data.find(item);
     }
-    auto size() {
+    auto size() const {
         lock_guard <decltype(_m)> lock(_m);
         return _data.size();
     }
