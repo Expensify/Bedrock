@@ -308,7 +308,7 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency)
 
 void SQLiteNode::sendResponse(const SQLiteCommand& command)
 {
-    Peer* peer = getPeerByID(command.initiatingPeerID);
+    Peer* peer = _getPeerByID(command.initiatingPeerID);
     SASSERT(peer);
     // If it was a peer message, we don't need to wrap it in an escalation response.
     SData escalate("ESCALATE_RESPONSE");
@@ -328,7 +328,7 @@ void SQLiteNode::beginShutdown(uint64_t usToWait) {
     }
 }
 
-bool SQLiteNode::_isNothingBlockingShutdown() {
+bool SQLiteNode::_isNothingBlockingShutdown() const {
     // Don't shutdown if in the middle of a transaction
     if (_db.insideTransaction())
         return false;
@@ -410,6 +410,38 @@ bool SQLiteNode::shutdownComplete() {
               << commitInProgress() << ", escalated=" << _escalatedCommandMap.size());
         return false;
     }
+}
+
+SQLiteNode::State SQLiteNode::getState() const {
+    return _state;
+}
+
+int SQLiteNode::getPriority() const {
+    return _priority;
+}
+
+const string& SQLiteNode::getLeaderVersion() const {
+    return _leaderVersion;
+}
+
+const string& SQLiteNode::getVersion() const {
+    return _version;
+}
+
+uint64_t SQLiteNode::getCommitCount() const {
+    return _db.getCommitCount();
+}
+
+bool SQLiteNode::gracefulShutdown() const {
+    return (_gracefulShutdownTimeout.alarmDuration != 0);
+}
+
+bool SQLiteNode::commitInProgress() const {
+    return (_commitState == CommitState::WAITING || _commitState == CommitState::COMMITTING);
+}
+
+bool SQLiteNode::commitSucceeded() const {
+    return _commitState == CommitState::SUCCESS;
 }
 
 void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs) {
@@ -1527,7 +1559,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             peer->getCommit(count, hash);
             request["peerCommitCount"] = to_string(count);
             request["peerHash"] = hash;
-            request["peerID"] = to_string(getIDByPeer(peer));
+            request["peerID"] = to_string(_getIDByPeer(peer));
 
             // The following properties are only used to expand out our log macros.
             request["name"] = name;
@@ -2378,7 +2410,7 @@ void SQLiteNode::_reconnectAll() {
     }
 }
 
-bool SQLiteNode::_majoritySubscribed() {
+bool SQLiteNode::_majoritySubscribed() const {
     // Count up how may full and subscribed peers we have (A "full" peer is one that *isn't* a permafollower).
     int numFullPeers = 0;
     int numFullFollowers = 0;
@@ -2405,7 +2437,7 @@ bool SQLiteNode::peekPeerCommand(shared_ptr<SQLiteNode> node, SQLite& db, SQLite
     Peer* peer = nullptr;
     try {
         if (SIEquals(command.request.methodLine, "SYNCHRONIZE")) {
-            peer = node->getPeerByID(SToUInt64(command.request["peerID"]));
+            peer = node->_getPeerByID(SToUInt64(command.request["peerID"]));
             if (!peer) {
                 // There's nobody to send to, but this was a valid command that's been handled.
                 return true;
@@ -3100,7 +3132,7 @@ void SQLiteNode::_sendPING(Peer* peer) {
     peer->socket->send(ping.serialize());
 }
 
-uint64_t SQLiteNode::getIDByPeer(SQLiteNode::Peer* peer) {
+uint64_t SQLiteNode::_getIDByPeer(SQLiteNode::Peer* peer) const {
     uint64_t id = 1;
     for (auto p : peerList) {
         if (p == peer) {
@@ -3111,7 +3143,7 @@ uint64_t SQLiteNode::getIDByPeer(SQLiteNode::Peer* peer) {
     return 0;
 }
 
-SQLiteNode::Peer* SQLiteNode::getPeerByID(uint64_t id) {
+SQLiteNode::Peer* SQLiteNode::_getPeerByID(uint64_t id) const {
     if (id <= 0) {
         return nullptr;
     }
