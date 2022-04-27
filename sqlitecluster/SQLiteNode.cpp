@@ -264,12 +264,12 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _lastSentTransactionID(0),
       _dbPool(dbPool),
       _db(_dbPool->getBase()),
+      _originalPriority(priority),
       _state(UNKNOWN),
       _commitState(CommitState::UNINITIALIZED),
       _server(server),
       _stateChangeCount(0),
       _lastNetStatTime(chrono::steady_clock::now()),
-      _handledCommitCount(0),
       _replicationThreadsShouldExit(false),
       _replicationThreadCount(0),
       _commandAddress(commandPort),
@@ -281,7 +281,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
     }
 
     SASSERT(priority >= 0);
-    _originalPriority = priority;
     _priority = -1;
     _state = SEARCHING;
     _syncPeer = nullptr;
@@ -2608,8 +2607,6 @@ bool SQLiteNode::peekPeerCommand(shared_ptr<SQLiteNode> node, SQLite& db, SQLite
 }
 
 void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& message, bool wasConflict) {
-    AutoScopedWallClockTimer timer(_syncTimer);
-
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
     // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
     // the transaction for any reason, it is broken somehow -- disconnect from the leader.
@@ -2654,8 +2651,6 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
 }
 
 void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message) {
-    AutoScopedWallClockTimer timer(_syncTimer);
-
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
     // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
     // the transaction for any reason, it is broken somehow -- disconnect from the leader.
@@ -2731,8 +2726,6 @@ void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& m
 }
 
 int SQLiteNode::handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash) {
-    AutoScopedWallClockTimer timer(_syncTimer);
-
     // COMMIT_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
     // outstanding transaction should be committed to the database. This completes a given distributed transaction.
     if (_state != FOLLOWING) {
@@ -2769,18 +2762,11 @@ int SQLiteNode::handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t c
           << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
           << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"
           << rollbackElapsed / 1000 << "ms)");
-    _handledCommitCount++;
-    if (_handledCommitCount % 5000 == 0) {
-        // Log how much time we've spent handling 5000 commits.
-        auto timingInfo = _syncTimer.getStatsAndReset();
-        SINFO("Over the last 5000 commits, (total: " << _handledCommitCount << ") " << timingInfo.second.count() << "/" << timingInfo.first.count() << "ms spent in replication");
-    }
 
     return result;
 }
 
 void SQLiteNode::handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message) {
-    AutoScopedWallClockTimer timer(_syncTimer);
     // ROLLBACK_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
     // outstanding transaction should be rolled back. This completes a given distributed transaction.
     if (!message.isSet("ID")) {

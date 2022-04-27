@@ -379,7 +379,7 @@ class SQLiteNode : public STCPManager {
 
     // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
-    int _originalPriority;
+    const int _originalPriority;
 
     // Our current State.
     atomic<State> _state;
@@ -411,15 +411,9 @@ class SQLiteNode : public STCPManager {
     // leader's version string.
     string _leaderVersion;
 
-    // The maximum number of seconds we'll allow before we force a quorum commit. This can be violated when commits
-    // are performed outside of SQLiteNode, but we'll catch up the next time we do a commit.
-    int _quorumCheckpointSeconds;
-
-    // The timestamp of the (end of) the last quorum commit.
-    uint64_t _lastQuorumTime;
-
     // When we're a follower, we can escalate a command to the leader. When we do so, we store that command in the
     // following map of commandID to Command until the follower responds.
+    [[deprecated("Use HTTP escalation")]]
     SynchronizedMap<string, unique_ptr<SQLiteCommand>> _escalatedCommandMap;
 
     // The server object to which we'll pass incoming escalated commands.
@@ -431,10 +425,8 @@ class SQLiteNode : public STCPManager {
     int _stateChangeCount;
 
     // Last time we recorded network stats.
+    // TODO: Kill this and the stuff related to it.
     chrono::steady_clock::time_point _lastNetStatTime;
-
-    WallClockTimer _syncTimer;
-    atomic<uint64_t> _handledCommitCount;
 
     // State variable that indicates when the above threads should quit.
     atomic<bool> _replicationThreadsShouldExit;
