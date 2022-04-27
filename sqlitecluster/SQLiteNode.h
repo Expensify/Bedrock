@@ -23,21 +23,9 @@
 // Diagnostic class for timing what fraction of time happens in certain blocks.
 class AutoTimer {
   public:
-    AutoTimer(string name) : _name(name), _intervalStart(chrono::steady_clock::now()), _countedTime(0) { }
-    void start() { _instanceStart = chrono::steady_clock::now(); };
-    void stop() {
-        auto stopped = chrono::steady_clock::now();
-        _countedTime += stopped - _instanceStart;
-        if (stopped > (_intervalStart + 10s)) {
-            auto counted = chrono::duration_cast<chrono::milliseconds>(_countedTime).count();
-            auto elapsed = chrono::duration_cast<chrono::milliseconds>(stopped - _intervalStart).count();
-            static char percent[10] = {0};
-            snprintf(percent, 10, "%.2f", static_cast<double>(counted) / static_cast<double>(elapsed) * 100.0);
-            SINFO("[performance] AutoTimer (" << _name << "): " << counted << "/" << elapsed << " ms timed, " << percent << "%");
-            _intervalStart = stopped;
-            _countedTime = chrono::microseconds::zero();
-        }
-    };
+    AutoTimer(string name);
+    void start();
+    void stop();
 
   private:
     string _name;
@@ -48,8 +36,8 @@ class AutoTimer {
 
 class AutoTimerTime {
   public:
-    AutoTimerTime(AutoTimer& t) : _t(t) { _t.start(); }
-    ~AutoTimerTime() { _t.stop(); }
+    AutoTimerTime(AutoTimer& t);
+    ~AutoTimerTime();
 
   private:
     AutoTimer& _t;
@@ -487,4 +475,3 @@ class SQLiteNode : public STCPManager {
 
 // serialization for Responses.
 ostream& operator<<(ostream& os, const atomic<SQLiteNode::Peer::Response>& response);
-

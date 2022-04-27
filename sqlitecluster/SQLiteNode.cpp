@@ -59,6 +59,160 @@
 //                   optimizing replication.
 
 #undef SLOGPREFIX
+#define SLOGPREFIX "{} "
+
+AutoTimer::AutoTimer(string name) : _name(name), _intervalStart(chrono::steady_clock::now()), _countedTime(0) {
+}
+
+void AutoTimer::start() {
+    _instanceStart = chrono::steady_clock::now();
+}
+
+void AutoTimer::stop() {
+    auto stopped = chrono::steady_clock::now();
+    _countedTime += stopped - _instanceStart;
+    if (stopped > (_intervalStart + 10s)) {
+        auto counted = chrono::duration_cast<chrono::milliseconds>(_countedTime).count();
+        auto elapsed = chrono::duration_cast<chrono::milliseconds>(stopped - _intervalStart).count();
+        static char percent[10] = {0};
+        snprintf(percent, 10, "%.2f", static_cast<double>(counted) / static_cast<double>(elapsed) * 100.0);
+        SINFO("[performance] AutoTimer (" << _name << "): " << counted << "/" << elapsed << " ms timed, " << percent << "%");
+        _intervalStart = stopped;
+        _countedTime = chrono::microseconds::zero();
+    }
+};
+
+AutoTimerTime::AutoTimerTime(AutoTimer& t) : _t(t) {
+    _t.start();
+}
+
+AutoTimerTime::~AutoTimerTime() {
+    _t.stop();
+}
+
+#undef SLOGPREFIX
+#define SLOGPREFIX "{" << name << "} "
+
+SQLiteNode::Peer::Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
+  : commitCount(0),
+    host(host_),
+    id(id_),
+    name(name_),
+    params(params_),
+    permaFollower(isPermafollower(params)),
+    failedConnections(0),
+    latency(0),
+    loggedIn(false),
+    nextReconnect(0),
+    priority(0),
+    state(SEARCHING),
+    standupResponse(Response::NONE),
+    subscribed(false),
+    transactionResponse(Response::NONE),
+    version(),
+    hash()
+{ }
+
+SQLiteNode::Peer::~Peer() {
+    delete socket;
+}
+
+bool SQLiteNode::Peer::connected() const {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    return (socket && socket->state.load() == STCPManager::Socket::CONNECTED);
+}
+
+void SQLiteNode::Peer::reset() {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    latency = 0;
+    loggedIn = false;
+    priority = 0;
+    delete socket;
+    socket = nullptr;
+    state = SEARCHING;
+    standupResponse = Response::NONE;
+    subscribed = false;
+    transactionResponse = Response::NONE;
+    version = "";
+    setCommit(0, "");
+}
+
+string SQLiteNode::Peer::responseName(Response response) {
+    switch (response) {
+        case SQLiteNode::Peer::Response::NONE:
+            return "NONE";
+            break;
+        case SQLiteNode::Peer::Response::APPROVE:
+            return "APPROVE";
+            break;
+        case SQLiteNode::Peer::Response::DENY:
+            return "DENY";
+            break;
+        default:
+            return "";
+    }
+}
+
+void SQLiteNode::Peer::setCommit(uint64_t count, const string& hashString) {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    const_cast<atomic<uint64_t>&>(commitCount) = count;
+    hash = hashString;
+}
+
+void SQLiteNode::Peer::getCommit(uint64_t& count, string& hashString) const {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    count = commitCount.load();
+    hashString = hash.load();
+}
+
+STable SQLiteNode::Peer::getData() const {
+    // Add all of our standard stuff.
+    STable result({
+        {"name", name},
+        {"host", host},
+        {"state", (stateName(state) + (connected() ? "" : " (DISCONNECTED)"))},
+        {"latency", to_string(latency)},
+        {"nextReconnect", to_string(nextReconnect)},
+        {"id", to_string(id)},
+        {"failedConnections", to_string(failedConnections)},
+        {"loggedIn", (loggedIn ? "true" : "false")},
+        {"priority", to_string(priority)},
+        {"version", version},
+        {"hash", hash},
+        {"commitCount", to_string(commitCount)},
+        {"standupResponse", responseName(standupResponse)},
+        {"transactionResponse", responseName(transactionResponse)},
+        {"subscribed", (subscribed ? "true" : "false")},
+    });
+
+    // And anything from the params (note: doesn't overwrite our standard stuff).
+    for (auto& p : params) {
+        result.emplace(p);
+    }
+
+    result["commandAddress"] = commandAddress;
+
+    return result;
+}
+
+bool SQLiteNode::Peer::isPermafollower(const STable& params) {
+    auto it = params.find("Permafollower");
+    if (it != params.end() && it->second == "true") {
+        return true;
+    }
+    return false;
+}
+
+void SQLiteNode::Peer::sendMessage(const SData& message) {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket) {
+        socket->send(message.serialize());
+    } else {
+        SWARN("Tried to send " << message.methodLine << " to peer, but not available.");
+    }
+}
+
+#undef SLOGPREFIX
 #define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
 
 // Initializations for static vars.
@@ -3196,128 +3350,6 @@ SQLiteNode::State SQLiteNode::stateFromName(const string& name) {
         return UNKNOWN;
     } else {
         return it->second;
-    }
-}
-
-SQLiteNode::Peer::Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
-  : commitCount(0),
-    host(host_),
-    id(id_),
-    name(name_),
-    params(params_),
-    permaFollower(isPermafollower(params)),
-    failedConnections(0),
-    latency(0),
-    loggedIn(false),
-    nextReconnect(0),
-    priority(0),
-    state(SEARCHING),
-    standupResponse(Response::NONE),
-    subscribed(false),
-    transactionResponse(Response::NONE),
-    version(),
-    hash()
-{ }
-
-SQLiteNode::Peer::~Peer() {
-    delete socket;
-}
-
-bool SQLiteNode::Peer::connected() const {
-    lock_guard<decltype(peerMutex)> lock(peerMutex);
-    return (socket && socket->state.load() == STCPManager::Socket::CONNECTED);
-}
-
-void SQLiteNode::Peer::reset() {
-    lock_guard<decltype(peerMutex)> lock(peerMutex);
-    latency = 0;
-    loggedIn = false;
-    priority = 0;
-    delete socket;
-    socket = nullptr;
-    state = SEARCHING;
-    standupResponse = Response::NONE;
-    subscribed = false;
-    transactionResponse = Response::NONE;
-    version = "";
-    setCommit(0, "");
-}
-
-string SQLiteNode::Peer::responseName(Response response) {
-    switch (response) {
-        case SQLiteNode::Peer::Response::NONE:
-            return "NONE";
-            break;
-        case SQLiteNode::Peer::Response::APPROVE:
-            return "APPROVE";
-            break;
-        case SQLiteNode::Peer::Response::DENY:
-            return "DENY";
-            break;
-        default:
-            return "";
-    }
-}
-
-void SQLiteNode::Peer::setCommit(uint64_t count, const string& hashString) {
-    lock_guard<decltype(peerMutex)> lock(peerMutex);
-    const_cast<atomic<uint64_t>&>(commitCount) = count;
-    hash = hashString;
-}
-
-void SQLiteNode::Peer::getCommit(uint64_t& count, string& hashString) const {
-    lock_guard<decltype(peerMutex)> lock(peerMutex);
-    count = commitCount.load();
-    hashString = hash.load();
-}
-
-STable SQLiteNode::Peer::getData() const {
-    // Add all of our standard stuff.
-    STable result({
-        {"name", name},
-        {"host", host},
-        {"state", (stateName(state) + (connected() ? "" : " (DISCONNECTED)"))},
-        {"latency", to_string(latency)},
-        {"nextReconnect", to_string(nextReconnect)},
-        {"id", to_string(id)},
-        {"failedConnections", to_string(failedConnections)},
-        {"loggedIn", (loggedIn ? "true" : "false")},
-        {"priority", to_string(priority)},
-        {"version", version},
-        {"hash", hash},
-        {"commitCount", to_string(commitCount)},
-        {"standupResponse", responseName(standupResponse)},
-        {"transactionResponse", responseName(transactionResponse)},
-        {"subscribed", (subscribed ? "true" : "false")},
-    });
-
-    // And anything from the params (note: doesn't overwrite our standard stuff).
-    for (auto& p : params) {
-        result.emplace(p);
-    }
-
-    result["commandAddress"] = commandAddress;
-
-    return result;
-}
-
-bool SQLiteNode::Peer::isPermafollower(const STable& params) {
-    auto it = params.find("Permafollower");
-    if (it != params.end() && it->second == "true") {
-        return true;
-    }
-    return false;
-}
-
-#undef SLOGPREFIX
-#define SLOGPREFIX "{" << name << "} "
-
-void SQLiteNode::Peer::sendMessage(const SData& message) {
-    lock_guard<decltype(peerMutex)> lock(peerMutex);
-    if (socket) {
-        socket->send(message.serialize());
-    } else {
-        SWARN("Tried to send " << message.methodLine << " to peer, but not available.");
     }
 }
 
