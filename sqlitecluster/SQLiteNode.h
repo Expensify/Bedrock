@@ -61,6 +61,7 @@ class SQLiteServer;
 // Distributed, leader/follower, failover, transactional DB cluster
 class SQLiteNode : public STCPManager {
     // This exists to expose internal state to a test harness. It is not used otherwise.
+    friend class SQLiteNodeTest;
     friend class SQLiteNodeTester;
 
   public:
@@ -197,6 +198,8 @@ class SQLiteNode : public STCPManager {
 
     const string& getLeaderVersion() const;
 
+    list<STable> getPeerInfo() const;
+
     int getPriority() const;
 
     State getState() const;
@@ -259,9 +262,7 @@ class SQLiteNode : public STCPManager {
 
 // DONE ABOVE HERE
     // Attributes
-    string name;
-    uint64_t recvTimeout;
-    const vector<Peer*> peerList;
+    const string name;
 
     // What is this?
     list<Socket*> acceptedSocketList;
@@ -373,6 +374,9 @@ class SQLiteNode : public STCPManager {
 
     // Helper functions
     void _sendPING(Peer* peer);
+
+    const uint64_t _recvTimeout;
+    const vector<Peer*> _peerList;
 
     // A bunch of private properties.
     list<STCPManager::Socket*> _socketList;

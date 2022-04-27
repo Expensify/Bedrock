@@ -103,8 +103,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
                        const string& version, const bool useParallelReplication, const string& commandPort)
     : STCPManager(),
       name(name),
-      recvTimeout(max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      peerList(_initPeers(peerList)),
+      _recvTimeout(max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
+      _peerList(_initPeers(peerList)),
       _deserializeTimer("SQLiteNode::deserialize"),
       _sConsumeFrontTimer("SQLiteNode::SConsumeFront"),
       _sAppendTimer("SQLiteNode::append"),
@@ -157,7 +157,7 @@ SQLiteNode::~SQLiteNode() {
     }
     acceptedSocketList.clear();
 
-    for (Peer* peer : peerList) {
+    for (Peer* peer : _peerList) {
         // Shut down the peer
         if (peer->socket) {
             _socketList.remove(peer->socket);
@@ -391,7 +391,7 @@ bool SQLiteNode::shutdownComplete() {
     }
 
     // If we have unsent data, not done
-    for (auto peer : peerList) {
+    for (auto peer : _peerList) {
         if (peer->socket && !peer->socket->sendBufferEmpty()) {
             // Still sending data
             SINFO("Can't graceful shutdown yet because unsent data to peer '" << peer->name << "'");
@@ -469,7 +469,7 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
             transaction["dbCountAtStart"] = to_string(dbCountAtStart);
             transaction["ID"] = idHeader;
             transaction.content = query;
-            for (auto peer : peerList) {
+            for (auto peer : _peerList) {
                 // Clear the response flag from the last transaction
                 peer->transactionResponse = Peer::Response::NONE;
             }
@@ -487,6 +487,14 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
         _sendToAllPeers(commit, true); // subscribed only
         _lastSentTransactionID = id;
     }
+}
+
+list<STable> SQLiteNode::getPeerInfo() const {
+    list<STable> peerData;
+    for (Peer* peer : _peerList) {
+        peerData.emplace_back(peer->getData());
+    }
+    return peerData;
 }
 
 void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget) {
@@ -571,7 +579,7 @@ bool SQLiteNode::update() {
         string logMsg = "[performance] Network stats: " +
                         to_string(chrono::duration_cast<chrono::milliseconds>(elapsed).count()) +
                         " ms elapsed. ";
-        for (auto& p : peerList) {
+        for (auto& p : _peerList) {
             if (p->socket) {
                 logMsg += p->name + " sent " + to_string(p->socket->getSentBytes()) + " bytes, recv " + to_string(p->socket->getRecvBytes()) + " bytes. ";
                 p->socket->resetCounters();
@@ -604,7 +612,7 @@ bool SQLiteNode::update() {
             return false; // Don't re-update
 
         // If no peers, we're the leader, unless we're shutting down.
-        if (peerList.empty()) {
+        if (_peerList.empty()) {
             // There are no peers, jump straight to leading
             SHMMM("No peers configured, jumping to LEADING");
             _changeState(LEADING);
@@ -616,7 +624,7 @@ bool SQLiteNode::update() {
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
         Peer* freshestPeer = nullptr;
-        for (auto peer : peerList) {
+        for (auto peer : _peerList) {
             // Wait until all connected (or failed) and logged in
             bool permaFollower = peer->permaFollower;
             bool loggedIn = peer->loggedIn;
@@ -637,7 +645,7 @@ bool SQLiteNode::update() {
         }
 
         // Keep searching until we connect to at least half our non-permafollowers peers OR timeout
-        SINFO("Signed in to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << peerList.size()
+        SINFO("Signed in to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << _peerList.size()
                               << " with permafollowers), timeout in " << (_stateTimeout - STimeNow()) / 1000
                               << "ms");
         if (((float)numLoggedInFullPeers < numFullPeers / 2.0) && (STimeNow() < _stateTimeout))
@@ -761,7 +769,7 @@ bool SQLiteNode::update() {
         Peer* highestPriorityPeer = nullptr;
         Peer* freshestPeer = nullptr;
         Peer* currentLeader = nullptr;
-        for (auto peer : peerList) {
+        for (auto peer : _peerList) {
             // Make sure we're a full peer
             if (!peer->permaFollower) {
                 // Verify we're logged in
@@ -833,7 +841,7 @@ bool SQLiteNode::update() {
             // Yep -- time for us to stand up -- clear everyone's
             // last approval status as they're about to send them.
             SINFO("No leader and we're highest priority (over " << highestPriorityPeer->name << "), STANDINGUP");
-            for (auto peer : peerList) {
+            for (auto peer : _peerList) {
                 peer->standupResponse = Peer::Response::NONE;
             }
             _changeState(STANDINGUP);
@@ -841,7 +849,7 @@ bool SQLiteNode::update() {
         }
 
         // Otherwise, Keep waiting
-        SDEBUG("Connected to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << peerList.size()
+        SDEBUG("Connected to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << _peerList.size()
                                << " with permafollowers), priority=" << _priority);
         break;
     }
@@ -869,7 +877,7 @@ bool SQLiteNode::update() {
             _changeState(SEARCHING);
             return true; // Re-update
         }
-        for (auto peer : peerList) {
+        for (auto peer : _peerList) {
             // Check this peer; if not logged in, tacit approval
             if (!peer->permaFollower) {
                 ++numFullPeers;
@@ -960,7 +968,7 @@ bool SQLiteNode::update() {
             int numFullResponded = 0; // Num full peers that have responded approve/deny
             int numFullApproved = 0;  // Num full peers that have approved
             int numFullDenied = 0;    // Num full peers that have denied
-            for (auto peer : peerList) {
+            for (auto peer : _peerList) {
                 // Check this peer to see if it's full or a permafollower
                 if (!peer->permaFollower) {
                     // It's a full peer -- is it subscribed, and if so, how did it respond?
@@ -1070,7 +1078,7 @@ bool SQLiteNode::update() {
                     SINFO("Committed leader transaction for '"
                           << (_lastSentTransactionID + 1) << " (" << _db.getCommittedHash() << "). "
                           << " (consistencyRequired=" << consistencyLevelNames[_commitConsistency] << "), "
-                          << numFullApproved << " of " << numFullPeers << " approved (" << peerList.size() << " total) in "
+                          << numFullApproved << " of " << numFullPeers << " approved (" << _peerList.size() << " total) in "
                           << totalElapsed / 1000 << " ms ("
                           << beginElapsed / 1000 << "+" << readElapsed / 1000 << "+"
                           << writeElapsed / 1000 << "+" << prepareElapsed / 1000 << "+"
@@ -1129,7 +1137,7 @@ bool SQLiteNode::update() {
             }
             transaction.content = _db.getUncommittedQuery();
 
-            for (auto peer : peerList) {
+            for (auto peer : _peerList) {
                 // Clear the response flag from the last transaction
                 peer->transactionResponse = Peer::Response::NONE;
             }
@@ -1154,7 +1162,7 @@ bool SQLiteNode::update() {
                 _priority = 1;
             } else {
                 // Loop across peers
-                for (auto peer : peerList) {
+                for (auto peer : _peerList) {
                     // Check this peer
                     if (peer->state == LEADING) {
                         // Hm... somehow we're in a multi-leader scenario -- not good.
@@ -1476,7 +1484,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 } else {
                     // Approve if nobody else is trying to stand up
                     response["Response"] = "approve"; // Optimistic; will override
-                    for (auto otherPeer : peerList) {
+                    for (auto otherPeer : _peerList) {
                         if (otherPeer != peer) {
                             // See if it's trying to be leader
                             if (otherPeer->state == STANDINGUP || otherPeer->state == LEADING || otherPeer->state == STANDINGDOWN) {
@@ -1971,7 +1979,7 @@ void SQLiteNode::_onDisconnect(Peer* peer) {
     if (_state == LEADING || _state == STANDINGUP || _state == STANDINGDOWN) {
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
-        for (auto otherPeer : peerList) {
+        for (auto otherPeer : _peerList) {
             // Skip the current peer, it no longer counts.
             if (otherPeer == peer) {
                 continue;
@@ -2031,7 +2039,7 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     const string& serializedMessage = messageCopy.serialize();
 
     // Loop across all connected peers and send the message
-    for (auto peer : peerList) {
+    for (auto peer : _peerList) {
         // Send either to everybody, or just subscribed peers.
         if (peer->socket && (!subscribedOnly || peer->subscribed)) {
             // Send it now, without waiting for the outer event loop
@@ -2324,7 +2332,7 @@ void SQLiteNode::_updateSyncPeer()
 {
     Peer* newSyncPeer = nullptr;
     uint64_t commitCount = _db.getCommitCount();
-    for (auto peer : peerList) {
+    for (auto peer : _peerList) {
         // If either of these conditions are true, then we can't use this peer.
         if (!peer->loggedIn || peer->commitCount <= commitCount) {
             continue;
@@ -2371,7 +2379,7 @@ void SQLiteNode::_updateSyncPeer()
         // We see strange behavior when choosing peers. Peers are being chosen from distant data centers rather than
         // peers on the same LAN. This is extra diagnostic info to try and see why we don't choose closer ones.
         list<string> nonChosenPeers;
-        for (auto peer : peerList) {
+        for (auto peer : _peerList) {
             if (peer == newSyncPeer || peer == _syncPeer) {
                 continue; // These ones we're already logging.
             } else if (!peer->loggedIn) {
@@ -2401,7 +2409,7 @@ void SQLiteNode::_reconnectPeer(Peer* peer) {
 
 void SQLiteNode::_reconnectAll() {
     // Loop across and reconnect
-    for (auto peer : peerList) {
+    for (auto peer : _peerList) {
         _reconnectPeer(peer);
     }
 }
@@ -2410,7 +2418,7 @@ bool SQLiteNode::_majoritySubscribed() const {
     // Count up how may full and subscribed peers we have (A "full" peer is one that *isn't* a permafollower).
     int numFullPeers = 0;
     int numFullFollowers = 0;
-    for (auto peer : peerList) {
+    for (auto peer : _peerList) {
         if (!peer->permaFollower) {
             ++numFullPeers;
             if (peer->subscribed) {
@@ -2852,7 +2860,7 @@ bool SQLiteNode::hasQuorum() const {
     }
     int numFullPeers = 0;
     int numFullFollowers = 0;
-    for (auto peer : peerList) {
+    for (auto peer : _peerList) {
         if (!peer->permaFollower) {
             ++numFullPeers;
             if (peer->subscribed) {
@@ -2931,7 +2939,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {
                     // Got it -- can we associate with a peer?
                     bool foundIt = false;
-                    for (Peer* peer : peerList) {
+                    for (Peer* peer : _peerList) {
                         // Just match any unconnected peer
                         // **FIXME: Authenticate and match by public key
                         if (peer->name == message["Name"]) {
@@ -2978,7 +2986,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     // Try to establish connections with peers and process messages
-    for (Peer* peer : peerList) {
+    for (Peer* peer : _peerList) {
         // See if we're connected
         if (peer->socket) {
             // We have a socket; process based on its state
@@ -2990,14 +2998,14 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 int messageSize = 0;
                 try {
                     // peer->socket->lastRecvTime is always set, it's initialized to STimeNow() at creation.
-                    if (peer->socket->lastRecvTime + recvTimeout < STimeNow()) {
+                    if (peer->socket->lastRecvTime + _recvTimeout < STimeNow()) {
                         // Reset and reconnect.
                         SHMMM("Connection with peer '" << peer->name << "' timed out.");
                         STHROW("Timed Out!");
                     }
 
                     // Send PINGs 5s before the socket times out
-                    if (STimeNow() - peer->socket->lastSendTime > recvTimeout - 5 * STIME_US_PER_S) {
+                    if (STimeNow() - peer->socket->lastSendTime > _recvTimeout - 5 * STIME_US_PER_S) {
                         // Let's not delay on flushing the PING PONG exchanges
                         // in case we get blocked before we get to flush later.
                         SINFO("Sending PING to peer '" << peer->name << "'");
@@ -3130,7 +3138,7 @@ void SQLiteNode::_sendPING(Peer* peer) {
 
 uint64_t SQLiteNode::_getIDByPeer(SQLiteNode::Peer* peer) const {
     uint64_t id = 1;
-    for (auto p : peerList) {
+    for (auto p : _peerList) {
         if (p == peer) {
             return id;
         }
@@ -3144,7 +3152,7 @@ SQLiteNode::Peer* SQLiteNode::_getPeerByID(uint64_t id) const {
         return nullptr;
     }
     try {
-        return peerList[id - 1];
+        return _peerList[id - 1];
     } catch (const out_of_range& e) {
         return nullptr;
     }

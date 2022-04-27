@@ -1689,9 +1689,7 @@ list<STable> BedrockServer::getPeerInfo() {
     list<STable> peerData;
     auto _syncNodeCopy = atomic_load(&_syncNode);
     if (_syncNodeCopy) {
-        for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList) {
-            peerData.emplace_back(peer->getData());
-        }
+        peerData =  _syncNodeCopy->getPeerInfo();
     }
     return peerData;
 }
