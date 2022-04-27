@@ -262,27 +262,25 @@ class SQLiteNode : public STCPManager {
         CounterType& _counter;
     };
 
+    // The names of each of the consistency levels defined in `ConsistencyLevel` as strings. This is only actually used
+    // for logging.
+    static const string CONSISTENCY_LEVEL_NAMES[NUM_CONSISTENCY_LEVELS];
+
+    // Monotonically increasing thread counter, used for thread IDs for logging purposes.
+    static atomic<int64_t> currentReplicateThreadID;
+
     // Receive timeout for 'normal' SQLiteNode messages
     static const uint64_t SQL_NODE_DEFAULT_RECV_TIMEOUT;
 
     // Separate timeout for receiving and applying synchronization commits.
     static const uint64_t SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT;
 
-    // The names of each of the consistency levels defined in `ConsistencyLevel` as strings. This is only actually used
-    // for logging.
-    static const string consistencyLevelNames[NUM_CONSISTENCY_LEVELS];
-
-    // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
-    // any new committed transactions to peers, and update this value.
-    static uint64_t _lastSentTransactionID;
+    static const vector<Peer*> _initPeers(const string& peerList);
 
     // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
     // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
     // thread with a different DB object) - which is why this is static.
     static void _queueSynchronize(SQLiteNode* node, Peer* peer, SQLite& db, SData& response, bool sendAll);
-
-    // Monotonically increasing thread counter, used for thread IDs for logging purposes.
-    static atomic<int64_t> _currentCommandThreadID;
 
     // This is the main replication loop that's run in the replication threads. It's instantiated in a new thread for
     // each new relevant replication command received by the sync thread.
@@ -314,8 +312,6 @@ class SQLiteNode : public STCPManager {
     uint64_t _getIDByPeer(Peer* peer) const;
 
     Socket* _acceptSocket();
-
-    const vector<Peer*> _initPeers(const string& peerList);
 
     // Called when we first establish a connection with a new peer
     void _onConnect(Peer* peer);
@@ -361,6 +357,10 @@ class SQLiteNode : public STCPManager {
     list<Socket*> _acceptedSocketList;
 
     unique_ptr<Port> port;
+
+    // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
+    // any new committed transactions to peers, and update this value.
+    uint64_t _lastSentTransactionID;
 
     // This is a pool of DB handles that this node can use for any DB access it needs. Currently, it hands them out to
     // replication threads as required. It's passed in via the constructor.

@@ -218,16 +218,18 @@ void SQLiteNode::Peer::sendMessage(const SData& message) {
 // Initializations for static vars.
 const uint64_t SQLiteNode::SQL_NODE_DEFAULT_RECV_TIMEOUT = STIME_US_PER_M * 1;
 const uint64_t SQLiteNode::SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT = STIME_US_PER_S * 30;
-uint64_t SQLiteNode::_lastSentTransactionID = 0;
 
-const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
+const string SQLiteNode::CONSISTENCY_LEVEL_NAMES[] = {"ASYNC",
                                                     "ONE",
                                                     "QUORUM"};
 
-atomic<int64_t> SQLiteNode::_currentCommandThreadID(0);
+atomic<int64_t> SQLiteNode::currentReplicateThreadID(0);
 
 const vector<SQLiteNode::Peer*> SQLiteNode::_initPeers(const string& peerListString) {
-    _state = UNKNOWN;
+    // Make the logging macro work in the static initializer.
+    auto _name = "init";
+    State _state = UNKNOWN;
+
     vector<Peer*> peerList;
     list<string> parsedPeerList = SParseList(peerListString);
     for (const string& peerString : parsedPeerList) {
@@ -259,6 +261,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _name(name),
       _peerList(_initPeers(peerList)),
       _recvTimeout(max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
+      _lastSentTransactionID(0),
       _dbPool(dbPool),
       _db(_dbPool->getBase()),
       _state(UNKNOWN),
@@ -314,7 +317,7 @@ SQLiteNode::~SQLiteNode() {
 
 void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex) {
     // Initialize each new thread with a new number.
-    SInitialize("replicate" + to_string(node._currentCommandThreadID.fetch_add(1)));
+    SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
 
     // Allow the DB handle to be returned regardless of how this function exits.
     SQLiteScopedHandle dbScope(*node._dbPool, sqlitePoolIndex);
@@ -1171,8 +1174,8 @@ bool SQLiteNode::update() {
                    << ", numFullResponded="       << numFullResponded
                    << ", numFullApproved="        << numFullApproved
                    << ", majorityApproved="       << majorityApproved
-                   << ", writeConsistency="       << consistencyLevelNames[_commitConsistency]
-                   << ", consistencyRequired="    << consistencyLevelNames[_commitConsistency]
+                   << ", writeConsistency="       << CONSISTENCY_LEVEL_NAMES[_commitConsistency]
+                   << ", consistencyRequired="    << CONSISTENCY_LEVEL_NAMES[_commitConsistency]
                    << ", consistentEnough="       << consistentEnough
                    << ", everybodyResponded="     << everybodyResponded);
 
@@ -1206,7 +1209,7 @@ bool SQLiteNode::update() {
                 if (result == SQLITE_BUSY_SNAPSHOT) {
                     // We already asked everyone to commit this (even if it was async), so we'll have to tell them to
                     // roll back.
-                    SINFO("[performance] Conflict committing " << consistencyLevelNames[_commitConsistency]
+                    SINFO("[performance] Conflict committing " << CONSISTENCY_LEVEL_NAMES[_commitConsistency]
                           << " commit, rolling back.");
                     SData rollback("ROLLBACK_TRANSACTION");
                     rollback.set("ID", _lastSentTransactionID + 1);
@@ -1222,14 +1225,14 @@ bool SQLiteNode::update() {
                                                                          prepareElapsed, commitElapsed, rollbackElapsed);
                     SINFO("Committed leader transaction for '"
                           << (_lastSentTransactionID + 1) << " (" << _db.getCommittedHash() << "). "
-                          << " (consistencyRequired=" << consistencyLevelNames[_commitConsistency] << "), "
+                          << " (consistencyRequired=" << CONSISTENCY_LEVEL_NAMES[_commitConsistency] << "), "
                           << numFullApproved << " of " << numFullPeers << " approved (" << _peerList.size() << " total) in "
                           << totalElapsed / 1000 << " ms ("
                           << beginElapsed / 1000 << "+" << readElapsed / 1000 << "+"
                           << writeElapsed / 1000 << "+" << prepareElapsed / 1000 << "+"
                           << commitElapsed / 1000 << "+" << rollbackElapsed / 1000 << "ms)");
 
-                    SINFO("[performance] Successfully committed " << consistencyLevelNames[_commitConsistency]
+                    SINFO("[performance] Successfully committed " << CONSISTENCY_LEVEL_NAMES[_commitConsistency]
                           << " transaction. Sending COMMIT_TRANSACTION to peers.");
 
                     // Send our outstanding transactions. Note that this particular transaction will send a COMMIT
@@ -1242,7 +1245,7 @@ bool SQLiteNode::update() {
                 }
             } else {
                 // Not consistent enough, but not everyone's responded yet, so we'll wait.
-                SINFO("Waiting to commit. consistencyRequired=" << consistencyLevelNames[_commitConsistency]);
+                SINFO("Waiting to commit. consistencyRequired=" << CONSISTENCY_LEVEL_NAMES[_commitConsistency]);
 
                 // We're going to need to read from the network to finish this.
                 return false;
@@ -1254,7 +1257,7 @@ bool SQLiteNode::update() {
         // here. It's up to the server to stop giving us transactions to process if it wants us to stand down.
         if (_commitState == CommitState::WAITING) {
             _commitState = CommitState::COMMITTING;
-            SINFO("[performance] Beginning " << consistencyLevelNames[_commitConsistency] << " commit.");
+            SINFO("[performance] Beginning " << CONSISTENCY_LEVEL_NAMES[_commitConsistency] << " commit.");
 
             // We should already have locked the DB before getting here, we can safely clear out any outstanding
             // transactions, no new ones can be added until we release the lock.
@@ -2354,7 +2357,7 @@ void SQLiteNode::_queueSynchronize(SQLiteNode* node, Peer* peer, SQLite& db, SDa
     // The commitCount can change at any time, and on LEADER, we need to make sure we don't send the same transaction
     // twice, where _lastSentTransactionID only changes in the sync thread. From followers serving SYNCHRONIZE
     // requests, they can always serve their entire DB, there's no point at which they risk double-sending data.
-    uint64_t targetCommit = (_state == LEADING || _state == STANDINGDOWN) ? _lastSentTransactionID : db.getCommitCount();
+    uint64_t targetCommit = (_state == LEADING || _state == STANDINGDOWN) ? node->_lastSentTransactionID : db.getCommitCount();
     if (peerCommitCount == targetCommit) {
         // Already synchronized; nothing to send
         PINFO("Peer is already synchronized");
