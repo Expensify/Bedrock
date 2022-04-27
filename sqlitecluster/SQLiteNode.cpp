@@ -258,31 +258,26 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
                        const string& host, const string& peerList, int priority, uint64_t firstTimeout,
                        const string& version, const string& commandPort)
     : STCPManager(),
+      _commandAddress(commandPort),
       _name(name),
       _peerList(_initPeers(peerList)),
+      _originalPriority(priority),
+      _port(host.empty() ? nullptr : openPort(host, 30)),
       _recvTimeout(max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
+      _version(version),
       _lastSentTransactionID(0),
+      _commitState(CommitState::UNINITIALIZED),
       _dbPool(dbPool),
       _db(_dbPool->getBase()),
-      _originalPriority(priority),
       _state(UNKNOWN),
-      _commitState(CommitState::UNINITIALIZED),
       _server(server),
       _stateChangeCount(0),
       _lastNetStatTime(chrono::steady_clock::now()),
       _replicationThreadsShouldExit(false),
-      _replicationThreadCount(0),
-      _commandAddress(commandPort),
-      _version(version)
-    {
-
-    if (!host.empty()) {
-        port = openPort(host, 30);
-    }
-
-    SASSERT(priority >= 0);
+      _replicationThreadCount(0)
+{
+    SASSERT(_originalPriority >= 0);
     _priority = -1;
-    _state = SEARCHING;
     _syncPeer = nullptr;
     _leadPeer = nullptr;
     _stateTimeout = STimeNow() + firstTimeout;
@@ -367,7 +362,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                     SDEBUG("BEGIN for commit " << newCount);
                     bool uniqueContraintsError = false;
                     try {
-                        node.handleBeginTransaction(db, peer, command, commitAttemptCount > 1);
+                        node._handleBeginTransaction(db, peer, command, commitAttemptCount > 1);
 
                         // Now we need to wait for the DB to be up-to-date (if the transaction is QUORUM, we can
                         // skip this, we did it above) to enforce that commits are in the same order on followers as on
@@ -390,7 +385,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
                         }
 
                         // Ok, almost ready.
-                        node.handlePrepareTransaction(db, peer, command);
+                        node._handlePrepareTransaction(db, peer, command);
                     } catch (const SQLite::constraint_error& e) {
                         // We could `continue` immediately upon catching this exception, but instead, we wait for the
                         // leader commit notifier to be ready. This prevents us from spinning in an endless loop on the
@@ -414,7 +409,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
 
                     // Leader says it has committed this transaction, so we can too.
                     ++commitAttemptCount;
-                    result = node.handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
+                    result = node._handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
                     if (result != SQLITE_OK) {
                         db.rollback();
                     }
@@ -430,6 +425,7 @@ void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t s
         } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
             // `decrementer` needs to be destroyed to decrement our thread count before we can change state out of
             // FOLLOWING.
+            node._handleRollbackTransaction(db, peer, command);
             goSearchingOnExit = true;
         } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
             node._leaderCommitNotifier.notifyThrough(command.calcU64("CommitCount"));
@@ -2606,7 +2602,7 @@ bool SQLiteNode::peekPeerCommand(shared_ptr<SQLiteNode> node, SQLite& db, SQLite
     return false;
 }
 
-void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& message, bool wasConflict) {
+void SQLiteNode::_handleBeginTransaction(SQLite& db, Peer* peer, const SData& message, bool wasConflict) {
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
     // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
     // the transaction for any reason, it is broken somehow -- disconnect from the leader.
@@ -2650,7 +2646,7 @@ void SQLiteNode::handleBeginTransaction(SQLite& db, Peer* peer, const SData& mes
     }
 }
 
-void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message) {
+void SQLiteNode::_handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message) {
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
     // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
     // the transaction for any reason, it is broken somehow -- disconnect from the leader.
@@ -2725,7 +2721,7 @@ void SQLiteNode::handlePrepareTransaction(SQLite& db, Peer* peer, const SData& m
           << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
 }
 
-int SQLiteNode::handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash) {
+int SQLiteNode::_handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash) {
     // COMMIT_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
     // outstanding transaction should be committed to the database. This completes a given distributed transaction.
     if (_state != FOLLOWING) {
@@ -2766,7 +2762,7 @@ int SQLiteNode::handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t c
     return result;
 }
 
-void SQLiteNode::handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message) {
+void SQLiteNode::_handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message) {
     // ROLLBACK_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
     // outstanding transaction should be rolled back. This completes a given distributed transaction.
     if (!message.isSet("ID")) {
@@ -2815,8 +2811,8 @@ bool SQLiteNode::hasQuorum() const {
 }
 
 void SQLiteNode::prePoll(fd_map& fdm) const {
-    if (port) {
-        SFDset(fdm, port->s, SREADEVTS);
+    if (_port) {
+        SFDset(fdm, _port->s, SREADEVTS);
     }
     for (auto& s : _socketList) {
         STCPManager::prePoll(fdm, *s);
@@ -2830,10 +2826,10 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 
     // Try to accept on the port and wrap in a socket
     sockaddr_in addr;
-    int s = S_accept(port->s, addr, false);
+    int s = S_accept(_port->s, addr, false);
     if (s > 0) {
         // Received a socket, wrap
-        SDEBUG("Accepting socket from '" << addr << "' on port '" << port->host << "'");
+        SDEBUG("Accepting socket from '" << addr << "' on port '" << _port->host << "'");
         socket = new Socket(s, Socket::CONNECTED);
         socket->addr = addr;
         // Pretty sure these leak.
