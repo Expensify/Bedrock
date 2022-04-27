@@ -237,7 +237,7 @@ class SQLiteNode : public STCPManager {
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,
-               const string& peerList, int priority, uint64_t firstTimeout, const string& version, const bool useParallelReplication = false,
+               const string& peerList, int priority, uint64_t firstTimeout, const string& version,
                const string& commandPort = "localhost:8890");
     ~SQLiteNode();
 
@@ -348,11 +348,6 @@ class SQLiteNode : public STCPManager {
     int handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
     void handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message);
     
-    // Legacy versions of the above functions for serial replication.
-    void handleSerialBeginTransaction(Peer* peer, const SData& message);
-    void handleSerialCommitTransaction(Peer* peer, const SData& message);
-    void handleSerialRollbackTransaction(Peer* peer, const SData& message);
-
     // Helper functions
     void _sendPING(Peer* peer);
 
@@ -453,9 +448,6 @@ class SQLiteNode : public STCPManager {
     // Counter of the total number of currently active replication threads. This is used to let us know when all
     // threads have finished.
     atomic<int64_t> _replicationThreadCount;
-
-    // Indicates whether this node is configured for parallel replication.
-    const bool _useParallelReplication;
 
     // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command
     // port".
