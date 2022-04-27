@@ -10,9 +10,8 @@
 
 // Introduction
 // ------------
-// SQLiteNode builds atop STCPNode and SQLite to provide a distributed transactional SQL database. The STCPNode base
-// class establishes and maintains connections with all peers: if any connection fails, it forever attempts to
-// re-establish. This frees the SQLiteNode layer to focus on the high-level distributed database state machine.
+// SQLiteNode builds atop SQLite to provide a distributed transactional SQL database. It establishes and maintains
+// connections with all peers: if any connection fails, it forever attempts to re-establish.
 //
 // FIXME: Handle the case where two nodes have conflicting databases. Should find where they fork, tag the affected
 //        accounts for manual review, and adopt the higher-priority
@@ -67,7 +66,7 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
 
 atomic<int64_t> SQLiteNode::_currentCommandThreadID(0);
 
-const vector<STCPNode::Peer*> SQLiteNode::initPeers(const string& peerListString) {
+const vector<SQLiteNode::Peer*> SQLiteNode::initPeers(const string& peerListString) {
     _state = UNKNOWN;
     vector<Peer*> peerList;
     list<string> parsedPeerList = SParseList(peerListString);
@@ -96,7 +95,13 @@ const vector<STCPNode::Peer*> SQLiteNode::initPeers(const string& peerListString
 SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name,
                        const string& host, const string& peerList, int priority, uint64_t firstTimeout,
                        const string& version, const bool useParallelReplication, const string& commandPort)
-    : STCPNode(name, host, initPeers(peerList), max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
+    : STCPManager(),
+      name(name),
+      recvTimeout(max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
+      peerList(initPeers(peerList)),
+      _deserializeTimer("SQLiteNode::deserialize"),
+      _sConsumeFrontTimer("SQLiteNode::SConsumeFront"),
+      _sAppendTimer("SQLiteNode::append"),
       _dbPool(dbPool),
       _db(_dbPool->getBase()),
       _state(UNKNOWN),
@@ -114,6 +119,10 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _escalateTimer("escalateCommand"),
       _commandAddress(commandPort)
     {
+
+    if (!host.empty()) {
+        port = openPort(host, 30);
+    }
 
     SASSERT(priority >= 0);
     _originalPriority = priority;
@@ -135,6 +144,20 @@ SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
     SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
+
+    // Clean up all the sockets and peers
+    for (Socket* socket : acceptedSocketList) {
+        delete socket;
+    }
+    acceptedSocketList.clear();
+
+    for (Peer* peer : peerList) {
+        // Shut down the peer
+        if (peer->socket) {
+            socketList.remove(peer->socket);
+        }
+        delete peer;
+    }
 }
 
 void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex) {
@@ -2816,12 +2839,252 @@ bool SQLiteNode::hasQuorum() {
 }
 
 void SQLiteNode::prePoll(fd_map& fdm) {
-    STCPNode::prePoll(fdm);
+    if (port) {
+        SFDset(fdm, port->s, SREADEVTS);
+    }
+    for (auto& s : socketList) {
+        STCPManager::prePoll(fdm, *s);
+    }
     _commitsToSend.prePoll(fdm);
 }
 
+STCPManager::Socket* SQLiteNode::acceptSocket() {
+    // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
+    Socket* socket = nullptr;
+
+    // Try to accept on the port and wrap in a socket
+    sockaddr_in addr;
+    int s = S_accept(port->s, addr, false);
+    if (s > 0) {
+        // Received a socket, wrap
+        SDEBUG("Accepting socket from '" << addr << "' on port '" << port->host << "'");
+        socket = new Socket(s, Socket::CONNECTED);
+        socket->addr = addr;
+        // Pretty sure these leak.
+        socketList.push_back(socket);
+
+        // Try to read immediately
+        S_recvappend(socket->s, socket->recvBuffer);
+    }
+
+    return socket;
+}
+
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
-    STCPNode::postPoll(fdm, nextActivity);
+    // Process the sockets
+    {
+        AutoTimerTime appendTime(_sAppendTimer);
+        for (auto& s : socketList) {
+            STCPManager::postPoll(fdm, *s);
+        }
+    }
+
+    // Accept any new peers
+    Socket* socket = nullptr;
+    while ((socket = acceptSocket())) {
+        acceptedSocketList.push_back(socket);
+    }
+
+    // Process the incoming sockets
+    list<Socket*>::iterator nextSocketIt = acceptedSocketList.begin();
+    while (nextSocketIt != acceptedSocketList.end()) {
+        // See if we've logged in (we know we're already connected because
+        // we're accepting an inbound connection)
+        list<Socket*>::iterator socketIt = nextSocketIt++;
+        Socket* socket = *socketIt;
+        try {
+            // Verify it's still alive
+            if (socket->state.load() != Socket::CONNECTED)
+                STHROW("premature disconnect");
+
+            // Still alive; try to login
+            SData message;
+            int messageSize = message.deserialize(socket->recvBuffer);
+            if (messageSize) {
+                // What is it?
+                socket->recvBuffer.consumeFront(messageSize);
+                if (SIEquals(message.methodLine, "NODE_LOGIN")) {
+                    // Got it -- can we associate with a peer?
+                    bool foundIt = false;
+                    for (Peer* peer : peerList) {
+                        // Just match any unconnected peer
+                        // **FIXME: Authenticate and match by public key
+                        if (peer->name == message["Name"]) {
+                            // Found it!  Are we already connected?
+                            if (!peer->socket) {
+                                // Attach to this peer and LOGIN
+                                PINFO("Attaching incoming socket");
+                                peer->socket = socket;
+                                peer->failedConnections = 0;
+                                acceptedSocketList.erase(socketIt);
+                                foundIt = true;
+
+                                // Send our own PING back so we can estimate latency
+                                _sendPING(peer);
+
+                                // Let the child class do its connection logic
+                                _onConnect(peer);
+                                break;
+                            } else
+                                STHROW("already connected");
+                        }
+                    }
+
+                    // Did we find it?
+                    if (!foundIt) {
+                        // This node wasn't expected
+                        SWARN("Unauthenticated node '" << message["Name"] << "' attempted to connected, rejecting.");
+                        STHROW("unauthenticated node");
+                    }
+                } else
+                    STHROW("expecting NODE_LOGIN");
+            }
+        } catch (const SException& e) {
+            // Died prematurely
+            if (socket->recvBuffer.empty() && socket->sendBufferEmpty()) {
+                SDEBUG("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), empty buffers");
+            } else {
+                SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), send='" << socket->sendBufferCopy() << "'");
+            }
+            socketList.remove(socket);
+            acceptedSocketList.erase(socketIt);
+            delete socket;
+        }
+    }
+
+    // Try to establish connections with peers and process messages
+    for (Peer* peer : peerList) {
+        // See if we're connected
+        if (peer->socket) {
+            // We have a socket; process based on its state
+            switch (peer->socket->state.load()) {
+            case Socket::CONNECTED: {
+                // See if there is anything new.
+                peer->failedConnections = 0; // Success; reset failures
+                SData message;
+                int messageSize = 0;
+                try {
+                    // peer->socket->lastRecvTime is always set, it's initialized to STimeNow() at creation.
+                    if (peer->socket->lastRecvTime + recvTimeout < STimeNow()) {
+                        // Reset and reconnect.
+                        SHMMM("Connection with peer '" << peer->name << "' timed out.");
+                        STHROW("Timed Out!");
+                    }
+
+                    // Send PINGs 5s before the socket times out
+                    if (STimeNow() - peer->socket->lastSendTime > recvTimeout - 5 * STIME_US_PER_S) {
+                        // Let's not delay on flushing the PING PONG exchanges
+                        // in case we get blocked before we get to flush later.
+                        SINFO("Sending PING to peer '" << peer->name << "'");
+                        _sendPING(peer);
+                    }
+
+                    // Process all messages
+                    while (AutoTimerTime(_deserializeTimer), (messageSize = message.deserialize(peer->socket->recvBuffer))) {
+                        // Which message?
+                        {
+                            AutoTimerTime consumeTime(_sConsumeFrontTimer);
+                            peer->socket->recvBuffer.consumeFront(messageSize);
+                        }
+                        if (peer->socket->recvBuffer.size() > 10'000) {
+                            // Make in known if this buffer ever gets big.
+                            PINFO("Received '" << message.methodLine << "'(size: " << messageSize << ") with " 
+                                  << (peer->socket->recvBuffer.size()) << " bytes remaining in message buffer.");
+                        } else {
+                            PDEBUG("Received '" << message.methodLine << "'.");
+                        }
+                        if (SIEquals(message.methodLine, "PING")) {
+                            // Let's not delay on flushing the PING PONG
+                            // exchanges in case we get blocked before we
+                            // get to flush later.  Pass back the remote
+                            // timestamp of the PING such that the remote
+                            // host can calculate latency.
+                            SINFO("Received PING from peer '" << peer->name << "'. Sending PONG.");
+                            SData pong("PONG");
+                            pong["Timestamp"] = message["Timestamp"];
+                            peer->socket->send(pong.serialize());
+                        } else if (SIEquals(message.methodLine, "PONG")) {
+                            // Recevied the PONG; update our latency estimate for this peer.
+                            // We set a lower bound on this at 1, because even though it should be pretty impossible
+                            // for this to be 0 (it's in us), we rely on it being non-zero in order to connect to
+                            // peers.
+                            peer->latency = max(STimeNow() - message.calc64("Timestamp"), (uint64_t)1);
+                            SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/1000 << "ms latency)");
+                        } else {
+                            // Not a PING or PONG; pass to the child class
+                            _onMESSAGE(peer, message);
+                        }
+                    }
+                } catch (const SException& e) {
+                    // Warn if the message is set. Otherwise, the error is that we got no message (we timed out), just
+                    // reconnect without complaining about it.
+                    if (message.methodLine.size()) {
+                        PWARN("Error processing message '" << message.methodLine << "' (" << e.what() << "), reconnecting.");
+                    }
+                    SData reconnect("RECONNECT");
+                    reconnect["Reason"] = e.what();
+                    peer->socket->send(reconnect.serialize());
+                    peer->socket->shutdown();
+                    break;
+                }
+                break;
+            }
+
+            case Socket::CLOSED: {
+                // Done; clean up and try to reconnect
+                uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
+                if (peer->socket->connectFailure) {
+                    PINFO("Peer connection failed after " << (STimeNow() - peer->socket->openTime) / 1000
+                                                          << "ms, reconnecting in " << delay / 1000 << "ms");
+                } else {
+                    PHMMM("Lost peer connection after " << (STimeNow() - peer->socket->openTime) / 1000
+                                                        << "ms, reconnecting in " << delay / 1000 << "ms");
+                }
+                _onDisconnect(peer);
+                if (peer->socket->connectFailure) {
+                    peer->failedConnections++;
+                }
+                socketList.remove(peer->socket);
+                peer->reset();
+                peer->nextReconnect = STimeNow() + delay;
+                nextActivity = min(nextActivity, peer->nextReconnect.load());
+                break;
+            }
+
+            default:
+                // Connecting or shutting down, wait
+                // **FIXME: Add timeout here?
+                break;
+            }
+        } else {
+            // Not connected, is it time to try again?
+            if (STimeNow() > peer->nextReconnect) {
+                // Try again
+                PINFO("Retrying the connection");
+                peer->reset();
+                try {
+                    peer->socket = new Socket(peer->host);
+                    socketList.push_back(peer->socket);
+
+                    // Try to log in now.  Send a PING immediately after so we
+                    // can get a fast estimate of latency.
+                    SData login("NODE_LOGIN");
+                    login["Name"] = name;
+                    peer->socket->send(login.serialize());
+                    _sendPING(peer);
+                    _onConnect(peer);
+                } catch (const SException& exception) {
+                    // Failed to open -- try again later
+                    SWARN(exception.what());
+                    peer->failedConnections++;
+                    peer->nextReconnect = STimeNow() + STIME_US_PER_M;
+                }
+            } else {
+                // Waiting to reconnect -- notify the caller
+                nextActivity = min(nextActivity, peer->nextReconnect.load());
+            }
+        }
+    }
 
     // Just clear this, it doesn't matter what the contents are.
     _commitsToSend.postPoll(fdm);
@@ -2830,4 +3093,199 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
 void SQLiteNode::notifyCommit() {
     _commitsToSend.push(true);
+}
+
+void SQLiteNode::_sendPING(Peer* peer) {
+    // Send a PING message, including our current timestamp
+    SASSERT(peer);
+    SData ping("PING");
+    ping["Timestamp"] = SToStr(STimeNow());
+    peer->socket->send(ping.serialize());
+}
+
+uint64_t SQLiteNode::getIDByPeer(SQLiteNode::Peer* peer) {
+    uint64_t id = 1;
+    for (auto p : peerList) {
+        if (p == peer) {
+            return id;
+        }
+        id++;
+    }
+    return 0;
+}
+
+SQLiteNode::Peer* SQLiteNode::getPeerByID(uint64_t id) {
+    if (id <= 0) {
+        return nullptr;
+    }
+    try {
+        return peerList[id - 1];
+    } catch (const out_of_range& e) {
+        return nullptr;
+    }
+}
+
+const string& SQLiteNode::stateName(SQLiteNode::State state) {
+    static string placeholder = "";
+    static map<State, string> lookup = {
+        {UNKNOWN, "UNKNOWN"},
+        {SEARCHING, "SEARCHING"},
+        {SYNCHRONIZING, "SYNCHRONIZING"},
+        {WAITING, "WAITING"},
+        {STANDINGUP, "STANDINGUP"},
+        {LEADING, "LEADING"},
+        {STANDINGDOWN, "STANDINGDOWN"},
+        {SUBSCRIBING, "SUBSCRIBING"},
+        {FOLLOWING, "FOLLOWING"},
+    };
+    auto it = lookup.find(state);
+    if (it == lookup.end()) {
+        return placeholder;
+    } else {
+        return it->second;
+    }
+}
+
+SQLiteNode::State SQLiteNode::stateFromName(const string& name) {
+    const string normalizedName = SToUpper(name);
+    static map<string, State> lookup = {
+        {"SEARCHING", SEARCHING},
+        {"SYNCHRONIZING", SYNCHRONIZING},
+        {"WAITING", WAITING},
+        {"STANDINGUP", STANDINGUP},
+        {"LEADING", LEADING},
+        {"STANDINGDOWN", STANDINGDOWN},
+        {"SUBSCRIBING", SUBSCRIBING},
+        {"FOLLOWING", FOLLOWING},
+    };
+    auto it = lookup.find(normalizedName);
+    if (it == lookup.end()) {
+        return UNKNOWN;
+    } else {
+        return it->second;
+    }
+}
+
+SQLiteNode::Peer::Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
+  : name(name_), host(host_), id(id_), params(params_), permaFollower(isPermafollower(params)),
+    commitCount(0),
+    failedConnections(0),
+    latency(0),
+    loggedIn(false),
+    nextReconnect(0),
+    priority(0),
+    state(SEARCHING),
+    standupResponse(Response::NONE),
+    subscribed(false),
+    transactionResponse(Response::NONE),
+    version(),
+    hash()
+{ }
+
+SQLiteNode::Peer::~Peer() {
+    delete socket;
+}
+
+bool SQLiteNode::Peer::connected() const {
+    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
+    return (socket && socket->state.load() == STCPManager::Socket::CONNECTED);
+}
+
+void SQLiteNode::Peer::reset() {
+    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
+    latency = 0;
+    loggedIn = false;
+    priority = 0;
+    delete socket;
+    socket = nullptr;
+    state = SEARCHING;
+    standupResponse = Response::NONE;
+    subscribed = false;
+    transactionResponse = Response::NONE;
+    version = "";
+    setCommit(0, "");
+}
+
+string SQLiteNode::Peer::responseName(Response response) {
+    switch (response) {
+        case SQLiteNode::Peer::Response::NONE:
+            return "NONE";
+            break;
+        case SQLiteNode::Peer::Response::APPROVE:
+            return "APPROVE";
+            break;
+        case SQLiteNode::Peer::Response::DENY:
+            return "DENY";
+            break;
+        default:
+            return "";
+    }
+}
+
+void SQLiteNode::Peer::setCommit(uint64_t count, const string& hashString) {
+    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
+    const_cast<atomic<uint64_t>&>(commitCount) = count;
+    hash = hashString;
+}
+
+void SQLiteNode::Peer::getCommit(uint64_t& count, string& hashString) {
+    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
+    count = commitCount.load();
+    hashString = hash.load();
+}
+
+STable SQLiteNode::Peer::getData() const {
+    // Add all of our standard stuff.
+    STable result({
+        {"name", name},
+        {"host", host},
+        {"state", (stateName(state) + (connected() ? "" : " (DISCONNECTED)"))},
+        {"latency", to_string(latency)},
+        {"nextReconnect", to_string(nextReconnect)},
+        {"id", to_string(id)},
+        {"failedConnections", to_string(failedConnections)},
+        {"loggedIn", (loggedIn ? "true" : "false")},
+        {"priority", to_string(priority)},
+        {"version", version},
+        {"hash", hash},
+        {"commitCount", to_string(commitCount)},
+        {"standupResponse", responseName(standupResponse)},
+        {"transactionResponse", responseName(transactionResponse)},
+        {"subscribed", (subscribed ? "true" : "false")},
+    });
+
+    // And anything from the params (note: doesn't overwrite our standard stuff).
+    for (auto& p : params) {
+        result.emplace(p);
+    }
+
+    result["commandAddress"] = commandAddress;
+
+    return result;
+}
+
+bool SQLiteNode::Peer::isPermafollower(const STable& params) {
+    auto it = params.find("Permafollower");
+    if (it != params.end() && it->second == "true") {
+        return true;
+    }
+    return false;
+}
+
+#undef SLOGPREFIX
+#define SLOGPREFIX "{" << name << "} "
+
+void SQLiteNode::Peer::sendMessage(const SData& message) {
+    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
+    if (socket) {
+        socket->send(message.serialize());
+    } else {
+        SWARN("Tried to send " << message.methodLine << " to peer, but not available.");
+    }
+}
+
+ostream& operator<<(ostream& os, const atomic<SQLiteNode::Peer::Response>& response)
+{
+    os << SQLiteNode::Peer::responseName(response.load());
+    return os;
 }
