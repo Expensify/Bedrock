@@ -259,9 +259,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _name(name),
       _peerList(_initPeers(peerList)),
       _recvTimeout(max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      _deserializeTimer("SQLiteNode::deserialize"),
-      _sConsumeFrontTimer("SQLiteNode::SConsumeFront"),
-      _sAppendTimer("SQLiteNode::append"),
       _dbPool(dbPool),
       _db(_dbPool->getBase()),
       _state(UNKNOWN),
@@ -273,10 +270,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _replicationThreadsShouldExit(false),
       _replicationThreadCount(0),
       _useParallelReplication(useParallelReplication),
-      _multiReplicationThreadSpawn("multi-replication"),
-      _legacyReplication("legacy-replication"),
-      _onMessageTimer("_onMESSAGE"),
-      _escalateTimer("escalateCommand"),
       _commandAddress(commandPort)
     {
 
@@ -652,7 +645,6 @@ list<STable> SQLiteNode::getPeerInfo() const {
 }
 
 void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget) {
-    AutoTimerTime time(_escalateTimer);
     unique_lock<shared_mutex> leadPeerLock(_leadPeerMutex);
     // Send this to the leader
     SASSERT(_leadPeer);
@@ -1450,7 +1442,6 @@ bool SQLiteNode::update() {
 // Messages
 // Here are the messages that can be received, and how a cluster node will respond to each based on its state:
 void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
-    AutoTimerTime time(_onMessageTimer);
     SASSERT(peer);
     SASSERTWARN(!message.empty());
     SDEBUG("Received sqlitenode message from peer " << peer->name << ": " << message.serialize());
@@ -1852,12 +1843,10 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
             } else {
                 auto threadID = _replicationThreadCount.fetch_add(1);
                 SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
-                AutoTimerTime time(_multiReplicationThreadSpawn);
                 thread(replicate, ref(*this), peer, message, _dbPool->getIndex(false)).detach();
                 SDEBUG("Done spawning concurrent replicate thread: " << threadID);
             }
         } else {
-            AutoTimerTime time(_legacyReplication);
             if (SIEquals(message.methodLine, "BEGIN_TRANSACTION")) {
                 handleSerialBeginTransaction(peer, message);
             } else if (SIEquals(message.methodLine, "COMMIT_TRANSACTION")) {
@@ -3059,11 +3048,8 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Process the sockets
-    {
-        AutoTimerTime appendTime(_sAppendTimer);
-        for (auto& s : _socketList) {
-            STCPManager::postPoll(fdm, *s);
-        }
+    for (auto& s : _socketList) {
+        STCPManager::postPoll(fdm, *s);
     }
 
     // Accept any new peers
@@ -3167,12 +3153,9 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     }
 
                     // Process all messages
-                    while (AutoTimerTime(_deserializeTimer), (messageSize = message.deserialize(peer->socket->recvBuffer))) {
+                    while ((messageSize = message.deserialize(peer->socket->recvBuffer))) {
                         // Which message?
-                        {
-                            AutoTimerTime consumeTime(_sConsumeFrontTimer);
-                            peer->socket->recvBuffer.consumeFront(messageSize);
-                        }
+                        peer->socket->recvBuffer.consumeFront(messageSize);
                         if (peer->socket->recvBuffer.size() > 10'000) {
                             // Make in known if this buffer ever gets big.
                             PINFO("Received '" << message.methodLine << "'(size: " << messageSize << ") with " 

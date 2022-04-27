@@ -21,6 +21,7 @@
 // 8. In each of these sections, things should be alphabetized.
 
 // Diagnostic class for timing what fraction of time happens in certain blocks.
+// TODO: Move out of SQLiteNode.
 class AutoTimer {
   public:
     AutoTimer(string name);
@@ -364,9 +365,6 @@ class SQLiteNode : public STCPManager {
     // TODO:: These are redundant and probably contain the same thing. Or one is empty? Either way it's confusing.
     list<Socket*> _acceptedSocketList;
 
-    AutoTimer _deserializeTimer;
-    AutoTimer _sConsumeFrontTimer;
-    AutoTimer _sAppendTimer;
     unique_ptr<Port> port;
 
     // This is a pool of DB handles that this node can use for any DB access it needs. Currently, it hands them out to
@@ -458,11 +456,6 @@ class SQLiteNode : public STCPManager {
 
     // Indicates whether this node is configured for parallel replication.
     const bool _useParallelReplication;
-
-    AutoTimer _multiReplicationThreadSpawn;
-    AutoTimer _legacyReplication;
-    AutoTimer _onMessageTimer;
-    AutoTimer _escalateTimer;
 
     // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command
     // port".
