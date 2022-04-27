@@ -72,7 +72,7 @@ const string SQLiteNode::consistencyLevelNames[] = {"ASYNC",
 
 atomic<int64_t> SQLiteNode::_currentCommandThreadID(0);
 
-const vector<SQLiteNode::Peer*> SQLiteNode::initPeers(const string& peerListString) {
+const vector<SQLiteNode::Peer*> SQLiteNode::_initPeers(const string& peerListString) {
     _state = UNKNOWN;
     vector<Peer*> peerList;
     list<string> parsedPeerList = SParseList(peerListString);
@@ -104,7 +104,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
     : STCPManager(),
       name(name),
       recvTimeout(max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
-      peerList(initPeers(peerList)),
+      peerList(_initPeers(peerList)),
       _deserializeTimer("SQLiteNode::deserialize"),
       _sConsumeFrontTimer("SQLiteNode::SConsumeFront"),
       _sAppendTimer("SQLiteNode::append"),
@@ -320,7 +320,7 @@ void SQLiteNode::sendResponse(const SQLiteCommand& command)
 
 void SQLiteNode::beginShutdown(uint64_t usToWait) {
     // Ignore redundant
-    if (!gracefulShutdown()) {
+    if (!_gracefulShutdown()) {
         // Start graceful shutdown
         SINFO("Beginning graceful shutdown.");
         _gracefulShutdownTimeout.alarmDuration = usToWait;
@@ -348,7 +348,7 @@ bool SQLiteNode::_isNothingBlockingShutdown() const {
 
 bool SQLiteNode::shutdownComplete() {
     // First even see if we're shutting down
-    if (!gracefulShutdown())
+    if (!_gracefulShutdown())
         return false;
 
     // Next, see if we're timing out the graceful shutdown and killing non-gracefully
@@ -424,15 +424,11 @@ const string& SQLiteNode::getLeaderVersion() const {
     return _leaderVersion;
 }
 
-const string& SQLiteNode::getVersion() const {
-    return _version;
-}
-
 uint64_t SQLiteNode::getCommitCount() const {
     return _db.getCommitCount();
 }
 
-bool SQLiteNode::gracefulShutdown() const {
+bool SQLiteNode::_gracefulShutdown() const {
     return (_gracefulShutdownTimeout.alarmDuration != 0);
 }
 
@@ -736,7 +732,7 @@ bool SQLiteNode::update() {
         SASSERTWARN(_db.getUncommittedHash().empty());
         SASSERTWARN(_escalatedCommandMap.empty());
         // If we're trying and ready to shut down, do nothing.
-        if (gracefulShutdown()) {
+        if (_gracefulShutdown()) {
             // Do we have an outstanding command?
             if (1/* TODO: Commit in progress? */) {
                 // Nope!  Let's just halt the FSM here until we shutdown so as to
@@ -868,7 +864,7 @@ bool SQLiteNode::update() {
         bool allResponded = true;
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
-        if (gracefulShutdown()) {
+        if (_gracefulShutdown()) {
             SINFO("Shutting down while standing up, setting state to SEARCHING");
             _changeState(SEARCHING);
             return true; // Re-update
@@ -1151,7 +1147,7 @@ bool SQLiteNode::update() {
         // Check to see if we should stand down. We'll finish any outstanding commits before we actually do.
         if (_state == LEADING) {
             string standDownReason;
-            if (gracefulShutdown()) {
+            if (_gracefulShutdown()) {
                 // Graceful shutdown. Set priority 1 and stand down so we'll re-connect to the new leader and finish
                 // up our commands.
                 standDownReason = "Shutting down, setting priority 1 and STANDINGDOWN.";
@@ -1245,7 +1241,7 @@ bool SQLiteNode::update() {
         // If graceful shutdown requested, stop following once there is
         // nothing blocking shutdown.  We stop listening for new commands
         // immediately upon TERM.)
-        if (gracefulShutdown() && _isNothingBlockingShutdown()) {
+        if (_gracefulShutdown() && _isNothingBlockingShutdown()) {
             // Go searching so we stop following
             SINFO("Stopping FOLLOWING in order to gracefully shut down, SEARCHING.");
             _changeState(SEARCHING);
@@ -2877,7 +2873,7 @@ void SQLiteNode::prePoll(fd_map& fdm) const {
     _commitsToSend.prePoll(fdm);
 }
 
-STCPManager::Socket* SQLiteNode::acceptSocket() {
+STCPManager::Socket* SQLiteNode::_acceptSocket() {
     // Initialize to 0 in case we don't accept anything. Note that this *does* overwrite the passed-in pointer.
     Socket* socket = nullptr;
 
@@ -2910,7 +2906,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Accept any new peers
     Socket* socket = nullptr;
-    while ((socket = acceptSocket())) {
+    while ((socket = _acceptSocket())) {
         acceptedSocketList.push_back(socket);
     }
 
@@ -3196,8 +3192,12 @@ SQLiteNode::State SQLiteNode::stateFromName(const string& name) {
 }
 
 SQLiteNode::Peer::Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
-  : name(name_), host(host_), id(id_), params(params_), permaFollower(isPermafollower(params)),
-    commitCount(0),
+  : commitCount(0),
+    host(host_),
+    id(id_),
+    name(name_),
+    params(params_),
+    permaFollower(isPermafollower(params)),
     failedConnections(0),
     latency(0),
     loggedIn(false),
@@ -3216,12 +3216,12 @@ SQLiteNode::Peer::~Peer() {
 }
 
 bool SQLiteNode::Peer::connected() const {
-    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
     return (socket && socket->state.load() == STCPManager::Socket::CONNECTED);
 }
 
 void SQLiteNode::Peer::reset() {
-    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
     latency = 0;
     loggedIn = false;
     priority = 0;
@@ -3252,13 +3252,13 @@ string SQLiteNode::Peer::responseName(Response response) {
 }
 
 void SQLiteNode::Peer::setCommit(uint64_t count, const string& hashString) {
-    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
     const_cast<atomic<uint64_t>&>(commitCount) = count;
     hash = hashString;
 }
 
-void SQLiteNode::Peer::getCommit(uint64_t& count, string& hashString) {
-    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
+void SQLiteNode::Peer::getCommit(uint64_t& count, string& hashString) const {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
     count = commitCount.load();
     hashString = hash.load();
 }
@@ -3305,7 +3305,7 @@ bool SQLiteNode::Peer::isPermafollower(const STable& params) {
 #define SLOGPREFIX "{" << name << "} "
 
 void SQLiteNode::Peer::sendMessage(const SData& message) {
-    lock_guard<decltype(_stateMutex)> lock(_stateMutex);
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         socket->send(message.serialize());
     } else {
