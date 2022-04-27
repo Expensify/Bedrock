@@ -408,9 +408,6 @@ class SQLiteNode : public STCPManager {
     // Stopwatch to track if we're giving up on the server preventing a standdown.
     SStopwatch _standDownTimeOut;
 
-    // Our version string. Supplied by constructor.
-    string _version;
-
     // leader's version string.
     string _leaderVersion;
 
@@ -456,6 +453,9 @@ class SQLiteNode : public STCPManager {
     // This is just here to allow `poll` to get interrupted when there are new commits to send. We don't want followers
     // to wait up to a full second for them.
     mutable SSynchronizedQueue<bool> _commitsToSend;
+
+    // Our version string. Supplied by constructor.
+    const string _version;
 };
 
 // serialization for Responses.

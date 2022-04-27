@@ -272,7 +272,8 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _handledCommitCount(0),
       _replicationThreadsShouldExit(false),
       _replicationThreadCount(0),
-      _commandAddress(commandPort)
+      _commandAddress(commandPort),
+      _version(version)
     {
 
     if (!host.empty()) {
@@ -286,7 +287,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
     _syncPeer = nullptr;
     _leadPeer = nullptr;
     _stateTimeout = STimeNow() + firstTimeout;
-    _version = version;
 
     SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
     _localCommitNotifier.notifyThrough(_db.getCommitCount());
