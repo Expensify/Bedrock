@@ -26,10 +26,15 @@
  * No non-const members should be publicly exposed.
  * Any public method that is `const` must shared_lock<>(nodeMutex).
  * Alternatively, a public `const` method that is a simple getter for an atomic property can skip the lock.
- * Any pubic method that is non-const must uniaue_lock<>(nodeMutex).
+ * Any public method that is non-const must uniaue_lock<>(nodeMutex) before changing any internal state, and must hold
+ * this lock until it is done changing state to make this method's changes atomic.
  * Any private methods must not call public methods.
  * Any private methods must not lock nodeMutex (for recursion reasons).
  * Any public methods must not call other public methods.
+ *
+ * `_replicate` is a special exception because it runs in multiple threads internally. It needs to handle locking if it
+ * changes any internal state (and it calls `changeState`, which does).
+ *
  */
 
 // Diagnostic class for timing what fraction of time happens in certain blocks.
@@ -304,9 +309,9 @@ class SQLiteNode : public STCPManager {
     //
     // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
     // which happens when a node stops FOLLOWING.
-    static void replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex);
+    static void _replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex);
 
-    // Inverse of the above function. If the peer is not found, returns 0.
+    // Returns the ID of Peer. If the peer is not found, returns 0.
     uint64_t _getIDByPeer(Peer* peer) const;
 
     // Returns a peer by it's ID. If the ID is invalid, returns nullptr.

@@ -309,7 +309,7 @@ SQLiteNode::~SQLiteNode() {
     }
 }
 
-void SQLiteNode::replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex) {
+void SQLiteNode::_replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex) {
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
 
@@ -1839,7 +1839,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
         } else {
             auto threadID = _replicationThreadCount.fetch_add(1);
             SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
-            thread(replicate, ref(*this), peer, message, _dbPool->getIndex(false)).detach();
+            thread(_replicate, ref(*this), peer, message, _dbPool->getIndex(false)).detach();
             SDEBUG("Done spawning concurrent replicate thread: " << threadID);
         }
     } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
