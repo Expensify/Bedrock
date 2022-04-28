@@ -277,8 +277,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _state(UNKNOWN),
       _stateChangeCount(0),
       _stateTimeout(STimeNow() + firstTimeout),
-      _syncPeer(nullptr),
-      _lastNetStatTime(chrono::steady_clock::now())
+      _syncPeer(nullptr)
 {
     SASSERT(_originalPriority >= 0);
     SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
@@ -717,26 +716,6 @@ void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forge
 // -----------------
 // Each state transitions according to the following events and operates as follows:
 bool SQLiteNode::update() {
-
-    // Log network timing info.
-    auto now = chrono::steady_clock::now();
-    if (now > (_lastNetStatTime + 10s)) {
-        auto elapsed = (now - _lastNetStatTime);
-        _lastNetStatTime = now;
-        string logMsg = "[performance] Network stats: " +
-                        to_string(chrono::duration_cast<chrono::milliseconds>(elapsed).count()) +
-                        " ms elapsed. ";
-        for (auto& p : _peerList) {
-            if (p->socket) {
-                logMsg += p->name + " sent " + to_string(p->socket->getSentBytes()) + " bytes, recv " + to_string(p->socket->getRecvBytes()) + " bytes. ";
-                p->socket->resetCounters();
-            } else {
-                logMsg += p->name + " has no socket. ";
-            }
-        }
-        SINFO(logMsg);
-    }
-
     // Process the database state machine
     switch (_state) {
     /// - SEARCHING: Wait for a period and try to connect to all known

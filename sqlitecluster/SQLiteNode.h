@@ -451,10 +451,6 @@ class SQLiteNode : public STCPManager {
     // The peer that we'll synchronize from.
     // Remove. See: https://github.com/Expensify/Expensify/issues/208439
     Peer* _syncPeer;
-
-    // Last time we recorded network stats.
-    // TODO: Kill this and the stuff related to it.
-    chrono::steady_clock::time_point _lastNetStatTime;
 };
 
 // serialization for Responses.
