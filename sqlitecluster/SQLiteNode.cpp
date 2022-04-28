@@ -408,7 +408,7 @@ int SQLiteNode::getPriority() const {
 }
 
 const string SQLiteNode::getLeaderVersion() const {
-    if (_state == STANDINGUP || _state == LEADING || _state == STANDINGDOWN) {
+    if (_state == LEADING || _state == STANDINGDOWN) {
         return _version;
     } else if (_leadPeer) {
         return _leadPeer.load()->version;
