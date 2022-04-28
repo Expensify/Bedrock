@@ -371,6 +371,8 @@ class SQLiteNode : public STCPManager {
     // A bunch of private properties.
     list<STCPManager::Socket*> _socketList;
     // TODO:: These are redundant and probably contain the same thing. Or one is empty? Either way it's confusing.
+    // Ok, this is annoying because it's a special list of peers that are in the process of connecting right now. I
+    // don't think we need a whole other list for this. Remove this and do something better.
     list<Socket*> _acceptedSocketList;
 
     // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
