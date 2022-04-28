@@ -13,6 +13,7 @@
 #include <BedrockPlugin.h>
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
+#include <libstuff/AutoTimer.h>
 
 set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;

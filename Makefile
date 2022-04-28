@@ -30,7 +30,7 @@ INTERMEDIATEDIR = .build
 
 # We use the same library paths and required libraries for all binaries.
 LIBPATHS =-L$(PROJECT) -Lmbedtls/library
-LIBRARIES =-lbedrock -lstuff -lbedrock -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lm
+LIBRARIES =-Wl,--start-group -lbedrock -lstuff -Wl,--end-group -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lm
 
 # These targets aren't actual files.
 .PHONY: all test clustertest clean testplugin

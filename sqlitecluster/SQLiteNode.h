@@ -37,30 +37,6 @@
  *
  */
 
-// Diagnostic class for timing what fraction of time happens in certain blocks.
-// TODO: Move out of SQLiteNode.
-class AutoTimer {
-  public:
-    AutoTimer(string name);
-    void start();
-    void stop();
-
-  private:
-    string _name;
-    chrono::steady_clock::time_point _intervalStart;
-    chrono::steady_clock::time_point _instanceStart;
-    chrono::steady_clock::duration _countedTime;
-};
-
-class AutoTimerTime {
-  public:
-    AutoTimerTime(AutoTimer& t);
-    ~AutoTimerTime();
-
-  private:
-    AutoTimer& _t;
-};
-
 class SQLiteCommand;
 class SQLiteServer;
 
