@@ -10,10 +10,12 @@ class SQLiteServer : public STCPManager {
     // An SQLiteNode will call this to pass a command to a server for processing. The isNew flag is set if this is the
     // first time this command has been sent to this server, as opposed to being an existing command, such as one that
     // was previously escalated.
+    [[deprecated("Use HTTP escalation")]]
     virtual void acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew) = 0;
 
     // An SQLiteNode will call this to cancel a command that a peer has escalated but no longer wants a response to.
     // The command may or may not be canceled, depending on whether it's already been processed.
+    [[deprecated]]
     virtual void cancelCommand(const string& commandID) = 0;
 
     // This will return true if there's no outstanding writable activity that we're waiting on. It's called by an

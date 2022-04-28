@@ -200,7 +200,7 @@ class SQLiteNode : public STCPManager {
     // false.
     bool commitSucceeded() const;
     uint64_t getCommitCount() const;
-    const string& getLeaderVersion() const;
+    const string getLeaderVersion() const;
     list<STable> getPeerInfo() const;
     int getPriority() const;
     State getState() const;
@@ -368,93 +368,93 @@ class SQLiteNode : public STCPManager {
     // Our version string. Supplied by constructor.
     const string _version;
 
-    // A bunch of private properties.
-    list<STCPManager::Socket*> _socketList;
-    // TODO:: These are redundant and probably contain the same thing. Or one is empty? Either way it's confusing.
-    // Ok, this is annoying because it's a special list of peers that are in the process of connecting right now. I
-    // don't think we need a whole other list for this. Remove this and do something better.
+    // Remove. See: https://github.com/Expensify/Expensify/issues/208438
     list<Socket*> _acceptedSocketList;
 
-    // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
-    // any new committed transactions to peers, and update this value.
-    uint64_t _lastSentTransactionID;
+    // The write consistency requested for the current in-progress commit.
+    // Remove. See: https://github.com/Expensify/Expensify/issues/208443
+    ConsistencyLevel _commitConsistency;
 
     // This is the current CommitState we're in with regard to committing a transaction. It is `UNINITIALIZED` from
     // startup until a transaction is started.
     CommitState _commitState;
 
-    // This is a pool of DB handles that this node can use for any DB access it needs. Currently, it hands them out to
-    // replication threads as required. It's passed in via the constructor.
-    shared_ptr<SQLitePool> _dbPool;
+    // This is just here to allow `poll` to get interrupted when there are new commits to send. We don't want followers
+    // to wait up to a full second for them.
+    mutable SSynchronizedQueue<bool> _commitsToSend;
 
     // Handle to the underlying database that we write to. This should also be passed to an SQLiteCore object that can
     // actually perform some action on the DB. When those action are complete, you can call SQLiteNode::startCommit()
     // to commit and replicate them.
     SQLite& _db;
 
-    Peer* _syncPeer;
-
-    // Our priority, with respect to other nodes in the cluster. This is passed in to our constructor. The node with
-    // the highest priority in the cluster will attempt to become the leader.
-    atomic<int> _priority;
-
-    // Our current State.
-    atomic<State> _state;
-    
-    // Pointer to the peer that is the leader. Null if we're the leader, or if we don't have a leader yet.
-    atomic<Peer*> _leadPeer;
-
-    // There's a mutex here to lock around changes to this, or any complex operations that expect leader to remain
-    // unchanged throughout, notably, _sendToPeer. This is sort of a mess, but replication threads need to send
-    // acknowledgments to the lead peer, but the main sync loop can update that at any time.
-    mutable shared_mutex _leadPeerMutex;
-
-    // Timestamp that, if we pass with no activity, we'll give up on our current state, and start over from SEARCHING.
-    uint64_t _stateTimeout;
-
-    // The write consistency requested for the current in-progress commit.
-    ConsistencyLevel _commitConsistency;
-
-    // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
-    SStopwatch _gracefulShutdownTimeout;
-
-    // Stopwatch to track if we're giving up on the server preventing a standdown.
-    SStopwatch _standDownTimeOut;
-
-    // leader's version string.
-    string _leaderVersion;
+    // This is a pool of DB handles that this node can use for any DB access it needs. Currently, it hands them out to
+    // replication threads as required. It's passed in via the constructor.
+    shared_ptr<SQLitePool> _dbPool;
 
     // When we're a follower, we can escalate a command to the leader. When we do so, we store that command in the
     // following map of commandID to Command until the follower responds.
     [[deprecated("Use HTTP escalation")]]
     SynchronizedMap<string, unique_ptr<SQLiteCommand>> _escalatedCommandMap;
 
-    // The server object to which we'll pass incoming escalated commands.
+    // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
+    // any new committed transactions to peers, and update this value.
+    uint64_t _lastSentTransactionID;
+
+    // Pointer to the peer that is the leader. Null if we're the leader, or if we don't have a leader yet.
+    atomic<Peer*> _leadPeer;
+
+    // These are used in _replicate, _changeState, and _recvSynchronize to coordinate the replication threads.
+    SQLiteSequentialNotifier _leaderCommitNotifier;
+    SQLiteSequentialNotifier _localCommitNotifier;
+
+    // Our priority, with respect to other nodes in the cluster. This is passed in to our constructor. The node with
+    // the highest priority in the cluster will attempt to become the leader.
+    // This is the same as `_originalPriority` most of the time except when we're first starting up and synchronizing,
+    // or when we're standingdown.
+    // Remove. See: https://github.com/Expensify/Expensify/issues/208449
+    atomic<int> _priority;
+
+    // Counter of the total number of currently active replication threads. This is used to let us know when all
+    // threads have finished.
+    atomic<int64_t> _replicationThreadCount;
+
+    // State variable that indicates when the above threads should quit.
+    atomic<bool> _replicationThreadsShouldExit;
+
+    // Server that implements `SQLiteServer` interface.
     SQLiteServer& _server;
+
+    // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
+    SStopwatch _shutdownTimeout;
+
+    // List of sockets connected to peers.
+    list<STCPManager::Socket*> _socketList;
+
+    // Stopwatch to track if we're giving up on the server preventing a standdown.
+    SStopwatch _standDownTimeout;
+
+   // Our current State.
+    atomic<State> _state;
 
     // This is an integer that increments every time we change states. This is useful for responses to state changes
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
     // and not stale responses to old changes.
     int _stateChangeCount;
 
+    // This is the mutex we lock any time we change any internal state variables.
+    mutable shared_mutex _stateMutex;
+
+    // Timestamp that, if we pass with no activity, we'll give up on our current state, and start over from SEARCHING.
+    uint64_t _stateTimeout;
+
+    // The peer that we'll synchronize from.
+    // Remove. See: https://github.com/Expensify/Expensify/issues/208439
+    Peer* _syncPeer;
+
     // Last time we recorded network stats.
     // TODO: Kill this and the stuff related to it.
     chrono::steady_clock::time_point _lastNetStatTime;
-
-    // State variable that indicates when the above threads should quit.
-    atomic<bool> _replicationThreadsShouldExit;
-
-    SQLiteSequentialNotifier _localCommitNotifier;
-    SQLiteSequentialNotifier _leaderCommitNotifier;
-
-    // Counter of the total number of currently active replication threads. This is used to let us know when all
-    // threads have finished.
-    atomic<int64_t> _replicationThreadCount;
-
-    // This is just here to allow `poll` to get interrupted when there are new commits to send. We don't want followers
-    // to wait up to a full second for them.
-    mutable SSynchronizedQueue<bool> _commitsToSend;
-
 };
 
 // serialization for Responses.
