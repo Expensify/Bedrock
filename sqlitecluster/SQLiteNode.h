@@ -425,6 +425,7 @@ class SQLiteNode : public STCPManager {
     SStopwatch _shutdownTimeout;
 
     // List of sockets connected to peers.
+    // Remove. See: https://github.com/Expensify/Expensify/issues/208459
     list<STCPManager::Socket*> _socketList;
 
     // Stopwatch to track if we're giving up on the server preventing a standdown.
