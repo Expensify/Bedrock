@@ -308,6 +308,9 @@ class SQLiteNode : public STCPManager {
     // which happens when a node stops FOLLOWING.
     static void _replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex);
 
+    Socket* _acceptSocket();
+    void _changeState(State newState);
+
     // Returns the ID of Peer. If the peer is not found, returns 0.
     uint64_t _getIDByPeer(Peer* peer) const;
 
@@ -316,17 +319,15 @@ class SQLiteNode : public STCPManager {
 
     // Returns whether we're in the process of gracefully shutting down.
     bool _gracefulShutdown() const;
-    bool _isNothingBlockingShutdown() const;
-    bool _majoritySubscribed() const;
-
-    Socket* _acceptSocket();
-    void _changeState(State newState);
 
     // Handlers for transaction messages.
     void _handleBeginTransaction(SQLite& db, Peer* peer, const SData& message, bool wasConflict);
     void _handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message);
     int _handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
     void _handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message);
+
+    bool _isNothingBlockingShutdown() const;
+    bool _majoritySubscribed() const;
 
     // Called when we first establish a connection with a new peer
     void _onConnect(Peer* peer);
