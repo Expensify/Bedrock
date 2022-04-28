@@ -281,11 +281,8 @@ class SQLiteNode : public STCPManager {
     // Monotonically increasing thread counter, used for thread IDs for logging purposes.
     static atomic<int64_t> currentReplicateThreadID;
 
-    // Receive timeout for 'normal' SQLiteNode messages
-    static const uint64_t SQL_NODE_DEFAULT_RECV_TIMEOUT;
-
-    // Separate timeout for receiving and applying synchronization commits.
-    static const uint64_t SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT;
+    // Receive timeout for cluster messages.
+    static const uint64_t RECV_TIMEOUT;
 
     static const vector<Peer*> _initPeers(const string& peerList);
 
@@ -363,7 +360,6 @@ class SQLiteNode : public STCPManager {
 
     // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command port".
     const unique_ptr<Port> _port;
-    const uint64_t _recvTimeout;
 
     // Our version string. Supplied by constructor.
     const string _version;

@@ -216,8 +216,7 @@ void SQLiteNode::Peer::sendMessage(const SData& message) {
 #define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
 
 // Initializations for static vars.
-const uint64_t SQLiteNode::SQL_NODE_DEFAULT_RECV_TIMEOUT = STIME_US_PER_M * 1;
-const uint64_t SQLiteNode::SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT = STIME_US_PER_S * 30;
+const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S * 30};
 
 const string SQLiteNode::CONSISTENCY_LEVEL_NAMES[] = {"ASYNC",
                                                     "ONE",
@@ -263,7 +262,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _peerList(_initPeers(peerList)),
       _originalPriority(priority),
       _port(host.empty() ? nullptr : openPort(host, 30)),
-      _recvTimeout(max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _version(version),
       _commitState(CommitState::UNINITIALIZED),
       _db(dbPool->getBase()),
@@ -1746,7 +1744,7 @@ void SQLiteNode::_onMESSAGE(Peer* peer, const SData& message) {
                 }
 
                 // Also, extend our timeout so long as we're still alive
-                _stateTimeout = STimeNow() + SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
+                _stateTimeout = STimeNow() + RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
             }
         } catch (const SException& e) {
             // Transaction failed
@@ -2208,10 +2206,8 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             // TODO: Maybe it would be better to re-send the message indicating we're standing up when we see someone
             // hasn't responded.
             timeout = STIME_US_PER_S * 5 + SRandom::rand64() % STIME_US_PER_S * 5;
-        } else if (newState == SEARCHING || newState == SUBSCRIBING) {
-            timeout = SQL_NODE_DEFAULT_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
-        } else if (newState == SYNCHRONIZING) {
-            timeout = SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
+        } else if (newState == SEARCHING || newState == SUBSCRIBING || newState == SYNCHRONIZING) {
+            timeout = RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
         } else {
             timeout = 0;
         }
@@ -2910,14 +2906,14 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 int messageSize = 0;
                 try {
                     // peer->socket->lastRecvTime is always set, it's initialized to STimeNow() at creation.
-                    if (peer->socket->lastRecvTime + _recvTimeout < STimeNow()) {
+                    if (peer->socket->lastRecvTime + RECV_TIMEOUT < STimeNow()) {
                         // Reset and reconnect.
                         SHMMM("Connection with peer '" << peer->name << "' timed out.");
                         STHROW("Timed Out!");
                     }
 
                     // Send PINGs 5s before the socket times out
-                    if (STimeNow() - peer->socket->lastSendTime > _recvTimeout - 5 * STIME_US_PER_S) {
+                    if (STimeNow() - peer->socket->lastSendTime > RECV_TIMEOUT - 5 * STIME_US_PER_S) {
                         // Let's not delay on flushing the PING PONG exchanges
                         // in case we get blocked before we get to flush later.
                         SINFO("Sending PING to peer '" << peer->name << "'");
