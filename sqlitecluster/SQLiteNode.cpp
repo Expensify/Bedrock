@@ -266,7 +266,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _recvTimeout(max(SQL_NODE_DEFAULT_RECV_TIMEOUT, SQL_NODE_SYNCHRONIZING_RECV_TIMEOUT)),
       _version(version),
       _commitState(CommitState::UNINITIALIZED),
-      _db(_dbPool->getBase()),
+      _db(dbPool->getBase()),
       _dbPool(dbPool),
       _lastSentTransactionID(0),
       _leadPeer(nullptr),
