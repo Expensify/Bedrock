@@ -39,6 +39,7 @@
 
 class SQLiteCommand;
 class SQLiteServer;
+class SQLitePeer;
 
 // Distributed, leader/follower, failover, transactional DB cluster
 class SQLiteNode : public STCPManager {
@@ -65,7 +66,6 @@ class SQLiteNode : public STCPManager {
     };
 
     // Possible states of a node in a DB cluster
-    // Before `Peer` because `Peer` references it.
     enum State {
         UNKNOWN,
         SEARCHING,     // Searching for peers
@@ -76,84 +76,6 @@ class SQLiteNode : public STCPManager {
         STANDINGDOWN,  // Giving up leader role
         SUBSCRIBING,   // Preparing to follow the leader
         FOLLOWING      // Following the leader node
-    };
-
-    // Represents a single peer in the database cluster
-    class Peer {
-        // This allows direct access to the socket from the node object that should actually be managing peer
-        // connections, which should always be handled by a single thread, and thus safe. Ideally, this isn't required,
-        // but for the time being, the amount of refactoring required to fix that is too high.
-        friend class SQLiteNode;
-
-      public:
-        // Possible responses from a peer.
-        enum class Response {
-            NONE,
-            APPROVE,
-            DENY
-        };
-
-        // Get a string name for a Response object.
-        static string responseName(Response response);
-
-        // Atomically get commit and hash.
-        void getCommit(uint64_t& count, string& hashString) const;
-
-        // Gets an STable representation of this peer's current state in order to display status info.
-        STable getData() const;
-
-        // Returns true if there's an active connection to this Peer.
-        bool connected() const;
-
-        Peer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
-        ~Peer();
-
-        // Reset a peer, as if disconnected and starting the connection over.
-        void reset();
-
-        // Send a message to this peer. Thread-safe.
-        void sendMessage(const SData& message);
-
-        // Atomically set commit and hash.
-        void setCommit(uint64_t count, const string& hashString);
-
-        // This is const because it's public, and we don't want it to be changed outside of this class, as it needs to
-        // be synchronized with `hash`. However, it's often useful just as it is, so we expose it like this and update
-        // it with `const_cast`. `hash` is only used in few places, so is private, and can only be accessed with
-        // `getCommit`, thus reducing the risk of anyone getting out-of-sync commitCount and hash.
-        const atomic<uint64_t> commitCount;
-
-        const string host;
-        const uint64_t id;
-        const string name;
-        const STable params;
-        const bool permaFollower;
-
-        // An address on which this peer can accept commands.
-        atomic<string> commandAddress;
-        atomic<int> failedConnections;
-        atomic<uint64_t> latency;
-        atomic<bool> loggedIn;
-        atomic<uint64_t> nextReconnect;
-        atomic<int> priority;
-        atomic<State> state;
-        atomic<Response> standupResponse;
-        atomic<bool> subscribed;
-        atomic<Response> transactionResponse;
-        atomic<string> version;
-
-      private:
-        // For initializing the permafollower value from the params list.
-        static bool isPermafollower(const STable& params);
-
-        // The hash corresponding to commitCount.
-        atomic<string> hash;
-
-        // Mutex for locking around non-atomic member access (for set/getCommit, accessing socket, etc).
-        mutable recursive_mutex peerMutex;
-
-        // Not named with an underscore because it's only sort-of private (see friend class declaration above).
-        Socket* socket = nullptr;
     };
 
     // This is a static function that can 'peek' a command initiated by a peer, but can be called by any thread.
@@ -203,7 +125,7 @@ class SQLiteNode : public STCPManager {
 
     // This will broadcast a message to all peers, or a specific peer.
     [[deprecated("Use HTTP escalation")]]
-    void broadcast(const SData& message, Peer* peer = nullptr);
+    void broadcast(const SData& message, SQLitePeer* peer = nullptr);
 
     // If we have a command that can't be handled on a follower, we can escalate it to the leader node. The SQLiteNode
     // takes ownership of the command until it receives a response from the follower. When the command completes, it will
@@ -260,12 +182,12 @@ class SQLiteNode : public STCPManager {
     // Receive timeout for cluster messages.
     static const uint64_t RECV_TIMEOUT;
 
-    static const vector<Peer*> _initPeers(const string& peerList);
+    static const vector<SQLitePeer*> _initPeers(const string& peerList);
 
     // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
     // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
     // thread with a different DB object) - which is why this is static.
-    static void _queueSynchronize(SQLiteNode* node, Peer* peer, SQLite& db, SData& response, bool sendAll);
+    static void _queueSynchronize(SQLiteNode* node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll);
 
     // This is the main replication loop that's run in the replication threads. It's instantiated in a new thread for
     // each new relevant replication command received by the sync thread.
@@ -282,46 +204,46 @@ class SQLiteNode : public STCPManager {
     //
     // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
     // which happens when a node stops FOLLOWING.
-    static void _replicate(SQLiteNode& node, Peer* peer, SData command, size_t sqlitePoolIndex);
+    static void _replicate(SQLiteNode& node, SQLitePeer* peer, SData command, size_t sqlitePoolIndex);
 
     Socket* _acceptSocket();
     void _changeState(State newState);
 
-    // Returns the ID of Peer. If the peer is not found, returns 0.
-    uint64_t _getIDByPeer(Peer* peer) const;
+    // Returns the ID of SQLitePeer. If the peer is not found, returns 0.
+    uint64_t _getIDByPeer(SQLitePeer* peer) const;
 
     // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
-    Peer* _getPeerByID(uint64_t id) const;
+    SQLitePeer* _getPeerByID(uint64_t id) const;
 
     // Returns whether we're in the process of gracefully shutting down.
     bool _gracefulShutdown() const;
 
     // Handlers for transaction messages.
-    void _handleBeginTransaction(SQLite& db, Peer* peer, const SData& message, bool wasConflict);
-    void _handlePrepareTransaction(SQLite& db, Peer* peer, const SData& message);
-    int _handleCommitTransaction(SQLite& db, Peer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
-    void _handleRollbackTransaction(SQLite& db, Peer* peer, const SData& message);
+    void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message, bool wasConflict);
+    void _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
+    int _handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
+    void _handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
 
     bool _isNothingBlockingShutdown() const;
     bool _majoritySubscribed() const;
 
     // Called when we first establish a connection with a new peer
-    void _onConnect(Peer* peer);
+    void _onConnect(SQLitePeer* peer);
 
     // Called when we lose connection with a peer
-    void _onDisconnect(Peer* peer);
+    void _onDisconnect(SQLitePeer* peer);
 
     // Called when the peer sends us a message; throw an SException to reconnect.
-    void _onMESSAGE(Peer* peer, const SData& message);
+    void _onMESSAGE(SQLitePeer* peer, const SData& message);
     void _reconnectAll();
-    void _reconnectPeer(Peer* peer);
-    void _recvSynchronize(Peer* peer, const SData& message);
+    void _reconnectPeer(SQLitePeer* peer);
+    void _recvSynchronize(SQLitePeer* peer, const SData& message);
 
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
-    void _sendPING(Peer* peer);
+    void _sendPING(SQLitePeer* peer);
     void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
-    void _sendToPeer(Peer* peer, const SData& message);
+    void _sendToPeer(SQLitePeer* peer, const SData& message);
 
     // Choose the best peer to synchronize from. If no other peer is logged in, or no logged in peer has a higher
     // commitCount that we do, this will return null.
@@ -329,7 +251,7 @@ class SQLiteNode : public STCPManager {
 
     const string _commandAddress;
     const string _name;
-    const vector<Peer*> _peerList;
+    const vector<SQLitePeer*> _peerList;
 
     // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
@@ -375,7 +297,7 @@ class SQLiteNode : public STCPManager {
     uint64_t _lastSentTransactionID;
 
     // Pointer to the peer that is the leader. Null if we're the leader, or if we don't have a leader yet.
-    atomic<Peer*> _leadPeer;
+    atomic<SQLitePeer*> _leadPeer;
 
     // These are used in _replicate, _changeState, and _recvSynchronize to coordinate the replication threads.
     SQLiteSequentialNotifier _leaderCommitNotifier;
@@ -424,8 +346,5 @@ class SQLiteNode : public STCPManager {
 
     // The peer that we'll synchronize from.
     // Remove. See: https://github.com/Expensify/Expensify/issues/208439
-    Peer* _syncPeer;
+    SQLitePeer* _syncPeer;
 };
-
-// serialization for Responses.
-ostream& operator<<(ostream& os, const atomic<SQLiteNode::Peer::Response>& response);

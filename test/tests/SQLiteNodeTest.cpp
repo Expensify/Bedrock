@@ -1,6 +1,7 @@
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteCommand.h>
 #include <sqlitecluster/SQLiteNode.h>
+#include <sqlitecluster/SQLitePeer.h>
 #include <sqlitecluster/SQLiteServer.h>
 #include <test/lib/BedrockTester.h>
 
@@ -9,7 +10,7 @@
 
 class SQLiteNodeTester {
   public:
-    static SQLiteNode::Peer* getSyncPeer(SQLiteNode& node) {
+    static SQLitePeer* getSyncPeer(SQLiteNode& node) {
         return node._syncPeer;
     }
 
@@ -25,7 +26,7 @@ class TestServer : public SQLiteServer {
     virtual void acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew) { }
     virtual void cancelCommand(const string& commandID) { }
     virtual bool canStandDown() { return true; }
-    virtual void onNodeLogin(SQLiteNode::Peer* peer) { }
+    virtual void onNodeLogin(SQLitePeer* peer) { }
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {
@@ -53,7 +54,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, 1, 1000000000, "1.0");
 
         // Do a base test, with one peer with no latency.
-        SQLiteNode::Peer* fastest = nullptr;
+        SQLitePeer* fastest = nullptr;
         for (auto peer : testNode._peerList) {
             int peerNum = peer->name[4] - 48;
             peer->loggedIn = true;

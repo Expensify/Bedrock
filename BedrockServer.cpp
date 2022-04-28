@@ -14,6 +14,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 #include <libstuff/AutoTimer.h>
+#include <sqlitecluster/SQLitePeer.h>
 
 set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
@@ -2061,7 +2062,7 @@ void BedrockServer::broadcastCommand(const SData& cmd) {
     }
 }
 
-void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
+void BedrockServer::onNodeLogin(SQLitePeer* peer)
 {
     shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
     for (const auto& p : _crashCommands) {

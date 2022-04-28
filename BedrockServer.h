@@ -7,6 +7,8 @@
 #include "BedrockCommandQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
 
+class SQLitePeer;
+
 class BedrockServer : public SQLiteServer {
   public:
 
@@ -204,7 +206,7 @@ class BedrockServer : public SQLiteServer {
     const atomic<SQLiteNode::State>& getState() const;
 
     // When a peer node logs in, we'll send it our crash command list.
-    void onNodeLogin(SQLiteNode::Peer* peer);
+    void onNodeLogin(SQLitePeer* peer);
 
     // You must block and unblock the command port with *identical strings*.
     void blockCommandPort(const string& reason);

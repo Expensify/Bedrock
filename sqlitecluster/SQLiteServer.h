@@ -1,5 +1,6 @@
 #pragma once
 class SQLiteCommand;
+class SQLitePeer;
 
 #include <libstuff/STCPManager.h>
 
@@ -23,5 +24,5 @@ class SQLiteServer : public STCPManager {
     virtual bool canStandDown() = 0;
 
     // When a node connects to the cluster, this function will be called on the sync thread.
-    virtual void onNodeLogin(SQLiteNode::Peer* peer) = 0;
+    virtual void onNodeLogin(SQLitePeer* peer) = 0;
 };
