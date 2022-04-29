@@ -2702,6 +2702,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Try to establish connections with peers and process messages
     for (SQLitePeer* peer : _peerList) {
+        // TODO: Call peer->postPoll(); and refactor everything in here.
         // See if we're connected
         if (peer->socket) {
             // We have a socket; process based on its state

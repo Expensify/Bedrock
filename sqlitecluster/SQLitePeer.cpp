@@ -61,39 +61,38 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(uint64_t& nextActivity) {
     if (socket) {
         // We have a socket; process based on its state
         switch (socket->state.load()) {
-        case STCPManager::Socket::CONNECTED: {
-            // socket->lastRecvTime is always set, it's initialized to STimeNow() at creation.
-            if (socket->lastRecvTime + SQLiteNode::RECV_TIMEOUT < STimeNow()) {
-                SHMMM("Connection with peer '" << name << "' timed out.");
-                return PeerPostPollStatus::SOCKET_ERROR;
-            }
+            case STCPManager::Socket::CONNECTED: {
+                // socket->lastRecvTime is always set, it's initialized to STimeNow() at creation.
+                if (socket->lastRecvTime + SQLiteNode::RECV_TIMEOUT < STimeNow()) {
+                    SHMMM("Connection with peer '" << name << "' timed out.");
+                    return PeerPostPollStatus::SOCKET_ERROR;
+                }
 
-            // Send PINGs 5s before the socket times out
-            if (STimeNow() - socket->lastSendTime > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
-                return PeerPostPollStatus::NEAR_TIMEOUT;
-            }
+                // Send PINGs 5s before the socket times out
+                if (STimeNow() - socket->lastSendTime > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
+                    return PeerPostPollStatus::NEAR_TIMEOUT;
+                }
 
-            break;
-        }
-        case STCPManager::Socket::CLOSED: {
-            // Done; clean up and try to reconnect
-            uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
-            if (socket->connectFailure) {
-                SINFO("SQLitePeer connection failed after " << (STimeNow() - socket->openTime) / 1000 << "ms, reconnecting in " << delay / 1000 << "ms");
-            } else {
-                SHMMM("Lost peer connection after " << (STimeNow() - socket->openTime) / 1000 << "ms, reconnecting in " << delay / 1000 << "ms");
+                break;
             }
-            reset();
-            nextReconnect = STimeNow() + delay;
-            nextActivity = min(nextActivity, nextReconnect.load());
-            return PeerPostPollStatus::SOCKET_CLOSED;
-            break;
-        }
-
-        default:
-            // Connecting or shutting down, wait
-            // **FIXME: Add timeout here?
-            break;
+            case STCPManager::Socket::CLOSED: {
+                // Done; clean up and try to reconnect
+                uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
+                if (socket->connectFailure) {
+                    SINFO("SQLitePeer connection failed after " << (STimeNow() - socket->openTime) / 1000 << "ms, reconnecting in " << delay / 1000 << "ms");
+                } else {
+                    SHMMM("Lost peer connection after " << (STimeNow() - socket->openTime) / 1000 << "ms, reconnecting in " << delay / 1000 << "ms");
+                }
+                reset();
+                nextReconnect = STimeNow() + delay;
+                nextActivity = min(nextActivity, nextReconnect.load());
+                return PeerPostPollStatus::SOCKET_CLOSED;
+                break;
+            }
+            default:
+                // Connecting or shutting down, wait
+                // **FIXME: Add timeout here?
+                break;
         }
     } else {
         // Not connected, is it time to try again?
