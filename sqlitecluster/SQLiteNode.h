@@ -84,6 +84,9 @@ class SQLiteNode : public STCPManager {
     [[deprecated("Use HTTP escalation")]]
     static bool peekPeerCommand(shared_ptr<SQLiteNode>, SQLite& db, SQLiteCommand& command);
 
+    // Receive timeout for cluster messages.
+    static const uint64_t RECV_TIMEOUT;
+
     // Get and SQLiteNode State from it's name.
     static State stateFromName(const string& name);
 
@@ -199,9 +202,6 @@ class SQLiteNode : public STCPManager {
 
     // Monotonically increasing thread counter, used for thread IDs for logging purposes.
     static atomic<int64_t> currentReplicateThreadID;
-
-    // Receive timeout for cluster messages.
-    static const uint64_t RECV_TIMEOUT;
 
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
 

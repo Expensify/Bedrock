@@ -16,6 +16,14 @@ class SQLitePeer {
         DENY
     };
 
+    enum class PeerPostPollStatus {
+        OK,
+        NEAR_TIMEOUT,
+        JUST_CONNECTED,
+        SOCKET_ERROR,
+        SOCKET_CLOSED,
+    };
+
     // Get a string name for a Response object.
     static string responseName(Response response);
 
@@ -28,11 +36,10 @@ class SQLitePeer {
     // Returns true if there's an active connection to this Peer.
     bool connected() const;
 
-    SQLitePeer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
-    ~SQLitePeer();
-
     // Reset a peer, as if disconnected and starting the connection over.
     void reset();
+
+    PeerPostPollStatus postPoll(uint64_t& nextActivity);
 
     // Send a message to this peer. Thread-safe.
     void sendMessage(const SData& message);
@@ -45,6 +52,9 @@ class SQLitePeer {
     bool setSocket(STCPManager::Socket* newSocket, bool onlyIfNull = true);
 
     void shutdownSocket();
+
+    SQLitePeer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
+    ~SQLitePeer();
 
     // This is const because it's public, and we don't want it to be changed outside of this class, as it needs to
     // be synchronized with `hash`. However, it's often useful just as it is, so we expose it like this and update
