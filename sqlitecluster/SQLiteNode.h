@@ -140,6 +140,10 @@ class SQLiteNode : public STCPManager {
     // Can block.
     void prePoll(fd_map& fdm) const;
 
+    // Call this to check if the node's completed shutting down.
+    // Can block.
+    bool shutdownComplete() const;
+
     // Call this if you want to shut down the node.
     void beginShutdown(uint64_t usToWait);
 
@@ -161,9 +165,6 @@ class SQLiteNode : public STCPManager {
     // node, or if this command doesn't have an `initiatingPeerID`, then calling this function is an error.
     [[deprecated("Use HTTP escalation")]]
     void sendResponse(const SQLiteCommand& command);
-
-    // Call this to check if the node's completed shutting down.
-    bool shutdownComplete();
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,

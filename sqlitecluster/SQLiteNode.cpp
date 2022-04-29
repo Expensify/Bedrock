@@ -335,50 +335,24 @@ bool SQLiteNode::_isNothingBlockingShutdown() const {
     return true;
 }
 
-bool SQLiteNode::shutdownComplete() {
-    // TODO: Optimize so that this only blocks when shutdown *is* complete.
-    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+bool SQLiteNode::shutdownComplete() const {
+    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
+
     // First even see if we're shutting down
-    if (!_gracefulShutdown())
+    if (!_gracefulShutdown()) {
         return false;
+    }
 
     // Next, see if we're timing out the graceful shutdown and killing non-gracefully
     if (_shutdownTimeout.ringing()) {
         SWARN("Graceful shutdown timed out, killing non gracefully.");
-        auto lock = _escalatedCommandMap.scopedLock();
-        if (_escalatedCommandMap.size()) {
-            SWARN("Abandoned " << _escalatedCommandMap.size() << " escalated commands.");
-            for (auto& commandPair : _escalatedCommandMap) {
-                commandPair.second->response.methodLine = "500 Abandoned";
-                commandPair.second->complete = true;
-                _server.acceptCommand(move(commandPair.second), false);
-            }
-            _escalatedCommandMap.clear();
-        }
-        // TODO: Do we need to do this here? Does it matter?
-        // _changeState(SEARCHING);
         return true;
     }
 
     // Not complete unless we're SEARCHING, SYNCHRONIZING, or WAITING
     if (_state > WAITING) {
         // Not in a shutdown state
-        SINFO("Can't graceful shutdown yet because state="
-              << stateName(_state) << ", commitInProgress=" << commitInProgress()
-              << ", escalated=" << _escalatedCommandMap.size());
-
-        // If we end up with anything left in the escalated command map when we're trying to shut down, let's log it,
-        // so we can try and diagnose what's happening.
-        auto lock = _escalatedCommandMap.scopedLock();
-        for (auto& cmd : _escalatedCommandMap) {
-            string name = cmd.first;
-            unique_ptr<SQLiteCommand>& command = cmd.second;
-            int64_t created = command->request.calcU64("commandExecuteTime");
-            int64_t elapsed = STimeNow() - created;
-            double elapsedSeconds = (double)elapsed / STIME_US_PER_S;
-            SINFO("Escalated command remaining at shutdown(" << name << "): " << command->request.methodLine
-                  << ". Created: " << command->request["commandExecuteTime"] << " (" << elapsedSeconds << "s ago)");
-        }
+        SINFO("Can't graceful shutdown yet because state=" << stateName(_state) << ", commitInProgress=" << commitInProgress() << ", escalated=" << _escalatedCommandMap.size());
         return false;
     }
 
@@ -393,13 +367,11 @@ bool SQLiteNode::shutdownComplete() {
 
     // Finally, make sure nothing is blocking shutdown
     if (_isNothingBlockingShutdown()) {
-        // Yes!
         SINFO("Graceful shutdown is complete");
         return true;
     } else {
         // Not done yet
-        SINFO("Can't graceful shutdown yet because waiting on commands: commitInProgress="
-              << commitInProgress() << ", escalated=" << _escalatedCommandMap.size());
+        SINFO("Can't graceful shutdown yet because waiting on commands: commitInProgress=" << commitInProgress() << ".");
         return false;
     }
 }
