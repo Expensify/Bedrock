@@ -400,14 +400,19 @@ bool SQLiteNode::shutdownComplete() {
 }
 
 SQLiteNode::State SQLiteNode::getState() const {
+    // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
+    // private methods.
     return _state;
 }
 
 int SQLiteNode::getPriority() const {
+    // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
+    // private methods.
     return _priority;
 }
 
 const string SQLiteNode::getLeaderVersion() const {
+    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
     if (_state == LEADING || _state == STANDINGDOWN) {
         return _version;
     } else if (_leadPeer) {
@@ -417,6 +422,8 @@ const string SQLiteNode::getLeaderVersion() const {
 }
 
 uint64_t SQLiteNode::getCommitCount() const {
+    // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
+    // private methods. (Yes, SQLite::SharedData::commitCount is atomic, go check).
     return _db.getCommitCount();
 }
 
@@ -425,10 +432,15 @@ bool SQLiteNode::_gracefulShutdown() const {
 }
 
 bool SQLiteNode::commitInProgress() const {
-    return (_commitState == CommitState::WAITING || _commitState == CommitState::COMMITTING);
+    // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
+    // private methods.
+    CommitState commitState = _commitState.load();
+    return (commitState == CommitState::WAITING || commitState == CommitState::COMMITTING);
 }
 
 bool SQLiteNode::commitSucceeded() const {
+    // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
+    // private methods.
     return _commitState == CommitState::SUCCESS;
 }
 
@@ -482,6 +494,7 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
 }
 
 list<STable> SQLiteNode::getPeerInfo() const {
+    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
     list<STable> peerData;
     for (SQLitePeer* peer : _peerList) {
         peerData.emplace_back(peer->getData());
@@ -2592,7 +2605,7 @@ void SQLiteNode::_handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const 
 }
 
 SQLiteNode::State SQLiteNode::leaderState() const {
-    shared_lock<shared_mutex> leadPeerLock(_stateMutex);
+    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
     if (_leadPeer) {
         return _leadPeer.load()->state;
     }
@@ -2600,7 +2613,7 @@ SQLiteNode::State SQLiteNode::leaderState() const {
 }
 
 string SQLiteNode::leaderCommandAddress() const {
-    shared_lock<shared_mutex> leadPeerLock(_stateMutex);
+    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
     if (_leadPeer && _leadPeer.load()->state == State::LEADING) {
         return _leadPeer.load()->commandAddress;
     }
@@ -2608,6 +2621,7 @@ string SQLiteNode::leaderCommandAddress() const {
 }
 
 bool SQLiteNode::hasQuorum() const {
+    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
     if (_state != LEADING && _state != STANDINGDOWN) {
         return false;
     }
@@ -2625,6 +2639,7 @@ bool SQLiteNode::hasQuorum() const {
 }
 
 void SQLiteNode::prePoll(fd_map& fdm) const {
+    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
     if (_port) {
         SFDset(fdm, _port->s, SREADEVTS);
     }
@@ -2872,6 +2887,8 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 }
 
 void SQLiteNode::notifyCommit() const {
+    // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
+    // private methods.
     _commitsToSend.push(true);
 }
 

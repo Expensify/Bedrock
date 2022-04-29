@@ -167,7 +167,7 @@ class SQLite {
 
     // Returns the current value of commitCount, which should be the highest ID of a commit in any handle to the
     // database.
-    uint64_t getCommitCount();
+    uint64_t getCommitCount() const;
 
     // Returns the current state of the database, as a SHA1 hash of all queries committed.
     string getCommittedHash();

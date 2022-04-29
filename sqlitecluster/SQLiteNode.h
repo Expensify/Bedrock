@@ -92,32 +92,52 @@ class SQLiteNode : public STCPManager {
 
     // True from when we call 'startCommit' until the commit has been sent to (and, if it required replication,
     // acknowledged by) peers.
+    // Does not block.
     bool commitInProgress() const;
 
-    // Returns true if the last commit was successful. If called while `commitInProgress` would return true, it returns
-    // false.
+    // Returns true if the last commit was successful. If called while `commitInProgress` would return true, it returns false.
+    // Does not block.
     bool commitSucceeded() const;
+
+    // Get's the commitCount from the underlying DB.
+    // Does not block.
     uint64_t getCommitCount() const;
+
+    // Get's the current leader version (our own version if we're leading)
+    // Can block.
     const string getLeaderVersion() const;
+
+    // Gets a copy of the peer state as an STable.
+    // Can block.
     list<STable> getPeerInfo() const;
+
+    // Returns our current priority.
+    // Does not block.
     int getPriority() const;
+
+    // Returns our current state.
+    // Does not block.
     State getState() const;
 
-    // Returns true if we're LEADING with enough FOLLOWERs to commit a quorum transaction. Not thread-safe to call
-    // outside the sync thread.
+    // Returns true if we're LEADING with enough FOLLOWERs to commit a quorum transaction.
+    // Can block.
     bool hasQuorum() const;
 
     // Return the command address of the current leader, if there is one (empty string otherwise).
+    // Can block.
     string leaderCommandAddress() const;
 
     // Return the state of the lead peer. Returns UNKNOWN if there is no leader, or if we are the leader.
+    // Does not block.
     State leaderState() const;
 
     // Tell the node a commit has been made by another thread, so that we can interrupt our poll loop if we're waiting
     // for data, and send the new commit.
+    // Does not block.
     void notifyCommit() const;
 
     // Prepare a set of sockets to wait for read/write.
+    // Can block.
     void prePoll(fd_map& fdm) const;
 
     // Call this if you want to shut down the node.
@@ -272,7 +292,7 @@ class SQLiteNode : public STCPManager {
 
     // This is the current CommitState we're in with regard to committing a transaction. It is `UNINITIALIZED` from
     // startup until a transaction is started.
-    CommitState _commitState;
+    atomic<CommitState> _commitState;
 
     // This is just here to allow `poll` to get interrupted when there are new commits to send. We don't want followers
     // to wait up to a full second for them.
