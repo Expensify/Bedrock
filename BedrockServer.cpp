@@ -78,10 +78,6 @@ void BedrockServer::acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNe
     }
 }
 
-void BedrockServer::cancelCommand(const string& commandID) {
-    // TODO: Unimplemented (but never called, anyway)
-}
-
 bool BedrockServer::canStandDown() {
     // Here's all the commands in existence.
     size_t count = BedrockCommand::getCommandCount();

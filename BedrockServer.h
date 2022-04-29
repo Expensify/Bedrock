@@ -185,10 +185,6 @@ class BedrockServer : public SQLiteServer {
     // Backwards-compatible version of the above method for plugins that already used it.
     void acceptCommand(SQLiteCommand&& command, bool isNew = true);
 
-    // Cancel a command.
-    // SQLiteNode API.
-    void cancelCommand(const string& commandID);
-
     // Flush the send buffers
     // STCPNode API.
     void prePoll(fd_map& fdm);

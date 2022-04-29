@@ -1779,11 +1779,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             }
             const string& commandID = SToLower(message["ID"]);
             PINFO("Received ESCALATE_CANCEL command for '" << commandID << "'");
-
-            // Pass it along to the server. We don't try and cancel a command that's currently being committed. It's
-            // both super unlikely to happen (as it requires perfect timing), and not a deterministic operation anyway
-            // (i.e., a few MS network latency would make it too late, anyway).
-            _server.cancelCommand(commandID);
         }
     } else if (SIEquals(message.methodLine, "ESCALATE_RESPONSE")) {
         // ESCALATE_RESPONSE: Sent when the leader processes the ESCALATE.
