@@ -12,7 +12,6 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     name(name_),
     params(params_),
     permaFollower(isPermafollower(params)),
-    failedConnections(0),
     latency(0),
     loggedIn(false),
     nextReconnect(0),
@@ -47,6 +46,26 @@ void SQLitePeer::reset() {
     transactionResponse = Response::NONE;
     version = "";
     setCommit(0, "");
+}
+
+void SQLitePeer::shutdownSocket() {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket) {
+        socket->shutdown();
+        socket = nullptr;
+    }
+}
+
+bool SQLitePeer::setSocket(STCPManager::Socket* newSocket, bool onlyIfNull) {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket && onlyIfNull) {
+        return false;
+    }
+    if (socket) {
+        SWARN("Overwriting existing peer socket. Is it leaking?");
+    }
+    socket = newSocket;
+    return true;
 }
 
 string SQLitePeer::responseName(Response response) {
@@ -86,7 +105,6 @@ STable SQLitePeer::getData() const {
         {"latency", to_string(latency)},
         {"nextReconnect", to_string(nextReconnect)},
         {"id", to_string(id)},
-        {"failedConnections", to_string(failedConnections)},
         {"loggedIn", (loggedIn ? "true" : "false")},
         {"priority", to_string(priority)},
         {"version", version},

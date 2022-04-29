@@ -40,6 +40,12 @@ class SQLitePeer {
     // Atomically set commit and hash.
     void setCommit(uint64_t count, const string& hashString);
 
+    // Sets the socket to the new socket, but will fail if the socket is already set unless onlyIfNull is false.
+    // returns whether or not the socket was actually set.
+    bool setSocket(STCPManager::Socket* newSocket, bool onlyIfNull = true);
+
+    void shutdownSocket();
+
     // This is const because it's public, and we don't want it to be changed outside of this class, as it needs to
     // be synchronized with `hash`. However, it's often useful just as it is, so we expose it like this and update
     // it with `const_cast`. `hash` is only used in few places, so is private, and can only be accessed with
@@ -54,7 +60,6 @@ class SQLitePeer {
 
     // An address on which this peer can accept commands.
     atomic<string> commandAddress;
-    atomic<int> failedConnections;
     atomic<uint64_t> latency;
     atomic<bool> loggedIn;
     atomic<uint64_t> nextReconnect;

@@ -144,10 +144,6 @@ SQLiteNode::~SQLiteNode() {
     _acceptedSocketList.clear();
 
     for (SQLitePeer* peer : _peerList) {
-        // Shut down the peer
-        if (peer->socket) {
-            _socketList.remove(peer->socket);
-        }
         delete peer;
     }
 }
@@ -1859,17 +1855,6 @@ void SQLiteNode::_onConnect(SQLitePeer* peer) {
 // made in certain states, but we'll check them in all states just to be sure.)
 void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
     SASSERT(peer);
-    /// - Verify we don't have any important data buffered for sending to this
-    ///   peer.  In particular, make sure we're not sending an ESCALATION_RESPONSE
-    ///   because that means the initiating follower's command was successfully
-    ///   processed, but it died before learning this.  This won't corrupt the
-    ///   database per se (all nodes will still be synchronized, or will repair
-    ///   themselves on reconnect), but it means that the data in the database
-    ///   is out of touch with reality: we processed a command and reality doesn't
-    ///   know it.  Not cool!
-    ///
-    if (peer->socket && peer->socket->sendBufferCopy().find("ESCALATE_RESPONSE") != string::npos)
-        PWARN("Initiating follower died before receiving response to escalation");
 
     /// - Verify we didn't just lose contact with our leader.  This should
     ///   only be possible if we're SUBSCRIBING or FOLLOWING.  If we did lose our
@@ -1952,41 +1937,33 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
     }
 }
 
-void SQLiteNode::_sendToPeer(SQLitePeer* peer, const SData& message) {
-    SASSERT(peer);
-    SASSERT(!message.empty());
-
-    // If a peer is currently disconnected, we can't send it a message.
-    if (!peer->socket) {
-        PWARN("Can't send message to peer, no socket. Message '" << message.methodLine << "' will be discarded.");
-        return;
+SData SQLiteNode::_addPeerHeaders(SData message) {
+    if (!message.isSet("CommitCount")) {
+        message["CommitCount"] = SToStr(_db.getCommitCount());
     }
-    // Piggyback on whatever we're sending to add the CommitCount/Hash
-    SData messageCopy = message;
-    messageCopy["CommitCount"] = to_string(_db.getCommitCount());
-    messageCopy["Hash"] = _db.getCommittedHash();
-    messageCopy["commandAddress"] = _commandAddress;
-    peer->socket->send(messageCopy.serialize());
+    if (!message.isSet("Hash")) {
+        message["Hash"] = _db.getCommittedHash();
+    }
+    message["commandAddress"] = _commandAddress;
+    return message;
+}
+
+void SQLiteNode::_sendToPeer(SQLitePeer* peer, const SData& message) {
+    // We can treat this whole function as atomic and thread-safe as it sends data to a peer with it's own atomic
+    // `sendMessage` and the peer itself (assuming it's something from _peerList, which, if not, don't do that) is
+    // const and will exist without changing until destruction.
+    peer->sendMessage(_addPeerHeaders(message).serialize());
 }
 
 void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
-    // Piggyback on whatever we're sending to add the CommitCount/Hash, but only serialize once before broadcasting.
-    SData messageCopy = message;
-    if (!messageCopy.isSet("CommitCount")) {
-        messageCopy["CommitCount"] = SToStr(_db.getCommitCount());
-    }
-    if (!messageCopy.isSet("Hash")) {
-        messageCopy["Hash"] = _db.getCommittedHash();
-    }
-    messageCopy["commandAddress"] = _commandAddress;
-    const string& serializedMessage = messageCopy.serialize();
+    const string serializedMessage = _addPeerHeaders(message).serialize();
 
-    // Loop across all connected peers and send the message
+    // Loop across all connected peers and send the message. _peerList is const so this is thread-safe.
     for (auto peer : _peerList) {
-        // Send either to everybody, or just subscribed peers.
-        if (peer->socket && (!subscribedOnly || peer->subscribed)) {
-            // Send it now, without waiting for the outer event loop
-            peer->socket->send(serializedMessage);
+        // This check is strictly thread-safe, as SQLitePeer::subscribed is atomic, but there's still a race condition
+        // around checking subscribed and then sending, as subscribed could technically change.
+        if (subscribedOnly && peer->subscribed) {
+            peer->sendMessage(_addPeerHeaders(serializedMessage).serialize());
         }
     }
 }
@@ -2342,13 +2319,9 @@ void SQLiteNode::_updateSyncPeer()
 }
 
 void SQLiteNode::_reconnectPeer(SQLitePeer* peer) {
-    // If we're connected, just kill the connection
-    if (peer->socket) {
-        // Reset
-        SHMMM("Reconnecting to '" << peer->name << "'");
-        peer->socket->shutdown();
-        peer->loggedIn = false;
-    }
+    SHMMM("Reconnecting to '" << peer->name << "'");
+    peer->loggedIn = false;
+    peer->shutdownSocket();
 }
 
 void SQLiteNode::_reconnectAll() {
@@ -2697,11 +2670,9 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         // **FIXME: Authenticate and match by public key
                         if (peer->name == message["Name"]) {
                             // Found it!  Are we already connected?
-                            if (!peer->socket) {
+                            if (peer->setSocket(socket)) {
                                 // Attach to this peer and LOGIN
-                                PINFO("Attaching incoming socket");
-                                peer->socket = socket;
-                                peer->failedConnections = 0;
+                                PINFO("Attached incoming socket");
                                 _acceptedSocketList.erase(socketIt);
                                 foundIt = true;
 
@@ -2746,7 +2717,6 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             switch (peer->socket->state.load()) {
             case Socket::CONNECTED: {
                 // See if there is anything new.
-                peer->failedConnections = 0; // Success; reset failures
                 SData message;
                 int messageSize = 0;
                 try {
@@ -2824,9 +2794,6 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                                                         << "ms, reconnecting in " << delay / 1000 << "ms");
                 }
                 _onDisconnect(peer);
-                if (peer->socket->connectFailure) {
-                    peer->failedConnections++;
-                }
                 _socketList.remove(peer->socket);
                 peer->reset();
                 peer->nextReconnect = STimeNow() + delay;
@@ -2859,7 +2826,6 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 } catch (const SException& exception) {
                     // Failed to open -- try again later
                     SWARN(exception.what());
-                    peer->failedConnections++;
                     peer->nextReconnect = STimeNow() + STIME_US_PER_M;
                 }
             } else {
@@ -2885,7 +2851,7 @@ void SQLiteNode::_sendPING(SQLitePeer* peer) {
     SASSERT(peer);
     SData ping("PING");
     ping["Timestamp"] = SToStr(STimeNow());
-    peer->socket->send(ping.serialize());
+    peer->sendMessage(ping.serialize());
 }
 
 uint64_t SQLiteNode::_getIDByPeer(SQLitePeer* peer) const {

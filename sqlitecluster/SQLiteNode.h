@@ -211,6 +211,10 @@ class SQLiteNode : public STCPManager {
     static void _queueSynchronize(SQLiteNode* node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll);
 
     Socket* _acceptSocket();
+
+    // Add required headers for messages being sent to peers.
+    SData _addPeerHeaders(SData message);
+
     void _changeState(State newState);
 
     // Returns the ID of SQLitePeer. If the peer is not found, returns 0.
