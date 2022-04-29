@@ -52,7 +52,6 @@ void SQLitePeer::shutdownSocket() {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         socket->shutdown();
-        socket = nullptr;
     }
 }
 

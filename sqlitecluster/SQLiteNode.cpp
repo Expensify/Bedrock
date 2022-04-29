@@ -1962,8 +1962,8 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     for (auto peer : _peerList) {
         // This check is strictly thread-safe, as SQLitePeer::subscribed is atomic, but there's still a race condition
         // around checking subscribed and then sending, as subscribed could technically change.
-        if (subscribedOnly && peer->subscribed) {
-            peer->sendMessage(_addPeerHeaders(serializedMessage).serialize());
+        if (!subscribedOnly || peer->subscribed) {
+            peer->sendMessage(serializedMessage);
         }
     }
 }
