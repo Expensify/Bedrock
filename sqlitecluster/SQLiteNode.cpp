@@ -354,15 +354,6 @@ bool SQLiteNode::shutdownComplete() const {
         return false;
     }
 
-    // If we have unsent data, not done
-    for (auto peer : _peerList) {
-        if (peer->socket && !peer->socket->sendBufferEmpty()) {
-            // Still sending data
-            SINFO("Can't graceful shutdown yet because unsent data to peer '" << peer->name << "'");
-            return false;
-        }
-    }
-
     // Finally, make sure nothing is blocking shutdown
     if (_isNothingBlockingShutdown()) {
         SINFO("Graceful shutdown is complete");
