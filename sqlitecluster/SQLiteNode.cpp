@@ -279,8 +279,9 @@ void SQLiteNode::_replicate(SQLiteNode& node, SQLitePeer* peer, SData command, s
     }
 }
 
-void SQLiteNode::startCommit(ConsistencyLevel consistency)
-{
+void SQLiteNode::startCommit(ConsistencyLevel consistency) {
+    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+
     // Verify we're not already committing something, and then record that we have begun. This doesn't actually *do*
     // anything, but `update()` will pick up the state in its next invocation and start the actual commit.
     SASSERT(_commitState == CommitState::UNINITIALIZED ||
@@ -293,8 +294,8 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency)
     }
 }
 
-void SQLiteNode::sendResponse(const SQLiteCommand& command)
-{
+void SQLiteNode::sendResponse(const SQLiteCommand& command) {
+    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     SQLitePeer* peer = _getPeerByID(command.initiatingPeerID);
     SASSERT(peer);
     // If it was a peer message, we don't need to wrap it in an escalation response.
@@ -306,6 +307,7 @@ void SQLiteNode::sendResponse(const SQLiteCommand& command)
 }
 
 void SQLiteNode::beginShutdown(uint64_t usToWait) {
+    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     // Ignore redundant
     if (!_gracefulShutdown()) {
         // Start graceful shutdown
@@ -334,6 +336,8 @@ bool SQLiteNode::_isNothingBlockingShutdown() const {
 }
 
 bool SQLiteNode::shutdownComplete() {
+    // TODO: Optimize so that this only blocks when shutdown *is* complete.
+    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     // First even see if we're shutting down
     if (!_gracefulShutdown())
         return false;
@@ -351,7 +355,8 @@ bool SQLiteNode::shutdownComplete() {
             }
             _escalatedCommandMap.clear();
         }
-        _changeState(SEARCHING);
+        // TODO: Do we need to do this here? Does it matter?
+        // _changeState(SEARCHING);
         return true;
     }
 
@@ -503,7 +508,7 @@ list<STable> SQLiteNode::getPeerInfo() const {
 }
 
 void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget) {
-    unique_lock<shared_mutex> leadPeerLock(_stateMutex);
+    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     // Send this to the leader
     SASSERT(_leadPeer);
 
@@ -574,6 +579,8 @@ void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forge
 // -----------------
 // Each state transitions according to the following events and operates as follows:
 bool SQLiteNode::update() {
+    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+
     // Process the database state machine
     switch (_state) {
     /// - SEARCHING: Wait for a period and try to connect to all known
@@ -592,8 +599,11 @@ bool SQLiteNode::update() {
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
         // If we're trying to shut down, just do nothing
-        if (shutdownComplete())
-            return false; // Don't re-update
+        /* TODO: Commented out because uses a pulbic API that will deadlock.
+         * if (shutdownComplete()) {
+         *     return false; // Don't re-update
+         * }
+         */
 
         // If no peers, we're the leader, unless we're shutting down.
         if (_peerList.empty()) {
@@ -797,7 +807,6 @@ bool SQLiteNode::update() {
         if (currentLeader && _priority < highestPriorityPeer->priority && currentLeader->state == LEADING) {
             // Subscribe to the leader
             SINFO("Subscribing to leader '" << currentLeader->name << "'");
-            unique_lock<shared_mutex> leadPeerLock(_stateMutex);
             _leadPeer = currentLeader;
             _sendToPeer(currentLeader, SData("SUBSCRIBE"));
             _changeState(SUBSCRIBING);
@@ -1209,7 +1218,6 @@ bool SQLiteNode::update() {
         if (STimeNow() > _stateTimeout) {
             // Give up
             SHMMM("Timed out waiting for SUBSCRIPTION_APPROVED, reconnecting to leader and re-SEARCHING.");
-            unique_lock<shared_mutex> leadPeerLock(_stateMutex);
             _reconnectPeer(_leadPeer);
             _leadPeer = nullptr;
             _changeState(SEARCHING);
@@ -1900,7 +1908,6 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
         PHMMM("Lost our LEADER, re-SEARCHING.");
         SASSERTWARN(_state == SUBSCRIBING || _state == FOLLOWING);
         {
-            unique_lock<shared_mutex> leadPeerLock(_stateMutex);
             _leadPeer = nullptr;
         }
         if (!_db.getUncommittedHash().empty()) {
@@ -2012,6 +2019,14 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
 }
 
 void SQLiteNode::broadcast(const SData& message, SQLitePeer* peer) {
+    // TODO: this gets called with the following broken stack:
+    // std::__throw_system_error(int) [0x7f8781e4d73f]
+    // SQLiteNode::broadcast(SData const&, SQLitePeer*) [0x55f16c8b295a]
+    // BedrockServer::onNodeLogin(SQLitePeer*) [0x55f16c7f9f3d]
+    // SQLiteNode::_onMESSAGE(SQLitePeer*, SData const&) [0x55f16c8fd448]
+    // SQLiteNode::postPoll(std::map<int, pollfd, std::less<int>, std::allocator<std::pair<int const, pollfd> > >&, unsigned long&) [0x55f16c912381]
+
+    // unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     if (peer) {
         SINFO("Sending broadcast: " << message.serialize() << " to peer: " << peer->name);
         _sendToPeer(peer, message);
@@ -2091,7 +2106,6 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         // Clear some state if we can
         if (newState < SUBSCRIBING) {
             // We're no longer SUBSCRIBING or FOLLOWING, so we have no leader
-            unique_lock<shared_mutex> leadPeerLock(_stateMutex);
             _leadPeer = nullptr;
         }
 
@@ -2528,7 +2542,6 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
             response["NewCount"] = SToStr(db.getCommitCount() + 1);
             response["NewHash"] = success ? db.getUncommittedHash() : message["NewHash"];
             response["ID"] = message["ID"];
-            unique_lock<shared_mutex> leadPeerLock(_stateMutex);
             if (!_leadPeer) {
                 STHROW("no leader?");
             }
@@ -2672,6 +2685,7 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 }
 
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     // Process the sockets
     for (auto& s : _socketList) {
         STCPManager::postPoll(fdm, *s);
