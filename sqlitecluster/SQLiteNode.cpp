@@ -570,12 +570,11 @@ bool SQLiteNode::update() {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
-        // If we're trying to shut down, just do nothing
-        /* TODO: Commented out because uses a pulbic API that will deadlock.
-         * if (shutdownComplete()) {
-         *     return false; // Don't re-update
-         * }
-         */
+        // If we're trying to shut down, just do nothing, especially don't jump directly to leading and get stuck in an
+        // endless loop.
+        if (_gracefulShutdown()) {
+            return false; // Don't re-update
+        }
 
         // If no peers, we're the leader, unless we're shutting down.
         if (_peerList.empty()) {
