@@ -210,23 +210,6 @@ class SQLiteNode : public STCPManager {
     // thread with a different DB object) - which is why this is static.
     static void _queueSynchronize(SQLiteNode* node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll);
 
-    // This is the main replication loop that's run in the replication threads. It's instantiated in a new thread for
-    // each new relevant replication command received by the sync thread.
-    //
-    // There are three commands we currently handle here BEGIN_TRANSACTION, ROLLBACK_TRANSACTION, and
-    // COMMIT_TRANSACTION.
-    // ROLLBACK_TRANSACTION and COMMIT_TRANSACTION are trivial, they record the new highest commit number from LEADER,
-    // or instruct the node to go SEARCHING and reconnect if a distributed ROLLBACK happens.
-    //
-    // BEGIN_TRANSACTION is where the interesting case is. This starts all transactions in parallel, and then waits
-    // until each previous transaction is committed such that the final commit order matches LEADER. It also handles
-    // commit conflicts by re-running the transaction from the beginning. Most of the logic for making sure
-    // transactions are ordered correctly is done in `SQLiteSequentialNotifier`, which is worth reading.
-    //
-    // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
-    // which happens when a node stops FOLLOWING.
-    static void _replicate(SQLiteNode& node, SQLitePeer* peer, SData command, size_t sqlitePoolIndex);
-
     Socket* _acceptSocket();
     void _changeState(State newState);
 
@@ -259,6 +242,23 @@ class SQLiteNode : public STCPManager {
     void _reconnectAll();
     void _reconnectPeer(SQLitePeer* peer);
     void _recvSynchronize(SQLitePeer* peer, const SData& message);
+
+    // This is the main replication loop that's run in the replication threads. It's instantiated in a new thread for
+    // each new relevant replication command received by the sync thread.
+    //
+    // There are three commands we currently handle here BEGIN_TRANSACTION, ROLLBACK_TRANSACTION, and
+    // COMMIT_TRANSACTION.
+    // ROLLBACK_TRANSACTION and COMMIT_TRANSACTION are trivial, they record the new highest commit number from LEADER,
+    // or instruct the node to go SEARCHING and reconnect if a distributed ROLLBACK happens.
+    //
+    // BEGIN_TRANSACTION is where the interesting case is. This starts all transactions in parallel, and then waits
+    // until each previous transaction is committed such that the final commit order matches LEADER. It also handles
+    // commit conflicts by re-running the transaction from the beginning. Most of the logic for making sure
+    // transactions are ordered correctly is done in `SQLiteSequentialNotifier`, which is worth reading.
+    //
+    // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
+    // which happens when a node stops FOLLOWING.
+    void _replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex);
 
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
