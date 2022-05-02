@@ -1128,8 +1128,7 @@ bool SQLiteNode::update() {
                             // It's got data that we don't, stand down so we can get it.
                             standDownReason = "Found WAITING peer (" + peer->name +
                                               ") with more data than us (we have " + SToStr(_db.getCommitCount()) +
-                                              "/" + _db.getCommittedHash() + ", it has " + to_string(peer->commitCount) +
-                                              "/" + peer->hash.load() + ") while LEADING, STANDINGDOWN";
+                                              ", it has " + to_string(peer->commitCount) + ") while LEADING, STANDINGDOWN";
                         }
                     }
                 }
@@ -1843,8 +1842,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
         PWARN("Error processing message '" << message.methodLine << "' (" << e.what() << "), reconnecting.");
         SData reconnect("RECONNECT");
         reconnect["Reason"] = e.what();
-        peer->socket->send(reconnect.serialize());
-        peer->socket->shutdown();
+        peer->sendMessage(reconnect.serialize());
+        peer->shutdownSocket();
     }
 }
 

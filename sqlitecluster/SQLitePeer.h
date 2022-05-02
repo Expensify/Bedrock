@@ -3,12 +3,6 @@
 
 // Represents a single peer in the database cluster
 class SQLitePeer {
-    // This allows direct access to the socket from the node object that should actually be managing peer
-    // connections, which should always be handled by a single thread, and thus safe. Ideally, this isn't required,
-    // but for the time being, the amount of refactoring required to fix that is too high.
-    // TODO: remove when SQLitePeer::postPoll is done.
-    friend class SQLiteNode;
-
   public:
     // Possible responses from a peer.
     enum class Response {
