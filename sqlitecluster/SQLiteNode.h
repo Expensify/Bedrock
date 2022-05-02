@@ -26,7 +26,7 @@
  * No non-const members should be publicly exposed.
  * Any public method that is `const` must shared_lock<>(nodeMutex).
  * Alternatively, a public `const` method that is a simple getter for an atomic property can skip the lock.
- * Any public method that is non-const must uniaue_lock<>(nodeMutex) before changing any internal state, and must hold
+ * Any public method that is non-const must unique_lock<>(nodeMutex) before changing any internal state, and must hold
  * this lock until it is done changing state to make this method's changes atomic.
  * Any private methods must not call public methods.
  * Any private methods must not lock nodeMutex (for recursion reasons).
