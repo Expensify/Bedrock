@@ -39,6 +39,8 @@ class SQLitePeer {
     // The most recent send or receive time, in microseconds since the epoch.
     uint64_t lastActivityTime() const;
 
+    void prePoll(fd_map& fdm) const;
+
     // Reset a peer, as if disconnected and starting the connection over.
     void reset();
 
@@ -46,7 +48,7 @@ class SQLitePeer {
     // If there are no messages, throws `std::out_of_range`.
     SData popMessage();
 
-    PeerPostPollStatus postPoll(uint64_t& nextActivity);
+    PeerPostPollStatus postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Send a message to this peer. Thread-safe.
     void sendMessage(const SData& message);

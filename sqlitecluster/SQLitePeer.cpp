@@ -56,9 +56,18 @@ void SQLitePeer::shutdownSocket() {
     }
 }
 
-SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(uint64_t& nextActivity) {
+void SQLitePeer::prePoll(fd_map& fdm) const {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
+        STCPManager::prePoll(fdm, *socket);
+    }
+}
+
+SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket) {
+        STCPManager::postPoll(fdm, *socket);
+
         // We have a socket; process based on its state
         switch (socket->state.load()) {
             case STCPManager::Socket::CONNECTED: {
@@ -78,7 +87,7 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(uint64_t& nextActivity) {
                 } else {
                     SHMMM("Lost peer connection after " << (STimeNow() - socket->openTime) / 1000 << "ms, reconnecting in " << delay / 1000 << "ms");
                 }
-                // reset();
+                reset();
                 nextReconnect = STimeNow() + delay;
                 nextActivity = min(nextActivity, nextReconnect.load());
                 return PeerPostPollStatus::SOCKET_CLOSED;

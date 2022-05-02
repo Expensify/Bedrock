@@ -223,6 +223,8 @@ class SQLiteNode : public STCPManager {
     // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
     SQLitePeer* _getPeerByID(uint64_t id) const;
 
+    SQLitePeer* _getPeerByName(const string& name) const;
+
     // Returns whether we're in the process of gracefully shutting down.
     bool _gracefulShutdown() const;
 
@@ -288,8 +290,9 @@ class SQLiteNode : public STCPManager {
     // Our version string. Supplied by constructor.
     const string _version;
 
-    // Remove. See: https://github.com/Expensify/Expensify/issues/208438
-    list<Socket*> _acceptedSocketList;
+    // These are sockets that have been accepted on the node port but have not yet been associated with a peer (because
+    // they need to send a NODE_LOGIN message with their name first).
+    set<Socket*> _unauthenticatedIncomingSockets;
 
     // The write consistency requested for the current in-progress commit.
     // Remove. See: https://github.com/Expensify/Expensify/issues/208443
@@ -347,10 +350,6 @@ class SQLiteNode : public STCPManager {
 
     // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
     SStopwatch _shutdownTimeout;
-
-    // List of sockets connected to peers.
-    // Remove. See: https://github.com/Expensify/Expensify/issues/208459
-    list<STCPManager::Socket*> _socketList;
 
     // Stopwatch to track if we're giving up on the server preventing a standdown.
     SStopwatch _standDownTimeout;

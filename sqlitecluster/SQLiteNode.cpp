@@ -138,10 +138,10 @@ SQLiteNode::~SQLiteNode() {
     SASSERTWARN(!commitInProgress());
 
     // Clean up all the sockets and peers
-    for (Socket* socket : _acceptedSocketList) {
+    for (Socket* socket : _unauthenticatedIncomingSockets) {
         delete socket;
     }
-    _acceptedSocketList.clear();
+    _unauthenticatedIncomingSockets.clear();
 
     for (SQLitePeer* peer : _peerList) {
         delete peer;
@@ -2617,8 +2617,8 @@ void SQLiteNode::prePoll(fd_map& fdm) const {
     if (_port) {
         SFDset(fdm, _port->s, SREADEVTS);
     }
-    for (auto& s : _socketList) {
-        STCPManager::prePoll(fdm, *s);
+    for (SQLitePeer* peer : _peerList) {
+        peer->prePoll(fdm);
     }
     _commitsToSend.prePoll(fdm);
 }
@@ -2635,8 +2635,6 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
         SDEBUG("Accepting socket from '" << addr << "' on port '" << _port->host << "'");
         socket = new Socket(s, Socket::CONNECTED);
         socket->addr = addr;
-        // Pretty sure these leak.
-        _socketList.push_back(socket);
 
         // Try to read immediately
         S_recvappend(socket->s, socket->recvBuffer);
@@ -2647,89 +2645,64 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-    // Process the sockets
-    for (auto& s : _socketList) {
-        STCPManager::postPoll(fdm, *s);
-    }
 
     // Accept any new peers
     Socket* socket = nullptr;
     while ((socket = _acceptSocket())) {
-        _acceptedSocketList.push_back(socket);
+        _unauthenticatedIncomingSockets.insert(socket);
     }
 
-    // Process the incoming sockets
-    list<Socket*>::iterator nextSocketIt = _acceptedSocketList.begin();
-    while (nextSocketIt != _acceptedSocketList.end()) {
-        // See if we've logged in (we know we're already connected because
-        // we're accepting an inbound connection)
-        list<Socket*>::iterator socketIt = nextSocketIt++;
-        Socket* socket = *socketIt;
-        try {
-            // Verify it's still alive
-            if (socket->state.load() != Socket::CONNECTED)
-                STHROW("premature disconnect");
+    // After we've run through the accepted sockets, we can probably remove most of them, as they're now associated
+    // with peers, so we store any that we can remove in this list.
+    list<Socket*> socketsToRemove;
 
-            // Still alive; try to login
+    // Check each new connection for a NODE_LOGIN message.
+    for (auto socket : _unauthenticatedIncomingSockets) {
+        try {
+            if (socket->state.load() != Socket::CONNECTED) {
+                STHROW("premature disconnect");
+            }
+
             SData message;
             int messageSize = message.deserialize(socket->recvBuffer);
             if (messageSize) {
-                // What is it?
                 socket->recvBuffer.consumeFront(messageSize);
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {
-                    // Got it -- can we associate with a peer?
-                    bool foundIt = false;
-                    for (SQLitePeer* peer : _peerList) {
-                        // Just match any unconnected peer
-                        // **FIXME: Authenticate and match by public key
-                        if (peer->name == message["Name"]) {
-                            // Found it!  Are we already connected?
-                            if (peer->setSocket(socket)) {
-                                // Attach to this peer and LOGIN
-                                PINFO("Attached incoming socket");
-                                _acceptedSocketList.erase(socketIt);
-                                foundIt = true;
-
-                                // Send our own PING back so we can estimate latency
-                                _sendPING(peer);
-
-                                // Let the child class do its connection logic
-                                _onConnect(peer);
-                                break;
-                            } else
-                                STHROW("already connected");
+                    SQLitePeer* peer = _getPeerByName(message["Name"]);
+                    if (peer) {
+                        if (!peer->setSocket(socket)) {
+                            SWARN("Peer " << peer->name << " seems already connected. Assuming existing connection has died and replacing."); 
+                            peer->reset();
+                            peer->setSocket(socket);
+                            _sendPING(peer);
+                            _onConnect(peer);
                         }
+                        socketsToRemove.push_back(socket);
+                    } else {
+                        STHROW("Unauthenticated node '" + message["Name"] + "' attempted to connected, rejecting.");
                     }
-
-                    // Did we find it?
-                    if (!foundIt) {
-                        // This node wasn't expected
-                        SWARN("Unauthenticated node '" << message["Name"] << "' attempted to connected, rejecting.");
-                        STHROW("unauthenticated node");
-                    }
-                } else
+                } else {
                     STHROW("expecting NODE_LOGIN");
+                }
             }
         } catch (const SException& e) {
-            // Died prematurely
-            if (socket->recvBuffer.empty() && socket->sendBufferEmpty()) {
-                SDEBUG("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), empty buffers");
-            } else {
-                SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << "), send='" << socket->sendBufferCopy() << "'");
-            }
-            _socketList.remove(socket);
-            _acceptedSocketList.erase(socketIt);
+            SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << ")");
+            socketsToRemove.push_back(socket);
             delete socket;
         }
     }
 
-    // Try to establish connections with peers and process messages
+    // Clean up any sockets that are dead or now authenticated.
+    for (auto socket : socketsToRemove) {
+        _unauthenticatedIncomingSockets.erase(socket);
+    }
+
+    // Now check established peer connections.
     for (SQLitePeer* peer : _peerList) {
-        auto result = peer->postPoll(nextActivity);
+        auto result = peer->postPoll(fdm, nextActivity);
         switch (result) {
             case SQLitePeer::PeerPostPollStatus::JUST_CONNECTED:
             {
-                _socketList.push_back(peer->socket);
                 SData login("NODE_LOGIN");
                 login["Name"] = _name;
                 peer->sendMessage(login.serialize());
@@ -2748,9 +2721,6 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             case SQLitePeer::PeerPostPollStatus::SOCKET_CLOSED:
             {
                 _onDisconnect(peer);
-                _socketList.remove(peer->socket);
-                // TODO: Need to remove from _socketList before the peer deletes it.
-                peer->reset();
             }
             break;
             case SQLitePeer::PeerPostPollStatus::OK:
@@ -2812,6 +2782,17 @@ SQLitePeer* SQLiteNode::_getPeerByID(uint64_t id) const {
         return nullptr;
     }
 }
+
+SQLitePeer* SQLiteNode::_getPeerByName(const string& name) const {
+    // TODO: Store peers in sorted order by name and binary search the list here.
+    for (const auto& peer : _peerList) {
+        if (peer->name == name) {
+            return peer;
+        }
+    }
+    return nullptr;
+}
+
 
 const string& SQLiteNode::stateName(SQLiteNode::State state) {
     static string placeholder = "";
