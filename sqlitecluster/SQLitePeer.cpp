@@ -222,8 +222,9 @@ void SQLitePeer::sendMessage(const SData& message) {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         socket->send(message.serialize());
+        SINFO("Successfully sent " << message.methodLine << " to peer " << name << ".");
     } else {
-        SWARN("Tried to send " << message.methodLine << " to peer, but not available.");
+        SINFO("Tried to send " << message.methodLine << " to peer " << name << ", but not available.");
     }
 }
 

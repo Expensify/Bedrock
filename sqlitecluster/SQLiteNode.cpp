@@ -2670,12 +2670,20 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {
                     SQLitePeer* peer = _getPeerByName(message["Name"]);
                     if (peer) {
-                        if (!peer->setSocket(socket)) {
-                            SWARN("Peer " << peer->name << " seems already connected. Assuming existing connection has died and replacing."); 
-                            peer->reset();
-                            peer->setSocket(socket);
+                        if (peer->setSocket(socket)) {
                             _sendPING(peer);
                             _onConnect(peer);
+                        } else {
+                            // If you're tempted to use the new socket to replace the old one because it seems more
+                            // likely to be valid (i.e., the old one may have timed out from the other side) that's not
+                            // the issue we're handling here. What can happen is that both peers can each try to
+                            // connect to each other at the same time, and whichever one connects first will start a
+                            // chain of messages that need to arrive in order. Accepting the second connection will
+                            // interrupt that chain in a way that will cause the remote end to think you've had an
+                            // error, and start over. So, once a connection is established, we should just use that one
+                            // for all communication until it breaks.
+                            peer->reset();
+                            STHROW("Peer " + peer->name + " seems already connected."); 
                         }
                         socketsToRemove.push_back(socket);
                     } else {
