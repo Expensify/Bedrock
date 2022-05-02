@@ -1983,14 +1983,9 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
 }
 
 void SQLiteNode::broadcast(const SData& message, SQLitePeer* peer) {
-    // TODO: this gets called with the following broken stack:
-    // std::__throw_system_error(int) [0x7f8781e4d73f]
-    // SQLiteNode::broadcast(SData const&, SQLitePeer*) [0x55f16c8b295a]
-    // BedrockServer::onNodeLogin(SQLitePeer*) [0x55f16c7f9f3d]
-    // SQLiteNode::_onMESSAGE(SQLitePeer*, SData const&) [0x55f16c8fd448]
-    // SQLiteNode::postPoll(std::map<int, pollfd, std::less<int>, std::allocator<std::pair<int const, pollfd> > >&, unsigned long&) [0x55f16c912381]
-
-    // unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+    // This public method *does not lock the node* because it is explicitly thread-safe otherwise. `peer` itself is
+    // const and is guaranteed not to change. `_sendToPeer` and `_sendToPeers` are internally thread-safe and
+    // effectively const (though they write to peer send buffers that are not directly accesible).
     if (peer) {
         SINFO("Sending broadcast: " << message.serialize() << " to peer: " << peer->name);
         _sendToPeer(peer, message);
