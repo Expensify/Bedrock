@@ -688,12 +688,13 @@
 transform: rotate(90deg);
 		}
 
-		.nested {
+		.nested-treeview {
 			display: none;
 		}
 
-		.active {
+		.active-treeview {
 			display: block;
+			padding-inline-start: 20px;
 		}
 	</style>
 	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tocbot/4.1.1/tocbot.css">
@@ -762,15 +763,15 @@ transform: rotate(90deg);
 
 			<ul id="myUL" style="background-color: white;margin: 10px 0 10px 0;">
 				<li><span class="caret">Beverages</span>
-					<ul class="nested">
+					<ul class="nested-treeview">
 						<li>Water</li>
 						<li>Coffee</li>
 						<li><span class="caret">Tea</span>
-							<ul class="nested">
+							<ul class="nested-treeview">
 								<li>Black Tea</li>
 								<li>White Tea</li>
 								<li><span class="caret">Green Tea</span>
-									<ul class="nested">
+									<ul class="nested-treeview">
 										<li>Sencha</li>
 										<li>Gyokuro</li>
 										<li>Matcha</li>
@@ -933,7 +934,7 @@ transform: rotate(90deg);
 
 		for (i = 0; i < toggler.length; i++) {
 			toggler[i].addEventListener("click", function () {
-				this.parentElement.querySelector(".nested").classList.toggle("active");
+				this.parentElement.querySelector(".nested-treeview").classList.toggle("active-treeview");
 				this.classList.toggle("caret-down");
 			});
 		}
