@@ -1245,583 +1245,606 @@ bool SQLiteNode::update() {
 // Messages
 // Here are the messages that can be received, and how a cluster node will respond to each based on its state:
 void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
-    SASSERT(peer);
-    SASSERTWARN(!message.empty());
-    SDEBUG("Received sqlitenode message from peer " << peer->name << ": " << message.serialize());
-    // Every message broadcasts the current state of the node
-    if (!message.isSet("CommitCount")) {
-        STHROW("missing CommitCount");
-    }
-    if (!message.isSet("Hash")) {
-        STHROW("missing Hash");
-    }
-    if (message.isSet("commandAddress")) {
-        peer->commandAddress = message["commandAddress"];
-    }
+    try {
+        SASSERT(peer);
+        SASSERTWARN(!message.empty());
+        SDEBUG("Received sqlitenode message from peer " << peer->name << ": " << message.serialize());
 
-    peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
-
-    // Classify and process the message
-    if (SIEquals(message.methodLine, "LOGIN")) {
-        // LOGIN: This is the first message sent to and received from a new peer. It communicates the current state of
-        // the peer (hash and commit count), as well as the peer's priority. Peers can connect in any state, so this
-        // message can be sent and received in any state.
-        if (peer->loggedIn) {
-            STHROW("already logged in");
-        }
-        if (!message.isSet("Priority")) {
-            STHROW("missing Priority");
-        }
-        if (!message.isSet("State")) {
-            STHROW("missing State");
-        }
-        if (!message.isSet("Version")) {
-            STHROW("missing Version");
-        }
-        if (peer->permaFollower && (message["Permafollower"] != "true" || message.calc("Priority") > 0)) {
-            STHROW("you're supposed to be a 0-priority permafollower");
-        }
-        if (!peer->permaFollower && (message["Permafollower"] == "true" || message.calc("Priority") == 0)) {
-            STHROW("you're *not* supposed to be a 0-priority permafollower");
+        // We let PING and PONG skip the other message validations, they're here just to know conenctedness and don't need
+        // info on the DB state.
+        if (SIEquals(message.methodLine, "PING")) {
+            SINFO("Received PING from peer '" << peer->name << "'. Sending PONG.");
+            SData pong("PONG");
+            pong["Timestamp"] = message["Timestamp"];
+            peer->sendMessage(pong.serialize());
+            return;
+        } else if (SIEquals(message.methodLine, "PONG")) {
+            // Latency must be > 0 because we treat 0 as "not connected".
+            peer->latency = max(STimeNow() - message.calc64("Timestamp"), 1ul);
+            SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/1000 << "ms latency)");
+            return;
         }
 
-        // It's an error to have to peers configured with the same priority, except 0 and -1
-        SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
-        PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
-              << message["CommitCount"] << " (" << message["Hash"] << ")");
-        peer->priority = message.calc("Priority");
-        peer->loggedIn = true;
-        peer->version = message["Version"];
-        peer->state = stateFromName(message["State"]);
+        // Every other message broadcasts the current state of the node
+        if (!message.isSet("CommitCount")) {
+            STHROW("missing CommitCount");
+        }
+        if (!message.isSet("Hash")) {
+            STHROW("missing Hash");
+        }
+        if (message.isSet("commandAddress")) {
+            peer->commandAddress = message["commandAddress"];
+        }
+        peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
 
-        // Let the server know that a peer has logged in.
-        _server.onNodeLogin(peer);
-    } else if (!peer->loggedIn) {
-        STHROW("not logged in");
-    }
-    else if (SIEquals(message.methodLine, "STATE")) {
-        // STATE: Broadcast to all peers whenever a node's state changes. Also sent whenever a node commits a new query
-        // (and thus has a new commit count and hash). A peer can react or respond to a peer's state change as follows:
-        if (!message.isSet("State")) {
-            STHROW("missing State");
-        }
-        if (!message.isSet("Priority")) {
-            STHROW("missing Priority");
-        }
-        const State from = peer->state;
-        peer->priority = message.calc("Priority");
-        peer->state = stateFromName(message["State"]);
-        const State to = peer->state;
-        if (from == to) {
-            // No state change, just new commits?
-            PINFO("Peer received new commit in state '" << stateName(from) << "', commit #" << message["CommitCount"] << " ("
-                  << message["Hash"] << ")");
-        } else {
-            // State changed -- first see if it's doing anything unusual
-            PINFO("Peer switched from '" << stateName(from) << "' to '" << stateName(to) << "' commit #" << message["CommitCount"]
-                  << " (" << message["Hash"] << ")");
-            if (from == UNKNOWN) {
-                PWARN("Peer coming from unrecognized state '" << stateName(from) << "'");
+        // Classify and process the message
+        if (SIEquals(message.methodLine, "LOGIN")) {
+            // LOGIN: This is the first message sent to and received from a new peer. It communicates the current state of
+            // the peer (hash and commit count), as well as the peer's priority. Peers can connect in any state, so this
+            // message can be sent and received in any state.
+            if (peer->loggedIn) {
+                STHROW("already logged in");
             }
-            if (to == UNKNOWN) {
-                PWARN("Peer going to unrecognized state '" << stateName(to) << "'");
+            if (!message.isSet("Priority")) {
+                STHROW("missing Priority");
+            }
+            if (!message.isSet("State")) {
+                STHROW("missing State");
+            }
+            if (!message.isSet("Version")) {
+                STHROW("missing Version");
+            }
+            if (peer->permaFollower && (message["Permafollower"] != "true" || message.calc("Priority") > 0)) {
+                STHROW("you're supposed to be a 0-priority permafollower");
+            }
+            if (!peer->permaFollower && (message["Permafollower"] == "true" || message.calc("Priority") == 0)) {
+                STHROW("you're *not* supposed to be a 0-priority permafollower");
             }
 
-            // Make sure transition states are an approved pair
-            bool okTransition = false;
-            switch (from) {
-            case UNKNOWN:
-                break;
-            case SEARCHING:
-                okTransition = (to == SYNCHRONIZING || to == WAITING || to == LEADING);
-                break;
-            case SYNCHRONIZING:
-                okTransition = (to == SEARCHING || to == WAITING);
-                break;
-            case WAITING:
-                okTransition = (to == SEARCHING || to == STANDINGUP || to == SUBSCRIBING);
-                break;
-            case STANDINGUP:
-                okTransition = (to == SEARCHING || to == LEADING);
-                break;
-            case LEADING:
-                okTransition = (to == SEARCHING || to == STANDINGDOWN);
-                break;
-            case STANDINGDOWN:
-                okTransition = (to == SEARCHING);
-                break;
-            case SUBSCRIBING:
-                okTransition = (to == SEARCHING || to == FOLLOWING);
-                break;
-            case FOLLOWING:
-                okTransition = (to == SEARCHING);
-                break;
-            }
-            if (!okTransition) {
-                PWARN("Peer making invalid transition from '" << stateName(from) << "' to '" << stateName(to) << "'");
-            }
+            // It's an error to have to peers configured with the same priority, except 0 and -1
+            SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
+            PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
+                  << message["CommitCount"] << " (" << message["Hash"] << ")");
+            peer->priority = message.calc("Priority");
+            peer->loggedIn = true;
+            peer->version = message["Version"];
+            peer->state = stateFromName(message["State"]);
 
-            // Next, should we do something about it?
-            if (to == SEARCHING) {
-                // SEARCHING: If anything ever goes wrong, a node reverts to the SEARCHING state. Thus if we see a peer
-                // go SEARCHING, we reset its accumulated state.  Specifically, we mark it is no longer being
-                // "subscribed", and we clear its last transaction response.
-                peer->transactionResponse = SQLitePeer::Response::NONE;
-                peer->subscribed = false;
-            } else if (to == STANDINGUP) {
-                // STANDINGUP: When a peer announces it intends to stand up, we immediately respond with approval or
-                // denial. We determine this by checking to see if there is any  other peer who is already leader or
-                // also trying to stand up.
-                //
-                // **FIXME**: Should it also deny if it knows of a higher priority peer?
-                SData response("STANDUP_RESPONSE");
-                // Parrot back the node's attempt count so that it can differentiate stale responses.
-                response["StateChangeCount"] = message["StateChangeCount"];
-
-                // Reason we would deny, if we do.
-                string reason;
-                if (peer->permaFollower) {
-                    // We think it's a permafollower, deny
-                    PHMMM("Permafollower trying to stand up, denying.");
-                    response["Response"] = "deny";
-                    reason = "You're a permafollower";
+            // Let the server know that a peer has logged in.
+            _server.onNodeLogin(peer);
+        } else if (!peer->loggedIn) {
+            STHROW("not logged in");
+        }
+        else if (SIEquals(message.methodLine, "STATE")) {
+            // STATE: Broadcast to all peers whenever a node's state changes. Also sent whenever a node commits a new query
+            // (and thus has a new commit count and hash). A peer can react or respond to a peer's state change as follows:
+            if (!message.isSet("State")) {
+                STHROW("missing State");
+            }
+            if (!message.isSet("Priority")) {
+                STHROW("missing Priority");
+            }
+            const State from = peer->state;
+            peer->priority = message.calc("Priority");
+            peer->state = stateFromName(message["State"]);
+            const State to = peer->state;
+            if (from == to) {
+                // No state change, just new commits?
+                PINFO("Peer received new commit in state '" << stateName(from) << "', commit #" << message["CommitCount"] << " ("
+                      << message["Hash"] << ")");
+            } else {
+                // State changed -- first see if it's doing anything unusual
+                PINFO("Peer switched from '" << stateName(from) << "' to '" << stateName(to) << "' commit #" << message["CommitCount"]
+                      << " (" << message["Hash"] << ")");
+                if (from == UNKNOWN) {
+                    PWARN("Peer coming from unrecognized state '" << stateName(from) << "'");
+                }
+                if (to == UNKNOWN) {
+                    PWARN("Peer going to unrecognized state '" << stateName(to) << "'");
                 }
 
-                // What's our state
-                if (SWITHIN(STANDINGUP, _state, STANDINGDOWN)) {
-                    // Oh crap, it's trying to stand up while we're leading. Who is higher priority?
-                    if (peer->priority > _priority) {
-                        // The other peer is a higher priority than us, so we should stand down (maybe it crashed, we
-                        // came up as leader, and now it's been brought back up). We'll want to stand down here, but we
-                        // do it gracefully so that we won't lose any transactions in progress.
-                        if (_state == STANDINGUP) {
-                            PWARN("Higher-priority peer is trying to stand up while we are STANDINGUP, SEARCHING.");
-                            _changeState(SEARCHING);
-                        } else if (_state == LEADING) {
-                            PWARN("Higher-priority peer is trying to stand up while we are LEADING, STANDINGDOWN.");
-                            _changeState(STANDINGDOWN);
+                // Make sure transition states are an approved pair
+                bool okTransition = false;
+                switch (from) {
+                case UNKNOWN:
+                    break;
+                case SEARCHING:
+                    okTransition = (to == SYNCHRONIZING || to == WAITING || to == LEADING);
+                    break;
+                case SYNCHRONIZING:
+                    okTransition = (to == SEARCHING || to == WAITING);
+                    break;
+                case WAITING:
+                    okTransition = (to == SEARCHING || to == STANDINGUP || to == SUBSCRIBING);
+                    break;
+                case STANDINGUP:
+                    okTransition = (to == SEARCHING || to == LEADING);
+                    break;
+                case LEADING:
+                    okTransition = (to == SEARCHING || to == STANDINGDOWN);
+                    break;
+                case STANDINGDOWN:
+                    okTransition = (to == SEARCHING);
+                    break;
+                case SUBSCRIBING:
+                    okTransition = (to == SEARCHING || to == FOLLOWING);
+                    break;
+                case FOLLOWING:
+                    okTransition = (to == SEARCHING);
+                    break;
+                }
+                if (!okTransition) {
+                    PWARN("Peer making invalid transition from '" << stateName(from) << "' to '" << stateName(to) << "'");
+                }
+
+                // Next, should we do something about it?
+                if (to == SEARCHING) {
+                    // SEARCHING: If anything ever goes wrong, a node reverts to the SEARCHING state. Thus if we see a peer
+                    // go SEARCHING, we reset its accumulated state.  Specifically, we mark it is no longer being
+                    // "subscribed", and we clear its last transaction response.
+                    peer->transactionResponse = SQLitePeer::Response::NONE;
+                    peer->subscribed = false;
+                } else if (to == STANDINGUP) {
+                    // STANDINGUP: When a peer announces it intends to stand up, we immediately respond with approval or
+                    // denial. We determine this by checking to see if there is any  other peer who is already leader or
+                    // also trying to stand up.
+                    //
+                    // **FIXME**: Should it also deny if it knows of a higher priority peer?
+                    SData response("STANDUP_RESPONSE");
+                    // Parrot back the node's attempt count so that it can differentiate stale responses.
+                    response["StateChangeCount"] = message["StateChangeCount"];
+
+                    // Reason we would deny, if we do.
+                    string reason;
+                    if (peer->permaFollower) {
+                        // We think it's a permafollower, deny
+                        PHMMM("Permafollower trying to stand up, denying.");
+                        response["Response"] = "deny";
+                        reason = "You're a permafollower";
+                    }
+
+                    // What's our state
+                    if (SWITHIN(STANDINGUP, _state, STANDINGDOWN)) {
+                        // Oh crap, it's trying to stand up while we're leading. Who is higher priority?
+                        if (peer->priority > _priority) {
+                            // The other peer is a higher priority than us, so we should stand down (maybe it crashed, we
+                            // came up as leader, and now it's been brought back up). We'll want to stand down here, but we
+                            // do it gracefully so that we won't lose any transactions in progress.
+                            if (_state == STANDINGUP) {
+                                PWARN("Higher-priority peer is trying to stand up while we are STANDINGUP, SEARCHING.");
+                                _changeState(SEARCHING);
+                            } else if (_state == LEADING) {
+                                PWARN("Higher-priority peer is trying to stand up while we are LEADING, STANDINGDOWN.");
+                                _changeState(STANDINGDOWN);
+                            } else {
+                                PWARN("Higher-priority peer is trying to stand up while we are STANDINGDOWN, continuing.");
+                            }
                         } else {
-                            PWARN("Higher-priority peer is trying to stand up while we are STANDINGDOWN, continuing.");
+                            // Deny because we're currently in the process of leading and we're higher priority.
+                            response["Response"] = "deny";
+                            reason = "I am leading";
+
+                            // Hmm, why is a lower priority peer trying to stand up? Is it possible we're no longer in
+                            // control of the cluster? Let's see how many nodes are subscribed.
+                            if (_majoritySubscribed()) {
+                                // we have a majority of the cluster, so ignore this oddity.
+                                PHMMM("Lower-priority peer is trying to stand up while we are " << stateName(_state)
+                                      << " with a majority of the cluster; denying and ignoring.");
+                            } else {
+                                // We don't have a majority of the cluster -- maybe it knows something we don't?  For
+                                // example, it could be that the rest of the cluster has forked away from us. This can
+                                // happen if the leader hangs while processing a command: by the time it finishes, the
+                                // cluster might have elected a new leader, forked, and be a thousand commits in the future.
+                                // In this case, let's just reset everything anyway to be safe.
+                                PWARN("Lower-priority peer is trying to stand up while we are " << stateName(_state)
+                                      << ", but we don't have a majority of the cluster so reconnecting and SEARCHING.");
+                                _reconnectAll();
+                                // TODO: This puts us in an ambiguous state if we switch to SEARCHING from LEADING,
+                                // without going through the STANDDOWN process. We'll need to handle it better, but it's
+                                // unclear if this can ever happen at all. exit() may be a reasonable strategy here.
+                                _changeState(SEARCHING);
+                            }
                         }
                     } else {
-                        // Deny because we're currently in the process of leading and we're higher priority.
-                        response["Response"] = "deny";
-                        reason = "I am leading";
-
-                        // Hmm, why is a lower priority peer trying to stand up? Is it possible we're no longer in
-                        // control of the cluster? Let's see how many nodes are subscribed.
-                        if (_majoritySubscribed()) {
-                            // we have a majority of the cluster, so ignore this oddity.
-                            PHMMM("Lower-priority peer is trying to stand up while we are " << stateName(_state)
-                                  << " with a majority of the cluster; denying and ignoring.");
-                        } else {
-                            // We don't have a majority of the cluster -- maybe it knows something we don't?  For
-                            // example, it could be that the rest of the cluster has forked away from us. This can
-                            // happen if the leader hangs while processing a command: by the time it finishes, the
-                            // cluster might have elected a new leader, forked, and be a thousand commits in the future.
-                            // In this case, let's just reset everything anyway to be safe.
-                            PWARN("Lower-priority peer is trying to stand up while we are " << stateName(_state)
-                                  << ", but we don't have a majority of the cluster so reconnecting and SEARCHING.");
-                            _reconnectAll();
-                            // TODO: This puts us in an ambiguous state if we switch to SEARCHING from LEADING,
-                            // without going through the STANDDOWN process. We'll need to handle it better, but it's
-                            // unclear if this can ever happen at all. exit() may be a reasonable strategy here.
-                            _changeState(SEARCHING);
-                        }
-                    }
-                } else {
-                    // Approve if nobody else is trying to stand up
-                    response["Response"] = "approve"; // Optimistic; will override
-                    for (auto otherPeer : _peerList) {
-                        if (otherPeer != peer) {
-                            // See if it's trying to be leader
-                            if (otherPeer->state == STANDINGUP || otherPeer->state == LEADING || otherPeer->state == STANDINGDOWN) {
-                                // We need to contest this standup
-                                response["Response"] = "deny";
-                                reason = "peer '" + otherPeer->name + "' is '" + stateName(otherPeer->state) + "'";
-                                break;
+                        // Approve if nobody else is trying to stand up
+                        response["Response"] = "approve"; // Optimistic; will override
+                        for (auto otherPeer : _peerList) {
+                            if (otherPeer != peer) {
+                                // See if it's trying to be leader
+                                if (otherPeer->state == STANDINGUP || otherPeer->state == LEADING || otherPeer->state == STANDINGDOWN) {
+                                    // We need to contest this standup
+                                    response["Response"] = "deny";
+                                    reason = "peer '" + otherPeer->name + "' is '" + stateName(otherPeer->state) + "'";
+                                    break;
+                                }
                             }
                         }
                     }
-                }
 
-                // Send the response
-                if (SIEquals(response["Response"], "approve")) {
-                    PINFO("Approving standup request");
+                    // Send the response
+                    if (SIEquals(response["Response"], "approve")) {
+                        PINFO("Approving standup request");
+                    } else {
+                        PHMMM("Denying standup request because " << reason);
+                    }
+                    _sendToPeer(peer, response);
+                } else if (from == STANDINGDOWN) {
+                    // STANDINGDOWN: When a peer stands down we double-check to make sure we don't have any outstanding
+                    // transaction (and if we do, we warn and rollback).
+                    if (!_db.getUncommittedHash().empty()) {
+                        // Crap, we were waiting for a response that will apparently never come. I guess roll it back? This
+                        // should never happen, however, as the leader shouldn't STANDOWN unless all subscribed followers
+                        // (including us) have already unsubscribed, and we wouldn't do that in the middle of a
+                        // transaction. But just in case...
+                        SASSERTWARN(_state == FOLLOWING);
+                        PWARN("Was expecting a response for transaction #"
+                              << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash()
+                              << ") but stood down prematurely, rolling back and hoping for the best.");
+                        _db.rollback();
+                    }
+                }
+            }
+        } else if (SIEquals(message.methodLine, "STANDUP_RESPONSE")) {
+            // STANDUP_RESPONSE: Sent in response to the STATE message generated when a node enters the STANDINGUP state.
+            // Contains a header "Response" with either the value "approve" or "deny".  This response is stored within the
+            // peer for testing in the update loop.
+            if (_state == STANDINGUP) {
+                // We only verify this if it's present, which allows us to still receive valid STANDUP_RESPONSE
+                // messages from peers on older versions. Once all nodes have been upgraded past the first version that
+                // supports this, we can enforce that this count is present.
+                if (message.isSet("StateChangeCount") && message.calc("StateChangeCount") != _stateChangeCount) {
+                    SHMMM("Received STANDUP_RESPONSE for old standup attempt (" << message.calc("StateChangeCount") << "), ignoring.");
+                    return;
+                }
+                if (!message.isSet("Response")) {
+                    STHROW("missing Response");
+                }
+                if (peer->standupResponse != SQLitePeer::Response::NONE) {
+                    PWARN("Already received standup response '" << peer->standupResponse << "', now receiving '"
+                          << message["Response"] << "', odd -- multiple leaders competing?");
+                }
+                if (SIEquals(message["Response"], "approve")) {
+                    PINFO("Received standup approval");
+                    peer->standupResponse = SQLitePeer::Response::APPROVE;
                 } else {
-                    PHMMM("Denying standup request because " << reason);
+                    PHMMM("Received standup denial: reason='" << message["Reason"] << "'");
+                    peer->standupResponse = SQLitePeer::Response::DENY;
                 }
-                _sendToPeer(peer, response);
-            } else if (from == STANDINGDOWN) {
-                // STANDINGDOWN: When a peer stands down we double-check to make sure we don't have any outstanding
-                // transaction (and if we do, we warn and rollback).
-                if (!_db.getUncommittedHash().empty()) {
-                    // Crap, we were waiting for a response that will apparently never come. I guess roll it back? This
-                    // should never happen, however, as the leader shouldn't STANDOWN unless all subscribed followers
-                    // (including us) have already unsubscribed, and we wouldn't do that in the middle of a
-                    // transaction. But just in case...
-                    SASSERTWARN(_state == FOLLOWING);
-                    PWARN("Was expecting a response for transaction #"
-                          << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash()
-                          << ") but stood down prematurely, rolling back and hoping for the best.");
-                    _db.rollback();
-                }
-            }
-        }
-    } else if (SIEquals(message.methodLine, "STANDUP_RESPONSE")) {
-        // STANDUP_RESPONSE: Sent in response to the STATE message generated when a node enters the STANDINGUP state.
-        // Contains a header "Response" with either the value "approve" or "deny".  This response is stored within the
-        // peer for testing in the update loop.
-        if (_state == STANDINGUP) {
-            // We only verify this if it's present, which allows us to still receive valid STANDUP_RESPONSE
-            // messages from peers on older versions. Once all nodes have been upgraded past the first version that
-            // supports this, we can enforce that this count is present.
-            if (message.isSet("StateChangeCount") && message.calc("StateChangeCount") != _stateChangeCount) {
-                SHMMM("Received STANDUP_RESPONSE for old standup attempt (" << message.calc("StateChangeCount") << "), ignoring.");
-                return;
-            }
-            if (!message.isSet("Response")) {
-                STHROW("missing Response");
-            }
-            if (peer->standupResponse != SQLitePeer::Response::NONE) {
-                PWARN("Already received standup response '" << peer->standupResponse << "', now receiving '"
-                      << message["Response"] << "', odd -- multiple leaders competing?");
-            }
-            if (SIEquals(message["Response"], "approve")) {
-                PINFO("Received standup approval");
-                peer->standupResponse = SQLitePeer::Response::APPROVE;
             } else {
-                PHMMM("Received standup denial: reason='" << message["Reason"] << "'");
-                peer->standupResponse = SQLitePeer::Response::DENY;
+                SINFO("Got STANDUP_RESPONSE but not STANDINGUP. Probably a late message, ignoring.");
             }
-        } else {
-            SINFO("Got STANDUP_RESPONSE but not STANDINGUP. Probably a late message, ignoring.");
-        }
-    } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
-        // If we're FOLLOWING, we'll let worker threads handle SYNCHRONIZATION messages. We don't on leader, because if
-        // there's a backlog of commands, these can get stale, and by the time they reach the follower, it's already
-        // behind, thus never catching up.
-        if (_state == FOLLOWING) {
-            // Attach all of the state required to populate a SYNCHRONIZE_RESPONSE to this message. All of this is
-            // processed asynchronously, but that is fine, the final `SUBSCRIBE` message and its response will be
-            // processed synchronously.
-            SData request = message;
-            uint64_t count = 0;
-            string hash;
-            peer->getCommit(count, hash);
-            request["peerCommitCount"] = to_string(count);
-            request["peerHash"] = hash;
-            request["peerID"] = to_string(_getIDByPeer(peer));
+        } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
+            // If we're FOLLOWING, we'll let worker threads handle SYNCHRONIZATION messages. We don't on leader, because if
+            // there's a backlog of commands, these can get stale, and by the time they reach the follower, it's already
+            // behind, thus never catching up.
+            if (_state == FOLLOWING) {
+                // Attach all of the state required to populate a SYNCHRONIZE_RESPONSE to this message. All of this is
+                // processed asynchronously, but that is fine, the final `SUBSCRIBE` message and its response will be
+                // processed synchronously.
+                SData request = message;
+                uint64_t count = 0;
+                string hash;
+                peer->getCommit(count, hash);
+                request["peerCommitCount"] = to_string(count);
+                request["peerHash"] = hash;
+                request["peerID"] = to_string(_getIDByPeer(peer));
 
-            // The following properties are only used to expand out our log macros.
-            request["name"] = _name;
-            request["peerName"] = peer->name;
+                // The following properties are only used to expand out our log macros.
+                request["name"] = _name;
+                request["peerName"] = peer->name;
 
-            // Create a command from this request and pass it on to the server to handle.
-            auto command = make_unique<SQLiteCommand>(move(request));
-            command->initiatingPeerID = peer->id;
-            _server.acceptCommand(move(command), true);
-        } else {
-            // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
-            // stood up.
-            SData response("SYNCHRONIZE_RESPONSE");
-            _queueSynchronize(this, peer, _db, response, false);
-            _sendToPeer(peer, response);
-        }
-    } else if (SIEquals(message.methodLine, "SYNCHRONIZE_RESPONSE")) {
-        // SYNCHRONIZE_RESPONSE: Sent in response to a SYNCHRONIZE request. Contains a payload of zero or more COMMIT
-        // messages, all of which are immediately committed to the local database.
-        if (_state != SYNCHRONIZING) {
-            STHROW("not synchronizing");
-        }
-        if (!_syncPeer) {
-            STHROW("too late, gave up on you");
-        }
-        if (peer != _syncPeer) {
-            STHROW("sync peer mismatch");
-        }
-        PINFO("Beginning synchronization");
-        try {
-            // Received this synchronization response; are we done?
-            _recvSynchronize(peer, message);
-            uint64_t peerCommitCount = _syncPeer->commitCount;
-            if (_db.getCommitCount() == peerCommitCount) {
-                // All done
-                SINFO("Synchronization complete, at commitCount #" << _db.getCommitCount() << " ("
-                      << _db.getCommittedHash() << "), WAITING");
-                _syncPeer = nullptr;
-                _changeState(WAITING);
-            } else if (_db.getCommitCount() > peerCommitCount) {
-                // How did this happen?  Something is screwed up.
-                SWARN("We have more data (" << _db.getCommitCount() << ") than our sync peer '" << _syncPeer->name
-                      << "' (" << peerCommitCount << "), reconnecting and SEARCHING.");
+                // Create a command from this request and pass it on to the server to handle.
+                auto command = make_unique<SQLiteCommand>(move(request));
+                command->initiatingPeerID = peer->id;
+                _server.acceptCommand(move(command), true);
+            } else {
+                // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
+                // stood up.
+                SData response("SYNCHRONIZE_RESPONSE");
+                _queueSynchronize(this, peer, _db, response, false);
+                _sendToPeer(peer, response);
+            }
+        } else if (SIEquals(message.methodLine, "SYNCHRONIZE_RESPONSE")) {
+            // SYNCHRONIZE_RESPONSE: Sent in response to a SYNCHRONIZE request. Contains a payload of zero or more COMMIT
+            // messages, all of which are immediately committed to the local database.
+            if (_state != SYNCHRONIZING) {
+                STHROW("not synchronizing");
+            }
+            if (!_syncPeer) {
+                STHROW("too late, gave up on you");
+            }
+            if (peer != _syncPeer) {
+                STHROW("sync peer mismatch");
+            }
+            PINFO("Beginning synchronization");
+            try {
+                // Received this synchronization response; are we done?
+                _recvSynchronize(peer, message);
+                uint64_t peerCommitCount = _syncPeer->commitCount;
+                if (_db.getCommitCount() == peerCommitCount) {
+                    // All done
+                    SINFO("Synchronization complete, at commitCount #" << _db.getCommitCount() << " ("
+                          << _db.getCommittedHash() << "), WAITING");
+                    _syncPeer = nullptr;
+                    _changeState(WAITING);
+                } else if (_db.getCommitCount() > peerCommitCount) {
+                    // How did this happen?  Something is screwed up.
+                    SWARN("We have more data (" << _db.getCommitCount() << ") than our sync peer '" << _syncPeer->name
+                          << "' (" << peerCommitCount << "), reconnecting and SEARCHING.");
+                    _reconnectPeer(_syncPeer);
+                    _syncPeer = nullptr;
+                    _changeState(SEARCHING);
+                } else {
+                    // Otherwise, more to go
+                    SINFO("Synchronization underway, at commitCount #"
+                          << _db.getCommitCount() << " (" << _db.getCommittedHash() << "), "
+                          << peerCommitCount - _db.getCommitCount() << " to go.");
+                    _updateSyncPeer();
+                    if (_syncPeer) {
+                        _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
+                    } else {
+                        SWARN("No usable _syncPeer but syncing not finished. Going to SEARCHING.");
+                        _changeState(SEARCHING);
+                    }
+
+                    // Also, extend our timeout so long as we're still alive
+                    _stateTimeout = STimeNow() + RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
+                }
+            } catch (const SException& e) {
+                // Transaction failed
+                SWARN("Synchronization failed '" << e.what() << "', reconnecting and re-SEARCHING.");
                 _reconnectPeer(_syncPeer);
                 _syncPeer = nullptr;
                 _changeState(SEARCHING);
+                throw e;
+            }
+        } else if (SIEquals(message.methodLine, "SUBSCRIBE")) {
+            // SUBSCRIBE: Sent by a node in the WAITING state to the current leader to begin FOLLOWING. Respond
+            // SUBSCRIPTION_APPROVED with any COMMITs that the subscribing peer lacks (for example, any commits that have
+            // occurred after it completed SYNCHRONIZING but before this SUBSCRIBE was received). Tag this peer as
+            // "subscribed" for use in the LEADING and STANDINGDOWN update loops. Finally, if there is an outstanding
+            // distributed transaction being processed, send it to this new follower.
+            if (_state != LEADING) {
+                STHROW("not leading");
+            }
+            PINFO("Received SUBSCRIBE, accepting new follower");
+            SData response("SUBSCRIPTION_APPROVED");
+            _queueSynchronize(this, peer, _db, response, true); // Send everything it's missing
+            _sendToPeer(peer, response);
+            SASSERTWARN(!peer->subscribed);
+            peer->subscribed = true;
+
+            // New follower; are we in the midst of a transaction?
+            if (_commitState == CommitState::COMMITTING) {
+                // Invite the new peer to participate in the transaction
+                SINFO("Inviting peer into distributed transaction already underway (" << _db.getUncommittedHash() << ")");
+
+                // TODO: This duplicates code in `update()`, would be nice to refactor out the common code.
+                uint64_t commitCount = _db.getCommitCount();
+                SData transaction("BEGIN_TRANSACTION");
+                SINFO("beginning distributed transaction for commit #" << commitCount + 1 << " ("
+                      << _db.getUncommittedHash() << ")");
+                transaction.set("NewCount", commitCount + 1);
+                transaction.set("NewHash", _db.getUncommittedHash());
+                transaction.set("leaderSendTime", to_string(STimeNow()));
+                transaction.set("dbCountAtStart", to_string(_db.getDBCountAtStart()));
+                transaction.set("ID", _lastSentTransactionID + 1);
+                transaction.content = _db.getUncommittedQuery();
+                _sendToPeer(peer, transaction);
+            }
+        } else if (SIEquals(message.methodLine, "SUBSCRIPTION_APPROVED")) {
+            // SUBSCRIPTION_APPROVED: Sent by a follower's new leader to complete the subscription process. Includes zero or
+            // more COMMITS that should be immediately applied to the database.
+            if (_state != SUBSCRIBING) {
+                STHROW("not subscribing");
+            }
+            if (_leadPeer != peer) {
+                STHROW("not subscribing to you");
+            }
+            SINFO("Received SUBSCRIPTION_APPROVED, final synchronization.");
+            try {
+                // Done synchronizing
+                _recvSynchronize(peer, message);
+                SINFO("Subscription complete, at commitCount #" << _db.getCommitCount() << " (" << _db.getCommittedHash()
+                      << "), FOLLOWING");
+                _changeState(FOLLOWING);
+            } catch (const SException& e) {
+                // Transaction failed
+                SWARN("Subscription failed '" << e.what() << "', reconnecting to leader and re-SEARCHING.");
+                _reconnectPeer(_leadPeer);
+                _changeState(SEARCHING);
+                throw e;
+            }
+        } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
+            if (_replicationThreadsShouldExit) {
+                SINFO("Discarding replication message, stopping FOLLOWING");
             } else {
-                // Otherwise, more to go
-                SINFO("Synchronization underway, at commitCount #"
-                      << _db.getCommitCount() << " (" << _db.getCommittedHash() << "), "
-                      << peerCommitCount - _db.getCommitCount() << " to go.");
-                _updateSyncPeer();
-                if (_syncPeer) {
-                    _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
+                auto threadID = _replicationThreadCount.fetch_add(1);
+                SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
+                thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false)).detach();
+                SDEBUG("Done spawning concurrent replicate thread: " << threadID);
+            }
+        } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
+            // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
+            // is ready to commit. Note that this peer approves the transaction for use in the LEADING and STANDINGDOWN
+            // update loop.
+            if (!message.isSet("ID")) {
+                STHROW("missing ID");
+            }
+            if (!message.isSet("NewCount")) {
+                STHROW("missing NewCount");
+            }
+            if (!message.isSet("NewHash")) {
+                STHROW("missing NewHash");
+            }
+            if (_state != LEADING && _state != STANDINGDOWN) {
+                STHROW("not leading");
+            }
+            SQLitePeer::Response response = SIEquals(message.methodLine, "APPROVE_TRANSACTION") ? SQLitePeer::Response::APPROVE : SQLitePeer::Response::DENY;
+            try {
+                // We ignore late approvals of commits that have already been finalized. They could have been committed
+                // already, in which case `_lastSentTransactionID` will have incremented, or they could have been rolled
+                // back due to a conflict, which would cuase them to have the wrong hash (the hash of the previous attempt
+                // at committing the transaction with this ID).
+                bool hashMatch = message["NewHash"] == _db.getUncommittedHash();
+                if (hashMatch && to_string(_lastSentTransactionID + 1) == message["ID"]) {
+                    if (message.calcU64("NewCount") != _db.getCommitCount() + 1) {
+                        STHROW("commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: "
+                              + to_string(_db.getCommitCount() + 1));
+                    }
+                    if (peer->permaFollower) {
+                        STHROW("permafollowers shouldn't approve/deny");
+                    }
+                    PINFO("Peer " << response << " transaction #" << message["NewCount"] << " (" << message["NewHash"] << ")");
+                    peer->transactionResponse = response;
                 } else {
-                    SWARN("No usable _syncPeer but syncing not finished. Going to SEARCHING.");
-                    _changeState(SEARCHING);
+                    // Old command.  Nothing to do.  We already sent a commit or rollback.
+                    PINFO("Peer '" << message.methodLine << "' transaction #" << message["NewCount"]
+                          << " (" << message["NewHash"] << ") after " << (hashMatch ? "commit" : "rollback") << ".");
                 }
-
-                // Also, extend our timeout so long as we're still alive
-                _stateTimeout = STimeNow() + RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
+            } catch (const SException& e) {
+                // Doesn't correspond to the outstanding transaction not necessarily fatal. This can happen if, for
+                // example, a command is escalated from/ one follower, approved by the second, but where the first follower dies
+                // before the second's approval is received by the leader. In this case the leader will drop the command
+                // when the initiating peer is lost, and thus won't have an outstanding transaction (or will be processing
+                // a new transaction) when the old, outdated approval is received. Furthermore, in this case we will have
+                // already sent a ROLLBACK, so it will already correct itself. If not, then we'll wait for the follower to
+                // determine it's screwed and reconnect.
+                SWARN("Received " << message.methodLine << " for transaction #"
+                      << message.calc("NewCount") << " (" << message["NewHash"] << ", " << message["ID"] << ") but '"
+                      << e.what() << "', ignoring.");
             }
-        } catch (const SException& e) {
-            // Transaction failed
-            SWARN("Synchronization failed '" << e.what() << "', reconnecting and re-SEARCHING.");
-            _reconnectPeer(_syncPeer);
-            _syncPeer = nullptr;
-            _changeState(SEARCHING);
-            throw e;
-        }
-    } else if (SIEquals(message.methodLine, "SUBSCRIBE")) {
-        // SUBSCRIBE: Sent by a node in the WAITING state to the current leader to begin FOLLOWING. Respond
-        // SUBSCRIPTION_APPROVED with any COMMITs that the subscribing peer lacks (for example, any commits that have
-        // occurred after it completed SYNCHRONIZING but before this SUBSCRIBE was received). Tag this peer as
-        // "subscribed" for use in the LEADING and STANDINGDOWN update loops. Finally, if there is an outstanding
-        // distributed transaction being processed, send it to this new follower.
-        if (_state != LEADING) {
-            STHROW("not leading");
-        }
-        PINFO("Received SUBSCRIBE, accepting new follower");
-        SData response("SUBSCRIPTION_APPROVED");
-        _queueSynchronize(this, peer, _db, response, true); // Send everything it's missing
-        _sendToPeer(peer, response);
-        SASSERTWARN(!peer->subscribed);
-        peer->subscribed = true;
-
-        // New follower; are we in the midst of a transaction?
-        if (_commitState == CommitState::COMMITTING) {
-            // Invite the new peer to participate in the transaction
-            SINFO("Inviting peer into distributed transaction already underway (" << _db.getUncommittedHash() << ")");
-
-            // TODO: This duplicates code in `update()`, would be nice to refactor out the common code.
-            uint64_t commitCount = _db.getCommitCount();
-            SData transaction("BEGIN_TRANSACTION");
-            SINFO("beginning distributed transaction for commit #" << commitCount + 1 << " ("
-                  << _db.getUncommittedHash() << ")");
-            transaction.set("NewCount", commitCount + 1);
-            transaction.set("NewHash", _db.getUncommittedHash());
-            transaction.set("leaderSendTime", to_string(STimeNow()));
-            transaction.set("dbCountAtStart", to_string(_db.getDBCountAtStart()));
-            transaction.set("ID", _lastSentTransactionID + 1);
-            transaction.content = _db.getUncommittedQuery();
-            _sendToPeer(peer, transaction);
-        }
-    } else if (SIEquals(message.methodLine, "SUBSCRIPTION_APPROVED")) {
-        // SUBSCRIPTION_APPROVED: Sent by a follower's new leader to complete the subscription process. Includes zero or
-        // more COMMITS that should be immediately applied to the database.
-        if (_state != SUBSCRIBING) {
-            STHROW("not subscribing");
-        }
-        if (_leadPeer != peer) {
-            STHROW("not subscribing to you");
-        }
-        SINFO("Received SUBSCRIPTION_APPROVED, final synchronization.");
-        try {
-            // Done synchronizing
-            _recvSynchronize(peer, message);
-            SINFO("Subscription complete, at commitCount #" << _db.getCommitCount() << " (" << _db.getCommittedHash()
-                  << "), FOLLOWING");
-            _changeState(FOLLOWING);
-        } catch (const SException& e) {
-            // Transaction failed
-            SWARN("Subscription failed '" << e.what() << "', reconnecting to leader and re-SEARCHING.");
-            _reconnectPeer(_leadPeer);
-            _changeState(SEARCHING);
-            throw e;
-        }
-    } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
-        if (_replicationThreadsShouldExit) {
-            SINFO("Discarding replication message, stopping FOLLOWING");
-        } else {
-            auto threadID = _replicationThreadCount.fetch_add(1);
-            SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
-            thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false)).detach();
-            SDEBUG("Done spawning concurrent replicate thread: " << threadID);
-        }
-    } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
-        // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
-        // is ready to commit. Note that this peer approves the transaction for use in the LEADING and STANDINGDOWN
-        // update loop.
-        if (!message.isSet("ID")) {
-            STHROW("missing ID");
-        }
-        if (!message.isSet("NewCount")) {
-            STHROW("missing NewCount");
-        }
-        if (!message.isSet("NewHash")) {
-            STHROW("missing NewHash");
-        }
-        if (_state != LEADING && _state != STANDINGDOWN) {
-            STHROW("not leading");
-        }
-        SQLitePeer::Response response = SIEquals(message.methodLine, "APPROVE_TRANSACTION") ? SQLitePeer::Response::APPROVE : SQLitePeer::Response::DENY;
-        try {
-            // We ignore late approvals of commits that have already been finalized. They could have been committed
-            // already, in which case `_lastSentTransactionID` will have incremented, or they could have been rolled
-            // back due to a conflict, which would cuase them to have the wrong hash (the hash of the previous attempt
-            // at committing the transaction with this ID).
-            bool hashMatch = message["NewHash"] == _db.getUncommittedHash();
-            if (hashMatch && to_string(_lastSentTransactionID + 1) == message["ID"]) {
-                if (message.calcU64("NewCount") != _db.getCommitCount() + 1) {
-                    STHROW("commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: "
-                          + to_string(_db.getCommitCount() + 1));
+        } else if (SIEquals(message.methodLine, "ESCALATE")) {
+            // ESCALATE: Sent to the leader by a follower. Is processed like a normal command, except when complete an
+            // ESCALATE_RESPONSE is sent to the follower that initiated the escalation.
+            if (!message.isSet("ID")) {
+                STHROW("missing ID");
+            }
+            if (_state != LEADING) {
+                // Reject escalation because we're no longer leading
+                if (_state != STANDINGDOWN) {
+                    // Don't warn if we're standing down, this is expected.
+                    PWARN("Received ESCALATE but not LEADING or STANDINGDOWN, aborting command.");
                 }
-                if (peer->permaFollower) {
-                    STHROW("permafollowers shouldn't approve/deny");
-                }
-                PINFO("Peer " << response << " transaction #" << message["NewCount"] << " (" << message["NewHash"] << ")");
-                peer->transactionResponse = response;
+                SData aborted("ESCALATE_ABORTED");
+                aborted["ID"] = message["ID"];
+                aborted["Reason"] = "not leading";
+                _sendToPeer(peer, aborted);
             } else {
-                // Old command.  Nothing to do.  We already sent a commit or rollback.
-                PINFO("Peer '" << message.methodLine << "' transaction #" << message["NewCount"]
-                      << " (" << message["NewHash"] << ") after " << (hashMatch ? "commit" : "rollback") << ".");
+                // We're leading, make sure the rest checks out
+                SData request;
+                if (!request.deserialize(message.content)) {
+                    STHROW("malformed request");
+                }
+                if (!peer->subscribed) {
+                    STHROW("not subscribed");
+                }
+                if (!message.isSet("ID")) {
+                    STHROW("missing ID");
+                }
+                SAUTOPREFIX(request);
+                PINFO("Received ESCALATE command for '" << message["ID"] << "' (" << request.methodLine << ")");
+
+                // Create a new Command and send to the server.
+                auto command = make_unique<SQLiteCommand>(move(request));
+                command->initiatingPeerID = peer->id;
+                command->id = message["ID"];
+                _server.acceptCommand(move(command), true);
             }
-        } catch (const SException& e) {
-            // Doesn't correspond to the outstanding transaction not necessarily fatal. This can happen if, for
-            // example, a command is escalated from/ one follower, approved by the second, but where the first follower dies
-            // before the second's approval is received by the leader. In this case the leader will drop the command
-            // when the initiating peer is lost, and thus won't have an outstanding transaction (or will be processing
-            // a new transaction) when the old, outdated approval is received. Furthermore, in this case we will have
-            // already sent a ROLLBACK, so it will already correct itself. If not, then we'll wait for the follower to
-            // determine it's screwed and reconnect.
-            SWARN("Received " << message.methodLine << " for transaction #"
-                  << message.calc("NewCount") << " (" << message["NewHash"] << ", " << message["ID"] << ") but '"
-                  << e.what() << "', ignoring.");
-        }
-    } else if (SIEquals(message.methodLine, "ESCALATE")) {
-        // ESCALATE: Sent to the leader by a follower. Is processed like a normal command, except when complete an
-        // ESCALATE_RESPONSE is sent to the follower that initiated the escalation.
-        if (!message.isSet("ID")) {
-            STHROW("missing ID");
-        }
-        if (_state != LEADING) {
-            // Reject escalation because we're no longer leading
-            if (_state != STANDINGDOWN) {
-                // Don't warn if we're standing down, this is expected.
-                PWARN("Received ESCALATE but not LEADING or STANDINGDOWN, aborting command.");
+        } else if (SIEquals(message.methodLine, "ESCALATE_CANCEL")) {
+            // ESCALATE_CANCEL: Sent to the leader by a follower. Indicates that the follower would like to cancel the escalated
+            // command, such that it is not processed. For example, if the client that sent the original request
+            // disconnects from the follower before an answer is returned, there is no value (and sometimes a negative value)
+            // to the leader going ahead and completing it.
+            if (!message.isSet("ID")) {
+                STHROW("missing ID");
             }
-            SData aborted("ESCALATE_ABORTED");
-            aborted["ID"] = message["ID"];
-            aborted["Reason"] = "not leading";
-            _sendToPeer(peer, aborted);
-        } else {
-            // We're leading, make sure the rest checks out
-            SData request;
-            if (!request.deserialize(message.content)) {
-                STHROW("malformed request");
+            if (_state != LEADING) {
+                // Reject escalation because we're no longer leading
+                PWARN("Received ESCALATE_CANCEL but not LEADING, ignoring.");
+            } else {
+                // We're leading, make sure the rest checks out
+                SData request;
+                if (!request.deserialize(message.content)) {
+                    STHROW("malformed request");
+                }
+                if (!peer->subscribed) {
+                    STHROW("not subscribed");
+                }
+                if (!message.isSet("ID")) {
+                    STHROW("missing ID");
+                }
+                const string& commandID = SToLower(message["ID"]);
+                PINFO("Received ESCALATE_CANCEL command for '" << commandID << "'");
             }
-            if (!peer->subscribed) {
-                STHROW("not subscribed");
+        } else if (SIEquals(message.methodLine, "ESCALATE_RESPONSE")) {
+            // ESCALATE_RESPONSE: Sent when the leader processes the ESCALATE.
+            if (_state != FOLLOWING) {
+                STHROW("not following");
             }
             if (!message.isSet("ID")) {
                 STHROW("missing ID");
             }
-            SAUTOPREFIX(request);
-            PINFO("Received ESCALATE command for '" << message["ID"] << "' (" << request.methodLine << ")");
+            SData response;
+            if (!response.deserialize(message.content)) {
+                STHROW("malformed content");
+            }
 
+            // Go find the escalated command
+            PINFO("Received ESCALATE_RESPONSE for '" << message["ID"] << "'");
+            auto lock = _escalatedCommandMap.scopedLock();
+            auto commandIt = _escalatedCommandMap.find(message["ID"]);
+            if (commandIt != _escalatedCommandMap.end()) {
+                // Process the escalated command response
+                unique_ptr<SQLiteCommand>& command = commandIt->second;
+                if (command->escalationTimeUS) {
+                    command->escalationTimeUS = STimeNow() - command->escalationTimeUS;
+                    SINFO("Total escalation time for command " << command->request.methodLine << " was "
+                          << command->escalationTimeUS/1000 << "ms.");
+                }
+                command->response = response;
+                command->complete = true;
+                _server.acceptCommand(move(command), false);
+                _escalatedCommandMap.erase(commandIt);
+            } else {
+                SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. ");
+            }
+        } else if (SIEquals(message.methodLine, "ESCALATE_ABORTED")) {
+            // ESCALATE_RESPONSE: Sent when the leader aborts processing an escalated command. Re-submit to the new leader.
+            if (_state != FOLLOWING) {
+                STHROW("not following");
+            }
+            if (!message.isSet("ID")) {
+                STHROW("missing ID");
+            }
+            PINFO("Received ESCALATE_ABORTED for '" << message["ID"] << "' (" << message["Reason"] << ")");
+
+            // Look for that command
+            auto lock = _escalatedCommandMap.scopedLock();
+            auto commandIt = _escalatedCommandMap.find(message["ID"]);
+            if (commandIt != _escalatedCommandMap.end()) {
+                // Re-queue this
+                unique_ptr<SQLiteCommand>& command = commandIt->second;
+                PINFO("Re-queueing command '" << message["ID"] << "' (" << command->request.methodLine << ") ("
+                      << command->id << ")");
+                _server.acceptCommand(move(command), false);
+                _escalatedCommandMap.erase(commandIt);
+            } else
+                SWARN("Received ESCALATE_ABORTED for unescalated command " << message["ID"] << ", ignoring.");
+        } else if (SIEquals(message.methodLine, "CRASH_COMMAND") || SIEquals(message.methodLine, "BROADCAST_COMMAND")) {
             // Create a new Command and send to the server.
-            auto command = make_unique<SQLiteCommand>(move(request));
-            command->initiatingPeerID = peer->id;
-            command->id = message["ID"];
-            _server.acceptCommand(move(command), true);
-        }
-    } else if (SIEquals(message.methodLine, "ESCALATE_CANCEL")) {
-        // ESCALATE_CANCEL: Sent to the leader by a follower. Indicates that the follower would like to cancel the escalated
-        // command, such that it is not processed. For example, if the client that sent the original request
-        // disconnects from the follower before an answer is returned, there is no value (and sometimes a negative value)
-        // to the leader going ahead and completing it.
-        if (!message.isSet("ID")) {
-            STHROW("missing ID");
-        }
-        if (_state != LEADING) {
-            // Reject escalation because we're no longer leading
-            PWARN("Received ESCALATE_CANCEL but not LEADING, ignoring.");
+            SData messageCopy = message;
+            PINFO("Received " << message.methodLine << " command, forwarding to server.");
+            _server.acceptCommand(make_unique<SQLiteCommand>(move(messageCopy)), true);
         } else {
-            // We're leading, make sure the rest checks out
-            SData request;
-            if (!request.deserialize(message.content)) {
-                STHROW("malformed request");
-            }
-            if (!peer->subscribed) {
-                STHROW("not subscribed");
-            }
-            if (!message.isSet("ID")) {
-                STHROW("missing ID");
-            }
-            const string& commandID = SToLower(message["ID"]);
-            PINFO("Received ESCALATE_CANCEL command for '" << commandID << "'");
+            STHROW("unrecognized message");
         }
-    } else if (SIEquals(message.methodLine, "ESCALATE_RESPONSE")) {
-        // ESCALATE_RESPONSE: Sent when the leader processes the ESCALATE.
-        if (_state != FOLLOWING) {
-            STHROW("not following");
-        }
-        if (!message.isSet("ID")) {
-            STHROW("missing ID");
-        }
-        SData response;
-        if (!response.deserialize(message.content)) {
-            STHROW("malformed content");
-        }
-
-        // Go find the escalated command
-        PINFO("Received ESCALATE_RESPONSE for '" << message["ID"] << "'");
-        auto lock = _escalatedCommandMap.scopedLock();
-        auto commandIt = _escalatedCommandMap.find(message["ID"]);
-        if (commandIt != _escalatedCommandMap.end()) {
-            // Process the escalated command response
-            unique_ptr<SQLiteCommand>& command = commandIt->second;
-            if (command->escalationTimeUS) {
-                command->escalationTimeUS = STimeNow() - command->escalationTimeUS;
-                SINFO("Total escalation time for command " << command->request.methodLine << " was "
-                      << command->escalationTimeUS/1000 << "ms.");
-            }
-            command->response = response;
-            command->complete = true;
-            _server.acceptCommand(move(command), false);
-            _escalatedCommandMap.erase(commandIt);
-        } else {
-            SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. ");
-        }
-    } else if (SIEquals(message.methodLine, "ESCALATE_ABORTED")) {
-        // ESCALATE_RESPONSE: Sent when the leader aborts processing an escalated command. Re-submit to the new leader.
-        if (_state != FOLLOWING) {
-            STHROW("not following");
-        }
-        if (!message.isSet("ID")) {
-            STHROW("missing ID");
-        }
-        PINFO("Received ESCALATE_ABORTED for '" << message["ID"] << "' (" << message["Reason"] << ")");
-
-        // Look for that command
-        auto lock = _escalatedCommandMap.scopedLock();
-        auto commandIt = _escalatedCommandMap.find(message["ID"]);
-        if (commandIt != _escalatedCommandMap.end()) {
-            // Re-queue this
-            unique_ptr<SQLiteCommand>& command = commandIt->second;
-            PINFO("Re-queueing command '" << message["ID"] << "' (" << command->request.methodLine << ") ("
-                  << command->id << ")");
-            _server.acceptCommand(move(command), false);
-            _escalatedCommandMap.erase(commandIt);
-        } else
-            SWARN("Received ESCALATE_ABORTED for unescalated command " << message["ID"] << ", ignoring.");
-    } else if (SIEquals(message.methodLine, "CRASH_COMMAND") || SIEquals(message.methodLine, "BROADCAST_COMMAND")) {
-        // Create a new Command and send to the server.
-        SData messageCopy = message;
-        PINFO("Received " << message.methodLine << " command, forwarding to server.");
-        _server.acceptCommand(make_unique<SQLiteCommand>(move(messageCopy)), true);
-    } else {
-        STHROW("unrecognized message");
+    } catch (const SException& e) {
+        PWARN("Error processing message '" << message.methodLine << "' (" << e.what() << "), reconnecting.");
+        SData reconnect("RECONNECT");
+        reconnect["Reason"] = e.what();
+        peer->socket->send(reconnect.serialize());
+        peer->socket->shutdown();
     }
 }
 
@@ -2702,128 +2725,48 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // Try to establish connections with peers and process messages
     for (SQLitePeer* peer : _peerList) {
-        // TODO: Call peer->postPoll(); and refactor everything in here.
-        // See if we're connected
-        if (peer->socket) {
-            // We have a socket; process based on its state
-            switch (peer->socket->state.load()) {
-            case Socket::CONNECTED: {
-                // See if there is anything new.
-                SData message;
-                int messageSize = 0;
-                try {
-                    // peer->socket->lastRecvTime is always set, it's initialized to STimeNow() at creation.
-                    if (peer->socket->lastRecvTime + RECV_TIMEOUT < STimeNow()) {
-                        // Reset and reconnect.
-                        SHMMM("Connection with peer '" << peer->name << "' timed out.");
-                        STHROW("Timed Out!");
-                    }
-
-                    // Send PINGs 5s before the socket times out
-                    if (STimeNow() - peer->socket->lastSendTime > RECV_TIMEOUT - 5 * STIME_US_PER_S) {
-                        // Let's not delay on flushing the PING PONG exchanges
-                        // in case we get blocked before we get to flush later.
-                        SINFO("Sending PING to peer '" << peer->name << "'");
-                        _sendPING(peer);
-                    }
-
-                    // Process all messages
-                    while ((messageSize = message.deserialize(peer->socket->recvBuffer))) {
-                        // Which message?
-                        peer->socket->recvBuffer.consumeFront(messageSize);
-                        if (peer->socket->recvBuffer.size() > 10'000) {
-                            // Make in known if this buffer ever gets big.
-                            PINFO("Received '" << message.methodLine << "'(size: " << messageSize << ") with " 
-                                  << (peer->socket->recvBuffer.size()) << " bytes remaining in message buffer.");
-                        } else {
-                            PDEBUG("Received '" << message.methodLine << "'.");
-                        }
-                        if (SIEquals(message.methodLine, "PING")) {
-                            // Let's not delay on flushing the PING PONG
-                            // exchanges in case we get blocked before we
-                            // get to flush later.  Pass back the remote
-                            // timestamp of the PING such that the remote
-                            // host can calculate latency.
-                            SINFO("Received PING from peer '" << peer->name << "'. Sending PONG.");
-                            SData pong("PONG");
-                            pong["Timestamp"] = message["Timestamp"];
-                            peer->socket->send(pong.serialize());
-                        } else if (SIEquals(message.methodLine, "PONG")) {
-                            // Recevied the PONG; update our latency estimate for this peer.
-                            // We set a lower bound on this at 1, because even though it should be pretty impossible
-                            // for this to be 0 (it's in us), we rely on it being non-zero in order to connect to
-                            // peers.
-                            peer->latency = max(STimeNow() - message.calc64("Timestamp"), (uint64_t)1);
-                            SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/1000 << "ms latency)");
-                        } else {
-                            // Not a PING or PONG; pass to the child class
-                            _onMESSAGE(peer, message);
-                        }
-                    }
-                } catch (const SException& e) {
-                    // Warn if the message is set. Otherwise, the error is that we got no message (we timed out), just
-                    // reconnect without complaining about it.
-                    if (message.methodLine.size()) {
-                        PWARN("Error processing message '" << message.methodLine << "' (" << e.what() << "), reconnecting.");
-                    }
-                    SData reconnect("RECONNECT");
-                    reconnect["Reason"] = e.what();
-                    peer->socket->send(reconnect.serialize());
-                    peer->socket->shutdown();
-                    break;
-                }
-                break;
+        auto result = peer->postPoll(nextActivity);
+        switch (result) {
+            case SQLitePeer::PeerPostPollStatus::JUST_CONNECTED:
+            {
+                _socketList.push_back(peer->socket);
+                SData login("NODE_LOGIN");
+                login["Name"] = _name;
+                peer->sendMessage(login.serialize());
+                _sendPING(peer);
+                _onConnect(peer);
             }
-
-            case Socket::CLOSED: {
-                // Done; clean up and try to reconnect
-                uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
-                if (peer->socket->connectFailure) {
-                    PINFO("SQLitePeer connection failed after " << (STimeNow() - peer->socket->openTime) / 1000
-                                                          << "ms, reconnecting in " << delay / 1000 << "ms");
-                } else {
-                    PHMMM("Lost peer connection after " << (STimeNow() - peer->socket->openTime) / 1000
-                                                        << "ms, reconnecting in " << delay / 1000 << "ms");
-                }
+            break;
+            case SQLitePeer::PeerPostPollStatus::SOCKET_ERROR:
+            {
+                SData reconnect("RECONNECT");
+                reconnect["Reason"] = "socket error";
+                peer->sendMessage(reconnect.serialize());
+                peer->shutdownSocket();
+            }
+            break;
+            case SQLitePeer::PeerPostPollStatus::SOCKET_CLOSED:
+            {
                 _onDisconnect(peer);
                 _socketList.remove(peer->socket);
-                peer->reset();
-                peer->nextReconnect = STimeNow() + delay;
-                nextActivity = min(nextActivity, peer->nextReconnect.load());
-                break;
             }
-
-            default:
-                // Connecting or shutting down, wait
-                // **FIXME: Add timeout here?
-                break;
-            }
-        } else {
-            // Not connected, is it time to try again?
-            if (STimeNow() > peer->nextReconnect) {
-                // Try again
-                PINFO("Retrying the connection");
-                peer->reset();
-                try {
-                    peer->socket = new Socket(peer->host);
-                    _socketList.push_back(peer->socket);
-
-                    // Try to log in now.  Send a PING immediately after so we
-                    // can get a fast estimate of latency.
-                    SData login("NODE_LOGIN");
-                    login["Name"] = _name;
-                    peer->socket->send(login.serialize());
+            break;
+            case SQLitePeer::PeerPostPollStatus::OK:
+            {
+                if (STimeNow() - peer->lastActivityTime() > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
+                    SINFO("Close to timeout, sending PING to peer '" << peer->name << "'");
                     _sendPING(peer);
-                    _onConnect(peer);
-                } catch (const SException& exception) {
-                    // Failed to open -- try again later
-                    SWARN(exception.what());
-                    peer->nextReconnect = STimeNow() + STIME_US_PER_M;
                 }
-            } else {
-                // Waiting to reconnect -- notify the caller
-                nextActivity = min(nextActivity, peer->nextReconnect.load());
+                try {
+                    while (true) {
+                        SData message = peer->popMessage();
+                        _onMESSAGE(peer, message);
+                    }
+                } catch (const out_of_range& e) {
+                    // Ok, just no messages.
+                }
             }
+            break;
         }
     }
 

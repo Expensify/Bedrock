@@ -19,7 +19,6 @@ class SQLitePeer {
 
     enum class PeerPostPollStatus {
         OK,
-        NEAR_TIMEOUT,
         JUST_CONNECTED,
         SOCKET_ERROR,
         SOCKET_CLOSED,
@@ -37,8 +36,15 @@ class SQLitePeer {
     // Returns true if there's an active connection to this Peer.
     bool connected() const;
 
+    // The most recent send or receive time, in microseconds since the epoch.
+    uint64_t lastActivityTime() const;
+
     // Reset a peer, as if disconnected and starting the connection over.
     void reset();
+
+    // Pops a message off the *front* of the receive buffer and returns it.
+    // If there are no messages, throws `std::out_of_range`.
+    SData popMessage();
 
     PeerPostPollStatus postPoll(uint64_t& nextActivity);
 

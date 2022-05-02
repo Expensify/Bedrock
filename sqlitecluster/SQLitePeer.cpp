@@ -68,11 +68,6 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(uint64_t& nextActivity) {
                     return PeerPostPollStatus::SOCKET_ERROR;
                 }
 
-                // Send PINGs 5s before the socket times out
-                if (STimeNow() - socket->lastSendTime > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
-                    return PeerPostPollStatus::NEAR_TIMEOUT;
-                }
-
                 break;
             }
             case STCPManager::Socket::CLOSED: {
@@ -114,6 +109,27 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(uint64_t& nextActivity) {
         }
     }
     return PeerPostPollStatus::OK;
+}
+
+uint64_t SQLitePeer::lastActivityTime() const {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket) {
+        return max(socket->lastSendTime, socket->lastRecvTime);
+    }
+    return 0;
+}
+
+SData SQLitePeer::popMessage() {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket) {
+        SData message;
+        size_t size = message.deserialize(socket->recvBuffer);
+        if (size) {
+            socket->recvBuffer.consumeFront(size);
+            return message;
+        }
+    }
+    throw out_of_range("no messages");
 }
 
 bool SQLitePeer::setSocket(STCPManager::Socket* newSocket, bool onlyIfNull) {
