@@ -2673,6 +2673,9 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         if (peer->setSocket(socket)) {
                             _sendPING(peer);
                             _onConnect(peer);
+
+                            // Connected OK, don't need in _unauthenticatedIncomingSockets anymore.
+                            socketsToRemove.push_back(socket);
                         } else {
                             // If you're tempted to use the new socket to replace the old one because it seems more
                             // likely to be valid (i.e., the old one may have timed out from the other side) that's not
@@ -2685,7 +2688,6 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             peer->reset();
                             STHROW("Peer " + peer->name + " seems already connected."); 
                         }
-                        socketsToRemove.push_back(socket);
                     } else {
                         STHROW("Unauthenticated node '" + message["Name"] + "' attempted to connected, rejecting.");
                     }
