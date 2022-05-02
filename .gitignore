@@ -12,3 +12,5 @@ sqlitecluster/sqlitecluster
 libstuff/libstuff.d
 libstuff/libstuff.h.gch
 .idea
+docs/_site
+docs/.jekyll-cache
