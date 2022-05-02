@@ -2749,11 +2749,13 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             {
                 _onDisconnect(peer);
                 _socketList.remove(peer->socket);
+                // TODO: Need to remove from _socketList before the peer deletes it.
+                peer->reset();
             }
             break;
             case SQLitePeer::PeerPostPollStatus::OK:
             {
-                if (STimeNow() - peer->lastActivityTime() > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
+                if (peer->lastActivityTime() && STimeNow() - peer->lastActivityTime() > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
                     SINFO("Close to timeout, sending PING to peer '" << peer->name << "'");
                     _sendPING(peer);
                 }

@@ -78,7 +78,7 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(uint64_t& nextActivity) {
                 } else {
                     SHMMM("Lost peer connection after " << (STimeNow() - socket->openTime) / 1000 << "ms, reconnecting in " << delay / 1000 << "ms");
                 }
-                reset();
+                // reset();
                 nextReconnect = STimeNow() + delay;
                 nextActivity = min(nextActivity, nextReconnect.load());
                 return PeerPostPollStatus::SOCKET_CLOSED;
