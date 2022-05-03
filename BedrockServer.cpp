@@ -813,9 +813,12 @@ void BedrockServer::worker(int threadId)
 
             // If this was a command initiated by a peer as part of a cluster operation, then we process it separately
             // and respond immediately. This allows SQLiteNode to offload read-only operations to worker threads.
-            if (SQLiteNode::peekPeerCommand(_syncNode, db, *command)) {
-                // Move on to the next command.
-                continue;
+            {
+                auto _syncNodeCopy = atomic_load(&_syncNode);
+                if (_syncNodeCopy && _syncNodeCopy->peekPeerCommand(db, *command)) {
+                    // Move on to the next command.
+                    continue;
+                }
             }
 
             // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.

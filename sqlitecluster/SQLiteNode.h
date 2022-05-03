@@ -78,12 +78,6 @@ class SQLiteNode : public STCPManager {
         FOLLOWING      // Following the leader node
     };
 
-    // This is a static function that can 'peek' a command initiated by a peer, but can be called by any thread.
-    // Importantly for thread safety, this cannot depend on the current state of the cluster or a specific node.
-    // Returns false if the node can't peek the command.
-    [[deprecated("Use HTTP escalation")]]
-    static bool peekPeerCommand(shared_ptr<SQLiteNode>, SQLite& db, SQLiteCommand& command);
-
     // Receive timeout for cluster messages.
     static const uint64_t RECV_TIMEOUT;
 
@@ -138,6 +132,9 @@ class SQLiteNode : public STCPManager {
     // for data, and send the new commit.
     // Does not block.
     void notifyCommit() const;
+
+    [[deprecated("Use HTTP escalation")]]
+    bool peekPeerCommand(SQLite& db, SQLiteCommand& command) const;
 
     // Prepare a set of sockets to wait for read/write.
     // Can block.
@@ -208,7 +205,7 @@ class SQLiteNode : public STCPManager {
     // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
     // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
     // thread with a different DB object) - which is why this is static.
-    static void _queueSynchronize(SQLiteNode* node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll);
+    static void _queueSynchronize(const SQLiteNode* node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll);
 
     Socket* _acceptSocket();
 
