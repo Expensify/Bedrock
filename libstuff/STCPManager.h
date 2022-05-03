@@ -47,10 +47,6 @@ struct STCPManager {
         string sendBufferCopy();
         void setSendBuffer(const string& buffer);
 
-        void resetCounters();
-        uint64_t getRecvBytes();
-        uint64_t getSentBytes();
-
       private:
         static atomic<uint64_t> socketCount;
         recursive_mutex sendRecvMutex;
@@ -64,9 +60,6 @@ struct STCPManager {
         // the underlying ssl code. Once assigned, the socket owns this object for it's lifetime and will delete it
         // upon destruction.
         SX509* _x509;
-
-        uint64_t sentBytes;
-        uint64_t recvBytes;
     };
 
     class Port {

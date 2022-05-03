@@ -2673,11 +2673,11 @@ SStopwatch::SStopwatch(uint64_t alarm) {
     alarmDuration.store(alarm);
 }
 
-uint64_t SStopwatch::elapsed() {
+uint64_t SStopwatch::elapsed() const {
     return STimeNow() - startTime.load();
 }
 
-uint64_t SStopwatch::ringing() {
+uint64_t SStopwatch::ringing() const {
     return alarmDuration.load() && (elapsed() > alarmDuration.load());
 }
 

@@ -13,6 +13,8 @@
 #include <BedrockPlugin.h>
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
+#include <libstuff/AutoTimer.h>
+#include <sqlitecluster/SQLitePeer.h>
 
 set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
@@ -188,7 +190,7 @@ void BedrockServer::sync()
     // Initialize the shared pointer to our sync node object.
     atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, _dbPool, args["-nodeName"], args["-nodeHost"],
                                                             args["-peerList"], args.calc("-priority"), firstTimeout,
-                                                            _version, args.test("-parallelReplication"), args["-commandPortPrivate"]));
+                                                            _version, args["-commandPortPrivate"]));
 
     // The node is now coming up, and should eventually end up in a `LEADING` or `FOLLOWING` state. We can start adding
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while
@@ -1685,9 +1687,7 @@ list<STable> BedrockServer::getPeerInfo() {
     list<STable> peerData;
     auto _syncNodeCopy = atomic_load(&_syncNode);
     if (_syncNodeCopy) {
-        for (SQLiteNode::Peer* peer : _syncNodeCopy->peerList) {
-            peerData.emplace_back(peer->getData());
-        }
+        peerData =  _syncNodeCopy->getPeerInfo();
     }
     return peerData;
 }
@@ -1806,9 +1806,6 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
             // Set some information about this node.
             content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
             content["priority"] = to_string(_syncNodeCopy->getPriority());
-
-            // Get any escalated commands that are waiting to be processed.
-            content["escalatedCommandList"] = SComposeJSONArray(_syncNodeCopy->getEscalatedCommandRequestMethodLines());
             _syncNodeCopy = nullptr;
         } else {
             content["syncNodeAvailable"] = "false";
@@ -2061,7 +2058,7 @@ void BedrockServer::broadcastCommand(const SData& cmd) {
     }
 }
 
-void BedrockServer::onNodeLogin(SQLiteNode::Peer* peer)
+void BedrockServer::onNodeLogin(SQLitePeer* peer)
 {
     shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
     for (const auto& p : _crashCommands) {
