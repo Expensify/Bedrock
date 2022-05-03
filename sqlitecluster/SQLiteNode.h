@@ -10,7 +10,7 @@
 
 // This file is long and complex. For each nested sub-structure (I.e., classes inside classes) we have attempted to
 // arrange things as such:
-// For each puplic private block:
+// For each public/private block:
 // 1. classes/structs/type definitions
 // 2. static members
 // 3. static methods
