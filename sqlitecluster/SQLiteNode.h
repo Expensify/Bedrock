@@ -218,11 +218,14 @@ class SQLiteNode : public STCPManager {
     void _changeState(State newState);
 
     // Returns the ID of SQLitePeer. If the peer is not found, returns 0.
+    [[deprecated("Only required as long as synchronize uses peekPeerCommand")]]
     uint64_t _getIDByPeer(SQLitePeer* peer) const;
 
     // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
+    [[deprecated("Only required as long as synchronize uses peekPeerCommand")]]
     SQLitePeer* _getPeerByID(uint64_t id) const;
 
+    // Look up the correct peer by the name it supplies in a NODE_LOGIN message.
     SQLitePeer* _getPeerByName(const string& name) const;
 
     // Returns whether we're in the process of gracefully shutting down.
