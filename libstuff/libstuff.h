@@ -176,8 +176,8 @@ struct SStopwatch {
     SStopwatch(uint64_t alarm);
 
     // Accessors
-    uint64_t elapsed();
-    uint64_t ringing();
+    uint64_t elapsed() const;
+    uint64_t ringing() const;
 
     // Mutators
     void start();
