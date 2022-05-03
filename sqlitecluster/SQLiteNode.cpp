@@ -2115,7 +2115,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
     }
 }
 
-void SQLiteNode::_queueSynchronize(const SQLiteNode* node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll) {
+void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll) {
     // We need this to check the state of the node, and we also need `name` to make the logging macros work in a static
     // function. However, if you pass a null pointer here, we can't set these, so we'll fail. We also can't log that,
     // so we are just going to rely on the signal handling for sigsegv to log that for you. Don't do that.
@@ -2358,6 +2358,7 @@ bool SQLiteNode::_majoritySubscribed() const {
 
 bool SQLiteNode::peekPeerCommand(SQLite& db, SQLiteCommand& command) const
 {
+    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
     SQLitePeer* peer = nullptr;
     try {
         if (SIEquals(command.request.methodLine, "SYNCHRONIZE")) {
@@ -2367,10 +2368,6 @@ bool SQLiteNode::peekPeerCommand(SQLite& db, SQLiteCommand& command) const
                 return true;
             }
             command.response.methodLine = "SYNCHRONIZE_RESPONSE";
-
-            // Because we hold a sharedPtr to the node, it can't delete any peers (because it only does at
-            // destruction), and since our peers our thread-safe, we can run this just fine.
-            // TODO: Consider the thread-safety of this.
             _queueSynchronize(this, peer, db, command.response, false);
 
             // The following two lines are copied from `_sendToPeer`.

@@ -205,14 +205,7 @@ class SQLiteNode : public STCPManager {
     // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
     // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
     // thread with a different DB object) - which is why this is static.
-    static void _queueSynchronize(const SQLiteNode* node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll);
-
-    Socket* _acceptSocket();
-
-    // Add required headers for messages being sent to peers.
-    SData _addPeerHeaders(SData message);
-
-    void _changeState(State newState);
+    static void _queueSynchronize(const SQLiteNode* const node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll);
 
     // Returns the ID of SQLitePeer. If the peer is not found, returns 0.
     [[deprecated("Only required as long as synchronize uses peekPeerCommand")]]
@@ -228,14 +221,21 @@ class SQLiteNode : public STCPManager {
     // Returns whether we're in the process of gracefully shutting down.
     bool _gracefulShutdown() const;
 
+    bool _isNothingBlockingShutdown() const;
+    bool _majoritySubscribed() const;
+
+    Socket* _acceptSocket();
+
+    // Add required headers for messages being sent to peers.
+    SData _addPeerHeaders(SData message);
+
+    void _changeState(State newState);
+
     // Handlers for transaction messages.
     void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message, bool wasConflict);
     void _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
     int _handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
     void _handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
-
-    bool _isNothingBlockingShutdown() const;
-    bool _majoritySubscribed() const;
 
     // Called when we first establish a connection with a new peer
     void _onConnect(SQLitePeer* peer);
