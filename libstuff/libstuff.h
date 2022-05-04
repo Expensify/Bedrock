@@ -292,7 +292,7 @@ namespace std {
     template<>
     struct atomic<string> {
         string operator=(string desired) {
-            lock_guard<decltype(m)> l(m);
+            unique_lock<decltype(m)> l(m);
             _string = desired;
             return _string;
         }
@@ -300,19 +300,19 @@ namespace std {
             return false;
         }
         void store(string desired, std::memory_order order = std::memory_order_seq_cst) {
-            lock_guard<decltype(m)> l(m);
+            unique_lock<decltype(m)> l(m);
             _string = desired;
         };
         string load(std::memory_order order = std::memory_order_seq_cst) const {
-            lock_guard<decltype(m)> l(m);
+            shared_lock<decltype(m)> l(m);
             return _string;
         }
         operator string() const {
-            lock_guard<decltype(m)> l(m);
+            shared_lock<decltype(m)> l(m);
             return _string;
         }
         string exchange(string desired, std::memory_order order = std::memory_order_seq_cst) {
-            lock_guard<decltype(m)> l(m);
+            unique_lock<decltype(m)> l(m);
             string existing = _string;
             _string = desired;
             return existing;
@@ -320,7 +320,7 @@ namespace std {
 
       private:
         string _string;
-        mutable recursive_mutex m;
+        mutable shared_mutex m;
     };
 };
 
