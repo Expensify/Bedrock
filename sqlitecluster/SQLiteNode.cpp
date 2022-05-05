@@ -204,13 +204,6 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                         // skip this, we did it above) to enforce that commits are in the same order on followers as on
                         // leader.
                         if (!quorum) {
-                            // If we get here, we're *in* a transaction (begin ran) so the checkpoint thread is blocked
-                            // waiting for us to finish. But the thread that needs to commit to unblock us can be blocked
-                            // on the checkpoint if these are started out of order.
-                            //
-                            // Let's see if we can verify that happened.
-                            // Yes, we get this line logged 4 times from four threads as their last activity and then:
-                            // (SQLite.cpp:403) operator() [checkpoint] [info] [checkpoint] Waiting on 4 remaining transactions.
                             SDEBUG("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
                             SQLiteSequentialNotifier::RESULT waitResult = _localCommitNotifier.waitFor(currentCount, true);
                             if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
@@ -941,10 +934,6 @@ bool SQLiteNode::update() {
                 }
             }
 
-            // Did we get a majority? This is important whether or not our consistency level needs it, as it will
-            // reset the checkpoint limit either way.
-            bool majorityApproved = (numFullApproved * 2 >= numFullPeers);
-
             // Figure out if we have enough consistency
             bool consistentEnough = false;
             switch (_commitConsistency) {
@@ -958,7 +947,7 @@ bool SQLiteNode::update() {
                     break;
                 case QUORUM:
                     // This one requires a majority
-                    consistentEnough = majorityApproved;
+                    consistentEnough = (numFullApproved * 2 >= numFullPeers);
                     break;
                 default:
                     SERROR("Invalid write consistency.");
@@ -969,17 +958,6 @@ bool SQLiteNode::update() {
             // NOTE: This can be true if nobody responds if there are no full followers - this includes machines that
             // should be followers that are disconnected.
             bool everybodyResponded = numFullResponded >= numFullFollowers;
-
-            // Record these for posterity
-            SDEBUG(     "numFullPeers="           << numFullPeers
-                   << ", numFullFollowers="       << numFullFollowers
-                   << ", numFullResponded="       << numFullResponded
-                   << ", numFullApproved="        << numFullApproved
-                   << ", majorityApproved="       << majorityApproved
-                   << ", writeConsistency="       << CONSISTENCY_LEVEL_NAMES[_commitConsistency]
-                   << ", consistencyRequired="    << CONSISTENCY_LEVEL_NAMES[_commitConsistency]
-                   << ", consistentEnough="       << consistentEnough
-                   << ", everybodyResponded="     << everybodyResponded);
 
             // If anyone denied this transaction, roll this back. Alternatively, roll it back if everyone we're
             // currently connected to has responded, but that didn't generate enough consistency. This could happen, in
@@ -2198,45 +2176,32 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message) {
         // **FIXME: This could be optimized to commit in one huge transaction
         content += messageSize;
         remaining -= messageSize;
-        if (!SIEquals(commit.methodLine, "COMMIT"))
+        if (!SIEquals(commit.methodLine, "COMMIT")) {
             STHROW("expecting COMMIT");
-        if (!commit.isSet("CommitIndex"))
+        }
+        if (!commit.isSet("CommitIndex")) {
             STHROW("missing CommitIndex");
-        if (commit.calc64("CommitIndex") < 0)
+        }
+        if (commit.calc64("CommitIndex") < 0) {
             STHROW("invalid CommitIndex");
-        if (!commit.isSet("Hash"))
+        }
+        if (!commit.isSet("Hash")) {
             STHROW("missing Hash");
-        if (commit.content.empty())
+        }
+        if (commit.content.empty()) {
             SALERT("Synchronized blank query");
-        if (commit.calcU64("CommitIndex") != _db.getCommitCount() + 1)
+        }
+        if (commit.calcU64("CommitIndex") != _db.getCommitCount() + 1) {
             STHROW("commit index mismatch");
-
-        // This block repeats until we successfully commit, or throw out of it.
-        // This allows us to retry in the event we're interrupted for a checkpoint. This should only happen once,
-        // because the second try will be blocked on the checkpoint.
-        while (true) {
-            try {
-                if (!_db.beginTransaction()) {
-                    STHROW("failed to begin transaction");
-                }
-
-                // Inside a transaction; get ready to back out if an error
-                if (!_db.writeUnmodified(commit.content)) {
-                    STHROW("failed to write transaction");
-                }
-                if (!_db.prepare()) {
-                    STHROW("failed to prepare transaction");
-                }
-
-                // Done, break out of `while (true)`.
-                break;
-            } catch (const SException& e) {
-                // Transaction failed, clean up
-                SERROR("Can't synchronize (" << e.what() << "); shutting down.");
-                // **FIXME: Remove the above line once we can automatically handle?
-                _db.rollback();
-                throw e;
-            }
+        }
+        if (!_db.beginTransaction()) {
+            STHROW("failed to begin transaction");
+        }
+        if (!_db.writeUnmodified(commit.content)) {
+            STHROW("failed to write transaction");
+        }
+        if (!_db.prepare()) {
+            STHROW("failed to prepare transaction");
         }
 
         // Transaction succeeded, commit and go to the next
@@ -2403,34 +2368,17 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
         STHROW("already in a transaction");
     }
 
-    // This block repeats until we successfully commit, or error out of it.
-    // This allows us to retry in the event we're interrupted for a checkpoint. This should only happen once,
-    // because the second try will be blocked on the checkpoint.
-    while (true) {
-        try {
-            // If we are running this after a conflict, we'll grab an exclusive lock here. This makes no practical
-            // difference in replication, as transactions must commit in order, thus if we've failed one commit, nobody
-            // else can attempt to commit anyway, but this logs our time spent in the commit mutex in EXCLUSIVE rather
-            // than SHARED mode.
-            if (!db.beginTransaction(wasConflict ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("failed to begin transaction");
-            }
+    // If we are running this after a conflict, we'll grab an exclusive lock here. This makes no practical
+    // difference in replication, as transactions must commit in order, thus if we've failed one commit, nobody
+    // else can attempt to commit anyway, but this logs our time spent in the commit mutex in EXCLUSIVE rather
+    // than SHARED mode.
+    if (!db.beginTransaction(wasConflict ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
+        STHROW("failed to begin transaction");
+    }
 
-            // Inside transaction; get ready to back out on error
-            if (!db.writeUnmodified(message.content)) {
-                STHROW("failed to write transaction");
-            }
-
-            // Done, break out of `while (true)`.
-            break;
-        } catch (const SException& e) {
-            // Something caused a write failure.
-            SALERT(e.what());
-            db.rollback();
-
-            // This is a fatal error case.
-            break;
-        }
+    // Inside transaction; get ready to back out on error
+    if (!db.writeUnmodified(message.content)) {
+        STHROW("failed to write transaction");
     }
 }
 
@@ -2440,7 +2388,6 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
     // the transaction for any reason, it is broken somehow -- disconnect from the leader.
     // **FIXME**: What happens if LEADER steps down before sending BEGIN?
     // **FIXME**: What happens if LEADER steps down or disconnects after BEGIN?
-    bool success = true;
     uint64_t leaderSentTimestamp = message.calcU64("leaderSendTime");
     uint64_t followerDequeueTimestamp = STimeNow();
     if (!message.isSet("ID")) {
@@ -2456,26 +2403,11 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
         STHROW("not following");
     }
 
-    // This block repeats until we successfully commit, or error out of it.
-    // This allows us to retry in the event we're interrupted for a checkpoint. This should only happen once,
-    // because the second try will be blocked on the checkpoint.
-    while (true) {
-        try {
-            // This will grab the commit lock and hold it until we commit or rollback.
-            if (!db.prepare()) {
-                STHROW("failed to prepare transaction");
-            }
-
-            // Done, break out of `while (true)`.
-            break;
-        } catch (const SException& e) {
-            // Something caused a write failure.
-            success = false;
-            db.rollback();
-
-            // This is a fatal error case.
-            break;
-        }
+    bool success = true;
+    if (!db.prepare()) {
+        SALERT("failed to prepare transaction");
+        success = false;
+        db.rollback();
     }
 
     // Are we participating in quorum?
