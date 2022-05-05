@@ -960,7 +960,7 @@ void BedrockServer::worker(int threadId)
                         } else {
                             // TODO: Something less naive that considers how these failures happen rather than a simple
                             // endless loop of requeue and retry.
-                            SINFO("Couldn't escalate command " << command->request.methodLine << " to leader. We are in state: " << STCPNode::stateName(state));
+                            SINFO("Couldn't escalate command " << command->request.methodLine << " to leader. We are in state: " << SQLiteNode::stateName(state));
                             _commandQueue.push(move(command));
                         }
 
