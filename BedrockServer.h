@@ -7,6 +7,8 @@
 #include "BedrockCommandQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
 
+class SQLitePeer;
+
 class BedrockServer : public SQLiteServer {
   public:
 
@@ -183,10 +185,6 @@ class BedrockServer : public SQLiteServer {
     // Backwards-compatible version of the above method for plugins that already used it.
     void acceptCommand(SQLiteCommand&& command, bool isNew = true);
 
-    // Cancel a command.
-    // SQLiteNode API.
-    void cancelCommand(const string& commandID);
-
     // Flush the send buffers
     // STCPNode API.
     void prePoll(fd_map& fdm);
@@ -204,7 +202,7 @@ class BedrockServer : public SQLiteServer {
     const atomic<SQLiteNode::State>& getState() const;
 
     // When a peer node logs in, we'll send it our crash command list.
-    void onNodeLogin(SQLiteNode::Peer* peer);
+    void onNodeLogin(SQLitePeer* peer);
 
     // You must block and unblock the command port with *identical strings*.
     void blockCommandPort(const string& reason);

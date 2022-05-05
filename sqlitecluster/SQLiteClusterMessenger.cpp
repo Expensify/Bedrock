@@ -84,7 +84,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
         if (leaderAddress.empty()) {
             // If there's no leader, it's possible we're supposed to be the leader. In this case, we can exit early.
             auto myState = _node->getState();
-            if (myState == STCPNode::LEADING || myState == STCPNode::STANDINGUP) {
+            if (myState == SQLiteNode::LEADING || myState == SQLiteNode::STANDINGUP) {
                 SINFO("[HTTPESC] I'm the leader now! Exiting early.");
                 return false;
             }
