@@ -11,9 +11,6 @@
 atomic<int64_t> SQLite::_transactionAttemptCount(0);
 mutex SQLite::_pageLogMutex;
 
-atomic<int> SQLite::passiveCheckpointPageMin(2500); // Approx 10mb
-atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are assumed to be 4kb)
-
 // Tracing can only be enabled or disabled globally, not per object.
 atomic<bool> SQLite::enableTrace(false);
 
@@ -185,9 +182,6 @@ void SQLite::commonConstructorInitialization() {
         SASSERT(!SQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
     }
 
-    // Do our own checkpointing.
-    sqlite3_wal_hook(_db, _sqliteWALCallback, this);
-
     // Enable tracing for performance analysis.
     sqlite3_trace_v2(_db, SQLITE_TRACE_STMT, _sqliteTraceCallback, this);
 
@@ -266,10 +260,6 @@ int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void*
         SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql((sqlite3_stmt*)p));
     }
     return 0;
-}
-
-int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {
-    return SQLITE_OK;
 }
 
 string SQLite::_getJournalQuery(const list<string>& queryParts, bool append) {
@@ -671,13 +661,7 @@ int SQLite::commit(const string& description) {
         _mutexLocked = false;
         _queryCache.clear();
 
-        // See if we can checkpoint without holding the commit lock.
-        int walSizeFrames = 0;
-        int framesCheckpointed = 0;
-        uint64_t start = STimeNow();
-        int result = sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
-        SDEBUG("[checkpoint] Checkpoint complete. Result: " << result << ". Total frames checkpointed: "
-              << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
+        sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, NULL, NULL);
         SINFO(description << " COMMIT complete in " << time << ". Wrote " << (endPages - startPages)
               << " pages. WAL file size is " << sz << " bytes. " << _queryCount << " queries attempted, " << _cacheHits
               << " served from cache.");
