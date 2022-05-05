@@ -68,7 +68,6 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-maxJournalSize", "25000"},
         {"-v", ""},
         {"-enableMultiWrite", "true"},
-        {"-escalateOverHTTP", "true"},
         {"-cacheSize", "1000"},
         {"-parallelReplication", "true"},
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?
