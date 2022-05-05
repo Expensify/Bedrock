@@ -20,6 +20,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
     void setup() {
         cmdID.store(0);
+        tester = new BedrockClusterTester();
     }
 
     void teardown() {
