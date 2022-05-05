@@ -556,10 +556,6 @@ void BedrockServer::sync()
                         } else if (result == BedrockCore::RESULT::SHOULD_PROCESS) {
                             // This is sort of the "default" case after checking if this command was complete above. If so,
                             // we'll fall through to calling processCommand below.
-                        } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
-                            SINFO("[checkpoint] Re-queuing abandoned command (from peek) in sync thread");
-                            _commandQueue.push(move(command));
-                            break;
                         } else {
                             SERROR("peekCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                         }
@@ -602,10 +598,6 @@ void BedrockServer::sync()
                         // Otherwise, the command doesn't need a commit (maybe it was an error, or it didn't have any work
                         // to do). We'll just respond.
                         _reply(command);
-                    } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
-                        SINFO("[checkpoint] Re-queuing abandoned command (from process) in sync thread");
-                        _commandQueue.push(move(command));
-                        break;
                     } else if (result == BedrockCore::RESULT::SERVER_NOT_LEADING) {
                         SINFO("Server stopped leading, re-queueing commad");
                         _commandQueue.push(move(command));
@@ -895,12 +887,6 @@ void BedrockServer::worker(int threadId)
                     calledPeek = true;
                 }
 
-                // This drops us back to the top of the loop.
-                if (peekResult == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
-                    SINFO("[checkpoint] Re-trying abandoned command (from peek) in worker thread");
-                    continue;
-                }
-
                 if (!calledPeek || peekResult == BedrockCore::RESULT::SHOULD_PROCESS) {
                     // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
                     // write it. We'll flag that here, to keep the node from falling out of LEADING/STANDINGDOWN
@@ -1019,10 +1005,6 @@ void BedrockServer::worker(int threadId)
                             SINFO("Conflict or state change committing " << command->request.methodLine
                                   << " on worker thread with " << retry << " retries remaining.");
                         }
-                    } else if (result == BedrockCore::RESULT::ABANDONED_FOR_CHECKPOINT) {
-                        SINFO("[checkpoint] Re-trying abandoned command (from process) in worker thread");
-                        // Add a retry so that we don't hit out conflict limit for checkpoints.
-                        ++retry;
                     } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                         // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
                         // of this block.
@@ -1038,7 +1020,7 @@ void BedrockServer::worker(int threadId)
                             _reply(command);
                             break;
                         } else {
-                            // Allow for an extra retry and start from the top, like with ABANDONED_FOR_CHECKPOINT.
+                            // Allow for an extra retry and start from the top.
                             SINFO("State changed before 'processCommand' but no HTTPS requests so retrying.");
                             ++retry;
                         }
@@ -1759,7 +1741,6 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "Detach")                 ||
         SIEquals(command->request.methodLine, "Attach")                 ||
         SIEquals(command->request.methodLine, "SetConflictParams")      ||
-        SIEquals(command->request.methodLine, "SetCheckpointIntervals") ||
         SIEquals(command->request.methodLine, "EnableSQLTracing")
         ) {
         return true;
@@ -1804,22 +1785,6 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         } else {
             response.methodLine = "204 ATTACHING";
             _detach = false;
-        }
-    } else if (SIEquals(command->request.methodLine, "SetCheckpointIntervals")) {
-        response["passiveCheckpointPageMin"] = to_string(SQLite::passiveCheckpointPageMin.load());
-        response["fullCheckpointPageMin"] = to_string(SQLite::fullCheckpointPageMin.load());
-        if (command->request.isSet("passiveCheckpointPageMin")) {
-            SQLite::passiveCheckpointPageMin.store(command->request.calc("passiveCheckpointPageMin"));
-        }
-        if (command->request.isSet("fullCheckpointPageMin")) {
-            SQLite::fullCheckpointPageMin.store(command->request.calc("fullCheckpointPageMin"));
-        }
-        if (command->request.isSet("MaxConflictRetries")) {
-            int retries = command->request.calc("MaxConflictRetries");
-            if (retries > 0 && retries <= 100) {
-                SINFO("Updating _maxConflictRetries to: " << retries);
-                _maxConflictRetries.store(retries);
-            }
         }
     } else if (SIEquals(command->request.methodLine, "EnableSQLTracing")) {
         response["oldValue"] = SQLite::enableTrace ? "true" : "false";

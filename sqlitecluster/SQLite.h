@@ -215,11 +215,6 @@ class SQLite {
     // in the case that a specific table/column are not being directly requested.
     map<string, set<string>>* whitelist = nullptr;
 
-    // These are the minimum thresholds for the WAL file, in pages, that will cause us to trigger either a full or
-    // passive checkpoint. They're public, non-const, and atomic so that they can be configured on the fly.
-    static atomic<int> passiveCheckpointPageMin;
-    static atomic<int> fullCheckpointPageMin;
-
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
 
@@ -300,7 +295,7 @@ class SQLite {
         map<uint64_t, tuple<string, string, uint64_t>> _committedTransactions;
 
         // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
-        // variety of operations (i.e., inserting checkpoint listeners, updating _committedTransactions, etc.
+        // variety of operations (i.e., updating _committedTransactions, etc).
         recursive_mutex _internalStateMutex;
     };
 
@@ -407,9 +402,6 @@ class SQLite {
 
     // Callback to trace internal sqlite state (used for logging normalized queries).
     static int _sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x);
-
-    // Handles running checkpointing operations.
-    static int _sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount);
 
     // Callback function for progress tracking.
     static int _progressHandlerCallback(void* arg);
