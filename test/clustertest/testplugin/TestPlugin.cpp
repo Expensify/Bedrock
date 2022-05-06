@@ -94,6 +94,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "generatesegfaultprocess",
         "idcollision",
         "slowprocessquery",
+        "logrockingest",
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -424,6 +425,25 @@ void TestPluginCommand::process(SQLite& db) {
         string statString = "Processing testescalate (" + serverState + ")\n";
         fileAppend(request["tempFile"], statString);
         return;
+    } else if (request.methodLine == "logrockingest") {
+        static uint64_t totalTime = 0;
+        auto start = STimeNow();
+
+        istringstream iss(request.content);
+        for (string line; getline(iss, line);) {
+            db.write("INSERT into logs (line) values (" + SQ(line) + ");");
+        }
+
+        auto end = STimeNow();
+        totalTime += (end - start);
+
+        //string query = "SELECT COUNT(*) FROM logs;";
+        //SQResult result;
+        //db.read(query, result);
+
+        cout << "Took " << (end - start) / 1'000'000 << " seconds to process 500 lines." << endl;
+        //cout << "Running total: " << totalTime / 1'000'000 << " seconds for " << result[0][0] << " lines" << endl;
+        cout << "Running total: " << totalTime / 1'000'000 << " seconds" << endl;
     }
 }
 
@@ -433,6 +453,9 @@ void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {
                                         "id    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
                                         "value )", ignore));
     SASSERT(db.verifyTable("test", "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)", ignore));
+
+    // Create Logrock fts5 table
+    SASSERT(db.verifyTable("logs", "CREATE VIRTUAL TABLE logs USING fts5 (line, tokenize='porter trigram')", ignore));
 }
 
 
