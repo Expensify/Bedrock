@@ -24,31 +24,32 @@ struct UpgradeTest : tpunit::TestFixture {
             system(command.c_str());
             string data = SFileLoad("brdata.json");
 
-            cout << data << endl;
-
             string bedrockDownloadURL;
             list<string> j1 = SParseJSONArray(STrim(data));
             if (j1.size()) {
                 STable j2 = SParseJSONObject(j1.front());
-                auto tarball = j2.find("tarball_url");
-                if (tarball != j2.end()) {
-                    bedrockDownloadURL = tarball->second;
+                auto assets = j2.find("assets");
+                if (assets != j2.end()) {
+                    list<string> j3 = SParseJSONArray(assets->second);
+                    for (auto& item : j3) {
+                        STable j4 = SParseJSONObject(item);
+                        auto name = j4.find("name");
+                        if (name != j4.end() && name->second == "bedrock") {
+                            bedrockDownloadURL = j4["browser_download_url"];
+                        }
+                    }
                 }
             }
 
-            const string releaseBedrock = "bedrock.tar.gz";
+            const string releaseBedrock = "release_bedrock";
             cout << "URL: " << bedrockDownloadURL << endl;
             SFileDelete(tempJson);
             ASSERT_TRUE(bedrockDownloadURL.size());
             command = "curl --silent -L '" + bedrockDownloadURL + "' -o " + releaseBedrock;
             system(command.c_str());
-            system(string("tar zxf " + releaseBedrock).c_str());
-            SFileDelete(releaseBedrock);
-            /*
             struct stat fileInfo{0};
             stat(releaseBedrock.c_str(), &fileInfo);
             chmod(releaseBedrock.c_str(), fileInfo.st_mode | S_IXUSR);
-            */
             cout << "Downloaded production bedrock" << endl;
         });
 
