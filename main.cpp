@@ -167,10 +167,6 @@ int main(int argc, char* argv[]) {
     sqlite3_initialize();
     SASSERT(sqlite3_threadsafe());
 
-    // Disabled by default, but lets really beat it in. This way checkpointing does not need to wait on locks
-    // created in this thread.
-    SASSERT(sqlite3_enable_shared_cache(0) == SQLITE_OK);
-
     // Fork if requested
     if (args.isSet("-fork")) {
         // Do the fork
