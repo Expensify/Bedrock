@@ -1994,8 +1994,8 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         // If we were following, and now we're not, we give up an any replications.
         if (_state == FOLLOWING) {
             _replicationThreadsShouldExit = true;
-            uint64_t cancelAfter = _leaderCommitNotifier.getValue();
-            SINFO("Replication threads should exit, canceling commits after current leader commit " << cancelAfter);
+            uint64_t cancelAfter = _localCommitNotifier.getValue();
+            SINFO("Replication threads should exit, canceling commits after current commit " << cancelAfter);
             _localCommitNotifier.cancel(cancelAfter);
             _leaderCommitNotifier.cancel(cancelAfter);
 
