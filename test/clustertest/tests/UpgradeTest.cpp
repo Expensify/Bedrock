@@ -40,7 +40,7 @@ struct UpgradeTest : tpunit::TestFixture {
         if (!SFileExists(prodBedrockName)) {
             // Get a directory we can work in.
             char brReleaseDirArr[] = "/tmp/br-prod-test-XXXXXX";
-            mkdtemp(brReleaseDirArr);
+            ASSERT_FALSE(mkdtemp(brReleaseDirArr));
             string brReleaseDir(brReleaseDirArr, sizeof(brReleaseDirArr) - 1);
 
             // Clone bedrock.
