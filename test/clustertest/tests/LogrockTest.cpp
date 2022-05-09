@@ -15,12 +15,12 @@ struct LogrockTest : tpunit::TestFixture {
     {
         auto start = STimeNow();
 
-        BedrockClusterTester tester(ClusterSize::ONE_NODE_CLUSTER);
+        BedrockClusterTester tester;
         ifstream logfile;
         SData command("logrockingest");
 
         // We're going to send a command to a follower.
-        BedrockTester& brtester = tester.getTester(0);
+        BedrockTester& brtester = tester.getTester(1);
 
         // open the file
         //logfile.open ("/vagrant/rafe/2022-04-09T13_00.txt");

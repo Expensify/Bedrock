@@ -437,12 +437,7 @@ void TestPluginCommand::process(SQLite& db) {
         auto end = STimeNow();
         totalTime += (end - start);
 
-        //string query = "SELECT COUNT(*) FROM logs;";
-        //SQResult result;
-        //db.read(query, result);
-
         cout << "Took " << (end - start) / 1'000'000 << " seconds to process 500 lines." << endl;
-        //cout << "Running total: " << totalTime / 1'000'000 << " seconds for " << result[0][0] << " lines" << endl;
         cout << "Running total: " << totalTime / 1'000'000 << " seconds" << endl;
     }
 }
@@ -455,7 +450,7 @@ void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {
     SASSERT(db.verifyTable("test", "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)", ignore));
 
     // Create Logrock fts5 table
-    SASSERT(db.verifyTable("logs", "CREATE VIRTUAL TABLE logs USING fts5 (line, tokenize='porter trigram')", ignore));
+    SASSERT(db.verifyTable("logs", "CREATE VIRTUAL TABLE logs USING fts5 (line, tokenize='trigram')", ignore));
 }
 
 
