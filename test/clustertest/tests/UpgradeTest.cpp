@@ -66,6 +66,23 @@ struct UpgradeTest : tpunit::TestFixture {
     }
 
     void test() {
+        ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
+        cout << "Leader is up, restarting follower 2." << endl;
+
+        tester->getTester(2).stopServer();
+        tester->getTester(2).serverName = "bedrock";
+        
+        cout << "Bringing up new version as follower" << endl;
+        tester->getTester(2).startServer();
+        ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
+        cout << "New version is following" << endl;
+
+        SData status("Status");
+        for (auto i: {0, 2}) {
+            vector<SData> statusResult = tester->getTester(i).executeWaitMultipleData({status});
+            cout << statusResult[0].serialize() << endl;
+        }
+
     }
 
 } __UpgradeTest;
