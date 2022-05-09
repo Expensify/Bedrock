@@ -31,7 +31,8 @@ struct UpgradeTest : tpunit::TestFixture {
             }
         }
 
-        // HACK! This just gets known broken version. Delete when done.
+        // If you'd like to test against a particular tag, uncomment the following line. The value chosen here was a
+        // known bad version that failed to escalate commands at upgrade when first deployed.
         // bedrockTagName = "2022-05-06";
 
         // If we've already built this, don't bother doing it again. This makes running this test multiple times in a
