@@ -57,7 +57,6 @@ struct UpgradeTest : tpunit::TestFixture {
             ASSERT_FALSE(system(("mv " + brReleaseDir + "/Bedrock/bedrock " + prodBedrockName).c_str()));
         }
 
-        cout << "Starting prod version at " << prodBedrockName << endl;
         tester = new BedrockClusterTester("db,cache,jobs", prodBedrockName);
     }
 
