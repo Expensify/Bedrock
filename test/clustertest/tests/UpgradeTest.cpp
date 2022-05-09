@@ -88,6 +88,25 @@ struct UpgradeTest : tpunit::TestFixture {
         SData cmd("ineffectiveUpdate");
         vector<SData> cmdResult = tester->getTester(2).executeWaitMultipleData({cmd});
         ASSERT_EQUAL(cmdResult[0].methodLine, "200 OK");
+
+        // We've verified that the new version can send a command to the old version. Now let's upgrade leader to the
+        // new version.
+        tester->getTester(0).stopServer();
+        tester->getTester(0).serverName = "bedrock";
+        tester->getTester(0).startServer();
+        ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
+
+        // Verify 0 and 2 are the same version, but 1 is a different version.
+        for (auto i: {0, 1, 2}) {
+            vector<SData> statusResult = tester->getTester(i).executeWaitMultipleData({status});
+            versions[i] = SParseJSONObject(statusResult[0].content)["version"];
+        }
+        ASSERT_EQUAL(versions[0], versions[2]);
+        ASSERT_NOT_EQUAL(versions[0], versions[1]);
+
+        // Now verify the old version can send a command to the new version as well.
+        cmdResult = tester->getTester(1).executeWaitMultipleData({cmd});
+        ASSERT_EQUAL(cmdResult[0].methodLine, "200 OK");
     }
 
 } __UpgradeTest;
