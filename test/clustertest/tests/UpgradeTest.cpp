@@ -56,7 +56,9 @@ struct UpgradeTest : tpunit::TestFixture {
             return;
         }
 
-        //tester = new BedrockClusterTester();
+        tester = new BedrockClusterTester("db,cache,jobs", brReleaseDir + "/Bedrock/bedrock");
+        cout << "Starting prod bedrock cluster" << endl;
+        sleep(10);
     }
 
     void teardown() {

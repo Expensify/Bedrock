@@ -80,6 +80,8 @@ class BedrockTester {
     // This is just a convenience wrapper around `waitForStatusTerm` looking for the state of the node.
     bool waitForState(const string& state, uint64_t timeoutUS = 60'000'000);
 
+    string serverName;
+
   protected:
     // Returns an SQLite object attached to the same DB file as the bedrock server. Writing to this is dangerous and
     // should not be done!
