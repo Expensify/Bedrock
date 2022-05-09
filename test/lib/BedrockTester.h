@@ -29,7 +29,8 @@ class BedrockTester {
                   uint16_t serverPort = 0,
                   uint16_t nodePort = 0,
                   uint16_t controlPort = 0,
-                  bool startImmediately = true);
+                  bool startImmediately = true,
+                  const string& bedrockBinary = "");
 
     // Destructor.
     ~BedrockTester();

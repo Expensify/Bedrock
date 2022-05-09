@@ -37,7 +37,8 @@ BedrockTester::BedrockTester(const map<string, string>& args,
                              uint16_t serverPort,
                              uint16_t nodePort,
                              uint16_t controlPort,
-                             bool startImmediately) :
+                             bool startImmediately,
+                             const string& bedrockBinary) :
     _serverPort(serverPort ?: ports.getPort()),
     _nodePort(nodePort ?: ports.getPort()),
     _controlPort(controlPort ?: ports.getPort()),
