@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-SQLiteClusterMessenger::SQLiteClusterMessenger(shared_ptr<SQLiteNode>& node)
+SQLiteClusterMessenger::SQLiteClusterMessenger(SQLiteNode& node)
  : _node(node)
 {
 }
@@ -19,11 +19,11 @@ void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command) {
 }
 
 void SQLiteClusterMessenger::shutdownBy(uint64_t shutdownTimestamp) {
-    _shutDownBy = shutdownTimestamp;
-}
-
-void SQLiteClusterMessenger::reset() {
-    _shutDownBy = 0;
+    // If we hadn't set a shutdown flag before, set one now.
+    // If it was already set, we don't do anything.
+    if(!_shutdownSet.test_and_set()) {
+        _shutDownBy = shutdownTimestamp;
+    }
 }
 
 // Returns true on ready or false on error or timeout.
@@ -40,6 +40,8 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
     while (true) {
         int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
         if (!result) {
+            // Because _shutDownBy can only change form 0 to non-zero once, there's no race condition here. If it's
+            // true in the non-zero check, it will always be true after that.
             if (_shutDownBy && STimeNow() > _shutDownBy) {
                 SINFO("[HTTPESC] Giving up because shutting down.");
                 return WaitForReadyResult::SHUTTING_DOWN;
@@ -74,20 +76,16 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
 }
 
 bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
-    if (!_node) {
-        return false;
-    }
-
     auto start = chrono::steady_clock::now();
     bool sent = false;
     size_t sleepsDueToFailures = 0;
 
     unique_ptr<SHTTPSManager::Socket> s;
     while (chrono::steady_clock::now() < (start + 5s) && !sent) {
-        string leaderAddress = _node->leaderCommandAddress();
+        string leaderAddress = _node.leaderCommandAddress();
         if (leaderAddress.empty()) {
             // If there's no leader, it's possible we're supposed to be the leader. In this case, we can exit early.
-            auto myState = _node->getState();
+            auto myState = _node.getState();
             if (myState == SQLiteNode::LEADING || myState == SQLiteNode::STANDINGUP) {
                 SINFO("[HTTPESC] I'm the leader now! Exiting early.");
                 return false;
