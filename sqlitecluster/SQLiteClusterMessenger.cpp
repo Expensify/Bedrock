@@ -19,7 +19,9 @@ void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command) {
 }
 
 void SQLiteClusterMessenger::shutdownBy(uint64_t shutdownTimestamp) {
-    _shutDownBy = shutdownTimestamp;
+    if (_shutDownBy == 0) {
+        _shutDownBy = shutdownTimestamp;
+    }
 }
 
 void SQLiteClusterMessenger::reset() {
