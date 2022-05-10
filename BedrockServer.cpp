@@ -1514,7 +1514,11 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // If we've been told to start shutting down, we'll set the shut down timer.
     if (_shutdownState.load() == START_SHUTDOWN) {
-        _clusterMessenger.shutdownBy(STimeNow() + 5 * 1'000'000); // 5 seconds from now
+        // Technically a race condition but we don't really care about the
+        // implications - worst case is _shutDownBy gets set to a few ms later.
+        if (_clusterMessenger.getShutDownBy() != 0) {
+            _clusterMessenger.shutdownBy(STimeNow() + 5 * 1'000'000); // 5 seconds from now
+        }
 
         // Locking here means that no commands can be running when we do these checks and then switch to
         // `CLIENTS_RESPONDED` because we have a shared lock on this mutex in `handleSocket`. This means this check can

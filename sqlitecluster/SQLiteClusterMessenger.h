@@ -28,6 +28,9 @@ class SQLiteClusterMessenger {
     // Set a timestamp by which we should give up on any pending commands.
     void shutdownBy(uint64_t shutdownTimestamp);
 
+    // Getter method for _shutDownBy
+    uint64_t getShutDownBy();
+
     // Reset to not be shutting down.
     void reset();
 
