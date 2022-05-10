@@ -1,6 +1,7 @@
 #include "SQLitePeer.h"
 
 #include <libstuff/SData.h>
+#include <libstuff/SRandom.h>
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
@@ -12,7 +13,6 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     name(name_),
     params(params_),
     permaFollower(isPermafollower(params)),
-    failedConnections(0),
     latency(0),
     loggedIn(false),
     nextReconnect(0),
@@ -47,6 +47,110 @@ void SQLitePeer::reset() {
     transactionResponse = Response::NONE;
     version = "";
     setCommit(0, "");
+}
+
+void SQLitePeer::shutdownSocket() {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket) {
+        socket->shutdown();
+    }
+}
+
+void SQLitePeer::prePoll(fd_map& fdm) const {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket) {
+        STCPManager::prePoll(fdm, *socket);
+    }
+}
+
+SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket) {
+        STCPManager::postPoll(fdm, *socket);
+
+        // We have a socket; process based on its state
+        switch (socket->state.load()) {
+            case STCPManager::Socket::CONNECTED: {
+                // socket->lastRecvTime is always set, it's initialized to STimeNow() at creation.
+                if (socket->lastRecvTime + SQLiteNode::RECV_TIMEOUT < STimeNow()) {
+                    SHMMM("Connection with peer '" << name << "' timed out.");
+                    return PeerPostPollStatus::SOCKET_ERROR;
+                }
+
+                break;
+            }
+            case STCPManager::Socket::CLOSED: {
+                // Done; clean up and try to reconnect
+                uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
+                if (socket->connectFailure) {
+                    SINFO("SQLitePeer connection failed after " << (STimeNow() - socket->openTime) / 1000 << "ms, reconnecting in " << delay / 1000 << "ms");
+                } else {
+                    SHMMM("Lost peer connection after " << (STimeNow() - socket->openTime) / 1000 << "ms, reconnecting in " << delay / 1000 << "ms");
+                }
+                reset();
+                nextReconnect = STimeNow() + delay;
+                nextActivity = min(nextActivity, nextReconnect.load());
+                return PeerPostPollStatus::SOCKET_CLOSED;
+                break;
+            }
+            default:
+                // Connecting or shutting down, wait
+                // **FIXME: Add timeout here?
+                break;
+        }
+    } else {
+        // Not connected, is it time to try again?
+        if (STimeNow() > nextReconnect) {
+            // Try again
+            SINFO("Retrying the connection");
+            reset();
+            try {
+                socket = new STCPManager::Socket(host);
+                return PeerPostPollStatus::JUST_CONNECTED;
+            } catch (const SException& exception) {
+                // Failed to open -- try again later
+                SWARN(exception.what());
+                nextReconnect = STimeNow() + STIME_US_PER_M;
+            }
+        } else {
+            // Waiting to reconnect -- notify the caller
+            nextActivity = min(nextActivity, nextReconnect.load());
+        }
+    }
+    return PeerPostPollStatus::OK;
+}
+
+uint64_t SQLitePeer::lastActivityTime() const {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket) {
+        return max(socket->lastSendTime, socket->lastRecvTime);
+    }
+    return 0;
+}
+
+SData SQLitePeer::popMessage() {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket) {
+        SData message;
+        size_t size = message.deserialize(socket->recvBuffer);
+        if (size) {
+            socket->recvBuffer.consumeFront(size);
+            return message;
+        }
+    }
+    throw out_of_range("no messages");
+}
+
+bool SQLitePeer::setSocket(STCPManager::Socket* newSocket, bool onlyIfNull) {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket && onlyIfNull) {
+        return false;
+    }
+    if (socket) {
+        SWARN("Overwriting existing peer socket. Is it leaking?");
+    }
+    socket = newSocket;
+    return true;
 }
 
 string SQLitePeer::responseName(Response response) {
@@ -86,7 +190,6 @@ STable SQLitePeer::getData() const {
         {"latency", to_string(latency)},
         {"nextReconnect", to_string(nextReconnect)},
         {"id", to_string(id)},
-        {"failedConnections", to_string(failedConnections)},
         {"loggedIn", (loggedIn ? "true" : "false")},
         {"priority", to_string(priority)},
         {"version", version},
@@ -119,8 +222,9 @@ void SQLitePeer::sendMessage(const SData& message) {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         socket->send(message.serialize());
+        SINFO("Successfully sent " << message.methodLine << " to peer " << name << ".");
     } else {
-        SWARN("Tried to send " << message.methodLine << " to peer, but not available.");
+        SINFO("Tried to send " << message.methodLine << " to peer " << name << ", but not available.");
     }
 }
 
