@@ -642,12 +642,8 @@ void BedrockServer::sync()
                     // When we're leading, we'll try and handle one command and then stop.
                     break;
                 } else if (nodeState == SQLiteNode::FOLLOWING) {
-                    // If we're following, we just escalate directly to leader without peeking. We can only get an incomplete
-                    // command on the follower sync thread if a follower worker thread peeked it unsuccessfully, so we don't
-                    // bother peeking it again.
-                    auto it = command->request.nameValueMap.find("Connection");
-                    bool forget = it != command->request.nameValueMap.end() && SIEquals(it->second, "forget");
-                    _syncNode->escalateCommand(move(command), forget);
+                    SWARN("Sync thread has command when following. Re-queueing");
+                    _commandQueue.push(move(command));
                 }
             }
             if (escalateCount == 1000) {
@@ -805,9 +801,12 @@ void BedrockServer::worker(int threadId)
 
             // If this was a command initiated by a peer as part of a cluster operation, then we process it separately
             // and respond immediately. This allows SQLiteNode to offload read-only operations to worker threads.
-            if (SQLiteNode::peekPeerCommand(_syncNode, db, *command)) {
-                // Move on to the next command.
-                continue;
+            {
+                auto _syncNodeCopy = atomic_load(&_syncNode);
+                if (_syncNodeCopy && _syncNodeCopy->peekPeerCommand(db, *command)) {
+                    // Move on to the next command.
+                    continue;
+                }
             }
 
             // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
@@ -2355,7 +2354,12 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         } else {
                             if (_version != _leaderVersion.load()) {
                                 SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
-                                _syncNodeQueuedCommands.push(move(command));
+                                if (_clusterMessenger.runOnLeader(*command)) {
+                                    _reply(command);
+                                } else {
+                                    SINFO("Re-queueing command that couldn't run on leader.");
+                                    _commandQueue.push(move(command));
+                                }
                             } else {
                                 SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
                                       << _commandQueue.size() << " commands already queued.");

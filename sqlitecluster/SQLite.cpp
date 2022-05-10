@@ -796,7 +796,7 @@ int64_t SQLite::getLastInsertRowID() {
     return sqliteRowID;
 }
 
-uint64_t SQLite::getCommitCount() {
+uint64_t SQLite::getCommitCount() const {
     return _sharedData.commitCount;
 }
 
