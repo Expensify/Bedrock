@@ -40,7 +40,7 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
     while (true) {
         int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
         if (!result) {
-            // Because _shutDownBy can only change form 0 to non-zero once, there's no race condition here. If it's
+            // Because _shutDownBy can only change from 0 to non-zero once, there's no race condition here. If it's
             // true in the non-zero check, it will always be true after that.
             if (_shutDownBy && STimeNow() > _shutDownBy) {
                 SINFO("[HTTPESC] Giving up because shutting down.");
