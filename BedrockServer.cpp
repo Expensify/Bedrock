@@ -192,7 +192,7 @@ void BedrockServer::sync()
                                                             args["-peerList"], args.calc("-priority"), firstTimeout,
                                                             _version, args["-commandPortPrivate"]));
 
-    atomic_store(&_clusterMessenger, make_shared<SQLiteClusterMessenger>(*_syncNode));
+    _clusterMessenger = make_shared<SQLiteClusterMessenger>(*_syncNode);
 
     // The node is now coming up, and should eventually end up in a `LEADING` or `FOLLOWING` state. We can start adding
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while
@@ -846,7 +846,7 @@ void BedrockServer::worker(int threadId)
             // the `_futureCommitCommands` queue.
             if (state == SQLiteNode::FOLLOWING && command->escalateImmediately && !command->complete) {
                 if (_escalateOverHTTP) {
-                    auto _clusterMessengerCopy = atomic_load(&_clusterMessenger);
+                    auto _clusterMessengerCopy = _clusterMessenger;
                     if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
                         // command->complete is now true for this command. It will get handled a few lines below.
                         SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
@@ -1018,7 +1018,7 @@ void BedrockServer::worker(int threadId)
                         // TODO: When escalation over HTTP is totally vetted, remove this "else" block and just always
                         // use the "if" case.
                         if (_escalateOverHTTP) {
-                            auto _clusterMessengerCopy = atomic_load(&_clusterMessenger);
+                            auto _clusterMessengerCopy = _clusterMessenger;
                             if (state == SQLiteNode::LEADING) {
                                 SINFO("Sending non-parallel command " << command->request.methodLine
                                       << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
@@ -1523,7 +1523,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     if (_shutdownState.load() == START_SHUTDOWN) {
         if (!_lastChance) {
             _lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
-            auto _clusterMessengerCopy = atomic_load(&_clusterMessenger);
+            auto _clusterMessengerCopy = _clusterMessenger;
             if (_clusterMessengerCopy) {
                 _clusterMessengerCopy->shutdownBy(_lastChance);
             }
@@ -2363,7 +2363,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         } else {
                             if (_version != _leaderVersion.load()) {
                                 SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
-                                auto _clusterMessengerCopy = atomic_load(&_clusterMessenger);
+                                auto _clusterMessengerCopy = _clusterMessenger;
                                 if (_clusterMessengerCopy && _clusterMessenger->runOnLeader(*command)) {
                                     _reply(command);
                                 } else {
