@@ -74,6 +74,10 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
 }
 
 bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
+    if (!_node) {
+        return false;
+    }
+
     auto start = chrono::steady_clock::now();
     bool sent = false;
     size_t sleepsDueToFailures = 0;
