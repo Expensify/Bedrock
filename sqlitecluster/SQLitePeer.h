@@ -30,8 +30,11 @@ class SQLitePeer {
     // Returns true if there's an active connection to this Peer.
     bool connected() const;
 
-    // The most recent send or receive time, in microseconds since the epoch.
-    uint64_t lastActivityTime() const;
+    // The most recent receive time, in microseconds since the epoch.
+    uint64_t lastRecvTime() const;
+
+    // The most recent send time, in microseconds since the epoch.
+    uint64_t lastSendTime() const;
 
     void prePoll(fd_map& fdm) const;
 

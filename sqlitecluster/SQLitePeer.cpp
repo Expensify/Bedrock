@@ -120,10 +120,18 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextA
     return PeerPostPollStatus::OK;
 }
 
-uint64_t SQLitePeer::lastActivityTime() const {
+uint64_t SQLitePeer::lastRecvTime() const {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
-        return max(socket->lastSendTime, socket->lastRecvTime);
+        return socket->lastRecvTime;
+    }
+    return 0;
+}
+
+uint64_t SQLitePeer::lastSendTime() const {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket) {
+        return socket->lastSendTime;
     }
     return 0;
 }

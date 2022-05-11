@@ -952,6 +952,10 @@ void BedrockServer::worker(int threadId)
             // We'll retry on conflict up to this many times.
             int retry = _maxConflictRetries.load();
             while (retry) {
+                // If we've changed out of leading, we need to notice that.
+                state = _replicationState.load();
+                canWriteParallel = canWriteParallel && (state == SQLiteNode::LEADING);
+
                 // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
                 // command has specifically asked for that.
                 // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
