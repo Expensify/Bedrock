@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-SQLiteClusterMessenger::SQLiteClusterMessenger(SQLiteNode& node)
+SQLiteClusterMessenger::SQLiteClusterMessenger(const SQLiteNode& node)
  : _node(node)
 {
 }

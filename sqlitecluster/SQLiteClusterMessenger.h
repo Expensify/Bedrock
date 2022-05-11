@@ -16,7 +16,7 @@ class SQLiteClusterMessenger {
         POLL_ERROR,
     };
 
-    SQLiteClusterMessenger(SQLiteNode& node);
+    SQLiteClusterMessenger(const SQLiteNode& node);
 
     // Attempts to make a TCP connection to the leader, and run the given command there, setting the appropriate
     // response from leader in the command, and marking it as complete if possible.
