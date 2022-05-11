@@ -19,7 +19,7 @@ void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command) {
 }
 
 void SQLiteClusterMessenger::shutdownBy(uint64_t shutdownTimestamp) {
-    // If we hadn't set a shutdown flag before, set one now.
+    // If we haven't set a shutdown flag before, set one now.
     // If it was already set, we don't do anything.
     if(!_shutdownSet.test_and_set()) {
         _shutDownBy = shutdownTimestamp;
