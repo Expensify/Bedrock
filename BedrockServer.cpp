@@ -192,7 +192,7 @@ void BedrockServer::sync()
                                                             args["-peerList"], args.calc("-priority"), firstTimeout,
                                                             _version, args["-commandPortPrivate"]));
 
-    _clusterMessenger = make_shared<SQLiteClusterMessenger>(*_syncNode);
+    _clusterMessenger = make_shared<SQLiteClusterMessenger>(_syncNode);
 
     // The node is now coming up, and should eventually end up in a `LEADING` or `FOLLOWING` state. We can start adding
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while

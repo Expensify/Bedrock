@@ -16,7 +16,7 @@ class SQLiteClusterMessenger {
         POLL_ERROR,
     };
 
-    SQLiteClusterMessenger(const SQLiteNode& node);
+    SQLiteClusterMessenger(const shared_ptr<const SQLiteNode> node);
 
     // Attempts to make a TCP connection to the leader, and run the given command there, setting the appropriate
     // response from leader in the command, and marking it as complete if possible.
@@ -38,7 +38,7 @@ class SQLiteClusterMessenger {
     // This sets a command as a 500 and marks it as complete.
     void setErrorResponse(BedrockCommand& command);
 
-    const SQLiteNode& _node;
+    const shared_ptr<const SQLiteNode> _node;
 
     // This is set to a timestamp when the server is shutting down so that we can abandon any commands that would
     // block that.

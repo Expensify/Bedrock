@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-SQLiteClusterMessenger::SQLiteClusterMessenger(const SQLiteNode& node)
+SQLiteClusterMessenger::SQLiteClusterMessenger(const shared_ptr<const SQLiteNode> node)
  : _node(node)
 {
 }
@@ -82,10 +82,10 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
 
     unique_ptr<SHTTPSManager::Socket> s;
     while (chrono::steady_clock::now() < (start + 5s) && !sent) {
-        string leaderAddress = _node.leaderCommandAddress();
+        string leaderAddress = _node->leaderCommandAddress();
         if (leaderAddress.empty()) {
             // If there's no leader, it's possible we're supposed to be the leader. In this case, we can exit early.
-            auto myState = _node.getState();
+            auto myState = _node->getState();
             if (myState == SQLiteNode::LEADING || myState == SQLiteNode::STANDINGUP) {
                 SINFO("[HTTPESC] I'm the leader now! Exiting early.");
                 return false;
