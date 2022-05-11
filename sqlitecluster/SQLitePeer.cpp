@@ -128,6 +128,14 @@ uint64_t SQLitePeer::lastRecvTime() const {
     return 0;
 }
 
+uint64_t SQLitePeer::lastSendTime() const {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+    if (socket) {
+        return socket->lastSendTime;
+    }
+    return 0;
+}
+
 SData SQLitePeer::popMessage() {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {

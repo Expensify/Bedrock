@@ -33,6 +33,9 @@ class SQLitePeer {
     // The most recent receive time, in microseconds since the epoch.
     uint64_t lastRecvTime() const;
 
+    // The most recent send time, in microseconds since the epoch.
+    uint64_t lastSendTime() const;
+
     void prePoll(fd_map& fdm) const;
 
     // Reset a peer, as if disconnected and starting the connection over.
