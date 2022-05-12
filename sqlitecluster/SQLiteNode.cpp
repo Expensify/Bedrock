@@ -1988,7 +1988,12 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             // Polling wait for threads to quit. This could use a notification model such as with a condition_variable,
             // which would probably be "better" but introduces yet more state variables for a state that we're rarely
             // in, and so I've left it out for the time being.
+            size_t infoCount = 1;
             while (_replicationThreadCount) {
+                if (!(infoCount % 100)) {
+                    SINFO("Waiting for " << _replicationThreadCount << "remaining replication threads.");
+                }
+                infoCount++;
                 usleep(10'000);
             }
 
