@@ -1524,8 +1524,6 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // If we've been told to start shutting down, we'll set the shut down timer.
     if (_shutdownState.load() == START_SHUTDOWN) {
-        // Technically a race condition but we don't really care about the
-        // implications - worst case is _shutDownBy gets set to a few ms later.
         auto _clusterMessengerCopy = _clusterMessenger;
         if (_clusterMessengerCopy) {
             _clusterMessengerCopy->shutdownBy(STimeNow() + 5 * 1'000'000); // 5 seconds from now
