@@ -2426,10 +2426,11 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
             response["NewCount"] = SToStr(db.getCommitCount() + 1);
             response["NewHash"] = success ? db.getUncommittedHash() : message["NewHash"];
             response["ID"] = message["ID"];
-            if (!_leadPeer) {
-                STHROW("no leader?");
+            if (_leadPeer) {
+                _sendToPeer(_leadPeer, response);
+            } else {
+                SWARN("no leader? Still handling transaction, it may have been approved elsewhere.");
             }
-            _sendToPeer(_leadPeer, response);
         } else {
             SDEBUG("Skipping " << verb << " for ASYNC command.");
         }
