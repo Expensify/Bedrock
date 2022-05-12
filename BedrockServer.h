@@ -483,12 +483,6 @@ class BedrockServer : public SQLiteServer {
     // Setup a new command from a bare request.
     unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket& s, bool shouldTreatAsLocalhost);
 
-    // This is a timestamp, after which we'll start giving up on any sockets that don't seem to be giving us any data.
-    // The case for this is that once we start shutting down, we'll close any sockets when we respond to a command on
-    // them, and we'll stop accepting any new sockets, but if existing sockets just sit around giving us nothing, we
-    // need to figure out some way to handle them. We'll wait 5 seconds and then start killing them.
-    atomic<uint64_t> _lastChance;
-
     // This is a monotonically incrementing integer just used to uniquely identify socket threads.
     atomic<uint64_t> _socketThreadNumber;
 
@@ -496,7 +490,7 @@ class BedrockServer : public SQLiteServer {
     atomic<uint64_t> _outstandingSocketThreads;
 
     // If we hit the point where we're unable to create new socket threads, we block doing so.
-    bool _shouldBlockNewSocketThreads; 
+    bool _shouldBlockNewSocketThreads;
     mutex _newSocketThreadBlockedMutex;
 
     // This mutex prevents the check for whether there are outstanding commands preventing shutdown from running at the

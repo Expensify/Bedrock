@@ -1250,7 +1250,6 @@ void BedrockServer::_resetServer() {
     _commandPortPrivate = nullptr;
     _gracefulShutdownTimeout.alarmDuration = 0;
     _pluginsDetached = false;
-    _lastChance = 0;
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {
@@ -1269,7 +1268,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(nullptr), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
-    _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0),
+    _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _escalateOverHTTP(args.test("-escalateOverHTTP"))
 {
     _version = VERSION;
@@ -1523,14 +1522,11 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
     }
 
-    // If we've been told to start shutting down, we'll set the _lastChance timer.
+    // If we've been told to start shutting down, we'll set the shut down timer.
     if (_shutdownState.load() == START_SHUTDOWN) {
-        if (!_lastChance) {
-            _lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
-            auto _clusterMessengerCopy = _clusterMessenger;
-            if (_clusterMessengerCopy) {
-                _clusterMessengerCopy->shutdownBy(_lastChance);
-            }
+        auto _clusterMessengerCopy = _clusterMessenger;
+        if (_clusterMessengerCopy) {
+            _clusterMessengerCopy->shutdownBy(STimeNow() + 5 * 1'000'000); // 5 seconds from now
         }
 
         // Locking here means that no commands can be running when we do these checks and then switch to
@@ -2387,11 +2383,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             cv.wait(lock);
                         }
                     }
-                }
-            } else {
-                // If we weren't able to deserialize a complete request, and we're shutting down, give up.
-                if (_shutdownState != RUNNING && _lastChance && _lastChance < STimeNow()) {
-                    SINFO("Closing socket " << socket.id << " with incomplete data and no pending command: shutting down.");
                 }
             }
         } else if (socket.state == STCPManager::Socket::SHUTTINGDOWN || socket.state == STCPManager::Socket::CLOSED) {
