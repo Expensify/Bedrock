@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-SQLiteClusterMessenger::SQLiteClusterMessenger(shared_ptr<SQLiteNode>& node)
+SQLiteClusterMessenger::SQLiteClusterMessenger(const shared_ptr<const SQLiteNode> node)
  : _node(node)
 {
 }
@@ -19,15 +19,11 @@ void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command) {
 }
 
 void SQLiteClusterMessenger::shutdownBy(uint64_t shutdownTimestamp) {
-    _shutDownBy = shutdownTimestamp;
-}
-
-uint64_t SQLiteClusterMessenger::getShutDownBy() {
-    return _shutDownBy;
-}
-
-void SQLiteClusterMessenger::reset() {
-    _shutDownBy = 0;
+    // If we haven't set a shutdown flag before, set one now.
+    // If it was already set, we don't do anything.
+    if(!_shutdownSet.test_and_set()) {
+        _shutDownBy = shutdownTimestamp;
+    }
 }
 
 // Returns true on ready or false on error or timeout.
@@ -44,6 +40,8 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
     while (true) {
         int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
         if (!result) {
+            // Because _shutDownBy can only change from 0 to non-zero once, there's no race condition here. If it's
+            // true in the non-zero check, it will always be true after that.
             if (_shutDownBy && STimeNow() > _shutDownBy) {
                 SINFO("[HTTPESC] Giving up because shutting down.");
                 return WaitForReadyResult::SHUTTING_DOWN;

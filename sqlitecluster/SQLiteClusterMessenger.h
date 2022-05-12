@@ -16,7 +16,7 @@ class SQLiteClusterMessenger {
         POLL_ERROR,
     };
 
-    SQLiteClusterMessenger(shared_ptr<SQLiteNode>& node);
+    SQLiteClusterMessenger(const shared_ptr<const SQLiteNode> node);
 
     // Attempts to make a TCP connection to the leader, and run the given command there, setting the appropriate
     // response from leader in the command, and marking it as complete if possible.
@@ -25,14 +25,9 @@ class SQLiteClusterMessenger {
     // no connection to leader could be made).
     bool runOnLeader(BedrockCommand& command);
 
-    // Set a timestamp by which we should give up on any pending commands.
+    // Set a timestamp by which we should give up on any pending commands. Once set, this is permanent. You will need a
+    // new SQLiteClusterMessenger if you want to shutdown again.
     void shutdownBy(uint64_t shutdownTimestamp);
-
-    // Getter method for _shutDownBy
-    uint64_t getShutDownBy();
-
-    // Reset to not be shutting down.
-    void reset();
 
   private:
     // This takes a pollfd with either POLLIN or POLLOUT set, and waits for the socket to be ready to read or write,
@@ -43,9 +38,10 @@ class SQLiteClusterMessenger {
     // This sets a command as a 500 and marks it as complete.
     void setErrorResponse(BedrockCommand& command);
 
-    shared_ptr<SQLiteNode>& _node;
+    const shared_ptr<const SQLiteNode> _node;
 
     // This is set to a timestamp when the server is shutting down so that we can abandon any commands that would
     // block that.
     atomic<uint64_t> _shutDownBy = 0;
+    atomic_flag _shutdownSet = ATOMIC_FLAG_INIT;
 };
