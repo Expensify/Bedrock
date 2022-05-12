@@ -47,7 +47,7 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
             // immediately following that wakeup, so there's a small but nonzero chance of this log line firing in a
             // valid case.
             if (_globalResult == RESULT::CANCELED || state->result != RESULT::UNKNOWN) {
-                SWARN("Got timeout in wait_for but state has changed!");
+                SWARN("Got timeout in wait_for but state has changed! Was waiting for " << value);
             }
         }
     }
