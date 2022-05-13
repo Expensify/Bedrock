@@ -2562,29 +2562,19 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 }
 
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
-    auto start = STimeNow();
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-    auto end = STimeNow();
-    if ((end - start) > 5'000) {
-        SINFO("[diag][performance] Took " << (end - start) << "us to lock sync node");
-    }
 
     // Accept any new peers
-    start = STimeNow();
     Socket* socket = nullptr;
     while ((socket = _acceptSocket())) {
         _unauthenticatedIncomingSockets.insert(socket);
     }
-    end = STimeNow();
-    if ((end - start) > 5'000) {
-        SINFO("[diag][performance] Took " << (end - start) << "us to _acceptSocket()s, now have " << _unauthenticatedIncomingSockets.size() << " unauthenticated sockets.");
-    }
+
     // After we've run through the accepted sockets, we can probably remove most of them, as they're now associated
     // with peers, so we store any that we can remove in this list.
     list<Socket*> socketsToRemove;
 
     // Check each new connection for a NODE_LOGIN message.
-    start = STimeNow();
     for (auto socket : _unauthenticatedIncomingSockets) {
         try {
             if (socket->state.load() != Socket::CONNECTED) {
@@ -2635,14 +2625,8 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         _unauthenticatedIncomingSockets.erase(socket);
     }
 
-    end = STimeNow();
-    if ((end - start) > 5'000) {
-        SINFO("[diag][performance] Took " << (end - start) << "us to check _unauthenticatedIncomingSockets, " << _unauthenticatedIncomingSockets.size() << " unauthenticated sockets remaining.");
-    }
-
     // Now check established peer connections.
     for (SQLitePeer* peer : _peerList) {
-        start = STimeNow();
         auto result = peer->postPoll(fdm, nextActivity);
         switch (result) {
             case SQLitePeer::PeerPostPollStatus::JUST_CONNECTED:
@@ -2684,10 +2668,6 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 }
             }
             break;
-        }
-        end = STimeNow();
-        if ((end - start) > 5'000) {
-            SINFO("[diag][performance] Took " << (end - start) << "us to check peer " << peer->name);
         }
     }
 
