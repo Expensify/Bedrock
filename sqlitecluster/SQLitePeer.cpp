@@ -64,7 +64,12 @@ void SQLitePeer::prePoll(fd_map& fdm) const {
 }
 
 SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    auto start = STimeNow();
     lock_guard<decltype(peerMutex)> lock(peerMutex);
+    auto end = STimeNow();
+    if ((end - start) > 5'000) {
+        SINFO("[diag] Took " << (end - start) << "us to lock peer" << name);
+    }
     if (socket) {
         STCPManager::postPoll(fdm, *socket);
 
