@@ -344,7 +344,7 @@ void BedrockServer::sync()
             auto finish = STimeNow();
 
             if ((finish - start) > 1'500'000) {
-                SINFO("[diag] Post poll took " << (finish - start) << "us, breakdown: "
+                SINFO("[diag][performance] Post poll took " << (finish - start) << "us, breakdown: "
                       << (first - start) << "us in _postPollCommands, "
                       << (second - first) << "us in _syncNode->postPoll, "
                       << (third - second) << "us in _syncNodeQueuedCommands.postPoll, "
@@ -1957,11 +1957,11 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
     _newCommandsWaiting.clear();
     auto end = STimeNow();
     if ((end - start) > 5'000) {
-        SINFO("[diag] Took " << (end - start) << "us to clear _newCommandsWaiting");
+        SINFO("[diag][performance] Took " << (end - start) << "us to clear _newCommandsWaiting");
     }
 
     if (_outstandingHTTPSCommands.size()) {
-        SINFO("[diag] " << _outstandingHTTPSCommands.size() << " entries in _outstandingHTTPSCommands");
+        SINFO("[diag][performance] " << _outstandingHTTPSCommands.size() << " entries in _outstandingHTTPSCommands");
     }
 
     // Because we modify this list as we walk across it, we use an iterator to our current position.

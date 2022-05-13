@@ -2566,7 +2566,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     auto end = STimeNow();
     if ((end - start) > 5'000) {
-        SINFO("[diag] Took " << (end - start) << "us to lock sync node");
+        SINFO("[diag][performance] Took " << (end - start) << "us to lock sync node");
     }
 
     // Accept any new peers
@@ -2577,7 +2577,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
     end = STimeNow();
     if ((end - start) > 5'000) {
-        SINFO("[diag] Took " << (end - start) << "us to _acceptSocket()s, now have " << _unauthenticatedIncomingSockets.size() << " unauthenticated sockets.");
+        SINFO("[diag][performance] Took " << (end - start) << "us to _acceptSocket()s, now have " << _unauthenticatedIncomingSockets.size() << " unauthenticated sockets.");
     }
     // After we've run through the accepted sockets, we can probably remove most of them, as they're now associated
     // with peers, so we store any that we can remove in this list.
