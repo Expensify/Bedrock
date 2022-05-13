@@ -2637,7 +2637,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     end = STimeNow();
     if ((end - start) > 5'000) {
-        SINFO("[diag] Took " << (end - start) << "us to check _unauthenticatedIncomingSockets, " << _unauthenticatedIncomingSockets.size() << " unauthenticated sockets remaining.");
+        SINFO("[diag][performance] Took " << (end - start) << "us to check _unauthenticatedIncomingSockets, " << _unauthenticatedIncomingSockets.size() << " unauthenticated sockets remaining.");
     }
 
     // Now check established peer connections.
@@ -2687,7 +2687,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
         end = STimeNow();
         if ((end - start) > 5'000) {
-            SINFO("[diag] Took " << (end - start) << "us to check peer " << peer->name);
+            SINFO("[diag][performance] Took " << (end - start) << "us to check peer " << peer->name);
         }
     }
 
