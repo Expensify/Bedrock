@@ -2505,9 +2505,20 @@ SQLiteNode::State SQLiteNode::leaderState() const {
 }
 
 string SQLiteNode::leaderCommandAddress() const {
-    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
-    if (_leadPeer && _leadPeer.load()->state == State::LEADING) {
-        return _leadPeer.load()->commandAddress;
+    // Note: this can skip locking because it only accesses atomic variables in a predicatable order.
+    // If there's a _leadPeer, we atomically get a copy of it. Because these can only point to our const list of peers,
+    // once we have this value, we know that `_leadPeerCopy` is safe. It's either pointing at null, or a valid Peer
+    // object.
+    // Once we have this pointer, we can check if it's leading, which is an atomic operation, and if so, we can get
+    // it's command address, which is also atomic.
+    // These are not mutually atomic, but it doesn't matter, as this address can only be used for non-atomic network
+    // operations anyway. The command address for peers doesn't actually change under normal circumstances anyway. The
+    // riskiest thing here is getting a peer in the moment it's being unassigned as leader, in which case you could
+    // return an address that had just turned invalid, but as mentioned above, you can only use this to make network
+    // requests, which are inherently non-atomic.
+    auto _leadPeerCopy = _leadPeer;
+    if (_leadPeerCopy && _leadPeerCopy->state == State::LEADING) {
+        return _leadPeer->commandAddress;
     }
     return "";
 }
@@ -2644,9 +2655,12 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     for (SQLitePeer* peer : _peerList) {
         start = STimeNow();
         auto result = peer->postPoll(fdm, nextActivity);
+        string resultString;
+        auto first = STimeNow();
         switch (result) {
             case SQLitePeer::PeerPostPollStatus::JUST_CONNECTED:
             {
+                resultString = "JUST_CONNECTED";
                 SData login("NODE_LOGIN");
                 login["Name"] = _name;
                 peer->sendMessage(login.serialize());
@@ -2656,6 +2670,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case SQLitePeer::PeerPostPollStatus::SOCKET_ERROR:
             {
+                resultString = "SOCKET_ERROR";
                 SData reconnect("RECONNECT");
                 reconnect["Reason"] = "socket error";
                 peer->sendMessage(reconnect.serialize());
@@ -2664,21 +2679,29 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case SQLitePeer::PeerPostPollStatus::SOCKET_CLOSED:
             {
+                resultString = "SOCKET_CLOSED";
                 _onDisconnect(peer);
             }
             break;
             case SQLitePeer::PeerPostPollStatus::OK:
             {
+                resultString = "OK";
                 auto lastSendTime = peer->lastSendTime();
                 if (lastSendTime && STimeNow() - lastSendTime > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
                     SINFO("Close to timeout, sending PING to peer '" << peer->name << "'");
                     _sendPING(peer);
                 }
                 try {
+                    auto messageStart = STimeNow();
                     while (true) {
                         SData message = peer->popMessage();
                         _onMESSAGE(peer, message);
+                        messagesDeqeued++;
+                        if (messagesDeqeued >= 50) {
+                            break;
+                        }
                     }
+
                 } catch (const out_of_range& e) {
                     // Ok, just no messages.
                 }
@@ -2687,7 +2710,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
         end = STimeNow();
         if ((end - start) > 5'000) {
-            SINFO("[diag][performance] Took " << (end - start) << "us to check peer " << peer->name);
+            SINFO("[diag][performance] Took " << (end - start) << "us to check peer " << peer->name << ", peer->postPoll:" << (first - start) << "us, connection state: " << resultString << );
         }
     }
 
