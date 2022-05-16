@@ -2633,6 +2633,8 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 } else {
                     STHROW("expecting NODE_LOGIN");
                 }
+            } else if (STimeNow() > socket->lastRecvTime + 5'000'000) {
+                STHROW("Incoming socket didn't send a message for over 5s, closing.");
             }
         } catch (const SException& e) {
             SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << ")");
@@ -2647,7 +2649,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     }
 
     end = STimeNow();
-    if ((end - start) > 5'000) {
+    if ((end - start) > 5'000 || _unauthenticatedIncomingSockets.size() > 5) {
         SINFO("[diag][performance] Took " << (end - start) << "us to check _unauthenticatedIncomingSockets, " << _unauthenticatedIncomingSockets.size() << " unauthenticated sockets remaining.");
     }
 
