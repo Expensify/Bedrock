@@ -2694,17 +2694,28 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 try {
                     auto messageStart = STimeNow();
                     size_t messagesDeqeued = 0;
+                    map<string, size_t> messageCount;
                     while (true) {
                         SData message = peer->popMessage();
+                        auto count = messageCount.find(message.methodLine);
+                        if (count != messageCount.end()) {
+                            count->second++;
+                        } else {
+                            messageCount.emplace(make_pair(message.methodLine, 1));
+                        }
                         _onMESSAGE(peer, message);
                         messagesDeqeued++;
-                        if (messagesDeqeued >= 500) {
+                        if (messagesDeqeued >= 100) {
                             break;
                         }
                     }
                     auto messageEnd = STimeNow();
-                    if ((messageEnd - messageStart > 1'500'000) || (messagesDeqeued >= 500)) {
-                        SINFO("[diag][performance] Took " << (messageEnd - messageStart) << "us to handle " << messagesDeqeued << " messages.");
+                    if ((messageEnd - messageStart > 1'500'000) || (messagesDeqeued >= 100)) {
+                        list<string> composed;
+                        for (const auto& messageCountPair : messageCount) {
+                            composed.emplace_back(messageCountPair.first + ": " + to_string(messageCountPair.second));
+                        }
+                        SINFO("[diag][performance] Took " << (messageEnd - messageStart) << "us to handle " << messagesDeqeued << " messages: " << SComposeList(composed));
                     }
 
                 } catch (const out_of_range& e) {
