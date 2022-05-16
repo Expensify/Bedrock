@@ -2516,9 +2516,9 @@ string SQLiteNode::leaderCommandAddress() const {
     // riskiest thing here is getting a peer in the moment it's being unassigned as leader, in which case you could
     // return an address that had just turned invalid, but as mentioned above, you can only use this to make network
     // requests, which are inherently non-atomic.
-    auto _leadPeerCopy = _leadPeer;
+    auto _leadPeerCopy = _leadPeer.load();
     if (_leadPeerCopy && _leadPeerCopy->state == State::LEADING) {
-        return _leadPeer->commandAddress;
+        return _leadPeerCopy->commandAddress;
     }
     return "";
 }
@@ -2693,13 +2693,18 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 }
                 try {
                     auto messageStart = STimeNow();
+                    size_t messagesDeqeued = 0;
                     while (true) {
                         SData message = peer->popMessage();
                         _onMESSAGE(peer, message);
                         messagesDeqeued++;
-                        if (messagesDeqeued >= 50) {
+                        if (messagesDeqeued >= 500) {
                             break;
                         }
+                    }
+                    auto messageEnd = STimeNow();
+                    if ((messageEnd - messageStart > 1'500'000) || (messagesDeqeued >= 500)) {
+                        SINFO("[diag][performance] Took " << (messageEnd - messageStart) << "us to handle " << messagesDeqeued << " messages.");
                     }
 
                 } catch (const out_of_range& e) {
@@ -2710,7 +2715,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
         end = STimeNow();
         if ((end - start) > 5'000) {
-            SINFO("[diag][performance] Took " << (end - start) << "us to check peer " << peer->name << ", peer->postPoll:" << (first - start) << "us, connection state: " << resultString << );
+            SINFO("[diag][performance] Took " << (end - start) << "us to check peer " << peer->name << ", peer->postPoll:" << (first - start) << "us, connection state: " << resultString);
         }
     }
 
