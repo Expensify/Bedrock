@@ -101,6 +101,7 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextA
             default:
                 // Connecting or shutting down, wait
                 // **FIXME: Add timeout here?
+                SINFO("Peer connection to " << name << " in state " << socket->state.load() << ", waiting for it to stabilize.");
                 break;
         }
     } else {
