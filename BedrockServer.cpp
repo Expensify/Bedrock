@@ -192,6 +192,8 @@ void BedrockServer::sync()
                                                             args["-peerList"], args.calc("-priority"), firstTimeout,
                                                             _version, args["-commandPortPrivate"]));
 
+    _clusterMessenger = make_shared<SQLiteClusterMessenger>(_syncNode);
+
     // The node is now coming up, and should eventually end up in a `LEADING` or `FOLLOWING` state. We can start adding
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while
     // it's running, and our workers will have to maintain awareness of that state anyway.
@@ -717,6 +719,9 @@ void BedrockServer::sync()
         _blockingCommandQueue.clear();
     }
 
+    // We clear this before the _syncNode that it references.
+    _clusterMessenger.reset();
+
     // Release our handle to this pointer. Any other functions that are still using it will keep the object alive
     // until they return.
     atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
@@ -854,7 +859,8 @@ void BedrockServer::worker(int threadId)
             // the `_futureCommitCommands` queue.
             if (state == SQLiteNode::FOLLOWING && command->escalateImmediately && !command->complete) {
                 if (_escalateOverHTTP) {
-                    if (_clusterMessenger.runOnLeader(*command)) {
+                    auto _clusterMessengerCopy = _clusterMessenger;
+                    if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
                         // command->complete is now true for this command. It will get handled a few lines below.
                         SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
                     } else {
@@ -1029,6 +1035,7 @@ void BedrockServer::worker(int threadId)
                         // TODO: When escalation over HTTP is totally vetted, remove this "else" block and just always
                         // use the "if" case.
                         if (_escalateOverHTTP) {
+                            auto _clusterMessengerCopy = _clusterMessenger;
                             if (state == SQLiteNode::LEADING) {
                                 SINFO("Sending non-parallel command " << command->request.methodLine
                                       << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
@@ -1036,7 +1043,7 @@ void BedrockServer::worker(int threadId)
                             } else if (state == SQLiteNode::STANDINGDOWN) {
                                 SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
                                 _standDownQueue.push(move(command));
-                            } else if (_clusterMessenger.runOnLeader(*command)) {
+                            } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
                                 SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
                                 _reply(command);
                             } else {
@@ -1256,8 +1263,6 @@ void BedrockServer::_resetServer() {
     _commandPortPrivate = nullptr;
     _gracefulShutdownTimeout.alarmDuration = 0;
     _pluginsDetached = false;
-    _lastChance = 0;
-    _clusterMessenger.reset();
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {
@@ -1267,16 +1272,16 @@ void BedrockServer::_resetServer() {
 
 BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_)
   : SQLiteServer(), args(args_), _replicationState(SQLiteNode::LEADING),
-    _syncNode(nullptr), _clusterMessenger(_syncNode)
+    _syncNode(nullptr), _clusterMessenger(nullptr)
 {}
 
 BedrockServer::BedrockServer(const SData& args_)
   : SQLiteServer(), shutdownWhileDetached(false), args(args_), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
     _upgradeInProgress(false),
-    _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(_syncNode), _shutdownState(RUNNING),
+    _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(nullptr), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
-    _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _lastChance(0), _socketThreadNumber(0),
+    _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _escalateOverHTTP(args.test("-escalateOverHTTP"))
 {
     _version = VERSION;
@@ -1530,11 +1535,11 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
     }
 
-    // If we've been told to start shutting down, we'll set the _lastChance timer.
+    // If we've been told to start shutting down, we'll set the shut down timer.
     if (_shutdownState.load() == START_SHUTDOWN) {
-        if (!_lastChance) {
-            _lastChance = STimeNow() + 5 * 1'000'000; // 5 seconds from now.
-            _clusterMessenger.shutdownBy(_lastChance);
+        auto _clusterMessengerCopy = _clusterMessenger;
+        if (_clusterMessengerCopy) {
+            _clusterMessengerCopy->shutdownBy(STimeNow() + 5 * 1'000'000); // 5 seconds from now
         }
 
         // Locking here means that no commands can be running when we do these checks and then switch to
@@ -2380,7 +2385,8 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         } else {
                             if (_version != _leaderVersion.load()) {
                                 SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
-                                if (_clusterMessenger.runOnLeader(*command)) {
+                                auto _clusterMessengerCopy = _clusterMessenger;
+                                if (_clusterMessengerCopy && _clusterMessenger->runOnLeader(*command)) {
                                     _reply(command);
                                 } else {
                                     SINFO("Re-queueing command that couldn't run on leader.");
@@ -2399,11 +2405,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             cv.wait(lock);
                         }
                     }
-                }
-            } else {
-                // If we weren't able to deserialize a complete request, and we're shutting down, give up.
-                if (_shutdownState != RUNNING && _lastChance && _lastChance < STimeNow()) {
-                    SINFO("Closing socket " << socket.id << " with incomplete data and no pending command: shutting down.");
                 }
             }
         } else if (socket.state == STCPManager::Socket::SHUTTINGDOWN || socket.state == STCPManager::Socket::CLOSED) {
