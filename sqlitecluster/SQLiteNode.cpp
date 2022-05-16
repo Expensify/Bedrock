@@ -2706,6 +2706,8 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         _onMESSAGE(peer, message);
                         messagesDeqeued++;
                         if (messagesDeqeued >= 100) {
+                            // We should run again immediately, we have more to do.
+                            nextActivity = STimeNow();
                             break;
                         }
                     }
