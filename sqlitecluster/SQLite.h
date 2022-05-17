@@ -288,6 +288,9 @@ class SQLite {
 
         SPerformanceTimer _commitLockTimer;
 
+        atomic_flag checkpointInProgress = ATOMIC_FLAG_INIT;
+        atomic<size_t> outstandingFramesToCheckpoint = 0;
+
       private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.

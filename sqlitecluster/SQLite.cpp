@@ -254,6 +254,8 @@ int SQLite::_progressHandlerCallback(void* arg) {
 }
 
 int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize) {
+    SQLite* sqlite = static_cast<SQLite*>(sqliteObject);
+    sqlite->_sharedData.outstandingFramesToCheckpoint = walFileSize;
     if (walFileSize > 50) {
         SINFO("Uncheckpointed frames remaining in both WAL files: " << walFileSize);
     }
@@ -670,13 +672,21 @@ int SQLite::commit(const string& description) {
         _mutexLocked = false;
         _queryCache.clear();
 
-        auto start = STimeNow();
         int framesCheckpointed = 0;
-        sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, NULL, &framesCheckpointed);
-        auto end = STimeNow();
+        if (!_sharedData.checkpointInProgress.test_and_set()) {
+            // If we were the first to set it (i.e., test_and_set returned `false` as the previous value), we'll start
+            // a checkpoint.
+            if (_sharedData.outstandingFramesToCheckpoint > 50) {
+                auto start = STimeNow();
+                sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, NULL, &framesCheckpointed);
+                auto end = STimeNow();
+                SINFO("Checkpointed " << framesCheckpointed << " (total) frames of " << _sharedData.outstandingFramesToCheckpoint << " in " << (end - start) << "us.");
+            }
+            _sharedData.checkpointInProgress.clear();
+        }
         SINFO(description << " COMMIT complete in " << time << ". Wrote " << (endPages - startPages)
               << " pages. WAL file size is " << sz << " bytes. " << _queryCount << " queries attempted, " << _cacheHits
-              << " served from cache. Checkpointed " << framesCheckpointed << " (total) frames in " << (end - start) << "us.");
+              << " served from cache.");
         _queryCount = 0;
         _cacheHits = 0;
         _dbCountAtStart = 0;
