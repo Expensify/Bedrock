@@ -64,7 +64,12 @@ void SQLitePeer::prePoll(fd_map& fdm) const {
 }
 
 SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    auto start = STimeNow();
     lock_guard<decltype(peerMutex)> lock(peerMutex);
+    auto end = STimeNow();
+    if ((end - start) > 5'000) {
+        SINFO("[diag][performance] Took " << (end - start) << "us to lock peer" << name);
+    }
     if (socket) {
         STCPManager::postPoll(fdm, *socket);
 
@@ -72,7 +77,10 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextA
         switch (socket->state.load()) {
             case STCPManager::Socket::CONNECTED: {
                 // socket->lastRecvTime is always set, it's initialized to STimeNow() at creation.
-                if (socket->lastRecvTime + SQLiteNode::RECV_TIMEOUT < STimeNow()) {
+                // HACK: we only double RECV_TIMEOUT here because of an issue where the sync thread is blocking long
+                // enough doing replications that it can't respond to pings in the required amount of time, so we are
+                // temporarily making the time longer.
+                if (socket->lastRecvTime + (SQLiteNode::RECV_TIMEOUT * 2) < STimeNow()) {
                     SHMMM("Connection with peer '" << name << "' timed out.");
                     return PeerPostPollStatus::SOCKET_ERROR;
                 }
@@ -96,6 +104,7 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextA
             default:
                 // Connecting or shutting down, wait
                 // **FIXME: Add timeout here?
+                SINFO("Peer connection to " << name << " in state " << socket->state.load() << ", waiting for it to stabilize.");
                 break;
         }
     } else {

@@ -2511,9 +2511,20 @@ SQLiteNode::State SQLiteNode::leaderState() const {
 }
 
 string SQLiteNode::leaderCommandAddress() const {
-    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
-    if (_leadPeer && _leadPeer.load()->state == State::LEADING) {
-        return _leadPeer.load()->commandAddress;
+    // Note: this can skip locking because it only accesses atomic variables in a predicatable order.
+    // If there's a _leadPeer, we atomically get a copy of it. Because these can only point to our const list of peers,
+    // once we have this value, we know that `_leadPeerCopy` is safe. It's either pointing at null, or a valid Peer
+    // object.
+    // Once we have this pointer, we can check if it's leading, which is an atomic operation, and if so, we can get
+    // it's command address, which is also atomic.
+    // These are not mutually atomic, but it doesn't matter, as this address can only be used for non-atomic network
+    // operations anyway. The command address for peers doesn't actually change under normal circumstances anyway. The
+    // riskiest thing here is getting a peer in the moment it's being unassigned as leader, in which case you could
+    // return an address that had just turned invalid, but as mentioned above, you can only use this to make network
+    // requests, which are inherently non-atomic.
+    auto _leadPeerCopy = _leadPeer.load();
+    if (_leadPeerCopy && _leadPeerCopy->state == State::LEADING) {
+        return _leadPeerCopy->commandAddress;
     }
     return "";
 }
@@ -2568,19 +2579,29 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 }
 
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    auto start = STimeNow();
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+    auto end = STimeNow();
+    if ((end - start) > 5'000) {
+        SINFO("[diag][performance] Took " << (end - start) << "us to lock sync node");
+    }
 
     // Accept any new peers
+    start = STimeNow();
     Socket* socket = nullptr;
     while ((socket = _acceptSocket())) {
         _unauthenticatedIncomingSockets.insert(socket);
     }
-
+    end = STimeNow();
+    if ((end - start) > 5'000) {
+        SINFO("[diag][performance] Took " << (end - start) << "us to _acceptSocket()s, now have " << _unauthenticatedIncomingSockets.size() << " unauthenticated sockets.");
+    }
     // After we've run through the accepted sockets, we can probably remove most of them, as they're now associated
     // with peers, so we store any that we can remove in this list.
     list<Socket*> socketsToRemove;
 
     // Check each new connection for a NODE_LOGIN message.
+    start = STimeNow();
     for (auto socket : _unauthenticatedIncomingSockets) {
         try {
             if (socket->state.load() != Socket::CONNECTED) {
@@ -2618,6 +2639,8 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 } else {
                     STHROW("expecting NODE_LOGIN");
                 }
+            } else if (STimeNow() > socket->lastRecvTime + 5'000'000) {
+                STHROW("Incoming socket didn't send a message for over 5s, closing.");
             }
         } catch (const SException& e) {
             SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << ")");
@@ -2631,12 +2654,21 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         _unauthenticatedIncomingSockets.erase(socket);
     }
 
+    end = STimeNow();
+    if ((end - start) > 5'000 || _unauthenticatedIncomingSockets.size() > 5) {
+        SINFO("[diag][performance] Took " << (end - start) << "us to check _unauthenticatedIncomingSockets, " << _unauthenticatedIncomingSockets.size() << " unauthenticated sockets remaining.");
+    }
+
     // Now check established peer connections.
     for (SQLitePeer* peer : _peerList) {
+        start = STimeNow();
         auto result = peer->postPoll(fdm, nextActivity);
+        string resultString;
+        auto first = STimeNow();
         switch (result) {
             case SQLitePeer::PeerPostPollStatus::JUST_CONNECTED:
             {
+                resultString = "JUST_CONNECTED";
                 SData login("NODE_LOGIN");
                 login["Name"] = _name;
                 peer->sendMessage(login.serialize());
@@ -2646,6 +2678,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case SQLitePeer::PeerPostPollStatus::SOCKET_ERROR:
             {
+                resultString = "SOCKET_ERROR";
                 SData reconnect("RECONNECT");
                 reconnect["Reason"] = "socket error";
                 peer->sendMessage(reconnect.serialize());
@@ -2654,26 +2687,56 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case SQLitePeer::PeerPostPollStatus::SOCKET_CLOSED:
             {
+                resultString = "SOCKET_CLOSED";
                 _onDisconnect(peer);
             }
             break;
             case SQLitePeer::PeerPostPollStatus::OK:
             {
+                resultString = "OK";
                 auto lastSendTime = peer->lastSendTime();
                 if (lastSendTime && STimeNow() - lastSendTime > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
                     SINFO("Close to timeout, sending PING to peer '" << peer->name << "'");
                     _sendPING(peer);
                 }
                 try {
+                    auto messageStart = STimeNow();
+                    size_t messagesDeqeued = 0;
+                    map<string, size_t> messageCount;
                     while (true) {
                         SData message = peer->popMessage();
+                        auto count = messageCount.find(message.methodLine);
+                        if (count != messageCount.end()) {
+                            count->second++;
+                        } else {
+                            messageCount.emplace(make_pair(message.methodLine, 1));
+                        }
                         _onMESSAGE(peer, message);
+                        messagesDeqeued++;
+                        if (messagesDeqeued >= 100) {
+                            // We should run again immediately, we have more to do.
+                            nextActivity = STimeNow();
+                            break;
+                        }
                     }
+                    auto messageEnd = STimeNow();
+                    if ((messageEnd - messageStart > 1'500'000) || (messagesDeqeued >= 100)) {
+                        list<string> composed;
+                        for (const auto& messageCountPair : messageCount) {
+                            composed.emplace_back(messageCountPair.first + ": " + to_string(messageCountPair.second));
+                        }
+                        SINFO("[diag][performance] Took " << (messageEnd - messageStart) << "us to handle " << messagesDeqeued << " messages: " << SComposeList(composed));
+                    }
+
                 } catch (const out_of_range& e) {
                     // Ok, just no messages.
                 }
             }
             break;
+        }
+        end = STimeNow();
+        if ((end - start) > 5'000) {
+            SINFO("[diag][performance] Took " << (end - start) << "us to check peer " << peer->name << ", peer->postPoll:" << (first - start) << "us, connection state: " << resultString);
         }
     }
 
