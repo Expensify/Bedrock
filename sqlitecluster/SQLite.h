@@ -405,6 +405,10 @@ class SQLite {
 
     // Callback function for progress tracking.
     static int _progressHandlerCallback(void* arg);
+
+    // Callback when the db checkpoints.
+    static int _walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize);
+
     uint64_t _timeoutLimit = 0;
     uint64_t _timeoutStart;
     uint64_t _timeoutError;

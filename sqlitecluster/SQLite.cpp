@@ -196,6 +196,8 @@ void SQLite::commonConstructorInitialization() {
     // second. This is set to be a bit more granular than that, which is probably adequate.
     sqlite3_progress_handler(_db, 1'000'000, _progressHandlerCallback, this);
 
+    sqlite3_wal_hook(_db, _walHookCallback, this);
+
     // Check if synchronous has been set and run query to use a custom synchronous setting
     if (!_synchronous.empty()) {
         SASSERT(!SQuery(_db, "setting custom synchronous commits", "PRAGMA synchronous = " + SQ(_synchronous)  + ";"));
@@ -249,6 +251,13 @@ int SQLite::_progressHandlerCallback(void* arg) {
         return 1;
     }
     return 0;
+}
+
+int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize) {
+    if (walFileSize > 50) {
+        SINFO("Uncheckpointed frames remaining in both WAL files: " << walFileSize);
+    }
+    return SQLITE_OK;
 }
 
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
