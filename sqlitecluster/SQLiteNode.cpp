@@ -1980,15 +1980,20 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         // If we were following, and now we're not, we give up an any replications.
         if (_state == FOLLOWING) {
             _replicationThreadsShouldExit = true;
-            uint64_t cancelAfter = _localCommitNotifier.getValue();
-            SINFO("Replication threads should exit, canceling commits after current commit " << cancelAfter);
+            uint64_t cancelAfter = _leaderCommitNotifier.getValue();
+            SINFO("Replication threads should exit, canceling commits after current leader commit " << cancelAfter);
             _localCommitNotifier.cancel(cancelAfter);
             _leaderCommitNotifier.cancel(cancelAfter);
 
             // Polling wait for threads to quit. This could use a notification model such as with a condition_variable,
             // which would probably be "better" but introduces yet more state variables for a state that we're rarely
             // in, and so I've left it out for the time being.
+            size_t infoCount = 1;
             while (_replicationThreadCount) {
+                if (infoCount % 100 == 0) {
+                    SINFO("Waiting for " << _replicationThreadCount << " remaining replication threads.");
+                }
+                infoCount++;
                 usleep(10'000);
             }
 
@@ -2421,10 +2426,11 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
             response["NewCount"] = SToStr(db.getCommitCount() + 1);
             response["NewHash"] = success ? db.getUncommittedHash() : message["NewHash"];
             response["ID"] = message["ID"];
-            if (!_leadPeer) {
-                STHROW("no leader?");
+            if (_leadPeer) {
+                _sendToPeer(_leadPeer, response);
+            } else {
+                SWARN("no leader? Still handling transaction, it may have been approved elsewhere.");
             }
-            _sendToPeer(_leadPeer, response);
         } else {
             SDEBUG("Skipping " << verb << " for ASYNC command.");
         }

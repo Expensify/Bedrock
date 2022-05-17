@@ -854,10 +854,11 @@ void BedrockServer::worker(int threadId)
             // our state right before we commit.
             SQLiteNode::State state = _replicationState.load();
 
-            // If we're following, any incomplete commands can be immediately escalated to leader. This saves the work
-            // of a `peek` operation, but more importantly, it skips any delays that might be introduced by waiting in
-            // the `_futureCommitCommands` queue.
-            if (state == SQLiteNode::FOLLOWING && command->escalateImmediately && !command->complete) {
+            // If we're following, we will automatically escalate any command that's not already complete (complete
+            // commands are likely already returned from leader with legacy escalation) and is marked as
+            // `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
+            // for a previous commit to be delivered to this follower), OR if we're on a different version from leader.
+            if (state == SQLiteNode::FOLLOWING && (_version != _leaderVersion.load() || command->escalateImmediately) && !command->complete) {
                 if (_escalateOverHTTP) {
                     auto _clusterMessengerCopy = _clusterMessenger;
                     if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {

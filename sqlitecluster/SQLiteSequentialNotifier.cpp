@@ -37,7 +37,19 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
         } else if (state->result != RESULT::UNKNOWN) {
             return state->result;
         }
-        state->waitingThreadConditionVariable.wait(lock);
+        cv_status result = state->waitingThreadConditionVariable.wait_for(lock, 1s);
+        if (result == cv_status::timeout) {
+            // So, normally, we should only get woken up if something has happened. If we get woken up because of a
+            // timeout, that's fundamentally fine, we could just still be waiting for that thing to happen.
+            // But if one of the things we're tracking has changed, and we got woken up from a timeout, not from that
+            // change, that's worrisome, and indicates that maybe there's a condition in which we can get stuck. Note
+            // that this isn't 100%, we could get woken up here by chance and one of these conditions could change
+            // immediately following that wakeup, so there's a small but nonzero chance of this log line firing in a
+            // valid case.
+            if (_globalResult == RESULT::CANCELED || state->result != RESULT::UNKNOWN) {
+                SWARN("Got timeout in wait_for but state has changed! Was waiting for " << value);
+            }
+        }
     }
 }
 
