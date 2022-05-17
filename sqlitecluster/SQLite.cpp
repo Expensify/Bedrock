@@ -196,6 +196,7 @@ void SQLite::commonConstructorInitialization() {
     // second. This is set to be a bit more granular than that, which is probably adequate.
     sqlite3_progress_handler(_db, 1'000'000, _progressHandlerCallback, this);
 
+    // Setting a wal hook prevents auto-checkpointing.
     sqlite3_wal_hook(_db, _walHookCallback, this);
 
     // Check if synchronous has been set and run query to use a custom synchronous setting

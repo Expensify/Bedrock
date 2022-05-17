@@ -288,7 +288,11 @@ class SQLite {
 
         SPerformanceTimer _commitLockTimer;
 
+        // We use this flag to prevent to threads running checkpoints t the same time.
         atomic_flag checkpointInProgress = ATOMIC_FLAG_INIT;
+
+        // This records the most recent count of the number of frames to checkpoint. We may be able to remove this with
+        // no ill effects, but currently we use it to set a floor on the number of frames we will try and checkpoint.
         atomic<size_t> outstandingFramesToCheckpoint = 0;
 
       private:
@@ -409,7 +413,8 @@ class SQLite {
     // Callback function for progress tracking.
     static int _progressHandlerCallback(void* arg);
 
-    // Callback when the db checkpoints.
+    // Callback when the db checkpoints. Does little except record the number of pages outstanding.
+    // Registering this has the important side effect of preventing the DB from auto-checkpointing.
     static int _walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize);
 
     uint64_t _timeoutLimit = 0;
