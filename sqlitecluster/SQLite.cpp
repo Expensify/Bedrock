@@ -670,10 +670,13 @@ int SQLite::commit(const string& description) {
         _mutexLocked = false;
         _queryCache.clear();
 
-        sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, NULL, NULL);
+        auto start = STimeNow();
+        int framesCheckpointed = 0;
+        sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, NULL, &framesCheckpointed);
+        auto end = STimeNow();
         SINFO(description << " COMMIT complete in " << time << ". Wrote " << (endPages - startPages)
               << " pages. WAL file size is " << sz << " bytes. " << _queryCount << " queries attempted, " << _cacheHits
-              << " served from cache.");
+              << " served from cache. Checkpointed " << framesCheckpointed << " (total) frames in " << (end - start) << "us.");
         _queryCount = 0;
         _cacheHits = 0;
         _dbCountAtStart = 0;
