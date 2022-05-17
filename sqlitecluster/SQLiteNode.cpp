@@ -1990,7 +1990,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
             // in, and so I've left it out for the time being.
             size_t infoCount = 1;
             while (_replicationThreadCount) {
-                if (!(infoCount % 100)) {
+                if (infoCount % 100 == 0) {
                     SINFO("Waiting for " << _replicationThreadCount << " remaining replication threads.");
                 }
                 infoCount++;
