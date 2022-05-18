@@ -2575,7 +2575,7 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
         socket->addr = addr;
 
         // Try to read immediately
-        S_recvappend(socket->s, socket->recvBuffer);
+        socket->recv();
     }
 
     return socket;
