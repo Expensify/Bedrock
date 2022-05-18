@@ -2555,9 +2555,11 @@ void SQLiteNode::prePoll(fd_map& fdm) const {
     for (SQLitePeer* peer : _peerList) {
         peer->prePoll(fdm);
     }
+    /*
     for (auto socket : _unauthenticatedIncomingSockets) {
         STCPManager::prePoll(fdm, *socket);
     }
+    */
     _commitsToSend.prePoll(fdm);
 }
 
@@ -2606,7 +2608,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Check each new connection for a NODE_LOGIN message.
     start = STimeNow();
     for (auto socket : _unauthenticatedIncomingSockets) {
-        STCPManager::postPoll(fdm, *socket);
+        //STCPManager::postPoll(fdm, *socket);
         try {
             if (socket->state.load() != Socket::CONNECTED) {
                 STHROW("premature disconnect");
@@ -2625,6 +2627,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
                             // Connected OK, don't need in _unauthenticatedIncomingSockets anymore.
                             socketsToRemove.push_back(socket);
+                            SINFO("[TYLER] Connected to peer " << peer->name << " after " << socket->readAttempts << " read attempts.");
                         } else {
                             // If you're tempted to use the new socket to replace the old one because it seems more
                             // likely to be valid (i.e., the old one may have timed out from the other side) that's not
@@ -2644,7 +2647,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     STHROW("expecting NODE_LOGIN");
                 }
             } else if (STimeNow() > socket->lastRecvTime + 5'000'000) {
-                STHROW("Incoming socket didn't send a message for over 5s, closing.");
+                STHROW("[TYLER] Incoming socket didn't send a message for over 5s, closing.");
             }
         } catch (const SException& e) {
             SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << ")");

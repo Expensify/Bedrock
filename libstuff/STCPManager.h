@@ -42,6 +42,7 @@ struct STCPManager {
         void shutdown(State toState = SHUTTINGDOWN);
         uint64_t id;
         string logString;
+        uint64_t readAttempts = 0;
 
         bool sendBufferEmpty();
         string sendBufferCopy();

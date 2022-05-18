@@ -294,6 +294,7 @@ void STCPManager::Socket::setSendBuffer(const string& buffer) {
 
 bool STCPManager::Socket::recv() {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+    readAttempts++;
 
     // Read data
     bool result = false;
