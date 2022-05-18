@@ -2678,6 +2678,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 resultString = "JUST_CONNECTED";
                 SData login("NODE_LOGIN");
                 login["Name"] = _name;
+                usleep(500'000);
                 peer->sendMessage(login.serialize());
                 _sendPING(peer);
                 _onConnect(peer);
