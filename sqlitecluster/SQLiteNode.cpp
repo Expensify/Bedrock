@@ -2555,11 +2555,9 @@ void SQLiteNode::prePoll(fd_map& fdm) const {
     for (SQLitePeer* peer : _peerList) {
         peer->prePoll(fdm);
     }
-    /*
     for (auto socket : _unauthenticatedIncomingSockets) {
         STCPManager::prePoll(fdm, *socket);
     }
-    */
     _commitsToSend.prePoll(fdm);
 }
 
@@ -2608,7 +2606,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Check each new connection for a NODE_LOGIN message.
     start = STimeNow();
     for (auto socket : _unauthenticatedIncomingSockets) {
-        //STCPManager::postPoll(fdm, *socket);
+        STCPManager::postPoll(fdm, *socket);
         try {
             if (socket->state.load() != Socket::CONNECTED) {
                 STHROW("premature disconnect");
