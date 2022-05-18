@@ -333,23 +333,10 @@ void BedrockServer::sync()
 
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
-            auto start = STimeNow();
             _postPollCommands(fdm, nextActivity);
-            auto first = STimeNow();
             _syncNode->postPoll(fdm, nextActivity);
-            auto second = STimeNow();
             _syncNodeQueuedCommands.postPoll(fdm);
-            auto third = STimeNow();
             _completedCommands.postPoll(fdm);
-            auto finish = STimeNow();
-
-            if ((finish - start) > 1'500'000) {
-                SINFO("[diag][performance] Post poll took " << (finish - start) << "us, breakdown: "
-                      << (first - start) << "us in _postPollCommands, "
-                      << (second - first) << "us in _syncNode->postPoll, "
-                      << (third - second) << "us in _syncNodeQueuedCommands.postPoll, "
-                      << (finish - third) << "us in _completedCommands.postPoll.");
-            }
         }
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
@@ -1953,17 +1940,8 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
     lock_guard<decltype(_httpsCommandMutex)> lock(_httpsCommandMutex);
 
     // Just clear this, it doesn't matter what the contents are.
-    auto start = STimeNow();
     _newCommandsWaiting.postPoll(fdm);
     _newCommandsWaiting.clear();
-    auto end = STimeNow();
-    if ((end - start) > 5'000) {
-        SINFO("[diag][performance] Took " << (end - start) << "us to clear _newCommandsWaiting");
-    }
-
-    if (_outstandingHTTPSCommands.size()) {
-        SINFO("[diag][performance] " << _outstandingHTTPSCommands.size() << " entries in _outstandingHTTPSCommands");
-    }
 
     // Because we modify this list as we walk across it, we use an iterator to our current position.
     auto it = _outstandingHTTPSCommands.begin();
