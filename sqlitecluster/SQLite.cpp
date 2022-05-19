@@ -257,9 +257,6 @@ int SQLite::_progressHandlerCallback(void* arg) {
 int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize) {
     SQLite* sqlite = static_cast<SQLite*>(sqliteObject);
     sqlite->_sharedData.outstandingFramesToCheckpoint = walFileSize;
-    if (walFileSize > 50) {
-        SINFO("Uncheckpointed frames remaining in both WAL files: " << walFileSize);
-    }
     return SQLITE_OK;
 }
 
@@ -673,15 +670,17 @@ int SQLite::commit(const string& description) {
         _mutexLocked = false;
         _queryCache.clear();
 
-        int framesCheckpointed = 0;
+        // If we are the first to set it (i.e., test_and_set returned `false` as the previous value), we'll start a checkpoint.
         if (!_sharedData.checkpointInProgress.test_and_set()) {
-            // If we were the first to set it (i.e., test_and_set returned `false` as the previous value), we'll start
-            // a checkpoint.
-            if (_sharedData.outstandingFramesToCheckpoint > 50) {
+            if (_sharedData.outstandingFramesToCheckpoint) {
                 auto start = STimeNow();
+                int framesCheckpointed = 0;
                 sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, NULL, &framesCheckpointed);
                 auto end = STimeNow();
                 SINFO("Checkpointed " << framesCheckpointed << " (total) frames of " << _sharedData.outstandingFramesToCheckpoint << " in " << (end - start) << "us.");
+
+                // It might not actually be 0, but we'll just let sqlite tell us what it is next time _walHookCallback runs.
+                _sharedData.outstandingFramesToCheckpoint = 0;
             }
             _sharedData.checkpointInProgress.clear();
         }
