@@ -2367,6 +2367,18 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                                 auto _clusterMessengerCopy = _clusterMessenger;
                                 if (_clusterMessengerCopy && _clusterMessenger->runOnLeader(*command)) {
                                     _reply(command);
+
+                                    // This case doesn't move the command to another queue that will eventually complete
+                                    // it and delete the object, firing the destructionCallback to unblock our "wait"
+                                    // call below. Instead, we just sort of "undo" this here. We can remove/simplify
+                                    // this when we execute commands synchronously in socket threads.
+                                    if (hasSocket) {
+                                        lock.unlock();
+                                        command->destructionCallback = nullptr;
+                                        hasSocket = false;
+                                    }
+                                    // This command isn't moved, and thus won't be destroyed somewhere else, but we're
+                                    // going to wait on a lock below, so we're in a sort of deadlock.
                                 } else {
                                     SINFO("Re-queueing command that couldn't run on leader.");
                                     _commandQueue.push(move(command));
@@ -2380,6 +2392,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
                         // Now that the command is queued, we wait for it to complete (if it's has a socket). When it's
                         // destructionCallback fires, this will stop blocking and we can move on to the next request.
+                        // NOTE: This doesn't correctly handle spurious wakeups.
                         if (hasSocket) {
                             cv.wait(lock);
                         }
