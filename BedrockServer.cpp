@@ -2362,32 +2362,9 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
                             _standDownQueue.push(move(command));
                         } else {
-                            if (_version != _leaderVersion.load()) {
-                                SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
-                                auto _clusterMessengerCopy = _clusterMessenger;
-                                if (_clusterMessengerCopy && _clusterMessenger->runOnLeader(*command)) {
-                                    _reply(command);
-
-                                    // This case doesn't move the command to another queue that will eventually complete
-                                    // it and delete the object, firing the destructionCallback to unblock our "wait"
-                                    // call below. Instead, we just sort of "undo" this here. We can remove/simplify
-                                    // this when we execute commands synchronously in socket threads.
-                                    if (hasSocket) {
-                                        lock.unlock();
-                                        command->destructionCallback = nullptr;
-                                        hasSocket = false;
-                                    }
-                                    // This command isn't moved, and thus won't be destroyed somewhere else, but we're
-                                    // going to wait on a lock below, so we're in a sort of deadlock.
-                                } else {
-                                    SINFO("Re-queueing command that couldn't run on leader.");
-                                    _commandQueue.push(move(command));
-                                }
-                            } else {
-                                SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
-                                      << _commandQueue.size() << " commands already queued.");
-                                _commandQueue.push(move(command));
-                            }
+                            SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
+                                  << _commandQueue.size() << " commands already queued.");
+                            _commandQueue.push(move(command));
                         }
 
                         // Now that the command is queued, we wait for it to complete (if it's has a socket). When it's
