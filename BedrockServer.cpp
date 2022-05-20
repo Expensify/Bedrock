@@ -2357,7 +2357,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             lock.lock();
                         }
 
-                        // Now we'll queue this command in one of three queues.
+                        // Now we'll queue this command in one of two queues.
                         auto _syncNodeCopy = atomic_load(&_syncNode);
                         if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
                             _standDownQueue.push(move(command));
