@@ -2357,29 +2357,19 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             lock.lock();
                         }
 
-                        // Now we'll queue this command in one of three queues.
+                        // Now we'll queue this command in one of two queues.
                         auto _syncNodeCopy = atomic_load(&_syncNode);
                         if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
                             _standDownQueue.push(move(command));
                         } else {
-                            if (_version != _leaderVersion.load()) {
-                                SINFO("Immediately escalating " << command->request.methodLine << " to leader due to version mismatch.");
-                                auto _clusterMessengerCopy = _clusterMessenger;
-                                if (_clusterMessengerCopy && _clusterMessenger->runOnLeader(*command)) {
-                                    _reply(command);
-                                } else {
-                                    SINFO("Re-queueing command that couldn't run on leader.");
-                                    _commandQueue.push(move(command));
-                                }
-                            } else {
-                                SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
-                                      << _commandQueue.size() << " commands already queued.");
-                                _commandQueue.push(move(command));
-                            }
+                            SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
+                                  << _commandQueue.size() << " commands already queued.");
+                            _commandQueue.push(move(command));
                         }
 
                         // Now that the command is queued, we wait for it to complete (if it's has a socket). When it's
                         // destructionCallback fires, this will stop blocking and we can move on to the next request.
+                        // NOTE: This doesn't correctly handle spurious wakeups.
                         if (hasSocket) {
                             cv.wait(lock);
                         }
