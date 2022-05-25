@@ -1638,7 +1638,12 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             } else {
                 auto threadID = _replicationThreadCount.fetch_add(1);
                 SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
-                thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false)).detach();
+                try {
+                    thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false)).detach();
+                } catch (const system_error& e) {
+                    SWARN("Caught system_error starting _replicate thread with " << _replicationThreadCount.load() << " threads. e.what()=" << e.what());
+                    throw;
+                }
                 SDEBUG("Done spawning concurrent replicate thread: " << threadID);
             }
         } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
