@@ -651,52 +651,9 @@
 		}
 	</style>
 	<style>
-		ul,
-		#myUL {
-			list-style-type: none;
-		}
-
-		#myUL {
-			margin: 0;
-			padding: 0;
-		}
-
-		.caret {
-			cursor: pointer;
-			-webkit-user-select: none;
-			/* Safari 3.1+ */
-			-moz-user-select: none;
-			/* Firefox 2+ */
-			-ms-user-select: none;
-			/* IE 10+ */
-			user-select: none;
-		}
-
-		.caret::before {
-			content: "\25B6";
-			color: black;
-			display: inline-block;
-			margin-right: 6px;
-		}
-
-		.caret-down::before {
-			-ms-transform: rotate(90deg);
-			/* IE 9 */
-			-webkit-transform: rotate(90deg);
-			/* Safari */
-			'
-transform: rotate(90deg);
-		}
-
-		.nested-treeview {
-			display: none;
-		}
-
-		.active-treeview {
-			display: block;
-			padding-inline-start: 20px;
-		}
+		
 	</style>
+	<link rel="stylesheet" href="/assets/css/styles.css">
 	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tocbot/4.1.1/tocbot.css">
 </head>
 
@@ -744,48 +701,16 @@ transform: rotate(90deg);
                     <h2><a href="http://bedrockdb.com">Bedrock</a></h2>
                 </div> -->
 
-			<div>
-				<button class="accordion">Section 1</button>
-				<div class="panel">
-					<p>Lorem ipsum...</p>
+
+				<div class="lhn">
+					{% if page.use_main_navigation_tree %}
+						{% include main-navigation-tree.html %}
+					{% else %}
+						<span class="left-caret">Back</span>
+						<span>In this article</span>
+						<div class="article-toc"></div>
+					{% endif %}
 				</div>
-
-				<button class="accordion">Section 2</button>
-				<div class="panel">
-					<p>Lorem ipsum...</p>
-				</div>
-
-				<button class="accordion">Section 3</button>
-				<div class="panel">
-					<p>Lorem ipsum...</p>
-				</div>
-			</div>
-
-			<ul id="myUL" style="background-color: white;margin: 10px 0 10px 0;">
-				<li><span class="caret">Beverages</span>
-					<ul class="nested-treeview">
-						<li>Water</li>
-						<li>Coffee</li>
-						<li><span class="caret">Tea</span>
-							<ul class="nested-treeview">
-								<li>Black Tea</li>
-								<li>White Tea</li>
-								<li><span class="caret">Green Tea</span>
-									<ul class="nested-treeview">
-										<li>Sencha</li>
-										<li>Gyokuro</li>
-										<li>Matcha</li>
-										<li>Pi Lo Chun</li>
-									</ul>
-								</li>
-							</ul>
-						</li>
-					</ul>
-				</li>
-			</ul>
-
-
-			<div class="js-toc" style="background-color: white;"></div>
 
 
 		</div>
@@ -797,8 +722,21 @@ transform: rotate(90deg);
 			<div class="content-panel__inner">
 				<div class="content-card">
 					<div class="content-card__inner">
-						<div class="js-toc-content">
+						<div class="article-toc-content">
+							dir: {{ page.dir }}
+							<br/>
+							path: {{ page.path }}
+							<br/>
+							url: {{ page.url }}
+							<br/>
+
+							{{ page.name | remove: '.md' | split: "-" |  join: " " }}
+
+							<br/>
+							<br/>
+
 							{{ content }}
+
 						</div>
 					</div>
 				</div>
@@ -807,138 +745,19 @@ transform: rotate(90deg);
 	</div>
 
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/tocbot/4.1.1/tocbot.min.js"></script>
+	{% unless page.use_main_navigation_tree %}
+	{% endunless %}
 	<script>
 		(function (i, s, o, g, r, a, m) {
 			i['GoogleAnalyticsObject'] = r; i[r] = i[r] || function () {
 				(i[r].q = i[r].q || []).push(arguments)
 			}, i[r].l = 1 * new Date(); a = s.createElement(o),
-				m = s.getElementsByTagName(o)[0]; a.async = 1; a.src = g; m.parentNode.insertBefore(a, m)
+			m = s.getElementsByTagName(o)[0]; a.async = 1; a.src = g; m.parentNode.insertBefore(a, m)
 		})(window, document, 'script', 'https://www.google-analytics.com/analytics.js', 'ga');
-
 		ga('create', 'UA-86007127-1', 'auto');
 		ga('send', 'pageview');
-
-
-		var acc = document.getElementsByClassName("accordion");
-		var i;
-
-		for (i = 0; i < acc.length; i++) {
-			acc[i].addEventListener("click", function () {
-				/* Toggle between adding and removing the "active" class,
-				to highlight the button that controls the panel */
-				this.classList.toggle("active");
-
-				/* Toggle between hiding and showing the active panel */
-				var panel = this.nextElementSibling;
-				if (panel.style.display === "block") {
-					panel.style.display = "none";
-				} else {
-					panel.style.display = "block";
-				}
-			});
-		}
-
-		// tocbot.init();
-		tocbot.init({
-			// Where to render the table of contents.
-			tocSelector: '.js-toc',
-			// Where to grab the headings to build the table of contents.
-			contentSelector: '.js-toc-content',
-			// Which headings to grab inside of the contentSelector element.
-			headingSelector: 'h1, h2, h3',
-			// the link corresponding to the top most heading on the page.
-			activeLinkClass: 'is-active-link',
-			// Main class to add to lists.
-			listClass: 'toc-list',
-			// Extra classes to add to lists.
-			extraListClasses: '',
-			// Class that gets added when a list should be collapsed.
-			isCollapsedClass: 'is-collapsed',
-			// Class that gets added when a list should be able
-			// to be collapsed but isn't necessarily collapsed.
-			collapsibleClass: 'is-collapsible',
-			// Class to add to list items.
-			listItemClass: 'toc-list-item',
-			// Class to add to active list items.
-			activeListItemClass: 'is-active-li',
-			// How many heading levels should not be collapsed.
-			// For example, number 6 will show everything since
-			// there are only 6 heading levels and number 0 will collapse them all.
-			// The sections that are hidden will open
-			// and close as you scroll to headings within them.
-			collapseDepth: 6,
-			// Smooth scrolling enabled.
-			scrollSmooth: true,
-			// Smooth scroll duration.
-			scrollSmoothDuration: 420,
-			// Smooth scroll offset.
-			scrollSmoothOffset: 0,
-			// Callback for scroll end.
-			scrollEndCallback: function (e) { },
-			// Headings offset between the headings and the top of the document (this is meant for minor adjustments).
-			headingsOffset: 1,
-			// Timeout between events firing to make sure it's
-			// not too rapid (for performance reasons).
-			throttleTimeout: 50,
-			// Element to add the positionFixedClass to.
-			positionFixedSelector: null,
-			// Fixed position class to add to make sidebar fixed after scrolling
-			// down past the fixedSidebarOffset.
-			positionFixedClass: 'is-position-fixed',
-			// fixedSidebarOffset can be any number but by default is set
-			// to auto which sets the fixedSidebarOffset to the sidebar
-			// element's offsetTop from the top of the document on init.
-			fixedSidebarOffset: 'auto',
-			// includeHtml can be set to true to include the HTML markup from the
-			// heading node instead of just including the textContent.
-			includeHtml: false,
-			// includeTitleTags automatically sets the html title tag of the link
-			// to match the title. This can be useful for SEO purposes or
-			// when truncating titles.
-			includeTitleTags: false,
-			// onclick function to apply to all links in toc. will be called with
-			// the event as the first parameter, and this can be used to stop,
-			// propagation, prevent default or perform action
-			onClick: function (e) { },
-			// orderedList can be set to false to generate unordered lists (ul)
-			// instead of ordered lists (ol)
-			orderedList: true,
-			// If there is a fixed article scroll container, set to calculate titles' offset
-			scrollContainer: null,
-			// prevent ToC DOM rendering if it's already rendered by an external system
-			skipRendering: false,
-			// Optional callback to change heading labels.
-			// For example it can be used to cut down and put ellipses on multiline headings you deem too long.
-			// Called each time a heading is parsed. Expects a string and returns the modified label to display.
-			// Additionally, the attribute `data-heading-label` may be used on a heading to specify
-			// a shorter string to be used in the TOC.
-			// function (string) => string
-			headingLabelCallback: false,
-			// ignore headings that are hidden in DOM
-			ignoreHiddenElements: false,
-			// Optional callback to modify properties of parsed headings.
-			// The heading element is passed in node parameter and information parsed by default parser is provided in obj parameter.
-			// Function has to return the same or modified obj.
-			// The heading will be excluded from TOC if nothing is returned.
-			// function (object, HTMLElement) => object | void
-			headingObjectCallback: null,
-			// Set the base path, useful if you use a `base` tag in `head`.
-			basePath: '',
-			// Only takes affect when `tocSelector` is scrolling,
-			// keep the toc scroll position in sync with the content.
-			disableTocScrollSync: false
-		});
-
-		var toggler = document.getElementsByClassName("caret");
-		var i;
-
-		for (i = 0; i < toggler.length; i++) {
-			toggler[i].addEventListener("click", function () {
-				this.parentElement.querySelector(".nested-treeview").classList.toggle("active-treeview");
-				this.classList.toggle("caret-down");
-			});
-		}
 	</script>
+	<script src="/assets/js/main.js"></script>
 </body>
 
 </html>

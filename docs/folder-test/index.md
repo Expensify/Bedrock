@@ -1,10 +1,16 @@
 ---
-use_main_navigation_tree: true
+layout: default
 ---
-# Section 1
+# Test Index
 <!-- ========= -->
 
 Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur hendrerit euismod dui, nec fermentum urna porta ultrices. Nullam sed vestibulum purus, in auctor libero. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia Curae; Maecenas dolor metus, molestie nec eros non, suscipit efficitur erat. Nulla ante odio, tristique sed nisi id, ultrices vulputate magna. Nunc congue nibh non lorem ultricies congue. Donec non metus vitae purus semper interdum eget a augue. Nullam sem ante, finibus eget sapien ultricies, pretium accumsan felis. Donec eget nulla orci.
+
+<div class="blog-post">
+    <span>Title</span>
+    <span>Sub-title</span>
+    <button>Buttons</button>
+</div>
 
 ## Sub-section A
 <!-- ------------- -->
