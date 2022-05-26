@@ -9,6 +9,7 @@ struct RequeueJobsTest : tpunit::TestFixture {
                               BEFORE_CLASS(RequeueJobsTest::setupClass),
                               TEST(RequeueJobsTest::requeueRunningJob),
                               TEST(RequeueJobsTest::requeueRunqueuedJob),
+                              TEST(RequeueJobsTest::autoRequeue),
                               TEST(RequeueJobsTest::requeueMultipleJobs),
                               TEST(RequeueJobsTest::changeMultipleJobNames),
                               TEST(RequeueJobsTest::testNextRunTime),
@@ -83,6 +84,41 @@ struct RequeueJobsTest : tpunit::TestFixture {
         // Confrim the job is back in the QUEUED state
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
+    }
+
+    void autoRequeue() {
+        SData command("CreateJob");
+        command["name"] = "autoRequeue";
+        command["retryAfter"] = "+0 SECOND";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job, but with `forget` so we don't respond.
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "autoRequeue";
+        command["Connection"] = "forget";
+
+        // Run it more than 10x, which would usually fail the job.
+        for (int i = 0; i < 15; i++) {
+            tester->executeWaitVerifyContent(command, "202");
+        }
+
+        // Confirm the job is not FAILED
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        ASSERT_NOT_EQUAL(result[0][0], "FAILED");
+
+        // Retry it, but get the response.
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "autoRequeue";
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(jobID, response["jobID"]);
+
+        // Confirm the job is back in the RUNQUEUED state
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        ASSERT_EQUAL(result[0][0], "RUNQUEUED");
     }
 
     void requeueMultipleJobs() {
