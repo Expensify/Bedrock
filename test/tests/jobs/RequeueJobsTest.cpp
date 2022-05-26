@@ -3,6 +3,8 @@
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
 
+#include <unistd.h>
+
 struct RequeueJobsTest : tpunit::TestFixture {
     RequeueJobsTest()
         : tpunit::TestFixture("RequeueJobs",
@@ -102,6 +104,7 @@ struct RequeueJobsTest : tpunit::TestFixture {
         // Run it more than 10x, which would usually fail the job.
         for (int i = 0; i < 15; i++) {
             tester->executeWaitVerifyContent(command, "202");
+            usleep(250'000);
         }
 
         // Confirm the job is not FAILED
