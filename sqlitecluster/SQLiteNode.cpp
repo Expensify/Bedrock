@@ -474,9 +474,6 @@ void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forge
     }
 
     SASSERTEQUALS(_leadPeer.load()->state, LEADING);
-    uint64_t elapsed = STimeNow() - command->request.calcU64("commandExecuteTime");
-    SINFO("Escalating '" << command->request.methodLine << "' (" << command->id << ") to leader '" << _leadPeer.load()->name
-          << "' after " << elapsed / 1000 << " ms");
 
     // Create a command to send to our leader.
     SData escalate("ESCALATE");
