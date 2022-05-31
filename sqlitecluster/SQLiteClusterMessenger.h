@@ -25,6 +25,9 @@ class SQLiteClusterMessenger {
     // no connection to leader could be made).
     bool runOnLeader(BedrockCommand& command);
 
+    // TODO: add informative comment
+    bool runOnAll(BedrockCommand& command);
+
     // Set a timestamp by which we should give up on any pending commands. Once set, this is permanent. You will need a
     // new SQLiteClusterMessenger if you want to shutdown again.
     void shutdownBy(uint64_t shutdownTimestamp);
@@ -37,6 +40,9 @@ class SQLiteClusterMessenger {
 
     // This sets a command as a 500 and marks it as complete.
     void setErrorResponse(BedrockCommand& command);
+
+    // TODO: writeme
+    bool _sendCommandOnSocket(&SHTTPSManager::Socket socket, BedrockCommand& command);
 
     const shared_ptr<const SQLiteNode> _node;
 
