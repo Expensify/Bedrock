@@ -61,13 +61,10 @@ int64_t BedrockCommand::_getTimeout(const SData& request) {
     // Convert to microseconds.
     timeout *= 1000;
 
-    int64_t start;
-    if (request.isSet("commandExecuteTime")) {
-        start = request.calc64("commandExecuteTime");
-    } else {
-        SWARN("BedrockCommand '" + request.methodLine + "' created with no commandExecuteTime, should be done in base constructor!");
-        start = STimeNow();
-    }
+    // If the command has specified an execute time, that's the time we'll start counting from for our timeout,
+    // otherwise it's right now.
+    int64_t commandExecuteTime = request.calc64("commandExecuteTime");
+    int64_t start = commandExecuteTime ? commandExecuteTime : STimeNow();
     return timeout + start;
 }
 
