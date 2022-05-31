@@ -50,10 +50,10 @@ struct BroadcastCommandTest : tpunit::TestFixture {
             throw;
         }
 
-        // The peekedAt of the command should be between the time we stored as `now` above, and 3 seconds
+        // The commandExecuteTime of the command should be between the time we stored as `now` above, and 3 seconds
         // after that
-        ASSERT_GREATER_THAN(now + 3'000'000, stoull(results[0]["stored_peekedAt"]));
-        ASSERT_LESS_THAN(now, stoull(results[0]["stored_peekedAt"]));
+        ASSERT_GREATER_THAN(now + 3'000'000, stoull(results[0]["stored_commandExecuteTime"]));
+        ASSERT_LESS_THAN(now, stoull(results[0]["stored_commandExecuteTime"]));
 
         // Other values should just match what's in the testplugin code.
         ASSERT_EQUAL(5001, stoll(results[0]["stored_processTimeout"]));

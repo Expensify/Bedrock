@@ -5,7 +5,9 @@
 
 SData SQLiteCommand::preprocessRequest(SData&& request) {
     // If the request doesn't specify an execution time, default to right now.
-    if (request.isSet("commandExecuteTime")) {
+    if (!request.isSet("commandExecuteTime")) {
+        request["commandExecuteTime"] = to_string(STimeNow());
+    } else {
         // We are deprecating `commandExecuteTime` so need to figure out where it's used.
         auto now = STimeNow();
         auto executeTime = request.calcU64("commandExecuteTime");
