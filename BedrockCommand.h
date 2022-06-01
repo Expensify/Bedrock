@@ -169,6 +169,9 @@ class BedrockCommand : public SQLiteCommand {
     // is awaiting a reply.
     STCPManager::Socket* socket;
 
+    // Time at which this command was initially scheduled (typically the time of creation).
+    const uint64_t scheduledTime;
+
   protected:
     // The plugin that owns this command.
     BedrockPlugin* _plugin;
@@ -181,7 +184,7 @@ class BedrockCommand : public SQLiteCommand {
     tuple<TIMING_INFO, uint64_t, uint64_t> _inProgressTiming;
 
     // Get the absolute timeout value for this command based on it's request. This is used to initialize _timeout.
-    static int64_t _getTimeout(const SData& request);
+    static int64_t _getTimeout(const SData& request, const uint64_t scheduledTime);
 
     // This is a timestamp in *microseconds* for when this command should timeout.
     uint64_t _timeout;
