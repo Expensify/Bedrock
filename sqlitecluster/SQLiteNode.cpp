@@ -474,9 +474,6 @@ void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forge
     }
 
     SASSERTEQUALS(_leadPeer.load()->state, LEADING);
-    uint64_t elapsed = STimeNow() - command->request.calcU64("commandExecuteTime");
-    SINFO("Escalating '" << command->request.methodLine << "' (" << command->id << ") to leader '" << _leadPeer.load()->name
-          << "' after " << elapsed / 1000 << " ms");
 
     // Create a command to send to our leader.
     SData escalate("ESCALATE");
@@ -1638,7 +1635,12 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             } else {
                 auto threadID = _replicationThreadCount.fetch_add(1);
                 SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
-                thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false)).detach();
+                try {
+                    thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false)).detach();
+                } catch (const system_error& e) {
+                    SWARN("Caught system_error starting _replicate thread with " << _replicationThreadCount.load() << " threads. e.what()=" << e.what());
+                    throw;
+                }
                 SDEBUG("Done spawning concurrent replicate thread: " << threadID);
             }
         } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {

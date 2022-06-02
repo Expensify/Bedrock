@@ -181,7 +181,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         lock_guard<mutex> lock(plugin().dataLock);
         plugin().arbitraryData["timeout"] = request["timeout"];
         plugin().arbitraryData["processTimeout"] = request["processTimeout"];
-        plugin().arbitraryData["commandExecuteTime"] = request["commandExecuteTime"];
+        plugin().arbitraryData["peekedAt"] = to_string(STimeNow());
         plugin().arbitraryData["not_special"] = request["not_special"];
         return true;
     } else if (SStartsWith(request.methodLine, "getbroadcasttimeouts")) {
@@ -189,7 +189,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         lock_guard<mutex> lock(plugin().dataLock);
         response["stored_timeout"] = plugin().arbitraryData["timeout"];
         response["stored_processTimeout"] = plugin().arbitraryData["processTimeout"];
-        response["stored_commandExecuteTime"] = plugin().arbitraryData["commandExecuteTime"];
+        response["stored_peekedAt"] = plugin().arbitraryData["peekedAt"];
         response["stored_not_special"] = plugin().arbitraryData["not_special"];
         return true;
     } else if (SStartsWith(request.methodLine, "sendrequest")) {
