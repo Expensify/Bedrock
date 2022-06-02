@@ -2026,6 +2026,15 @@ SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& com
 }
 
 void BedrockServer::broadcastCommand(const SData& cmd) {
+    //auto _clusterMessengerCopy = _clusterMessenger;
+    //if (_clusterMessengerCopy && _clusterMessengerCopy->runOnAll(*command)) {
+        //SINFO("Successfully broadcasted command " << command->request.methodLine << " to all nodes.");
+    //} else {
+        //SINFO("Failed to broadcast command " << command->request.methodLine << " to all nodes, queuing normally.");
+        //_commandQueue.push(move(command)); // TODO: is this correct?
+    //}
+
+    // TODO: remove this old code
     SData message("BROADCAST_COMMAND");
     message.content = cmd.serialize();
     auto _syncNodeCopy = atomic_load(&_syncNode);
@@ -2048,6 +2057,7 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
             }
             auto _syncNodeCopy = atomic_load(&_syncNode);
             if (_syncNodeCopy) {
+                // TODO: change this to runOnPeer
                 _syncNodeCopy->broadcast(_generateCrashMessage(cmd), peer);
             }
         }

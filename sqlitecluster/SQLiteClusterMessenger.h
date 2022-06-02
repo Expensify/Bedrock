@@ -27,7 +27,7 @@ class SQLiteClusterMessenger {
     bool runOnLeader(BedrockCommand& command);
 
     // TODO: add informative comment
-    bool runOnAll(BedrockCommand& command);
+    void runOnAll(BedrockCommand& command);
 
     // TODO: add informative comment
     bool runOnPeer(BedrockCommand& command, string peerName);

@@ -1969,6 +1969,7 @@ void SQLiteNode::broadcast(const SData& message, SQLitePeer* peer) {
         SINFO("Sending broadcast: " << message.serialize() << " to peer: " << peer->name);
         _sendToPeer(peer, message);
     } else {
+        // TODO: do this in runOnAll
         SINFO("Sending broadcast: " << message.serialize());
         _sendToAllPeers(message, false);
     }

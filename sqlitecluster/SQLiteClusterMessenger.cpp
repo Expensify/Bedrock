@@ -76,14 +76,14 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
 }
 
 void SQLiteClusterMessenger::runOnAll(BedrockCommand& command) {
-    SINFO("Sending broadcast: " << message.serialize());
+    //SINFO("Sending broadcast: " << message.serialize());
 
     //auto start = chrono::steady_clock::now();
-    bool sent = false;
+    //bool sent = false;
 
-    unique_ptr<SHTTPSManager::Socket> s;
-    while (chrono::steady_clock::now() < (start + 5s) && !sent) {
-        for (auto data : _node->getPeerInfo()) {
+    //unique_ptr<SHTTPSManager::Socket> s;
+    //while (chrono::steady_clock::now() < (start + 5s) && !sent) {
+        //for (auto data : _node->getPeerInfo()) {
             // do something with each peer data
             /*
              *
@@ -105,8 +105,8 @@ void SQLiteClusterMessenger::runOnAll(BedrockCommand& command) {
     });
              *
              */
-        }
-    }
+        //}
+    //}
 
 
 
