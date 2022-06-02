@@ -126,7 +126,6 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, string peerName)
         return false;
     }
 
-    // TODO: deduplicate from runOnLeader
     string peerCommandAddress = peer->commandAddress;
     s = _getSocketForAddress(peerCommandAddress);
 
