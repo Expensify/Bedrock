@@ -16,9 +16,10 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
     escalateImmediately(escalateImmediately_),
     destructionCallback(nullptr),
     socket(nullptr),
+    scheduledTime(request.isSet("commandExecuteTime") ? request.calc64("commandExecuteTime") : STimeNow()),
     _plugin(plugin),
     _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request))
+    _timeout(_getTimeout(request, scheduledTime))
 {
     // Initialize the priority, if supplied.
     if (request.isSet("priority")) {
@@ -49,7 +50,7 @@ const string& BedrockCommand::getName() const {
     return defaultPluginName;
 }
 
-int64_t BedrockCommand::_getTimeout(const SData& request) {
+int64_t BedrockCommand::_getTimeout(const SData& request, const uint64_t scheduledTime) {
     // Timeout is the default, unless explicitly supplied, or if Connection: forget is set.
     int64_t timeout =  DEFAULT_TIMEOUT;
     if (request.isSet("timeout")) {
@@ -61,11 +62,7 @@ int64_t BedrockCommand::_getTimeout(const SData& request) {
     // Convert to microseconds.
     timeout *= 1000;
 
-    // If the command has specified an execute time, that's the time we'll start counting from for our timeout,
-    // otherwise it's right now.
-    int64_t commandExecuteTime = request.calc64("commandExecuteTime");
-    int64_t start = commandExecuteTime ? commandExecuteTime : STimeNow();
-    return timeout + start;
+    return timeout + scheduledTime;
 }
 
 BedrockCommand::~BedrockCommand() {
