@@ -1,4 +1,5 @@
 #include <libstuff/libstuff.h>
+#include <libstuff/SHTTPSManager.h>
 
 class SQLiteNode;
 class BedrockCommand;
@@ -42,7 +43,7 @@ class SQLiteClusterMessenger {
     void setErrorResponse(BedrockCommand& command);
 
     // TODO: writeme
-    bool _sendCommandOnSocket(&SHTTPSManager::Socket socket, BedrockCommand& command);
+    bool _sendCommandOnSocket(unique_ptr<SHTTPSManager::Socket> socket, BedrockCommand& command);
 
     const shared_ptr<const SQLiteNode> _node;
 
