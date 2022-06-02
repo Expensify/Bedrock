@@ -288,13 +288,18 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
             continue;
         }
 
+        // Start our escalation timing
+        command.escalationTimeUS = STimeNow();
+
         s = _getSocketForAddress(leaderAddress);
         if (!s) {
+            command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
             return false;
         }
 
         sent = _sendCommandOnSocket(move(s), command);
         if (!sent) {
+            command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
             return false;
         }
     }
@@ -307,6 +312,8 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     command.escalated = true;
 
     // Finish our escalation timing.
+    // FIXME: Do we need this both here and in `if (!sent)` or can we set it
+    // once after _sendCommandOnSocket regardless of the outcome?
     command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
 
     return true;
