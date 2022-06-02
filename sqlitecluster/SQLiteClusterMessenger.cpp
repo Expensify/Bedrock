@@ -1,6 +1,7 @@
 #include <BedrockCommand.h>
 #include <sqlitecluster/SQLiteClusterMessenger.h>
 #include <sqlitecluster/SQLiteNode.h>
+#include <sqlitecluster/SQLitePeer.h>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -118,8 +119,33 @@ void SQLiteClusterMessenger::runOnAll(BedrockCommand& command) {
 }
 
 bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, string peerName) {
+    unique_ptr<SHTTPSManager::Socket> s;
 
-    return false;
+    SQLitePeer* peer = _node->getPeerByName(peerName);
+    if (!peer) {
+        return false;
+    }
+
+    // SParseURI expects a typical http or https scheme.
+    // TODO: deduplicate from runOnLeader
+    string peerCommandAddress = peer->commandAddress;
+    string url = "http://" + peerCommandAddress;
+    string host, path;
+    if (!SParseURI(url, host, path) || !SHostIsValid(host)) {
+        return false;
+    }
+
+    try {
+        // TODO: Future improvement - socket pool so these are reused.
+        // TODO: Also, allow S_socket to take a parsed address instead of redoing all the parsing above.
+        s = unique_ptr<SHTTPSManager::Socket>(new SHTTPSManager::Socket(host, nullptr));
+    } catch (const SException& exception) {
+        // Finish our escalation.
+        SINFO("[HTTPESC] Socket failed to open.");
+        return false;
+    }
+
+    return _sendCommandOnSocket(move(s), command);
 }
 
 // TODO: writeme

@@ -29,6 +29,9 @@ class SQLiteClusterMessenger {
     // TODO: add informative comment
     bool runOnAll(BedrockCommand& command);
 
+    // TODO: add informative comment
+    bool runOnPeer(BedrockCommand& command, string peerName);
+
     // Set a timestamp by which we should give up on any pending commands. Once set, this is permanent. You will need a
     // new SQLiteClusterMessenger if you want to shutdown again.
     void shutdownBy(uint64_t shutdownTimestamp);

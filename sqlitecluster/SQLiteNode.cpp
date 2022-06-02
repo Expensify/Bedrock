@@ -2609,7 +2609,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             if (messageSize) {
                 socket->recvBuffer.consumeFront(messageSize);
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {
-                    SQLitePeer* peer = _getPeerByName(message["Name"]);
+                    SQLitePeer* peer = getPeerByName(message["Name"]);
                     if (peer) {
                         if (peer->setSocket(socket)) {
                             _sendPING(peer);
@@ -2744,7 +2744,7 @@ SQLitePeer* SQLiteNode::_getPeerByID(uint64_t id) const {
     }
 }
 
-SQLitePeer* SQLiteNode::_getPeerByName(const string& name) const {
+SQLitePeer* SQLiteNode::getPeerByName(const string& name) const {
     // TODO: Store peers in sorted order by name and binary search the list here.
     for (const auto& peer : _peerList) {
         if (peer->name == name) {
