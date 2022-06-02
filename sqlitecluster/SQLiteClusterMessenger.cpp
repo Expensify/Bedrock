@@ -126,22 +126,11 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, string peerName)
         return false;
     }
 
-    // SParseURI expects a typical http or https scheme.
     // TODO: deduplicate from runOnLeader
     string peerCommandAddress = peer->commandAddress;
-    string url = "http://" + peerCommandAddress;
-    string host, path;
-    if (!SParseURI(url, host, path) || !SHostIsValid(host)) {
-        return false;
-    }
+    s = _getSocketForAddress(peerCommandAddress);
 
-    try {
-        // TODO: Future improvement - socket pool so these are reused.
-        // TODO: Also, allow S_socket to take a parsed address instead of redoing all the parsing above.
-        s = unique_ptr<SHTTPSManager::Socket>(new SHTTPSManager::Socket(host, nullptr));
-    } catch (const SException& exception) {
-        // Finish our escalation.
-        SINFO("[HTTPESC] Socket failed to open.");
+    if (!s) {
         return false;
     }
 
@@ -253,6 +242,29 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(unique_ptr<SHTTPSManager::Sock
     return true;
 }
 
+unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(string address) {
+    unique_ptr<SHTTPSManager::Socket> s;
+
+    // SParseURI expects a typical http or https scheme.
+    string url = "http://" + address;
+    string host, path;
+    if (!SParseURI(url, host, path) || !SHostIsValid(host)) {
+        return nullptr;
+    }
+
+    try {
+        // TODO: Future improvement - socket pool so these are reused.
+        // TODO: Also, allow S_socket to take a parsed address instead of redoing all the parsing above.
+        s = unique_ptr<SHTTPSManager::Socket>(new SHTTPSManager::Socket(host, nullptr));
+    } catch (const SException& exception) {
+        // Finish our escalation.
+        SINFO("[HTTPESC] Socket failed to open.");
+        return nullptr;
+    }
+
+    return s;
+}
+
 bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     auto start = chrono::steady_clock::now();
     bool sent = false;
@@ -276,24 +288,8 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
             continue;
         }
 
-        // SParseURI expects a typical http or https scheme.
-        string url = "http://" + leaderAddress;
-        string host, path;
-        if (!SParseURI(url, host, path) || !SHostIsValid(host)) {
-            return false;
-        }
-
-        // Start our escalation timing.
-        command.escalationTimeUS = STimeNow();
-
-        try {
-            // TODO: Future improvement - socket pool so these are reused.
-            // TODO: Also, allow S_socket to take a parsed address instead of redoing all the parsing above.
-            s = unique_ptr<SHTTPSManager::Socket>(new SHTTPSManager::Socket(host, nullptr));
-        } catch (const SException& exception) {
-            // Finish our escalation.
-            command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
-            SINFO("[HTTPESC] Socket failed to open.");
+        s = _getSocketForAddress(leaderAddress);
+        if (!s) {
             return false;
         }
 

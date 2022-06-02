@@ -48,6 +48,9 @@ class SQLiteClusterMessenger {
     // TODO: writeme
     bool _sendCommandOnSocket(unique_ptr<SHTTPSManager::Socket> socket, BedrockCommand& command);
 
+    // TODO: writeme
+    unique_ptr<SHTTPSManager::Socket> _getSocketForAddress(string address);
+
     const shared_ptr<const SQLiteNode> _node;
 
     // This is set to a timestamp when the server is shutting down so that we can abandon any commands that would
