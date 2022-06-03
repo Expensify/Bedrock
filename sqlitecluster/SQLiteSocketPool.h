@@ -18,15 +18,10 @@ class SQLiteSocketPool {
     // The timeout after which a socket is closed if not used.
     const chrono::steady_clock::duration timeout = 10s;
   private:
-
-    // Returns the number of sockets removed.
-    size_t _pruneOldSockets();
-
     void _timeoutThreadFunc();
-    atomic<bool> exit = false;
+    bool _exit = false;
     mutex _poolMutex;
     condition_variable _poolCV;
-    atomic<chrono::steady_clock::time_point> _nextInterrupt;
     list<pair<chrono::steady_clock::time_point, unique_ptr<STCPManager::Socket>>> _sockets;
     thread _timeoutThread;
 };

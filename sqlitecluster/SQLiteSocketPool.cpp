@@ -2,28 +2,51 @@
 
 SQLiteSocketPool::SQLiteSocketPool(const string& host)
   : host(host),
-    _nextInterrupt(chrono::steady_clock::now()),
     _timeoutThread(&SQLiteSocketPool::_timeoutThreadFunc, this) {
 }
 
 SQLiteSocketPool::~SQLiteSocketPool() {
-    exit = true;
+    {
+        unique_lock<mutex> lock(_poolMutex);
+        _exit = true;
+    }
+    _poolCV.notify_one();
     _timeoutThread.join();
 }
 
 void SQLiteSocketPool::_timeoutThreadFunc() {
-    while (!exit) {
-        _pruneOldSockets();
+    while (true) {
+        unique_lock<mutex> lock(_poolMutex);
 
-        // TODO: replace with the condition variable.
-        this_thread::sleep_for(1s);
+        // If `exit` is set, we are done.
+        if (_exit) {
+            return;
+        }
+
+        // Prune any sockets that expired already.
+        auto now = chrono::steady_clock::now();
+        auto last = _sockets.begin();
+        while (((last->first + timeout) < now) && last != _sockets.end()) {
+            last++;
+        }
+
+        // This calls the destructor for each item in the list, closing the sockets.
+        _sockets.erase(_sockets.begin(), last);
+
+        // If there are still sockets, the next wakeup is `timeout` after the first one.
+        if (_sockets.size()) {
+            _poolCV.wait_until(lock, _sockets.front().first + timeout);
+        } else {
+            // If there are no more sockets, we sleep until we're interrupted.
+            _poolCV.wait(lock);
+        }
     }
 }
 
 unique_ptr<STCPManager::Socket> SQLiteSocketPool::getSocket() {
     {
+        // If there's an existing socket, return it.
         lock_guard<mutex> lock(_poolMutex);
-        _pruneOldSockets();
         if (_sockets.size()) {
             pair<chrono::steady_clock::time_point, unique_ptr<STCPManager::Socket>> s = move(_sockets.front());
             _sockets.pop_front();
@@ -41,20 +64,11 @@ unique_ptr<STCPManager::Socket> SQLiteSocketPool::getSocket() {
 }
 
 void SQLiteSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s) {
-    lock_guard<mutex> lock(_poolMutex);
-    _pruneOldSockets();
-    _sockets.emplace_back(make_pair(chrono::steady_clock::now(), move(s)));
-}
-
-size_t SQLiteSocketPool::_pruneOldSockets() {
-    // Doesn't lock because private. Public functions should lock before calling.
-    size_t startSize = _sockets.size();
-    auto last = _sockets.begin();
-    while(last->first < (chrono::steady_clock::now() - timeout)) {
-        last++;
+    {
+        lock_guard<mutex> lock(_poolMutex);
+        _sockets.emplace_back(make_pair(chrono::steady_clock::now(), move(s)));
     }
 
-    // This calls the destructor for each item in the list, closing the sockets.
-    _sockets.erase(_sockets.begin(), last);
-    return _sockets.size() - startSize;
+    // Notify the waiting thread that we have something for it to do in 10s.
+    _poolCV.notify_one();
 }
