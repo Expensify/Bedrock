@@ -44,13 +44,4 @@ class SQLiteClusterMessenger {
     // block that.
     atomic<uint64_t> _shutDownBy = 0;
     atomic_flag _shutdownSet = ATOMIC_FLAG_INIT;
-
-    // Map of timestamps last used to socket int. Because these are sorted lowest first, the oldest sockets are at the
-    // front. Timestamps in us.
-    typedef list<pair<uint64_t, STCPManager::Socket>> LRUSocketList;
-
-    // Map of address strings to LRUSocketLists.
-    map<string, LRUSocketMap> socketPool;
-
-    mutex socketPoolMutex;
 };

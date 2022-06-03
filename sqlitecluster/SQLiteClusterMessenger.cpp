@@ -111,24 +111,6 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
         try {
             // TODO: Future improvement - socket pool so these are reused.
             // TODO: Also, allow S_socket to take a parsed address instead of redoing all the parsing above.
-            //
-
-            // First, see if there's a socket we can use in our pool.
-            {
-                lock_guard<mutex> lock(socketPoolMutex);
-                auto socketIt = socketPool.find(host);
-                if (socketIt != socket.end()) {
-                    auto socketList = socketIt.second;
-                    uint64_t now = STimeNow();
-                    while (socketList.size() && SocketList.front().first < now - 10'000'000) {
-                    }
-
-                }
-            }
-
-
-
-
             s = unique_ptr<SHTTPSManager::Socket>(new SHTTPSManager::Socket(host, nullptr));
         } catch (const SException& exception) {
             // Finish our escalation.
@@ -154,7 +136,6 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
                 usleep(500'000);
                 break;
             } else if (result != WaitForReadyResult::OK) {
-                s->shutdown();
                 return false;
             }
 
@@ -168,7 +149,6 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
                         break;
                     default:
                         SINFO("[HTTPESC] Got error (send): " << errno << ", fatal.");
-                        s->shutdown();
                         return false;
                 }
             } else {
@@ -199,7 +179,6 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     while (true) {
         if (waitForReady(fdspec, command.timeout()) != WaitForReadyResult::OK) {
             setErrorResponse(command);
-            s->shutdown();
             return false;
         }
 
@@ -214,13 +193,11 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
                 default:
                     SINFO("[HTTPESC] Got error (recv): " << errno << ", fatal.");
                     setErrorResponse(command);
-                    s->shutdown();
                     return false;
             }
         } else if (bytesRead == 0) {
             SINFO("[HTTPESC] disconnected.");
             setErrorResponse(command);
-            s->shutdown();
             return false;
         } else {
             // Save the response.
@@ -241,6 +218,5 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     // Finish our escalation timing.
     command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
 
-    s->shutdown();
     return true;
 }
