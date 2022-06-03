@@ -19,7 +19,9 @@ class SQLiteSocketPool {
     const chrono::steady_clock::duration timeout = 10s;
   private:
 
-    void _pruneOldSockets();
+    // Returns the number of sockets removed.
+    size_t _pruneOldSockets();
+
     void _timeoutThreadFunc();
     atomic<bool> exit = false;
     mutex _poolMutex;

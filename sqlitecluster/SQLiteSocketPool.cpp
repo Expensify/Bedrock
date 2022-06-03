@@ -12,6 +12,7 @@ SQLiteSocketPool::~SQLiteSocketPool() {
 
 void SQLiteSocketPool::_timeoutThreadFunc() {
     while (!exit) {
+        _pruneOldSockets();
         this_thread::sleep_for(1s);
     }
 }
@@ -42,8 +43,9 @@ void SQLiteSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s) {
     _sockets.emplace_back(make_pair(chrono::steady_clock::now(), move(s)));
 }
 
-void SQLiteSocketPool::_pruneOldSockets() {
+size_t SQLiteSocketPool::_pruneOldSockets() {
     // Doesn't lock because private. Public functions should lock before calling.
+    size_t startSize = _sockets.size();
     auto last = _sockets.begin();
     while(last->first < (chrono::steady_clock::now() - timeout)) {
         last++;
@@ -51,4 +53,5 @@ void SQLiteSocketPool::_pruneOldSockets() {
 
     // This calls the destructor for each item in the list, closing the sockets.
     _sockets.erase(_sockets.begin(), last);
+    return _sockets.size() - startSize;
 }
