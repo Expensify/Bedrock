@@ -2,6 +2,7 @@
 
 SQLiteSocketPool::SQLiteSocketPool(const string& host)
   : host(host),
+    _nextInterrupt(chrono::steady_clock::now()),
     _timeoutThread(&SQLiteSocketPool::_timeoutThreadFunc, this) {
 }
 
@@ -13,6 +14,8 @@ SQLiteSocketPool::~SQLiteSocketPool() {
 void SQLiteSocketPool::_timeoutThreadFunc() {
     while (!exit) {
         _pruneOldSockets();
+
+        // TODO: replace with the condition variable.
         this_thread::sleep_for(1s);
     }
 }
