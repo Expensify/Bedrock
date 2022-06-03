@@ -227,6 +227,8 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
         lock_guard<mutex> lock(_socketPoolMutex);
         if (_socketPool && _socketPool->host == host) {
             _socketPool->returnSocket(move(s));
+        } else {
+            SDEBUG("[SOCKET] Not returning socket to pool, pool changed or moved, socket: " << s->s);
         }
     }
 

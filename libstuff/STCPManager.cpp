@@ -236,6 +236,9 @@ STCPManager::Socket::Socket(Socket&& from)
 }
 
 STCPManager::Socket::~Socket() {
+    if (pool) {
+        SDEBUG("[SOCKET] destroying pool socket " << s); // OK
+    }
     if (s != -1) {
         ::close(s);
     }
