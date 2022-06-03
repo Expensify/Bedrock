@@ -1,11 +1,11 @@
-#include "SQLiteSocketPool.h"
+#include "SSocketPool.h"
 
-SQLiteSocketPool::SQLiteSocketPool(const string& host)
+SSocketPool::SSocketPool(const string& host)
   : host(host),
-    _timeoutThread(&SQLiteSocketPool::_timeoutThreadFunc, this) {
+    _timeoutThread(&SSocketPool::_timeoutThreadFunc, this) {
 }
 
-SQLiteSocketPool::~SQLiteSocketPool() {
+SSocketPool::~SSocketPool() {
     {
         unique_lock<mutex> lock(_poolMutex);
         _exit = true;
@@ -14,7 +14,7 @@ SQLiteSocketPool::~SQLiteSocketPool() {
     _timeoutThread.join();
 }
 
-void SQLiteSocketPool::_timeoutThreadFunc() {
+void SSocketPool::_timeoutThreadFunc() {
     while (true) {
         unique_lock<mutex> lock(_poolMutex);
 
@@ -43,7 +43,7 @@ void SQLiteSocketPool::_timeoutThreadFunc() {
     }
 }
 
-unique_ptr<STCPManager::Socket> SQLiteSocketPool::getSocket() {
+unique_ptr<STCPManager::Socket> SSocketPool::getSocket() {
     {
         // If there's an existing socket, return it.
         lock_guard<mutex> lock(_poolMutex);
@@ -63,7 +63,7 @@ unique_ptr<STCPManager::Socket> SQLiteSocketPool::getSocket() {
     }
 }
 
-void SQLiteSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s) {
+void SSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s) {
     {
         lock_guard<mutex> lock(_poolMutex);
         _sockets.emplace_back(make_pair(chrono::steady_clock::now(), move(s)));

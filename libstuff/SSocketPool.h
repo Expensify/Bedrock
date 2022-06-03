@@ -1,10 +1,10 @@
 #include <libstuff/STCPManager.h>
 #include <chrono>
 
-class SQLiteSocketPool {
+class SSocketPool {
   public:
-    SQLiteSocketPool(const string& host);
-    ~SQLiteSocketPool();
+    SSocketPool(const string& host);
+    ~SSocketPool();
 
     // Returns an existing or new socket.
     unique_ptr<STCPManager::Socket> getSocket();
