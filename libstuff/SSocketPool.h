@@ -1,3 +1,4 @@
+#pragma once
 #include <libstuff/STCPManager.h>
 #include <chrono>
 

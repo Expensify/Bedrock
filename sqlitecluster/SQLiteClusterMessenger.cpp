@@ -81,6 +81,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     size_t sleepsDueToFailures = 0;
 
     unique_ptr<SHTTPSManager::Socket> s;
+    string host, path;
     while (chrono::steady_clock::now() < (start + 5s) && !sent) {
         string leaderAddress = _node->leaderCommandAddress();
         if (leaderAddress.empty()) {
@@ -100,7 +101,6 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
 
         // SParseURI expects a typical http or https scheme.
         string url = "http://" + leaderAddress;
-        string host, path;
         if (!SParseURI(url, host, path) || !SHostIsValid(host)) {
             return false;
         }
@@ -108,11 +108,15 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
         // Start our escalation timing.
         command.escalationTimeUS = STimeNow();
 
-        try {
-            // TODO: Future improvement - socket pool so these are reused.
-            // TODO: Also, allow S_socket to take a parsed address instead of redoing all the parsing above.
-            s = unique_ptr<SHTTPSManager::Socket>(new SHTTPSManager::Socket(host, nullptr));
-        } catch (const SException& exception) {
+        // Get a socket from the pool.
+        {
+            lock_guard<mutex> lock(_socketPoolMutex);
+            if (!_socketPool || _socketPool->host != host) {
+                _socketPool = make_unique<SSocketPool>(host);
+            }
+            s = _socketPool->getSocket();
+        }
+        if (s == nullptr) {
             // Finish our escalation.
             command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
             SINFO("[HTTPESC] Socket failed to open.");
@@ -217,6 +221,14 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
 
     // Finish our escalation timing.
     command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
+
+    // Since everything went fine with this command, we can save its socket.
+    {
+        lock_guard<mutex> lock(_socketPoolMutex);
+        if (_socketPool && _socketPool->host == host) {
+            _socketPool->returnSocket(move(s));
+        }
+    }
 
     return true;
 }
