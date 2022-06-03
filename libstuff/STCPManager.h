@@ -39,7 +39,7 @@ struct STCPManager {
         bool send();
         bool send(const string& buffer);
         bool recv();
-        void shutdown(State toState = SHUTTINGDOWN);
+        void shutdown();
         uint64_t id;
         string logString;
 

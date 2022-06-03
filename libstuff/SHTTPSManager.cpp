@@ -96,7 +96,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         transaction.finished = now;
 
         // Shut down the socket, we're done with it.
-        transaction.s->shutdown(Socket::CLOSED);
+        transaction.s->shutdown();
 
         // This is supposed to check for a "200 OK" response, which it does very poorly. It also checks for message
         // content. Why this is the what constitutes a valid response is lost to time. Any well-formed response should

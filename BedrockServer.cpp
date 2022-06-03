@@ -2260,7 +2260,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
         while (!(pollResult = poll(&pollStruct, 1, 1'000))) {
             if (_shutdownState != RUNNING) {
                 SINFO("Socket thread exiting because no data and shutting down.");
-                socket.shutdown(Socket::CLOSED);
+                socket.shutdown();
                 break;
             }
         }
@@ -2270,12 +2270,12 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
             if (pollResult < 0) {
                 // This is an exceptional case, we'll just kill the socket if this happens and let the client reconnect.
                 SINFO("Poll failed: " << strerror(errno));
-                socket.shutdown(Socket::CLOSED);
+                socket.shutdown();
             } else {
                 // We've either got new data, or an error on the socket. Let's determine which by trying to read.
                 if (!socket.recv()) {
                     // If reading failed, then the socket was closed.
-                    socket.shutdown(Socket::CLOSED);
+                    socket.shutdown();
                 }
             }
         }
@@ -2316,7 +2316,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                     // If we couldn't build a command, this was some sort of unusual exception case (like trying to
                     // schedule a command in the future while shutting down). We can just give up.
                     SINFO("No command from request, closing socket.");
-                    socket.shutdown(Socket::CLOSED);
+                    socket.shutdown();
                 } else if (!_handleIfStatusOrControlCommand(command)) {
                     // If it's a status or control command, we handle it specially above. If not, we'll queue it for
                     // later processing below.

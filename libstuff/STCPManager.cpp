@@ -80,7 +80,7 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
 
         // Mark any sockets that the other end disconnected as closed.
         if (SFDAnySet(fdm, socket.s, POLLHUP)) {
-            socket.shutdown(Socket::CLOSED);
+            socket.shutdown();
         }
 
         // Tagged as writable; check SO_ERROR to see if the connect failed
@@ -158,7 +158,7 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
                     SWARN("Dirty shutdown of SSL socket '" << socket.addr << "' (" << socket.sendBufferCopy().size()
                                                            << " bytes remain)");
                 }
-                socket.shutdown(Socket::CLOSED);
+                socket.shutdown();
             }
         } else {
             // Not SSL -- only send if we have something to send
@@ -179,7 +179,7 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
                 if (!socket.recv()) {
                     // Done shutting down
                     SDEBUG("Graceful shutdown of socket '" << socket.addr << "'");
-                    socket.shutdown(Socket::CLOSED);
+                    socket.shutdown();
                 }
             }
         }
@@ -192,10 +192,11 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
     }
 }
 
-void STCPManager::Socket::shutdown(Socket::State toState) {
+void STCPManager::Socket::shutdown() {
     SDEBUG("Shutting down socket '" << addr << "'");
     ::shutdown(s, SHUT_RDWR);
-    state.store(toState);
+    ::close(s);
+    state.store(CLOSED);
 }
 
 STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)
@@ -237,7 +238,7 @@ STCPManager::Socket::Socket(Socket&& from)
 
 STCPManager::Socket::~Socket() {
     if (s != -1) {
-        ::close(s);
+        shutdown();
     }
     if (ssl) {
         SSSLClose(ssl);
