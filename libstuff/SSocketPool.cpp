@@ -32,14 +32,6 @@ void SSocketPool::_timeoutThreadFunc() {
             last++;
         }
 
-        string msg = "About to remove sockets 10s before now (" + to_string(now.time_since_epoch().count()) + "): ";
-
-        auto it = _sockets.begin();
-        while (it != last) {
-            msg += to_string(it->first.time_since_epoch().count()) + ", ";
-            it++;
-        }
-
         // This calls the destructor for each item in the list, closing the sockets.
         _sockets.erase(_sockets.begin(), last);
 
