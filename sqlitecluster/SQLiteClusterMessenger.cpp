@@ -222,23 +222,25 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     // Finish our escalation timing.
     command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
 
-    // See if either the client or the leader specified `Connection: close`.
-    // Technically, we shouldn't need to care if the client wants to close the connection, we could still re-use the connection from this server to leader, except that we've already sent
-    // it a command with `Connection: close` on this socket so we should expect that it will honor that and close this socket.
-    bool keepOpen = true;
-    for (const auto& message : {command.request.nameValueMap, command.response.nameValueMap}) {
-        auto connectionHeader = message.find("Connection");
-        if (connectionHeader != message.end() && connectionHeader->second == "close") {
-            keepOpen = false;
-            break;
-        }
-    }
-
     // Since everything went fine with this command, we can save its socket, unless it's being closed.
-    if (keepOpen) {
+    if (!commandWillCloseSocket(command)) {
         lock_guard<mutex> lock(_socketPoolMutex);
         if (_socketPool && _socketPool->host == host) {
             _socketPool->returnSocket(move(s));
+        }
+    }
+
+    return true;
+}
+
+bool SQLiteClusterMessenger::commandWillCloseSocket(BedrockCommand& command) {
+    // See if either the client or the leader specified `Connection: close`.
+    // Technically, we shouldn't need to care if the client wants to close the connection, we could still re-use the connection from this server to leader, except that we've already sent
+    // it a command with `Connection: close` on this socket so we should expect that it will honor that and close this socket.
+    for (const auto& message : {command.request.nameValueMap, command.response.nameValueMap}) {
+        auto connectionHeader = message.find("Connection");
+        if (connectionHeader != message.end() && connectionHeader->second == "close") {
+            return false;
         }
     }
 
