@@ -1586,7 +1586,8 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     command->response["nodeName"] = args["-nodeName"];
 
     // If we're shutting down, tell the caller to close the connection.
-    if (_shutdownState.load() != RUNNING) {
+    // Also, if the caller wanted us to close the connection, we'll parrot that back.
+    if (_shutdownState.load() != RUNNING || command->request["Connection"] == "close") {
         command->response["Connection"] = "close";
     }
 

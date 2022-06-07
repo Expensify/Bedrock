@@ -37,7 +37,10 @@ class SQLiteClusterMessenger {
     WaitForReadyResult waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp);
 
     // This sets a command as a 500 and marks it as complete.
-    void setErrorResponse(BedrockCommand& command);
+    static void setErrorResponse(BedrockCommand& command);
+
+    // Checks if a command will cause the server to close this socket, indicating we can't reuse it.
+    static bool commandWillCloseSocket(BedrockCommand& command);
 
     const shared_ptr<const SQLiteNode> _node;
 
