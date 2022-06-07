@@ -240,9 +240,9 @@ bool SQLiteClusterMessenger::commandWillCloseSocket(BedrockCommand& command) {
     for (const auto& message : {command.request.nameValueMap, command.response.nameValueMap}) {
         auto connectionHeader = message.find("Connection");
         if (connectionHeader != message.end() && connectionHeader->second == "close") {
-            return false;
+            return true;
         }
     }
 
-    return true;
+    return false;
 }
