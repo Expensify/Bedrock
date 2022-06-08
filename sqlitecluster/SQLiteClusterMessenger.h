@@ -1,5 +1,6 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SHTTPSManager.h>
+#include <libstuff/SSocketPool.h>
 
 class SQLiteNode;
 class BedrockCommand;
@@ -43,7 +44,10 @@ class SQLiteClusterMessenger {
     WaitForReadyResult waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp);
 
     // This sets a command as a 500 and marks it as complete.
-    void setErrorResponse(BedrockCommand& command);
+    static void setErrorResponse(BedrockCommand& command);
+
+    // Checks if a command will cause the server to close this socket, indicating we can't reuse it.
+    static bool commandWillCloseSocket(BedrockCommand& command);
 
     // TODO: writeme
     bool _sendCommandOnSocket(unique_ptr<SHTTPSManager::Socket> socket, BedrockCommand& command);
@@ -57,4 +61,8 @@ class SQLiteClusterMessenger {
     // block that.
     atomic<uint64_t> _shutDownBy = 0;
     atomic_flag _shutdownSet = ATOMIC_FLAG_INIT;
+
+    // For managing many connections to leader, we have a socket pool.
+    mutex _socketPoolMutex;
+    unique_ptr<SSocketPool> _socketPool;
 };

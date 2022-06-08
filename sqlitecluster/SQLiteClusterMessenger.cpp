@@ -251,11 +251,17 @@ unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(s
         return nullptr;
     }
 
-    try {
-        // TODO: Future improvement - socket pool so these are reused.
-        // TODO: Also, allow S_socket to take a parsed address instead of redoing all the parsing above.
-        s = unique_ptr<SHTTPSManager::Socket>(new SHTTPSManager::Socket(host, nullptr));
-    } catch (const SException& exception) {
+    // TODO: make this not reset the pool every time we send something to a different host
+    // Get a socket from the pool.
+    {
+        lock_guard<mutex> lock(_socketPoolMutex);
+        if (!_socketPool || _socketPool->host != host) {
+            _socketPool = make_unique<SSocketPool>(host);
+        }
+        s = _socketPool->getSocket();
+    }
+
+    if (s == nullptr) {
         // Finish our escalation.
         SINFO("[HTTPESC] Socket failed to open.");
         return nullptr;
@@ -268,10 +274,11 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     auto start = chrono::steady_clock::now();
     bool sent = false;
     size_t sleepsDueToFailures = 0;
+    string leaderAddress;
 
     unique_ptr<SHTTPSManager::Socket> s;
     while (chrono::steady_clock::now() < (start + 5s) && !sent) {
-        string leaderAddress = _node->leaderCommandAddress();
+        leaderAddress = _node->leaderCommandAddress();
         if (leaderAddress.empty()) {
             // If there's no leader, it's possible we're supposed to be the leader. In this case, we can exit early.
             auto myState = _node->getState();
@@ -315,5 +322,27 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     // once after _sendCommandOnSocket regardless of the outcome?
     command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
 
+    // Since everything went fine with this command, we can save its socket, unless it's being closed.
+    if (!commandWillCloseSocket(command)) {
+        lock_guard<mutex> lock(_socketPoolMutex);
+        if (_socketPool && _socketPool->host == leaderAddress) {
+            _socketPool->returnSocket(move(s));
+        }
+    }
+
     return true;
+}
+
+bool SQLiteClusterMessenger::commandWillCloseSocket(BedrockCommand& command) {
+    // See if either the client or the leader specified `Connection: close`.
+    // Technically, we shouldn't need to care if the client wants to close the connection, we could still re-use the connection from this server to leader, except that we've already sent
+    // it a command with `Connection: close` on this socket so we should expect that it will honor that and close this socket.
+    for (const auto& message : {command.request.nameValueMap, command.response.nameValueMap}) {
+        auto connectionHeader = message.find("Connection");
+        if (connectionHeader != message.end() && connectionHeader->second == "close") {
+            return true;
+        }
+    }
+
+    return false;
 }

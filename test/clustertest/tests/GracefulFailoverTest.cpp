@@ -179,7 +179,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
             ASSERT_TRUE(p.first == "202" || p.first == "756");
             cout << "[GracefulFailoverTest] method: " << p.first << ", count: " << p.second << endl;
         }
-        
+
         // Now that we've verified that, we can start spamming again, and verify failover works in a crash situation.
         startClientThreads(*threads, done, *counts, commandID, mu, *allresults);
 
