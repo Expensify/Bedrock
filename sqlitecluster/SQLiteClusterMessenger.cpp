@@ -82,47 +82,25 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
     }
 }
 
-void SQLiteClusterMessenger::runOnAll(BedrockCommand& command) {
-    //SINFO("Sending broadcast: " << message.serialize());
+vector<SData> SQLiteClusterMessenger::runOnAll(const SData& cmd) {
+    list<thread> threads;
+    auto peerInfo = _node->getPeerInfo();
+    vector<SData> results(peerInfo.size());
+    atomic<size_t> index = 0;
 
-    //auto start = chrono::steady_clock::now();
-    //bool sent = false;
+    for (auto data : peerInfo) {
+        threads.emplace_back([this, &cmd, &data, &results, &index](){
+            BedrockCommand command(SQLiteCommand(SData(cmd)), nullptr);
+            runOnPeer(command, data["name"]);
+            size_t i = index.fetch_add(1);
+            results[i] = command.response;
+        });
+    }
+    for (auto& t : threads) {
+        t.join();
+    }
 
-    //unique_ptr<SHTTPSManager::Socket> s;
-    //while (chrono::steady_clock::now() < (start + 5s) && !sent) {
-        //for (auto data : _node->getPeerInfo()) {
-            // do something with each peer data
-            /*
-             *
-    STable result({
-        {"name", name},
-        {"host", host},
-        {"state", (SQLiteNode::stateName(state) + (connected() ? "" : " (DISCONNECTED)"))},
-        {"latency", to_string(latency)},
-        {"nextReconnect", to_string(nextReconnect)},
-        {"id", to_string(id)},
-        {"loggedIn", (loggedIn ? "true" : "false")},
-        {"priority", to_string(priority)},
-        {"version", version},
-        {"hash", hash},
-        {"commitCount", to_string(commitCount)},
-        {"standupResponse", responseName(standupResponse)},
-        {"transactionResponse", responseName(transactionResponse)},
-        {"subscribed", (subscribed ? "true" : "false")},
-    });
-             *
-             */
-        //}
-    //}
-
-
-
-    // use logic from SQLiteNode::_sendToAllPeers
-    // add peer headers to the message
-    // iterate over peer list
-    // send over private command port, not node port
-
-    //return false;
+    return results;
 }
 
 bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, string peerName) {
@@ -130,6 +108,7 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, string peerName)
 
     SQLitePeer* peer = _node->getPeerByName(peerName);
     if (!peer) {
+        setErrorResponse(command);
         return false;
     }
 
@@ -137,10 +116,22 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, string peerName)
     s = _getSocketForAddress(peerCommandAddress);
 
     if (!s) {
+        setErrorResponse(command);
         return false;
     }
 
-    return _sendCommandOnSocket(move(s), command);
+    // _sendCommandOnSocket doesn't always call setErrorResponse - if the
+    // command is intended for leader, we don't always want to set
+    // command.complete = true because that prevents it from being retried. If
+    // the command failed because leader was not available, but it will be
+    // again soon, let the command be retried. In this case, we will let the
+    // caller to runOnPeer determine how to handle the failed command.
+    bool result = _sendCommandOnSocket(move(s), command);
+    if (!result) {
+        setErrorResponse(command);
+    }
+
+    return result;
 }
 
 // TODO: writeme
@@ -329,6 +320,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     // once after _sendCommandOnSocket regardless of the outcome?
     command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
 
+    // TODO: maybe move this to a function?
     // Since everything went fine with this command, we can save its socket, unless it's being closed.
     if (!commandWillCloseSocket(command)) {
         lock_guard<mutex> lock(_socketPoolMutex);
