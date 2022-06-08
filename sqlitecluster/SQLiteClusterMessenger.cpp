@@ -37,6 +37,13 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
         type = labels.at(fdspec.events);
     } catch (const out_of_range& e) {}
 
+    // If we're trying to send, we need to also check that the socket is not disconnected by the other end.
+    // We don't check this when receiving because it's possible the other end of the socket is closed but we still have
+    // data to read from it, so we want to read the data first and notice the close later, which seems to work fine.
+    if (fdspec.events & POLLOUT) {
+        fdspec.events |= POLLRDHUP;
+    }
+
     while (true) {
         int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
         if (!result) {
@@ -50,7 +57,7 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
                 return WaitForReadyResult::TIMEOUT;
             }
         } else if (result == 1) {
-            if (fdspec.revents & POLLERR || fdspec.revents & POLLHUP || fdspec.revents & POLLNVAL) {
+            if (fdspec.revents & POLLERR || fdspec.revents & POLLHUP || fdspec.revents & POLLRDHUP || fdspec.revents & POLLNVAL) {
                 SINFO("[HTTPESC] Socket disconnected while waiting to be ready (" << type << ").");
                 return fdspec.events == POLLIN ? WaitForReadyResult::DISCONNECTED_IN : WaitForReadyResult::DISCONNECTED_OUT;
             } else if ((fdspec.events & POLLIN && fdspec.revents & POLLIN) || (fdspec.events & POLLOUT && fdspec.revents & POLLOUT)) {
