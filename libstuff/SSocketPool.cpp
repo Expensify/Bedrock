@@ -45,9 +45,6 @@ void SSocketPool::_timeoutThreadFunc() {
     }
 }
 
-// TODO: Due to a bug, this was returning nullptr that was previously returned
-// to the pool. That bug was fixed, but now I'm wondering if we should
-// explicitly check for that here or in returnSocket 🤔
 unique_ptr<STCPManager::Socket> SSocketPool::getSocket() {
     {
         // If there's an existing socket, return it.
@@ -69,6 +66,14 @@ unique_ptr<STCPManager::Socket> SSocketPool::getSocket() {
 }
 
 void SSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s) {
+    // Due to a bug, getSocket() this was returning a nullptr that was previously returned
+    // to the pool. That bug was fixed, but just in case, do not allow nullptr to
+    // be returned to the pool as though it were a valid socket.
+    if (s == nullptr) {
+        SWARN("[SOCKET] Trying to return a null socket to the pool, this should not happen.");
+        return;
+    }
+
     bool needWake = false;
     {
         lock_guard<mutex> lock(_poolMutex);
