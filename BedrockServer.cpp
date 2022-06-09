@@ -27,19 +27,12 @@ void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
 void BedrockServer::acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew) {
     // If the sync node tells us that a command causes a crash, we immediately save that.
     if (SIEquals(command->request.methodLine, "CRASH_COMMAND")) {
-        SData request;
-        request.deserialize(command->request.content);
-
-        // Take a unique lock so nobody else can read from this table while we update it.
-        unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
-
-        // Add the blacklisted command to the map.
-        _crashCommands[request.methodLine].insert(request.nameValueMap);
-        size_t totalCount = 0;
-        for (const auto& s : _crashCommands) {
-            totalCount += s.second.size();
-        }
-        SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
+        // Handling in acceptCommand() is for commands that come in on the node
+        // port. We are transitioning crash commands to be sent on the command
+        // port, so handle it there. Eventually, when no nodes in the cluster
+        // send crash commands on the node port, this block can be deleted.
+         auto cmd = make_unique<BedrockCommand>(move(*command), nullptr);
+        _control(cmd);
     } else {
         unique_ptr<BedrockCommand> newCommand(nullptr);
         if (SIEquals(command->request.methodLine, "BROADCAST_COMMAND")) {
@@ -561,7 +554,7 @@ void BedrockServer::sync()
                 // like a segfault. Note that it's possible we're in the middle of sending a message to peers when we call
                 // this, which would probably make this message malformed. This is the best we can do.
                 SSetSignalHandlerDieFunc([&](){
-                    _syncNode->broadcast(_generateCrashMessage(command));
+                    _clusterMessenger->runOnAll(_generateCrashMessage(command));
                 });
 
                 // And now we'll decide how to handle it.
@@ -765,7 +758,7 @@ void BedrockServer::worker(int threadId)
             // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
             // signals, like SIGSEGV, this function will be called.
             SSetSignalHandlerDieFunc([&](){
-                _syncNode->broadcast(_generateCrashMessage(command));
+                _clusterMessenger->runOnAll(_generateCrashMessage(command));
             });
 
             // If we dequeue a status or control command, handle it immediately.
@@ -1849,7 +1842,8 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "Attach")                 ||
         SIEquals(command->request.methodLine, "SetConflictParams")      ||
         SIEquals(command->request.methodLine, "EnableSQLTracing")       ||
-        SIEquals(command->request.methodLine, "EnableEscalateOverHTTP")
+        SIEquals(command->request.methodLine, "EnableEscalateOverHTTP") ||
+        SIEquals(command->request.methodLine, "CRASH_COMMAND")
         ) {
         return true;
     }
@@ -1858,7 +1852,11 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
 
 bool BedrockServer::_isNonSecureControlCommand(const unique_ptr<BedrockCommand>& command) {
     // A list of non-secure control commands that can be run from another host
-    return SIEquals(command->request.methodLine, "SuppressCommandPort") || SIEquals(command->request.methodLine, "ClearCommandPort");
+    // TODO: Have some other way to specify privileged commands that can be
+    // sent from other nodes on the private command port.
+    return SIEquals(command->request.methodLine, "SuppressCommandPort") ||
+        SIEquals(command->request.methodLine, "ClearCommandPort") ||
+        SIEquals(command->request.methodLine, "CRASH_COMMAND");
 }
 
 void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
@@ -1913,6 +1911,20 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         } else {
             command->response.methodLine = "400 Must Specify Enable";
         }
+    } else if (SIEquals(command->request.methodLine, "CRASH_COMMAND")) {
+        SData request;
+        request.deserialize(command->request.content);
+
+        // Take a unique lock so nobody else can read from this table while we update it.
+        unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
+
+        // Add the blacklisted command to the map.
+        _crashCommands[request.methodLine].insert(request.nameValueMap);
+        size_t totalCount = 0;
+        for (const auto& s : _crashCommands) {
+            totalCount += s.second.size();
+        }
+        SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
     }
 }
 
@@ -2048,10 +2060,10 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
             for (const auto& fields : table) {
                 cmd->crashIdentifyingValues.insert(fields.first);
             }
-            auto _syncNodeCopy = atomic_load(&_syncNode);
-            if (_syncNodeCopy) {
-                // TODO: change this to runOnPeer
-                _syncNodeCopy->broadcast(_generateCrashMessage(cmd), peer);
+            auto _clusterMessengerCopy = _clusterMessenger;
+            if (_clusterMessengerCopy) {
+                BedrockCommand cppTypesAreHard(_generateCrashMessage(cmd), nullptr);
+                _clusterMessengerCopy->runOnPeer(cppTypesAreHard, peer->name);
             }
         }
     }
