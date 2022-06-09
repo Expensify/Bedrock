@@ -85,22 +85,22 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
 
 vector<SData> SQLiteClusterMessenger::runOnAll(const SData& cmd) {
     list<thread> threads;
-    auto peerInfo = _node->getPeerInfo();
+    list<STable> peerInfo = _node->getPeerInfo();
     vector<SData> results(peerInfo.size());
     atomic<size_t> index = 0;
 
     for (auto data : peerInfo) {
-        // TODO: bring back threads once we have a socket pool per host
-        //threads.emplace_back([this, &cmd, &data, &results, &index](){
+        string name = data["name"];
+        threads.emplace_back([this, &cmd, name, &results, &index](){
             BedrockCommand command(SQLiteCommand(SData(cmd)), nullptr);
-            runOnPeer(command, data["name"]);
+            runOnPeer(command, name);
             size_t i = index.fetch_add(1);
             results[i] = command.response;
-        //});
+        });
     }
-    //for (auto& t : threads) {
-        //t.join();
-    //}
+    for (auto& t : threads) {
+        t.join();
+    }
 
     return results;
 }
