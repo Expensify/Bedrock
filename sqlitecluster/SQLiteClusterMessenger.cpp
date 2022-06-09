@@ -136,7 +136,6 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, string peerName)
     return result;
 }
 
-// TODO: writeme
 bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command) {
     size_t sleepsDueToFailures = 0;
     auto start = chrono::steady_clock::now();
@@ -151,7 +150,6 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
     pollfd fdspec = {socket.s, POLLOUT, 0};
     while (true) {
         WaitForReadyResult result = waitForReady(fdspec, command.timeout());
-        // TODO: Does this apply to general sending
         if (result == WaitForReadyResult::DISCONNECTED_OUT) {
             // This is the case we're likely to get if the leader's port is closed.
             // We break this loop and let the top loop (with the timer) start over.
