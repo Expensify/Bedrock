@@ -126,7 +126,7 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, string peerName)
     // the command failed because leader was not available, but it will be
     // again soon, let the command be retried. In this case, we will let the
     // caller to runOnPeer determine how to handle the failed command.
-    bool result = _sendCommandOnSocket(move(s), command);
+    bool result = _sendCommandOnSocket(*s, command);
     if (!result) {
         setErrorResponse(command);
     }
@@ -135,7 +135,7 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, string peerName)
 }
 
 // TODO: writeme
-bool SQLiteClusterMessenger::_sendCommandOnSocket(unique_ptr<SHTTPSManager::Socket> socket, BedrockCommand& command) {
+bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command) {
     size_t sleepsDueToFailures = 0;
     auto start = chrono::steady_clock::now();
     bool sent = false;
@@ -146,7 +146,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(unique_ptr<SHTTPSManager::Sock
     SFastBuffer buf(request.serialize());
 
     // We only have one FD to poll.
-    pollfd fdspec = {socket->s, POLLOUT, 0};
+    pollfd fdspec = {socket.s, POLLOUT, 0};
     while (true) {
         WaitForReadyResult result = waitForReady(fdspec, command.timeout());
         // TODO: Does this apply to general sending
@@ -161,7 +161,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(unique_ptr<SHTTPSManager::Sock
             return false;
         }
 
-        ssize_t bytesSent = send(socket->s, buf.c_str(), buf.size(), 0);
+        ssize_t bytesSent = send(socket.s, buf.c_str(), buf.size(), 0);
         if (bytesSent == -1) {
             switch (errno) {
                 case EAGAIN:
@@ -195,7 +195,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(unique_ptr<SHTTPSManager::Sock
     // If we fail before here, we can try again. If we fail after here, we should return an error.
 
     // Ok, now we need to receive the response.
-    fdspec = {socket->s, POLLIN, 0};
+    fdspec = {socket.s, POLLIN, 0};
     string responseStr;
     char response[4096] = {0};
     while (true) {
@@ -204,7 +204,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(unique_ptr<SHTTPSManager::Sock
             return false;
         }
 
-        ssize_t bytesRead = recv(socket->s, response, 4096, 0);
+        ssize_t bytesRead = recv(socket.s, response, 4096, 0);
         if (bytesRead == -1) {
             switch (errno) {
                 case EAGAIN:
@@ -301,7 +301,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
             return false;
         }
 
-        sent = _sendCommandOnSocket(move(s), command);
+        sent = _sendCommandOnSocket(*s, command);
         if (!sent) {
             command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
             return false;

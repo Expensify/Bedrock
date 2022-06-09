@@ -50,7 +50,7 @@ class SQLiteClusterMessenger {
     static bool commandWillCloseSocket(BedrockCommand& command);
 
     // TODO: writeme
-    bool _sendCommandOnSocket(unique_ptr<SHTTPSManager::Socket> socket, BedrockCommand& command);
+    bool _sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command);
 
     // TODO: writeme
     unique_ptr<SHTTPSManager::Socket> _getSocketForAddress(string address);

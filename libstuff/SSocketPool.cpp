@@ -45,6 +45,9 @@ void SSocketPool::_timeoutThreadFunc() {
     }
 }
 
+// TODO: Due to a bug, this was returning nullptr that was previously returned
+// to the pool. That bug was fixed, but now I'm wondering if we should
+// explicitly check for that here or in returnSocket 🤔
 unique_ptr<STCPManager::Socket> SSocketPool::getSocket() {
     {
         // If there's an existing socket, return it.
