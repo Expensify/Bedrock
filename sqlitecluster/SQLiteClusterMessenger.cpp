@@ -9,6 +9,7 @@
 SQLiteClusterMessenger::SQLiteClusterMessenger(const shared_ptr<const SQLiteNode> node)
  : _node(node)
 {
+    _socketPool = make_unique<SMultiSocketPool>();
 }
 
 void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command) {
@@ -252,13 +253,7 @@ unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(s
 
     // TODO: make this not reset the pool every time we send something to a different host
     // Get a socket from the pool.
-    {
-        lock_guard<mutex> lock(_socketPoolMutex);
-        if (!_socketPool || _socketPool->host != host) {
-            _socketPool = make_unique<SSocketPool>(host);
-        }
-        s = _socketPool->getSocket();
-    }
+    s = _socketPool->getSocket(host);
 
     if (s == nullptr) {
         // Finish our escalation.
@@ -324,10 +319,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     // TODO: maybe move this to a function?
     // Since everything went fine with this command, we can save its socket, unless it's being closed.
     if (!commandWillCloseSocket(command)) {
-        lock_guard<mutex> lock(_socketPoolMutex);
-        if (_socketPool && _socketPool->host == leaderAddress) {
-            _socketPool->returnSocket(move(s));
-        }
+        _socketPool->returnSocket(move(s), leaderAddress);
     }
 
     return true;
