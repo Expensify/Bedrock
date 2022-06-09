@@ -46,6 +46,7 @@ struct STCPManager {
         bool sendBufferEmpty();
         string sendBufferCopy();
         void setSendBuffer(const string& buffer);
+        bool pool = false;
 
       private:
         static atomic<uint64_t> socketCount;
