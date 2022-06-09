@@ -23,7 +23,7 @@ PROJECT = $(shell git rev-parse --show-toplevel)
 INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
 
 # Set our standard C++ compiler flags
-CXXFLAGS = -g -std=c++17 -fpic -DSQLITE_ENABLE_NORMALIZE $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security  -Wno-error=deprecated-declarations -Wno-deprecated $(INCLUDE)
+CXXFLAGS = -g -std=c++17 -fpic -DSQLITE_ENABLE_NORMALIZE $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security  -Wno-error=deprecated-declarations $(INCLUDE)
 
 # All our intermediate, dependency, object, etc files get hidden in here.
 INTERMEDIATEDIR = .build

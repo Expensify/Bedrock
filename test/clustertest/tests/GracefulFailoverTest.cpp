@@ -180,9 +180,6 @@ struct GracefulFailoverTest : tpunit::TestFixture {
             cout << "[GracefulFailoverTest] method: " << p.first << ", count: " << p.second << endl;
         }
 
-        // Allow enough time for sockets to expire.
-        sleep(12);
-
         // Now that we've verified that, we can start spamming again, and verify failover works in a crash situation.
         startClientThreads(*threads, done, *counts, commandID, mu, *allresults);
 
