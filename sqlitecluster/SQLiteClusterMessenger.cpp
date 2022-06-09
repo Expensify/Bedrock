@@ -251,8 +251,6 @@ unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(s
         return nullptr;
     }
 
-    // TODO: make this not reset the pool every time we send something to a different host
-    // Get a socket from the pool.
     s = _socketPool->getSocket(host);
 
     if (s == nullptr) {
@@ -312,11 +310,8 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     command.escalated = true;
 
     // Finish our escalation timing.
-    // FIXME: Do we need this both here and in `if (!sent)` or can we set it
-    // once after _sendCommandOnSocket regardless of the outcome?
     command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
 
-    // TODO: maybe move this to a function?
     // Since everything went fine with this command, we can save its socket, unless it's being closed.
     if (!commandWillCloseSocket(command)) {
         _socketPool->returnSocket(move(s), leaderAddress);

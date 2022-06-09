@@ -27,10 +27,18 @@ class SQLiteClusterMessenger {
     // no connection to leader could be made).
     bool runOnLeader(BedrockCommand& command);
 
-    // TODO: add informative comment
+    // Attempts to run command on every peer. This is done in threads, so the
+    // order in which the peers run the command is not deterministic.
     vector<SData> runOnAll(const SData& command);
 
-    // TODO: add informative comment
+    // Attempts to make a TCP connection to a specified peer, and run the given
+    // command there, setting the appropriate response from the peer in the
+    // command, and marking it as complete if possible.  returns
+    // command->complete at the end of the function, this is true if the
+    // command was successfully completed, or if a fatal error occurred. Unlike
+    // runOnLeader, if the command fails for any reason, command.complete will
+    // be set to true and not retried. It is up to the caller to determine how
+    // to handle the failure.
     bool runOnPeer(BedrockCommand& command, string peerName);
 
     // Set a timestamp by which we should give up on any pending commands. Once set, this is permanent. You will need a
@@ -49,10 +57,10 @@ class SQLiteClusterMessenger {
     // Checks if a command will cause the server to close this socket, indicating we can't reuse it.
     static bool commandWillCloseSocket(BedrockCommand& command);
 
-    // TODO: writeme
+    // Establishes a connection to the host associated with the socket and actually sends the message.
     bool _sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command);
 
-    // TODO: writeme
+    // Parses the address to confirm it is valid, then requests a socket from the socket pool.
     unique_ptr<SHTTPSManager::Socket> _getSocketForAddress(string address);
 
     const shared_ptr<const SQLiteNode> _node;
