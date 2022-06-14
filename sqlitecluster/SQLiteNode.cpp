@@ -1961,20 +1961,6 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     }
 }
 
-void SQLiteNode::broadcast(const SData& message, SQLitePeer* peer) {
-    // This public method *does not lock the node* because it is explicitly thread-safe otherwise. `peer` itself is
-    // const and is guaranteed not to change. `_sendToPeer` and `_sendToPeers` are internally thread-safe and
-    // effectively const (though they write to peer send buffers that are not directly accesible).
-    if (peer) {
-        SINFO("Sending broadcast: " << message.serialize() << " to peer: " << peer->name);
-        _sendToPeer(peer, message);
-    } else {
-        // TODO: do this in runOnAll
-        SINFO("Sending broadcast: " << message.serialize());
-        _sendToAllPeers(message, false);
-    }
-}
-
 void SQLiteNode::_changeState(SQLiteNode::State newState) {
     SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
     _localCommitNotifier.notifyThrough(_db.getCommitCount());

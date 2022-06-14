@@ -147,10 +147,6 @@ class SQLiteNode : public STCPManager {
     // Call this if you want to shut down the node.
     void beginShutdown(uint64_t usToWait);
 
-    // This will broadcast a message to all peers, or a specific peer.
-    [[deprecated("Use HTTP escalation")]]
-    void broadcast(const SData& message, SQLitePeer* peer = nullptr);
-
     // If we have a command that can't be handled on a follower, we can escalate it to the leader node. The SQLiteNode
     // takes ownership of the command until it receives a response from the follower. When the command completes, it will
     // be re-queued in the SQLiteServer (_server), but its `complete` field will be set to true.
