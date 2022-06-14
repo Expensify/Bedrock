@@ -1,6 +1,6 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SHTTPSManager.h>
-#include <libstuff/SMultiSocketPool.h>
+#include <libstuff/SMultiHostSocketPool.h>
 
 class SQLiteNode;
 class BedrockCommand;
@@ -71,5 +71,5 @@ class SQLiteClusterMessenger {
     atomic_flag _shutdownSet = ATOMIC_FLAG_INIT;
 
     // For managing many connections to leader, we have a socket pool.
-    SMultiSocketPool _socketPool;
+    SMultiHostSocketPool _socketPool;
 };

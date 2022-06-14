@@ -2,10 +2,10 @@
 #include <libstuff/STCPManager.h>
 #include <libstuff/SSocketPool.h>
 
-class SMultiSocketPool {
+class SMultiHostSocketPool {
   public:
-    SMultiSocketPool();
-    ~SMultiSocketPool();
+    SMultiHostSocketPool();
+    ~SMultiHostSocketPool();
 
     // Returns an existing or new socket.
     unique_ptr<STCPManager::Socket> getSocket(const string& host);
