@@ -66,9 +66,6 @@ unique_ptr<STCPManager::Socket> SSocketPool::getSocket() {
 }
 
 void SSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s) {
-    // Due to a bug, getSocket() this was returning a nullptr that was previously returned
-    // to the pool. That bug was fixed, but just in case, do not allow nullptr to
-    // be returned to the pool as though it were a valid socket.
     if (s == nullptr) {
         SWARN("[SOCKET] Trying to return a null socket to the pool, this should not happen.");
         return;

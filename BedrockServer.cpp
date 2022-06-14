@@ -2041,11 +2041,12 @@ SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& com
 void BedrockServer::broadcastCommand(const SData& command) {
     auto _clusterMessengerCopy = _clusterMessenger;
     if (!_clusterMessengerCopy) {
-        SINFO("Failed to broadcast command " << command.methodLine << " to all nodes.");
+        SINFO("Failed to broadcast command " << command.methodLine << " to all nodes, cluster messenger does not exist.");
+        return;
     }
 
     _clusterMessengerCopy->runOnAll(command);
-    SINFO("Broadcasted command " << command.methodLine << ".");
+    SINFO("Completed broadcast of command " << command.methodLine << ".");
 }
 
 void BedrockServer::onNodeLogin(SQLitePeer* peer)
@@ -2054,16 +2055,16 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
     for (const auto& p : _crashCommands) {
         for (const auto& table : p.second) {
             SALERT("Sending crash command " << p.first << " to node " << peer->name << " on login");
-            SData command(p.first);
-            command.nameValueMap = table;
-            unique_ptr<BedrockCommand> cmd = getCommandFromPlugins(move(command));
+            SData crashCommandSpec(p.first);
+            crashCommandSpec.nameValueMap = table;
+            unique_ptr<BedrockCommand> crashCommand = getCommandFromPlugins(move(crashCommandSpec));
             for (const auto& fields : table) {
-                cmd->crashIdentifyingValues.insert(fields.first);
+                crashCommand->crashIdentifyingValues.insert(fields.first);
             }
             auto _clusterMessengerCopy = _clusterMessenger;
             if (_clusterMessengerCopy) {
-                BedrockCommand cppTypesAreHard(_generateCrashMessage(cmd), nullptr);
-                _clusterMessengerCopy->runOnPeer(cppTypesAreHard, peer->name);
+                BedrockCommand peerCommand(_generateCrashMessage(crashCommand), nullptr);
+                _clusterMessengerCopy->runOnPeer(peerCommand, peer->name);
             }
         }
     }

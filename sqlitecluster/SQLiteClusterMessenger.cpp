@@ -7,10 +7,8 @@
 #include <fcntl.h>
 
 SQLiteClusterMessenger::SQLiteClusterMessenger(const shared_ptr<const SQLiteNode> node)
- : _node(node)
-{
-    _socketPool = make_unique<SMultiSocketPool>();
-}
+ : _node(node), _socketPool()
+{ }
 
 void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command) {
     command.response.methodLine = "500 Internal Server Error";
@@ -85,7 +83,7 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
 
 vector<SData> SQLiteClusterMessenger::runOnAll(const SData& cmd) {
     list<thread> threads;
-    list<STable> peerInfo = _node->getPeerInfo();
+    const list<STable> peerInfo = _node->getPeerInfo();
     vector<SData> results(peerInfo.size());
     atomic<size_t> index = 0;
 
@@ -105,18 +103,16 @@ vector<SData> SQLiteClusterMessenger::runOnAll(const SData& cmd) {
     return results;
 }
 
-bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, string peerName) {
+bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, const string& peerName) {
     unique_ptr<SHTTPSManager::Socket> s;
 
-    SQLitePeer* peer = _node->getPeerByName(peerName);
+    const SQLitePeer* peer = _node->getPeerByName(peerName);
     if (!peer) {
         setErrorResponse(command);
         return false;
     }
 
-    string peerCommandAddress = peer->commandAddress;
-    s = _getSocketForAddress(peerCommandAddress);
-
+    s = _getSocketForAddress(peer->commandAddress);
     if (!s) {
         setErrorResponse(command);
         return false;
@@ -128,7 +124,7 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, string peerName)
     // the command failed because leader was not available, but it will be
     // again soon, let the command be retried. In this case, we will let the
     // caller to runOnPeer determine how to handle the failed command.
-    bool result = _sendCommandOnSocket(*s, command);
+    const bool result = _sendCommandOnSocket(*s, command);
     if (!result) {
         setErrorResponse(command);
     }
@@ -249,10 +245,8 @@ unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(s
         return nullptr;
     }
 
-    s = _socketPool->getSocket(host);
-
+    s = _socketPool.getSocket(host);
     if (s == nullptr) {
-        // Finish our escalation.
         SINFO("[HTTPESC] Socket failed to open.");
         return nullptr;
     }
@@ -312,7 +306,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
 
     // Since everything went fine with this command, we can save its socket, unless it's being closed.
     if (!commandWillCloseSocket(command)) {
-        _socketPool->returnSocket(move(s), leaderAddress);
+        _socketPool.returnSocket(move(s), leaderAddress);
     }
 
     return true;

@@ -39,7 +39,7 @@ class SQLiteClusterMessenger {
     // runOnLeader, if the command fails for any reason, command.complete will
     // be set to true and not retried. It is up to the caller to determine how
     // to handle the failure.
-    bool runOnPeer(BedrockCommand& command, string peerName);
+    bool runOnPeer(BedrockCommand& command, const string& peerName);
 
     // Set a timestamp by which we should give up on any pending commands. Once set, this is permanent. You will need a
     // new SQLiteClusterMessenger if you want to shutdown again.
@@ -57,7 +57,7 @@ class SQLiteClusterMessenger {
     // Checks if a command will cause the server to close this socket, indicating we can't reuse it.
     static bool commandWillCloseSocket(BedrockCommand& command);
 
-    // Establishes a connection to the host associated with the socket and actually sends the message.
+    // Sends command to the host associated with socket.
     bool _sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command);
 
     // Parses the address to confirm it is valid, then requests a socket from the socket pool.
@@ -71,5 +71,5 @@ class SQLiteClusterMessenger {
     atomic_flag _shutdownSet = ATOMIC_FLAG_INIT;
 
     // For managing many connections to leader, we have a socket pool.
-    unique_ptr<SMultiSocketPool> _socketPool;
+    SMultiSocketPool _socketPool;
 };
