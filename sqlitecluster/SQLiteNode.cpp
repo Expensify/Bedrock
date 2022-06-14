@@ -2744,12 +2744,30 @@ SQLitePeer* SQLiteNode::_getPeerByID(uint64_t id) const {
     }
 }
 
-SQLitePeer* SQLiteNode::_getPeerByName(const string& name) const {
+bool comparePeers(SQLitePeer peer1, SQLitePeer peer2) {
+    return peer1.name < peer2.name;
+}
+
+int SQLiteNode::binarySearchPeers(const string& name) {
+    auto it = std::lower_bound(_peerList.begin(), _peerList.end(), name);
+    if (it == _peerList.end() || it.operator*()->name != name) {
+        return -1;
+    } else {
+        std::size_t index = std::distance(_peerList.begin(), it);
+        return index;
+    }
+}
+
+SQLitePeer* SQLiteNode::_getPeerByName(const string& name) {
     // TODO: Store peers in sorted order by name and binary search the list here.
-    for (const auto& peer : _peerList) {
-        if (peer->name == name) {
-            return peer;
-        }
+    // Sort the peers
+    std::sort(_peerList.begin(), _peerList.end(), comparePeers);
+
+    // Binary search peers for the name
+    int index = binarySearchPeers(name);
+
+    if (index > -1) {
+        return _peerList[index];
     }
     return nullptr;
 }

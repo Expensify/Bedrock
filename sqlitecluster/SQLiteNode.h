@@ -216,7 +216,11 @@ class SQLiteNode : public STCPManager {
     SQLitePeer* _getPeerByID(uint64_t id) const;
 
     // Look up the correct peer by the name it supplies in a NODE_LOGIN message.
-    SQLitePeer* _getPeerByName(const string& name) const;
+    SQLitePeer* _getPeerByName(const string& name);
+
+    // Search for then name in the peer list and return 0-based
+    // index if the name is found, -1 otherwise
+    int binarySearchPeers(const string& name);
 
     // Returns whether we're in the process of gracefully shutting down.
     bool _gracefulShutdown() const;
