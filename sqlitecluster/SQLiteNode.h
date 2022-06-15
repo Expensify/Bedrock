@@ -176,7 +176,10 @@ class SQLiteNode : public STCPManager {
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
 
-    // Look up the correct peer by the name it supplies in a NODE_LOGIN message.
+    // Look up the correct peer by the name it supplies in a NODE_LOGIN
+    // message. Does not lock, but this method is const and all it does is
+    // access _peerList and peer->name, both of which are const. So it is safe
+    // to call from other public functions.
     SQLitePeer* getPeerByName(const string& name) const;
   private:
     // Utility class that can decrement _replicationThreadCount when objects go out of scope.
