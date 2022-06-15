@@ -26,7 +26,7 @@ void SQLiteClusterMessenger::shutdownBy(uint64_t shutdownTimestamp) {
 }
 
 // Returns true on ready or false on error or timeout.
-SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) {
+SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) const {
     static const map <int, string> labels = {
         {POLLOUT, "send"},
         {POLLIN, "recv"},
@@ -132,7 +132,7 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, const string& pe
     return result;
 }
 
-bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command) {
+bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command) const {
     size_t sleepsDueToFailures = 0;
     auto start = chrono::steady_clock::now();
     bool sent = false;

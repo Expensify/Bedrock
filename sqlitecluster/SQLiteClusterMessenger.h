@@ -49,7 +49,7 @@ class SQLiteClusterMessenger {
     // This takes a pollfd with either POLLIN or POLLOUT set, and waits for the socket to be ready to read or write,
     // respectively. It returns true if ready, or false if error or timeout. The timeout is specified as a timestamp in
     // microseconds.
-    WaitForReadyResult waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp);
+    WaitForReadyResult waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) const;
 
     // This sets a command as a 500 and marks it as complete.
     static void setErrorResponse(BedrockCommand& command);
@@ -58,7 +58,7 @@ class SQLiteClusterMessenger {
     static bool commandWillCloseSocket(BedrockCommand& command);
 
     // Sends command to the host associated with socket.
-    bool _sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command);
+    bool _sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command) const;
 
     // Parses the address to confirm it is valid, then requests a socket from the socket pool.
     unique_ptr<SHTTPSManager::Socket> _getSocketForAddress(string address);
