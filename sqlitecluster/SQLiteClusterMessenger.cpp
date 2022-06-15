@@ -87,8 +87,8 @@ vector<SData> SQLiteClusterMessenger::runOnAll(const SData& cmd) {
     vector<SData> results(peerInfo.size());
     atomic<size_t> index = 0;
 
-    for (auto data : peerInfo) {
-        string name = data["name"];
+    for (const auto& data : peerInfo) {
+        string name = data.at("name");
         threads.emplace_back([this, &cmd, name, &results, &index](){
             BedrockCommand command(SQLiteCommand(SData(cmd)), nullptr);
             runOnPeer(command, name);
