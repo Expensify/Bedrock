@@ -97,6 +97,7 @@ const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString) {
         peer->nextReconnect = STimeNow() + SRandom::rand64() % (STIME_US_PER_S * 2);
         peerList.push_back(peer);
     }
+    std::sort(peerList.begin(), peerList.end());
     return peerList;
 }
 
@@ -2744,27 +2745,18 @@ SQLitePeer* SQLiteNode::_getPeerByID(uint64_t id) const {
     }
 }
 
-bool comparePeers(SQLitePeer peer1, SQLitePeer peer2) {
-    return peer1.name < peer2.name;
-}
-
-int SQLiteNode::binarySearchPeers(const string& name) {
+int SQLiteNode::_binarySearchPeers(const string& name) {
     auto it = std::lower_bound(_peerList.begin(), _peerList.end(), name);
     if (it == _peerList.end() || it.operator*()->name != name) {
         return -1;
-    } else {
-        std::size_t index = std::distance(_peerList.begin(), it);
-        return index;
     }
+
+    return std::distance(_peerList.begin(), it);
 }
 
 SQLitePeer* SQLiteNode::_getPeerByName(const string& name) {
-    // TODO: Store peers in sorted order by name and binary search the list here.
-    // Sort the peers
-    std::sort(_peerList.begin(), _peerList.end(), comparePeers);
-
     // Binary search peers for the name
-    int index = binarySearchPeers(name);
+    int index = _binarySearchPeers(name);
 
     if (index > -1) {
         return _peerList[index];
