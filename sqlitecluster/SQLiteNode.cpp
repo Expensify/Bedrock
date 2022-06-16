@@ -71,12 +71,12 @@ const string SQLiteNode::CONSISTENCY_LEVEL_NAMES[] = {"ASYNC",
 
 atomic<int64_t> SQLiteNode::currentReplicateThreadID(0);
 
-const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString) {
+const set<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString) {
     // Make the logging macro work in the static initializer.
     auto _name = "init";
     State _state = UNKNOWN;
 
-    vector<SQLitePeer*> peerList;
+    set<SQLitePeer*> peerList;
     list<string> parsedPeerList = SParseList(peerListString);
     for (const string& peerString : parsedPeerList) {
         // Get the params from this peer, if any
@@ -95,7 +95,7 @@ const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString) {
 
         // Wait up to 2s before trying the first time
         peer->nextReconnect = STimeNow() + SRandom::rand64() % (STIME_US_PER_S * 2);
-        peerList.push_back(peer);
+        peerList.insert(peer);
     }
     std::sort(peerList.begin(), peerList.end());
     return peerList;
@@ -2734,32 +2734,47 @@ uint64_t SQLiteNode::_getIDByPeer(SQLitePeer* peer) const {
     return 0;
 }
 
+struct SQLiteNode::_findPeerById {
+    explicit _findPeerById(const uint64_t id) : id(id) {}
+    bool operator()(const SQLitePeer* peer) {
+        return peer->id == id;
+    }
+
+  private:
+    uint64_t id;
+};
+
 SQLitePeer* SQLiteNode::_getPeerByID(uint64_t id) const {
     if (id <= 0) {
         return nullptr;
     }
-    try {
-        return _peerList[id - 1];
-    } catch (const out_of_range& e) {
-        return nullptr;
+
+    auto result = std::find_if(_peerList.begin(), _peerList.end(), _findPeerById(id));
+
+    if(result != _peerList.end()) {
+        return result.operator*();
     }
+    return nullptr;
 }
 
-int SQLiteNode::_binarySearchPeers(const string& name) {
-    auto it = std::lower_bound(_peerList.begin(), _peerList.end(), name);
-    if (it == _peerList.end() || it.operator*()->name != name) {
-        return -1;
+struct SQLiteNode::_findPeerByName {
+    explicit _findPeerByName(const string& name) : name(name) {}
+    bool operator()(const SQLitePeer* peer) {
+        return peer->name == name;
     }
 
-    return std::distance(_peerList.begin(), it);
-}
+  private:
+    string name;
+};
 
 SQLitePeer* SQLiteNode::_getPeerByName(const string& name) {
-    // Binary search peers for the name
-    int index = _binarySearchPeers(name);
+    // Search for the peer list in 0(n)
+    auto result = std::find_if(_peerList.begin(), _peerList.end(), _findPeerByName(name));
+    //SQLitePeer* peer = new SQLitePeer(name, host, params, peerList.size() + 1);
+   // auto results = _peerList.find(SQLitePeer(name, "", SData(), _peerList.size() + 1));
 
-    if (index > -1) {
-        return _peerList[index];
+    if(result != _peerList.end()) {
+        return result.operator*();
     }
     return nullptr;
 }

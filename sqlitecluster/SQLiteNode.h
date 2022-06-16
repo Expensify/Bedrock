@@ -200,7 +200,7 @@ class SQLiteNode : public STCPManager {
     // Monotonically increasing thread counter, used for thread IDs for logging purposes.
     static atomic<int64_t> currentReplicateThreadID;
 
-    static const vector<SQLitePeer*> _initPeers(const string& peerList);
+    static const set<SQLitePeer*> _initPeers(const string& peerList);
 
     // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
     // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
@@ -218,9 +218,9 @@ class SQLiteNode : public STCPManager {
     // Look up the correct peer by the name it supplies in a NODE_LOGIN message.
     SQLitePeer* _getPeerByName(const string& name);
 
-    // Search for the name in the peer list and return 0-based
-    // index if the name is found, -1 otherwise
-    int _binarySearchPeers(const string& name);
+    struct _findPeerByName;
+
+    struct _findPeerById;
 
     // Returns whether we're in the process of gracefully shutting down.
     bool _gracefulShutdown() const;
@@ -282,7 +282,7 @@ class SQLiteNode : public STCPManager {
 
     const string _commandAddress;
     const string _name;
-    const vector<SQLitePeer*> _peerList;
+    const set<SQLitePeer*> _peerList;
 
     // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
