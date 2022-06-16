@@ -15,5 +15,5 @@ class SMultiHostSocketPool {
 
   private:
     mutex _poolMutex;
-    map<string, unique_ptr<SSocketPool>> _pools;
+    map<string, SSocketPool> _pools;
 };

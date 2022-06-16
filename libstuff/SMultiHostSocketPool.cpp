@@ -5,16 +5,18 @@ SMultiHostSocketPool::~SMultiHostSocketPool() {}
 
 unique_ptr<STCPManager::Socket> SMultiHostSocketPool::getSocket(const string& host) {
     lock_guard<mutex> lock(_poolMutex);
-    if (!_pools[host]) {
-        _pools[host] = make_unique<SSocketPool>(host);
+    auto pool = _pools.find(host);
+    if (pool == _pools.end()) {
+        pool = _pools.emplace(host, host).first;
     }
 
-    return _pools[host]->getSocket();
+    return pool->second.getSocket();
 }
 
 void SMultiHostSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s, const string& host) {
     lock_guard<mutex> lock(_poolMutex);
-    if (_pools[host]) {
-        _pools[host]->returnSocket(move(s));
+    auto pool = _pools.find(host);
+    if (pool != _pools.end()) {
+        pool->second.returnSocket(move(s));
     }
 }
