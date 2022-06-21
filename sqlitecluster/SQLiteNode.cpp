@@ -1961,19 +1961,6 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     }
 }
 
-void SQLiteNode::broadcast(const SData& message, SQLitePeer* peer) {
-    // This public method *does not lock the node* because it is explicitly thread-safe otherwise. `peer` itself is
-    // const and is guaranteed not to change. `_sendToPeer` and `_sendToPeers` are internally thread-safe and
-    // effectively const (though they write to peer send buffers that are not directly accesible).
-    if (peer) {
-        SINFO("Sending broadcast: " << message.serialize() << " to peer: " << peer->name);
-        _sendToPeer(peer, message);
-    } else {
-        SINFO("Sending broadcast: " << message.serialize());
-        _sendToAllPeers(message, false);
-    }
-}
-
 void SQLiteNode::_changeState(SQLiteNode::State newState) {
     SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
     _localCommitNotifier.notifyThrough(_db.getCommitCount());
@@ -2609,7 +2596,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             if (messageSize) {
                 socket->recvBuffer.consumeFront(messageSize);
                 if (SIEquals(message.methodLine, "NODE_LOGIN")) {
-                    SQLitePeer* peer = _getPeerByName(message["Name"]);
+                    SQLitePeer* peer = getPeerByName(message["Name"]);
                     if (peer) {
                         if (peer->setSocket(socket)) {
                             _sendPING(peer);
@@ -2744,7 +2731,7 @@ SQLitePeer* SQLiteNode::_getPeerByID(uint64_t id) const {
     }
 }
 
-SQLitePeer* SQLiteNode::_getPeerByName(const string& name) const {
+SQLitePeer* SQLiteNode::getPeerByName(const string& name) const {
     // TODO: Store peers in sorted order by name and binary search the list here.
     for (const auto& peer : _peerList) {
         if (peer->name == name) {

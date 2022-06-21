@@ -66,6 +66,11 @@ unique_ptr<STCPManager::Socket> SSocketPool::getSocket() {
 }
 
 void SSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s) {
+    if (s == nullptr) {
+        SWARN("[SOCKET] Trying to return a null socket to the pool, this should not happen.");
+        return;
+    }
+
     bool needWake = false;
     {
         lock_guard<mutex> lock(_poolMutex);

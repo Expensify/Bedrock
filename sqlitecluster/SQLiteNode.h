@@ -147,10 +147,6 @@ class SQLiteNode : public STCPManager {
     // Call this if you want to shut down the node.
     void beginShutdown(uint64_t usToWait);
 
-    // This will broadcast a message to all peers, or a specific peer.
-    [[deprecated("Use HTTP escalation")]]
-    void broadcast(const SData& message, SQLitePeer* peer = nullptr);
-
     // If we have a command that can't be handled on a follower, we can escalate it to the leader node. The SQLiteNode
     // takes ownership of the command until it receives a response from the follower. When the command completes, it will
     // be re-queued in the SQLiteServer (_server), but its `complete` field will be set to true.
@@ -180,12 +176,17 @@ class SQLiteNode : public STCPManager {
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
 
+    // Look up the correct peer by the name it supplies in a NODE_LOGIN
+    // message. Does not lock, but this method is const and all it does is
+    // access _peerList and peer->name, both of which are const. So it is safe
+    // to call from other public functions.
+    SQLitePeer* getPeerByName(const string& name) const;
   private:
     // Utility class that can decrement _replicationThreadCount when objects go out of scope.
     template <typename CounterType>
     class ScopedDecrement {
       public:
-        ScopedDecrement(CounterType& counter) : _counter(counter) {} 
+        ScopedDecrement(CounterType& counter) : _counter(counter) {}
         ~ScopedDecrement() {
             --_counter;
         }
@@ -214,9 +215,6 @@ class SQLiteNode : public STCPManager {
     // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
     [[deprecated("Only required as long as synchronize uses peekPeerCommand")]]
     SQLitePeer* _getPeerByID(uint64_t id) const;
-
-    // Look up the correct peer by the name it supplies in a NODE_LOGIN message.
-    SQLitePeer* _getPeerByName(const string& name) const;
 
     // Returns whether we're in the process of gracefully shutting down.
     bool _gracefulShutdown() const;

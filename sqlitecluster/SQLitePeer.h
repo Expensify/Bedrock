@@ -74,7 +74,7 @@ class SQLitePeer {
     const STable params;
     const bool permaFollower;
 
-    // An address on which this peer can accept commands.
+    // An address on which this peer can accept commands. (a.k.a. "private command port")
     atomic<string> commandAddress;
     atomic<uint64_t> latency;
     atomic<bool> loggedIn;
