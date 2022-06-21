@@ -27,7 +27,7 @@ SData SQLiteCommand::preprocessRequest(SData&& request) {
     return move(request);
 }
 
-SQLiteCommand::SQLiteCommand(SData&& _request) : 
+SQLiteCommand::SQLiteCommand(SData&& _request) :
     privateRequest(move(preprocessRequest(move(_request)))),
     request(privateRequest),
     initiatingPeerID(0),
@@ -57,7 +57,7 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
     }
 }
 
-SQLiteCommand::SQLiteCommand(SQLiteCommand&& from) : 
+SQLiteCommand::SQLiteCommand(SQLiteCommand&& from) :
     privateRequest(move(from.privateRequest)),
     request(privateRequest),
     initiatingPeerID(from.initiatingPeerID),

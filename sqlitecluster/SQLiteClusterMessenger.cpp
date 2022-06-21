@@ -1,15 +1,14 @@
 #include <BedrockCommand.h>
 #include <sqlitecluster/SQLiteClusterMessenger.h>
 #include <sqlitecluster/SQLiteNode.h>
-#include <libstuff/SHTTPSManager.h>
+#include <sqlitecluster/SQLitePeer.h>
 
 #include <unistd.h>
 #include <fcntl.h>
 
 SQLiteClusterMessenger::SQLiteClusterMessenger(const shared_ptr<const SQLiteNode> node)
- : _node(node)
-{
-}
+ : _node(node), _socketPool()
+{ }
 
 void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command) {
     command.response.methodLine = "500 Internal Server Error";
@@ -27,7 +26,7 @@ void SQLiteClusterMessenger::shutdownBy(uint64_t shutdownTimestamp) {
 }
 
 // Returns true on ready or false on error or timeout.
-SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) {
+SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) const {
     static const map <int, string> labels = {
         {POLLOUT, "send"},
         {POLLIN, "recv"},
@@ -82,96 +81,104 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
     }
 }
 
-bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
+vector<SData> SQLiteClusterMessenger::runOnAll(const SData& cmd) {
+    list<thread> threads;
+    const list<STable> peerInfo = _node->getPeerInfo();
+    vector<SData> results(peerInfo.size());
+    atomic<size_t> index = 0;
+
+    for (const auto& data : peerInfo) {
+        string name = data.at("name");
+        threads.emplace_back([this, &cmd, name, &results, &index](){
+            BedrockCommand command(SQLiteCommand(SData(cmd)), nullptr);
+            runOnPeer(command, name);
+            size_t i = index.fetch_add(1);
+            results[i] = command.response;
+        });
+    }
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    return results;
+}
+
+bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, const string& peerName) {
+    unique_ptr<SHTTPSManager::Socket> s;
+
+    const SQLitePeer* peer = _node->getPeerByName(peerName);
+    if (!peer) {
+        setErrorResponse(command);
+        return false;
+    }
+
+    s = _getSocketForAddress(peer->commandAddress);
+    if (!s) {
+        setErrorResponse(command);
+        return false;
+    }
+
+    // _sendCommandOnSocket doesn't always call setErrorResponse - if the
+    // command is intended for leader, we don't always want to set
+    // command.complete = true because that prevents it from being retried. If
+    // the command failed because leader was not available, but it will be
+    // again soon, let the command be retried. In this case, we will let the
+    // caller to runOnPeer determine how to handle the failed command.
+    const bool result = _sendCommandOnSocket(*s, command);
+    if (!result) {
+        setErrorResponse(command);
+    }
+
+    return result;
+}
+
+bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command) const {
+    size_t sleepsDueToFailures = 0;
     auto start = chrono::steady_clock::now();
     bool sent = false;
-    size_t sleepsDueToFailures = 0;
 
-    unique_ptr<SHTTPSManager::Socket> s;
-    string host, path;
-    while (chrono::steady_clock::now() < (start + 5s) && !sent) {
-        string leaderAddress = _node->leaderCommandAddress();
-        if (leaderAddress.empty()) {
-            // If there's no leader, it's possible we're supposed to be the leader. In this case, we can exit early.
-            auto myState = _node->getState();
-            if (myState == SQLiteNode::LEADING || myState == SQLiteNode::STANDINGUP) {
-                SINFO("[HTTPESC] I'm the leader now! Exiting early.");
-                return false;
-            }
+    // This is what we need to send.
+    SData request = command.request;
+    request.nameValueMap["ID"] = command.id;
+    SFastBuffer buf(request.serialize());
 
-            // Otherwise, just wait until there is a leader.
-            SINFO("[HTTPESC] No leader address.");
+    // We only have one FD to poll.
+    pollfd fdspec = {socket.s, POLLOUT, 0};
+    while (true) {
+        WaitForReadyResult result = waitForReady(fdspec, command.timeout());
+        if (result == WaitForReadyResult::DISCONNECTED_OUT) {
+            // This is the case we're likely to get if the leader's port is closed.
+            // We break this loop and let the top loop (with the timer) start over.
+            // But first we sleep 1/2 second to make this not spam a million times.
             sleepsDueToFailures++;
             usleep(500'000);
-            continue;
-        }
-
-        // SParseURI expects a typical http or https scheme.
-        string url = "http://" + leaderAddress;
-        if (!SParseURI(url, host, path) || !SHostIsValid(host)) {
+            break;
+        } else if (result != WaitForReadyResult::OK) {
             return false;
         }
 
-        // Start our escalation timing.
-        command.escalationTimeUS = STimeNow();
-
-        // Get a socket from the pool.
-        {
-            lock_guard<mutex> lock(_socketPoolMutex);
-            if (!_socketPool || _socketPool->host != host) {
-                _socketPool = make_unique<SSocketPool>(host);
-            }
-            s = _socketPool->getSocket();
-        }
-        if (s == nullptr) {
-            // Finish our escalation.
-            command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
-            SINFO("[HTTPESC] Socket failed to open.");
-            return false;
-        }
-
-        // This is what we need to send.
-        SData request = command.request;
-        request.nameValueMap["ID"] = command.id;
-        SFastBuffer buf(request.serialize());
-
-        // We only have one FD to poll.
-        pollfd fdspec = {s->s, POLLOUT, 0};
-        while (true) {
-            WaitForReadyResult result = waitForReady(fdspec, command.timeout());
-            if (result == WaitForReadyResult::DISCONNECTED_OUT) {
-                // This is the case we're likely to get if the leader's port is closed.
-                // We break this loop and let the top loop (with the timer) start over.
-                // But first we sleep 1/2 second to make this not spam a million times.
-                sleepsDueToFailures++;
-                usleep(500'000);
-                break;
-            } else if (result != WaitForReadyResult::OK) {
-                return false;
-            }
-
-            ssize_t bytesSent = send(s->s, buf.c_str(), buf.size(), 0);
-            if (bytesSent == -1) {
-                switch (errno) {
-                    case EAGAIN:
-                    case EINTR:
-                        // these are ok. try again.
-                        SINFO("[HTTPESC] Got error (send): " << errno << ", trying again.");
-                        break;
-                    default:
-                        SINFO("[HTTPESC] Got error (send): " << errno << ", fatal.");
-                        return false;
-                }
-            } else {
-                buf.consumeFront(bytesSent);
-                if (buf.empty()) {
-                    // Everything has sent, we're done with this loop.
-                    sent = true;
+        ssize_t bytesSent = send(socket.s, buf.c_str(), buf.size(), 0);
+        if (bytesSent == -1) {
+            switch (errno) {
+                case EAGAIN:
+                case EINTR:
+                    // these are ok. try again.
+                    SINFO("[HTTPESC] Got error (send): " << errno << ", trying again.");
                     break;
-                }
+                default:
+                    SINFO("[HTTPESC] Got error (send): " << errno << ", fatal.");
+                    return false;
+            }
+        } else {
+            buf.consumeFront(bytesSent);
+            if (buf.empty()) {
+                // Everything has sent, we're done with this loop.
+                sent = true;
+                break;
             }
         }
     }
+
     if (!sent) {
         SINFO("[HTTPESC] Failed to send to leader after timeout establishing connnection.");
         return false;
@@ -184,7 +191,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     // If we fail before here, we can try again. If we fail after here, we should return an error.
 
     // Ok, now we need to receive the response.
-    pollfd fdspec = {s->s, POLLIN, 0};
+    fdspec = {socket.s, POLLIN, 0};
     string responseStr;
     char response[4096] = {0};
     while (true) {
@@ -193,7 +200,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
             return false;
         }
 
-        ssize_t bytesRead = recv(s->s, response, 4096, 0);
+        ssize_t bytesRead = recv(socket.s, response, 4096, 0);
         if (bytesRead == -1) {
             switch (errno) {
                 case EAGAIN:
@@ -224,6 +231,74 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
 
     // If we got here, the command is complete.
     command.complete = true;
+
+    return true;
+}
+
+unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(string address) {
+    unique_ptr<SHTTPSManager::Socket> s;
+
+    // SParseURI expects a typical http or https scheme.
+    string url = "http://" + address;
+    string host, path;
+    if (!SParseURI(url, host, path) || !SHostIsValid(host)) {
+        return nullptr;
+    }
+
+    s = _socketPool.getSocket(host);
+    if (s == nullptr) {
+        SINFO("[HTTPESC] Socket failed to open.");
+        return nullptr;
+    }
+
+    return s;
+}
+
+bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
+    auto start = chrono::steady_clock::now();
+    bool sent = false;
+    size_t sleepsDueToFailures = 0;
+    string leaderAddress;
+
+    unique_ptr<SHTTPSManager::Socket> s;
+    while (chrono::steady_clock::now() < (start + 5s) && !sent) {
+        leaderAddress = _node->leaderCommandAddress();
+        if (leaderAddress.empty()) {
+            // If there's no leader, it's possible we're supposed to be the leader. In this case, we can exit early.
+            auto myState = _node->getState();
+            if (myState == SQLiteNode::LEADING || myState == SQLiteNode::STANDINGUP) {
+                SINFO("[HTTPESC] I'm the leader now! Exiting early.");
+                return false;
+            }
+
+            // Otherwise, just wait until there is a leader.
+            SINFO("[HTTPESC] No leader address.");
+            sleepsDueToFailures++;
+            usleep(500'000);
+            continue;
+        }
+
+        // Start our escalation timing
+        command.escalationTimeUS = STimeNow();
+
+        s = _getSocketForAddress(leaderAddress);
+        if (!s) {
+            command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
+            return false;
+        }
+
+        sent = _sendCommandOnSocket(*s, command);
+        if (!sent) {
+            command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
+            return false;
+        }
+    }
+    if (sleepsDueToFailures) {
+        auto msElapsed = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count();
+        SINFO("[HTTPESC] Problems connecting for escalation but succeeded in " << msElapsed << "ms.");
+    }
+
+    // If we got here, the command is complete.
     command.escalated = true;
 
     // Finish our escalation timing.
@@ -231,10 +306,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
 
     // Since everything went fine with this command, we can save its socket, unless it's being closed.
     if (!commandWillCloseSocket(command)) {
-        lock_guard<mutex> lock(_socketPoolMutex);
-        if (_socketPool && _socketPool->host == host) {
-            _socketPool->returnSocket(move(s));
-        }
+        _socketPool.returnSocket(move(s), leaderAddress);
     }
 
     return true;
