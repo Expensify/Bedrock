@@ -248,7 +248,6 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                     ++commitAttemptCount;
                     result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
                     if (result != SQLITE_OK) {
-                        --_concurrentReplicateTransactions;
                         db.rollback();
                     }
                 }
