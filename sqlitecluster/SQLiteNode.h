@@ -369,4 +369,8 @@ class SQLiteNode : public STCPManager {
     // The peer that we'll synchronize from.
     // Remove. See: https://github.com/Expensify/Expensify/issues/208439
     SQLitePeer* _syncPeer;
+
+    // Debugging info. Log the current number of transactions we're actually performing in replicate threads.
+    // This can be removed once we've figured out why replication falls behind. See this issue: https://github.com/Expensify/Expensify/issues/210528
+    atomic<size_t> _concurrentReplicateTransactions = 0;
 };
