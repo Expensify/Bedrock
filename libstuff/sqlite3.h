@@ -148,7 +148,7 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.39.0"
 #define SQLITE_VERSION_NUMBER 3039000
-#define SQLITE_SOURCE_ID      "2022-06-27 21:43:33 41d4f14bc657f361976c51e1e0d38d2dd2440127fd230f80a1eb8f2a03bc9325"
+#define SQLITE_SOURCE_ID      "2022-06-28 21:52:50 77fe73761016bbaa7278d65789d98309d42c749ac06f337f275b92b27462403b"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -10426,6 +10426,9 @@ SQLITE_API int sqlite3_deserialize(
 #define SQLITE_DESERIALIZE_FREEONCLOSE 1 /* Call sqlite3_free() on close */
 #define SQLITE_DESERIALIZE_RESIZEABLE  2 /* Resize using sqlite3_realloc64() */
 #define SQLITE_DESERIALIZE_READONLY    4 /* Database is read-only */
+
+SQLITE_API const char *sqlite3_begin_concurrent_report(sqlite3*);
+SQLITE_API void sqlite3_begin_concurrent_report_enable(sqlite3 *db, int bEnable);
 
 /*
 ** Undo the hack that converts floating point types to integer for
