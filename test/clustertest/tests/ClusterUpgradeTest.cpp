@@ -41,7 +41,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         if (!SFileExists(prodBedrockName)) {
             // Get a directory we can work in.
             char brReleaseDirArr[] = "/tmp/br-prod-test-XXXXXX";
-            ASSERT_FALSE(mkdtemp(brReleaseDirArr));
+            ASSERT_EQUAL(mkdtemp(brReleaseDirArr), brReleaseDirArr);
             string brReleaseDir(brReleaseDirArr, sizeof(brReleaseDirArr) - 1);
 
             // Clone bedrock.
@@ -64,9 +64,31 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         delete tester;
     }
 
+    vector<string> getVersions() {
+        SData status("Status");
+        vector<string> versions(3);
+        for (auto i: {0, 1, 2}) {
+            vector<SData> statusResult = tester->getTester(i).executeWaitMultipleData({status});
+            versions[i] = SParseJSONObject(statusResult[0].content)["version"];
+        }
+        return versions;
+    }
+
     void test() {
-        // Verify 0 is leader.
+        // Let the entire cluster come up on the production version.
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
+        ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
+        ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
+
+        // Get the versions from the cluster.
+        auto versions = getVersions();
+
+        // Save the production version for later comparison.
+        string prodVersion = versions[0];
+
+        // Verify all three are the same.
+        ASSERT_EQUAL(versions[0], versions[1]);
+        ASSERT_EQUAL(versions[0], versions[2]);
 
         // Restart 2 on the new version.
         tester->getTester(2).stopServer();
@@ -74,39 +96,53 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         tester->getTester(2).startServer();
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
-        // Verify 0 and 1 are the same version, but 2 is a different version.
-        SData status("Status");
-        vector<string> versions(3);
-        for (auto i: {0, 1, 2}) {
-            vector<SData> statusResult = tester->getTester(i).executeWaitMultipleData({status});
-            versions[i] = SParseJSONObject(statusResult[0].content)["version"];
-        }
-        ASSERT_EQUAL(versions[0], versions[1]);
-        ASSERT_NOT_EQUAL(versions[0], versions[2]);
+        // Verify the server has been upgraded and the version is different.
+        versions = getVersions();
+        string devVersion = versions[2];
+        ASSERT_NOT_EQUAL(prodVersion, devVersion);
 
-        // Send a write command on 2 and verify we get a response.
-        SData cmd("ineffectiveUpdate");
+        // Send a write command on 2 and verify we get a reasonable response. This should verify that we can escalate from new->old.
+        SData cmd("idcollision");
         vector<SData> cmdResult = tester->getTester(2).executeWaitMultipleData({cmd});
         ASSERT_EQUAL(cmdResult[0].methodLine, "200 OK");
 
-        // We've verified that the new version can send a command to the old version. Now let's upgrade leader to the
-        // new version.
+        // Now we shut down the old leader. This makes the remaining old follower become leader.
         tester->getTester(0).stopServer();
+
+        // We should now have a two-node cluster with 1 leading and 2 following.
+        ASSERT_TRUE(tester->getTester(1).waitForState("LEADING"));
+        ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
+
+        // Start up the old leader on the new version.
         tester->getTester(0).serverName = "bedrock";
         tester->getTester(0).startServer();
+
+        // We should get the expected cluster state.
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
+        ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
+        ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
-        // Verify 0 and 2 are the same version, but 1 is a different version.
-        for (auto i: {0, 1, 2}) {
-            vector<SData> statusResult = tester->getTester(i).executeWaitMultipleData({status});
-            versions[i] = SParseJSONObject(statusResult[0].content)["version"];
-        }
-        ASSERT_EQUAL(versions[0], versions[2]);
-        ASSERT_NOT_EQUAL(versions[0], versions[1]);
+        // Now 0 and 2 are the new version, and 1 is the old version.
+        versions = getVersions();
+        ASSERT_EQUAL(versions[0], devVersion);
+        ASSERT_EQUAL(versions[1], prodVersion);
+        ASSERT_EQUAL(versions[2], devVersion);
 
-        // Now verify the old version can send a command to the new version as well.
+        // Now we need to send a command to node 1 to verify we can escalate old->new.
         cmdResult = tester->getTester(1).executeWaitMultipleData({cmd});
         ASSERT_EQUAL(cmdResult[0].methodLine, "200 OK");
+
+        // And finally, upgrade the last node.
+        tester->getTester(1).stopServer();
+        tester->getTester(1).serverName = "bedrock";
+        tester->getTester(1).startServer();
+        ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
+
+        // And verify everything is upgraded.
+        versions = getVersions();
+        ASSERT_EQUAL(versions[0], devVersion);
+        ASSERT_EQUAL(versions[1], devVersion);
+        ASSERT_EQUAL(versions[2], devVersion);
     }
 
 } __ClusterUpgradeTest;
