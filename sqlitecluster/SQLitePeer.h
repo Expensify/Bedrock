@@ -3,17 +3,19 @@
 
 // Represents a single peer in the database cluster
 class SQLitePeer {
-    // This allows direct access to the socket from the node object that should actually be managing peer
-    // connections, which should always be handled by a single thread, and thus safe. Ideally, this isn't required,
-    // but for the time being, the amount of refactoring required to fix that is too high.
-    friend class SQLiteNode;
-
   public:
     // Possible responses from a peer.
     enum class Response {
         NONE,
         APPROVE,
         DENY
+    };
+
+    enum class PeerPostPollStatus {
+        OK,
+        JUST_CONNECTED,
+        SOCKET_ERROR,
+        SOCKET_CLOSED,
     };
 
     // Get a string name for a Response object.
@@ -28,17 +30,37 @@ class SQLitePeer {
     // Returns true if there's an active connection to this Peer.
     bool connected() const;
 
-    SQLitePeer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
-    ~SQLitePeer();
+    // The most recent receive time, in microseconds since the epoch.
+    uint64_t lastRecvTime() const;
+
+    // The most recent send time, in microseconds since the epoch.
+    uint64_t lastSendTime() const;
+
+    void prePoll(fd_map& fdm) const;
 
     // Reset a peer, as if disconnected and starting the connection over.
     void reset();
+
+    // Pops a message off the *front* of the receive buffer and returns it.
+    // If there are no messages, throws `std::out_of_range`.
+    SData popMessage();
+
+    PeerPostPollStatus postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Send a message to this peer. Thread-safe.
     void sendMessage(const SData& message);
 
     // Atomically set commit and hash.
     void setCommit(uint64_t count, const string& hashString);
+
+    // Sets the socket to the new socket, but will fail if the socket is already set unless onlyIfNull is false.
+    // returns whether or not the socket was actually set.
+    bool setSocket(STCPManager::Socket* newSocket, bool onlyIfNull = true);
+
+    void shutdownSocket();
+
+    SQLitePeer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
+    ~SQLitePeer();
 
     // This is const because it's public, and we don't want it to be changed outside of this class, as it needs to
     // be synchronized with `hash`. However, it's often useful just as it is, so we expose it like this and update
@@ -52,9 +74,8 @@ class SQLitePeer {
     const STable params;
     const bool permaFollower;
 
-    // An address on which this peer can accept commands.
+    // An address on which this peer can accept commands. (a.k.a. "private command port")
     atomic<string> commandAddress;
-    atomic<int> failedConnections;
     atomic<uint64_t> latency;
     atomic<bool> loggedIn;
     atomic<uint64_t> nextReconnect;

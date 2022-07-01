@@ -53,7 +53,7 @@ class SQLiteSequentialNotifier {
     uint64_t _value;
 
     // If there is a global result for all pending operations (i.e., they've been canceled), that is stored here.
-    RESULT _globalResult;
+    atomic<RESULT> _globalResult;
 
     // For saving the value after which new or existing waiters will be returned a CANCELED result.
     atomic<uint64_t> _cancelAfter;
