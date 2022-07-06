@@ -13,23 +13,45 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
     string prodBedrockName;
 
     void setup() {
-        // Get the list of recent releases.
+        // Get the two most recent releases.
         const string tempJson = "brdata.json";
-        string command = "curl --silent 'https://api.github.com/repos/Expensify/Bedrock/releases?page=1&per_page=1' -o " + tempJson;
+        string command = "curl --silent 'https://api.github.com/repos/Expensify/Bedrock/releases?page=1&per_page=2' -o " + tempJson;
         ASSERT_FALSE(system(command.c_str()));
 
+        // Decide whether we want to test against the most recent tagged release, or the second most recent.
+        // If we are doing this as part of a deploy, the most recent tagged release is this one, and we want to test against the previous one. Otherwise, if we are in a regular un-released
+        // branch (for a typical Travis build) we want to test against the most recent release.
         // Parse a tag from it.
         string data = SFileLoad(tempJson);
         SFileDelete(tempJson);
         string bedrockTagName;
         list<string> j1 = SParseJSONArray(STrim(data));
-        if (j1.size()) {
+
+        // There should be two releases.
+        ASSERT_EQUAL(j1.size(), 2);
+
+        // Pull the tag names from the JSON.
+        array<string, 2> tagNames;
+        for (size_t i = 0; i < 1; i++) {
             STable j2 = SParseJSONObject(j1.front());
             auto tag = j2.find("tag_name");
             if (tag != j2.end()) {
-                bedrockTagName = tag->second;
+                tagNames[i] = tag->second;
+            }
+            if (j1.size()) {
+                j1.pop_front();
             }
         }
+
+        // Now choose the one to use.
+        // the commit number of the tag: git rev-list -n 1 $TAG
+        // The commit number we're currently on: git rev-parse HEAD
+        // If the current commit matches the latest tag commit, our script returns 1 and we will test against the second tag. Otherwise, it returns 0 and we test against the first tag.
+        string checkIfOnLatestTag = "/bin/bash -c if [ \"`git rev-list -n 1 " + tagNames[0] + "`\" = \"`git rev-parse HEAD`\" ]; then exit 1; else exit 0; fi";
+        int result = system(checkIfOnLatestTag.c_str());
+        bedrockTagName = tagNames[result];
+
+        cout << "Testing against: " << bedrockTagName << endl;
 
         // If you'd like to test against a particular tag, uncomment the following line. The value chosen here was a
         // known bad version that failed to escalate commands at upgrade when first deployed.
