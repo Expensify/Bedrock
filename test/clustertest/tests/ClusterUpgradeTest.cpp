@@ -32,7 +32,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
 
         // Pull the tag names from the JSON.
         array<string, 2> tagNames;
-        for (size_t i = 0; i < 1; i++) {
+        for (size_t i = 0; i <= 1; i++) {
             STable j2 = SParseJSONObject(j1.front());
             auto tag = j2.find("tag_name");
             if (tag != j2.end()) {
