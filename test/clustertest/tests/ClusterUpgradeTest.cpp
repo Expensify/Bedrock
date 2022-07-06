@@ -55,10 +55,6 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
             bedrockTagName = tagNames[0];
         }
 
-        cout << tagNames[0] << endl;
-        cout << tagNames[1] << endl;
-        cout << "Testing against: " << bedrockTagName << endl;
-
         // If you'd like to test against a particular tag, uncomment the following line. The value chosen here was a
         // known bad version that failed to escalate commands at upgrade when first deployed.
         // bedrockTagName = "2022-05-06";
