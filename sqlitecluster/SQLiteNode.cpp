@@ -2439,7 +2439,8 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
         PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
               << "), but a permafollower -- keeping quiet.");
     }
-    uint64_t transitTimeUS = dequeueTime - message.calcU64("leaderSendTime");
+    uint64_t leaderSentTimestamp = message.calcU64("leaderSendTime");
+    uint64_t transitTimeUS = dequeueTime - leaderSentTimestamp;
     uint64_t threadStartTimeUS = threadStartTime - dequeueTime;
     uint64_t applyTimeUS = STimeNow() - threadStartTime;
     float transitTimeMS = (float)transitTimeUS / 1000.0;
