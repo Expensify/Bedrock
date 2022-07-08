@@ -183,9 +183,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 
-        // Daemonize
-        // **NOTE: See http://www-theorie.physik.unizh.ch/~dpotter/howto/daemonize
-        umask(0);
+        // Code below here is run by the child process; the parent exited above
         SASSERT(setsid() >= 0);
         SASSERT(chdir("/") >= 0);
         if (!freopen("/dev/null", "r", stdin) ||
