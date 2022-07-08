@@ -148,9 +148,12 @@ SQLiteNode::~SQLiteNode() {
     }
 }
 
-void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex) {
+void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp) {
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
+
+    // Actual thread startup time. 
+    uint64_t threadStartTime = STimeNow();
 
     // Allow the DB handle to be returned regardless of how this function exits.
     SQLiteScopedHandle dbScope(*_dbPool, sqlitePoolIndex);
@@ -217,7 +220,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
 
                         // Ok, almost ready.
                         // Note:: calls _sendToPeer() which is a write operation.
-                        _handlePrepareTransaction(db, peer, command);
+                        _handlePrepareTransaction(db, peer, command, threadAttemptStartTimestamp, threadStartTime);
                         auto duration = chrono::steady_clock::now() - start;
                         SINFO("Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us. " << _concurrentReplicateTransactions.load()
                               << " concurrent replicate transactions in " << _replicationThreadCount << " threads.");
@@ -1645,7 +1648,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 auto threadID = _replicationThreadCount.fetch_add(1);
                 SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
                 try {
-                    thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false)).detach();
+                    uint64_t threadAttemptStartTimestamp = STimeNow();
+                    thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp).detach();
                 } catch (const system_error& e) {
                     SWARN("Caught system_error starting _replicate thread with " << _replicationThreadCount.load() << " threads. e.what()=" << e.what());
                     throw;
@@ -2386,14 +2390,12 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
     }
 }
 
-void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message) {
+void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime, uint64_t threadStartTime) {
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
     // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
     // the transaction for any reason, it is broken somehow -- disconnect from the leader.
     // **FIXME**: What happens if LEADER steps down before sending BEGIN?
     // **FIXME**: What happens if LEADER steps down or disconnects after BEGIN?
-    uint64_t leaderSentTimestamp = message.calcU64("leaderSendTime");
-    uint64_t followerDequeueTimestamp = STimeNow();
     if (!message.isSet("ID")) {
         STHROW("missing ID");
     }
@@ -2437,12 +2439,14 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
         PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
               << "), but a permafollower -- keeping quiet.");
     }
-    uint64_t transitTimeUS = followerDequeueTimestamp - leaderSentTimestamp;
-    uint64_t applyTimeUS = STimeNow() - followerDequeueTimestamp;
+    uint64_t transitTimeUS = dequeueTime - message.calcU64("leaderSendTime");
+    uint64_t threadStartTimeUS = threadStartTime - dequeueTime;
+    uint64_t applyTimeUS = STimeNow() - threadStartTime;
     float transitTimeMS = (float)transitTimeUS / 1000.0;
+    float threadStartTimeMS = (float)threadStartTimeUS / 1000.0;
     float applyTimeMS = (float)applyTimeUS / 1000.0;
     PINFO("Replicated transaction " << message.calcU64("NewCount") << ", sent by leader at " << leaderSentTimestamp
-          << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
+          << ", transit/dequeue time: " << transitTimeMS << "ms, thread start time: " << threadStartTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
 }
 
 int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash) {
