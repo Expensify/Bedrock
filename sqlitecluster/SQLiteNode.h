@@ -231,7 +231,7 @@ class SQLiteNode : public STCPManager {
 
     // Handlers for transaction messages.
     void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message, bool wasConflict);
-    void _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
+    void _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime, uint64_t threadStartTime);
     int _handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
     void _handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
 
@@ -262,7 +262,7 @@ class SQLiteNode : public STCPManager {
     //
     // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
     // which happens when a node stops FOLLOWING.
-    void _replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex);
+    void _replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp);
 
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
