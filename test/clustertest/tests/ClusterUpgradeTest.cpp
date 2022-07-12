@@ -13,26 +13,22 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
     string prodBedrockName;
 
     void setup() {
-        // Get the two most recent releases.
+        // Get the most recent releases.
+        const size_t RECENT_RELEASES_TO_CHECK = 5;
         const string tempJson = "brdata.json";
-        string command = "curl --silent 'https://api.github.com/repos/Expensify/Bedrock/releases?page=1&per_page=2' -o " + tempJson;
+        string command = "curl --silent 'https://api.github.com/repos/Expensify/Bedrock/releases?page=1&per_page=" + to_string(RECENT_RELEASES_TO_CHECK) + "' -o " + tempJson;
         ASSERT_FALSE(system(command.c_str()));
 
-        // Decide whether we want to test against the most recent tagged release, or the second most recent.
-        // If we are doing this as part of a deploy, the most recent tagged release is this one, and we want to test against the previous one. Otherwise, if we are in a regular un-released
-        // branch (for a typical Travis build) we want to test against the most recent release.
-        // Parse a tag from it.
+        // Parse the JSON we got from github with recent releases.
         string data = SFileLoad(tempJson);
         SFileDelete(tempJson);
         string bedrockTagName;
         list<string> j1 = SParseJSONArray(STrim(data));
+        ASSERT_EQUAL(j1.size(), RECENT_RELEASES_TO_CHECK);
 
-        // There should be two releases.
-        ASSERT_EQUAL(j1.size(), 2);
-
-        // Pull the tag names from the JSON.
-        array<string, 2> tagNames;
-        for (size_t i = 0; i <= 1; i++) {
+        // We need the tag names from each release.
+        array<string, RECENT_RELEASES_TO_CHECK> tagNames;
+        for (size_t i = 0; i < RECENT_RELEASES_TO_CHECK; i++) {
             STable j2 = SParseJSONObject(j1.front());
             auto tag = j2.find("tag_name");
             if (tag != j2.end()) {
@@ -43,17 +39,22 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
             }
         }
 
-        // Now choose the one to use.
+        // Now choose the one to use. We want to test against the msot recent release that isn't the commit we're currently on.
         // the commit number of the tag: git rev-list -n 1 $TAG
         // The commit number we're currently on: git rev-parse HEAD
-        // If the current commit matches the latest tag commit, our script returns 1 and we will test against the second tag. Otherwise, it returns 0 and we test against the first tag.
-        string checkIfOnLatestTag = "/bin/bash -c 'if [ \"`git rev-list -n 1 " + tagNames[0] + "`\" = \"`git rev-parse HEAD`\" ]; then exit 1; else exit 0; fi'";
-        int result = system(checkIfOnLatestTag.c_str());
-        if (result) {
-            bedrockTagName = tagNames[1];
-        } else {
-            bedrockTagName = tagNames[0];
+        // If the current commit matches the tested tag, the script returns 1 and we check the next one. When the script returns 0, that's the release we'll use.
+        for (const auto& tagName : tagNames) {
+            string checkIfOnLatestTag = "/bin/bash -c 'if [ \"`git rev-list -n 1 " + tagName + "`\" = \"`git rev-parse HEAD`\" ]; then exit 1; else exit 0; fi'";
+            int result = system(checkIfOnLatestTag.c_str());
+            if (!result) {
+                bedrockTagName = tagName;
+                cout << "Most recent release different from the checked out commit: " << bedrockTagName << endl;
+                break;
+            }
         }
+
+        // Make sure we got something to test.
+        ASSERT_NOT_EQUAL(bedrockTagName, "");
 
         // If you'd like to test against a particular tag, uncomment the following line. The value chosen here was a
         // known bad version that failed to escalate commands at upgrade when first deployed.
