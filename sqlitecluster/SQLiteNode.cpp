@@ -254,9 +254,6 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                         db.rollback();
                     }
                 }
-
-                // Notify that we've succeeded (it actually also notifies if we were canceled, but that's fine).
-                _localCommitNotifier.notifyThrough(db.getCommitCount());
             } catch (const SException& e) {
                 SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
                 goSearchingOnExit = true;
@@ -2468,7 +2465,13 @@ int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uin
     }
 
     SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
-    int result = db.commit(stateName(_state));
+
+    // Let the commit handler notify any other waiting threads that our commit is complete before it starts a checkpoint.
+    function<void()> notifyIfCommitted = [&]() {
+        _localCommitNotifier.notifyThrough(db.getCommitCount());
+    };
+
+    int result = db.commit(stateName(_state), &notifyIfCommitted);
     --_concurrentReplicateTransactions;
     if (result == SQLITE_BUSY_SNAPSHOT) {
         // conflict, bail out early.
