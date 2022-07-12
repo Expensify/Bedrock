@@ -46,7 +46,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         for (const auto& tagName : tagNames) {
             string checkIfOnLatestTag = "/bin/bash -c 'if [[ \"$(git rev-list -n 1 " + tagName + ")\" == \"$(git rev-parse HEAD)\" ]]; then exit 1; else exit 0; fi'";
             int result = system(checkIfOnLatestTag.c_str());
-            if (!result) {
+            if (result == 0) {
                 bedrockTagName = tagName;
                 break;
             }
