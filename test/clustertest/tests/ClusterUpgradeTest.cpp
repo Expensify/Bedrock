@@ -44,7 +44,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         // The commit number we're currently on: git rev-parse HEAD
         // If the current commit matches the tested tag, the script returns 1 and we check the next one. When the script returns 0, that's the release we'll use.
         for (const auto& tagName : tagNames) {
-            string checkIfOnLatestTag = "/bin/bash -c 'if [ \"`git rev-list -n 1 " + tagName + "`\" = \"`git rev-parse HEAD`\" ]; then exit 1; else exit 0; fi'";
+            string checkIfOnLatestTag = "/bin/bash -c 'if [[ \"$(git rev-list -n 1 " + tagName + ")\" == \"$(git rev-parse HEAD)\" ]]; then exit 1; else exit 0; fi'";
             int result = system(checkIfOnLatestTag.c_str());
             if (!result) {
                 bedrockTagName = tagName;
