@@ -48,7 +48,6 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
             int result = system(checkIfOnLatestTag.c_str());
             if (!result) {
                 bedrockTagName = tagName;
-                cout << "Most recent release different from the checked out commit: " << bedrockTagName << endl;
                 break;
             }
         }
