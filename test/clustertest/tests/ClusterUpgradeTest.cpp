@@ -17,7 +17,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         const size_t RECENT_RELEASES_TO_CHECK = 5;
         const string tempJson = "brdata.json";
         string command = "curl --silent 'https://api.github.com/repos/Expensify/Bedrock/releases?page=1&per_page=" + to_string(RECENT_RELEASES_TO_CHECK) + "' -o " + tempJson;
-        ASSERT_FALSE(system(command.c_str()));
+        ASSERT_EQUAL(system(command.c_str()), 0);
 
         // Parse the JSON we got from github with recent releases.
         string data = SFileLoad(tempJson);
