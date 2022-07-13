@@ -585,7 +585,7 @@ bool SQLite::prepare() {
     return true;
 }
 
-int SQLite::commit(const string& description) {
+int SQLite::commit(const string& description, function<void()>* preCheckpointCallback) {
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
         return COMMIT_DISABLED;
@@ -669,6 +669,10 @@ int SQLite::commit(const string& description) {
         _sharedData.commitLock.unlock();
         _mutexLocked = false;
         _queryCache.clear();
+
+        if (preCheckpointCallback != nullptr) {
+            (*preCheckpointCallback)();
+        }
 
         // If we are the first to set it (i.e., test_and_set returned `false` as the previous value), we'll start a checkpoint.
         if (!_sharedData.checkpointInProgress.test_and_set()) {
