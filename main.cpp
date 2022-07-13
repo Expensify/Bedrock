@@ -184,6 +184,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Code below here is run by the child process; the parent exited above
+        umask(0077);
         SASSERT(setsid() >= 0);
         SASSERT(chdir("/") >= 0);
         if (!freopen("/dev/null", "r", stdin) ||
