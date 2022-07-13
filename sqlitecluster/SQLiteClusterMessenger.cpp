@@ -300,7 +300,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
         return false;
     }
 
-    // If we succeeded but were delayed, log that but cintinue.
+    // If we succeeded but were delayed, log that and continue.
     if (sleepsDueToFailures) {
         auto msElapsed = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count();
         SINFO("[HTTPESC] Problems connecting for escalation but succeeded in " << msElapsed << "ms.");
