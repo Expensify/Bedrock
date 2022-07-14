@@ -293,6 +293,14 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
             return false;
         }
     }
+
+    // If we fell out of the loop simply because we did not get a leader address in time, we can return false and retry later.
+    if (leaderAddress.empty()) {
+        SINFO("[HTTPESC] Could not get leader address in 5s, will retry later.");
+        return false;
+    }
+
+    // If we succeeded but were delayed, log that and continue.
     if (sleepsDueToFailures) {
         auto msElapsed = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count();
         SINFO("[HTTPESC] Problems connecting for escalation but succeeded in " << msElapsed << "ms.");
