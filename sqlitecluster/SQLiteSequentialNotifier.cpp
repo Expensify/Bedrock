@@ -39,14 +39,18 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
         }
         cv_status result = state->waitingThreadConditionVariable.wait_for(lock, 1s);
         if (result == cv_status::timeout) {
-            // So, normally, we should only get woken up if something has happened. If we get woken up because of a
-            // timeout, that's fundamentally fine, we could just still be waiting for that thing to happen.
-            // But if one of the things we're tracking has changed, and we got woken up from a timeout, not from that
-            // change, that's worrisome, and indicates that maybe there's a condition in which we can get stuck. Note
-            // that this isn't 100%, we could get woken up here by chance and one of these conditions could change
-            // immediately following that wakeup, so there's a small but nonzero chance of this log line firing in a
-            // valid case.
-            if (_globalResult == RESULT::CANCELED || state->result != RESULT::UNKNOWN) {
+            // We shouldn't need this 1s timeout at all, and should be able to wait indefinitely until this thread is woken up, because that should always happen eventually. But it seems
+            // like there might be a bug *somewhere* that causes us to either miss a notification that we've canceled some outstanding transactions, or that we are failing to notify them
+            // that they're canceled. To handle that case, we wake up every second and will re-check, but warn if such a thing has happened.
+            //
+            // Note that this can also happen in the case of successful notifications - it seems like we can get a timeout even in the case that the notification was sent, if these two
+            // things happen more-or-less simultaneously. The condition_variable documentation does not make it clear if this should be the case or not, but in every examined case, the
+            // waited-for commit and the timeout happened more or less simultaneously (not with up to a 1s gap between them, which would indicate a missed notification and eventual timeout)
+            // so we are ignoring that case which seems to work OK.
+            //
+            // We should investigate any instances of thew below logline to see if they're same as for the success cases mentioned above (i.e., the timeout happens simultaneously as the
+            // cancellation) or if the log line is delayed by up to a second (indicating a problem).
+            if (_globalResult == RESULT::CANCELED || state->result == RESULT::CANCELED) {
                 SWARN("Got timeout in wait_for but state has changed! Was waiting for " << value);
             }
         }
