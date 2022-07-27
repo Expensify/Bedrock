@@ -57,23 +57,6 @@ travis_fold() {
   echo -en "travis_fold:${action}:${name}\r${ANSI_CLEAR}"
 }
 
-enforce_max_page_count() {
-    local fold_name="enforce_max_page_count"
-    travis_fold start $fold_name
-    travis_time_start
-    local intended_max_page_count="4294967295"
-    local max_page_count="$(grep -E 'define SQLITE_MAX_PAGE_COUNT [0-9]+' libstuff/sqlite3.c | awk '{print $4}')"
-    if [[ "$max_page_count" != "$intended_max_page_count" ]] ; then
-        echo "SQLITE_MAX_PAGE_COUNT should be set to ${intended_max_page_count}, set to ${max_page_count} instead." >&2
-        exit 1
-    fi
-    travis_time_finish
-    travis_fold end $fold_name
-}
-
-# Check that we remembered to reset the value for SQLITE_MAX_PAGE_COUNT in case we updated sqlite3.c
-enforce_max_page_count
-
 travis_fold start install_packages
 travis_time_start
 
