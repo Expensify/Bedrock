@@ -97,7 +97,7 @@ struct BadCommandTest : tpunit::TestFixture {
                     successfulRunCount++;
                 }
             } catch (...) {
-                cout << "[BadCommandTest] Caught exception running test." << endl;
+                cout << "Caught exception running test." << endl;
             }
         }
         ASSERT_GREATER_THAN_EQUAL(successfulRunCount, 3);
