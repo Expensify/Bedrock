@@ -1450,7 +1450,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
 
                 // Create a command from this request and pass it on to the server to handle.
                 auto command = make_unique<SQLiteCommand>(move(request));
-                command->initiatingPeerID = peer->id;
                 _server.acceptCommand(move(command), true);
             } else {
                 // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
