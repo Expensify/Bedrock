@@ -37,23 +37,7 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
         } else if (state->result != RESULT::UNKNOWN) {
             return state->result;
         }
-        cv_status result = state->waitingThreadConditionVariable.wait_for(lock, 1s);
-        if (result == cv_status::timeout) {
-            // We shouldn't need this 1s timeout at all, and should be able to wait indefinitely until this thread is woken up, because that should always happen eventually. But it seems
-            // like there might be a bug *somewhere* that causes us to either miss a notification that we've canceled some outstanding transactions, or that we are failing to notify them
-            // that they're canceled. To handle that case, we wake up every second and will re-check, but warn if such a thing has happened.
-            //
-            // Note that this can also happen in the case of successful notifications - it seems like we can get a timeout even in the case that the notification was sent, if these two
-            // things happen more-or-less simultaneously. The condition_variable documentation does not make it clear if this should be the case or not, but in every examined case, the
-            // waited-for commit and the timeout happened more or less simultaneously (not with up to a 1s gap between them, which would indicate a missed notification and eventual timeout)
-            // so we are ignoring that case which seems to work OK.
-            //
-            // We should investigate any instances of thew below logline to see if they're same as for the success cases mentioned above (i.e., the timeout happens simultaneously as the
-            // cancellation) or if the log line is delayed by up to a second (indicating a problem).
-            if (_globalResult == RESULT::CANCELED || state->result == RESULT::CANCELED) {
-                SWARN("Got timeout in wait_for but state has changed! Was waiting for " << value);
-            }
-        }
+        state->waitingThreadConditionVariable.wait(lock);
     }
 }
 

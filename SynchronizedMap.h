@@ -37,7 +37,7 @@ class SynchronizedMap {
         lock_guard <decltype(_m)> lock(_m);
         return _data.emplace(key, move(value));
     }
-    auto empty() const {
+    auto empty() {
         lock_guard <decltype(_m)> lock(_m);
         return _data.empty();
     }
@@ -55,7 +55,7 @@ class SynchronizedMap {
         lock_guard <decltype(_m)> lock(_m);
         return _data.find(item);
     }
-    auto size() const {
+    auto size() {
         lock_guard <decltype(_m)> lock(_m);
         return _data.size();
     }
@@ -65,5 +65,5 @@ class SynchronizedMap {
     
   private :
     map<T, U> _data;
-    mutable recursive_mutex _m;
+    recursive_mutex _m;
 };

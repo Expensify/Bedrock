@@ -19,8 +19,8 @@ class ClusterTester {
     // Creates a cluster of the given size and brings up all the nodes. The nodes will have priority in the order of
     // their creation (i.e., node 0 is highest priority and will become leader.
     // You can also specify plugins to load if for some reason you need to override the default configuration.
-    ClusterTester(ClusterSize size, list<string> queries = {}, map<string, string> _args = {}, list<string> uniquePorts = {}, string pluginsToLoad = "db,cache,jobs", const string& processPath = "");
-    ClusterTester(const string& pluginString = "db,cache,jobs", const string& processPath = "");
+    ClusterTester(ClusterSize size, list<string> queries = {}, map<string, string> _args = {}, list<string> uniquePorts = {}, string pluginsToLoad = "db,cache,jobs");
+    ClusterTester(const string& pluginString = "db,cache,jobs");
     ~ClusterTester();
 
     // Returns the tester at the given index in the cluster.
@@ -47,13 +47,12 @@ class ClusterTester {
 typedef ClusterTester<BedrockTester> BedrockClusterTester;
 
 template <typename T>
-ClusterTester<T>::ClusterTester(const string& pluginString, const string& processPath) : ClusterTester<T>(
+ClusterTester<T>::ClusterTester(const string& pluginString) : ClusterTester<T>(
     ClusterSize::THREE_NODE_CLUSTER,
     {},
     {},
     {},
-    pluginString,
-    processPath
+    pluginString
     )
 {}
 
@@ -62,8 +61,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
                                 list<string> queries,
                                 map<string, string> _args,
                                 list<string> uniquePorts,
-                                string pluginsToLoad,
-                                const string& processPath)
+                                string pluginsToLoad)
 : _size((int)size)
 {
     // Generate three ports for each node.
@@ -85,7 +83,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         STHROW("Couldn't get CWD");
     }
     if (SFileExists(string(cwd) + "/testplugin/testplugin.so")) {
-        pluginsToLoad += pluginsToLoad.size() ? "," : "";
+        pluginsToLoad += pluginsToLoad.size() ? pluginsToLoad += "," : "";
         pluginsToLoad += string(cwd) + "/testplugin/testplugin.so";
     }
 
@@ -140,7 +138,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         }
 
         // And add the new entry in the map.
-        _cluster.emplace_back(args, queries, serverPort, nodePort, controlPort, false, processPath);
+        _cluster.emplace_back(args, queries, serverPort, nodePort, controlPort, false);
     }
 
     // Now start them all.
