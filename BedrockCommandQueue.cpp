@@ -65,5 +65,8 @@ void BedrockCommandQueue::abandonFutureCommands(int msInFuture) {
 }
 
 void BedrockCommandQueue::push(unique_ptr<BedrockCommand>&& command) {
-    SScheduledPriorityQueue<unique_ptr<BedrockCommand>>::push(move(command), command->priority, command->scheduledTime, command->timeout());
+    BedrockCommand::Priority priority = command->priority;
+    uint64_t executionTime = command->request.calcU64("commandExecuteTime");
+    uint64_t timeout = command->timeout();
+    SScheduledPriorityQueue<unique_ptr<BedrockCommand>>::push(move(command), priority, executionTime, timeout);
 }

@@ -44,7 +44,8 @@ uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& comman
 
     // Already expired.
     if (adjustedTimeout <= 0 || (isProcessing && processTimeout <= 0)) {
-        SALERT("Command " << command->request.methodLine << " timed out.");
+        SALERT("Command " << command->request.methodLine << " timed out after "
+               << ((now - command->request.calc64("commandExecuteTime")) / 1000) << "ms.");
         STHROW("555 Timeout");
     }
 

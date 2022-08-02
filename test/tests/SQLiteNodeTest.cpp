@@ -1,7 +1,6 @@
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteCommand.h>
 #include <sqlitecluster/SQLiteNode.h>
-#include <sqlitecluster/SQLitePeer.h>
 #include <sqlitecluster/SQLiteServer.h>
 #include <test/lib/BedrockTester.h>
 
@@ -10,7 +9,7 @@
 
 class SQLiteNodeTester {
   public:
-    static SQLitePeer* getSyncPeer(SQLiteNode& node) {
+    static SQLiteNode::Peer* getSyncPeer(SQLiteNode& node) {
         return node._syncPeer;
     }
 
@@ -24,8 +23,9 @@ class TestServer : public SQLiteServer {
     TestServer() : SQLiteServer() { }
 
     virtual void acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew) { }
+    virtual void cancelCommand(const string& commandID) { }
     virtual bool canStandDown() { return true; }
-    virtual void onNodeLogin(SQLitePeer* peer) { }
+    virtual void onNodeLogin(SQLiteNode::Peer* peer) { }
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {
@@ -53,8 +53,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, 1, 1000000000, "1.0");
 
         // Do a base test, with one peer with no latency.
-        SQLitePeer* fastest = nullptr;
-        for (auto peer : testNode._peerList) {
+        SQLiteNode::Peer* fastest = nullptr;
+        for (auto peer : testNode.peerList) {
             int peerNum = peer->name[4] - 48;
             peer->loggedIn = true;
             peer->setCommit(10000000 + peerNum, "");
@@ -71,7 +71,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // See what happens when another peer becomes faster.
-        for (auto peer : testNode._peerList) {
+        for (auto peer : testNode.peerList) {
             // New fastest is peer 3.
             if (peer->name == "peer3") {
                 peer->latency = 50;
@@ -82,7 +82,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // And see what happens if our fastest peer logs out.
-        for (auto peer : testNode._peerList) {
+        for (auto peer : testNode.peerList) {
             if (peer->name == "peer3") {
                 peer->loggedIn = false;
                 peer->latency = 50;
@@ -97,7 +97,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // And then if our previously 0 latency peer gets (fast) latency data.
-        for (auto peer : testNode._peerList) {
+        for (auto peer : testNode.peerList) {
             // New fastest is peer 3.
             if (peer->name == "peer1") {
                 peer->latency = 75;
@@ -108,7 +108,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
 
         // Now none of our peers have latency data, but one has more commits.
-        for (auto peer : testNode._peerList) {
+        for (auto peer : testNode.peerList) {
             peer->latency = 0;
 
             // 4 had highest commit count.
