@@ -5,8 +5,14 @@
 
 SData SQLiteCommand::preprocessRequest(SData&& request) {
     // If the request doesn't specify an execution time, default to right now.
-    if (!request.isSet("commandExecuteTime")) {
-        request["commandExecuteTime"] = to_string(STimeNow());
+    if (request.isSet("commandExecuteTime")) {
+        // We are deprecating `commandExecuteTime` so need to figure out where it's used.
+        auto now = STimeNow();
+        auto executeTime = request.calcU64("commandExecuteTime");
+        if (executeTime > now + 5'000'000) {
+            auto difference = executeTime - now;
+            SINFO("Command '" << request.methodLine << "' requested execution time " << difference << "us in the future.");
+        }
     }
 
     // Add a request ID if one was missing.
@@ -21,7 +27,7 @@ SData SQLiteCommand::preprocessRequest(SData&& request) {
     return move(request);
 }
 
-SQLiteCommand::SQLiteCommand(SData&& _request) : 
+SQLiteCommand::SQLiteCommand(SData&& _request) :
     privateRequest(move(preprocessRequest(move(_request)))),
     request(privateRequest),
     initiatingPeerID(0),
@@ -51,7 +57,7 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
     }
 }
 
-SQLiteCommand::SQLiteCommand(SQLiteCommand&& from) : 
+SQLiteCommand::SQLiteCommand(SQLiteCommand&& from) :
     privateRequest(move(from.privateRequest)),
     request(privateRequest),
     initiatingPeerID(from.initiatingPeerID),

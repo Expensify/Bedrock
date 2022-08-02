@@ -29,7 +29,8 @@ class BedrockTester {
                   uint16_t serverPort = 0,
                   uint16_t nodePort = 0,
                   uint16_t controlPort = 0,
-                  bool startImmediately = true);
+                  bool startImmediately = true,
+                  const string& bedrockBinary = "");
 
     // Destructor.
     ~BedrockTester();
@@ -78,6 +79,8 @@ class BedrockTester {
 
     // This is just a convenience wrapper around `waitForStatusTerm` looking for the state of the node.
     bool waitForState(const string& state, uint64_t timeoutUS = 60'000'000);
+
+    string serverName;
 
   protected:
     // Returns an SQLite object attached to the same DB file as the bedrock server. Writing to this is dangerous and

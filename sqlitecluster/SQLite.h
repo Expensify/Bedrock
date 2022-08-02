@@ -150,7 +150,9 @@ class SQLite {
     void setRewriteHandler(bool (*handler)(int, const char*, string&));
 
     // Commits the current transaction to disk. Returns an sqlite3 result code.
-    int commit(const string& description = "UNSPECIFIED");
+    // preCheckpointCallback is an optional callback that will be called before the checkpoint code runs, after the commit has completed. Note that if the commit fails, this is not called.
+    // The main purpose of this is to allow replications in SQLiteNode to notify other waiting threads that the commit has finished even before the checkpoint is done.
+    int commit(const string& description = "UNSPECIFIED", function<void()>* preCheckpointCallback = nullptr);
 
     // Cancels the current transaction and rolls it back.
     void rollback();
@@ -167,7 +169,7 @@ class SQLite {
 
     // Returns the current value of commitCount, which should be the highest ID of a commit in any handle to the
     // database.
-    uint64_t getCommitCount();
+    uint64_t getCommitCount() const;
 
     // Returns the current state of the database, as a SHA1 hash of all queries committed.
     string getCommittedHash();
@@ -214,11 +216,6 @@ class SQLite {
     // restrictive access mode that will deny access for write operations and other potentially risky operations, even
     // in the case that a specific table/column are not being directly requested.
     map<string, set<string>>* whitelist = nullptr;
-
-    // These are the minimum thresholds for the WAL file, in pages, that will cause us to trigger either a full or
-    // passive checkpoint. They're public, non-const, and atomic so that they can be configured on the fly.
-    static atomic<int> passiveCheckpointPageMin;
-    static atomic<int> fullCheckpointPageMin;
 
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
@@ -293,6 +290,13 @@ class SQLite {
 
         SPerformanceTimer _commitLockTimer;
 
+        // We use this flag to prevent to threads running checkpoints t the same time.
+        atomic_flag checkpointInProgress = ATOMIC_FLAG_INIT;
+
+        // This records the most recent count of the number of frames to checkpoint. We may be able to remove this with
+        // no ill effects, but currently we use it to set a floor on the number of frames we will try and checkpoint.
+        atomic<size_t> outstandingFramesToCheckpoint = 0;
+
       private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
@@ -300,7 +304,7 @@ class SQLite {
         map<uint64_t, tuple<string, string, uint64_t>> _committedTransactions;
 
         // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
-        // variety of operations (i.e., inserting checkpoint listeners, updating _committedTransactions, etc.
+        // variety of operations (i.e., updating _committedTransactions, etc).
         recursive_mutex _internalStateMutex;
     };
 
@@ -408,11 +412,13 @@ class SQLite {
     // Callback to trace internal sqlite state (used for logging normalized queries).
     static int _sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x);
 
-    // Handles running checkpointing operations.
-    static int _sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount);
-
     // Callback function for progress tracking.
     static int _progressHandlerCallback(void* arg);
+
+    // Callback when the db checkpoints. Does little except record the number of pages outstanding.
+    // Registering this has the important side effect of preventing the DB from auto-checkpointing.
+    static int _walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize);
+
     uint64_t _timeoutLimit = 0;
     uint64_t _timeoutStart;
     uint64_t _timeoutError;

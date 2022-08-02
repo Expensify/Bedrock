@@ -11,9 +11,6 @@
 atomic<int64_t> SQLite::_transactionAttemptCount(0);
 mutex SQLite::_pageLogMutex;
 
-atomic<int> SQLite::passiveCheckpointPageMin(2500); // Approx 10mb
-atomic<int> SQLite::fullCheckpointPageMin(25000); // Approx 100mb (pages are assumed to be 4kb)
-
 // Tracing can only be enabled or disabled globally, not per object.
 atomic<bool> SQLite::enableTrace(false);
 
@@ -185,9 +182,6 @@ void SQLite::commonConstructorInitialization() {
         SASSERT(!SQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
     }
 
-    // Do our own checkpointing.
-    sqlite3_wal_hook(_db, _sqliteWALCallback, this);
-
     // Enable tracing for performance analysis.
     sqlite3_trace_v2(_db, SQLITE_TRACE_STMT, _sqliteTraceCallback, this);
 
@@ -201,6 +195,9 @@ void SQLite::commonConstructorInitialization() {
     // I tested and found that we could set about 10,000,000 and the number of steps to run and get a callback once a
     // second. This is set to be a bit more granular than that, which is probably adequate.
     sqlite3_progress_handler(_db, 1'000'000, _progressHandlerCallback, this);
+
+    // Setting a wal hook prevents auto-checkpointing.
+    sqlite3_wal_hook(_db, _walHookCallback, this);
 
     // Check if synchronous has been set and run query to use a custom synchronous setting
     if (!_synchronous.empty()) {
@@ -257,6 +254,12 @@ int SQLite::_progressHandlerCallback(void* arg) {
     return 0;
 }
 
+int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize) {
+    SQLite* sqlite = static_cast<SQLite*>(sqliteObject);
+    sqlite->_sharedData.outstandingFramesToCheckpoint = walFileSize;
+    return SQLITE_OK;
+}
+
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     SSYSLOG(LOG_INFO, "[info] " << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
 }
@@ -266,10 +269,6 @@ int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void*
         SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql((sqlite3_stmt*)p));
     }
     return 0;
-}
-
-int SQLite::_sqliteWALCallback(void* data, sqlite3* db, const char* dbName, int pageCount) {
-    return SQLITE_OK;
 }
 
 string SQLite::_getJournalQuery(const list<string>& queryParts, bool append) {
@@ -586,7 +585,7 @@ bool SQLite::prepare() {
     return true;
 }
 
-int SQLite::commit(const string& description) {
+int SQLite::commit(const string& description, function<void()>* preCheckpointCallback) {
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
         return COMMIT_DISABLED;
@@ -671,13 +670,24 @@ int SQLite::commit(const string& description) {
         _mutexLocked = false;
         _queryCache.clear();
 
-        // See if we can checkpoint without holding the commit lock.
-        int walSizeFrames = 0;
-        int framesCheckpointed = 0;
-        uint64_t start = STimeNow();
-        int result = sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, &walSizeFrames, &framesCheckpointed);
-        SDEBUG("[checkpoint] Checkpoint complete. Result: " << result << ". Total frames checkpointed: "
-              << framesCheckpointed << " of " << walSizeFrames << " in " << ((STimeNow() - start) / 1000) << "ms.");
+        if (preCheckpointCallback != nullptr) {
+            (*preCheckpointCallback)();
+        }
+
+        // If we are the first to set it (i.e., test_and_set returned `false` as the previous value), we'll start a checkpoint.
+        if (!_sharedData.checkpointInProgress.test_and_set()) {
+            if (_sharedData.outstandingFramesToCheckpoint) {
+                auto start = STimeNow();
+                int framesCheckpointed = 0;
+                sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, NULL, &framesCheckpointed);
+                auto end = STimeNow();
+                SINFO("Checkpointed " << framesCheckpointed << " (total) frames of " << _sharedData.outstandingFramesToCheckpoint << " in " << (end - start) << "us.");
+
+                // It might not actually be 0, but we'll just let sqlite tell us what it is next time _walHookCallback runs.
+                _sharedData.outstandingFramesToCheckpoint = 0;
+            }
+            _sharedData.checkpointInProgress.clear();
+        }
         SINFO(description << " COMMIT complete in " << time << ". Wrote " << (endPages - startPages)
               << " pages. WAL file size is " << sz << " bytes. " << _queryCount << " queries attempted, " << _cacheHits
               << " served from cache.");
@@ -812,7 +822,7 @@ int64_t SQLite::getLastInsertRowID() {
     return sqliteRowID;
 }
 
-uint64_t SQLite::getCommitCount() {
+uint64_t SQLite::getCommitCount() const {
     return _sharedData.commitCount;
 }
 

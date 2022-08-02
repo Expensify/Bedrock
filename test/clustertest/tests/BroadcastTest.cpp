@@ -25,6 +25,7 @@ struct BroadcastCommandTest : tpunit::TestFixture {
     {
         BedrockTester& leader = tester->getTester(0);
         BedrockTester& follower = tester->getTester(1);
+        BedrockTester& follower2 = tester->getTester(2);
 
         // We want to test when this command runs.
         uint64_t now = STimeNow();
@@ -43,22 +44,31 @@ struct BroadcastCommandTest : tpunit::TestFixture {
 
         SData cmd2("getbroadcasttimeouts");
         vector<SData> results;
+        vector<SData> results2;
         try {
             results = follower.executeWaitMultipleData({cmd2});
+            results2 = follower2.executeWaitMultipleData({cmd2});
         } catch (...) {
             cout << "[BroadcastTest] Couldn't send getbroadcasttimeouts" << endl;
             throw;
         }
 
-        // The commandExecuteTime of the command should be between the time we stored as `now` above, and 3 seconds
+        // The peekedAt of the command should be between the time we stored as `now` above, and 3 seconds
         // after that
-        ASSERT_GREATER_THAN(now + 3'000'000, stoull(results[0]["stored_commandExecuteTime"]));
-        ASSERT_LESS_THAN(now, stoull(results[0]["stored_commandExecuteTime"]));
+        ASSERT_GREATER_THAN(now + 3'000'000, stoull(results[0]["stored_peekedAt"]));
+        ASSERT_LESS_THAN(now, stoull(results[0]["stored_peekedAt"]));
 
         // Other values should just match what's in the testplugin code.
         ASSERT_EQUAL(5001, stoll(results[0]["stored_processTimeout"]));
         ASSERT_EQUAL(5002, stoll(results[0]["stored_timeout"]));
         ASSERT_EQUAL("whatever", results[0]["stored_not_special"]);
+
+        // Verify the results were received on cluster node 3 (follower 2) as well
+        ASSERT_GREATER_THAN(now + 3'000'000, stoull(results2[0]["stored_peekedAt"]));
+        ASSERT_LESS_THAN(now, stoull(results2[0]["stored_peekedAt"]));
+        ASSERT_EQUAL(5001, stoll(results2[0]["stored_processTimeout"]));
+        ASSERT_EQUAL(5002, stoll(results2[0]["stored_timeout"]));
+        ASSERT_EQUAL("whatever", results2[0]["stored_not_special"]);
     }
 
 } __BroadcastCommandTest;

@@ -37,7 +37,8 @@ BedrockTester::BedrockTester(const map<string, string>& args,
                              uint16_t serverPort,
                              uint16_t nodePort,
                              uint16_t controlPort,
-                             bool startImmediately) :
+                             bool startImmediately,
+                             const string& bedrockBinary) :
     _serverPort(serverPort ?: ports.getPort()),
     _nodePort(nodePort ?: ports.getPort()),
     _controlPort(controlPort ?: ports.getPort()),
@@ -54,6 +55,12 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         currentTestName = tpunit::currentTestName;
     }
 
+    if (bedrockBinary.empty()) {
+        serverName = "bedrock";
+    } else {
+        serverName = bedrockBinary;
+    }
+
     map <string, string> defaultArgs = {
         {"-db", getTempFileName()},
         {"-serverHost", "127.0.0.1:" + to_string(_serverPort)},
@@ -67,7 +74,6 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-mmapSizeGB", "1"},
         {"-maxJournalSize", "25000"},
         {"-v", ""},
-        {"-quorumCheckpoint", "50"},
         {"-enableMultiWrite", "true"},
         {"-escalateOverHTTP", "true"},
         {"-cacheSize", "1000"},
@@ -139,9 +145,6 @@ void BedrockTester::updateArgs(const map<string, string> args) {
 }
 
 string BedrockTester::startServer(bool wait) {
-    // This expects that `bedrock` exists in the current path. It may need to be added.
-    string serverName = "bedrock";
-
     int childPID = fork();
     if (childPID == -1) {
         cout << "Fork failed, acting like server died." << endl;
