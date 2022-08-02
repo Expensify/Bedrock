@@ -432,9 +432,6 @@ class BedrockServer : public SQLiteServer {
     // allows it to start again and pick up the new socket we just created.
     SSynchronizedQueue<bool> _newCommandsWaiting;
 
-    // Send a reply to a command that was escalated to us from a peer, rather than a locally-connected client.
-    void _finishPeerCommand(unique_ptr<BedrockCommand>& command);
-
     // When we're standing down, we temporarily dump newly received commands here (this lets all existing
     // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
     // endless loop of always having new unfinished commands.
@@ -469,10 +466,6 @@ class BedrockServer : public SQLiteServer {
     // Timestamp for the last time we promoted a command to QUORUM.
     atomic<uint64_t> _lastQuorumCommandTime;
 
-    // We keep a queue of completed commands that workers will insert into when they've successfully finished a command
-    // that just needs to be returned to a peer.
-    BedrockTimeoutCommandQueue _completedCommands;
-
     // Whether or not all plugins are detached
     bool _pluginsDetached;
 
@@ -503,7 +496,4 @@ class BedrockServer : public SQLiteServer {
     // syncNode while the sync thread exists, it's a shared pointer to allow for the last socket thread using it to
     // destroy the pool at shutdown.
     shared_ptr<SQLitePool> _dbPool;
-
-    // TODO: Remove once we've verified this all works.
-    atomic<bool> _escalateOverHTTP = false;
 };
