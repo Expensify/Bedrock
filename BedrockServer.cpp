@@ -684,7 +684,6 @@ void BedrockServer::sync()
         threadId++;
         workerThread.join();
     }
-    SINFO("All worker threads are done.");
 
     // If there's anything left in the command queue here, we'll discard it, because we have no way of processing it.
     if (_commandQueue.size()) {
