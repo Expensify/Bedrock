@@ -19,6 +19,9 @@ class SQLiteCommand {
     // Immutable reference handle to the original request.
     const SData& request;
 
+    // Final response
+    SData response;
+
     // This allows for modifying a request passed into the constructor such that we can store it as `const`.
     static SData preprocessRequest(SData&& request);
 
@@ -45,9 +48,6 @@ class SQLiteCommand {
 
     // Accumulated response content
     STable jsonContent;
-
-    // Final response
-    SData response;
 
     // Write consistency required when committing this command.
     SQLiteNode::ConsistencyLevel writeConsistency;

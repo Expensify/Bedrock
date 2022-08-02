@@ -60,11 +60,11 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
 SQLiteCommand::SQLiteCommand(SQLiteCommand&& from) :
     privateRequest(move(from.privateRequest)),
     request(privateRequest),
+    response(move(from.response)),
     initiatingPeerID(from.initiatingPeerID),
     initiatingClientID(from.initiatingClientID),
     id(move(from.id)),
     jsonContent(move(from.jsonContent)),
-    response(move(from.response)),
     writeConsistency(from.writeConsistency),
     complete(from.complete),
     escalationTimeUS(from.escalationTimeUS),
