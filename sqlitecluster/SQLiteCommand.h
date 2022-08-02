@@ -22,8 +22,8 @@ class SQLiteCommand {
     // This allows for modifying a request passed into the constructor such that we can store it as `const`.
     static SData preprocessRequest(SData&& request);
 
-    // TODO: Removing this entirely causes escalating to the old leader to break.
-    int64_t initiatingPeerID = 0;
+    // TODO: WTF.
+    char ifThereIsntSomethingHereThenEscalationsToOldVersionsBreak;
 
     // A value of zero is an invalid ID, and is interpreted to mean "not set".
     // A negative value indicates a valid ID of an invalid client (a psuedo-client, or a disconnected client), that we
