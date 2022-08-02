@@ -6,7 +6,6 @@
 #include <sqlitecluster/SQLitePool.h>
 #include <sqlitecluster/SQLiteSequentialNotifier.h>
 #include <WallClockTimer.h>
-#include <SynchronizedMap.h>
 
 // This file is long and complex. For each nested sub-structure (I.e., classes inside classes) we have attempted to
 // arrange things as such:
@@ -147,20 +146,8 @@ class SQLiteNode : public STCPManager {
     // Call this if you want to shut down the node.
     void beginShutdown(uint64_t usToWait);
 
-    // If we have a command that can't be handled on a follower, we can escalate it to the leader node. The SQLiteNode
-    // takes ownership of the command until it receives a response from the follower. When the command completes, it will
-    // be re-queued in the SQLiteServer (_server), but its `complete` field will be set to true.
-    // If the 'forget' flag is set, we will not expect a response from leader for this command.
-    [[deprecated("Use HTTP escalation")]]
-    void escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget = false);
-
     // Handle any read/write events that occurred.
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
-
-    // This takes a completed command and sends the response back to the originating peer. If we're not the leader
-    // node, or if this command doesn't have an `initiatingPeerID`, then calling this function is an error.
-    [[deprecated("Use HTTP escalation")]]
-    void sendResponse(const SQLiteCommand& command);
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,
@@ -312,11 +299,6 @@ class SQLiteNode : public STCPManager {
     // This is a pool of DB handles that this node can use for any DB access it needs. Currently, it hands them out to
     // replication threads as required. It's passed in via the constructor.
     shared_ptr<SQLitePool> _dbPool;
-
-    // When we're a follower, we can escalate a command to the leader. When we do so, we store that command in the
-    // following map of commandID to Command until the follower responds.
-    [[deprecated("Use HTTP escalation")]]
-    SynchronizedMap<string, unique_ptr<SQLiteCommand>> _escalatedCommandMap;
 
     // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
     // any new committed transactions to peers, and update this value.

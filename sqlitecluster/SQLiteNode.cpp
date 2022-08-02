@@ -28,10 +28,6 @@
 //
 // FIXME: Add test to measure how long it takes for leader to stabilize.
 //
-// FIXME: If leader dies before sending ESCALATE_RESPONSE (or if follower dies before receiving it), then a command might
-//        have been committed to the database without notifying whoever initiated it. Perhaps have the caller identify
-//        each command with a unique command id, and verify inside the query that the command hasn't been executed yet?
-
 // *** DOCUMENTATION OF MESSAGE FIELDS ***
 // Note: Yes, two of these fields start with lowercase chars.
 // CommitCount:      The highest committed transaction ID in the DB currently. This can be higher than any transaction
@@ -134,7 +130,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
 
 SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
-    SASSERTWARN(_escalatedCommandMap.empty());
     SASSERTWARN(!commitInProgress());
 
     // Clean up all the sockets and peers
@@ -294,18 +289,6 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency) {
     }
 }
 
-void SQLiteNode::sendResponse(const SQLiteCommand& command) {
-    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-    SQLitePeer* peer = _getPeerByID(command.initiatingPeerID);
-    SASSERT(peer);
-    // If it was a peer message, we don't need to wrap it in an escalation response.
-    SData escalate("ESCALATE_RESPONSE");
-    escalate["ID"] = command.id;
-    escalate.content = command.response.serialize();
-    SINFO("Sending ESCALATE_RESPONSE to " << peer->name << " for " << command.id << ".");
-    _sendToPeer(peer, escalate);
-}
-
 void SQLiteNode::beginShutdown(uint64_t usToWait) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     // Ignore redundant
@@ -324,11 +307,6 @@ bool SQLiteNode::_isNothingBlockingShutdown() const {
 
     // If we're doing a commit, don't shut down.
     if (commitInProgress()) {
-        return false;
-    }
-
-    // If we have non-"Connection: wait" commands escalated to leader, not done
-    if (!_escalatedCommandMap.empty()) {
         return false;
     }
 
@@ -352,7 +330,7 @@ bool SQLiteNode::shutdownComplete() const {
     // Not complete unless we're SEARCHING, SYNCHRONIZING, or WAITING
     if (_state > WAITING) {
         // Not in a shutdown state
-        SINFO("Can't graceful shutdown yet because state=" << stateName(_state) << ", commitInProgress=" << commitInProgress() << ", escalated=" << _escalatedCommandMap.size());
+        SINFO("Can't graceful shutdown yet because state=" << stateName(_state) << ", commitInProgress=" << commitInProgress());
         return false;
     }
 
@@ -468,41 +446,6 @@ list<STable> SQLiteNode::getPeerInfo() const {
         peerData.emplace_back(peer->getData());
     }
     return peerData;
-}
-
-void SQLiteNode::escalateCommand(unique_ptr<SQLiteCommand>&& command, bool forget) {
-    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-    // Send this to the leader
-    SASSERT(_leadPeer);
-
-    // If the leader is currently standing down, we won't escalate, we'll give the command back to the caller.
-    if(_leadPeer.load()->state == STANDINGDOWN) {
-        SINFO("Asked to escalate command but leader standing down, letting server retry.");
-        _server.acceptCommand(move(command), false);
-        return;
-    }
-
-    SASSERTEQUALS(_leadPeer.load()->state, LEADING);
-
-    // Create a command to send to our leader.
-    SData escalate("ESCALATE");
-    escalate["ID"] = command->id;
-    escalate.content = command->request.serialize();
-
-    // Marking the command as escalated, even if we are going to forget it, because the command's destructor may need
-    // this info.
-    command->escalated = true;
-
-    // Store the command as escalated, unless we intend to forget about it anyway.
-    if (forget) {
-        SINFO("Firing and forgetting command '" << command->request.methodLine << "' to leader.");
-    } else {
-        command->escalationTimeUS = STimeNow();
-        _escalatedCommandMap.emplace(command->id, move(command));
-    }
-
-    // And send to leader.
-    _sendToPeer(_leadPeer, escalate);
 }
 
 // --------------------------------------------------------------------------
@@ -690,7 +633,6 @@ bool SQLiteNode::update() {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
-        SASSERTWARN(_escalatedCommandMap.empty());
         // If we're trying and ready to shut down, do nothing.
         if (_gracefulShutdown()) {
             // Do we have an outstanding command?
@@ -1174,7 +1116,6 @@ bool SQLiteNode::update() {
     ///     following logic:
     ///
     ///         if( leader steps down or disconnects ) goto SEARCHING
-    ///         if( new queued commands ) send ESCALATE to leader
     ///
     case FOLLOWING:
         SASSERTWARN(!_syncPeer);
@@ -1194,16 +1135,7 @@ bool SQLiteNode::update() {
         SASSERT(_leadPeer);
         if (_leadPeer.load()->state != LEADING && _leadPeer.load()->state != STANDINGDOWN) {
             // Leader stepping down
-            SHMMM("Leader stepping down, re-queueing commands.");
-
-            // If there were escalated commands, give them back to the server to retry.
-            {
-                auto lock = _escalatedCommandMap.scopedLock();
-                for (auto& cmd : _escalatedCommandMap) {
-                    _server.acceptCommand(move(cmd.second), false);
-                }
-                _escalatedCommandMap.clear();
-            }
+            SHMMM("Leader stepping down.");
 
             // Are we in the middle of a commit? This should only happen if we received a `BEGIN_TRANSACTION` without a
             // corresponding `COMMIT` or `ROLLBACK`, this isn't supposed to happen.
@@ -1703,123 +1635,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                       << message.calc("NewCount") << " (" << message["NewHash"] << ", " << message["ID"] << ") but '"
                       << e.what() << "', ignoring.");
             }
-        } else if (SIEquals(message.methodLine, "ESCALATE")) {
-            // ESCALATE: Sent to the leader by a follower. Is processed like a normal command, except when complete an
-            // ESCALATE_RESPONSE is sent to the follower that initiated the escalation.
-            if (!message.isSet("ID")) {
-                STHROW("missing ID");
-            }
-            if (_state != LEADING) {
-                // Reject escalation because we're no longer leading
-                if (_state != STANDINGDOWN) {
-                    // Don't warn if we're standing down, this is expected.
-                    PWARN("Received ESCALATE but not LEADING or STANDINGDOWN, aborting command.");
-                }
-                SData aborted("ESCALATE_ABORTED");
-                aborted["ID"] = message["ID"];
-                aborted["Reason"] = "not leading";
-                _sendToPeer(peer, aborted);
-            } else {
-                // We're leading, make sure the rest checks out
-                SData request;
-                if (!request.deserialize(message.content)) {
-                    STHROW("malformed request");
-                }
-                if (!peer->subscribed) {
-                    STHROW("not subscribed");
-                }
-                if (!message.isSet("ID")) {
-                    STHROW("missing ID");
-                }
-                SAUTOPREFIX(request);
-                PINFO("Received ESCALATE command for '" << message["ID"] << "' (" << request.methodLine << ")");
-
-                // Create a new Command and send to the server.
-                auto command = make_unique<SQLiteCommand>(move(request));
-                command->initiatingPeerID = peer->id;
-                command->id = message["ID"];
-                _server.acceptCommand(move(command), true);
-            }
-        } else if (SIEquals(message.methodLine, "ESCALATE_CANCEL")) {
-            // ESCALATE_CANCEL: Sent to the leader by a follower. Indicates that the follower would like to cancel the escalated
-            // command, such that it is not processed. For example, if the client that sent the original request
-            // disconnects from the follower before an answer is returned, there is no value (and sometimes a negative value)
-            // to the leader going ahead and completing it.
-            if (!message.isSet("ID")) {
-                STHROW("missing ID");
-            }
-            if (_state != LEADING) {
-                // Reject escalation because we're no longer leading
-                PWARN("Received ESCALATE_CANCEL but not LEADING, ignoring.");
-            } else {
-                // We're leading, make sure the rest checks out
-                SData request;
-                if (!request.deserialize(message.content)) {
-                    STHROW("malformed request");
-                }
-                if (!peer->subscribed) {
-                    STHROW("not subscribed");
-                }
-                if (!message.isSet("ID")) {
-                    STHROW("missing ID");
-                }
-                const string& commandID = SToLower(message["ID"]);
-                PINFO("Received ESCALATE_CANCEL command for '" << commandID << "'");
-            }
-        } else if (SIEquals(message.methodLine, "ESCALATE_RESPONSE")) {
-            // ESCALATE_RESPONSE: Sent when the leader processes the ESCALATE.
-            if (_state != FOLLOWING) {
-                STHROW("not following");
-            }
-            if (!message.isSet("ID")) {
-                STHROW("missing ID");
-            }
-            SData response;
-            if (!response.deserialize(message.content)) {
-                STHROW("malformed content");
-            }
-
-            // Go find the escalated command
-            PINFO("Received ESCALATE_RESPONSE for '" << message["ID"] << "'");
-            auto lock = _escalatedCommandMap.scopedLock();
-            auto commandIt = _escalatedCommandMap.find(message["ID"]);
-            if (commandIt != _escalatedCommandMap.end()) {
-                // Process the escalated command response
-                unique_ptr<SQLiteCommand>& command = commandIt->second;
-                if (command->escalationTimeUS) {
-                    command->escalationTimeUS = STimeNow() - command->escalationTimeUS;
-                    SINFO("Total escalation time for command " << command->request.methodLine << " was "
-                          << command->escalationTimeUS/1000 << "ms.");
-                }
-                command->response = response;
-                command->complete = true;
-                _server.acceptCommand(move(command), false);
-                _escalatedCommandMap.erase(commandIt);
-            } else {
-                SHMMM("Received ESCALATE_RESPONSE for unknown command ID '" << message["ID"] << "', ignoring. ");
-            }
-        } else if (SIEquals(message.methodLine, "ESCALATE_ABORTED")) {
-            // ESCALATE_RESPONSE: Sent when the leader aborts processing an escalated command. Re-submit to the new leader.
-            if (_state != FOLLOWING) {
-                STHROW("not following");
-            }
-            if (!message.isSet("ID")) {
-                STHROW("missing ID");
-            }
-            PINFO("Received ESCALATE_ABORTED for '" << message["ID"] << "' (" << message["Reason"] << ")");
-
-            // Look for that command
-            auto lock = _escalatedCommandMap.scopedLock();
-            auto commandIt = _escalatedCommandMap.find(message["ID"]);
-            if (commandIt != _escalatedCommandMap.end()) {
-                // Re-queue this
-                unique_ptr<SQLiteCommand>& command = commandIt->second;
-                PINFO("Re-queueing command '" << message["ID"] << "' (" << command->request.methodLine << ") ("
-                      << command->id << ")");
-                _server.acceptCommand(move(command), false);
-                _escalatedCommandMap.erase(commandIt);
-            } else
-                SWARN("Received ESCALATE_ABORTED for unescalated command " << message["ID"] << ", ignoring.");
         } else if (SIEquals(message.methodLine, "CRASH_COMMAND") || SIEquals(message.methodLine, "BROADCAST_COMMAND")) {
             // Create a new Command and send to the server.
             SData messageCopy = message;
@@ -1879,16 +1694,6 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
                                                                << _db.getUncommittedHash()
                                                                << ") but disconnected prematurely; rolling back.");
             _db.rollback();
-        }
-
-        // If there were escalated commands, give them back to the server to retry, unless it looks like they were in
-        // progress when the leader died, in which case we say they completed with a 500 Error.
-        {
-            auto lock = _escalatedCommandMap.scopedLock();
-            for (auto& cmd : _escalatedCommandMap) {
-                _server.acceptCommand(move(cmd.second), false);
-            }
-            _escalatedCommandMap.clear();
         }
         _changeState(SEARCHING);
     }
@@ -2069,16 +1874,6 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
 
             // Abort all remote initiated commands if no longer LEADING
             // TODO: No we don't, we finish it, as per other documentation in this file.
-        } else if (newState == SEARCHING) {
-            auto lock = _escalatedCommandMap.scopedLock();
-            if (!_escalatedCommandMap.empty()) {
-                // This isn't supposed to happen, though we've seen in logs where it can.
-                // So what we'll do is try and correct the problem and log the state we're coming from to see if that
-                // gives us any more useful info in the future.
-                _escalatedCommandMap.clear();
-                SWARN("Switching from '" << stateName(_state) << "' to '" << stateName(newState)
-                      << "' but _escalatedCommandMap not empty. Clearing it and hoping for the best.");
-            }
         } else if (newState == WAITING) {
             // The first time we enter WAITING, we're caught up and ready to join the cluster - use our real priority from now on
             _priority = _originalPriority;
