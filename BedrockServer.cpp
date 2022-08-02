@@ -797,19 +797,13 @@ void BedrockServer::worker(int threadId)
             // `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
             // for a previous commit to be delivered to this follower), OR if we're on a different version from leader.
             if (state == SQLiteNode::FOLLOWING && (_version != _leaderVersion.load() || command->escalateImmediately) && !command->complete) {
-                if (_escalateOverHTTP) {
-                    auto _clusterMessengerCopy = _clusterMessenger;
-                    if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
-                        // command->complete is now true for this command. It will get handled a few lines below.
-                        SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
-                    } else {
-                        SINFO("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
-                        _commandQueue.push(move(command));
-                        continue;
-                    }
+                auto _clusterMessengerCopy = _clusterMessenger;
+                if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
+                    // command->complete is now true for this command. It will get handled a few lines below.
+                    SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
                 } else {
-                    SINFO("Immediately escalating " << command->request.methodLine << " to leader. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
-                    _syncNodeQueuedCommands.push(move(command));
+                    SINFO("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
+                    _commandQueue.push(move(command));
                     continue;
                 }
             }
@@ -945,32 +939,22 @@ void BedrockServer::worker(int threadId)
                         // Roll back the transaction, it'll get re-run in the sync thread.
                         core.rollback();
 
-                        // TODO: When escalation over HTTP is totally vetted, remove this "else" block and just always
-                        // use the "if" case.
-                        if (_escalateOverHTTP) {
-                            auto _clusterMessengerCopy = _clusterMessenger;
-                            if (state == SQLiteNode::LEADING) {
-                                SINFO("Sending non-parallel command " << command->request.methodLine
-                                      << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
-                                _syncNodeQueuedCommands.push(move(command));
-                            } else if (state == SQLiteNode::STANDINGDOWN) {
-                                SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
-                                _standDownQueue.push(move(command));
-                            } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
-                                SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
-                                _reply(command);
-                            } else {
-                                // TODO: Something less naive that considers how these failures happen rather than a simple
-                                // endless loop of requeue and retry.
-                                SINFO("Couldn't escalate command " << command->request.methodLine << " to leader. We are in state: " << SQLiteNode::stateName(state));
-                                _commandQueue.push(move(command));
-                            }
-                        } else {
-                            // We're not handling a writable command anymore.
+                        auto _clusterMessengerCopy = _clusterMessenger;
+                        if (state == SQLiteNode::LEADING) {
                             SINFO("Sending non-parallel command " << command->request.methodLine
-                                  << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size()
-                                  << " queued commands.");
+                                  << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
                             _syncNodeQueuedCommands.push(move(command));
+                        } else if (state == SQLiteNode::STANDINGDOWN) {
+                            SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
+                            _standDownQueue.push(move(command));
+                        } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
+                            SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
+                            _reply(command);
+                        } else {
+                            // TODO: Something less naive that considers how these failures happen rather than a simple
+                            // endless loop of requeue and retry.
+                            SINFO("Couldn't escalate command " << command->request.methodLine << " to leader. We are in state: " << SQLiteNode::stateName(state));
+                            _commandQueue.push(move(command));
                         }
 
                         // Done with this command, look for the next one.
@@ -1190,11 +1174,9 @@ BedrockServer::BedrockServer(const SData& args_)
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
-    _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _escalateOverHTTP(args.test("-escalateOverHTTP"))
+    _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false)
 {
     _version = VERSION;
-
-    SINFO("Escalate over HTTP: " << (_escalateOverHTTP ? "enabled" : "disabled"));
 
     // Enable the requested plugins, and update our version string if required.
     list<string> pluginNameList = SParseList(args["-plugins"]);
@@ -1672,7 +1654,6 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         content["state"]    = SQLiteNode::stateName(state);
         content["version"]  = _version;
         content["host"]     = args["-nodeHost"];
-        content["escalateOverHTTP"] = _escalateOverHTTP ? "true" : "false";
 
         {
             // Make it known if anything is known to cause crashes.
@@ -1824,19 +1805,6 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         if (command->request.isSet("enable")) {
             SQLite::enableTrace.store(command->request.test("enable"));
             response["newValue"] = SQLite::enableTrace ? "true" : "false";
-        }
-    } else if (SIEquals(command->request.methodLine, "EnableEscalateOverHTTP")) {
-        if (command->request.isSet("enable")) {
-            bool oldValue = _escalateOverHTTP;
-            _escalateOverHTTP = command->request.test("enable");
-            if (_escalateOverHTTP == oldValue) {
-                command->response.methodLine = "200 No Change";
-            } else {
-                SINFO("Escalate over HTTP: " << (_escalateOverHTTP ? "enabled" : "disabled"));
-                command->response.methodLine = "200 "s + (_escalateOverHTTP ? "Enabled" : "Disabled");
-            }
-        } else {
-            command->response.methodLine = "400 Must Specify Enable";
         }
     } else if (SIEquals(command->request.methodLine, "CRASH_COMMAND")) {
         SData request;
