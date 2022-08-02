@@ -81,3 +81,6 @@ SQLiteCommand::SQLiteCommand() :
     creationTime(STimeNow()),
     escalated(false)
 { }
+
+SQLiteCommand::~SQLiteCommand() {
+}

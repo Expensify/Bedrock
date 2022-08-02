@@ -22,9 +22,6 @@ class SQLiteCommand {
     // This allows for modifying a request passed into the constructor such that we can store it as `const`.
     static SData preprocessRequest(SData&& request);
 
-    // TODO: WTF.
-    char ifThereIsntSomethingHereThenEscalationsToOldVersionsBreak;
-
     // A value of zero is an invalid ID, and is interpreted to mean "not set".
     // A negative value indicates a valid ID of an invalid client (a psuedo-client, or a disconnected client), that we
     // can't respond to.
@@ -37,6 +34,9 @@ class SQLiteCommand {
 
     // Accumulated response content
     STable jsonContent;
+
+    // TODO: WTF. This works anywhere above here but not below here.
+    char ifThereIsntSomethingHereThenEscalationsToOldVersionsBreak;
 
     // Final response
     SData response;
@@ -73,5 +73,5 @@ class SQLiteCommand {
     SQLiteCommand& operator=(SQLiteCommand&& from) = default;
 
     // Destructor.
-    virtual ~SQLiteCommand() {}
+    virtual ~SQLiteCommand();
 };
