@@ -848,7 +848,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                                          "lastRun = " + SQ(currentTime) + ", " +
                                          "nextRun = " + nextRunDateTime + ", " +
                                          "data = JSON_SET(data, '$.retryAfterCount', COALESCE(JSON_EXTRACT(data, '$.retryAfterCount'), 0) + 1" + // Set this so we don't retry infinitely (see above)
-                                         (isRepeatBasedOnScheduledTime ? ", '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": ") ") + // Set this so we don't lose track of the original nextRun (which we are overriding here)
+                                         (isRepeatBasedOnScheduledTime ? ", '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": ")") + // Set this so we don't lose track of the original nextRun (which we are overriding here)
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
 
                 try {
@@ -1337,11 +1337,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         if (jobIDs.size()) {
             const string& name = request["name"];
             string nameQuery = name.empty() ? "" : ", name = " + SQ(name) + "";
-            string decrementFailuresQuery;
-            if (request.test("decrementFailures")) {
-                 decrementFailuresQuery = ", data = JSON_SET(data, '$.retryAfterCount', COALESCE(JSON_EXTRACT(data, '$.retryAfterCount'), 1) - 1)";
-            }
-            string updateQuery = "UPDATE jobs SET state = 'QUEUED', nextRun = created"+ nameQuery + decrementFailuresQuery + " WHERE jobID IN(" + SQList(jobIDs)+ ");";
+            string updateQuery = "UPDATE jobs SET state = 'QUEUED', nextRun = created"+ nameQuery +" WHERE jobID IN(" + SQList(jobIDs)+ ");";
             if (!db.writeIdempotent(updateQuery)) {
                 STHROW("502 RequeueJobs update failed");
             }
@@ -1460,7 +1456,6 @@ void BedrockJobsCommand::handleFailedReply() {
         SINFO("Failed sending response to '" << request.methodLine << "', re-queueing jobs: "<< SComposeList(jobIDs));
         SData requeue("RequeueJobs");
         requeue["jobIDs"] = SComposeList(jobIDs);
-        requeue["decrementFailures"] = "true";
 
         // Keep the request ID so we'll be able to associate these in the logs.
         requeue["requestID"] = request["requestID"];
