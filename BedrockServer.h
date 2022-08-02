@@ -496,7 +496,4 @@ class BedrockServer : public SQLiteServer {
     // syncNode while the sync thread exists, it's a shared pointer to allow for the last socket thread using it to
     // destroy the pool at shutdown.
     shared_ptr<SQLitePool> _dbPool;
-
-    // TODO: Remove once we've verified this all works.
-    atomic<bool> _escalateOverHTTP = false;
 };
