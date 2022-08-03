@@ -938,7 +938,6 @@ void BedrockServer::worker(int threadId)
                     if (command->onlyProcessOnSyncThread() || !canWriteParallel) {
                         // Roll back the transaction, it'll get re-run in the sync thread.
                         core.rollback();
-
                         auto _clusterMessengerCopy = _clusterMessenger;
                         if (state == SQLiteNode::LEADING) {
                             SINFO("Sending non-parallel command " << command->request.methodLine
@@ -1750,7 +1749,6 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "Attach")                 ||
         SIEquals(command->request.methodLine, "SetConflictParams")      ||
         SIEquals(command->request.methodLine, "EnableSQLTracing")       ||
-        SIEquals(command->request.methodLine, "EnableEscalateOverHTTP") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
         ) {
         return true;
