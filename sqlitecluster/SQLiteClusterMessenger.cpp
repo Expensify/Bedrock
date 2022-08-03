@@ -6,8 +6,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-#include <iostream>
-
 SQLiteClusterMessenger::SQLiteClusterMessenger(const shared_ptr<const SQLiteNode> node)
  : _node(node), _socketPool()
 { }
@@ -143,11 +141,6 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
     SData request = command.request;
     request.nameValueMap["ID"] = command.id;
     SFastBuffer buf(request.serialize());
-
-    string r = request.serialize();
-    cout << "Sending " << r.size() << " bytes:" << endl;
-    cout << r << endl;
-    cout << "----------------" << endl;
 
     // We only have one FD to poll.
     pollfd fdspec = {socket.s, POLLOUT, 0};
