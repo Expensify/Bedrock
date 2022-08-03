@@ -36,7 +36,7 @@ class SQLiteCommand {
     STable jsonContent;
 
     // TODO: WTF. This works anywhere above here but not below here.
-    // char ifThereIsntSomethingHereThenEscalationsToOldVersionsBreak;
+    char ifThereIsntSomethingHereThenEscalationsToOldVersionsBreak;
 
     // Final response
     SData response;
