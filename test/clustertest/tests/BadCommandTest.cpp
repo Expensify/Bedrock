@@ -14,6 +14,10 @@ struct BadCommandTest : tpunit::TestFixture {
                 BedrockTester& leader = tester.getTester(0);
                 BedrockTester& follower = tester.getTester(1);
 
+                ASSERT_TRUE(tester.getTester(0).waitForState("LEADING"));
+                ASSERT_TRUE(tester.getTester(1).waitForState("FOLLOWING"));
+                ASSERT_TRUE(tester.getTester(2).waitForState("FOLLOWING"));
+
                 int userID = 31;
 
                 // Make sure unhandled exceptions send an error response, but don't crash the server.
