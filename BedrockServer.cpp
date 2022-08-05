@@ -2261,45 +2261,43 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         // command that was already responded to in `buildCommandFromRequest` and we can move on to the
                         // next thing immediately.
                         mutex m;
-
-                        // Defer locking until we actually have to.
-                        unique_lock<mutex> lock(m, defer_lock);
                         condition_variable cv;
+                        atomic<bool> finished = false;
 
-                        function<void()> callback = [&m, &cv]() {
+                        function<void()> callback = [&m, &cv, &finished]() {
                             // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
                             // for `handleSocket` to release it's lock (by calling `wait`), and then notify the waiting
                             // socket thread.
-                            lock_guard lock(m);
+                            lock_guard l(m);
+                            finished = true;
                             cv.notify_all();
                         };
 
-                        // Ok, none of above synchronization code gets called unless the command has a socket to respond
-                        // on.
+                        // Ok, none of above synchronization code gets called unless the command has a socket to respond on.
                         bool hasSocket = command->socket;
                         if (hasSocket) {
                             // Set the destructor callback for when the command finishes.
                             command->destructionCallback = &callback;
-
-                            // And lock the mutex so the command can't complete until we are in `wait` below.
-                            lock.lock();
                         }
 
-                        // Now we'll queue this command in one of two queues.
+                        // Now we queue or run this command.
                         auto _syncNodeCopy = atomic_load(&_syncNode);
                         if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
                             _standDownQueue.push(move(command));
                         } else {
-                            SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
+                            SINFO("Running new '" << command->request.methodLine << "' command from local client, with "
                                   << _commandQueue.size() << " commands already queued.");
-                            _commandQueue.push(move(command));
+                            runCommand(move(command));
+
+                            // So, the command never gets destroyed if we don't release it here, which seems strange, I though the call to `move` above would imply that.
+                            command = nullptr;
                         }
 
-                        // Now that the command is queued, we wait for it to complete (if it's has a socket). When it's
-                        // destructionCallback fires, this will stop blocking and we can move on to the next request.
-                        // NOTE: This doesn't correctly handle spurious wakeups.
-                        if (hasSocket) {
-                            cv.wait(lock);
+                        // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
+                        // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.
+                        unique_lock<mutex> lock(m);
+                        if (!finished && hasSocket) {
+                            cv.wait(lock, [&]{return finished.load();});
                         }
                     }
                 }
