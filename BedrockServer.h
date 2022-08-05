@@ -8,6 +8,7 @@
 #include "BedrockTimeoutCommandQueue.h"
 
 class SQLitePeer;
+class BedrockCore;
 
 class BedrockServer : public SQLiteServer {
   public:
@@ -326,6 +327,8 @@ class BedrockServer : public SQLiteServer {
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
     void worker(int threadId);
+
+    void runCommand(unique_ptr<BedrockCommand>&& command, bool isBlocking = false);
 
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
