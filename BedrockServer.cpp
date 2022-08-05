@@ -2245,18 +2245,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                     SINFO("No command from request, closing socket.");
                     socket.shutdown(Socket::CLOSED);
                 } else if (!_handleIfStatusOrControlCommand(command)) {
-
-                    // If this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
-                    // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
-                    if (command->request.calcU64("commandExecuteTime") > STimeNow()) {
-                        // These are implictly fire-and-forget commands and a response will already have been sent in `buildCommandFromRequest`.
-                        _commandQueue.push(move(command));
-                        continue;
-                    }
-
-                    // If it's a status or control command, we handle it specially above. If not, we'll queue it for
-                    // later processing below.
-
                     if (fromControlPort && _shutdownState != RUNNING) {
                         // Don't handle non-control commands on the control port if we're shutting down. As the control
                         // port can remain open through shutdown (in the case of detaching) and can expect DB access,
@@ -2295,9 +2283,16 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
                             _standDownQueue.push(move(command));
                         } else {
-                            SINFO("Running new '" << command->request.methodLine << "' command from local client, with "
-                                  << _commandQueue.size() << " commands already queued.");
-                            runCommand(move(command));
+                            // If this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
+                            // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
+                            if (command->request.calcU64("commandExecuteTime") > STimeNow()) {
+                                // These are implictly fire-and-forget commands and a response will already have been sent in `buildCommandFromRequest`.
+                                _commandQueue.push(move(command));
+                                continue;
+                            } else {
+                                SINFO("Running new '" << command->request.methodLine << "' command from local client, with " << _commandQueue.size() << " commands already queued.");
+                                runCommand(move(command));
+                            }
                         }
 
                         // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
