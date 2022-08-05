@@ -256,6 +256,11 @@ class BedrockServer : public SQLiteServer {
     // accepted on _controlPort, _commandPortPublic, or _commandPortPrivate.
     void handleSocket(Socket&& socket, bool fromControlPort, bool fromPublicCommandPort, bool fromPrivateCommandPort);
 
+    // This will run a command. It provides no feedback on whether or not the command it's running has finished. In the typical case, the command will be complete when this returns, but
+    // that is not guaranteed. Because of the various retries and escalation paths that a command can go through, this function mat return having just queued this command to run somewhere
+    // else. In the future, when all command queues are removed, this will not be the case, but right now, you can not rely on the command having completed when this returns.
+    void runCommand(unique_ptr<BedrockCommand>&& command, bool isBlocking = false);
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
@@ -327,8 +332,6 @@ class BedrockServer : public SQLiteServer {
 
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
     void worker(int threadId);
-
-    void runCommand(unique_ptr<BedrockCommand>&& command, bool isBlocking = false);
 
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.

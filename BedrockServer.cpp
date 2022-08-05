@@ -705,10 +705,7 @@ void BedrockServer::worker(int threadId)
                 SWARN("Die function called early with no command, probably died in `commandQueue.get`.");
             });
 
-            // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-            command = unique_ptr<BedrockCommand>(nullptr);
-
-            // And get another one.
+            // Get the next one.
             command = commandQueue.get(1000000);
 
             SAUTOPREFIX(command->request);
@@ -733,7 +730,11 @@ void BedrockServer::worker(int threadId)
     }
 }
 
-void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& command, bool isBlocking) {
+void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlocking) {
+    // This takes ownership of the passed command. By calling the move constructor, the caller's unqiue_ptr is now empty, and so when the one here goes out of scope (i.e., this function
+    // returns), the command is destroyed.
+    unique_ptr<BedrockCommand> command(move(_command));
+
     SAUTOPREFIX(command->request);
     // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
     if (!_dbPool) {
@@ -2288,9 +2289,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             SINFO("Running new '" << command->request.methodLine << "' command from local client, with "
                                   << _commandQueue.size() << " commands already queued.");
                             runCommand(move(command));
-
-                            // So, the command never gets destroyed if we don't release it here, which seems strange, I though the call to `move` above would imply that.
-                            command = nullptr;
                         }
 
                         // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
