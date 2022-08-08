@@ -1437,22 +1437,29 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             // there's a backlog of commands, these can get stale, and by the time they reach the follower, it's already
             // behind, thus never catching up.
             if (_state == FOLLOWING) {
-                // There's an obvious race condition here and nothing actually prevents us from shutting down while these are running, or about to be running.
-                _pendingSynchronizeResponses++;
-                static atomic<size_t> synchronizeCount(0);
-                thread([message, peer, currentSynchronizeCount = synchronizeCount++, this] () {
-                    SInitialize("synchronize" + to_string(currentSynchronizeCount));
+                if (_gracefulShutdown()) {
+                    // This will cause the remote peer to reconnect (it will not necessarily give a fantastic error message for this), and choose a different sync peer.
+                    // This prevents us have having leftover synchronization responses in progress as we shut down.
+                    SWARN("Asked to help SYNCHRONIZE but shutting down.");
                     SData response("SYNCHRONIZE_RESPONSE");
-                    SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
-                    SQLite& db = dbScope.db();
-                    _queueSynchronize(this, peer, db, response, false);
-
-                    // The following two lines are copied from `_sendToPeer`.
-                    response["CommitCount"] = to_string(db.getCommitCount());
-                    response["Hash"] = db.getCommittedHash();
                     peer->sendMessage(response);
-                    _pendingSynchronizeResponses--;
-                }).detach();
+                } else {
+                    _pendingSynchronizeResponses++;
+                    static atomic<size_t> synchronizeCount(0);
+                    thread([message, peer, currentSynchronizeCount = synchronizeCount++, this] () {
+                        SInitialize("synchronize" + to_string(currentSynchronizeCount));
+                        SData response("SYNCHRONIZE_RESPONSE");
+                        SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
+                        SQLite& db = dbScope.db();
+                        _queueSynchronize(this, peer, db, response, false);
+
+                        // The following two lines are copied from `_sendToPeer`.
+                        response["CommitCount"] = to_string(db.getCommitCount());
+                        response["Hash"] = db.getCommittedHash();
+                        peer->sendMessage(response);
+                        _pendingSynchronizeResponses--;
+                    }).detach();
+                }
             } else {
                 // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
                 // stood up.
