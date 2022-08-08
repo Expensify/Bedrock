@@ -20,57 +20,6 @@ set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
 thread_local atomic<SQLiteNode::State> BedrockServer::_nodeStateSnapshot = SQLiteNode::UNKNOWN;
 
-void BedrockServer::acceptCommand(SQLiteCommand&& command, bool isNew) {
-    acceptCommand(make_unique<SQLiteCommand>(move(command)), isNew);
-}
-
-void BedrockServer::acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew) {
-    // If the sync node tells us that a command causes a crash, we immediately save that.
-    if (SIEquals(command->request.methodLine, "CRASH_COMMAND")) {
-        // Handling in acceptCommand() is for commands that come in on the node
-        // port. We are transitioning crash commands to be sent on the command
-        // port, so handle it there. Eventually, when no nodes in the cluster
-        // send crash commands on the node port, this block can be deleted.
-         auto cmd = make_unique<BedrockCommand>(move(*command), nullptr);
-        _control(cmd);
-    } else {
-        unique_ptr<BedrockCommand> newCommand(nullptr);
-        if (SIEquals(command->request.methodLine, "BROADCAST_COMMAND")) {
-            SData newRequest;
-            newRequest.deserialize(command->request.content);
-            newCommand = getCommandFromPlugins(move(newRequest));
-            newCommand->initiatingClientID = -1;
-            newCommand->initiatingPeerID = 0;
-        } else {
-            // If we already have an existing BedrockCommand (as opposed to a base class SQLiteCommand) this is
-            // something that we've already constructed (most likely, a response from leader), so no need to ask the
-            // plugins to build it over again from scratch (this also preserves the existing state of the command).
-            BedrockCommand* isABedrockCommand = dynamic_cast<BedrockCommand*>(command.get());
-            if (isABedrockCommand) {
-                newCommand = unique_ptr<BedrockCommand>(isABedrockCommand);
-                command.release();
-            } else {
-                newCommand = getCommandFromPlugins(move(command));
-            }
-            SAUTOPREFIX(newCommand->request);
-            SINFO("Accepted command " << newCommand->request.methodLine << " from plugin " << newCommand->getName());
-        }
-
-        SAUTOPREFIX(newCommand->request);
-        if (newCommand->writeConsistency != SQLiteNode::QUORUM
-            && _syncCommands.find(newCommand->request.methodLine) != _syncCommands.end()) {
-
-            newCommand->writeConsistency = SQLiteNode::QUORUM;
-            _lastQuorumCommandTime = STimeNow();
-            SINFO("Forcing QUORUM consistency for command " << newCommand->request.methodLine);
-        }
-        SINFO("Queued new '" << newCommand->request.methodLine << "' command from bedrock node, with " << _commandQueue.size()
-              << " commands already queued.");
-
-        _commandQueue.push(move(newCommand));
-    }
-}
-
 bool BedrockServer::canStandDown() {
     // Here's all the commands in existence.
     size_t count = BedrockCommand::getCommandCount();
@@ -777,16 +726,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         return;
     }
 
-    // If this was a command initiated by a peer as part of a cluster operation, then we process it separately
-    // and respond immediately. This allows SQLiteNode to offload read-only operations to worker threads.
-    {
-        auto _syncNodeCopy = atomic_load(&_syncNode);
-        if (_syncNodeCopy && _syncNodeCopy->peekPeerCommand(db, *command)) {
-            // Move on to the next command.
-            return;
-        }
-    }
-
     // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
     while (_upgradeInProgress ||
            (_replicationState.load() != SQLiteNode::LEADING &&
@@ -1481,6 +1420,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
         size_t count = BedrockCommand::getCommandCount();
         if (count) {
+            // This is possible to have these commands with no clients for commands with initiatingClientID = -1.
             SINFO("Have " << count << " remaining commands to delete.");
         }
     }
