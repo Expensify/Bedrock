@@ -1420,7 +1420,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         }
         size_t count = BedrockCommand::getCommandCount();
         if (count) {
-            // This is possible to have these commands with no clients for commands with initiatingClientID = -1.
+            // For commands not initiated by a client (those with initiatingClientID = -1), we can have commands
+            // remaining here even with `CLIENTS_RESPONDED` being true. We may want to address this in the future so
+            // that we can't orphan these commands at shutdown.
             SINFO("Have " << count << " remaining commands to delete.");
         }
     }

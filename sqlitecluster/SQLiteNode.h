@@ -300,7 +300,7 @@ class SQLiteNode : public STCPManager {
     SQLiteSequentialNotifier _leaderCommitNotifier;
     SQLiteSequentialNotifier _localCommitNotifier;
 
-    // We can spin up threads to handle responding to `SYNCHRONIZE` messages out of band. We want to make sure we don't
+    // We can spin up threads to handle responding to `SYNCHRONIZE` messages out-of-band. We want to make sure we don't
     // shut down in the middle of running these, so we keep a count of them.
     atomic<size_t> _pendingSynchronizeResponses = 0;
 
