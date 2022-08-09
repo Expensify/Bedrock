@@ -2266,7 +2266,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
                             // for `handleSocket` to release it's lock (by calling `wait`), and then notify the waiting
                             // socket thread.
-                            lock_guard l(m);
+                            lock_guard lock(m);
                             finished = true;
                             cv.notify_all();
                         };
