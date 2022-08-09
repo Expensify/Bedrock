@@ -54,7 +54,7 @@ class scopedDisableNoopMode {
     bool _wasNoop;
 };
 
-BedrockJobsCommand::BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugin_Jobs* plugin) :
+BedrockJobsCommand::BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin) :
   BedrockCommand(move(baseCommand), plugin, canEscalateImmediately(baseCommand))
 {
 }
@@ -1464,8 +1464,8 @@ void BedrockJobsCommand::handleFailedReply() {
 
         // Keep the request ID so we'll be able to associate these in the logs.
         requeue["requestID"] = request["requestID"];
-        auto cmd = make_unique<SQLiteCommand>(move(requeue));
+        auto cmd = make_unique<BedrockJobsCommand>(SQLiteCommand(move(requeue)), _plugin);
         cmd->initiatingClientID = -1;
-        _plugin->server.acceptCommand(move(cmd));
+        _plugin->server.runCommand(move(cmd));
     }
 }

@@ -690,14 +690,6 @@ void BedrockServer::worker(int threadId)
     // Worker 0 is the "blockingCommit" thread.
     SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
 
-    // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
-    if (!_dbPool) {
-        SERROR("Can't run a worker with no DB pool");
-    }
-    SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
-    SQLite& db = dbScope.db();
-    BedrockCore core(db, *this);
-
     // Command to work on. This default command is replaced when we find work to do.
     unique_ptr<BedrockCommand> command(nullptr);
 
@@ -713,372 +705,14 @@ void BedrockServer::worker(int threadId)
                 SWARN("Die function called early with no command, probably died in `commandQueue.get`.");
             });
 
-            // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-            command = unique_ptr<BedrockCommand>(nullptr);
-
-            // And get another one.
+            // Get the next one.
             command = commandQueue.get(1000000);
 
             SAUTOPREFIX(command->request);
             SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
                   << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
 
-            // Set the function that lets the signal handler know which command caused a problem, in case that happens.
-            // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
-            // signals, like SIGSEGV, this function will be called.
-            SSetSignalHandlerDieFunc([&](){
-                _clusterMessenger->runOnAll(_generateCrashMessage(command));
-            });
-
-            // If we dequeue a status or control command, handle it immediately.
-            if (_handleIfStatusOrControlCommand(command)) {
-                continue;
-            }
-
-            // If the command has already timed out when we get it, we can return early here without peeking it.
-            // We'd also catch that the command timed out in `peek`, but this can cause some weird side-effects. For
-            // instance, we saw QUORUM commands that make HTTPS requests time out in the sync thread, which caused them
-            // to be returned to the main queue, where they would have timed out in `peek`, but it was never called
-            // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
-            // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
-            if (core.isTimedOut(command)) {
-                _reply(command);
-                continue;
-            }
-
-            // Check if this command would be likely to cause a crash
-            if (_wouldCrash(command)) {
-                // If so, make a lot of noise, and respond 500 without processing it.
-                SALERT("CRASH-INDUCING COMMAND FOUND: " << command->request.methodLine);
-                command->response.methodLine = "500 Refused";
-                command->complete = true;
-                _reply(command);
-                continue;
-            }
-
-            // If this was a command initiated by a peer as part of a cluster operation, then we process it separately
-            // and respond immediately. This allows SQLiteNode to offload read-only operations to worker threads.
-            {
-                auto _syncNodeCopy = atomic_load(&_syncNode);
-                if (_syncNodeCopy && _syncNodeCopy->peekPeerCommand(db, *command)) {
-                    // Move on to the next command.
-                    continue;
-                }
-            }
-
-            // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
-            while (_upgradeInProgress ||
-                   (_replicationState.load() != SQLiteNode::LEADING &&
-                    _replicationState.load() != SQLiteNode::FOLLOWING &&
-                    _replicationState.load() != SQLiteNode::STANDINGDOWN)
-            ) {
-                // Make sure that the node isn't shutting down, leaving us in an endless loop.
-                if (_shutdownState.load() != RUNNING) {
-                    SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '"
-                          << command->request.methodLine << "'.");
-                    return;
-                }
-
-                // This sleep call is pretty ugly, but it should almost never happen. We're accepting the potential
-                // looping sleep call for the general case where we just check some bools and continue, instead of
-                // avoiding the sleep call but having every thread lock a mutex here on every loop.
-                usleep(10000);
-            }
-
-            // OK, so this is the state right now, which isn't necessarily anything in particular, because the sync
-            // node can change it at any time, and we're not synchronizing on it. We're going to go ahead and assume
-            // it's something reasonable, because in most cases, that's pretty safe. If we think we're anything but
-            // LEADING, we'll just peek this command and return it's result, which should be harmless. If we think
-            // we're leading, we'll go ahead and start a `process` for the command, but we'll synchronously verify
-            // our state right before we commit.
-            SQLiteNode::State state = _replicationState.load();
-
-            // If we're following, we will automatically escalate any command that's not already complete (complete
-            // commands are likely already returned from leader with legacy escalation) and is marked as
-            // `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
-            // for a previous commit to be delivered to this follower), OR if we're on a different version from leader.
-            if (state == SQLiteNode::FOLLOWING && (_version != _leaderVersion.load() || command->escalateImmediately) && !command->complete) {
-                auto _clusterMessengerCopy = _clusterMessenger;
-                if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
-                    // command->complete is now true for this command. It will get handled a few lines below.
-                    SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
-                } else {
-                    SINFO("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
-                    _commandQueue.push(move(command));
-                    continue;
-                }
-            }
-
-            // If we find that we've gotten a command with an initiatingPeerID, but we're not in a leading or
-            // standing down state, we'll have no way of returning this command to the caller, so we discard it. The
-            // original caller will need to re-send the request. This can happen if we're leading, and receive a
-            // request from a peer, but then we stand down from leading. The SQLiteNode should have already told its
-            // peers that their outstanding requests were being canceled at this point.
-            if (command->initiatingPeerID && !(state == SQLiteNode::LEADING || state == SQLiteNode::STANDINGDOWN)) {
-                SWARN("Found " << (command->complete ? "" : "in") << "complete " << "command "
-                      << command->request.methodLine << " from peer, but not leading. Too late for it, discarding.");
-
-                // If the command was processed, tell the plugin we couldn't send the response.
-                command->handleFailedReply();
-
-                continue;
-            }
-
-            // If this command is already complete, then we should be a follower, and the sync node got a response back
-            // from a command that had been escalated to leader, and queued it for a worker to respond to. We'll send
-            // that response now.
-            if (command->complete) {
-                // If this command is already complete, we can return it to the caller.
-                // If it has an initiator, it should have been returned to a peer by a sync node instead, but if we've
-                // just switched states out of leading, we might have an old command in the queue. All we can do here
-                // is note that and discard it, as we have nobody to deliver it to.
-                if (command->initiatingPeerID) {
-                    // Let's note how old this command is.
-                    uint64_t ageSeconds = (STimeNow() - command->creationTime) / STIME_US_PER_S;
-                    SWARN("Found unexpected complete command " << command->request.methodLine
-                          << " from peer in worker thread. Discarding (command was " << ageSeconds << "s old).");
-                    continue;
-                }
-
-                // Make sure we have an initiatingClientID at this point. If we do, but it's negative, it's for a
-                // client that we can't respond to, so we don't bother sending the response.
-                SASSERT(command->initiatingClientID);
-                if (command->initiatingClientID > 0) {
-                    _reply(command);
-                }
-
-                // This command is done, move on to the next one.
-                continue;
-            }
-
-            // If this command is dependent on a commitCount newer than what we have (maybe it's a follow-up to a
-            // command that was escalated to leader), we'll set it aside for later processing. When the sync node
-            // finishes its update loop, it will re-queue any of these commands that are no longer blocked on our
-            // updated commit count.
-            uint64_t commitCount = db.getCommitCount();
-            uint64_t commandCommitCount = command->request.calcU64("commitCount");
-            if (commandCommitCount > commitCount) {
-                SAUTOLOCK(_futureCommitCommandMutex);
-                auto newQueueSize = _futureCommitCommands.size() + 1;
-                SINFO("Command (" << command->request.methodLine << ") depends on future commit (" << commandCommitCount
-                      << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
-                _futureCommitCommandTimeouts.insert(make_pair(command->timeout(), commandCommitCount));
-                _futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
-
-                // Don't count this as `in progress`, it's just sitting there.
-                if (newQueueSize > 100) {
-                    SHMMM("_futureCommitCommands.size() == " << newQueueSize);
-                }
-                continue;
-            }
-
-            if (command->request.isSet("mockRequest")) {
-                SINFO("mockRequest set for command '" << command->request.methodLine << "'.");
-            }
-
-            // See if this is a feasible command to write parallel. If not, then be ready to forward it to the sync
-            // thread, if it doesn't finish in peek.
-            bool canWriteParallel = _multiWriteEnabled.load();
-            if (canWriteParallel) {
-                // If multi-write is enabled, then we need to make sure the command isn't blacklisted.
-                shared_lock<decltype(_blacklistedParallelCommandMutex)> lock(_blacklistedParallelCommandMutex);
-                canWriteParallel =
-                    (_blacklistedParallelCommands.find(command->request.methodLine) == _blacklistedParallelCommands.end());
-            }
-
-            // More checks for parallel writing.
-            canWriteParallel = canWriteParallel && (state == SQLiteNode::LEADING);
-            canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
-
-            // If all the other checks have passed, and we haven't sent a quorum command to the sync thread in a while,
-            // auto-promote one.
-            if (canWriteParallel) {
-                uint64_t now = STimeNow();
-                if (now > (_lastQuorumCommandTime + (_quorumCheckpointSeconds * 1'000'000))) {
-                    SINFO("Forcing QUORUM for command '" << command->request.methodLine << "'.");
-                    _lastQuorumCommandTime = now;
-                    command->writeConsistency = SQLiteNode::QUORUM;
-                    canWriteParallel = false;
-                }
-            }
-
-            // We'll retry on conflict up to this many times.
-            int retry = _maxConflictRetries.load();
-            while (retry) {
-                // If we've changed out of leading, we need to notice that.
-                state = _replicationState.load();
-                canWriteParallel = canWriteParallel && (state == SQLiteNode::LEADING);
-
-                // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
-                // command has specifically asked for that.
-                // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
-                bool calledPeek = false;
-                BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
-                if (command->repeek || !command->httpsRequests.size()) {
-                    peekResult = core.peekCommand(command, threadId == 0);
-                    calledPeek = true;
-                }
-
-                if (!calledPeek || peekResult == BedrockCore::RESULT::SHOULD_PROCESS) {
-                    // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
-                    // write it. We'll flag that here, to keep the node from falling out of LEADING/STANDINGDOWN
-                    // until we're finished with this command.
-                    if (command->httpsRequests.size()) {
-                        // This *should* be impossible, but previous bugs have existed where it's feasible that we call
-                        // `peekCommand` while leading, and by the time we're done, we're FOLLOWING, so we check just
-                        // in case we ever introduce another similar bug.
-                        if (state != SQLiteNode::LEADING && state != SQLiteNode::STANDINGDOWN) {
-                            SALERT("Not leading or standing down (" << SQLiteNode::stateName(state)
-                                   << ") but have outstanding HTTPS command: " << command->request.methodLine
-                                   << ", returning 500.");
-                            command->response.methodLine = "500 STANDDOWN TIMEOUT";
-                            _reply(command);
-                            core.rollback();
-                            break;
-                        }
-
-                        // If the command isn't complete, we'll re-queue it.
-                        if (command->repeek || !command->areHttpsRequestsComplete()) {
-                            // Roll back the existing transaction, but only if we are inside an transaction
-                            if (calledPeek) {
-                                core.rollback();
-                            }
-
-                            if (!command->areHttpsRequestsComplete()) {
-                                // If it has outstanding HTTPS requests, we'll wait for them.
-                                waitForHTTPS(move(command));
-                            } else if (command->repeek) {
-                                // Otherwise, it needs to be re-peeked, but had no outstanding requests, so it goes
-                                // back in the main queue.
-                                commandQueue.push(move(command));
-                            }
-
-                            // Move on to the next command until this one finishes.
-                            break;
-                        }
-                    }
-
-                    // Peek wasn't enough to handle this command. See if we think it should be writable in parallel.
-                    // We check `onlyProcessOnSyncThread` here, rather than before processing the command, because it's
-                    // not set at creation time, it's set in `peek`, so we need to wait at least until after peek is
-                    // called to check it.
-                    if (command->onlyProcessOnSyncThread() || !canWriteParallel) {
-                        // Roll back the transaction, it'll get re-run in the sync thread.
-                        core.rollback();
-                        auto _clusterMessengerCopy = _clusterMessenger;
-                        if (state == SQLiteNode::LEADING) {
-                            SINFO("Sending non-parallel command " << command->request.methodLine
-                                  << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
-                            _syncNodeQueuedCommands.push(move(command));
-                        } else if (state == SQLiteNode::STANDINGDOWN) {
-                            SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
-                            _standDownQueue.push(move(command));
-                        } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
-                            SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
-                            _reply(command);
-                        } else {
-                            // TODO: Something less naive that considers how these failures happen rather than a simple
-                            // endless loop of requeue and retry.
-                            SINFO("Couldn't escalate command " << command->request.methodLine << " to leader. We are in state: " << SQLiteNode::stateName(state));
-                            _commandQueue.push(move(command));
-                        }
-
-                        // Done with this command, look for the next one.
-                        break;
-                    }
-
-                    // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
-                    BedrockCore::RESULT result = core.processCommand(command, threadId == 0);
-                    if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
-                        // If processCommand returned true, then we need to do a commit. Otherwise, the command is
-                        // done, and we just need to respond. Before we commit, we need to grab the sync thread
-                        // lock. Because the sync thread grabs an exclusive lock on this wrapping any transactions
-                        // that it performs, we'll get this lock while the sync thread isn't in the process of
-                        // handling a transaction, thus guaranteeing that we can't commit and cause a conflict on
-                        // the sync thread. We can still get conflicts here, as the sync thread might have
-                        // performed a transaction after we called `processCommand` and before we call `commit`,
-                        // or we could conflict with another worker thread, but the sync thread will never see a
-                        // conflict as long as we don't commit while it's performing a transaction. This is scoped
-                        // to the minimum time required.
-                        bool commitSuccess = false;
-                        {
-                            // There used to be a mutex protecting this state change, with the idea that if we
-                            // prevented state changes, we couldn't fall out of leading in the middle of processing a
-                            // command. However, for "normal" graceful state changes, these changes are prevented by
-                            // checking canStandDown(), and we can't fall out of STANDINGDOWN until there are no
-                            // commands left. In the case of non-graceful state changes, i.e., we are spontaneously
-                            // disconnected from the cluster, all this really does is prevent the sync thread from
-                            // telling us about that until after we've already committed this transaction, which
-                            // doesn't really help. In those cases, it's possible that we fork the DB here, but that's
-                            // possible with or without a mutex for this, so we've removed it for the sake of
-                            // simplicity.
-                            if (_replicationState.load() != SQLiteNode::LEADING &&
-                                _replicationState.load() != SQLiteNode::STANDINGDOWN) {
-                                SALERT("Node State changed from LEADING to "
-                                       << SQLiteNode::stateName(_replicationState.load())
-                                       << " during worker commit. Rolling back transaction!");
-                                core.rollback();
-                            } else {
-                                BedrockCore::AutoTimer timer(command, BedrockCommand::COMMIT_WORKER);
-                                commitSuccess = core.commit(SQLiteNode::stateName(_replicationState));
-                            }
-                        }
-                        if (commitSuccess) {
-                            // Tell the sync node that there's been a commit so that it can jump out of it's "poll"
-                            // loop and send it to followers. NOTE: we don't check for null here, that should be
-                            // impossible inside a worker thread.
-                            _syncNode->notifyCommit();
-                            SINFO("Successfully committed " << command->request.methodLine << " on worker thread. blocking: "
-                                  << (threadId ? "false" : "true"));
-                            // So we must still be leading, and at this point our commit has succeeded, let's
-                            // mark it as complete. We add the currentCommit count here as well.
-                            command->response["commitCount"] = to_string(db.getCommitCount());
-                            command->complete = true;
-                        } else {
-                            SINFO("Conflict or state change committing " << command->request.methodLine
-                                  << " on worker thread with " << retry << " retries remaining.");
-                        }
-                    } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
-                        // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
-                        // of this block.
-                    } else if (result == BedrockCore::RESULT::SERVER_NOT_LEADING) {
-                        // We won't write regardless.
-                        core.rollback();
-
-                        // If there are no HTTPS requests, we can just re-queue this command, otherwise, we will
-                        // potentially run the same HTTPS requests twice.
-                        if (command->httpsRequests.size()) {
-                            SALERT("Server stopped leading while running command with HTTPS requests!");
-                            command->response.methodLine = "500 Leader stopped leading";
-                            _reply(command);
-                            break;
-                        } else {
-                            // Allow for an extra retry and start from the top.
-                            SINFO("State changed before 'processCommand' but no HTTPS requests so retrying.");
-                            ++retry;
-                        }
-                    } else {
-                        SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
-                    }
-                }
-
-                // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
-                // a conflict or the command was abandoned for a checkpoint, and we'll retry.
-                if (command->complete) {
-                    _reply(command);
-
-                    // Don't need to retry.
-                    break;
-                }
-
-                // We're about to retry, decrement the retry count.
-                --retry;
-
-                if (!retry) {
-                    SINFO("Max retries hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
-                   _blockingCommandQueue.push(move(command));
-                }
-            }
+            runCommand(move(command), threadId == 0);
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
             // If the sync node has shut down, we can return now, there will be no more work to do.
@@ -1092,6 +726,378 @@ void BedrockServer::worker(int threadId)
         if (_gracefulShutdownTimeout.ringing()) {
             SINFO("_shutdownState is DONE and we've timed out, exiting worker.");
             return;
+        }
+    }
+}
+
+void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlocking) {
+    // This takes ownership of the passed command. By calling the move constructor, the caller's unqiue_ptr is now empty, and so when the one here goes out of scope (i.e., this function
+    // returns), the command is destroyed.
+    unique_ptr<BedrockCommand> command(move(_command));
+
+    SAUTOPREFIX(command->request);
+    // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
+    if (!_dbPool) {
+        SERROR("Can't run a command with no DB pool");
+    }
+    SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
+    SQLite& db = dbScope.db();
+    BedrockCore core(db, *this);
+
+    // Set the function that lets the signal handler know which command caused a problem, in case that happens.
+    // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
+    // signals, like SIGSEGV, this function will be called.
+    SSetSignalHandlerDieFunc([&](){
+        _clusterMessenger->runOnAll(_generateCrashMessage(command));
+    });
+
+    // If we dequeue a status or control command, handle it immediately.
+    if (_handleIfStatusOrControlCommand(command)) {
+        return;
+    }
+
+    // If the command has already timed out when we get it, we can return early here without peeking it.
+    // We'd also catch that the command timed out in `peek`, but this can cause some weird side-effects. For
+    // instance, we saw QUORUM commands that make HTTPS requests time out in the sync thread, which caused them
+    // to be returned to the main queue, where they would have timed out in `peek`, but it was never called
+    // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
+    // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
+    if (core.isTimedOut(command)) {
+        _reply(command);
+        return;
+    }
+
+    // Check if this command would be likely to cause a crash
+    if (_wouldCrash(command)) {
+        // If so, make a lot of noise, and respond 500 without processing it.
+        SALERT("CRASH-INDUCING COMMAND FOUND: " << command->request.methodLine);
+        command->response.methodLine = "500 Refused";
+        command->complete = true;
+        _reply(command);
+        return;
+    }
+
+    // If this was a command initiated by a peer as part of a cluster operation, then we process it separately
+    // and respond immediately. This allows SQLiteNode to offload read-only operations to worker threads.
+    {
+        auto _syncNodeCopy = atomic_load(&_syncNode);
+        if (_syncNodeCopy && _syncNodeCopy->peekPeerCommand(db, *command)) {
+            // Move on to the next command.
+            return;
+        }
+    }
+
+    // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
+    while (_upgradeInProgress ||
+           (_replicationState.load() != SQLiteNode::LEADING &&
+            _replicationState.load() != SQLiteNode::FOLLOWING &&
+            _replicationState.load() != SQLiteNode::STANDINGDOWN)
+    ) {
+        // Make sure that the node isn't shutting down, leaving us in an endless loop.
+        if (_shutdownState.load() != RUNNING) {
+            SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '"
+                  << command->request.methodLine << "'.");
+            return;
+        }
+
+        // This sleep call is pretty ugly, but it should almost never happen. We're accepting the potential
+        // looping sleep call for the general case where we just check some bools and continue, instead of
+        // avoiding the sleep call but having every thread lock a mutex here on every loop.
+        usleep(10000);
+    }
+
+    // OK, so this is the state right now, which isn't necessarily anything in particular, because the sync
+    // node can change it at any time, and we're not synchronizing on it. We're going to go ahead and assume
+    // it's something reasonable, because in most cases, that's pretty safe. If we think we're anything but
+    // LEADING, we'll just peek this command and return it's result, which should be harmless. If we think
+    // we're leading, we'll go ahead and start a `process` for the command, but we'll synchronously verify
+    // our state right before we commit.
+    SQLiteNode::State state = _replicationState.load();
+
+    // If we're following, we will automatically escalate any command that's not already complete (complete
+    // commands are likely already returned from leader with legacy escalation) and is marked as
+    // `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
+    // for a previous commit to be delivered to this follower), OR if we're on a different version from leader.
+    if (state == SQLiteNode::FOLLOWING && (_version != _leaderVersion.load() || command->escalateImmediately) && !command->complete) {
+        auto _clusterMessengerCopy = _clusterMessenger;
+        if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
+            // command->complete is now true for this command. It will get handled a few lines below.
+            SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
+        } else {
+            SINFO("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
+            _commandQueue.push(move(command));
+            return;
+        }
+    }
+
+    // If we find that we've gotten a command with an initiatingPeerID, but we're not in a leading or
+    // standing down state, we'll have no way of returning this command to the caller, so we discard it. The
+    // original caller will need to re-send the request. This can happen if we're leading, and receive a
+    // request from a peer, but then we stand down from leading. The SQLiteNode should have already told its
+    // peers that their outstanding requests were being canceled at this point.
+    if (command->initiatingPeerID && !(state == SQLiteNode::LEADING || state == SQLiteNode::STANDINGDOWN)) {
+        SWARN("Found " << (command->complete ? "" : "in") << "complete " << "command "
+              << command->request.methodLine << " from peer, but not leading. Too late for it, discarding.");
+
+        // If the command was processed, tell the plugin we couldn't send the response.
+        command->handleFailedReply();
+
+        return;
+    }
+
+    // If this command is already complete, then we should be a follower, and the sync node got a response back
+    // from a command that had been escalated to leader, and queued it for a worker to respond to. We'll send
+    // that response now.
+    if (command->complete) {
+        // If this command is already complete, we can return it to the caller.
+        // If it has an initiator, it should have been returned to a peer by a sync node instead, but if we've
+        // just switched states out of leading, we might have an old command in the queue. All we can do here
+        // is note that and discard it, as we have nobody to deliver it to.
+        if (command->initiatingPeerID) {
+            // Let's note how old this command is.
+            uint64_t ageSeconds = (STimeNow() - command->creationTime) / STIME_US_PER_S;
+            SWARN("Found unexpected complete command " << command->request.methodLine
+                  << " from peer in worker thread. Discarding (command was " << ageSeconds << "s old).");
+            return;
+        }
+
+        // Make sure we have an initiatingClientID at this point. If we do, but it's negative, it's for a
+        // client that we can't respond to, so we don't bother sending the response.
+        SASSERT(command->initiatingClientID);
+        if (command->initiatingClientID > 0) {
+            _reply(command);
+        }
+
+        // This command is done, move on to the next one.
+        return;
+    }
+
+    // If this command is dependent on a commitCount newer than what we have (maybe it's a follow-up to a
+    // command that was escalated to leader), we'll set it aside for later processing. When the sync node
+    // finishes its update loop, it will re-queue any of these commands that are no longer blocked on our
+    // updated commit count.
+    uint64_t commitCount = db.getCommitCount();
+    uint64_t commandCommitCount = command->request.calcU64("commitCount");
+    if (commandCommitCount > commitCount) {
+        SAUTOLOCK(_futureCommitCommandMutex);
+        auto newQueueSize = _futureCommitCommands.size() + 1;
+        SINFO("Command (" << command->request.methodLine << ") depends on future commit (" << commandCommitCount
+              << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
+        _futureCommitCommandTimeouts.insert(make_pair(command->timeout(), commandCommitCount));
+        _futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
+
+        // Don't count this as `in progress`, it's just sitting there.
+        if (newQueueSize > 100) {
+            SHMMM("_futureCommitCommands.size() == " << newQueueSize);
+        }
+        return;
+    }
+
+    if (command->request.isSet("mockRequest")) {
+        SINFO("mockRequest set for command '" << command->request.methodLine << "'.");
+    }
+
+    // See if this is a feasible command to write parallel. If not, then be ready to forward it to the sync
+    // thread, if it doesn't finish in peek.
+    bool canWriteParallel = _multiWriteEnabled.load();
+    if (canWriteParallel) {
+        // If multi-write is enabled, then we need to make sure the command isn't blacklisted.
+        shared_lock<decltype(_blacklistedParallelCommandMutex)> lock(_blacklistedParallelCommandMutex);
+        canWriteParallel =
+            (_blacklistedParallelCommands.find(command->request.methodLine) == _blacklistedParallelCommands.end());
+    }
+
+    // More checks for parallel writing.
+    canWriteParallel = canWriteParallel && (state == SQLiteNode::LEADING);
+    canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
+
+    // If all the other checks have passed, and we haven't sent a quorum command to the sync thread in a while,
+    // auto-promote one.
+    if (canWriteParallel) {
+        uint64_t now = STimeNow();
+        if (now > (_lastQuorumCommandTime + (_quorumCheckpointSeconds * 1'000'000))) {
+            SINFO("Forcing QUORUM for command '" << command->request.methodLine << "'.");
+            _lastQuorumCommandTime = now;
+            command->writeConsistency = SQLiteNode::QUORUM;
+            canWriteParallel = false;
+        }
+    }
+
+    // We'll retry on conflict up to this many times.
+    int retry = _maxConflictRetries.load();
+    while (retry) {
+        // If we've changed out of leading, we need to notice that.
+        state = _replicationState.load();
+        canWriteParallel = canWriteParallel && (state == SQLiteNode::LEADING);
+
+        // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
+        // command has specifically asked for that.
+        // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
+        bool calledPeek = false;
+        BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
+        if (command->repeek || !command->httpsRequests.size()) {
+            peekResult = core.peekCommand(command, isBlocking);
+            calledPeek = true;
+        }
+
+        if (!calledPeek || peekResult == BedrockCore::RESULT::SHOULD_PROCESS) {
+            // We've just unsuccessfully peeked a command, which means we're in a state where we might want to
+            // write it. We'll flag that here, to keep the node from falling out of LEADING/STANDINGDOWN
+            // until we're finished with this command.
+            if (command->httpsRequests.size()) {
+                // This *should* be impossible, but previous bugs have existed where it's feasible that we call
+                // `peekCommand` while leading, and by the time we're done, we're FOLLOWING, so we check just
+                // in case we ever introduce another similar bug.
+                if (state != SQLiteNode::LEADING && state != SQLiteNode::STANDINGDOWN) {
+                    SALERT("Not leading or standing down (" << SQLiteNode::stateName(state)
+                           << ") but have outstanding HTTPS command: " << command->request.methodLine
+                           << ", returning 500.");
+                    command->response.methodLine = "500 STANDDOWN TIMEOUT";
+                    _reply(command);
+                    core.rollback();
+                    break;
+                }
+
+                // If the command isn't complete, we'll re-queue it.
+                if (command->repeek || !command->areHttpsRequestsComplete()) {
+                    // Roll back the existing transaction, but only if we are inside an transaction
+                    if (calledPeek) {
+                        core.rollback();
+                    }
+
+                    if (!command->areHttpsRequestsComplete()) {
+                        // If it has outstanding HTTPS requests, we'll wait for them.
+                        waitForHTTPS(move(command));
+                    } else if (command->repeek) {
+                        // Otherwise, it needs to be re-peeked, but had no outstanding requests, so it goes
+                        // back in the main queue.
+                        _commandQueue.push(move(command));
+                    }
+
+                    // Move on to the next command until this one finishes.
+                    break;
+                }
+            }
+
+            // Peek wasn't enough to handle this command. See if we think it should be writable in parallel.
+            // We check `onlyProcessOnSyncThread` here, rather than before processing the command, because it's
+            // not set at creation time, it's set in `peek`, so we need to wait at least until after peek is
+            // called to check it.
+            if (command->onlyProcessOnSyncThread() || !canWriteParallel) {
+                // Roll back the transaction, it'll get re-run in the sync thread.
+                core.rollback();
+                auto _clusterMessengerCopy = _clusterMessenger;
+                if (state == SQLiteNode::LEADING) {
+                    SINFO("Sending non-parallel command " << command->request.methodLine
+                          << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
+                    _syncNodeQueuedCommands.push(move(command));
+                } else if (state == SQLiteNode::STANDINGDOWN) {
+                    SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
+                    _standDownQueue.push(move(command));
+                } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
+                    SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
+                    _reply(command);
+                } else {
+                    // TODO: Something less naive that considers how these failures happen rather than a simple
+                    // endless loop of requeue and retry.
+                    SINFO("Couldn't escalate command " << command->request.methodLine << " to leader. We are in state: " << SQLiteNode::stateName(state));
+                    _commandQueue.push(move(command));
+                }
+
+                // Done with this command, look for the next one.
+                break;
+            }
+
+            // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
+            BedrockCore::RESULT result = core.processCommand(command, isBlocking);
+            if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
+                // If processCommand returned true, then we need to do a commit. Otherwise, the command is
+                // done, and we just need to respond. Before we commit, we need to grab the sync thread
+                // lock. Because the sync thread grabs an exclusive lock on this wrapping any transactions
+                // that it performs, we'll get this lock while the sync thread isn't in the process of
+                // handling a transaction, thus guaranteeing that we can't commit and cause a conflict on
+                // the sync thread. We can still get conflicts here, as the sync thread might have
+                // performed a transaction after we called `processCommand` and before we call `commit`,
+                // or we could conflict with another worker thread, but the sync thread will never see a
+                // conflict as long as we don't commit while it's performing a transaction. This is scoped
+                // to the minimum time required.
+                bool commitSuccess = false;
+                {
+                    // There used to be a mutex protecting this state change, with the idea that if we
+                    // prevented state changes, we couldn't fall out of leading in the middle of processing a
+                    // command. However, for "normal" graceful state changes, these changes are prevented by
+                    // checking canStandDown(), and we can't fall out of STANDINGDOWN until there are no
+                    // commands left. In the case of non-graceful state changes, i.e., we are spontaneously
+                    // disconnected from the cluster, all this really does is prevent the sync thread from
+                    // telling us about that until after we've already committed this transaction, which
+                    // doesn't really help. In those cases, it's possible that we fork the DB here, but that's
+                    // possible with or without a mutex for this, so we've removed it for the sake of
+                    // simplicity.
+                    if (_replicationState.load() != SQLiteNode::LEADING &&
+                        _replicationState.load() != SQLiteNode::STANDINGDOWN) {
+                        SALERT("Node State changed from LEADING to "
+                               << SQLiteNode::stateName(_replicationState.load())
+                               << " during worker commit. Rolling back transaction!");
+                        core.rollback();
+                    } else {
+                        BedrockCore::AutoTimer timer(command, BedrockCommand::COMMIT_WORKER);
+                        commitSuccess = core.commit(SQLiteNode::stateName(_replicationState));
+                    }
+                }
+                if (commitSuccess) {
+                    // Tell the sync node that there's been a commit so that it can jump out of it's "poll"
+                    // loop and send it to followers. NOTE: we don't check for null here, that should be
+                    // impossible inside a worker thread.
+                    _syncNode->notifyCommit();
+                    SINFO("Successfully committed " << command->request.methodLine << " on worker thread. blocking: "
+                          << (isBlocking ? "true" : "false"));
+                    // So we must still be leading, and at this point our commit has succeeded, let's
+                    // mark it as complete. We add the currentCommit count here as well.
+                    command->response["commitCount"] = to_string(db.getCommitCount());
+                    command->complete = true;
+                } else {
+                    SINFO("Conflict or state change committing " << command->request.methodLine
+                          << " on worker thread with " << retry << " retries remaining.");
+                }
+            } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
+                // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
+                // of this block.
+            } else if (result == BedrockCore::RESULT::SERVER_NOT_LEADING) {
+                // We won't write regardless.
+                core.rollback();
+
+                // If there are no HTTPS requests, we can just re-queue this command, otherwise, we will
+                // potentially run the same HTTPS requests twice.
+                if (command->httpsRequests.size()) {
+                    SALERT("Server stopped leading while running command with HTTPS requests!");
+                    command->response.methodLine = "500 Leader stopped leading";
+                    _reply(command);
+                    break;
+                } else {
+                    // Allow for an extra retry and start from the top.
+                    SINFO("State changed before 'processCommand' but no HTTPS requests so retrying.");
+                    ++retry;
+                }
+            } else {
+                SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
+            }
+        }
+
+        // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
+        // a conflict or the command was abandoned for a checkpoint, and we'll retry.
+        if (command->complete) {
+            _reply(command);
+
+            // Don't need to retry.
+            break;
+        }
+
+        // We're about to retry, decrement the retry count.
+        --retry;
+
+        if (!retry) {
+            SINFO("Max retries hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
+           _blockingCommandQueue.push(move(command));
         }
     }
 }
@@ -2239,9 +2245,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                     SINFO("No command from request, closing socket.");
                     socket.shutdown(Socket::CLOSED);
                 } else if (!_handleIfStatusOrControlCommand(command)) {
-                    // If it's a status or control command, we handle it specially above. If not, we'll queue it for
-                    // later processing below.
-
                     if (fromControlPort && _shutdownState != RUNNING) {
                         // Don't handle non-control commands on the control port if we're shutting down. As the control
                         // port can remain open through shutdown (in the case of detaching) and can expect DB access,
@@ -2256,45 +2259,47 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         // command that was already responded to in `buildCommandFromRequest` and we can move on to the
                         // next thing immediately.
                         mutex m;
-
-                        // Defer locking until we actually have to.
-                        unique_lock<mutex> lock(m, defer_lock);
                         condition_variable cv;
+                        atomic<bool> finished = false;
 
-                        function<void()> callback = [&m, &cv]() {
+                        function<void()> callback = [&m, &cv, &finished]() {
                             // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
                             // for `handleSocket` to release it's lock (by calling `wait`), and then notify the waiting
                             // socket thread.
                             lock_guard lock(m);
+                            finished = true;
                             cv.notify_all();
                         };
 
-                        // Ok, none of above synchronization code gets called unless the command has a socket to respond
-                        // on.
+                        // Ok, none of above synchronization code gets called unless the command has a socket to respond on.
                         bool hasSocket = command->socket;
                         if (hasSocket) {
                             // Set the destructor callback for when the command finishes.
                             command->destructionCallback = &callback;
-
-                            // And lock the mutex so the command can't complete until we are in `wait` below.
-                            lock.lock();
                         }
 
-                        // Now we'll queue this command in one of two queues.
+                        // Now we queue or run this command.
                         auto _syncNodeCopy = atomic_load(&_syncNode);
                         if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
                             _standDownQueue.push(move(command));
                         } else {
-                            SINFO("Queuing new '" << command->request.methodLine << "' command from local client, with "
-                                  << _commandQueue.size() << " commands already queued.");
-                            _commandQueue.push(move(command));
+                            // If this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
+                            // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
+                            if (command->request.calcU64("commandExecuteTime") > STimeNow()) {
+                                // These are implicitly fire-and-forget commands and a response will already have been sent in `buildCommandFromRequest`.
+                                _commandQueue.push(move(command));
+                                continue;
+                            } else {
+                                SINFO("Running new '" << command->request.methodLine << "' command from local client, with " << _commandQueue.size() << " commands already queued.");
+                                runCommand(move(command));
+                            }
                         }
 
-                        // Now that the command is queued, we wait for it to complete (if it's has a socket). When it's
-                        // destructionCallback fires, this will stop blocking and we can move on to the next request.
-                        // NOTE: This doesn't correctly handle spurious wakeups.
-                        if (hasSocket) {
-                            cv.wait(lock);
+                        // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
+                        // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.
+                        unique_lock<mutex> lock(m);
+                        if (!finished && hasSocket) {
+                            cv.wait(lock, [&]{return finished.load();});
                         }
                     }
                 }

@@ -26,7 +26,7 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
 
 class BedrockJobsCommand : public BedrockCommand {
   public:
-    BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugin_Jobs* plugin);
+    BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin);
     virtual bool peek(SQLite& db);
     virtual void process(SQLite& db);
     virtual void handleFailedReply();
