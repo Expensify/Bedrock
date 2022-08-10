@@ -2283,9 +2283,10 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
                             _standDownQueue.push(move(command));
                         } else {
-                            // If this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
+                            // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
+                            // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
                             // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
-                            if (command->request.calcU64("commandExecuteTime") > STimeNow()) {
+                            if (!_syncNodeCopy || command->request.calcU64("commandExecuteTime") > STimeNow()) {
                                 // These are implicitly fire-and-forget commands and a response will already have been sent in `buildCommandFromRequest`.
                                 _commandQueue.push(move(command));
                                 continue;
