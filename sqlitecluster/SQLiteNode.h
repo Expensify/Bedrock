@@ -23,12 +23,12 @@
  * Rules for maintaining SQLiteNode methods so that atomicity works as intended.
  *
  * No non-const members should be publicly exposed.
- * Any public method that is `const` must shared_lock<>(nodeMutex).
+ * Any public method that is `const` must shared_lock<>(_stateMutex).
  * Alternatively, a public `const` method that is a simple getter for an atomic property can skip the lock.
- * Any public method that is non-const must unique_lock<>(nodeMutex) before changing any internal state, and must hold
+ * Any public method that is non-const must unique_lock<>(_stateMutex) before changing any internal state, and must hold
  * this lock until it is done changing state to make this method's changes atomic.
  * Any private methods must not call public methods.
- * Any private methods must not lock nodeMutex (for recursion reasons).
+ * Any private methods must not lock _stateMutex (for recursion reasons).
  * Any public methods must not call other public methods.
  *
  * `_replicate` is a special exception because it runs in multiple threads internally. It needs to handle locking if it
@@ -165,6 +165,10 @@ class SQLiteNode : public STCPManager {
     // access _peerList and peer->name, both of which are const. So it is safe
     // to call from other public functions.
     SQLitePeer* getPeerByName(const string& name) const;
+
+    // Wait for the node to be in one of a list of valid states. The actual state (which must be in the list) is returned.
+    State waitForStates(list<State>) const;
+
   private:
     // Utility class that can decrement _replicationThreadCount when objects go out of scope.
     template <typename CounterType>
@@ -348,4 +352,9 @@ class SQLiteNode : public STCPManager {
     // Debugging info. Log the current number of transactions we're actually performing in replicate threads.
     // This can be removed once we've figured out why replication falls behind. See this issue: https://github.com/Expensify/Expensify/issues/210528
     atomic<size_t> _concurrentReplicateTransactions = 0;
+
+    // The variables requires to implement `waitForStates`. They are mutable because `waitForStates` is `const`, as logically,
+    // calling `waitForStates` changes nothing, but locking and unlocking a mutex (and also `wait` and `notify`) are not const methods.
+    mutable mutex _stateChangeMutex;
+    mutable condition_variable _stateChangeCV;
 };

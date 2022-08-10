@@ -1886,7 +1886,12 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         // we're "LoggedIn" (else we might change state after sending LOGIN,
         // but before we receive theirs, and they'll miss it).
         // Broadcast the new state
-        _state = newState;
+        {
+            unique_lock lock(_stateChangeMutex);
+            _state = newState;
+        }
+        _stateChangeCV.notify_all();
+
         SData state("STATE");
         state["StateChangeCount"] = to_string(++_stateChangeCount);
         state["State"] = stateName(_state);
@@ -2502,7 +2507,6 @@ SQLitePeer* SQLiteNode::getPeerByName(const string& name) const {
     return nullptr;
 }
 
-
 const string& SQLiteNode::stateName(SQLiteNode::State state) {
     static string placeholder = "";
     static map<State, string> lookup = {
@@ -2541,5 +2545,25 @@ SQLiteNode::State SQLiteNode::stateFromName(const string& name) {
         return UNKNOWN;
     } else {
         return it->second;
+    }
+}
+
+SQLiteNode::State SQLiteNode::waitForStates(list<SQLiteNode::State> states) const {
+    // We are using the rule (from the top of the.h file):
+    //
+    // Alternatively, a public `const` method that is a simple getter for an atomic property can skip the lock.
+    //
+    // Here to skip the locking of `_stateMutex`, as we don't want to block every thread checking the current state on `update` and `postPoll`.
+    // We are treating this as a simple getting for an atomic property (_state), which it is, with some extra waiting.
+    unique_lock lock(_stateChangeMutex);
+
+    // Loop until the state changes to something we are looking for. Wait after each check for it to change.
+    while (true) {
+        for (auto& state : states) {
+            if (_state == state) {
+                return state;
+            }
+        }
+        _stateChangeCV.wait(lock);
     }
 }

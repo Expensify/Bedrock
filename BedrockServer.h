@@ -431,6 +431,11 @@ class BedrockServer : public SQLiteServer {
     // endless loop of always having new unfinished commands.
     BedrockTimeoutCommandQueue _standDownQueue;
 
+    // This is the count of commands that are blocked waiting for the sync node to stand down. These commands exist, but
+    // they have not yet started being processed. When standing down, we wait for all commands to complete *except* commands
+    // that are waiting for the node to stand down.
+    atomic<size_t> _standDownCommandCount = 0;
+
     // The following variables all exist to to handle commands that seem to have caused crashes. This lets us broadcast
     // a command to all peer nodes with information about the crash-causing command, so they can refuse to process it if
     // it gets sent again (i.e., if an end-user clicks 'refresh' after crashing the first node). Because these can

@@ -23,10 +23,9 @@ thread_local atomic<SQLiteNode::State> BedrockServer::_nodeStateSnapshot = SQLit
 bool BedrockServer::canStandDown() {
     // Here's all the commands in existence.
     size_t count = BedrockCommand::getCommandCount();
-    size_t standDownQueueSize = _standDownQueue.size();
 
     // If we have any commands anywhere but the stand-down queue, let's log that.
-    if (count && count != standDownQueueSize) {
+    if (count && count != _standDownCommandCount) {
         size_t mainQueueSize = _commandQueue.size();
         size_t syncNodeQueueSize = _syncNodeQueuedCommands.size();
 
@@ -47,7 +46,7 @@ bool BedrockServer::canStandDown() {
               << "syncNodeQueueSize: " << syncNodeQueueSize << ", "
               << "outstandingHTTPSCommandsSize: " << outstandingHTTPSCommandsSize << ", "
               << "futureCommitCommandsSize: " << futureCommitCommandsSize << ", "
-              << "standDownQueueSize: " << standDownQueueSize << ".");
+              << "standDownCommandCount: " << _standDownCommandCount << ".");
         return false;
     } else {
         SINFO("Can stand down now.");
@@ -283,12 +282,7 @@ void BedrockServer::sync()
         _replicationState.store(nodeState);
         _leaderVersion.store(_syncNode->getLeaderVersion());
 
-        // If anything was in the stand down queue, move it back to the main queue.
-        if (nodeState != SQLiteNode::STANDINGDOWN) {
-            while (_standDownQueue.size()) {
-                _commandQueue.push(_standDownQueue.pop());
-            }
-        } else if (preUpdateState != SQLiteNode::STANDINGDOWN) {
+        if (preUpdateState != SQLiteNode::STANDINGDOWN) {
             // Otherwise,if we just started standing down, discard any commands that had been scheduled in the future.
             // In theory, it should be fine to keep these, as they shouldn't have sockets associated with them, and
             // they could be re-escalated to leader in the future, but there's not currently a way to decide if we've
@@ -740,6 +734,27 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command) {
     // our state right before we commit.
     SQLiteNode::State state = _replicationState.load();
 
+    if (state == SQLiteNode::STANDINGDOWN) {
+        // Don't start on the command while we're standing down.
+        _standDownCommandCount++;
+        auto _syncNodeCopy = atomic_load(&_syncNode);
+        if (_syncNodeCopy) {
+            // Every state except STANDINGDOWN. Note that not all of these are valid states for running commands, but if we're shutting down or something,
+            // we want to be able to handle the case where we've gone searching without getting stuck forever.
+            _syncNodeCopy->waitForStates({
+                SQLiteNode::SEARCHING,
+                SQLiteNode::SYNCHRONIZING,
+                SQLiteNode::WAITING,
+                SQLiteNode::STANDINGUP,
+                SQLiteNode::LEADING,
+                SQLiteNode::SUBSCRIBING,
+                SQLiteNode::FOLLOWING
+            });
+        }
+        SINFO("Waiting for standing down to complete before starting command.");
+        _standDownCommandCount--;
+    }
+
     // If we're following, we will automatically escalate any command that's not already complete (complete
     // commands are likely already returned from leader with legacy escalation) and is marked as
     // `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
@@ -921,8 +936,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command) {
                           << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
                     _syncNodeQueuedCommands.push(move(command));
                 } else if (state == SQLiteNode::STANDINGDOWN) {
-                    SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
-                    _standDownQueue.push(move(command));
+                    SINFO("Standing down with new QUROUM command, just saving it for later.");
+                    // Can we just throw it back in the main command queue? Why not?
+                    // Previously, it'd need to complete, but now it'll count as standing down in _standDownCommandCount as soon as we dequeue it there.
+                    _commandQueue.push(move(command));
                 } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
                     SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
                     _reply(command);
@@ -2204,20 +2221,16 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
                         // Now we queue or run this command.
                         auto _syncNodeCopy = atomic_load(&_syncNode);
-                        if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
-                            _standDownQueue.push(move(command));
+                        // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
+                        // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
+                        // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
+                        if (!_syncNodeCopy || command->request.calcU64("commandExecuteTime") > STimeNow()) {
+                            // These are implicitly fire-and-forget commands and a response will already have been sent in `buildCommandFromRequest`.
+                            _commandQueue.push(move(command));
+                            continue;
                         } else {
-                            // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
-                            // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
-                            // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
-                            if (!_syncNodeCopy || command->request.calcU64("commandExecuteTime") > STimeNow()) {
-                                // These are implicitly fire-and-forget commands and a response will already have been sent in `buildCommandFromRequest`.
-                                _commandQueue.push(move(command));
-                                continue;
-                            } else {
-                                SINFO("Running new '" << command->request.methodLine << "' command from local client, with " << _commandQueue.size() << " commands already queued.");
-                                runCommand(move(command));
-                            }
+                            SINFO("Running new '" << command->request.methodLine << "' command from local client, with " << _commandQueue.size() << " commands already queued.");
+                            runCommand(move(command));
                         }
 
                         // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
