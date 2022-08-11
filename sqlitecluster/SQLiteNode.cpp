@@ -1965,7 +1965,7 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
 }
 
 void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message) {
-    if (!message.isSet("ShuttingDown")) {
+    if (message.isSet("ShuttingDown")) {
         STHROW("Sync peer is shutting down");
     }
     if (!message.isSet("NumCommits")) {
