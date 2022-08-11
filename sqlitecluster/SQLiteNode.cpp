@@ -1440,8 +1440,9 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 if (_gracefulShutdown()) {
                     // This will cause the remote peer to reconnect (it will not necessarily give a fantastic error message for this), and choose a different sync peer.
                     // This prevents us have having leftover synchronization responses in progress as we shut down.
-                    SWARN("Asked to help SYNCHRONIZE but shutting down.");
+                    SINFO("Asked to help SYNCHRONIZE but shutting down.");
                     SData response("SYNCHRONIZE_RESPONSE");
+                    response["ShuttingDown"] = "true";
                     peer->sendMessage(response);
                 } else {
                     _pendingSynchronizeResponses++;
@@ -1964,10 +1965,14 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
 }
 
 void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message) {
-    SASSERT(peer);
-    // Walk across the content and commit in order
-    if (!message.isSet("NumCommits"))
+    if (!message.isSet("ShuttingDown")) {
+        STHROW("Sync peer is shutting down");
+    }
+    if (!message.isSet("NumCommits")) {
         STHROW("missing NumCommits");
+    }
+
+    // Walk across the content and commit in order
     int commitsRemaining = message.calc("NumCommits");
     SData commit;
     const char* content = message.content.c_str();
