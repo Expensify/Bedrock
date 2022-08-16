@@ -70,26 +70,11 @@ class BedrockServer : public SQLiteServer {
     // we're standing down without shutting down. The main difference is that we are not waiting on all existing
     // clients to be disconnected while we stand down - we will be able to service these same clients as a follower as
     // soon as we finish this operation. However, we still have the same criteria for STANDINGDOWN as listed above, no
-    // commands in progress, and an empty command queue.
-    //
-    // When a node switches to STANDINGDOWN, it starts rejecting escalated commands from peers. This allows it to run
-    // through its current list of pending escalated commands and finish them all (this is true whether we're shutting
-    // down or not, and it's why shutting down is able to complete the entire queue of commands without it potentially
-    // adding new commands that keep it from ever emptying). However, this doesn't keep new commands that arrive
-    // locally from being added to main queue. This could potentially keep us from ever finishing the queue. So, when
-    // we are in a STANDINGDOWN state, any new commands from local clients are inserted into a temporary
-    // `_standDownQueue` instead of the main queue. As soon as STANDINGDOWN completes, these commands will be moved
-    // back to the main queue.
-    //
-    // The reason we have to wait for the main queue to be empty *and* no commands to be in progress when standing
-    // down, is because of the way certain commands can move between queues. For instance, a command that has a pending
-    // HTTPS transaction is "in progress" until the transaction completes, but then re-queued for processing by a
-    // worker thread. If we allowed commands to remain in the main queue while standing down, some of them could be
-    // HTTPS commands with completed requests. If these didn't get processed until after the node finished standing
-    // down, then we'd try and run processCommand() while following, which would be invalid. For this reason, we need to
-    // make sure any command that has ever been started gets completed before we finish standing down. Unfortunately,
-    // once a command has been added to the main queue, there's no way of knowing whether it's ever been started
-    // without inspecting every command in the queue, hence the `_standDownQueue`.
+    // commands in progress, and an empty command queue. We handle this case by incrementing `_standDownCommandCount`
+    // for any command received while standing down, and only standing down when the total number of existing commands
+    // is equal to `_standDownCommandCount`, meaning that al lremaining commands are waiting on a stand down. These
+    // commands won't actually start in this state, they wait until the node state changes to something other than
+    // STANDIONGDOWN to begin.
     //
     // NOTE: in both cases of shutting down or standing down, we discard any commands in the main queue that are
     // scheduled to happen more than 5 seconds in the future. In the case that we're shutting down, there's nothing we
@@ -425,11 +410,6 @@ class BedrockServer : public SQLiteServer {
     // create an outgoing http request) we queue something here, so that the poll loop in `sync` gets interrupted. This
     // allows it to start again and pick up the new socket we just created.
     SSynchronizedQueue<bool> _newCommandsWaiting;
-
-    // When we're standing down, we temporarily dump newly received commands here (this lets all existing
-    // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
-    // endless loop of always having new unfinished commands.
-    BedrockTimeoutCommandQueue _standDownQueue;
 
     // This is the count of commands that are blocked waiting for the sync node to stand down. These commands exist, but
     // they have not yet started being processed. When standing down, we wait for all commands to complete *except* commands

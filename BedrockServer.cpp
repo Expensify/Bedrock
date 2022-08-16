@@ -739,6 +739,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command) {
         _standDownCommandCount++;
         auto _syncNodeCopy = atomic_load(&_syncNode);
         if (_syncNodeCopy) {
+            SINFO("Waiting for standing down to complete before starting command.");
             // Every state except STANDINGDOWN. Note that not all of these are valid states for running commands, but if we're shutting down or something,
             // we want to be able to handle the case where we've gone searching without getting stuck forever.
             _syncNodeCopy->waitForStates({
@@ -751,8 +752,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command) {
                 SQLiteNode::FOLLOWING
             });
         }
-        SINFO("Waiting for standing down to complete before starting command.");
         _standDownCommandCount--;
+
+        // TODO: We probably need to check _shutdownState again.
     }
 
     // If we're following, we will automatically escalate any command that's not already complete (complete
