@@ -282,8 +282,8 @@ void BedrockServer::sync()
         _replicationState.store(nodeState);
         _leaderVersion.store(_syncNode->getLeaderVersion());
 
-        if (preUpdateState != SQLiteNode::STANDINGDOWN) {
-            // Otherwise,if we just started standing down, discard any commands that had been scheduled in the future.
+        if (nodeState == SQLiteNode::STANDINGDOWN && preUpdateState != SQLiteNode::STANDINGDOWN) {
+            // If we just started standing down, discard any commands that had been scheduled in the future.
             // In theory, it should be fine to keep these, as they shouldn't have sockets associated with them, and
             // they could be re-escalated to leader in the future, but there's not currently a way to decide if we've
             // run through all of the commands that might need peer responses before standing down aside from seeing if
