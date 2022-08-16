@@ -173,10 +173,10 @@ class BedrockServer : public SQLiteServer {
     // Returns true when everything's ready to shutdown.
     bool shutdownComplete();
 
-    // Exposes the replication state to plugins. Note that this is guaranteed not to change inside a call to
-    // `peekCommand` or `processCommand`, but this is only from the command's point-of-view - the underlying value can
-    // change at any time.
-    const atomic<SQLiteNode::State>& getState() const;
+    // Returns the current value of _syncNode's state. If there is no sync node, returns UNKNOWN.
+    // If there's a `ScopedStateSnapshot` for this thread, then the value returned here won't change until that object goes out-of-scope,
+    // but the underlying syncNode value can still change.
+    const SQLiteNode::State getState() const;
 
     // When a peer node logs in, we'll send it our crash command list.
     void onNodeLogin(SQLitePeer* peer);

@@ -2283,6 +2283,13 @@ void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
     _newCommandsWaiting.push(true);
 }
 
-const atomic<SQLiteNode::State>& BedrockServer::getState() const {
-    return _nodeStateSnapshot == SQLiteNode::UNKNOWN ? _replicationState : _nodeStateSnapshot;
+const SQLiteNode::State BedrockServer::getState() const {
+    if (_nodeStateSnapshot != SQLiteNode::UNKNOWN) {
+        return _nodeStateSnapshot;
+    }
+    auto _syncNodeCopy = atomic_load(&_syncNode);
+    if (_syncNodeCopy) {
+        return _syncNodeCopy->getState();
+    }
+    return SQLiteNode::UNKNOWN;
 }
