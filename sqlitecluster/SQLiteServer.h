@@ -8,12 +8,6 @@ class SQLitePeer;
 // commands it receives.
 class SQLiteServer : public STCPManager {
   public:
-    // An SQLiteNode will call this to pass a command to a server for processing. The isNew flag is set if this is the
-    // first time this command has been sent to this server, as opposed to being an existing command, such as one that
-    // was previously escalated.
-    [[deprecated("Use HTTP escalation")]]
-    virtual void acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew) = 0;
-
     // This will return true if there's no outstanding writable activity that we're waiting on. It's called by an
     // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
     virtual bool canStandDown() = 0;

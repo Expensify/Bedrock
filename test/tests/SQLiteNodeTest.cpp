@@ -23,7 +23,6 @@ class TestServer : public SQLiteServer {
   public:
     TestServer() : SQLiteServer() { }
 
-    virtual void acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew) { }
     virtual bool canStandDown() { return true; }
     virtual void onNodeLogin(SQLitePeer* peer) { }
 };
