@@ -141,6 +141,13 @@ SQLiteNode::~SQLiteNode() {
     for (SQLitePeer* peer : _peerList) {
         delete peer;
     }
+
+    // If we're shut down and anyone is waiting for a state change, unblock them.
+    {
+        unique_lock lock(_stateChangeMutex);
+        _state = SEARCHING;
+    }
+    _stateChangeCV.notify_all();
 }
 
 void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp) {
