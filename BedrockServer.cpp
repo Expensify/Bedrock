@@ -577,10 +577,9 @@ void BedrockServer::sync()
     // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
     // the writing replication thread exits.
     _replicationState.store(_syncNode->getState());
-    if (_replicationState.load() > SQLiteNode::WAITING) {
+    if (_replicationState.load() != SQLiteNode::SEARCHING) {
         // This is because the graceful shutdown timer fired and syncNode.shutdownComplete() returned `true` above, but
-        // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
-        // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
+        // the server still thinks it's in some other state.
         SWARN("Sync thread exiting in state " << _replicationState.load() << ". Setting to SEARCHING.");
         _replicationState.store(SQLiteNode::SEARCHING);
     } else {
@@ -707,54 +706,63 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command) {
         return;
     }
 
-    // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
-    while (_upgradeInProgress ||
-           (_replicationState.load() != SQLiteNode::LEADING &&
-            _replicationState.load() != SQLiteNode::FOLLOWING &&
-            _replicationState.load() != SQLiteNode::STANDINGDOWN)
-    ) {
-        // Make sure that the node isn't shutting down, leaving us in an endless loop.
-        if (_shutdownState.load() != RUNNING) {
-            SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '"
-                  << command->request.methodLine << "'.");
-            return;
+    SQLiteNode::State state = SQLiteNode::UNKNOWN;
+
+    // This loop repeats until the node is in a functional state where it can actually run commands. In simplified terms this means it's LEADING
+    // or FOLLOWING and not shutting down (but there are edge cases where we are in the processing of stopping leading or starting to shut down).
+    while (true) {
+        // Note that the sync thread can independently change `_replicationState` at any point, so just because it looks correct at the given moment,
+        // doesn't mean it will stay correct forever.
+        state = _replicationState.load();
+        if (_upgradeInProgress || (state != SQLiteNode::LEADING && state != SQLiteNode::FOLLOWING && state != SQLiteNode::STANDINGDOWN)) {
+            // If we're *not* yet in a functional state, make sure that we're not shutting down, because then we may never reach a functional state,
+            // instead, exit early if we try to shut down before reaching a state that can run commands. This is unlikely to happen unless some other
+            // exceptional case has occurred first, typically shutdown begins from LEADING or FOLLOWING.
+            if (_shutdownState.load() != RUNNING) {
+                SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '" << command->request.methodLine << "'.");
+                return;
+            }
+
+            // It would be nicer to have some sort of event based `wait` call here, but the case we'd be waiting for is fairly complex. It includes
+            // both waiting for node state (which is possible with SQLiteNode::waitForStates) but also waiting for _shutdownState, which currently
+            // has no mechanism for watching for changes.
+            // Instead we do this ugly sleep call in a loop, but this almost never actually happens except briefly when coming up. Once we reach
+            // steady-state LEADING or FOLLOWING, the body of this loop is skipped.
+            usleep(10000);
+
+            // Start the loop over from the top of the main loop (which lets us query _replicationState again).
+            continue;
         }
 
-        // This sleep call is pretty ugly, but it should almost never happen. We're accepting the potential
-        // looping sleep call for the general case where we just check some bools and continue, instead of
-        // avoiding the sleep call but having every thread lock a mutex here on every loop.
-        usleep(10000);
-    }
+        // Now we do a second check if the state is STANDINGDOWN. We don't want to start any *new* commands while we're standing down. Commands
+        // already started need to complete (because they may be write commands that need to run on leader before we finish), but new commands need
+        // to not block the state change. So, if we are standing down we simply wait until we aren't, and start the command afterward.
+        if (state == SQLiteNode::STANDINGDOWN) {
+            // We keep a count of how many commands are waiting for stand down to complete, because `canStandDown` will tell the node that it's free
+            // to stand down once there are no commands still around that *aren't* waiting on stand down.
+            _standDownCommandCount++;
 
-    // OK, so this is the state right now, which isn't necessarily anything in particular, because the sync
-    // node can change it at any time, and we're not synchronizing on it. We're going to go ahead and assume
-    // it's something reasonable, because in most cases, that's pretty safe. If we think we're anything but
-    // LEADING, we'll just peek this command and return it's result, which should be harmless. If we think
-    // we're leading, we'll go ahead and start a `process` for the command, but we'll synchronously verify
-    // our state right before we commit.
-    SQLiteNode::State state = _replicationState.load();
+            // It is not infeasible that the sync node was deleted while we did the checks above, so we verify it still exists (though the fact that
+            // the command we are trying to run exists should have prevented that). In the case that is does not exist, we end up taking the same
+            // action as if STANDINGDOWN had completed.
+            auto _syncNodeCopy = atomic_load(&_syncNode);
+            if (_syncNodeCopy) {
+                SINFO("Waiting for standing down to complete before starting command.");
 
-    if (state == SQLiteNode::STANDINGDOWN) {
-        // Don't start on the command while we're standing down.
-        _standDownCommandCount++;
-        auto _syncNodeCopy = atomic_load(&_syncNode);
-        if (_syncNodeCopy) {
-            SINFO("Waiting for standing down to complete before starting command.");
-            // Every state except STANDINGDOWN. Note that not all of these are valid states for running commands, but if we're shutting down or something,
-            // we want to be able to handle the case where we've gone searching without getting stuck forever.
-            _syncNodeCopy->waitForStates({
-                SQLiteNode::SEARCHING,
-                SQLiteNode::SYNCHRONIZING,
-                SQLiteNode::WAITING,
-                SQLiteNode::STANDINGUP,
-                SQLiteNode::LEADING,
-                SQLiteNode::SUBSCRIBING,
-                SQLiteNode::FOLLOWING
-            });
+                // SEARCHING is the only valid state to transition to from STANDINGDOWN.
+                _syncNodeCopy->waitForStates({SQLiteNode::SEARCHING});
+            }
+
+            // At this point, we aren't standing down, but the expected state we'll be in is SEARCHING, which is not a valid state to run commands.
+            // The two expected cases after this are we either go FOLLOWING, or we shut down. To check these cases, we simply jump back to the top of
+            // the loop. If we're not LEADING, FOLLOWING, or STANDINDDOWN, we'll check the shutdown state again and exit if we are shutting down, or
+            // we'll wait until we're FOLLOWING and can run this command.
+            _standDownCommandCount--;
+            continue;
+        } else {
+            // In this case, we were either LEADING or FOLLOWING, which is great, we can start the command, simply break out of this loop and continue.
+            break;
         }
-        _standDownCommandCount--;
-
-        // TODO: We probably need to check _shutdownState again.
     }
 
     // If we're following, we will automatically escalate any command that's not already complete (complete
