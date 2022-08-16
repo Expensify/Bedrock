@@ -733,35 +733,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command) {
             continue;
         }
 
-        // Now we do a second check if the state is STANDINGDOWN. We don't want to start any *new* commands while we're standing down. Commands
-        // already started need to complete (because they may be write commands that need to run on leader before we finish), but new commands need
-        // to not block the state change. So, if we are standing down we simply wait until we aren't, and start the command afterward.
-        if (state == SQLiteNode::STANDINGDOWN) {
-            // We keep a count of how many commands are waiting for stand down to complete, because `canStandDown` will tell the node that it's free
-            // to stand down once there are no commands still around that *aren't* waiting on stand down.
-            _standDownCommandCount++;
-
-            // It is not infeasible that the sync node was deleted while we did the checks above, so we verify it still exists (though the fact that
-            // the command we are trying to run exists should have prevented that). In the case that is does not exist, we end up taking the same
-            // action as if STANDINGDOWN had completed.
-            auto _syncNodeCopy = atomic_load(&_syncNode);
-            if (_syncNodeCopy) {
-                SINFO("Waiting for standing down to complete before starting command.");
-
-                // SEARCHING is the only valid state to transition to from STANDINGDOWN.
-                _syncNodeCopy->waitForStates({SQLiteNode::SEARCHING});
-            }
-
-            // At this point, we aren't standing down, but the expected state we'll be in is SEARCHING, which is not a valid state to run commands.
-            // The two expected cases after this are we either go FOLLOWING, or we shut down. To check these cases, we simply jump back to the top of
-            // the loop. If we're not LEADING, FOLLOWING, or STANDINDDOWN, we'll check the shutdown state again and exit if we are shutting down, or
-            // we'll wait until we're FOLLOWING and can run this command.
-            _standDownCommandCount--;
-            continue;
-        } else {
-            // In this case, we were either LEADING or FOLLOWING, which is great, we can start the command, simply break out of this loop and continue.
-            break;
-        }
+        // If the above condition isn't true, we can leqve this loop and handle the command.
+        break;
     }
 
     // If we're following, we will automatically escalate any command that's not already complete (complete
@@ -2228,8 +2201,30 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             command->destructionCallback = &callback;
                         }
 
-                        // Now we queue or run this command.
+                        // If we've got a sync node and it's standing down, we wait for it to not be standing down.
+                        // we need to increment/decrement _standDownCommandCount either side of this, as we can't stand down until we're done with
+                        // all commands that *aren't* waiting on stand down.
+                        // The reason we want to wait here and not start new commands is that we need to let any LEADING commands complete, and
+                        // this may include any of the commands already in the main command queue. Those commands may be partially run already
+                        // (for instance, if they've made HTTPS requests) and we can't jsut restart them from the beginning after standing down.
                         auto _syncNodeCopy = atomic_load(&_syncNode);
+                        if (_syncNodeCopy && _replicationState.load() == SQLiteNode::STANDINGDOWN) {
+                            _standDownCommandCount++;
+                            SINFO("Waiting for STANDINGDOWN to complete before starting command: " << command->request.methodLine);
+                            _syncNodeCopy->waitForStates({
+                                SQLiteNode::UNKNOWN,
+                                SQLiteNode::SEARCHING,
+                                SQLiteNode::SYNCHRONIZING,
+                                SQLiteNode::WAITING,
+                                SQLiteNode::STANDINGUP,
+                                // STANDINGDOWN skipped on purpose.
+                                SQLiteNode::LEADING,
+                                SQLiteNode::SUBSCRIBING,
+                                SQLiteNode::FOLLOWING,
+                            });
+                            _standDownCommandCount--;
+                        }
+
                         // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
                         // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
                         // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
