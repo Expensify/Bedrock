@@ -646,7 +646,18 @@ void BedrockServer::worker(int threadId)
 }
 
 void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command) {
-    // This takes ownership of the passed command. By calling the move constructor, the caller's unqiue_ptr is now empty, and so when the one here goes out of scope (i.e., this function
+    // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
+    // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
+    // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
+    {
+        auto _syncNodeCopy = atomic_load(&_syncNode);
+        if (!_syncNodeCopy || _command->request.calcU64("commandExecuteTime") > STimeNow()) {
+            _commandQueue.push(move(_command));
+            return;
+        }
+    }
+
+    // This takes ownership of the passed command. By calling the move constructor, the caller's unique_ptr is now empty, and so when the one here goes out of scope (i.e., this function
     // returns), the command is destroyed.
     unique_ptr<BedrockCommand> command(move(_command));
 
