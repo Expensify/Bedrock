@@ -680,9 +680,25 @@ void BedrockServer::worker(int threadId)
 }
 
 void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlocking) {
-    // This takes ownership of the passed command. By calling the move constructor, the caller's unqiue_ptr is now empty, and so when the one here goes out of scope (i.e., this function
+
+    // This takes ownership of the passed command. By calling the move constructor, the caller's unique_ptr is now empty, and so when the one here goes out of scope (i.e., this function
     // returns), the command is destroyed.
     unique_ptr<BedrockCommand> command(move(_command));
+
+    // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
+    // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
+    // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
+    {
+        auto _syncNodeCopy = atomic_load(&_syncNode);
+        if (!_syncNodeCopy || command->request.calcU64("commandExecuteTime") > STimeNow()) {
+            if (command->request.calcU64("commandExecuteTime") > STimeNow() && command->socket) {
+                SWARN("TYLER got future command with socket");
+            } else {
+                SINFO("Looks OK");
+            }
+            _commandQueue.push(move(_command));
+        }
+    }
 
     SAUTOPREFIX(command->request);
     // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
@@ -2225,17 +2241,8 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
                             _standDownQueue.push(move(command));
                         } else {
-                            // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
-                            // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
-                            // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
-                            if (!_syncNodeCopy || command->request.calcU64("commandExecuteTime") > STimeNow()) {
-                                // These are implicitly fire-and-forget commands and a response will already have been sent in `buildCommandFromRequest`.
-                                _commandQueue.push(move(command));
-                                continue;
-                            } else {
-                                SINFO("Running new '" << command->request.methodLine << "' command from local client, with " << _commandQueue.size() << " commands already queued.");
-                                runCommand(move(command));
-                            }
+                            SINFO("Running new '" << command->request.methodLine << "' command from local client, with " << _commandQueue.size() << " commands already queued.");
+                            runCommand(move(command));
                         }
 
                         // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
