@@ -310,6 +310,10 @@ bool SQLiteNode::_isNothingBlockingShutdown() const {
         return false;
     }
 
+    if (_pendingSynchronizeResponses) {
+        return false;
+    }
+
     return true;
 }
 
@@ -1433,25 +1437,30 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             // there's a backlog of commands, these can get stale, and by the time they reach the follower, it's already
             // behind, thus never catching up.
             if (_state == FOLLOWING) {
-                // Attach all of the state required to populate a SYNCHRONIZE_RESPONSE to this message. All of this is
-                // processed asynchronously, but that is fine, the final `SUBSCRIBE` message and its response will be
-                // processed synchronously.
-                SData request = message;
-                uint64_t count = 0;
-                string hash;
-                peer->getCommit(count, hash);
-                request["peerCommitCount"] = to_string(count);
-                request["peerHash"] = hash;
-                request["peerID"] = to_string(_getIDByPeer(peer));
+                if (_gracefulShutdown()) {
+                    // This will cause the remote peer to reconnect (it will not necessarily give a fantastic error message for this), and choose a different sync peer.
+                    // This prevents us have having leftover synchronization responses in progress as we shut down.
+                    SINFO("Asked to help SYNCHRONIZE but shutting down.");
+                    SData response("SYNCHRONIZE_RESPONSE");
+                    response["ShuttingDown"] = "true";
+                    peer->sendMessage(response);
+                } else {
+                    _pendingSynchronizeResponses++;
+                    static atomic<size_t> synchronizeCount(0);
+                    thread([message, peer, currentSynchronizeCount = synchronizeCount++, this] () {
+                        SInitialize("synchronize" + to_string(currentSynchronizeCount));
+                        SData response("SYNCHRONIZE_RESPONSE");
+                        SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
+                        SQLite& db = dbScope.db();
+                        _queueSynchronize(this, peer, db, response, false);
 
-                // The following properties are only used to expand out our log macros.
-                request["name"] = _name;
-                request["peerName"] = peer->name;
-
-                // Create a command from this request and pass it on to the server to handle.
-                auto command = make_unique<SQLiteCommand>(move(request));
-                command->initiatingPeerID = peer->id;
-                _server.acceptCommand(move(command), true);
+                        // The following two lines are copied from `_sendToPeer`.
+                        response["CommitCount"] = to_string(db.getCommitCount());
+                        response["Hash"] = db.getCommittedHash();
+                        peer->sendMessage(response);
+                        _pendingSynchronizeResponses--;
+                    }).detach();
+                }
             } else {
                 // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
                 // stood up.
@@ -1635,11 +1644,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                       << message.calc("NewCount") << " (" << message["NewHash"] << ", " << message["ID"] << ") but '"
                       << e.what() << "', ignoring.");
             }
-        } else if (SIEquals(message.methodLine, "CRASH_COMMAND") || SIEquals(message.methodLine, "BROADCAST_COMMAND")) {
-            // Create a new Command and send to the server.
-            SData messageCopy = message;
-            PINFO("Received " << message.methodLine << " command, forwarding to server.");
-            _server.acceptCommand(make_unique<SQLiteCommand>(move(messageCopy)), true);
         } else {
             STHROW("unrecognized message");
         }
@@ -1961,10 +1965,14 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
 }
 
 void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message) {
-    SASSERT(peer);
-    // Walk across the content and commit in order
-    if (!message.isSet("NumCommits"))
+    if (message.isSet("ShuttingDown")) {
+        STHROW("Sync peer is shutting down");
+    }
+    if (!message.isSet("NumCommits")) {
         STHROW("missing NumCommits");
+    }
+
+    // Walk across the content and commit in order
     int commitsRemaining = message.calc("NumCommits");
     SData commit;
     const char* content = message.content.c_str();
@@ -2118,40 +2126,6 @@ bool SQLiteNode::_majoritySubscribed() const {
 
     // Done!
     return (numFullFollowers * 2 >= numFullPeers);
-}
-
-bool SQLiteNode::peekPeerCommand(SQLite& db, SQLiteCommand& command) const
-{
-    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
-    SQLitePeer* peer = nullptr;
-    try {
-        if (SIEquals(command.request.methodLine, "SYNCHRONIZE")) {
-            peer = _getPeerByID(SToUInt64(command.request["peerID"]));
-            if (!peer) {
-                // There's nobody to send to, but this was a valid command that's been handled.
-                return true;
-            }
-            command.response.methodLine = "SYNCHRONIZE_RESPONSE";
-            _queueSynchronize(this, peer, db, command.response, false);
-
-            // The following two lines are copied from `_sendToPeer`.
-            command.response["CommitCount"] = to_string(db.getCommitCount());
-            command.response["Hash"] = db.getCommittedHash();
-            peer->sendMessage(command.response);
-            return true;
-        }
-    } catch (const SException& e) {
-        if (peer) {
-            // Any failure causes the response to in initiate a reconnect, if we got a peer.
-            command.response.methodLine = "RECONNECT";
-            command.response["Reason"] = e.what();
-            peer->sendMessage(command.response);
-        }
-
-        // If we even got here, then it must have been a peer command, so we'll call it complete.
-        return true;
-    }
-    return false;
 }
 
 void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message, bool wasConflict) {
@@ -2521,28 +2495,6 @@ void SQLiteNode::_sendPING(SQLitePeer* peer) {
     SData ping("PING");
     ping["Timestamp"] = SToStr(STimeNow());
     peer->sendMessage(ping.serialize());
-}
-
-uint64_t SQLiteNode::_getIDByPeer(SQLitePeer* peer) const {
-    uint64_t id = 1;
-    for (auto p : _peerList) {
-        if (p == peer) {
-            return id;
-        }
-        id++;
-    }
-    return 0;
-}
-
-SQLitePeer* SQLiteNode::_getPeerByID(uint64_t id) const {
-    if (id <= 0) {
-        return nullptr;
-    }
-    try {
-        return _peerList[id - 1];
-    } catch (const out_of_range& e) {
-        return nullptr;
-    }
 }
 
 SQLitePeer* SQLiteNode::getPeerByName(const string& name) const {

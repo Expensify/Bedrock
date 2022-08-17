@@ -177,15 +177,6 @@ class BedrockServer : public SQLiteServer {
         const BedrockServer& _owner;
     };
 
-    // Accept an incoming command from an SQLiteNode.
-    // `isNew` will be set to true if this command has never been seen before, and false if this is an existing command
-    // being returned to the command queue (such as one that was previously escalated).
-    // SQLiteNode API.
-    void acceptCommand(unique_ptr<SQLiteCommand>&& command, bool isNew = true);
-
-    // Backwards-compatible version of the above method for plugins that already used it.
-    void acceptCommand(SQLiteCommand&& command, bool isNew = true);
-
     // Flush the send buffers
     // STCPNode API.
     void prePoll(fd_map& fdm);

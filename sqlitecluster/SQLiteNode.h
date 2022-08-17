@@ -132,9 +132,6 @@ class SQLiteNode : public STCPManager {
     // Does not block.
     void notifyCommit() const;
 
-    [[deprecated("Use HTTP escalation")]]
-    bool peekPeerCommand(SQLite& db, SQLiteCommand& command) const;
-
     // Prepare a set of sockets to wait for read/write.
     // Can block.
     void prePoll(fd_map& fdm) const;
@@ -194,14 +191,6 @@ class SQLiteNode : public STCPManager {
     // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
     // thread with a different DB object) - which is why this is static.
     static void _queueSynchronize(const SQLiteNode* const node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll);
-
-    // Returns the ID of SQLitePeer. If the peer is not found, returns 0.
-    [[deprecated("Only required as long as synchronize uses peekPeerCommand")]]
-    uint64_t _getIDByPeer(SQLitePeer* peer) const;
-
-    // Returns a peer by it's ID. If the ID is invalid, returns nullptr.
-    [[deprecated("Only required as long as synchronize uses peekPeerCommand")]]
-    SQLitePeer* _getPeerByID(uint64_t id) const;
 
     // Returns whether we're in the process of gracefully shutting down.
     bool _gracefulShutdown() const;
@@ -310,6 +299,10 @@ class SQLiteNode : public STCPManager {
     // These are used in _replicate, _changeState, and _recvSynchronize to coordinate the replication threads.
     SQLiteSequentialNotifier _leaderCommitNotifier;
     SQLiteSequentialNotifier _localCommitNotifier;
+
+    // We can spin up threads to handle responding to `SYNCHRONIZE` messages out-of-band. We want to make sure we don't
+    // shut down in the middle of running these, so we keep a count of them.
+    atomic<size_t> _pendingSynchronizeResponses = 0;
 
     // Our priority, with respect to other nodes in the cluster. This is passed in to our constructor. The node with
     // the highest priority in the cluster will attempt to become the leader.
