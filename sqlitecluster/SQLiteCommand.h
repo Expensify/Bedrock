@@ -35,9 +35,6 @@ class SQLiteCommand {
     // Accumulated response content
     STable jsonContent;
 
-    // Makes it not crash.
-    char empty;
-
     // Final response
     SData response;
 

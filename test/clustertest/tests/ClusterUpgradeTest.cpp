@@ -172,9 +172,6 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         ASSERT_EQUAL(versions[2], devVersion);
 
         // Now we need to send a command to node 1 to verify we can escalate old->new.
-        cout << "Sleeping for 10 seconds, see if this is where you need to look." << endl;
-        sleep(10);
-        cout << "Done." << endl;
         cmdResult = tester->getTester(1).executeWaitMultipleData({cmd});
         ASSERT_EQUAL(cmdResult[0].methodLine, "200 OK");
 
