@@ -1968,7 +1968,7 @@ bool S_recvappend(int s, SFastBuffer& recvBuffer) {
     char buffer[4096];
     int totalRecv = 0;
     ssize_t numRecv = 0;
-    sockaddr_in fromAddr;
+    sockaddr_in fromAddr = {0};
     socklen_t fromAddrLen = sizeof(fromAddr);
     while ((numRecv = recvfrom(s, buffer, sizeof(buffer), 0, (sockaddr*)&fromAddr, &fromAddrLen)) > 0) {
         // Got some more data
