@@ -98,7 +98,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         newTestPlugin = string(cwd) + "/testplugin/testplugin.so";
 
         // Load the whole prod cluster with the prod test plugin.
-        tester = new BedrockClusterTester("db,cache,jobs," + prodBedrockPluginName, prodBedrockName);
+        tester = new BedrockClusterTester(prodBedrockPluginName, prodBedrockName);
     }
 
     void teardown() {
@@ -134,7 +134,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         // Restart 2 on the new version.
         tester->getTester(2).stopServer();
         tester->getTester(2).serverName = "bedrock";
-        tester->getTester(2).updateArgs({{"-plugins","db,cache,jobs," + newTestPlugin}});
+        tester->getTester(2).updateArgs({{"-plugins", newTestPlugin}});
         tester->getTester(2).startServer();
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
@@ -157,7 +157,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
 
         // Start up the old leader on the new version.
         tester->getTester(0).serverName = "bedrock";
-        tester->getTester(1).updateArgs({{"-plugins","db,cache,jobs," + newTestPlugin}});
+        tester->getTester(0).updateArgs({{"-plugins", newTestPlugin}});
         tester->getTester(0).startServer();
 
         // We should get the expected cluster state.
@@ -172,13 +172,16 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         ASSERT_EQUAL(versions[2], devVersion);
 
         // Now we need to send a command to node 1 to verify we can escalate old->new.
+        cout << "Sleeping for 10 seconds, see if this is where you need to look." << endl;
+        sleep(10);
+        cout << "Done." << endl;
         cmdResult = tester->getTester(1).executeWaitMultipleData({cmd});
         ASSERT_EQUAL(cmdResult[0].methodLine, "200 OK");
 
         // And finally, upgrade the last node.
         tester->getTester(1).stopServer();
         tester->getTester(1).serverName = "bedrock";
-        tester->getTester(1).updateArgs({{"-plugins","db,cache,jobs," + newTestPlugin}});
+        tester->getTester(1).updateArgs({{"-plugins", newTestPlugin}});
         tester->getTester(1).startServer();
         ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
 
