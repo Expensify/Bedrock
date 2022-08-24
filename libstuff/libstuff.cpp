@@ -2905,7 +2905,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold,
 }
 
 string SUNQUOTED_TIMESTAMP(uint64_t when) {
-    return SComposeTime("%Y-%m-%d %H:%M:%S", when);
+    return SComposeTime("%Y-%m-%d %H:%M:%f", when);
 }
 
 string STIMESTAMP(uint64_t when) {
