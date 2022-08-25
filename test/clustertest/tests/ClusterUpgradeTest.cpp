@@ -11,6 +11,8 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
 
     BedrockClusterTester* tester;
     string prodBedrockName;
+    string prodBedrockPluginName;
+    string newTestPlugin;
 
     void setup() {
         // Get the most recent releases.
@@ -61,7 +63,9 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
 
         // If we've already built this, don't bother doing it again. This makes running this test multiple times in a
         // row much faster.
-        prodBedrockName = "/tmp/bedrock-" + bedrockTagName; 
+        string prodBedrockDirName = "/tmp/bedrock-" + bedrockTagName;
+        prodBedrockName = prodBedrockDirName + "/bedrock";
+        prodBedrockPluginName = prodBedrockDirName + "/testplugin.so";
         if (!SFileExists(prodBedrockName)) {
             // Get a directory we can work in.
             char brReleaseDirArr[] = "/tmp/br-prod-test-XXXXXX";
@@ -75,13 +79,26 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
             ASSERT_FALSE(system(("cd " + brReleaseDir + " && cd Bedrock && git checkout " + bedrockTagName + "  > /dev/null").c_str()));
 
             // Build the release.
-            ASSERT_FALSE(system(("cd " + brReleaseDir + " && cd Bedrock && make -j8 bedrock  > /dev/null").c_str()));
+            ASSERT_FALSE(system(("cd " + brReleaseDir + " && cd Bedrock && make -j8 > /dev/null").c_str()));
 
             // Save the final product.
+            mkdir(prodBedrockDirName.c_str(), 0755);
             ASSERT_FALSE(system(("mv " + brReleaseDir + "/Bedrock/bedrock " + prodBedrockName).c_str()));
+            ASSERT_FALSE(system(("mv " + brReleaseDir + "/Bedrock/test/clustertest/testplugin/testplugin.so " + prodBedrockPluginName).c_str()));
+
+            // Remove the intermediate dir.
+            rmdir(brReleaseDir.c_str());
         }
 
-        tester = new BedrockClusterTester("db,cache,jobs", prodBedrockName);
+        // Figure out where the new test plugin is.
+        char cwd[1024];
+        if (!getcwd(cwd, sizeof(cwd))) {
+            STHROW("Couldn't get CWD");
+        }
+        newTestPlugin = string(cwd) + "/testplugin/testplugin.so";
+
+        // Load the whole prod cluster with the prod test plugin.
+        tester = new BedrockClusterTester(prodBedrockPluginName, prodBedrockName);
     }
 
     void teardown() {
@@ -117,6 +134,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         // Restart 2 on the new version.
         tester->getTester(2).stopServer();
         tester->getTester(2).serverName = "bedrock";
+        tester->getTester(2).updateArgs({{"-plugins", newTestPlugin}});
         tester->getTester(2).startServer();
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
@@ -139,6 +157,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
 
         // Start up the old leader on the new version.
         tester->getTester(0).serverName = "bedrock";
+        tester->getTester(0).updateArgs({{"-plugins", newTestPlugin}});
         tester->getTester(0).startServer();
 
         // We should get the expected cluster state.
@@ -159,6 +178,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         // And finally, upgrade the last node.
         tester->getTester(1).stopServer();
         tester->getTester(1).serverName = "bedrock";
+        tester->getTester(1).updateArgs({{"-plugins", newTestPlugin}});
         tester->getTester(1).startServer();
         ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
 

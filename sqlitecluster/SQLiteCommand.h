@@ -22,17 +22,6 @@ class SQLiteCommand {
     // This allows for modifying a request passed into the constructor such that we can store it as `const`.
     static SData preprocessRequest(SData&& request);
 
-    // If this command was created via an escalation from a peer, this value will point to that peer object. As such,
-    // this should only ever be set on leader nodes, though it does not *need* to be set on leader nodes, as they can
-    // also accept connections directly from clients.
-    // A value of zero is an invalid ID, and is interpreted to mean "not set".
-    // A negative value indicates a valid ID of an invalid peer (a psuedo-peer, or a disconnected peer), that we can't
-    // respond to.
-    int64_t initiatingPeerID;
-
-    // If this command was created via a direct client connection, this value should be set. This can be set on both
-    // leader and followers, but should not be set simultaneously with `initiatingPeerID`. A command was initiated either
-    // by a client, or by a peer.
     // A value of zero is an invalid ID, and is interpreted to mean "not set".
     // A negative value indicates a valid ID of an invalid client (a psuedo-client, or a disconnected client), that we
     // can't respond to.
