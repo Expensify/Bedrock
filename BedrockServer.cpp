@@ -780,37 +780,11 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         }
     }
 
-    // If we find that we've gotten a command with an initiatingPeerID, but we're not in a leading or
-    // standing down state, we'll have no way of returning this command to the caller, so we discard it. The
-    // original caller will need to re-send the request. This can happen if we're leading, and receive a
-    // request from a peer, but then we stand down from leading. The SQLiteNode should have already told its
-    // peers that their outstanding requests were being canceled at this point.
-    if (command->initiatingPeerID && !(state == SQLiteNode::LEADING || state == SQLiteNode::STANDINGDOWN)) {
-        SWARN("Found " << (command->complete ? "" : "in") << "complete " << "command "
-              << command->request.methodLine << " from peer, but not leading. Too late for it, discarding.");
-
-        // If the command was processed, tell the plugin we couldn't send the response.
-        command->handleFailedReply();
-
-        return;
-    }
-
     // If this command is already complete, then we should be a follower, and the sync node got a response back
     // from a command that had been escalated to leader, and queued it for a worker to respond to. We'll send
     // that response now.
     if (command->complete) {
         // If this command is already complete, we can return it to the caller.
-        // If it has an initiator, it should have been returned to a peer by a sync node instead, but if we've
-        // just switched states out of leading, we might have an old command in the queue. All we can do here
-        // is note that and discard it, as we have nobody to deliver it to.
-        if (command->initiatingPeerID) {
-            // Let's note how old this command is.
-            uint64_t ageSeconds = (STimeNow() - command->creationTime) / STIME_US_PER_S;
-            SWARN("Found unexpected complete command " << command->request.methodLine
-                  << " from peer in worker thread. Discarding (command was " << ageSeconds << "s old).");
-            return;
-        }
-
         // Make sure we have an initiatingClientID at this point. If we do, but it's negative, it's for a
         // client that we can't respond to, so we don't bother sending the response.
         SASSERT(command->initiatingClientID);
