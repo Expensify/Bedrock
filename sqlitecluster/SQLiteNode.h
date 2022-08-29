@@ -5,7 +5,6 @@
 #include <sqlitecluster/SQLite.h>
 #include <sqlitecluster/SQLitePool.h>
 #include <sqlitecluster/SQLiteSequentialNotifier.h>
-#include <WallClockTimer.h>
 
 // This file is long and complex. For each nested sub-structure (I.e., classes inside classes) we have attempted to
 // arrange things as such:
