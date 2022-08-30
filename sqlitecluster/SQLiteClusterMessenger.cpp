@@ -133,8 +133,6 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, const string& pe
 }
 
 bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command) const {
-    size_t sleepsDueToFailures = 0;
-    auto start = chrono::steady_clock::now();
     bool sent = false;
 
     // This is what we need to send.
@@ -146,14 +144,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
     pollfd fdspec = {socket.s, POLLOUT, 0};
     while (true) {
         WaitForReadyResult result = waitForReady(fdspec, command.timeout());
-        if (result == WaitForReadyResult::DISCONNECTED_OUT) {
-            // This is the case we're likely to get if the leader's port is closed.
-            // We break this loop and let the top loop (with the timer) start over.
-            // But first we sleep 1/2 second to make this not spam a million times.
-            sleepsDueToFailures++;
-            usleep(500'000);
-            break;
-        } else if (result != WaitForReadyResult::OK) {
+        if (result != WaitForReadyResult::OK) {
             return false;
         }
 
@@ -182,10 +173,6 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
     if (!sent) {
         SINFO("[HTTPESC] Failed to send to leader after timeout establishing connnection.");
         return false;
-    }
-    if (sleepsDueToFailures) {
-        auto msElapsed = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count();
-        SINFO("[HTTPESC] Problems connecting for escalation but succeeded in " << msElapsed << "ms.");
     }
 
     // If we fail before here, we can try again. If we fail after here, we should return an error.
