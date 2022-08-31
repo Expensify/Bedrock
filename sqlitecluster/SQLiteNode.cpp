@@ -1452,12 +1452,22 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                         SData response("SYNCHRONIZE_RESPONSE");
                         SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
                         SQLite& db = dbScope.db();
-                        _queueSynchronize(this, peer, db, response, false);
+                        try {
+                            _queueSynchronize(this, peer, db, response, false);
 
-                        // The following two lines are copied from `_sendToPeer`.
-                        response["CommitCount"] = to_string(db.getCommitCount());
-                        response["Hash"] = db.getCommittedHash();
-                        peer->sendMessage(response);
+                            // The following two lines are copied from `_sendToPeer`.
+                            response["CommitCount"] = to_string(db.getCommitCount());
+                            response["Hash"] = db.getCommittedHash();
+                            peer->sendMessage(response);
+                        } catch (const SException& e) {
+                            // This is the same handling as at the bottom of _onMESSAGE.
+                            PWARN("Error processing message '" << message.methodLine << "' (" << e.what() << "), reconnecting.");
+                            SData reconnect("RECONNECT");
+                            reconnect["Reason"] = e.what();
+                            peer->sendMessage(reconnect.serialize());
+                            peer->shutdownSocket();
+                        }
+
                         _pendingSynchronizeResponses--;
                     }).detach();
                 }
