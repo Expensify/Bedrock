@@ -132,6 +132,12 @@ SQLiteNode::~SQLiteNode() {
     // Make sure it's a clean shutdown
     SASSERTWARN(!commitInProgress());
 
+    // If there are any outstanding transactions to send, do that before we delete all our peers.
+    // This isn't *supposed* to ever happen, but in exceptional cases where the sync node is killed early (for instance, a timed out shutdown) it's unclear if there are any other database
+    // handles still trying to write to the DB as we delete this object. This make some last best effort to send any final transactions to the rest of the cluster before we die, which, if
+    // successful, will prevent us from coming back up with a forked DB.
+    _sendOutstandingTransactions();
+
     // Clean up all the sockets and peers
     for (Socket* socket : _unauthenticatedIncomingSockets) {
         delete socket;
