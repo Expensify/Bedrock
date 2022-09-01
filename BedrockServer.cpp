@@ -1285,7 +1285,6 @@ bool BedrockServer::shutdownComplete() {
                 *(queueCountPair.first) += cmdPair.first + ":" + to_string(cmdPair.second) + ", ";
             }
         }
-
         SWARN("Graceful shutdown timed out. "
               << "Replication State: " << SQLiteNode::stateName(startingReplicationState) << ". "
               << "Command queue size: " << _commandQueue.size() << ". "
