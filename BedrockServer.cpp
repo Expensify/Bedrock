@@ -1258,6 +1258,11 @@ bool BedrockServer::shutdownComplete() {
     // We have hit our timeout. This will force the sync thread to exit, so we should hit the above criteria
     // (_syncThreadComplete) in the next loop or two.
     if (_gracefulShutdownTimeout.ringing()) {
+        // We are going to just let the sync thread kill itself, so we tell the node that we're not in a writable state to prevent any last-minute commits that could come in after the sync
+        // thread is no longer running.
+        auto startingReplicationState = _replicationState.load();
+        _replicationState.store(SQLiteNode::SEARCHING);
+
         // Timing out. Log some info and return true.
         string commandCounts;
         string blockingCommandCounts;
@@ -1280,10 +1285,13 @@ bool BedrockServer::shutdownComplete() {
                 *(queueCountPair.first) += cmdPair.first + ":" + to_string(cmdPair.second) + ", ";
             }
         }
+
         SWARN("Graceful shutdown timed out. "
-              << "Replication State: " << SQLiteNode::stateName(_replicationState.load()) << ". "
+              << "Replication State: " << SQLiteNode::stateName(startingReplicationState) << ". "
               << "Command queue size: " << _commandQueue.size() << ". "
               << "Blocking command queue size: " << _blockingCommandQueue.size() << ". "
+              << "Outstanding socket threads: " << _outstandingSocketThreads << ". "
+              << "Remaining commands: " << BedrockCommand::getCommandCount() << ". "
               << "Commands queued: " << commandCounts << ". "
               << "Blocking commands queued: " << blockingCommandCounts << ". "
               << "Killing non-gracefully.");
