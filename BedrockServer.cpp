@@ -1852,9 +1852,8 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
     if (_shutdownState.load() == RUNNING) {
         _detach = detach;
         // Begin a graceful shutdown; close our port
-        SINFO("Beginning graceful shutdown due to '" << reason
-              << "', closing command port on '" << args["-serverHost"] << "'");
-        _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * args.calc64("-gracefulShutdownTimeoutSec") ?: 60; // default to 60s if not specified.
+        SINFO("Beginning graceful shutdown due to '" << reason << "', closing command port on '" << args["-serverHost"] << "'");
+        _gracefulShutdownTimeout.alarmDuration = 1'000'000 * (args.isSet("-gracefulShutdownTimeoutSec") ? args.calc64("-gracefulShutdownTimeoutSec") : 60); // default to 60s
         _gracefulShutdownTimeout.start();
 
         // Delete any commands scheduled in the future.
