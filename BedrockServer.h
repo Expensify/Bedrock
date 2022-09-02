@@ -379,9 +379,6 @@ class BedrockServer : public SQLiteServer {
     static set<string> _blacklistedParallelCommands;
     static shared_timed_mutex _blacklistedParallelCommandMutex;
 
-    // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
-    SStopwatch _gracefulShutdownTimeout;
-
     // The current state of shutdown. Starts as RUNNING.
     atomic<SHUTDOWN_STATE> _shutdownState;
 
