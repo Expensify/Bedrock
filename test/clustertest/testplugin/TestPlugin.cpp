@@ -5,7 +5,6 @@
 #include <string.h>
 
 #include <libstuff/SQResult.h>
-#include <libstuff/SRandom.h>
 #include <libstuff/SX509.h>
 
 mutex BedrockPlugin_TestPlugin::dataLock;
@@ -93,7 +92,6 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "ineffectiveUpdate",
         "exceptioninprocess",
         "generatesegfaultprocess",
-        "randominsert",
         "idcollision",
         "slowprocessquery",
     };
@@ -228,8 +226,6 @@ bool TestPluginCommand::peek(SQLite& db) {
             db.read(query, result);
         }
         return true;
-    } else if (SStartsWith(request.methodLine, "randominsert")) {
-        // Go to process.
     } else if (SStartsWith(request.methodLine, "idcollision")) {
         usleep(1001); // for TimingTest to not get 0 values.
     } else if (SStartsWith(request.methodLine, "httpstimeout")) {
@@ -368,10 +364,6 @@ void TestPluginCommand::process(SQLite& db) {
         }
 
         // Done.
-        return;
-    } else if (SStartsWith(request.methodLine, "randominsert")) {
-        int64_t randomSignedInt = SRandom::rand64() >> 1;
-        SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(randomSignedInt) + ", " + SQ(request["value"]) + ");"));
         return;
     } else if (SStartsWith(request.methodLine, "idcollision")) {
         usleep(1001); // for TimingTest to not get 0 values.

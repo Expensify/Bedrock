@@ -1213,12 +1213,6 @@ BedrockServer::BedrockServer(const SData& args_)
 }
 
 BedrockServer::~BedrockServer() {
-    // Socket threads directly reference this object and will crash if it's destroyed.
-    while (_outstandingSocketThreads.load()) {
-        SINFO("Sorry, can't destroy the server with " << _outstandingSocketThreads.load() << " remaining socket threads. You need to wait.");
-        usleep(10'000);
-    }
-
     // Shut down the sync thread, (which will shut down worker threads in turn).
     SINFO("Closing sync thread '" << _syncThreadName << "'");
     if (_syncThread.joinable()) {
