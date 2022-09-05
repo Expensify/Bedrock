@@ -102,6 +102,12 @@ class SQLiteNode : public STCPManager {
     // Can block.
     const string getLeaderVersion() const;
 
+    // Look up the correct peer by the name it supplies in a NODE_LOGIN
+    // message. Does not lock, but this method is const and all it does is
+    // access peerList and peer->name, both of which are const. So it is safe
+    // to call from other public functions.
+    SQLitePeer* getPeerByName(const string& name) const;
+
     // Gets a copy of the peer state as an STable.
     // Can block.
     list<STable> getPeerInfo() const;
@@ -159,11 +165,20 @@ class SQLiteNode : public STCPManager {
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
 
-    // Look up the correct peer by the name it supplies in a NODE_LOGIN
-    // message. Does not lock, but this method is const and all it does is
-    // access _peerList and peer->name, both of which are const. So it is safe
-    // to call from other public functions.
-    SQLitePeer* getPeerByName(const string& name) const;
+    const string commandAddress;
+    const string name;
+    const vector<SQLitePeer*> peerList;
+
+    // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
+    // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
+    const int originalPriority;
+
+    // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command port".
+    const unique_ptr<Port> port;
+
+    // Our version string. Supplied by constructor.
+    const string version;
+
   private:
     // Utility class that can decrement _replicationThreadCount when objects go out of scope.
     template <typename CounterType>
@@ -249,20 +264,6 @@ class SQLiteNode : public STCPManager {
     // commitCount that we do, this will return null.
     void _updateSyncPeer();
 
-    const string _commandAddress;
-    const string _name;
-    const vector<SQLitePeer*> _peerList;
-
-    // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
-    // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
-    const int _originalPriority;
-
-    // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command port".
-    const unique_ptr<Port> _port;
-
-    // Our version string. Supplied by constructor.
-    const string _version;
-
     // These are sockets that have been accepted on the node port but have not yet been associated with a peer (because
     // they need to send a NODE_LOGIN message with their name first).
     set<Socket*> _unauthenticatedIncomingSockets;
@@ -305,7 +306,7 @@ class SQLiteNode : public STCPManager {
 
     // Our priority, with respect to other nodes in the cluster. This is passed in to our constructor. The node with
     // the highest priority in the cluster will attempt to become the leader.
-    // This is the same as `_originalPriority` most of the time except when we're first starting up and synchronizing,
+    // This is the same as `originalPriority` most of the time except when we're first starting up and synchronizing,
     // or when we're standingdown.
     // Remove. See: https://github.com/Expensify/Expensify/issues/208449
     atomic<int> _priority;
