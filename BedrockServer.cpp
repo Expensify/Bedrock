@@ -1220,6 +1220,10 @@ BedrockServer::~BedrockServer() {
     }
     SINFO("Threads closed.");
 
+    if (_outstandingSocketThreads) {
+        SWARN("Shutting down with " << _outstandingSocketThreads << " socket threads remaining.");
+    }
+
     // Delete our plugins.
     for (auto& p : plugins) {
         delete p.second;

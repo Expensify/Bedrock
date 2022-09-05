@@ -286,7 +286,7 @@ class SQLiteNode : public STCPManager {
     shared_ptr<SQLitePool> _dbPool;
 
     // Set to true to indicate we're attempting to shut down.
-    atomic<bool> _gracefulShutdown;
+    atomic<bool> _isShuttingDown;
 
     // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
     // any new committed transactions to peers, and update this value.
