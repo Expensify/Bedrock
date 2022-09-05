@@ -1484,6 +1484,10 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             if (_state != SYNCHRONIZING) {
                 STHROW("not synchronizing");
             }
+            if (message.isSet("hashMismatchValue") || message.isSet("hashMismatchNumber")) {
+                SALERT("Peer " << peer->name << ", that I was synchronizing from and I have forked at commit " << message["hashMismatchNumber"] << ".");
+                STHROW("Mismatched hash in SYNCHRONIZE_RESPONSE");
+            }
             if (!_syncPeer) {
                 STHROW("too late, gave up on you");
             }
@@ -1928,7 +1932,10 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
             SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << peerCommitCount << ". I am " << stateName(_state)
                    << " and have hash " << myHash << " for that commit. Peer has hash " << peerHash << ".");
 
-            response.methodLine = "400 Hash Mismatch";
+            // Instead of reconnecting, we tell the peer that we don't match. It's up to the peer to reconnect.
+            response["hashMismatchValue"] = myHash;
+            response["hashMismatchNumber"] = peerCommitCount;
+
             return;
         }
         PINFO("Latest commit hash matches our records, beginning synchronization.");
