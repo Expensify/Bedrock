@@ -1705,6 +1705,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "SuppressCommandPort")    ||
         SIEquals(command->request.methodLine, "ClearCommandPort")       ||
         SIEquals(command->request.methodLine, "ClearCrashCommands")     ||
+        SIEquals(command->request.methodLine, "GetClusterCommitHash")   ||
         SIEquals(command->request.methodLine, "Detach")                 ||
         SIEquals(command->request.methodLine, "Attach")                 ||
         SIEquals(command->request.methodLine, "SetConflictParams")      ||
@@ -1778,6 +1779,62 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             totalCount += s.second.size();
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
+    } else if (SIEquals(command->request.methodLine, "GetClusterCommitHash")) {
+        // Check the commit we're looking up.
+        uint64_t commit = SToUInt64(command->request["commit"]);
+        if (!commit) {
+            response.methodLine = "400 No Commit Supplied";
+            return;
+        }
+
+        // We'll parrot it back to the caller so that they can organize responses.
+        response["commit"] = to_string(commit);
+
+        // We also need to have a sync node to know our own name.
+        auto nodeCopy = _syncNode;
+        if (!nodeCopy) {
+            response.methodLine = "503 No Sync Node";
+            return;
+        }
+
+
+        // Make sure we can get a DB handle.
+        shared_ptr<SQLitePool> poolCopy = _dbPool;
+        if (!poolCopy) {
+            response.methodLine = "503 DB Unavailable";
+            return;
+        }
+        SQLiteScopedHandle dbScope(*poolCopy, poolCopy->getIndex());
+        SQLite& db = dbScope.db();
+
+        // And get the hash from the DB.
+        string query, hash;
+        db.getCommit(commit, query, hash);
+
+        // Now we can give an actual response.
+        response.content = nodeCopy->name + ": " + hash;
+
+        // Ok, now if this command was requested for the entire cluster, we can ask the rest of the nodes for their data.
+        if (command->request.isSet("entireCluster")) {
+            // Make sure we can message the cluster.
+            auto _clusterMessengerCopy = _clusterMessenger;
+            if (!_clusterMessengerCopy) {
+                response.methodLine = "503 Cluster Not Messageable";
+                return;
+            }
+
+            // And now we can grab the actual results from the rest of the cluster.
+            SData cmd = command->request;
+            cmd.erase("entireCluster");
+            auto responses = _clusterMessengerCopy->runOnAll(cmd);
+            for (const auto& cmdResponse : responses) {
+                if (response.methodLine == "200 OK") {
+                    response.content += "\n" + cmdResponse.content;
+                } else {
+                    response.content += "\n" + cmdResponse.methodLine;
+                }
+            }
+        }
     }
 }
 
