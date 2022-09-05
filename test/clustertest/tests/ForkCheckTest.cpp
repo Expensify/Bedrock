@@ -1,5 +1,6 @@
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
+#include <sqlitecluster/SQLite.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct ForkCheckTest : tpunit::TestFixture {
@@ -77,21 +78,31 @@ struct ForkCheckTest : tpunit::TestFixture {
         }
 
         // Break the journal on leader intentionally to fake a fork.
-        // TODO: We can just commit while not running.
         auto result = getMaxJournalCommit(tester.getTester(0));
         uint64_t leaderMaxCommit = result.first;
         string leaderMaxCommitJournal = result.second;
         result = getMaxJournalCommit(tester.getTester(1));
         uint64_t followerMaxCommit = result.first;
 
-        // Make sure the follower got farther than the leader, by at least 2.
-        ASSERT_GREATER_THAN(followerMaxCommit, leaderMaxCommit + 2);
+        // Make sure the follower got farther than the leader.
+        ASSERT_GREATER_THAN(followerMaxCommit, leaderMaxCommit);
 
         // Break leader.
-        SData breakJournal("Query");
-        // Oh. It's off... hmm.... 
-        breakJournal["query"] = "INSERT INTO TEST VALUES(123456789, 'boop');";
-        tester.getTester(0).executeWaitMultipleData({breakJournal});
+        {
+            string filename = tester.getTester(0).getArg("-db");
+            string query = "UPDATE " + leaderMaxCommitJournal + " SET hash = 'abcdef123456' WHERE id = " + to_string(leaderMaxCommit) + ";";
+            cout << filename << endl;
+            cout << query << endl;
+
+            sqlite3* db = nullptr;
+            sqlite3_open_v2(filename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
+            char* errMsg = nullptr;
+            sqlite3_exec(db, query.c_str(), 0, 0, &errMsg);
+            if (errMsg) {
+                cout << "Error updating db: " << errMsg << endl;
+            }
+            sqlite3_close_v2(db);
+        }
 
         // Start the broken leader back up. We expect it will fail to synchronize.
         cout << "Starting" << endl;
@@ -102,7 +113,7 @@ struct ForkCheckTest : tpunit::TestFixture {
         SData checkFork("GetClusterCommitHash");
         checkFork["commit"] = to_string(leaderMaxCommit);
         checkFork["entireCluster"] = "true";
-        auto results = tester.getTester(0).executeWaitMultipleData({breakJournal});
+        auto results = tester.getTester(0).executeWaitMultipleData({checkFork});
         cout << results[0].serialize() << endl;
     }
 } __ForkCheckTest;

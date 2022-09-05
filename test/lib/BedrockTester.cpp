@@ -144,6 +144,13 @@ void BedrockTester::updateArgs(const map<string, string> args) {
     }
 }
 
+string BedrockTester::getArg(const string& arg) const {
+    if (_args.find(arg) != _args.end()) {
+        return _args.at(arg);
+    }
+    return "";
+}
+
 string BedrockTester::startServer(bool wait) {
     int childPID = fork();
     if (childPID == -1) {

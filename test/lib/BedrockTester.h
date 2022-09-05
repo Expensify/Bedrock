@@ -53,6 +53,8 @@ class BedrockTester {
     // but not remove args. Any args specified here are added or replaced into the existing set.
     void updateArgs(const map<string, string> args);
 
+    string getArg(const string& arg) const;
+
     // Takes a list of requests, and returns a corresponding list of responses.
     // Uses `connections` parallel connections to the server to send the requests.
     // If `control` is set, sends the message to the control port.
