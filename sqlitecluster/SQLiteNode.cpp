@@ -1485,7 +1485,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 STHROW("not synchronizing");
             }
             if (message.isSet("hashMismatchValue") || message.isSet("hashMismatchNumber")) {
-                SALERT("Peer " << peer->name << ", that I was synchronizing from and I have forked at commit " << message["hashMismatchNumber"] << ".");
+                SALERT("Peer " << peer->name << " (that I was synchronizing from) and I have forked at commit " << message["hashMismatchNumber"] << ".");
                 STHROW("Mismatched hash in SYNCHRONIZE_RESPONSE");
             }
             if (!_syncPeer) {
