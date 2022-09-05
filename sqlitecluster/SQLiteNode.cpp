@@ -1924,11 +1924,12 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
         if (!db.getCommit(peerCommitCount, ignore, myHash)) {
             PWARN("Error getting commit for peer's commit: " << peerCommitCount << ", my commit count is: " << db.getCommitCount());
             STHROW("error getting hash");
-        }
-        if (myHash != peerHash) {
-            SWARN("Hash mismatch. Peer at commit:" << peerCommitCount << " with hash " << peerHash
-                  << ", but we have hash: " << myHash << " for that commit.");
-            STHROW("hash mismatch");
+        } else if (myHash != peerHash) {
+            SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << peerCommitCount << ". I am " << stateName(_state)
+                   << " and have hash " << myHash << " for that commit. Peer has hash " << peerHash << ".");
+
+            response.methodLine = "400 Hash Mismatch";
+            return;
         }
         PINFO("Latest commit hash matches our records, beginning synchronization.");
     } else {
