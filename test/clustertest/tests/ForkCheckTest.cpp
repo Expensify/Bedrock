@@ -1,3 +1,5 @@
+#include <sys/wait.h>
+
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <sqlitecluster/SQLite.h>
@@ -104,6 +106,14 @@ struct ForkCheckTest : tpunit::TestFixture {
         // Start the broken leader back up. We expect it will fail to synchronize.
         tester.getTester(0).startServer(false);
 
-        // Nothing is actually checked here.
+        // We expect it to die shortly.
+        int status;
+        waitpid(tester.getTester(0).getPID(), &status, 0);
+
+        // Should have gotten a signal when it died.
+        ASSERT_TRUE(WIFSIGNALED(status));
+
+        // And that signal should have been ABORT.
+        ASSERT_EQUAL(SIGABRT, WTERMSIG(status));
     }
 } __ForkCheckTest;

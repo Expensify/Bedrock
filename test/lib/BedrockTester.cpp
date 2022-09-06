@@ -559,3 +559,7 @@ bool BedrockTester::waitForState(const string& state, uint64_t timeoutUS)
     return waitForStatusTerm("state", state, timeoutUS);
 }
 
+int BedrockTester::getPID() const
+{
+    return _serverPID;
+}

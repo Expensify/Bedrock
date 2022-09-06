@@ -82,6 +82,8 @@ class BedrockTester {
     // This is just a convenience wrapper around `waitForStatusTerm` looking for the state of the node.
     bool waitForState(const string& state, uint64_t timeoutUS = 60'000'000);
 
+    int getPID() const;
+
     string serverName;
 
   protected:
