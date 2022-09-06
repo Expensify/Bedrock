@@ -81,20 +81,19 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
     }
 }
 
-map<string, SData> SQLiteClusterMessenger::runOnAll(const SData& cmd) {
+vector<SData> SQLiteClusterMessenger::runOnAll(const SData& cmd) {
     list<thread> threads;
     const list<STable> peerInfo = _node->getPeerInfo();
-    map<string, SData> results;
-    mutex m;
+    vector<SData> results(peerInfo.size());
+    atomic<size_t> index = 0;
 
     for (const auto& data : peerInfo) {
         string name = data.at("name");
-        threads.emplace_back([this, &cmd, name, &results, &m](){
+        threads.emplace_back([this, &cmd, name, &results, &index](){
             BedrockCommand command(SQLiteCommand(SData(cmd)), nullptr);
             runOnPeer(command, name);
-
-            lock_guard<mutex> lock(m);
-            results.emplace(make_pair(name, command.response));
+            size_t i = index.fetch_add(1);
+            results[i] = command.response;
         });
     }
     for (auto& t : threads) {

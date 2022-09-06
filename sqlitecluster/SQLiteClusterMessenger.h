@@ -27,10 +27,12 @@ class SQLiteClusterMessenger {
     // no connection to leader could be made).
     bool runOnLeader(BedrockCommand& command);
 
-    // Attempts to run command on every peer. This is done in threads, so the order in which the peers run the command
-    // is not deterministic. Returns a map of peer names to response objects from each command after they are run. It
-    // is up to the caller to inspect the responses and determine which if any of the commands to retry.
-    map<string, SData> runOnAll(const SData& command);
+    // Attempts to run command on every peer. This is done in threads, so the
+    // order in which the peers run the command is not deterministic. Returns a
+    // vector of response objects from each command after they are run. It is
+    // up to the caller to inspect the responses and determine which if any of
+    // the commands to retry.
+    vector<SData> runOnAll(const SData& command);
 
     // Attempts to make a TCP connection to a specified peer, and run the given
     // command there, setting the appropriate response from the peer in the
