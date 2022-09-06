@@ -140,7 +140,7 @@ class SQLiteNode : public STCPManager {
     bool shutdownComplete() const;
 
     // Call this if you want to shut down the node.
-    void beginShutdown(uint64_t usToWait);
+    void beginShutdown();
 
     // Handle any read/write events that occurred.
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
@@ -190,9 +190,6 @@ class SQLiteNode : public STCPManager {
     // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
     // thread with a different DB object) - which is why this is static.
     static void _queueSynchronize(const SQLiteNode* const node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll);
-
-    // Returns whether we're in the process of gracefully shutting down.
-    bool _gracefulShutdown() const;
 
     bool _isNothingBlockingShutdown() const;
     bool _majoritySubscribed() const;
@@ -288,6 +285,9 @@ class SQLiteNode : public STCPManager {
     // replication threads as required. It's passed in via the constructor.
     shared_ptr<SQLitePool> _dbPool;
 
+    // Set to true to indicate we're attempting to shut down.
+    atomic<bool> _isShuttingDown;
+
     // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
     // any new committed transactions to peers, and update this value.
     uint64_t _lastSentTransactionID;
@@ -319,9 +319,6 @@ class SQLiteNode : public STCPManager {
 
     // Server that implements `SQLiteServer` interface.
     SQLiteServer& _server;
-
-    // Stopwatch to track if we're going to give up on gracefully shutting down and force it.
-    SStopwatch _shutdownTimeout;
 
     // Stopwatch to track if we're giving up on the server preventing a standdown.
     SStopwatch _standDownTimeout;
