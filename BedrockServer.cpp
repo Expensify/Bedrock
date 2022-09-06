@@ -28,7 +28,6 @@ bool BedrockServer::canStandDown() {
     // If we have any commands anywhere but the stand-down queue, let's log that.
     if (count && count != standDownQueueSize) {
         size_t mainQueueSize = _commandQueue.size();
-        size_t blockingQueueSize = _blockingCommandQueue.size();
         size_t syncNodeQueueSize = _syncNodeQueuedCommands.size();
 
         // These two aren't all nicely packaged so we need to lock them ourselves.
@@ -45,7 +44,6 @@ bool BedrockServer::canStandDown() {
 
         SINFO("Can't stand down with " << count << " commands remaining. Queue sizes are: "
               << "mainQueueSize: " << mainQueueSize << ", "
-              << "blockingQueueSize: " << blockingQueueSize << ", "
               << "syncNodeQueueSize: " << syncNodeQueueSize << ", "
               << "outstandingHTTPSCommandsSize: " << outstandingHTTPSCommandsSize << ", "
               << "futureCommitCommandsSize: " << futureCommitCommandsSize << ", "
@@ -606,13 +604,6 @@ void BedrockServer::sync()
         _commandQueue.clear();
     }
 
-    // Same for the blocking queue.
-    if (_blockingCommandQueue.size()) {
-        SWARN("Sync thread shut down with " << _blockingCommandQueue.size() << " blocking queued commands. Commands were: "
-              << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
-        _blockingCommandQueue.clear();
-    }
-
     // We clear this before the _syncNode that it references.
     _clusterMessenger.reset();
 
@@ -632,14 +623,10 @@ void BedrockServer::sync()
 
 void BedrockServer::worker(int threadId)
 {
-    // Worker 0 is the "blockingCommit" thread.
-    SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
+    SInitialize("worker" + to_string(threadId));
 
     // Command to work on. This default command is replaced when we find work to do.
     unique_ptr<BedrockCommand> command(nullptr);
-
-    // Which command queue do we use? The blockingCommit thread special and does blocking commits from the blocking queue.
-    BedrockCommandQueue& commandQueue = threadId ? _commandQueue : _blockingCommandQueue;
 
     // We just run this loop looking for commands to process forever. There's a check for appropriate exit conditions
     // at the bottom, which will cause our loop and thus this thread to exit when that becomes true.
@@ -651,13 +638,12 @@ void BedrockServer::worker(int threadId)
             });
 
             // Get the next one.
-            command = commandQueue.get(1000000);
+            command = _commandQueue.get(1000000);
 
             SAUTOPREFIX(command->request);
-            SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
-                  << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
+             SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, " << _commandQueue.size() << " commands in queue.");
 
-            runCommand(move(command), threadId == 0);
+            runCommand(move(command));
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
             // If the sync node has shut down, we can return now, there will be no more work to do.
@@ -669,7 +655,7 @@ void BedrockServer::worker(int threadId)
     }
 }
 
-void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlocking) {
+void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command) {
     // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
     // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
     // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
@@ -839,7 +825,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
     // We'll retry on conflict up to this many times.
     int retry = _maxConflictRetries.load();
-    while (retry) {
+    while (true) {
+        if (!retry) {
+            SINFO("Running command " << command->request.methodLine << " in blocking mode.");
+        }
         // If we've changed out of leading, we need to notice that.
         state = _replicationState.load();
         canWriteParallel = canWriteParallel && (state == SQLiteNode::LEADING);
@@ -850,7 +839,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         bool calledPeek = false;
         BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
         if (command->repeek || !command->httpsRequests.size()) {
-            peekResult = core.peekCommand(command, isBlocking);
+            peekResult = core.peekCommand(command, retry == 0);
             calledPeek = true;
         }
 
@@ -923,7 +912,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             }
 
             // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
-            BedrockCore::RESULT result = core.processCommand(command, isBlocking);
+            BedrockCore::RESULT result = core.processCommand(command, retry == 0);
             if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
                 // If processCommand returned true, then we need to do a commit. Otherwise, the command is
                 // done, and we just need to respond. Before we commit, we need to grab the sync thread
@@ -964,7 +953,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     // impossible inside a worker thread.
                     _syncNode->notifyCommit();
                     SINFO("Successfully committed " << command->request.methodLine << " on worker thread. blocking: "
-                          << (isBlocking ? "true" : "false"));
+                          << (retry == 0 ? "true" : "false"));
                     // So we must still be leading, and at this point our commit has succeeded, let's
                     // mark it as complete. We add the currentCommit count here as well.
                     command->response["commitCount"] = to_string(db.getCommitCount());
@@ -1008,11 +997,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
         // We're about to retry, decrement the retry count.
         --retry;
-
-        if (!retry) {
-            SINFO("Max retries hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
-           _blockingCommandQueue.push(move(command));
-        }
     }
 }
 
@@ -1813,8 +1797,7 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
             _portPluginMap.clear();
             _shutdownState.store(START_SHUTDOWN);
         }
-        SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size()
-              << ", blocking commands queued: " << _blockingCommandQueue.size());
+         SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size());
     }
 }
 
