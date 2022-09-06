@@ -234,11 +234,7 @@ void BedrockServer::sync()
         // we're leading, then the next update() loop will set us to standing down, and then we won't accept any new
         // commands, and we'll shortly run through the existing queue.
         if (_shutdownState.load() == CLIENTS_RESPONDED) {
-            // The total time we'll wait for the sync node is whatever we haven't already waited from the original
-            // timeout, minus 5 seconds to allow to clean up afterward.
-            int64_t timeAllowed = _gracefulShutdownTimeout.alarmDuration.load() - _gracefulShutdownTimeout.elapsed();
-            timeAllowed -= 5'000'000;
-            _syncNode->beginShutdown(max(timeAllowed, (int64_t)1));
+            _syncNode->beginShutdown();
         }
 
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
@@ -566,7 +562,7 @@ void BedrockServer::sync()
             // _syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
         }
-    } while (!_syncNode->shutdownComplete() && !_gracefulShutdownTimeout.ringing());
+    } while (!_syncNode->shutdownComplete());
 
     SSetSignalHandlerDieFunc([](){SWARN("Dying in shutdown");});
 
@@ -669,12 +665,6 @@ void BedrockServer::worker(int threadId)
                 SINFO("No commands found in queue and DONE.");
                 return;
             }
-        }
-
-        // If we hit the timeout, doesn't matter if we've got work to do. Exit.
-        if (_gracefulShutdownTimeout.ringing()) {
-            SINFO("_shutdownState is DONE and we've timed out, exiting worker.");
-            return;
         }
     }
 }
@@ -1109,7 +1099,6 @@ void BedrockServer::_resetServer() {
     _shouldBackup = false;
     _commandPortPublic = nullptr;
     _commandPortPrivate = nullptr;
-    _gracefulShutdownTimeout.alarmDuration = 0;
     _pluginsDetached = false;
 
     // Tell any plugins that they can attach now
@@ -1243,56 +1232,11 @@ BedrockServer::~BedrockServer() {
 
 bool BedrockServer::shutdownComplete() {
     if (_detach) {
-        if (shutdownWhileDetached) {
-            return true;
-        }
-        // We don't want main() to stop calling `poll` for us, we are listening on the control port.
-        return false;
+        return shutdownWhileDetached;
     }
 
-    // If the sync thread is finished, we're finished.
-    if (_syncThreadComplete) {
-        return true;
-    }
-
-    // We have hit our timeout. This will force the sync thread to exit, so we should hit the above criteria
-    // (_syncThreadComplete) in the next loop or two.
-    if (_gracefulShutdownTimeout.ringing()) {
-        // Timing out. Log some info and return true.
-        string commandCounts;
-        string blockingCommandCounts;
-        list<pair<string*, BedrockCommandQueue*>> queuesToCount = {
-            {&commandCounts, &_commandQueue},
-            {&blockingCommandCounts, &_blockingCommandQueue}
-        };
-        for (auto queueCountPair : queuesToCount) {
-            map<string, int> commandsInQueue;
-            auto methods = queueCountPair.second->getRequestMethodLines();
-            for (auto method : methods) {
-                auto it = commandsInQueue.find(method);
-                if (it != commandsInQueue.end()) {
-                    (it->second)++;
-                } else {
-                    commandsInQueue[method] = 1;
-                }
-            }
-            for (auto cmdPair : commandsInQueue) {
-                *(queueCountPair.first) += cmdPair.first + ":" + to_string(cmdPair.second) + ", ";
-            }
-        }
-        SWARN("Graceful shutdown timed out. "
-              << "Replication State: " << SQLiteNode::stateName(_replicationState.load()) << ". "
-              << "Command queue size: " << _commandQueue.size() << ". "
-              << "Blocking command queue size: " << _blockingCommandQueue.size() << ". "
-              << "Commands queued: " << commandCounts << ". "
-              << "Blocking commands queued: " << blockingCommandCounts << ". "
-              << "Killing non-gracefully.");
-
-        return true;
-    }
-
-    // We wait until the sync thread returns.
-    return false;
+    // We're done when the sync thread is done.
+    return _syncThreadComplete;
 }
 
 void BedrockServer::prePoll(fd_map& fdm) {
@@ -1397,7 +1341,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         unique_lock<shared_mutex> lock(_controlPortExclusionMutex);
 
         // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
-        if (!_outstandingSocketThreads || _gracefulShutdownTimeout.ringing()) {
+        if (!_outstandingSocketThreads) {
             _shutdownState.store(CLIENTS_RESPONDED);
         }
         if (_outstandingSocketThreads) {
@@ -1845,10 +1789,7 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
     if (_shutdownState.load() == RUNNING) {
         _detach = detach;
         // Begin a graceful shutdown; close our port
-        SINFO("Beginning graceful shutdown due to '" << reason
-              << "', closing command port on '" << args["-serverHost"] << "'");
-        _gracefulShutdownTimeout.alarmDuration = STIME_US_PER_S * 60; // 60s timeout before we give up
-        _gracefulShutdownTimeout.start();
+        SINFO("Beginning graceful shutdown due to '" << reason << "', closing command port on '" << args["-serverHost"] << "'.");
 
         // Delete any commands scheduled in the future.
         _commandQueue.abandonFutureCommands(5000);
