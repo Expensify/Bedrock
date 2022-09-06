@@ -16,7 +16,6 @@ struct ForkCheckTest : tpunit::TestFixture {
             string maxID = tester.readDB("SELECT MAX(id) FROM " + row[0] + ";");
             try {
                 uint64_t maxCommitNum = stoull(maxID);
-                cout << row[0] << ": " << maxCommitNum << endl;
                 if (maxCommitNum > maxJournalCommit) {
                     maxJournalCommit = maxCommitNum;
                     maxJournalTable = row[0];
@@ -31,7 +30,7 @@ struct ForkCheckTest : tpunit::TestFixture {
 
     void test() {
         // Create a cluster, wait for it to come up.
-        BedrockClusterTester tester;
+        BedrockClusterTester tester(ClusterSize::FIVE_NODE_CLUSTER);
 
         // We'll tell the threads to stop when they're done.
         atomic<bool> stop(false);
@@ -91,8 +90,6 @@ struct ForkCheckTest : tpunit::TestFixture {
         {
             string filename = tester.getTester(0).getArg("-db");
             string query = "UPDATE " + leaderMaxCommitJournal + " SET hash = 'abcdef123456' WHERE id = " + to_string(leaderMaxCommit) + ";";
-            cout << filename << endl;
-            cout << query << endl;
 
             sqlite3* db = nullptr;
             sqlite3_open_v2(filename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
@@ -105,15 +102,8 @@ struct ForkCheckTest : tpunit::TestFixture {
         }
 
         // Start the broken leader back up. We expect it will fail to synchronize.
-        cout << "Starting" << endl;
         tester.getTester(0).startServer(false);
-        cout << "Started" << endl;
 
-        // And now send the check message to the whole cluster.
-        SData checkFork("GetClusterCommitHash");
-        checkFork["commit"] = to_string(leaderMaxCommit);
-        checkFork["entireCluster"] = "true";
-        auto results = tester.getTester(0).executeWaitMultipleData({checkFork});
-        cout << results[0].serialize() << endl;
+        // Nothing is actually checked here.
     }
 } __ForkCheckTest;

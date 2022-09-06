@@ -1488,9 +1488,16 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SQResult result;
                 uint64_t commitNum = SToUInt64(message["hashMismatchNumber"]);
                 _db.getCommits(commitNum, commitNum, result);
-                SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << message["hashMismatchNumber"] << ". I am " << stateName(_state)
+                _forkedFrom.insert(peer->name);
+                SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << message["hashMismatchNumber"]
+                       << ". I have forked from " << _forkedFrom.size() << " other nodes. I am " << stateName(_state)
                        << " and have hash " << result[0][0] << " for that commit. Peer has hash " << message["hashMismatchValue"] << ".");
-                STHROW("Hash mismatch in SYNCHRONIZE_RESPONSE");
+
+                if (_forkedFrom.size() > ((peerList.size() + 1) / 2)) {
+                    SERROR("Hash mismatch. I have forked from over half the cluster. This is unrecoverable.");
+                }
+
+                STHROW("Hash mismatch");
             }
             if (!_syncPeer) {
                 STHROW("too late, gave up on you");
@@ -1874,6 +1881,11 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         if (newState < SUBSCRIBING) {
             // We're no longer SUBSCRIBING or FOLLOWING, so we have no leader
             _leadPeer = nullptr;
+        } 
+
+        if (newState >= STANDINGUP) {
+            // Not forked from anyone.
+            _forkedFrom.clear();
         }
 
         // Re-enable commits if they were disabled during a previous stand-down.
@@ -2058,6 +2070,11 @@ void SQLiteNode::_updateSyncPeer()
     for (auto peer : peerList) {
         // If either of these conditions are true, then we can't use this peer.
         if (!peer->loggedIn || peer->commitCount <= commitCount) {
+            continue;
+        }
+
+        if (_forkedFrom.count(peer->name)) {
+            SWARN("Hash mismatch. Can't choose peer " << peer->name << " due to previous hash mismatch.");
             continue;
         }
 

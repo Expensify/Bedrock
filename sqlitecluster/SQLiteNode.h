@@ -348,4 +348,6 @@ class SQLiteNode : public STCPManager {
     // Debugging info. Log the current number of transactions we're actually performing in replicate threads.
     // This can be removed once we've figured out why replication falls behind. See this issue: https://github.com/Expensify/Expensify/issues/210528
     atomic<size_t> _concurrentReplicateTransactions = 0;
+
+    set<string> _forkedFrom;
 };
