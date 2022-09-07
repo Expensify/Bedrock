@@ -78,13 +78,13 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         ports[i][2] = controlPort;
     }
 
-    // If the test plugin exists, load it. Otherwise, skip it. This keeps this from failing for derived tests that
+    // If the test plugin exists, and isn't already specified, load it. Otherwise, skip it. This keeps this from failing for derived tests that
     // don't use this plugin. This should get moved somewhere else, really. Probably inside TestPlugin.
     char cwd[1024];
     if (!getcwd(cwd, sizeof(cwd))) {
         STHROW("Couldn't get CWD");
     }
-    if (SFileExists(string(cwd) + "/testplugin/testplugin.so")) {
+    if (SFileExists(string(cwd) + "/testplugin/testplugin.so") && !SContains(pluginsToLoad, "testplugin")) {
         pluginsToLoad += pluginsToLoad.size() ? "," : "";
         pluginsToLoad += string(cwd) + "/testplugin/testplugin.so";
     }

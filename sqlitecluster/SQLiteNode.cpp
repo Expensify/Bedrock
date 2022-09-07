@@ -109,6 +109,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _commitState(CommitState::UNINITIALIZED),
       _db(dbPool->getBase()),
       _dbPool(dbPool),
+      _isShuttingDown(false),
       _lastSentTransactionID(0),
       _leadPeer(nullptr),
       _priority(-1),
@@ -296,14 +297,13 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency) {
     }
 }
 
-void SQLiteNode::beginShutdown(uint64_t usToWait) {
+void SQLiteNode::beginShutdown() {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     // Ignore redundant
-    if (!_gracefulShutdown()) {
+    if (!_isShuttingDown) {
         // Start graceful shutdown
         SINFO("Beginning graceful shutdown.");
-        _shutdownTimeout.alarmDuration = usToWait;
-        _shutdownTimeout.start();
+        _isShuttingDown = true;
     }
 }
 
@@ -328,14 +328,8 @@ bool SQLiteNode::shutdownComplete() const {
     shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
 
     // First even see if we're shutting down
-    if (!_gracefulShutdown()) {
+    if (!_isShuttingDown) {
         return false;
-    }
-
-    // Next, see if we're timing out the graceful shutdown and killing non-gracefully
-    if (_shutdownTimeout.ringing()) {
-        SWARN("Graceful shutdown timed out, killing non gracefully.");
-        return true;
     }
 
     // Not complete unless we're SEARCHING, SYNCHRONIZING, or WAITING
@@ -382,10 +376,6 @@ uint64_t SQLiteNode::getCommitCount() const {
     // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
     // private methods. (Yes, SQLite::SharedData::commitCount is atomic, go check).
     return _db.getCommitCount();
-}
-
-bool SQLiteNode::_gracefulShutdown() const {
-    return (_shutdownTimeout.alarmDuration != 0);
 }
 
 bool SQLiteNode::commitInProgress() const {
@@ -512,9 +502,8 @@ bool SQLiteNode::update() {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
-        // If we're trying to shut down, just do nothing, especially don't jump directly to leading and get stuck in an
-        // endless loop.
-        if (_gracefulShutdown()) {
+        // If we're trying to shut down, just do nothing, especially don't jump directly to leading and get stuck in an endless loop.
+        if (_isShuttingDown) {
             return false; // Don't re-update
         }
 
@@ -645,7 +634,7 @@ bool SQLiteNode::update() {
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
         // If we're trying and ready to shut down, do nothing.
-        if (_gracefulShutdown()) {
+        if (_isShuttingDown) {
             // Do we have an outstanding command?
             if (1/* TODO: Commit in progress? */) {
                 // Nope!  Let's just halt the FSM here until we shutdown so as to
@@ -775,7 +764,7 @@ bool SQLiteNode::update() {
         bool allResponded = true;
         int numFullPeers = 0;
         int numLoggedInFullPeers = 0;
-        if (_gracefulShutdown()) {
+        if (_isShuttingDown) {
             SINFO("Shutting down while standing up, setting state to SEARCHING");
             _changeState(SEARCHING);
             return true; // Re-update
@@ -1042,7 +1031,7 @@ bool SQLiteNode::update() {
         // Check to see if we should stand down. We'll finish any outstanding commits before we actually do.
         if (_state == LEADING) {
             string standDownReason;
-            if (_gracefulShutdown()) {
+            if (_isShuttingDown) {
                 // Graceful shutdown. Set priority 1 and stand down so we'll re-connect to the new leader and finish
                 // up our commands.
                 standDownReason = "Shutting down, setting priority 1 and STANDINGDOWN.";
@@ -1133,7 +1122,7 @@ bool SQLiteNode::update() {
         // If graceful shutdown requested, stop following once there is
         // nothing blocking shutdown.  We stop listening for new commands
         // immediately upon TERM.)
-        if (_gracefulShutdown() && _isNothingBlockingShutdown()) {
+        if (_isShuttingDown && _isNothingBlockingShutdown()) {
             // Go searching so we stop following
             SINFO("Stopping FOLLOWING in order to gracefully shut down, SEARCHING.");
             _changeState(SEARCHING);
@@ -1444,7 +1433,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             // there's a backlog of commands, these can get stale, and by the time they reach the follower, it's already
             // behind, thus never catching up.
             if (_state == FOLLOWING) {
-                if (_gracefulShutdown()) {
+                if (_isShuttingDown) {
                     // This will cause the remote peer to reconnect (it will not necessarily give a fantastic error message for this), and choose a different sync peer.
                     // This prevents us have having leftover synchronization responses in progress as we shut down.
                     SINFO("Asked to help SYNCHRONIZE but shutting down.");
@@ -1459,12 +1448,22 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                         SData response("SYNCHRONIZE_RESPONSE");
                         SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
                         SQLite& db = dbScope.db();
-                        _queueSynchronize(this, peer, db, response, false);
+                        try {
+                            _queueSynchronize(this, peer, db, response, false);
 
-                        // The following two lines are copied from `_sendToPeer`.
-                        response["CommitCount"] = to_string(db.getCommitCount());
-                        response["Hash"] = db.getCommittedHash();
-                        peer->sendMessage(response);
+                            // The following two lines are copied from `_sendToPeer`.
+                            response["CommitCount"] = to_string(db.getCommitCount());
+                            response["Hash"] = db.getCommittedHash();
+                            peer->sendMessage(response);
+                        } catch (const SException& e) {
+                            // This is the same handling as at the bottom of _onMESSAGE.
+                            PWARN("Error processing message '" << message.methodLine << "' (" << e.what() << "), reconnecting.");
+                            SData reconnect("RECONNECT");
+                            reconnect["Reason"] = e.what();
+                            peer->sendMessage(reconnect.serialize());
+                            peer->shutdownSocket();
+                        }
+
                         _pendingSynchronizeResponses--;
                     }).detach();
                 }
