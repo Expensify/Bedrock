@@ -250,7 +250,7 @@ class BedrockServer : public SQLiteServer {
     // This will run a command. It provides no feedback on whether or not the command it's running has finished. In the typical case, the command will be complete when this returns, but
     // that is not guaranteed. Because of the various retries and escalation paths that a command can go through, this function mat return having just queued this command to run somewhere
     // else. In the future, when all command queues are removed, this will not be the case, but right now, you can not rely on the command having completed when this returns.
-    void runCommand(unique_ptr<BedrockCommand>&& command);
+    void runCommand(unique_ptr<BedrockCommand>&& command, bool isBlocking = false);
 
   private:
     // The name of the sync thread.
@@ -258,6 +258,9 @@ class BedrockServer : public SQLiteServer {
 
     // Commands that aren't currently being processed are kept here.
     BedrockCommandQueue _commandQueue;
+
+    // These are commands that will be processed in a blacking fashion.
+    BedrockCommandQueue _blockingCommandQueue;
 
     // Each time we read a new request from a client, we give it a unique ID.
     atomic<uint64_t> _requestCount;
