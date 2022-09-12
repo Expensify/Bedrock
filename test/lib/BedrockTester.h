@@ -53,6 +53,8 @@ class BedrockTester {
     // but not remove args. Any args specified here are added or replaced into the existing set.
     void updateArgs(const map<string, string> args);
 
+    string getArg(const string& arg) const;
+
     // Takes a list of requests, and returns a corresponding list of responses.
     // Uses `connections` parallel connections to the server to send the requests.
     // If `control` is set, sends the message to the control port.
@@ -79,6 +81,8 @@ class BedrockTester {
 
     // This is just a convenience wrapper around `waitForStatusTerm` looking for the state of the node.
     bool waitForState(const string& state, uint64_t timeoutUS = 60'000'000);
+
+    int getPID() const;
 
     string serverName;
 

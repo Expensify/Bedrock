@@ -1473,6 +1473,21 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             if (_state != SYNCHRONIZING) {
                 STHROW("not synchronizing");
             }
+            if (message.isSet("hashMismatchValue") || message.isSet("hashMismatchNumber")) {
+                SQResult result;
+                uint64_t commitNum = SToUInt64(message["hashMismatchNumber"]);
+                _db.getCommits(commitNum, commitNum, result);
+                _forkedFrom.insert(peer->name);
+                SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << message["hashMismatchNumber"]
+                       << ". I have forked from " << _forkedFrom.size() << " other nodes. I am " << stateName(_state)
+                       << " and have hash " << result[0][0] << " for that commit. Peer has hash " << message["hashMismatchValue"] << ".");
+
+                if (_forkedFrom.size() > ((_peerList.size() + 1) / 2)) {
+                    SERROR("Hash mismatch. I have forked from over half the cluster. This is unrecoverable.");
+                }
+
+                STHROW("Hash mismatch");
+            }
             if (!_syncPeer) {
                 STHROW("too late, gave up on you");
             }
@@ -1855,6 +1870,11 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         if (newState < SUBSCRIBING) {
             // We're no longer SUBSCRIBING or FOLLOWING, so we have no leader
             _leadPeer = nullptr;
+        } 
+
+        if (newState >= STANDINGUP) {
+            // Not forked from anyone.
+            _forkedFrom.clear();
         }
 
         // Re-enable commits if they were disabled during a previous stand-down.
@@ -1913,11 +1933,15 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
         if (!db.getCommit(peerCommitCount, ignore, myHash)) {
             PWARN("Error getting commit for peer's commit: " << peerCommitCount << ", my commit count is: " << db.getCommitCount());
             STHROW("error getting hash");
-        }
-        if (myHash != peerHash) {
-            SWARN("Hash mismatch. Peer at commit:" << peerCommitCount << " with hash " << peerHash
-                  << ", but we have hash: " << myHash << " for that commit.");
-            STHROW("hash mismatch");
+        } else if (myHash != peerHash) {
+            SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << peerCommitCount << ". I am " << stateName(_state)
+                   << " and have hash " << myHash << " for that commit. Peer has hash " << peerHash << ".");
+
+            // Instead of reconnecting, we tell the peer that we don't match. It's up to the peer to reconnect.
+            response["hashMismatchValue"] = myHash;
+            response["hashMismatchNumber"] = to_string(peerCommitCount);
+
+            return;
         }
         PINFO("Latest commit hash matches our records, beginning synchronization.");
     } else {
@@ -2035,6 +2059,11 @@ void SQLiteNode::_updateSyncPeer()
     for (auto peer : _peerList) {
         // If either of these conditions are true, then we can't use this peer.
         if (!peer->loggedIn || peer->commitCount <= commitCount) {
+            continue;
+        }
+
+        if (_forkedFrom.count(peer->name)) {
+            SWARN("Hash mismatch. Can't choose peer " << peer->name << " due to previous hash mismatch.");
             continue;
         }
 
