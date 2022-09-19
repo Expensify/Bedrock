@@ -842,14 +842,22 @@ void BedrockJobsCommand::process(SQLite& db) {
                 string retryAfterDateTime = "DATETIME(" + SQ(currentTime) + ", " + SQ(job["retryAfter"]) + ")";
                 string repeatDateTime = _constructNextRunDATETIME(job["nextRun"], currentTime, job["repeat"]);
                 string nextRunDateTime = repeatDateTime != "" ? "MIN(" + retryAfterDateTime + ", " + repeatDateTime + ")" : retryAfterDateTime;
+                bool isManualJob = job["name"].rfind("manual", 0) == 0;
                 bool isRepeatBasedOnScheduledTime = SToUpper(job["repeat"]).find("SCHEDULED") != string::npos;
+                string dataUpdateQuery = " ";
+                if (!isManualJob) {
+                    // Set this so we don't retry infinitely for non manual jobs (see above)
+                    // We also set originalNextRun so we don't lose track of the original nextRun (which we are overriding here)
+                    dataUpdateQuery = ", data = JSON_SET(data, '$.retryAfterCount', COALESCE(JSON_EXTRACT(data, '$.retryAfterCount'), 0) + 1" + (isRepeatBasedOnScheduledTime ? ", '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": ") ");
+                }
                 string updateQuery = "UPDATE jobs "
                                      "SET state = 'RUNQUEUED', "
                                          "lastRun = " + SQ(currentTime) + ", " +
-                                         "nextRun = " + nextRunDateTime + ", " +
-                                         "data = JSON_SET(data, '$.retryAfterCount', COALESCE(JSON_EXTRACT(data, '$.retryAfterCount'), 0) + 1" + // Set this so we don't retry infinitely (see above)
-                                         (isRepeatBasedOnScheduledTime ? ", '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": ") ") + // Set this so we don't lose track of the original nextRun (which we are overriding here)
+                                         "nextRun = " + nextRunDateTime + "" +
+                                         dataUpdateQuery +
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
+
+                SINFO("over here 1: " << updateQuery);
 
                 try {
                     if (!db.writeIdempotent(updateQuery)) {
