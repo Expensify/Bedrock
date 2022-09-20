@@ -857,8 +857,6 @@ void BedrockJobsCommand::process(SQLite& db) {
                                          dataUpdateQuery +
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
 
-                SINFO("over here 1: " << updateQuery);
-
                 try {
                     if (!db.writeIdempotent(updateQuery)) {
                         _handleFailedRetryAfterQuery(db, job["jobID"]);
