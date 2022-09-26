@@ -853,7 +853,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                 string updateQuery = "UPDATE jobs "
                                      "SET state = 'RUNQUEUED', "
                                          "lastRun = " + SQ(currentTime) + ", " +
-                                         "nextRun = " + nextRunDateTime + "" +
+                                         "nextRun = " + nextRunDateTime +
                                          dataUpdateQuery +
                                      "WHERE jobID = " + SQ(job["jobID"]) + ";";
 
