@@ -214,7 +214,6 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _db(initializeDB(_filename, mmapSizeGB)),
     _journalNames(initializeJournal(_db, minJournalTables)),
     _sharedData(initializeSharedData(_db, _filename, _journalNames)),
-    _journalName(_journalNames[0]),
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _pageLoggingEnabled(pageLoggingEnabled),
     _cacheSize(cacheSize),
@@ -230,7 +229,6 @@ SQLite::SQLite(const SQLite& from) :
     _db(initializeDB(_filename, from._mmapSizeGB)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
     _journalNames(from._journalNames),
     _sharedData(from._sharedData),
-    _journalName(_journalNames[(_sharedData.nextJournalCount++ % _journalNames.size() - 1) + 1]),
     _journalSize(from._journalSize),
     _pageLoggingEnabled(from._pageLoggingEnabled),
     _cacheSize(from._cacheSize),
@@ -564,6 +562,7 @@ bool SQLite::prepare() {
     uint64_t before = STimeNow();
 
     // Crete our query.
+    _journalName = _journalNames[_sharedData.nextJournalCount++ % _journalNames.size()];
     string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
 
     // These are the values we're currently operating on, until we either commit or rollback.
