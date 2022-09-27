@@ -25,6 +25,7 @@ struct CreateJobTest : tpunit::TestFixture {
                               TEST(CreateJobTest::retryUnique),
                               TEST(CreateJobTest::retryLifecycle),
                               TEST(CreateJobTest::retryWithChildren),
+                              TEST(CreateJobTest::getManualJobWithRetryAfter),
                               AFTER(CreateJobTest::tearDown),
                               AFTER_CLASS(CreateJobTest::tearDownClass)) { }
 
@@ -332,12 +333,14 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["name"], jobName);
 
         // Query the db and confirm the state, and that nextRun and lastRun are 5 seconds apart because of retryAfter
+        // Confirm the data contains an updated retryAfterCount since it was fetched once.
         SQResult jobData;
-        tester->readDB("SELECT state, nextRun, lastRun FROM jobs WHERE jobID = " + jobID + ";", jobData);
+        tester->readDB("SELECT state, nextRun, lastRun, data FROM jobs WHERE jobID = " + jobID + ";", jobData);
         ASSERT_EQUAL(jobData[0][0], "RUNQUEUED");
         time_t nextRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][1]);
         time_t lastRunTime = JobTestHelper::getTimestampForDateTimeString(jobData[0][2]);
         ASSERT_EQUAL(difftime(nextRunTime, lastRunTime), 5);
+        ASSERT_EQUAL(jobData[0][3], "{\"retryAfterCount\":1,\"originalNextRun\":\"" + originalJob[0][4] + "\"}");
 
         // Get the job, confirm error because 1 second hasn't passed
         try {
@@ -511,5 +514,36 @@ struct CreateJobTest : tpunit::TestFixture {
         command["name"] = "testRetryableChild";
         command["parentJobID"] = jobID;
         tester->executeWaitVerifyContent(command, "405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
+    }
+
+    void getManualJobWithRetryAfter() {
+        // Create a job with both retry and repeat
+        SData command("CreateJob");
+        string jobName = "manual/testRetryable";
+        string retryValue = "+5 SECOND";
+        command["name"] = jobName;
+        command["retryAfter"] = retryValue;
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = jobName;
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["data"], "{}");
+        ASSERT_EQUAL(response["jobID"], jobID);
+        ASSERT_EQUAL(response["name"], jobName);
+
+        // Check the jobs retryAfter, confirm it does have a retryAfter value
+        SQResult jobData;
+        tester->readDB("SELECT data FROM jobs WHERE jobID = " + jobID + ";", jobData);
+        ASSERT_EQUAL(jobData[0][0], "{}");
+
+        // Finish the job
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
     }
 } __CreateJobTest;
