@@ -506,7 +506,7 @@ bool SQLiteNode::update() {
             SHMMM("No peers configured, jumping to LEADING");
             _changeState(LEADING);
 
-            // re-run `update` immediately.
+            // Run `update` again immediately.
             return true;
         }
 
