@@ -25,6 +25,13 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         string data = SFileLoad(tempJson);
         SFileDelete(tempJson);
         string bedrockTagName;
+        if (STrim(data)[0] != '[') {
+            cout << "What's in our data?" << endl;
+            cout << data << endl;
+            cout << "Rereived with: " << command << endl;
+            cout << "Dying." << endl;
+            ASSERT_TRUE(false);
+        }
         list<string> j1 = SParseJSONArray(STrim(data));
         ASSERT_EQUAL(j1.size(), RECENT_RELEASES_TO_CHECK);
 
