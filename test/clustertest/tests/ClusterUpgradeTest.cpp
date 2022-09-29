@@ -33,7 +33,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
             ASSERT_TRUE(false);
         }
         list<string> j1 = SParseJSONArray(STrim(data));
-        ASSERT_EQUAL(j1.size(), RECENT_RELEASES_TO_CHECK); // Sometimes this fails because, I guess, we failed to download the file?
+        ASSERT_EQUAL(j1.size(), RECENT_RELEASES_TO_CHECK);
 
         // We need the tag names from each release.
         array<string, RECENT_RELEASES_TO_CHECK> tagNames;
