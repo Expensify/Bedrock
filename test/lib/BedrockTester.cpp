@@ -215,7 +215,7 @@ string BedrockTester::startServer(bool wait) {
         execvp(serverName.c_str(), cargs);
 
         // The above line should only ever return if it failed, so let's check for that.
-        cout << "Starting bedrock failed: " << serverName;
+        cout << "Starting bedrock failed. Errno: " << errno << ", msg: " << strerror(errno) << ", serverName: " << serverName;
         for (auto& arg : args) {
             cout << " " << arg;
         }
