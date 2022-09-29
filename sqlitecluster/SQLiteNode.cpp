@@ -495,6 +495,7 @@ bool SQLiteNode::update() {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
+
         // If we're trying to shut down, just do nothing, especially don't jump directly to leading and get stuck in an endless loop.
         if (_isShuttingDown) {
             return false; // Don't re-update
@@ -502,86 +503,82 @@ bool SQLiteNode::update() {
 
         // If no peers, we're the leader, unless we're shutting down.
         if (_peerList.empty()) {
-            // There are no peers, jump straight to leading
             SHMMM("No peers configured, jumping to LEADING");
             _changeState(LEADING);
-            return true; // Re-update immediately
+
+            // Run `update` again immediately.
+            return true;
         }
 
         // How many peers have we logged in to?
-        int numFullPeers = 0;
-        int numLoggedInFullPeers = 0;
+        size_t numFullPeers = 0;
+        size_t numLoggedInFullPeers = 0;
         SQLitePeer* freshestPeer = nullptr;
-        for (auto peer : _peerList) {
-            // Wait until all connected (or failed) and logged in
-            bool permaFollower = peer->permaFollower;
-            bool loggedIn = peer->loggedIn;
+        for (const auto peer : _peerList) {
+            // Count how many full peers (non-permafollowers) we have, and how many are logged in.
+            // Note that the `permaFollower` property is const and this value will always be the same for a given peer.
+            if (!peer->permaFollower) {
+                numFullPeers++;
+                if (peer->loggedIn) {
+                    numLoggedInFullPeers++;
+                }
+            }
 
-            // Count how many full peers (non-permafollowers) we have
-            numFullPeers += !permaFollower;
+            // Find the freshest non-broken peer (including permafollowers).
+            if (peer->loggedIn) {
+                if (_forkedFrom.count(peer->name)) {
+                    SWARN("Hash mismatch. Forked from peer " << peer->name << " so not considering it.");
+                    continue;
+                }
 
-            // Count how many full peers are logged in
-            numLoggedInFullPeers += (!permaFollower) && loggedIn;
-
-            // Find the freshest peer
-            if (loggedIn) {
-                // The freshest peer is the one that has the most commits.
+                // The freshest peer is the one that has the most commits. There can be ties here, they don't matter.
                 if (!freshestPeer || peer->commitCount > freshestPeer->commitCount) {
                     freshestPeer = peer;
                 }
             }
         }
 
-        // Keep searching until we connect to at least half our non-permafollowers peers OR timeout
-        SINFO("Signed in to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << _peerList.size()
-                              << " with permafollowers), timeout in " << (_stateTimeout - STimeNow()) / 1000
-                              << "ms");
-        if (((float)numLoggedInFullPeers < numFullPeers / 2.0) && (STimeNow() < _stateTimeout))
+        SINFO("Signed in to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << _peerList.size() << " with permafollowers).");
+
+        // We just keep searching until we are connected to at least half the full peers.
+        // Note that `numLoggedInFullPeers == numFullPeers` is adequate to satisfy the cluster size, because we do not include ourselves in the cluster size.
+        // For example, for a cluster of size 5, we have 4 peers. If we are logged into two of them, that means we are a group of three connected peers,
+        // which is sufficient for quorum. In this case `if (2 * 2 < 4)` will return `false` and we will skip the `return false`.
+        if (numLoggedInFullPeers * 2 < numFullPeers) {
             return false;
-
-        // We've given up searching; did we time out?
-        if (STimeNow() >= _stateTimeout)
-            SHMMM("Timeout SEARCHING for peers, continuing.");
-
-        // If no freshest (not connected to anyone), wait
-        if (!freshestPeer) {
-            // Unable to connect to anyone
-            SHMMM("Unable to connect to any peer, WAITING.");
-            _changeState(WAITING);
-            return true; // Re-update
         }
 
-        // How does our state compare with the freshest peer?
-        SASSERT(freshestPeer);
-        uint64_t freshestPeerCommitCount = freshestPeer->commitCount;
-        if (freshestPeerCommitCount == _db.getCommitCount()) {
-            // We're up to date
+        // The only way to not have a freshest peer, given that we've already checked that there should be peers, and that we're connected to at least half of
+        // them, is if all of the peers that we're connected to have forked from us. In this case, the best course of action is to wait for a non-forked peer
+        // to connect. If we have forked from too many peers, we can't get here, we'll have crashed.
+        if (!freshestPeer) {
+            SHMMM("Not connected to any non-forked peer. Retrying.");
+            return false;
+        }
+
+        // If we're at or ahead of the freshest peer, we can move forward towards LEADING or FOLLOWING.
+        if (_db.getCommitCount() >= freshestPeer->commitCount) {
             SINFO("Synchronized with the freshest peer '" << freshestPeer->name << "', WAITING.");
             _changeState(WAITING);
-            return true; // Re-update
+
+            // Run `update` again immediately.
+            return true;
         }
 
-        // Are we fresher than the freshest peer?
-        if (freshestPeerCommitCount < _db.getCommitCount()) {
-            // Looks like we're the freshest peer overall
-            SINFO("We're the freshest peer, WAITING.");
-            _changeState(WAITING);
-            return true; // Re-update
-        }
-
-        // It has a higher commit count than us, synchronize.
-        SASSERT(freshestPeerCommitCount > _db.getCommitCount());
+        // Otherwise, the peer has a higher commit count than us, synchronize from it.
         SASSERTWARN(!_syncPeer);
         _updateSyncPeer();
         if (_syncPeer) {
             _sendToPeer(_syncPeer, SData("SYNCHRONIZE"));
-        } else {
-            SWARN("Updated to NULL _syncPeer when about to send SYNCHRONIZE. Going to WAITING.");
-            _changeState(WAITING);
-            return true; // Re-update
+            _changeState(SYNCHRONIZING);
+
+            // Run `update` again immediately.
+            return true;
         }
-        _changeState(SYNCHRONIZING);
-        return true; // Re-update
+
+        // Wait on some network activity to see if we can fix this with a new peer login.
+        SWARN("We have a fresher peer but couldn't get a sync peer, SEARCHING again.");
+        return false;
     }
 
     /// - SYNCHRONIZING: We only stay in this state while waiting for
@@ -1422,50 +1419,39 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SINFO("Got STANDUP_RESPONSE but not STANDINGUP. Probably a late message, ignoring.");
             }
         } else if (SIEquals(message.methodLine, "SYNCHRONIZE")) {
-            // If we're FOLLOWING, we'll let worker threads handle SYNCHRONIZATION messages. We don't on leader, because if
-            // there's a backlog of commands, these can get stale, and by the time they reach the follower, it's already
-            // behind, thus never catching up.
-            if (_state == FOLLOWING) {
-                if (_isShuttingDown) {
-                    // This will cause the remote peer to reconnect (it will not necessarily give a fantastic error message for this), and choose a different sync peer.
-                    // This prevents us have having leftover synchronization responses in progress as we shut down.
-                    SINFO("Asked to help SYNCHRONIZE but shutting down.");
-                    SData response("SYNCHRONIZE_RESPONSE");
-                    response["ShuttingDown"] = "true";
-                    peer->sendMessage(response);
-                } else {
-                    _pendingSynchronizeResponses++;
-                    static atomic<size_t> synchronizeCount(0);
-                    thread([message, peer, currentSynchronizeCount = synchronizeCount++, this] () {
-                        SInitialize("synchronize" + to_string(currentSynchronizeCount));
-                        SData response("SYNCHRONIZE_RESPONSE");
-                        SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
-                        SQLite& db = dbScope.db();
-                        try {
-                            _queueSynchronize(this, peer, db, response, false);
-
-                            // The following two lines are copied from `_sendToPeer`.
-                            response["CommitCount"] = to_string(db.getCommitCount());
-                            response["Hash"] = db.getCommittedHash();
-                            peer->sendMessage(response);
-                        } catch (const SException& e) {
-                            // This is the same handling as at the bottom of _onMESSAGE.
-                            PWARN("Error processing message '" << message.methodLine << "' (" << e.what() << "), reconnecting.");
-                            SData reconnect("RECONNECT");
-                            reconnect["Reason"] = e.what();
-                            peer->sendMessage(reconnect.serialize());
-                            peer->shutdownSocket();
-                        }
-
-                        _pendingSynchronizeResponses--;
-                    }).detach();
-                }
-            } else {
-                // Otherwise we handle them immediately, as the server doesn't deliver commands to workers until we've
-                // stood up.
+            if (_isShuttingDown) {
+                // This will cause the remote peer to reconnect (it will not necessarily give a fantastic error message for this), and choose a different sync peer.
+                // This prevents us have having leftover synchronization responses in progress as we shut down.
+                SINFO("Asked to help SYNCHRONIZE but shutting down.");
                 SData response("SYNCHRONIZE_RESPONSE");
-                _queueSynchronize(this, peer, _db, response, false);
-                _sendToPeer(peer, response);
+                response["ShuttingDown"] = "true";
+                peer->sendMessage(response);
+            } else {
+                _pendingSynchronizeResponses++;
+                static atomic<size_t> synchronizeCount(0);
+                thread([message, peer, currentSynchronizeCount = synchronizeCount++, this] () {
+                    SInitialize("synchronize" + to_string(currentSynchronizeCount));
+                    SData response("SYNCHRONIZE_RESPONSE");
+                    SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
+                    SQLite& db = dbScope.db();
+                    try {
+                        _queueSynchronize(this, peer, db, response, false);
+
+                        // The following two lines are copied from `_sendToPeer`.
+                        response["CommitCount"] = to_string(db.getCommitCount());
+                        response["Hash"] = db.getCommittedHash();
+                        peer->sendMessage(response);
+                    } catch (const SException& e) {
+                        // This is the same handling as at the bottom of _onMESSAGE.
+                        PWARN("Error processing message '" << message.methodLine << "' (" << e.what() << "), reconnecting.");
+                        SData reconnect("RECONNECT");
+                        reconnect["Reason"] = e.what();
+                        peer->sendMessage(reconnect.serialize());
+                        peer->shutdownSocket();
+                    }
+
+                    _pendingSynchronizeResponses--;
+                }).detach();
             }
         } else if (SIEquals(message.methodLine, "SYNCHRONIZE_RESPONSE")) {
             // SYNCHRONIZE_RESPONSE: Sent in response to a SYNCHRONIZE request. Contains a payload of zero or more COMMIT
@@ -1873,7 +1859,7 @@ void SQLiteNode::_changeState(SQLiteNode::State newState) {
         } 
 
         if (newState >= STANDINGUP) {
-            // Not forked from anyone.
+            // Not forked from anyone. Note that this includes both LEADING and FOLLOWING.
             _forkedFrom.clear();
         }
 
