@@ -98,7 +98,7 @@ travis_fold end test_bedrock
 travis_fold start test_bedrock_cluster
 travis_time_start
 cd test/clustertest
-./clustertest -except BadCommand -threads 8
+./clustertest -only ClusterUpgrade
 cd ../..
 travis_time_finish
 travis_fold end test_bedrock_cluster

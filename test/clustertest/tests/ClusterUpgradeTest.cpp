@@ -108,6 +108,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
     cout << "A" << endl;
         // Let the entire cluster come up on the production version.
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
+    cout << "A.1" << endl;
         ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
