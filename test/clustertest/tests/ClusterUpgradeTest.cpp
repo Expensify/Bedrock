@@ -104,21 +104,25 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
     }
 
     void test() {
+    cout << "A" << endl;
         // Let the entire cluster come up on the production version.
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
         ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
+    cout << "B" << endl;
         // Get the versions from the cluster.
         auto versions = getVersions();
 
         // Save the production version for later comparison.
         string prodVersion = versions[0];
 
+    cout << "C" << endl;
         // Verify all three are the same.
         ASSERT_EQUAL(versions[0], versions[1]);
         ASSERT_EQUAL(versions[0], versions[2]);
 
+    cout << "D" << endl;
         // Restart 2 on the new version.
         tester->getTester(2).stopServer();
         tester->getTester(2).serverName = "bedrock";
@@ -126,43 +130,52 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         tester->getTester(2).startServer();
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
+    cout << "E" << endl;
         // Verify the server has been upgraded and the version is different.
         versions = getVersions();
         string devVersion = versions[2];
         ASSERT_NOT_EQUAL(prodVersion, devVersion);
 
+    cout << "F" << endl;
         // Send a write command on 2 and verify we get a reasonable response. This should verify that we can escalate from new->old.
         SData cmd("idcollision");
         vector<SData> cmdResult = tester->getTester(2).executeWaitMultipleData({cmd});
         ASSERT_EQUAL(cmdResult[0].methodLine, "200 OK");
 
+    cout << "G" << endl;
         // Now we shut down the old leader. This makes the remaining old follower become leader.
         tester->getTester(0).stopServer();
 
+    cout << "H" << endl;
         // We should now have a two-node cluster with 1 leading and 2 following.
         ASSERT_TRUE(tester->getTester(1).waitForState("LEADING"));
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
+    cout << "I" << endl;
         // Start up the old leader on the new version.
         tester->getTester(0).serverName = "bedrock";
         tester->getTester(0).updateArgs({{"-plugins", newTestPlugin}});
         tester->getTester(0).startServer();
 
+    cout << "J" << endl;
         // We should get the expected cluster state.
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
         ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
+    cout << "K" << endl;
         // Now 0 and 2 are the new version, and 1 is the old version.
         versions = getVersions();
         ASSERT_EQUAL(versions[0], devVersion);
         ASSERT_EQUAL(versions[1], prodVersion);
         ASSERT_EQUAL(versions[2], devVersion);
 
+    cout << "L" << endl;
         // Now we need to send a command to node 1 to verify we can escalate old->new.
         cmdResult = tester->getTester(1).executeWaitMultipleData({cmd});
         ASSERT_EQUAL(cmdResult[0].methodLine, "200 OK");
 
+    cout << "M" << endl;
         // And finally, upgrade the last node.
         tester->getTester(1).stopServer();
         tester->getTester(1).serverName = "bedrock";
@@ -170,6 +183,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         tester->getTester(1).startServer();
         ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
 
+    cout << "N" << endl;
         // And verify everything is upgraded.
         versions = getVersions();
         ASSERT_EQUAL(versions[0], devVersion);
