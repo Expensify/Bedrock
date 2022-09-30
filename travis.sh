@@ -114,6 +114,9 @@ git --version
 which head
 git tag --sort=-committerdate | head -n5
 
+git fetch --all --tags
+git tag --sort=-committerdate | head -n5
+
 ./clustertest -only ClusterUpgrade
 cd ../..
 travis_time_finish
