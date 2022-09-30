@@ -15,6 +15,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
     string newTestPlugin;
 
     void setup() {
+    cout << "Setup A" << endl;
         // Get the most recent releases.
         const size_t RECENT_RELEASES_TO_CHECK = 5;
 
@@ -28,6 +29,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         SFileDelete(tempFile);
         list<string> tagNames = SParseList(data, '\n');
 
+    cout << "Setup B" << endl;
         // Now choose the one to use. We want to test against the msot recent release that isn't the commit we're currently on.
         // the commit number of the tag: git rev-list -n 1 $TAG
         // The commit number we're currently on: git rev-parse HEAD
@@ -42,6 +44,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
             }
         }
 
+    cout << "Setup C" << endl;
         // Make sure we got something to test.
         ASSERT_NOT_EQUAL(bedrockTagName, "");
 
@@ -49,35 +52,43 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         // known bad version that failed to escalate commands at upgrade when first deployed.
         // bedrockTagName = "2022-05-06";
 
+    cout << "Setup D" << endl;
         // If we've already built this, don't bother doing it again. This makes running this test multiple times in a
         // row much faster.
         string prodBedrockDirName = "/tmp/bedrock-" + bedrockTagName;
         prodBedrockName = prodBedrockDirName + "/bedrock";
         prodBedrockPluginName = prodBedrockDirName + "/testplugin.so";
+    cout << "Setup E" << endl;
         if (!SFileExists(prodBedrockName)) {
             // Get a directory we can work in.
             char brReleaseDirArr[] = "/tmp/br-prod-test-XXXXXX";
             ASSERT_EQUAL(mkdtemp(brReleaseDirArr), brReleaseDirArr);
             string brReleaseDir(brReleaseDirArr, sizeof(brReleaseDirArr) - 1);
 
+    cout << "Setup F" << endl;
             // Clone bedrock.
             ASSERT_FALSE(system(("cd " + brReleaseDir + " && git clone https://github.com/Expensify/Bedrock.git > /dev/null").c_str()));
 
+    cout << "Setup G" << endl;
             // Check out the release tag.
             ASSERT_FALSE(system(("cd " + brReleaseDir + " && cd Bedrock && git checkout " + bedrockTagName + "  > /dev/null").c_str()));
 
+    cout << "Setup H" << endl;
             // Build the release.
             ASSERT_FALSE(system(("cd " + brReleaseDir + " && cd Bedrock && make -j8 > /dev/null").c_str()));
 
+    cout << "Setup I" << endl;
             // Save the final product.
             mkdir(prodBedrockDirName.c_str(), 0755);
             ASSERT_FALSE(system(("mv " + brReleaseDir + "/Bedrock/bedrock " + prodBedrockName).c_str()));
             ASSERT_FALSE(system(("mv " + brReleaseDir + "/Bedrock/test/clustertest/testplugin/testplugin.so " + prodBedrockPluginName).c_str()));
 
+    cout << "Setup J" << endl;
             // Remove the intermediate dir.
             rmdir(brReleaseDir.c_str());
         }
 
+    cout << "Setup K" << endl;
         // Figure out where the new test plugin is.
         char cwd[1024];
         if (!getcwd(cwd, sizeof(cwd))) {
@@ -85,9 +96,11 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         }
         newTestPlugin = string(cwd) + "/testplugin/testplugin.so";
 
+    cout << "Setup L" << endl;
         // Load the whole prod cluster with the prod test plugin.
         cout << "Loading prod cluster " << prodBedrockPluginName << ", " << prodBedrockName << endl;
         tester = new BedrockClusterTester(prodBedrockPluginName, prodBedrockName);
+    cout << "Setup M" << endl;
     }
 
     void teardown() {
