@@ -18,9 +18,11 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         // Get the most recent releases.
         const size_t RECENT_RELEASES_TO_CHECK = 5;
 
+        // Tags are somehow missing in Travis, so we'll fetch them.
+        ASSERT_EQUAL(system("git fetch --all --tags > /dev/null"), 0);
+
         // In theory, we should look at releases, not tags, but we don't have hat without github API access. But, since we only ever create tags for releases, we can look at recent tags
-        // instead and get the same information. We shouldn't need to look at remote tags, we're only interested in being able to upgrade to the version we're building, which should be at
-        // the head of the tree here, and contain all older tags.
+        // instead and get the same information.
         const string tempFile = "brdata.txt";
         const string command = "git tag --sort=-committerdate | head -n" + to_string(RECENT_RELEASES_TO_CHECK) + " > " + tempFile;
         ASSERT_EQUAL(system(command.c_str()), 0);
