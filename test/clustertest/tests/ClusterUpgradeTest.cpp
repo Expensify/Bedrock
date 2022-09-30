@@ -23,8 +23,9 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         // instead and get the same information. We shouldn't need to look at remote tags, we're only interested in being able to upgrade to the version we're building, which should be at
         // the head of the tree here, and contain all older tags.
         const string tempFile = "brdata.txt";
-        const string command = "git tag --sort=-committerdate | head -n" + to_string(RECENT_RELEASES_TO_CHECK) + " > " + tempFile;
+        const string command = "/bin/bash -c 'git tag --sort=-committerdate | head -n" + to_string(RECENT_RELEASES_TO_CHECK) + " > " + tempFile + "'";
         ASSERT_EQUAL(system(command.c_str()), 0);
+        cout << "Ran command: " << command << endl;
         string data = SFileLoad(tempFile);
         SFileDelete(tempFile);
         cout << "Loaded tags: " << endl;
