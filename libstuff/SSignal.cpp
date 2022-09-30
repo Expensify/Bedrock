@@ -6,6 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <iostream>
+
 thread_local function<void()> SSignalHandlerDieFunc;
 void SSetSignalHandlerDieFunc(function<void()>&& func) {
     SSignalHandlerDieFunc = move(func);
@@ -191,11 +193,11 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
 
             // Then try and log it to syslog. Neither backtrace_symbols() nor syslog() are signal-safe, either, so this
             // also might not do what we hope.
-            SWARN("Signal " << strsignal(_SSignal_threadCaughtSignalNumber) << "(" << _SSignal_threadCaughtSignalNumber
-                  << ") caused crash, logging stack trace.");
+            cout << "Signal " << strsignal(_SSignal_threadCaughtSignalNumber) << "(" << _SSignal_threadCaughtSignalNumber
+                  << ") caused crash, logging stack trace." << endl;
             vector<string> stack = SGetCallstack(depth, callstack);
             for (const auto& frame : stack) {
-                SWARN(frame);
+                cout << (frame) << endl;
             }
 
             // Call our die function and then reset it.

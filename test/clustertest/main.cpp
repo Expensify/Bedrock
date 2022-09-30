@@ -30,9 +30,10 @@ void log() {
 
 int main(int argc, char* argv[]) {
     SData args = SParseCommandLine(argc, argv);
+    SInitialize("main", "clustertest");
 
     // Catch sigint.
-    signal(SIGINT, sigclean);
+    //signal(SIGINT, sigclean);
 
     set<string> include;
     set<string> exclude;
@@ -73,7 +74,11 @@ int main(int argc, char* argv[]) {
         threads = SToInt(args["-threads"]);
     }
 
-
+    /*
+    int* x = 0;
+    int y = *x;
+    cout << y;
+    */
 
     int retval = 0;
     {
