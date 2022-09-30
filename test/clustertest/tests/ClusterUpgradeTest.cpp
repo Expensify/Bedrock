@@ -86,6 +86,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         newTestPlugin = string(cwd) + "/testplugin/testplugin.so";
 
         // Load the whole prod cluster with the prod test plugin.
+        cout << "Loading prod cluster " << prodBedrockPluginName << ", " << prodBedrockName << endl;
         tester = new BedrockClusterTester(prodBedrockPluginName, prodBedrockName);
     }
 
