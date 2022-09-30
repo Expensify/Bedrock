@@ -104,6 +104,12 @@ cat brdata.txt
 
 which git
 git tag --sort=-committerdate 
+git tag
+
+git --version
+
+/usr/bin/git tag
+/usr/bin/git tag --sort=committerdate
 
 which head
 git tag --sort=-committerdate | head -n5
