@@ -146,9 +146,9 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
     // Now start them all.
     list<thread> threads;
     for (auto it = _cluster.begin(); it != _cluster.end(); it++) {
-        //threads.emplace_back([it](){
+        threads.emplace_back([it](){
             it->startServer();
-        //});
+        });
     }
     for (auto& i : threads) {
         i.join();
