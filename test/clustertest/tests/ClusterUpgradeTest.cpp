@@ -27,6 +27,8 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         ASSERT_EQUAL(system(command.c_str()), 0);
         string data = SFileLoad(tempFile);
         SFileDelete(tempFile);
+        cout << "Loaded tags: " << endl;
+        cout << data << endl;
         list<string> tagNames = SParseList(data, '\n');
 
     cout << "Setup B" << endl;
