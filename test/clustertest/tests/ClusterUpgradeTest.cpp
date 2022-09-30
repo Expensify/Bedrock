@@ -30,7 +30,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         list<string> tagNames = SParseList(data, '\n');
 
     cout << "Setup B" << endl;
-        // Now choose the one to use. We want to test against the msot recent release that isn't the commit we're currently on.
+        // Now choose the one to use. We want to test against the most recent release that isn't the commit we're currently on.
         // the commit number of the tag: git rev-list -n 1 $TAG
         // The commit number we're currently on: git rev-parse HEAD
         // If the current commit matches the tested tag, the script returns 1 and we check the next one. When the script returns 0, that's the release we'll use.
@@ -38,10 +38,15 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         for (const auto& tagName : tagNames) {
             string checkIfOnLatestTag = "/bin/bash -c 'if [[ \"$(git rev-list -n 1 " + tagName + ")\" == \"$(git rev-parse HEAD)\" ]]; then exit 1; else exit 0; fi'";
             int result = system(checkIfOnLatestTag.c_str());
+                cout << checkIfOnLatestTag << endl;
             if (result == 0) {
+                cout << "Got BR name: " << bedrockTagName << endl;
                 bedrockTagName = tagName;
                 break;
             }
+        }
+        if (bedrockTagName.empty()) {
+            cout << "Couldn't find a tag!!!!" << endl;
         }
 
     cout << "Setup C" << endl;
