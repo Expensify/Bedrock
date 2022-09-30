@@ -98,6 +98,16 @@ travis_fold end test_bedrock
 travis_fold start test_bedrock_cluster
 travis_time_start
 cd test/clustertest
+
+/bin/bash -c 'git tag --sort=-committerdate | head -n5 > brdata.txt'
+cat brdata.txt
+
+which git
+git tag --sort=-committerdate 
+
+which head
+git tag --sort=-committerdate | head -n5
+
 ./clustertest -only ClusterUpgrade
 cd ../..
 travis_time_finish
