@@ -17,6 +17,8 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
     void setup() {
         // Get the most recent releases.
         const size_t RECENT_RELEASES_TO_CHECK = 5;
+        string bedrockTagName;
+        #if 0
         const string tempJson = "brdata.json";
         string command = "curl --silent 'https://api.github.com/repos/Expensify/Bedrock/releases?page=1&per_page=" + to_string(RECENT_RELEASES_TO_CHECK) + "' -o " + tempJson;
         ASSERT_EQUAL(system(command.c_str()), 0);
@@ -24,14 +26,11 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         // Parse the JSON we got from github with recent releases.
         string data = SFileLoad(tempJson);
         SFileDelete(tempJson);
-        string bedrockTagName;
-        if (STrim(data)[0] != '[') {
-            cout << "What's in our data?" << endl;
-            cout << data << endl;
-            cout << "Rereived with: " << command << endl;
-            cout << "Dying." << endl;
-            ASSERT_TRUE(false);
+
+        if (data.find("API rate limit exceeded") != data.end()) {
+            cout << "We have exceeded the GH rate-limit " << endl;
         }
+
         list<string> j1 = SParseJSONArray(STrim(data));
         ASSERT_EQUAL(j1.size(), RECENT_RELEASES_TO_CHECK);
 
@@ -46,6 +45,21 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
             if (j1.size()) {
                 j1.pop_front();
             }
+        }
+        #endif
+
+        // In theory, we should look at releases, not tags, but we don't have hat without github API access. But, since we only ever create tags for releases, we can look at recent tags
+        // instead and get the same information. We shouldn't need to look at remote tags, we're only interested in being able to upgrade to the version we're building, which should be at
+        // the head of the tree here, and contain all older tags.
+        const string tempFile = "brdata.txt";
+        const string command = "git tag --sort=-committerdate | head -n" + to_string(RECENT_RELEASES_TO_CHECK) + " > " + tempFile;
+        ASSERT_EQUAL(system(command.c_str()), 0);
+        string data = SFileLoad(tempFile);
+        SFileDelete(tempFile);
+
+        list<string> tagNames = SParseList(data, '\n');
+        for (const auto& tagName : tagNames) {
+            cout << tagName << "|" <<endl;
         }
 
         // Now choose the one to use. We want to test against the msot recent release that isn't the commit we're currently on.
@@ -63,6 +77,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
 
         // Make sure we got something to test.
         ASSERT_NOT_EQUAL(bedrockTagName, "");
+        cout << "Using tagname: " << bedrockTagName << endl;
 
         // If you'd like to test against a particular tag, uncomment the following line. The value chosen here was a
         // known bad version that failed to escalate commands at upgrade when first deployed.
