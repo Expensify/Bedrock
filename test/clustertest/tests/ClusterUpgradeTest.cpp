@@ -30,7 +30,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         SFileDelete(tempFile);
         list<string> tagNames = SParseList(data, '\n');
 
-        // Now choose the one to use. We want to test against the msot recent release that isn't the commit we're currently on.
+        // Now choose the one to use. We want to test against the most recent release that isn't the commit we're currently on.
         // the commit number of the tag: git rev-list -n 1 $TAG
         // The commit number we're currently on: git rev-parse HEAD
         // If the current commit matches the tested tag, the script returns 1 and we check the next one. When the script returns 0, that's the release we'll use.
