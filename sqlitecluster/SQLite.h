@@ -187,6 +187,9 @@ class SQLite {
     // Gets any error message associated with the previous query
     string getLastError() { return sqlite3_errmsg(_db); }
 
+    // Returns the most recent error string from sqlite.
+    const string getMostRecentSQLiteErrorLog() const;
+
     // Returns true if we're inside an uncommitted transaction.
     bool insideTransaction() { return _insideTransaction; }
 
@@ -465,4 +468,7 @@ class SQLite {
     int _cacheSize;
     const string _synchronous;
     int64_t _mmapSizeGB;
+
+    // This is a string (which may be empty) containing the most recent logged error by SQLite in this thread.
+    static thread_local string _mostRecentSQLiteErrorLog;
 };
