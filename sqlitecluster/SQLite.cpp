@@ -18,6 +18,12 @@ sqlite3* SQLite::getDBHandle() {
     return _db;
 }
 
+thread_local string SQLite::_mostRecentSQLiteErrorLog;
+
+const string SQLite::getMostRecentSQLiteErrorLog() const {
+    return _mostRecentSQLiteErrorLog;
+}
+
 string SQLite::initializeFilename(const string& filename) {
     // Canonicalize our filename and save that version.
     if (filename == ":memory:") {
@@ -259,7 +265,8 @@ int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, 
 }
 
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
-    SSYSLOG(LOG_INFO, "[info] " << "{SQLITE} Code: " << iErrCode << ", Message: " << zMsg);
+    _mostRecentSQLiteErrorLog = "{SQLITE} Code: "s + to_string(iErrCode) + ", Message: "s + zMsg;
+    SSYSLOG(LOG_INFO, "[info] " << _mostRecentSQLiteErrorLog);
 }
 
 int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {
