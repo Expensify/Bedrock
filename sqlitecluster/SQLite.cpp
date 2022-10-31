@@ -8,9 +8,6 @@
 
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
-atomic<int64_t> SQLite::_transactionAttemptCount(0);
-mutex SQLite::_pageLogMutex;
-
 // Tracing can only be enabled or disabled globally, not per object.
 atomic<bool> SQLite::enableTrace(false);
 
@@ -176,11 +173,6 @@ void SQLite::commonConstructorInitialization() {
     SASSERT(_cacheSize > 0);
     SASSERT(_maxJournalSize > 0);
 
-    // Turn on page logging if specified.
-    if (_pageLoggingEnabled) {
-        sqlite3_begin_concurrent_report_enable(_db, 1);
-    }
-
     // WAL is what allows simultaneous read/writing.
     SASSERT(!SQuery(_db, "enabling write ahead logging (wal2)", "PRAGMA journal_mode = wal2;"));
 
@@ -214,14 +206,13 @@ void SQLite::commonConstructorInitialization() {
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool pageLoggingEnabled) :
+               int minJournalTables, const string& synchronous, int64_t mmapSizeGB) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB)),
     _journalNames(initializeJournal(_db, minJournalTables)),
     _sharedData(initializeSharedData(_db, _filename, _journalNames)),
     _journalSize(initializeJournalSize(_db, _journalNames)),
-    _pageLoggingEnabled(pageLoggingEnabled),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
     _mmapSizeGB(mmapSizeGB)
@@ -236,7 +227,6 @@ SQLite::SQLite(const SQLite& from) :
     _journalNames(from._journalNames),
     _sharedData(from._sharedData),
     _journalSize(from._journalSize),
-    _pageLoggingEnabled(from._pageLoggingEnabled),
     _cacheSize(from._cacheSize),
     _synchronous(from._synchronous),
     _mmapSizeGB(from._mmapSizeGB)
@@ -319,7 +309,6 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
 
     SDEBUG("[concurrent] Beginning transaction");
     uint64_t before = STimeNow();
-    _currentTransactionAttemptCount = -1;
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
 
     // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
@@ -632,15 +621,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
 
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
-    if (_pageLoggingEnabled) {
-        {
-            lock_guard<mutex> lock(_pageLogMutex);
-            _currentTransactionAttemptCount = _transactionAttemptCount.fetch_add(1);
-            result = SQuery(_db, "committing db transaction", "COMMIT");
-        }
-    } else {
-        result = SQuery(_db, "committing db transaction", "COMMIT");
-    }
+    result = SQuery(_db, "committing db transaction", "COMMIT");
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
@@ -658,13 +639,6 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         sqlite3_file_control(_db, "main", SQLITE_FCNTL_JOURNAL_POINTER, &pWal);
         pWal->pMethods->xFileSize(pWal, &sz);
 
-        if (_currentTransactionAttemptCount != -1) {
-            const char* report = sqlite3_begin_concurrent_report(_db);
-            string logLine = SWHEREAMI + "[row-level-locking] transaction attempt:" +
-                             to_string(_currentTransactionAttemptCount) + " committed. report: " +
-                             (report ? string(report) : "null"s);
-            syslog(LOG_DEBUG, "%s", logLine.c_str());
-        }
         _commitElapsed += STimeNow() - before;
         _journalSize = newJournalSize;
         _sharedData.incrementCommit(_uncommittedHash);
@@ -701,12 +675,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _cacheHits = 0;
         _dbCountAtStart = 0;
     } else {
-        if (_currentTransactionAttemptCount != -1) {
-            string logLine = SWHEREAMI  + "[row-level-locking] transaction attempt:" +
-                             to_string(_currentTransactionAttemptCount) + " conflict, will roll back.";
-            syslog(LOG_DEBUG, "%s", logLine.c_str());
-            SINFO("Commit failed, waiting for rollback.");
-        }
+        SINFO("Commit failed, waiting for rollback.");
     }
 
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
@@ -732,14 +701,6 @@ void SQLite::rollback() {
             uint64_t before = STimeNow();
             SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
             _rollbackElapsed += STimeNow() - before;
-        }
-
-        if (_currentTransactionAttemptCount != -1) {
-            const char* report = sqlite3_begin_concurrent_report(_db);
-            string logLine = SWHEREAMI + "[row-level-locking] transaction attempt:" +
-                             to_string(_currentTransactionAttemptCount) + " rolled back. report: " +
-                             (report ? string(report) : "null"s);
-            syslog(LOG_DEBUG, "%s", logLine.c_str());
         }
 
         // Finally done with this.
