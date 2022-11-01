@@ -56,7 +56,7 @@ class SQLite {
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-           const string& synchronous = "", int64_t mmapSizeGB = 0, bool pageLoggingEnabled = false);
+           const string& synchronous = "", int64_t mmapSizeGB = 0);
 
     // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
@@ -458,11 +458,6 @@ class SQLite {
 
     // Will be set to false while running a non-deterministic query to prevent it's result being cached.
     bool _isDeterministicQuery = false;
-
-    bool _pageLoggingEnabled;
-    static atomic<int64_t> _transactionAttemptCount;
-    static mutex _pageLogMutex;
-    int64_t _currentTransactionAttemptCount = -1;
 
     // Copies of parameters used to initialize the DB that we store if we make child objects based on this one.
     int _cacheSize;
