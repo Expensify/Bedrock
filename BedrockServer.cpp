@@ -61,6 +61,7 @@ void BedrockServer::syncWrapper()
 {
     // Initialize the thread.
     SInitialize(_syncThreadName);
+    isSyncThread = true;
 
     while(true) {
         // If the server's set to be detached, we wait until that flag is unset, and then start the sync thread.
@@ -487,6 +488,7 @@ void BedrockServer::sync()
                     // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                     // re-verify that any checks made in peek are still valid in process.
                     if (!command->httpsRequests.size()) {
+                        // runs
                         BedrockCore::RESULT result = core.peekCommand(command, true);
                         if (result == BedrockCore::RESULT::COMPLETE) {
                             // This command completed in peek, respond to it appropriately, either directly or by sending it
@@ -519,6 +521,7 @@ void BedrockServer::sync()
                         }
                     }
 
+                    // runs
                     BedrockCore::RESULT result = core.processCommand(command, true);
                     if (result == BedrockCore::RESULT::NEEDS_COMMIT) {
                         // The processor says we need to commit this, so let's start that process.

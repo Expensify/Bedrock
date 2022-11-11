@@ -80,6 +80,7 @@
 
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
+thread_local bool isSyncThread;
 
 // We store the process name passed in `SInitialize` to use in logging.
 thread_local string SProcessName;
@@ -97,6 +98,7 @@ atomic_flag SLogSocketsInitialized = ATOMIC_FLAG_INIT;
 atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc = &syslog;
 
 void SInitialize(string threadName, const char* processName) {
+    isSyncThread = false;
     // This is not really thread safe. It's guaranteed to run only once, because of the atomic flag, but it's not
     // guaranteed that a second caller to `SInitialize` will wait until this block has completed before attempting to
     // use the socket logging variables. This is handled by the fact that we call `SInitialize` in main() which waits
