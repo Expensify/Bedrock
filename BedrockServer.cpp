@@ -825,18 +825,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     canWriteParallel = canWriteParallel && (state == SQLiteNode::LEADING);
     canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
 
-    // If all the other checks have passed, and we haven't sent a quorum command to the sync thread in a while,
-    // auto-promote one.
-    if (canWriteParallel) {
-        uint64_t now = STimeNow();
-        if (now > (_lastQuorumCommandTime + (_quorumCheckpointSeconds * 1'000'000))) {
-            SINFO("Forcing QUORUM for command '" << command->request.methodLine << "'.");
-            _lastQuorumCommandTime = now;
-            command->writeConsistency = SQLiteNode::QUORUM;
-            canWriteParallel = false;
-        }
-    }
-
     // We'll retry on conflict up to this many times.
     int retry = _maxConflictRetries.load();
     while (retry) {
@@ -890,6 +878,15 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
                     // Move on to the next command until this one finishes.
                     break;
+                }
+            } else {
+                // If we haven't sent a quorum command to the sync thread in a while, auto-promote one.
+                uint64_t now = STimeNow();
+                if (now > (_lastQuorumCommandTime + (_quorumCheckpointSeconds * 1'000'000))) {
+                    SINFO("Forcing QUORUM for command '" << command->request.methodLine << "'.");
+                    _lastQuorumCommandTime = now;
+                    command->writeConsistency = SQLiteNode::QUORUM;
+                    canWriteParallel = false;
                 }
             }
 
