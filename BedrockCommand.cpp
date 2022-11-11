@@ -253,3 +253,9 @@ void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWa
         transaction->manager.postPoll(fdm, *transaction, nextActivity, maxWaitMS);
     }
 }
+
+void BedrockCommand::setTimeout(uint64_t timeout) {
+    timeout *= 1'000;
+    timeout += STimeNow();
+    _timeout = timeout;
+}

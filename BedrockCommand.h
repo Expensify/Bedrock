@@ -151,6 +151,9 @@ class BedrockCommand : public SQLiteCommand {
     // Return the timestamp by which this command must finish executing.
     uint64_t timeout() const { return _timeout; }
 
+    // In milliseconds from the current time.
+    void setTimeout(uint64_t timeout);
+
     // Return the number of commands in existence.
     static size_t getCommandCount() { return _commandCount.load(); }
 

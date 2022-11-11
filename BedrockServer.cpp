@@ -899,6 +899,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 core.rollback();
                 auto _clusterMessengerCopy = _clusterMessenger;
                 if (state == SQLiteNode::LEADING) {
+                    // Limit the command timeout to 20s.
+                    command->setTimeout(20'000);
                     SINFO("Sending non-parallel command " << command->request.methodLine
                           << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
                     _syncNodeQueuedCommands.push(move(command));
