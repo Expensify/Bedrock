@@ -2536,9 +2536,14 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             sqlite3_stmt *preparedStatement = nullptr;
             error = sqlite3_prepare_v2(db, statementRemainder, strlen(statementRemainder), &preparedStatement, &statementRemainder);
             int numColumns = sqlite3_column_count(preparedStatement);
+            result.headers.resize(numColumns);
 
             while (true) {
                 error = sqlite3_step(preparedStatement);
+                for (int i = 0; i < numColumns; i++) {
+                    result.headers[i] = sqlite3_column_name(preparedStatement, i);
+                }
+
                 if (error == SQLITE_DONE) {
                     error = SQLITE_OK;
                     break;
