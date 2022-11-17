@@ -1,3 +1,4 @@
+#include <iostream>
 // --------------------------------------------------------------------------
 // libstuff.cpp
 // --------------------------------------------------------------------------
@@ -2530,45 +2531,45 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         result.clear();
         SDEBUG(sql);
 
-        sqlite3_stmt *preparedStatement = nullptr;
-        const char *statementRemainder = nullptr;
-        error = sqlite3_prepare_v2(db, sql.c_str(), sql.size(), &preparedStatement, &statementRemainder);
-        int numColumns = sqlite3_column_count(preparedStatement);
+        const char *statementRemainder = sql.c_str();
+        do {
+            sqlite3_stmt *preparedStatement = nullptr;
+            error = sqlite3_prepare_v2(db, statementRemainder, strlen(statementRemainder), &preparedStatement, &statementRemainder);
+            int numColumns = sqlite3_column_count(preparedStatement);
 
-        // TODO: statementRemainder is unhandled and this doesn't work for multiple sql statements.
-
-        while (true) {
-            error = sqlite3_step(preparedStatement);
-            if (error == SQLITE_DONE) {
-                error = SQLITE_OK;
-                break;
-            } else if (error == SQLITE_ROW) {
-                result.rows.emplace_back(vector<string>(numColumns));
-                for (int i = 0; i < numColumns; i++) {
-                    int colType = sqlite3_column_type(preparedStatement, i);
-                    switch (colType) {
-                        case SQLITE_INTEGER:
-                            result.rows.back()[i] = to_string(sqlite3_column_int64(preparedStatement, i));
-                            break;
-                        case SQLITE_FLOAT:
-                            result.rows.back()[i] =  to_string(sqlite3_column_double(preparedStatement, i));
-                            break;
-                        case SQLITE_TEXT:
-                            result.rows.back()[i] = reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i));
-                            break;
-                        case SQLITE_BLOB:
-                            result.rows.back()[i] =  string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i));
-                            break;
-                        case SQLITE_NULL:
-                            // null string.
-                            break;
+            while (true) {
+                error = sqlite3_step(preparedStatement);
+                if (error == SQLITE_DONE) {
+                    error = SQLITE_OK;
+                    break;
+                } else if (error == SQLITE_ROW) {
+                    result.rows.emplace_back(vector<string>(numColumns));
+                    for (int i = 0; i < numColumns; i++) {
+                        int colType = sqlite3_column_type(preparedStatement, i);
+                        switch (colType) {
+                            case SQLITE_INTEGER:
+                                result.rows.back()[i] = to_string(sqlite3_column_int64(preparedStatement, i));
+                                break;
+                            case SQLITE_FLOAT:
+                                result.rows.back()[i] =  to_string(sqlite3_column_double(preparedStatement, i));
+                                break;
+                            case SQLITE_TEXT:
+                                result.rows.back()[i] = reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i));
+                                break;
+                            case SQLITE_BLOB:
+                                result.rows.back()[i] =  string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i));
+                                break;
+                            case SQLITE_NULL:
+                                // null string.
+                                break;
+                        }
                     }
+                } else {
+                    break;
                 }
-            } else {
-                break;
             }
-        }
-        sqlite3_finalize(preparedStatement);
+            sqlite3_finalize(preparedStatement);
+        } while (*statementRemainder != 0);
 
         //error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
         extErr = sqlite3_extended_errcode(db);
