@@ -2538,7 +2538,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             if (!preparedStatement) {
                 // If we get a null statement (from parsing a blank string) we can break.
                 error = SQLITE_OK;
-                break;
+                continue;
             }
             int numColumns = sqlite3_column_count(preparedStatement);
             result.headers.resize(numColumns);
