@@ -2536,7 +2536,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             sqlite3_stmt *preparedStatement = nullptr;
             error = sqlite3_prepare_v2(db, statementRemainder, strlen(statementRemainder), &preparedStatement, &statementRemainder);
             if (!preparedStatement) {
-                // If we get a null statement (from parsing a blank string) we can break.
+                // If we get a null statement (from parsing a blank string) we can skip.
                 error = SQLITE_OK;
                 continue;
             }
@@ -2549,10 +2549,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                     result.headers[i] = sqlite3_column_name(preparedStatement, i);
                 }
 
-                if (error == SQLITE_DONE) {
-                    error = SQLITE_OK;
-                    break;
-                } else if (error == SQLITE_ROW) {
+                if (error == SQLITE_ROW) {
                     result.rows.emplace_back(vector<string>(numColumns));
                     for (int i = 0; i < numColumns; i++) {
                         int colType = sqlite3_column_type(preparedStatement, i);
@@ -2561,13 +2558,13 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                                 result.rows.back()[i] = to_string(sqlite3_column_int64(preparedStatement, i));
                                 break;
                             case SQLITE_FLOAT:
-                                result.rows.back()[i] =  to_string(sqlite3_column_double(preparedStatement, i));
+                                result.rows.back()[i] = to_string(sqlite3_column_double(preparedStatement, i));
                                 break;
                             case SQLITE_TEXT:
                                 result.rows.back()[i] = reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i));
                                 break;
                             case SQLITE_BLOB:
-                                result.rows.back()[i] =  string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i));
+                                result.rows.back()[i] = string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i));
                                 break;
                             case SQLITE_NULL:
                                 // null string.
@@ -2575,6 +2572,10 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                         }
                     }
                 } else {
+                    if (error == SQLITE_DONE) {
+                        // Treat "done" as just not-an-error.
+                        error = SQLITE_OK;
+                    }
                     break;
                 }
             }
