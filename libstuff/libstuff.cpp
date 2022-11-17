@@ -2499,6 +2499,7 @@ void SQueryLogClose() {
 
 // --------------------------------------------------------------------------
 // Called by SQLite in response to query
+/*
 static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
     // If we haven't already recorded the headers, do so now
     SQResult& result = *(SQResult*)data;
@@ -2515,6 +2516,7 @@ static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
     }
     return 0;
 }
+*/
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
@@ -2527,11 +2529,53 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
         SDEBUG(sql);
-        error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
+
+        sqlite3_stmt *preparedStatement = nullptr;
+        const char *statementRemainder = nullptr;
+        error = sqlite3_prepare_v2(db, sql.c_str(), sql.size(), &preparedStatement, &statementRemainder);
+        int numColumns = sqlite3_column_count(preparedStatement);
+
+        // TODO: statementRemainder is unhandled and this doesn't work for multiple sql statements.
+
+        while (true) {
+            error = sqlite3_step(preparedStatement);
+            if (error == SQLITE_DONE) {
+                error = SQLITE_OK;
+                break;
+            } else if (error == SQLITE_ROW) {
+                result.rows.emplace_back(vector<string>(numColumns));
+                for (int i = 0; i < numColumns; i++) {
+                    int colType = sqlite3_column_type(preparedStatement, i);
+                    switch (colType) {
+                        case SQLITE_INTEGER:
+                            result.rows.back()[i] = to_string(sqlite3_column_int64(preparedStatement, i));
+                            break;
+                        case SQLITE_FLOAT:
+                            result.rows.back()[i] =  to_string(sqlite3_column_double(preparedStatement, i));
+                            break;
+                        case SQLITE_TEXT:
+                            result.rows.back()[i] = reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i));
+                            break;
+                        case SQLITE_BLOB:
+                            result.rows.back()[i] =  string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i));
+                            break;
+                        case SQLITE_NULL:
+                            // null string.
+                            break;
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+        sqlite3_finalize(preparedStatement);
+
+        //error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
         extErr = sqlite3_extended_errcode(db);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
             break;
         }
+
         SWARN("sqlite3_exec returned SQLITE_BUSY on try #"
               << (tries + 1) << " of " << MAX_TRIES << ". "
               << "Extended error code: " << sqlite3_extended_errcode(db) << ". "
