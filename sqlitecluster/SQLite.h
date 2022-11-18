@@ -286,7 +286,7 @@ class SQLite {
         // Mutex to serialize commits to this DB. This should be locked anytime a thread needs to commit to the DB, or
         // needs to prevent other threads from committing to the DB (such as to guarantee there are no commit conflicts
         // during a transaction).
-        recursive_mutex commitLock;
+        recursive_timed_mutex commitLock;
 
         // If set to false, this prevents any thread from being able to commit to the DB.
         atomic<bool> _commitEnabled;
