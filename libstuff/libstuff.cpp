@@ -2537,11 +2537,12 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             error = sqlite3_prepare_v2(db, statementRemainder, strlen(statementRemainder), &preparedStatement, &statementRemainder);
              if (error) {
                 // This will just drop through to the general error handling below.
-                continue;
+                sqlite3_finalize(preparedStatement);
+                break;
             } else if (!preparedStatement) {
                 // If we get a null statement (from parsing a blank string) we can skip, this isn't an error.
                 error = SQLITE_OK;
-                continue;
+                break;
             }
             int numColumns = sqlite3_column_count(preparedStatement);
             result.headers.resize(numColumns);
@@ -2583,7 +2584,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                 }
             }
             sqlite3_finalize(preparedStatement);
-        } while (*statementRemainder != 0);
+        } while (*statementRemainder != 0 && error == SQLITE_OK);
 
         //error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
         extErr = sqlite3_extended_errcode(db);
