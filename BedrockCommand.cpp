@@ -254,8 +254,9 @@ void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWa
     }
 }
 
-void BedrockCommand::setTimeout(uint64_t timeout) {
-    timeout *= 1'000;
-    timeout += STimeNow();
-    _timeout = timeout;
+void BedrockCommand::setTimeout(uint64_t timeoutDurationMS) {
+    // Because _timeout is in microseconds.
+    timeoutDurationMS *= 1'000;
+    timeoutDurationMS += STimeNow();
+    _timeout = timeoutDurationMS;
 }

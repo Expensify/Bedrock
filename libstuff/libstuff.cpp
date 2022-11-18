@@ -1,4 +1,3 @@
-#include <iostream>
 // --------------------------------------------------------------------------
 // libstuff.cpp
 // --------------------------------------------------------------------------
@@ -2597,8 +2596,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
             break;
         }
-
-        SWARN("sqlite3_exec returned SQLITE_BUSY on try #"
+        SWARN("sqlite3 returned SQLITE_BUSY on try #"
               << (tries + 1) << " of " << MAX_TRIES << ". "
               << "Extended error code: " << sqlite3_extended_errcode(db) << ". "
               << (((tries + 1) < MAX_TRIES) ? "Sleeping 1 second and re-trying." : "No more retries."));
@@ -2612,7 +2610,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // Warn if it took longer than the specified threshold
     string sqlToLog = sql;
-    if ((int64_t)elapsed > 1000) {
+    if ((int64_t)elapsed > warnThreshold) {
         // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
         pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
         if (isSyncThread) {
