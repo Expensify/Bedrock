@@ -2535,8 +2535,11 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         do {
             sqlite3_stmt *preparedStatement = nullptr;
             error = sqlite3_prepare_v2(db, statementRemainder, strlen(statementRemainder), &preparedStatement, &statementRemainder);
-            if (!preparedStatement) {
-                // If we get a null statement (from parsing a blank string) we can skip.
+             if (error) {
+                // This will just drop through to the general error handling below.
+                continue;
+            } else if (!preparedStatement) {
+                // If we get a null statement (from parsing a blank string) we can skip, this isn't an error.
                 error = SQLITE_OK;
                 continue;
             }
