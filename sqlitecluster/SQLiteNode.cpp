@@ -1969,7 +1969,6 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
             commit.content = result[c][1];
             response.content += commit.serialize();
         }
-        SASSERTWARN(response.content.size() < 10 * 1024 * 1024); // Let's watch if it gets over 10MB
     }
 }
 
