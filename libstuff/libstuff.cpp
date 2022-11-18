@@ -2499,27 +2499,6 @@ void SQueryLogClose() {
 }
 
 // --------------------------------------------------------------------------
-// Called by SQLite in response to query
-/*
-static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
-    // If we haven't already recorded the headers, do so now
-    SQResult& result = *(SQResult*)data;
-    if (result.headers.empty()) {
-        for (int c = 0; c < argc; ++c) {
-            result.headers.push_back(colNames[c] ? colNames[c] : "");
-        }
-    }
-
-    // Record the result (and check for NULLs)
-    result.rows.resize(result.size() + 1);
-    for (int c = 0; c < argc; ++c) {
-        result.rows.back().push_back(argv[c] ? argv[c] : "");
-    }
-    return 0;
-}
-*/
-
-// --------------------------------------------------------------------------
 // Executes a SQLite query
 int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn) {
 #define MAX_TRIES 3
@@ -2527,14 +2506,29 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     uint64_t startTime = STimeNow();
     int error = 0;
     int extErr = 0;
+
+    size_t numLoops = 0;
+    size_t prepareTimeUS = 0;
+    size_t numSteps = 0;
+    size_t stepTimeUS = 0;
+    size_t longestStepTimeUS = 0;
+
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
         SDEBUG(sql);
 
         const char *statementRemainder = sql.c_str();
         do {
+            numLoops++;
             sqlite3_stmt *preparedStatement = nullptr;
+            size_t beforePrepare = 0;
+            if (isSyncThread) {
+                beforePrepare = STimeNow();
+            }
             error = sqlite3_prepare_v2(db, statementRemainder, strlen(statementRemainder), &preparedStatement, &statementRemainder);
+            if (isSyncThread) {
+                prepareTimeUS += STimeNow() - beforePrepare;
+            }
              if (error) {
                 // This will just drop through to the general error handling below.
                 sqlite3_finalize(preparedStatement);
@@ -2548,7 +2542,20 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             result.headers.resize(numColumns);
 
             while (true) {
+                size_t beforeStep = 0;
+                if (isSyncThread) {
+                    beforeStep = STimeNow();
+                }
+                numSteps++;
                 error = sqlite3_step(preparedStatement);
+                if (isSyncThread) {
+                    size_t stepTime = STimeNow() - beforeStep;
+                    if (stepTime > longestStepTimeUS) {
+                        longestStepTimeUS += stepTime;
+                    }
+                    stepTimeUS += stepTime;
+                }
+
                 for (int i = 0; i < numColumns; i++) {
                     result.headers[i] = sqlite3_column_name(preparedStatement, i);
                 }
@@ -2586,7 +2593,6 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             sqlite3_finalize(preparedStatement);
         } while (*statementRemainder != 0 && error == SQLITE_OK);
 
-        //error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
         extErr = sqlite3_extended_errcode(db);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
             break;
@@ -2606,10 +2612,20 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // Warn if it took longer than the specified threshold
     string sqlToLog = sql;
-    if ((int64_t)elapsed > warnThreshold) {
+    if ((int64_t)elapsed > 1000) {
         // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
         pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
-        SWARN("Slow query (" << elapsed / 1000 << "ms): " << sqlToLog);
+        if (isSyncThread) {
+            SWARN("Slow query sync ("
+                  << "loops: " << numLoops << ", "
+                  << "prepare US: " << prepareTimeUS << ", "
+                  << "steps: " << numSteps << ", "
+                  << "step US: " << stepTimeUS << ", "
+                  << "longest step US: " << longestStepTimeUS << "): "
+                  << sqlToLog);
+        } else {
+            SWARN("Slow query (" << elapsed / 1000 << "ms): " << sqlToLog);
+        }
     }
 
     // Log this if enabled
