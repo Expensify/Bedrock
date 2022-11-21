@@ -2528,9 +2528,11 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             if (isSyncThread) {
                 prepareTimeUS += STimeNow() - beforePrepare;
             }
-             if (error) {
-                // This will just drop through to the general error handling below.
+            if (error) {
+                // Delete our statement.
                 sqlite3_finalize(preparedStatement);
+
+                // This will just drop through to the general error handling below.
                 break;
             } else if (!preparedStatement) {
                 // If we get a null statement (from parsing a blank string) we can skip, this isn't an error.
