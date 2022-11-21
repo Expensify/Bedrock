@@ -264,6 +264,8 @@ extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
 extern thread_local string SThreadLogPrefix;
 extern thread_local string SThreadLogName;
 
+extern thread_local bool isSyncThread;
+
 // Thread-local log prefix
 void SLogSetThreadPrefix(const string& logPrefix);
 void SLogSetThreadName(const string& name);

@@ -80,6 +80,7 @@
 
 thread_local string SThreadLogPrefix;
 thread_local string SThreadLogName;
+thread_local bool isSyncThread;
 
 // We store the process name passed in `SInitialize` to use in logging.
 thread_local string SProcessName;
@@ -97,6 +98,7 @@ atomic_flag SLogSocketsInitialized = ATOMIC_FLAG_INIT;
 atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc = &syslog;
 
 void SInitialize(string threadName, const char* processName) {
+    isSyncThread = false;
     // This is not really thread safe. It's guaranteed to run only once, because of the atomic flag, but it's not
     // guaranteed that a second caller to `SInitialize` will wait until this block has completed before attempting to
     // use the socket logging variables. This is handled by the fact that we call `SInitialize` in main() which waits
@@ -2496,25 +2498,6 @@ void SQueryLogClose() {
 }
 
 // --------------------------------------------------------------------------
-// Called by SQLite in response to query
-static int _SQueryCallback(void* data, int argc, char** argv, char** colNames) {
-    // If we haven't already recorded the headers, do so now
-    SQResult& result = *(SQResult*)data;
-    if (result.headers.empty()) {
-        for (int c = 0; c < argc; ++c) {
-            result.headers.push_back(colNames[c] ? colNames[c] : "");
-        }
-    }
-
-    // Record the result (and check for NULLs)
-    result.rows.resize(result.size() + 1);
-    for (int c = 0; c < argc; ++c) {
-        result.rows.back().push_back(argv[c] ? argv[c] : "");
-    }
-    return 0;
-}
-
-// --------------------------------------------------------------------------
 // Executes a SQLite query
 int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn) {
 #define MAX_TRIES 3
@@ -2522,15 +2505,100 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     uint64_t startTime = STimeNow();
     int error = 0;
     int extErr = 0;
+
+    size_t numLoops = 0;
+    size_t prepareTimeUS = 0;
+    size_t numSteps = 0;
+    size_t stepTimeUS = 0;
+    size_t longestStepTimeUS = 0;
+
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
         SDEBUG(sql);
-        error = sqlite3_exec(db, sql.c_str(), _SQueryCallback, &result, 0);
+
+        const char *statementRemainder = sql.c_str();
+        do {
+            numLoops++;
+            sqlite3_stmt *preparedStatement = nullptr;
+            size_t beforePrepare = 0;
+            if (isSyncThread) {
+                beforePrepare = STimeNow();
+            }
+            error = sqlite3_prepare_v2(db, statementRemainder, strlen(statementRemainder), &preparedStatement, &statementRemainder);
+            if (isSyncThread) {
+                prepareTimeUS += STimeNow() - beforePrepare;
+            }
+            if (error) {
+                // Delete our statement.
+                sqlite3_finalize(preparedStatement);
+
+                // This will just drop through to the general error handling below.
+                break;
+            } else if (!preparedStatement) {
+                // If we get a null statement (from parsing a blank string) we can skip, this isn't an error.
+                error = SQLITE_OK;
+                break;
+            }
+            int numColumns = sqlite3_column_count(preparedStatement);
+            result.headers.resize(numColumns);
+
+            while (true) {
+                size_t beforeStep = 0;
+                if (isSyncThread) {
+                    beforeStep = STimeNow();
+                }
+                numSteps++;
+                error = sqlite3_step(preparedStatement);
+                if (isSyncThread) {
+                    size_t stepTime = STimeNow() - beforeStep;
+                    if (stepTime > longestStepTimeUS) {
+                        longestStepTimeUS += stepTime;
+                    }
+                    stepTimeUS += stepTime;
+                }
+
+                for (int i = 0; i < numColumns; i++) {
+                    result.headers[i] = sqlite3_column_name(preparedStatement, i);
+                }
+
+                if (error == SQLITE_ROW) {
+                    result.rows.emplace_back(vector<string>(numColumns));
+                    for (int i = 0; i < numColumns; i++) {
+                        int colType = sqlite3_column_type(preparedStatement, i);
+                        switch (colType) {
+                            case SQLITE_INTEGER:
+                                result.rows.back()[i] = to_string(sqlite3_column_int64(preparedStatement, i));
+                                break;
+                            case SQLITE_FLOAT:
+                                result.rows.back()[i] = to_string(sqlite3_column_double(preparedStatement, i));
+                                break;
+                            case SQLITE_TEXT:
+                                result.rows.back()[i] = reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i));
+                                break;
+                            case SQLITE_BLOB:
+                                result.rows.back()[i] = string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i));
+                                break;
+                            case SQLITE_NULL:
+                                // null string.
+                                break;
+                        }
+                    }
+                } else {
+                    if (error == SQLITE_DONE) {
+                        // Treat "done" as just not-an-error.
+                        error = SQLITE_OK;
+                    }
+                    break;
+                }
+            }
+            sqlite3_finalize(preparedStatement);
+        } while (*statementRemainder != 0 && error == SQLITE_OK);
+
         extErr = sqlite3_extended_errcode(db);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
             break;
         }
-        SWARN("sqlite3_exec returned SQLITE_BUSY on try #"
+        SWARN("sqlite3 returned SQLITE_BUSY on try #"
               << (tries + 1) << " of " << MAX_TRIES << ". "
               << "Extended error code: " << sqlite3_extended_errcode(db) << ". "
               << (((tries + 1) < MAX_TRIES) ? "Sleeping 1 second and re-trying." : "No more retries."));
@@ -2547,7 +2615,17 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     if ((int64_t)elapsed > warnThreshold) {
         // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
         pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
-        SWARN("Slow query (" << elapsed / 1000 << "ms): " << sqlToLog);
+        if (isSyncThread) {
+            SWARN("Slow query sync ("
+                  << "loops: " << numLoops << ", "
+                  << "prepare US: " << prepareTimeUS << ", "
+                  << "steps: " << numSteps << ", "
+                  << "step US: " << stepTimeUS << ", "
+                  << "longest step US: " << longestStepTimeUS << "): "
+                  << sqlToLog);
+        } else {
+            SWARN("Slow query (" << elapsed / 1000 << "ms): " << sqlToLog);
+        }
     }
 
     // Log this if enabled
