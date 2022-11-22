@@ -296,7 +296,15 @@ SQLite::~SQLite() {
 
 bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
-        _sharedData.commitLock.lock();
+        if (isSyncThread) {
+            // Blocking the sync thread has catastrophic results (forking) and so we either get this quickly, or we fail the transaction.
+            if (!_sharedData.commitLock.try_lock_for(5s)) {
+                SWARN("Failed to acquire commit lock in sync thread exclusive transaction!");
+                STHROW("512 Internal Lock Timeout");
+            }
+        } else {
+            _sharedData.commitLock.lock();
+        }
         _sharedData._commitLockTimer.start("EXCLUSIVE");
         _mutexLocked = true;
     }
