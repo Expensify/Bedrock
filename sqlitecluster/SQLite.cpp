@@ -664,13 +664,15 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
 
         // If we are the first to set it (i.e., test_and_set returned `false` as the previous value), we'll start a checkpoint.
         if (!_sharedData.checkpointInProgress.test_and_set()) {
-            if (_sharedData.outstandingFramesToCheckpoint) {
+            size_t outstandingFrames = _sharedData.outstandingFramesToCheckpoint;
+            if (outstandingFrames) {
                 auto start = STimeNow();
                 int totalFrames = 0;
                 int framesCheckpointed = 0;
                 sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, &totalFrames, &framesCheckpointed);
                 auto end = STimeNow();
-                SINFO("Checkpoint finished with " << (totalFrames - framesCheckpointed) << " frames remaining to checkpoint in " << (end - start) << "us.");
+                SINFO("Checkpoint finished with " << (totalFrames - framesCheckpointed) << " frames remaining to checkpoint in " << (end - start) << "us. WAL hook had reported "
+                      << outstandingFrames << " frames to checkpoint.");
 
                 // It might not actually be 0, but we'll just let sqlite tell us what it is next time _walHookCallback runs.
                 _sharedData.outstandingFramesToCheckpoint = 0;
