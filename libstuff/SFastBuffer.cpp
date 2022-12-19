@@ -19,19 +19,22 @@ bool SFastBuffer::startsWithHTTPRequest() {
     // aren't any".
     if (!headerLength) {
         size_t bodySeparator = data.find("\r\n\r\n", nextToCheck);
+        if (bodySeparator == string::npos) {
+            // This is dumb.
+            bodySeparator = data.find("\n\n", nextToCheck);
+        }
         if (bodySeparator != string::npos) {
             headerLength = bodySeparator - front;
-            return true;
         } else {
             // We subtract 4 so that we can't accidentally end up in the middle of the 4-char sequence that we're searching for and end up missing it on two sequential calls because each
             // contained only a single newline.
-            nextToCheck = data.length() - 4;
+            nextToCheck = data.size() - 4;
         }
     }
 
     // This is good enough for what we need right now, but it suffers the same exact problem that this was meant to fix, except for the body. This may be deferred as a future improvement to
     // deal with long bodies in addition to long headers.
-    return false;
+    return headerLength;
 }
 
 bool SFastBuffer::empty() const {
