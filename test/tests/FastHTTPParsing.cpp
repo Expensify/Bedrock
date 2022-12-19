@@ -9,8 +9,7 @@ struct FastHTTPParsing : tpunit::TestFixture {
                                     TEST(FastHTTPParsing::blank),
                                     TEST(FastHTTPParsing::noHeaders),
                                     TEST(FastHTTPParsing::splitSeparators),
-                                    TEST(FastHTTPParsing::reset),
-                                    TEST(FastHTTPParsing::noop))
+                                    TEST(FastHTTPParsing::reset))
     { }
 
     // We test both supported line ends everywhere.
@@ -95,8 +94,4 @@ struct FastHTTPParsing : tpunit::TestFixture {
             ASSERT_EQUAL(request["Content-length"], "1");
         }
     }
-
-    void noop() {
-    }
-
 } __FastHTTPParsing;
