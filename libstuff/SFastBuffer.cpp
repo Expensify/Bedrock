@@ -8,6 +8,32 @@ SFastBuffer::SFastBuffer() : front(0) {
 SFastBuffer::SFastBuffer(const string& str) : front(0), data(str) {
 }
 
+bool SFastBuffer::startsWithHTTPRequest() {
+    // No HTTP request is less than 4 bytes. Strictly, an HTTP request is longer than this, but this is all we need to care about.
+    if (size() < 4) {
+        return false;
+    }
+
+    // Do we have headers yet? If not, keep looking for them.
+    // Headers are optional, but this will actually contain the methodline as well, so we won't end up with an ambiguous case where '0' means both "we haven't found them yet" and "there
+    // aren't any".
+    if (!headerLength) {
+        size_t bodySeparator = data.find("\r\n\r\n", nextToCheck);
+        if (bodySeparator != string::npos) {
+            headerLength = bodySeparator - front;
+            return true;
+        } else {
+            // We subtract 4 so that we can't accidentally end up in the middle of the 4-char sequence that we're searching for and end up missing it on two sequential calls because each
+            // contained only a single newline.
+            nextToCheck = data.length() - 4;
+        }
+    }
+
+    // This is good enough for what we need right now, but it suffers the same exact problem that this was meant to fix, except for the body. This may be deferred as a future improvement to
+    // deal with long bodies in addition to long headers.
+    return false;
+}
+
 bool SFastBuffer::empty() const {
     return size() == 0;
 }
@@ -22,11 +48,18 @@ const char* SFastBuffer::c_str() const {
 
 void SFastBuffer::clear() {
     front = 0;
+    nextToCheck = 0;
+    headerLength = 0;
+    contentLength = 0;
     data.clear();
 }
 
 void SFastBuffer::consumeFront(size_t bytes) {
     front += bytes;
+
+    nextToCheck = front;
+    headerLength = 0;
+    contentLength = 0;
 
     // If we're all caught up, reset.
     if (front == data.size()) {
@@ -63,6 +96,9 @@ SFastBuffer& SFastBuffer::operator+=(const string& rhs) {
 
 SFastBuffer& SFastBuffer::operator=(const string& rhs) {
     front = 0;
+    nextToCheck = 0;
+    headerLength = 0;
+    contentLength = 0;
     data = rhs;
     return *this;
 }
