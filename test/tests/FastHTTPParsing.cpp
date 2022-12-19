@@ -80,12 +80,14 @@ struct FastHTTPParsing : tpunit::TestFixture {
             fb.consumeFront(requestSize); 
 
             ASSERT_EQUAL(string(fb.c_str()), string("GET"));
+            ASSERT_FALSE(fb.startsWithHTTPRequest());
 
             string restOf2ndRequest = " / HTTP/1.1" + end +
                                       "Content-Length: 1" + end +
                                       end +
                                       "A";
             fb.append(restOf2ndRequest.c_str(), restOf2ndRequest.size());
+            ASSERT_TRUE(fb.startsWithHTTPRequest());
             requestSize = request.deserialize(fb);
             fb.consumeFront(requestSize); 
             ASSERT_TRUE(fb.empty());

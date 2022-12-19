@@ -102,6 +102,9 @@ void SFastBuffer::append(const char* buffer, size_t bytes) {
         memmove(&data[0], data.data() + front, size());
         data.resize(size());
         front = 0;
+        nextToCheck = 0;
+        headerLength = 0;
+        contentLength = 0;
 
         // If the capacity is more than 4x the size we need, let's give some memory back.
         if (data.capacity() > (data.size() + bytes) * 4) {
