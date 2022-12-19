@@ -18,7 +18,7 @@ bool SFastBuffer::startsWithHTTPRequest() {
     // aren't any".
     if (!headerLength) {
         size_t next = nextToCheck;
-        while (next != string::npos && !headerLength) {
+        while (!headerLength) {
             next = data.find('\n', next);
 
             if (next == string::npos) {
