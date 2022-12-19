@@ -1,5 +1,4 @@
 #include "SFastBuffer.h"
-
 #include <cstring>
 
 SFastBuffer::SFastBuffer() : front(0) {
@@ -18,18 +17,41 @@ bool SFastBuffer::startsWithHTTPRequest() {
     // Headers are optional, but this will actually contain the methodline as well, so we won't end up with an ambiguous case where '0' means both "we haven't found them yet" and "there
     // aren't any".
     if (!headerLength) {
-        size_t bodySeparator = data.find("\r\n\r\n", nextToCheck);
-        if (bodySeparator == string::npos) {
-            // This is dumb.
-            bodySeparator = data.find("\n\n", nextToCheck);
+        size_t next = nextToCheck;
+        while (next != string::npos && !headerLength) {
+            next = data.find('\n', next);
+
+            if (next == string::npos) {
+                // There's nothing to find, we can give up until the next call.
+                break;
+            }
+
+            // If we don't break above, then there we've found a `\n` in our input. We need to see if it's part of a valid separator sequence.
+            // We support both `\r\n\r\n` and `\n\n` as valid seperators. Only the first is real HTTP, but the second is easier to use in many command-line tools (i.e., netcat).
+            // This means there's at least one byte after this one. If it's also a `\n`, then this is a good sequence.
+            if (next < data.size() - 1) {
+                if(data[next + 1] == '\n') {
+                    headerLength = next - front;
+                }
+            }
+
+            // Ok, the only other possible valid sequence requires that there are at least *two* bytes after this one, and one byte before.
+            if (next && (next < data.size() - 2)) {
+                // Make sure the previous and next bytes are `\r` and two bytes ahead is `\n`.
+                if (data[next - 1] == '\r' && data [next + 1] == '\r' && data[next + 2] == '\n') {
+                    headerLength = next - front - 1;
+                }
+            }
+
+            // We found a `\n` but not a full separator sequence. We'll skip ahead to the next byte and try to find another `\n` to inspect.
+            next++;
         }
-        if (bodySeparator != string::npos) {
-            headerLength = bodySeparator - front;
-        } else {
-            // We subtract 4 so that we can't accidentally end up in the middle of the 4-char sequence that we're searching for and end up missing it on two sequential calls because each
-            // contained only a single newline.
-            nextToCheck = data.size() - 4;
-        }
+    }
+
+    // If we still haven't found any headers, we'll just need to try again.
+    if (!headerLength) {
+        // We start from four bytes before the end to make sure that the whole `\r\n\r\n` sequence we're looking for is ahead of our starting point.
+        nextToCheck = data.size() - 4;
     }
 
     // This is good enough for what we need right now, but it suffers the same exact problem that this was meant to fix, except for the body. This may be deferred as a future improvement to
