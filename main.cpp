@@ -216,6 +216,7 @@ int main(int argc, char* argv[]) {
         cout << "-q                          Enables quiet logging" << endl;
         cout << "-clean                      Recreate a new database from scratch" << endl;
         cout << "-enableMultiWrite           Enable multi-write mode (default: true)" << endl;
+        cout << "-enableChkptExclMode        Enable checkpoint in exclusive mode (default: true)" << endl;
         cout << "-versionOverride <version>  Pretends to be a different version when talking to peers" << endl;
         cout << "-db             <filename>  Use a database with the given name (default 'bedrock.db')" << endl;
         cout
@@ -300,6 +301,7 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
     SETDEFAULT("-enableMultiWrite", "true");
+    SETDEFAULT("-enableChkptExclMode", "true");
 
     args["-plugins"] = SComposeList(loadPlugins(args));
 
