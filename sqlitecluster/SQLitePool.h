@@ -6,7 +6,7 @@ class SQLitePool {
   public:
     // Create a pool of DB handles.
     SQLitePool(size_t maxDBs, const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-               const string& synchronous = "", int64_t mmapSizeGB = 0);
+               const string& synchronous = "", int64_t mmapSizeGB = 0, bool enableChkptExclMod = true);
     ~SQLitePool();
 
     // Get the base object (the first one created, which uses the `journal` table). Note that if called by multiple

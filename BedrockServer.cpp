@@ -119,7 +119,7 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
     int fdLimit = args.isSet("-live") ? 25'000 : 250;
     SINFO("Setting dbPool size to: " << fdLimit);
-    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB);
+    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-chkptExclMode"));
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
@@ -2093,8 +2093,11 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                 }
             } else {
                 // Otherwise, handle any default request.
-                int requestSize = request.deserialize(socket.recvBuffer);
-                socket.recvBuffer.consumeFront(requestSize);
+                int requestSize = 0;
+                if (socket.recvBuffer.startsWithHTTPRequest()) {
+                    requestSize = request.deserialize(socket.recvBuffer);
+                    socket.recvBuffer.consumeFront(requestSize);
+                }
 
                 // If this socket was accepted from the public command port, and that's supposed to be closed now, set
                 // `Connection: close` so that we don't keep doing a bunch of activity on it.
