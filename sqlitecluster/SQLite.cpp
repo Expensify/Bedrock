@@ -206,7 +206,7 @@ void SQLite::commonConstructorInitialization() {
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB) :
+               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool chkptExclMode) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB)),
@@ -215,7 +215,8 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
-    _mmapSizeGB(mmapSizeGB)
+    _mmapSizeGB(mmapSizeGB),
+    _chkptExclMode(chkptExclMode)
 {
     commonConstructorInitialization();
 }
@@ -229,7 +230,8 @@ SQLite::SQLite(const SQLite& from) :
     _journalSize(from._journalSize),
     _cacheSize(from._cacheSize),
     _synchronous(from._synchronous),
-    _mmapSizeGB(from._mmapSizeGB)
+    _mmapSizeGB(from._mmapSizeGB),
+    _chkptExclMode(from._chkptExclMode)
 {
     commonConstructorInitialization();
 }
@@ -656,7 +658,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _uncommittedQuery.clear();
         _sharedData._commitLockTimer.stop();
         _sharedData.commitLock.unlock();
-        if (_currentTransactionType == TRANSACTION_TYPE::EXCLUSIVE) {
+        if (_chkptExclMode && _currentTransactionType == TRANSACTION_TYPE::EXCLUSIVE) {
             // This is is basically duplicate code from below, but this is a quick fix tosee if this helps, we can de-dupe later if this works. It's only 6 lines.
             _sharedData.checkpointInProgress.test_and_set();
             auto start = STimeNow();
@@ -679,7 +681,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         }
 
         // If we are the first to set it (i.e., test_and_set returned `false` as the previous value), we'll start a checkpoint.
-        if ((_currentTransactionType != TRANSACTION_TYPE::EXCLUSIVE) && (!_sharedData.checkpointInProgress.test_and_set())) {
+        if ((_currentTransactionType != TRANSACTION_TYPE::EXCLUSIVE || !_chkptExclMode) && (!_sharedData.checkpointInProgress.test_and_set())) {
             if (_sharedData.outstandingFramesToCheckpoint) {
                 auto start = STimeNow();
                 int framesCheckpointed = 0;

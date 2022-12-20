@@ -119,7 +119,7 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
     int fdLimit = args.isSet("-live") ? 25'000 : 250;
     SINFO("Setting dbPool size to: " << fdLimit);
-    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB);
+    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-chkptExclMode"));
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.

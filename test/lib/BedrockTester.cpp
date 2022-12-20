@@ -75,6 +75,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-maxJournalSize", "25000"},
         {"-v", ""},
         {"-enableMultiWrite", "true"},
+        {"-enableChkptExclMode", "true"},
         {"-escalateOverHTTP", "true"},
         {"-cacheSize", "1000"},
         {"-parallelReplication", "true"},
@@ -513,7 +514,7 @@ SQLite& BedrockTester::getSQLiteDB()
 {
     if (!_db) {
         // Assumes wal2 mode.
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, "", 0);
+        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, "", 0, true);
     }
     return *_db;
 }
