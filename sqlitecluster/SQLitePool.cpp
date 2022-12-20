@@ -9,9 +9,9 @@ SQLitePool::SQLitePool(size_t maxDBs,
                        int minJournalTables,
                        const string& synchronous,
                        int64_t mmapSizeGB,
-                       bool enableChkptExclMode)
+                       bool chkptExclMode)
 : _maxDBs(max(maxDBs, 1ul)),
-  _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, synchronous, mmapSizeGB, enableChkptExclMode),
+  _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, synchronous, mmapSizeGB, chkptExclMode),
   _objects(_maxDBs, nullptr)
 {
 }
