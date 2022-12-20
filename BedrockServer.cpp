@@ -119,7 +119,7 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
     int fdLimit = args.isSet("-live") ? 25'000 : 250;
     SINFO("Setting dbPool size to: " << fdLimit);
-    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB);
+    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.test("-enableChkptExclMode"));
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
@@ -1118,8 +1118,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _upgradeInProgress(false),
     _isCommandPortLikelyBlocked(false),
     _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(nullptr), _shutdownState(RUNNING),
-    _multiWriteEnabled(args.test("-enableMultiWrite")), _enableChkptExclMode(args.test("-enableChkptExclMode")),
-    _shouldBackup(false), _detach(args.isSet("-bootstrap")),
+    _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false)
