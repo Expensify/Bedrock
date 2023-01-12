@@ -295,7 +295,6 @@ SQLite::~SQLite() {
 }
 
 bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
-    _currentTransactionType = type;
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
         if (isSyncThread) {
             // Blocking the sync thread has catastrophic results (forking) and so we either get this quickly, or we fail the transaction.

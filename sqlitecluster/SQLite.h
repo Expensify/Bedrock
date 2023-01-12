@@ -343,9 +343,6 @@ class SQLite {
     // True when we have a transaction in progress.
     bool _insideTransaction = false;
 
-    // Keep track of what type of transaction we've started, we want to do complete checkpoints at the end of exclusive transactions.
-    TRANSACTION_TYPE _currentTransactionType;
-
     // The new query and new hash to add to the journal for a transaction that's nearing completion, before we commit
     // it.
     string _uncommittedQuery;
