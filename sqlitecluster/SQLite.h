@@ -56,7 +56,7 @@ class SQLite {
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-           const string& synchronous = "", int64_t mmapSizeGB = 0, bool chkptExclMode = true);
+           const string& synchronous = "", int64_t mmapSizeGB = 0);
 
     // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
@@ -343,9 +343,6 @@ class SQLite {
     // True when we have a transaction in progress.
     bool _insideTransaction = false;
 
-    // Keep track of what type of transaction we've started, we want to do complete checkpoints at the end of exclusive transactions.
-    TRANSACTION_TYPE _currentTransactionType;
-
     // The new query and new hash to add to the journal for a transaction that's nearing completion, before we commit
     // it.
     string _uncommittedQuery;
@@ -466,9 +463,6 @@ class SQLite {
     int _cacheSize;
     const string _synchronous;
     int64_t _mmapSizeGB;
-
-    // Feature flags
-    bool _chkptExclMode = true;
 
     // This is a string (which may be empty) containing the most recent logged error by SQLite in this thread.
     static thread_local string _mostRecentSQLiteErrorLog;
