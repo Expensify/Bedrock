@@ -2499,7 +2499,7 @@ void SQueryLogClose() {
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn) {
+int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn, bool* wasSlow) {
 #define MAX_TRIES 3
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
@@ -2625,6 +2625,11 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                   << sqlToLog);
         } else {
             SWARN("Slow query '" << e << "' (" << elapsed / 1000 << "ms): " << sqlToLog);
+        }
+
+        // Notify the caller that this was a slow query.
+        if (wasSlow != nullptr) {
+            *wasSlow = true;
         }
     }
 
@@ -2977,9 +2982,9 @@ string SQ(double val) {
     return SToStr(val);
 }
 
-int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipWarn) {
+int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipWarn, bool* wasSlow) {
     SQResult ignore;
-    return SQuery(db, e, sql, ignore, warnThreshold, skipWarn);
+    return SQuery(db, e, sql, ignore, warnThreshold, skipWarn, wasSlow);
 }
 
 string SUNQUOTED_TIMESTAMP(uint64_t when) {

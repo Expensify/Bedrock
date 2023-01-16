@@ -237,6 +237,7 @@ SQLite::SQLite(const SQLite& from) :
 int SQLite::_progressHandlerCallback(void* arg) {
     SQLite* sqlite = static_cast<SQLite*>(arg);
     uint64_t now = STimeNow();
+    sqlite->_progressHandlerInvocationTimestamps.push_back(now);
     if (sqlite->_timeoutLimit && now > sqlite->_timeoutLimit) {
         // Timeout! We don't throw here, we let `read` and `write` do it so we don't throw out of the middle of a
         // sqlite3 operation.
@@ -432,7 +433,12 @@ bool SQLite::read(const string& query, SQResult& result) {
         if (_queryCount == 1) {
             label += " [first query of transaction]";
         }
-        queryResult = !SQuery(_db, label.c_str(), query, result);
+        bool wasSlow = false;
+        _progressHandlerInvocationTimestamps.clear();
+        queryResult = !SQuery(_db, label.c_str(), query, result, 2'000'000, false, &wasSlow);
+        if (wasSlow) {
+            SWARN("Slow query progress timings (count: " << _progressHandlerInvocationTimestamps.size() << "): " << SComposeList(_progressHandlerInvocationTimestamps));
+        }
         if (_isDeterministicQuery && queryResult) {
             _queryCache.emplace(make_pair(query, result));
         }
@@ -506,7 +512,13 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     if (_queryCount == 1) {
         label += " [first query of transaction]";
     }
-    SASSERT(!SQuery(_db, label.c_str(), "PRAGMA schema_version;", results));
+    bool wasSlow = false;
+    _progressHandlerInvocationTimestamps.clear();
+    SASSERT(!SQuery(_db, label.c_str(), "PRAGMA schema_version;", results, 2'000'000, false, &wasSlow));
+    if (wasSlow) {
+        SWARN("Slow query progress timings (count: " << _progressHandlerInvocationTimestamps.size() << "): " << SComposeList(_progressHandlerInvocationTimestamps));
+    }
+
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaBefore = SToUInt64(results[0][0]);
     uint64_t changesBefore = sqlite3_total_changes(_db);
@@ -515,18 +527,32 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     uint64_t before = STimeNow();
     bool usedRewrittenQuery = false;
     int resultCode = 0;
+    wasSlow = false;
+    _progressHandlerInvocationTimestamps.clear();
     if (_enableRewrite) {
-        resultCode = SQuery(_db, "read/write transaction", query, 2000 * STIME_US_PER_MS, true);
+        resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, true, &wasSlow);
+        if (wasSlow) {
+            SWARN("Slow query progress timings (count: " << _progressHandlerInvocationTimestamps.size() << "): " << SComposeList(_progressHandlerInvocationTimestamps));
+        }
         if (resultCode == SQLITE_AUTH) {
+            wasSlow = false;
+            _progressHandlerInvocationTimestamps.clear();
+
             // Run re-written query.
             _currentlyRunningRewritten = true;
             SASSERT(SEndsWith(_rewrittenQuery, ";"));
-            resultCode = SQuery(_db, "read/write transaction", _rewrittenQuery);
+            resultCode = SQuery(_db, "read/write transaction", _rewrittenQuery, 2'000'000, false, &wasSlow);
+            if (wasSlow) {
+                SWARN("Slow query progress timings (count: " << _progressHandlerInvocationTimestamps.size() << "): " << SComposeList(_progressHandlerInvocationTimestamps));
+            }
             usedRewrittenQuery = true;
             _currentlyRunningRewritten = false;
         }
     } else {
-        resultCode = SQuery(_db, "read/write transaction", query);
+        resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, false, &wasSlow);
+        if (wasSlow) {
+            SWARN("Slow query progress timings (count: " << _progressHandlerInvocationTimestamps.size() << "): " << SComposeList(_progressHandlerInvocationTimestamps));
+        }
     }
 
     // If we got a constraints error, throw that.
