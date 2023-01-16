@@ -428,7 +428,11 @@ bool SQLite::read(const string& query, SQResult& result) {
         queryResult = true;
     } else {
         _isDeterministicQuery = true;
-        queryResult = !SQuery(_db, "read only query", query, result);
+        string label = "read only query";
+        if (_queryCount == 1) {
+            label += " [first query of transaction]";
+        }
+        queryResult = !SQuery(_db, label.c_str(), query, result);
         if (_isDeterministicQuery && queryResult) {
             _queryCache.emplace(make_pair(query, result));
         }
@@ -498,7 +502,11 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
 
     // First, check our current state
     SQResult results;
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+    string label = "looking up schema version";
+    if (_queryCount == 1) {
+        label += " [first query of transaction]";
+    }
+    SASSERT(!SQuery(_db, label.c_str(), "PRAGMA schema_version;", results));
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaBefore = SToUInt64(results[0][0]);
     uint64_t changesBefore = sqlite3_total_changes(_db);
@@ -786,7 +794,9 @@ bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) 
                                     (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     query = "SELECT hash, query FROM (" + query  + ") ORDER BY id";
-    return !SQuery(_db, "getting commits", query, result);
+
+    // These queries run with no transaction wrapping them. This makes them effectively the "first" query.
+    return !SQuery(_db, "getting commits [first query of transaction]", query, result);
 }
 
 int64_t SQLite::getLastInsertRowID() {
@@ -944,7 +954,12 @@ void SQLite::setUpdateNoopMode(bool enabled) {
 
     // Enable or disable this query.
     string query = "PRAGMA noop_update="s + (enabled ? "ON" : "OFF") + ";";
-    SQuery(_db, "setting noop-update mode", query);
+    _queryCount++;
+    string label = "setting noop-update mode";
+    if (_queryCount == 1) {
+        label += " [first query of transaction]";
+    }
+    SQuery(_db, label.c_str(), query);
     _noopUpdateMode = enabled;
 
     // If we're inside a transaction, make sure this gets saved so it can be replicated.
@@ -997,7 +1012,12 @@ int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& stat
 void SQLite::setQueryOnly(bool enabled) {
     SQResult result;
     string query = "PRAGMA query_only = "s + (enabled ? "true" : "false") + ";";
-    SQuery(_db, "set query_only", query, result);
+    _queryCount++;
+    string label = "set query_only";
+    if (_queryCount == 1) {
+        label += " [first query of transaction]";
+    }
+    SQuery(_db, label.c_str(), query, result);
 }
 
 SQLite::SharedData::SharedData() :

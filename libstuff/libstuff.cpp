@@ -2616,7 +2616,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
         pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
         if (isSyncThread) {
-            SWARN("Slow query sync ("
+            SWARN("Slow query sync '" << e << "' ("
                   << "loops: " << numLoops << ", "
                   << "prepare US: " << prepareTimeUS << ", "
                   << "steps: " << numSteps << ", "
@@ -2624,7 +2624,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                   << "longest step US: " << longestStepTimeUS << "): "
                   << sqlToLog);
         } else {
-            SWARN("Slow query (" << elapsed / 1000 << "ms): " << sqlToLog);
+            SWARN("Slow query '" << e << "' (" << elapsed / 1000 << "ms): " << sqlToLog);
         }
     }
 
