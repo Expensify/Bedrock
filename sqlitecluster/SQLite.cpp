@@ -954,12 +954,7 @@ void SQLite::setUpdateNoopMode(bool enabled) {
 
     // Enable or disable this query.
     string query = "PRAGMA noop_update="s + (enabled ? "ON" : "OFF") + ";";
-    _queryCount++;
-    string label = "setting noop-update mode";
-    if (_queryCount == 1) {
-        label += " [first query of transaction]";
-    }
-    SQuery(_db, label.c_str(), query);
+    SQuery(_db, "setting noop-update mode", query);
     _noopUpdateMode = enabled;
 
     // If we're inside a transaction, make sure this gets saved so it can be replicated.
@@ -1012,12 +1007,7 @@ int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& stat
 void SQLite::setQueryOnly(bool enabled) {
     SQResult result;
     string query = "PRAGMA query_only = "s + (enabled ? "true" : "false") + ";";
-    _queryCount++;
-    string label = "set query_only";
-    if (_queryCount == 1) {
-        label += " [first query of transaction]";
-    }
-    SQuery(_db, label.c_str(), query, result);
+    SQuery(_db, "set query_only", query, result);
 }
 
 SQLite::SharedData::SharedData() :
