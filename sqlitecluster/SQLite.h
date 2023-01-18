@@ -450,6 +450,9 @@ class SQLite {
     // Number of queries that have been attempted in this transaction (for metrics only).
     int64_t _queryCount = 0;
 
+    // Whenever we hit the progress handler for a query, we log the timestamp here. This list is reset before each query, and is only used for diagnostic purposes.
+    list<uint64_t> _progressHandlerInvocationTimestamps;
+
     // Number of queries found in cache in this transaction (for metrics only).
     int64_t _cacheHits = 0;
 
