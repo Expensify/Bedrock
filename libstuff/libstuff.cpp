@@ -2615,6 +2615,10 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     if ((int64_t)elapsed > warnThreshold) {
         // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
         pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
+
+        // We remove anything inside "html" because it's most likely sensitive data that should not be seen in logs
+        pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":<REDACTED>", &sqlToLog);
+
         if (isSyncThread) {
             SWARN("Slow query sync '" << e << "' ("
                   << "loops: " << numLoops << ", "
@@ -2643,10 +2647,11 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     }
 
     // Only OK and commit conflicts are allowed without warning.
-    if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT) {
-        if (!skipWarn) {
-            SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
-        }
+    if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && !skipWarn) {
+        // We remove anything inside "html" because it's most likely sensitive data that should not be seen in logs
+        pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":<REDACTED>", &sqlToLog);
+
+        SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
     }
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
