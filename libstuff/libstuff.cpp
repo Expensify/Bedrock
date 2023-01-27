@@ -2613,11 +2613,11 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     // Warn if it took longer than the specified threshold
     string sqlToLog = sql;
     if ((int64_t)elapsed > warnThreshold) {
-        // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
+        // We should always avoid logging authTokens because they give access to accounts
         pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
 
-        // We remove anything inside "html" because it's most likely sensitive data that should not be seen in logs
-        pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":<REDACTED>", &sqlToLog);
+        // We remove anything inside "html" because we intentionally don't log chats
+        pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &sqlToLog);
 
         if (isSyncThread) {
             SWARN("Slow query sync '" << e << "' ("
@@ -2646,10 +2646,11 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         SASSERT(fwrite(csvRow.c_str(), 1, csvRow.size(), _g_sQueryLogFP) == csvRow.size());
     }
 
-    // Only OK and commit conflicts are allowed without warning.
+    // Only OK and commit conflicts are allowed without warning because they're the only "successful" results that we expect here.
+    // OK means it succeeds, conflicts will get retried further up the call stack.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && !skipWarn) {
-        // We remove anything inside "html" because it's most likely sensitive data that should not be seen in logs
-        pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":<REDACTED>", &sqlToLog);
+        // We remove anything inside "html" because we intentionally don't log chats
+        pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &sqlToLog);
 
         SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
     }
