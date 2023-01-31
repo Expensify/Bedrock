@@ -658,7 +658,7 @@ void BedrockServer::worker(int threadId)
             SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
                   << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
 
-            runCommand(move(command), threadId == 0);
+            runCommand(move(command), threadId == 0, false);
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
             // If the sync node has shut down, we can return now, there will be no more work to do.
@@ -670,7 +670,7 @@ void BedrockServer::worker(int threadId)
     }
 }
 
-void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlocking) {
+void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlocking, bool hasDedicatedThread) {
     // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
     // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
     // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
