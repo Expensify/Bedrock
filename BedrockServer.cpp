@@ -685,15 +685,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // This takes ownership of the passed command. By calling the move constructor, the caller's unique_ptr is now empty, and so when the one here goes out of scope (i.e., this function
     // returns), the command is destroyed.
     unique_ptr<BedrockCommand> command(move(_command));
-
     SAUTOPREFIX(command->request);
-    // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
-    if (!_dbPool) {
-        SERROR("Can't run a command with no DB pool");
-    }
-    SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
-    SQLite& db = dbScope.db();
-    BedrockCore core(db, *this);
 
     // Set the function that lets the signal handler know which command caused a problem, in case that happens.
     // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
@@ -704,17 +696,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
     // If we dequeue a status or control command, handle it immediately.
     if (_handleIfStatusOrControlCommand(command)) {
-        return;
-    }
-
-    // If the command has already timed out when we get it, we can return early here without peeking it.
-    // We'd also catch that the command timed out in `peek`, but this can cause some weird side-effects. For
-    // instance, we saw QUORUM commands that make HTTPS requests time out in the sync thread, which caused them
-    // to be returned to the main queue, where they would have timed out in `peek`, but it was never called
-    // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
-    // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
-    if (core.isTimedOut(command)) {
-        _reply(command);
         return;
     }
 
@@ -787,27 +768,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         return;
     }
 
-    // If this command is dependent on a commitCount newer than what we have (maybe it's a follow-up to a
-    // command that was escalated to leader), we'll set it aside for later processing. When the sync node
-    // finishes its update loop, it will re-queue any of these commands that are no longer blocked on our
-    // updated commit count.
-    uint64_t commitCount = db.getCommitCount();
-    uint64_t commandCommitCount = command->request.calcU64("commitCount");
-    if (commandCommitCount > commitCount) {
-        SAUTOLOCK(_futureCommitCommandMutex);
-        auto newQueueSize = _futureCommitCommands.size() + 1;
-        SINFO("Command (" << command->request.methodLine << ") depends on future commit (" << commandCommitCount
-              << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
-        _futureCommitCommandTimeouts.insert(make_pair(command->timeout(), commandCommitCount));
-        _futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
-
-        // Don't count this as `in progress`, it's just sitting there.
-        if (newQueueSize > 100) {
-            SHMMM("_futureCommitCommands.size() == " << newQueueSize);
-        }
-        return;
-    }
-
     if (command->request.isSet("mockRequest")) {
         SINFO("mockRequest set for command '" << command->request.methodLine << "'.");
     }
@@ -829,6 +789,46 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // We'll retry on conflict up to this many times.
     int retry = _maxConflictRetries.load();
     while (retry) {
+        // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
+        if (!_dbPool) {
+            SERROR("Can't run a command with no DB pool");
+        }
+        SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
+        SQLite& db = dbScope.db();
+        BedrockCore core(db, *this);
+
+        // If the command has already timed out when we get it, we can return early here without peeking it.
+        // We'd also catch that the command timed out in `peek`, but this can cause some weird side-effects. For
+        // instance, we saw QUORUM commands that make HTTPS requests time out in the sync thread, which caused them
+        // to be returned to the main queue, where they would have timed out in `peek`, but it was never called
+        // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
+        // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
+        if (core.isTimedOut(command)) {
+            _reply(command);
+            return;
+        }
+
+        // If this command is dependent on a commitCount newer than what we have (maybe it's a follow-up to a
+        // command that was escalated to leader), we'll set it aside for later processing. When the sync node
+        // finishes its update loop, it will re-queue any of these commands that are no longer blocked on our
+        // updated commit count.
+        uint64_t commitCount = db.getCommitCount();
+        uint64_t commandCommitCount = command->request.calcU64("commitCount");
+        if (commandCommitCount > commitCount) {
+            SAUTOLOCK(_futureCommitCommandMutex);
+            auto newQueueSize = _futureCommitCommands.size() + 1;
+            SINFO("Command (" << command->request.methodLine << ") depends on future commit (" << commandCommitCount
+                  << "), Currently at: " << commitCount << ", storing for later. Queue size: " << newQueueSize);
+            _futureCommitCommandTimeouts.insert(make_pair(command->timeout(), commandCommitCount));
+            _futureCommitCommands.insert(make_pair(commandCommitCount, move(command)));
+
+            // Don't count this as `in progress`, it's just sitting there.
+            if (newQueueSize > 100) {
+                SHMMM("_futureCommitCommands.size() == " << newQueueSize);
+            }
+            return;
+        }
+
         // If we've changed out of leading, we need to notice that.
         state = _replicationState.load();
         canWriteParallel = canWriteParallel && (state == SQLiteNode::LEADING);
