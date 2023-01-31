@@ -1040,8 +1040,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     millisecondsToWait = 500;
             }
 
-            // Apply jitter. Take a value that's a whole number up to 20% of ideal time. This allows for adding or subtracting up to 10%.
-            millisecondsToWait += ((SRandom::rand64() % (millisecondsToWait / 5)) - (millisecondsToWait / 10));
+            // Apply jitter. Take a value that's a whole number up to 50% of ideal time. This allows for adding or subtracting up to 25%.
+            millisecondsToWait += ((SRandom::rand64() % (millisecondsToWait / 2)) - (millisecondsToWait / 4));
             SINFO("Waiting " << millisecondsToWait << "ms before retrying.");
             if (hasDedicatedThread) {
                 // If we have a dedicated socket thread for this command, we can just sleep here.
