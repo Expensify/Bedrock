@@ -20,4 +20,7 @@ class BedrockCommandQueue : public SScheduledPriorityQueue<unique_ptr<BedrockCom
 
     // Add an item to the queue. The queue takes ownership of the item and the caller's copy is invalidated.
     void push(unique_ptr<BedrockCommand>&& command);
+
+    // Add an item to the queue. The queue takes ownership of the item and the caller's copy is invalidated.
+    void push(unique_ptr<BedrockCommand>&& command, Scheduled time);
 };
