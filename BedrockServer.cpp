@@ -1010,9 +1010,48 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         // We're about to retry, decrement the retry count.
         --retry;
 
-        if (!retry) {
-            SINFO("Max retries hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
-           _blockingCommandQueue.push(move(command));
+        // If we're shutting down, we just try three times in a row and then move the command to the blocking queue.
+        if (_shutdownState.load() != RUNNING) {
+            if (command->processCount > 3) {
+                SINFO("Max retries hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
+                _blockingCommandQueue.push(move(command));
+                return;
+            }
+        } else {
+            // If we're not shutting down, see how long we want to wait until we'll try this command again.
+            size_t millisecondsToWait = 0;
+            switch (command->processCount) {
+                case 1:
+                    millisecondsToWait = 10;
+                    break;
+                case 2:
+                    millisecondsToWait = 25;
+                    break;
+                case 3:
+                    millisecondsToWait = 50;
+                    break;
+                case 4:
+                    millisecondsToWait = 100;
+                    break;
+                case 5:
+                    millisecondsToWait = 250;
+                    break;
+                default:
+                    millisecondsToWait = 500;
+            }
+
+            // Apply jitter. Take a value that's a whole number up to 20% of ideal time. This allows for adding or subtracting up to 10%.
+            millisecondsToWait += ((SRandom::rand64() % (millisecondsToWait / 5)) - (millisecondsToWait / 10));
+            SINFO("Waiting " << millisecondsToWait << "ms before retrying.");
+            if (hasDedicatedThread) {
+                // If we have a dedicated socket thread for this command, we can just sleep here.
+                // TODO: We need to free our DB handle before sleeping.
+                this_thread::sleep_for(chrono::milliseconds(millisecondsToWait));
+            } else {
+                // TODO: Add the actual timeout.
+                _commandQueue.push(move(_command));
+                return;
+            }
         }
     }
 }
@@ -1119,7 +1158,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _isCommandPortLikelyBlocked(false),
     _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(nullptr), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
+    _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(1'000'000),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false)
 {
