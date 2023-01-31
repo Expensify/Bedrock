@@ -786,9 +786,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     canWriteParallel = canWriteParallel && (state == SQLiteNode::LEADING);
     canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
 
-    // We'll retry on conflict up to this many times.
-    int retry = _maxConflictRetries.load();
-    while (retry) {
+    while (true) {
         // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
         if (!_dbPool) {
             SERROR("Can't run a command with no DB pool");
@@ -973,7 +971,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         command->complete = true;
                     } else {
                         SINFO("Conflict or state change committing " << command->request.methodLine
-                              << " on worker thread with " << retry << " retries remaining.");
+                              << " on worker thread.");
                     }
                 } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                     // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
@@ -992,7 +990,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     } else {
                         // Allow for an extra retry and start from the top.
                         SINFO("State changed before 'processCommand' but no HTTPS requests so retrying.");
-                        ++retry;
                     }
                 } else {
                     SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
@@ -1009,13 +1006,11 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             break;
         }
 
-        // We're about to retry, decrement the retry count.
-        --retry;
-
-        // If we're shutting down, we just try three times in a row and then move the command to the blocking queue.
-        if (_shutdownState.load() != RUNNING) {
-            if (command->processCount > 3) {
-                SINFO("Max retries hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
+        // If we're shutting down, or have set a specific max retries, we just try several times in a row and then move the command to the blocking queue.
+        int maxRetries = _maxConflictRetries.load();
+        if (maxRetries || _shutdownState.load() != RUNNING) {
+            if (command->processCount > maxRetries) {
+                SINFO("Max retries (" << maxRetries << ") hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
                 _blockingCommandQueue.push(move(command));
                 return;
             }
@@ -1158,7 +1153,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _isCommandPortLikelyBlocked(false),
     _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(nullptr), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(1'000'000),
+    _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(0),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false)
 {
@@ -1763,6 +1758,14 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             totalCount += s.second.size();
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
+    } else if (SIEquals(command->request.methodLine, "SetConflictParams")) {
+        int64_t maxConflictRetries = command->request.calc64("MaxConflictRetries");
+        if (maxConflictRetries >= 0) {
+            SINFO("Setting _maxConflictRetries to " << _maxConflictRetries);
+            int64_t oldMaxConflictRetries = _maxConflictRetries.load();
+            response["oldMaxConflictRetries"] = oldMaxConflictRetries;
+            _maxConflictRetries.store(_maxConflictRetries);
+        }
     }
 }
 
