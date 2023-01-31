@@ -1049,7 +1049,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 // If we have a dedicated socket thread for this command, we can just sleep here.
                 this_thread::sleep_for(chrono::milliseconds(millisecondsToWait));
             } else {
-                _commandQueue.push(move(_command), STimeNow() + millisecondsToWait * 1000);
+                _commandQueue.push(move(command), STimeNow() + millisecondsToWait * 1000);
                 return;
             }
         }
