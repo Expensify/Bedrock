@@ -1763,9 +1763,8 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         int64_t maxConflictRetries = command->request.calc64("MaxConflictRetries");
         if (maxConflictRetries >= 0) {
             SINFO("Setting _maxConflictRetries to " << _maxConflictRetries);
-            int64_t oldMaxConflictRetries = _maxConflictRetries.load();
-            response["oldMaxConflictRetries"] = oldMaxConflictRetries;
-            _maxConflictRetries.store(_maxConflictRetries);
+            response["oldMaxConflictRetries"] = to_string(_maxConflictRetries.load());
+            _maxConflictRetries.store(maxConflictRetries);
         }
     }
 }
