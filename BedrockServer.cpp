@@ -685,6 +685,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // This takes ownership of the passed command. By calling the move constructor, the caller's unique_ptr is now empty, and so when the one here goes out of scope (i.e., this function
     // returns), the command is destroyed.
     unique_ptr<BedrockCommand> command(move(_command));
+
     SAUTOPREFIX(command->request);
 
     // Set the function that lets the signal handler know which command caused a problem, in case that happens.
@@ -970,8 +971,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         command->response["commitCount"] = to_string(db.getCommitCount());
                         command->complete = true;
                     } else {
-                        SINFO("Conflict or state change committing " << command->request.methodLine
-                              << " on worker thread.");
+                        SINFO("Conflict or state change committing " << command->request.methodLine << " on worker thread.");
                     }
                 } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                     // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
@@ -1044,6 +1044,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 // If we have a dedicated socket thread for this command, we can just sleep here.
                 this_thread::sleep_for(chrono::milliseconds(millisecondsToWait));
             } else {
+                // Otherwise, re-queue and let another thread try again.
                 _commandQueue.push(move(command), STimeNow() + millisecondsToWait * 1000);
                 return;
             }
