@@ -67,3 +67,7 @@ void BedrockCommandQueue::abandonFutureCommands(int msInFuture) {
 void BedrockCommandQueue::push(unique_ptr<BedrockCommand>&& command) {
     SScheduledPriorityQueue<unique_ptr<BedrockCommand>>::push(move(command), command->priority, command->scheduledTime, command->timeout());
 }
+
+void BedrockCommandQueue::push(unique_ptr<BedrockCommand>&& command, Scheduled time) {
+    SScheduledPriorityQueue<unique_ptr<BedrockCommand>>::push(move(command), command->priority, time, command->timeout());
+}
