@@ -32,6 +32,9 @@ string SQLite::initializeFilename(const string& filename) {
         char resolvedPath[PATH_MAX];
         char* result = realpath(filename.c_str(), resolvedPath);
         if (!result) {
+            if (err == ENOENT) {
+                return filename;
+            }
             SERROR("Couldn't resolve pathname for: " << filename);
         }
         return resolvedPath;
