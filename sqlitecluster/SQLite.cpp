@@ -91,11 +91,11 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
     }
 }
 
-sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB) {
+sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree) {
     // Open the DB in read-write mode.
     SINFO((SFileExists(filename) ? "Opening" : "Creating") << " database '" << filename << "'.");
     sqlite3* db;
-    SASSERT(!sqlite3_open_v2(filename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL));
+    SASSERT(!sqlite3_open_v2((filename + (hctree ? "?hctree=1" : "")).c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL));
 
     // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
     // any tables to be effective.
@@ -206,10 +206,10 @@ void SQLite::commonConstructorInitialization() {
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB) :
+               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool hctree) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
-    _db(initializeDB(_filename, mmapSizeGB)),
+    _db(initializeDB(_filename, mmapSizeGB, hctree)),
     _journalNames(initializeJournal(_db, minJournalTables)),
     _sharedData(initializeSharedData(_db, _filename, _journalNames)),
     _journalSize(initializeJournalSize(_db, _journalNames)),
@@ -223,7 +223,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
 SQLite::SQLite(const SQLite& from) :
     _filename(from._filename),
     _maxJournalSize(from._maxJournalSize),
-    _db(initializeDB(_filename, from._mmapSizeGB)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
+    _db(initializeDB(_filename, from._mmapSizeGB, false)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
     _journalNames(from._journalNames),
     _sharedData(from._sharedData),
     _journalSize(from._journalSize),

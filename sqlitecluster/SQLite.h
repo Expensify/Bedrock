@@ -56,7 +56,7 @@ class SQLite {
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-           const string& synchronous = "", int64_t mmapSizeGB = 0);
+           const string& synchronous = "", int64_t mmapSizeGB = 0, bool hctree = false);
 
     // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
@@ -314,7 +314,7 @@ class SQLite {
     // Initializers to support RAII-style allocation in constructors.
     static string initializeFilename(const string& filename);
     static SharedData& initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames);
-    static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB);
+    static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree);
     static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
     static uint64_t initializeJournalSize(sqlite3* db, const vector<string>& journalNames);
     void commonConstructorInitialization();
