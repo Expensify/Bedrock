@@ -170,14 +170,16 @@ uint64_t SQLite::initializeJournalSize(sqlite3* db, const vector<string>& journa
     return max - min;
 }
 
-void SQLite::commonConstructorInitialization() {
+void SQLite::commonConstructorInitialization(bool hctree) {
     // Perform sanity checks.
     SASSERT(!_filename.empty());
     SASSERT(_cacheSize > 0);
     SASSERT(_maxJournalSize > 0);
 
     // WAL is what allows simultaneous read/writing.
-    SASSERT(!SQuery(_db, "enabling write ahead logging (wal2)", "PRAGMA journal_mode = wal2;"));
+    if (!hctree) {
+        SASSERT(!SQuery(_db, "enabling write ahead logging (wal2)", "PRAGMA journal_mode = wal2;"));
+    }
 
     if (_mmapSizeGB) {
         SASSERT(!SQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
@@ -220,7 +222,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _synchronous(synchronous),
     _mmapSizeGB(mmapSizeGB)
 {
-    commonConstructorInitialization();
+    commonConstructorInitialization(hctree);
 }
 
 SQLite::SQLite(const SQLite& from) :
@@ -234,7 +236,7 @@ SQLite::SQLite(const SQLite& from) :
     _synchronous(from._synchronous),
     _mmapSizeGB(from._mmapSizeGB)
 {
-    commonConstructorInitialization();
+    commonConstructorInitialization(true);
 }
 
 int SQLite::_progressHandlerCallback(void* arg) {
