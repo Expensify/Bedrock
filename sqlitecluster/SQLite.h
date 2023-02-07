@@ -317,7 +317,7 @@ class SQLite {
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB);
     static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
     static uint64_t initializeJournalSize(sqlite3* db, const vector<string>& journalNames);
-    void commonConstructorInitialization();
+    void commonConstructorInitialization(bool hctree = false);
 
     // The filename of this DB, canonicalized to its full path on disk.
     const string _filename;
