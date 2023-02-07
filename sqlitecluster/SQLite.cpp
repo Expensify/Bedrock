@@ -98,9 +98,12 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool h
     // Open the DB in read-write mode.
     SINFO((SFileExists(filename) ? "Opening" : "Creating") << " database '" << filename << "'.");
     sqlite3* db;
-    string completeFilename = filename + (hctree ? "?hctree=1" : "");
+    string completeFilename = filename;
+    if (hctree) {
+        completeFilename = "file://" + completeFilename + "?hctree=1";
+    }
     SINFO("Opening DB: " << completeFilename);
-    SASSERT(!sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL));
+    SASSERT(!sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL));
 
     // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
     // any tables to be effective.
