@@ -41,7 +41,7 @@ string SQLite::initializeFilename(const string& filename) {
     }
 }
 
-SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames) {
+SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool hctree) {
     static struct SharedDataLookupMapType {
         map<string, SharedData*> m;
         ~SharedDataLookupMapType() {
@@ -64,7 +64,7 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
         bool isDBCurrentlyUsingWAL2 = result.rows.size() && result.rows[0][0] == "wal2";
 
         // If the intended wal setting doesn't match the existing wal setting, change it.
-        if (!isDBCurrentlyUsingWAL2) {
+        if (!hctree && !isDBCurrentlyUsingWAL2) {
             SASSERT(!SQuery(db, "", "PRAGMA journal_mode = delete;", result));
             SASSERT(!SQuery(db, "", "PRAGMA journal_mode = WAL2;", result));
         }
@@ -98,7 +98,9 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool h
     // Open the DB in read-write mode.
     SINFO((SFileExists(filename) ? "Opening" : "Creating") << " database '" << filename << "'.");
     sqlite3* db;
-    SASSERT(!sqlite3_open_v2((filename + (hctree ? "?hctree=1" : "")).c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL));
+    string completeFilename = filename + (hctree ? "?hctree=1" : "");
+    SINFO("Opening DB: " << completeFilename);
+    SASSERT(!sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL));
 
     // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
     // any tables to be effective.
@@ -216,7 +218,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB, hctree)),
     _journalNames(initializeJournal(_db, minJournalTables)),
-    _sharedData(initializeSharedData(_db, _filename, _journalNames)),
+    _sharedData(initializeSharedData(_db, _filename, _journalNames, hctree)),
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
