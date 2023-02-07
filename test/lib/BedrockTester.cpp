@@ -95,11 +95,6 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         _args[row.first] = row.second;
     }
     
-    // If the DB file doesn't exist, create it.
-    if (!SFileExists(_args["-db"])) {
-        SFileSave(_args["-db"], "");
-    }
-
     // Run any supplied queries on the DB.
     // We don't use SQLite here, because we specifically want to avoid dealing with journal tables.
     if (queries.size()) {
