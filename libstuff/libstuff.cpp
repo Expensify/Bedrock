@@ -1281,6 +1281,10 @@ string SDecodeURIComponent(const char* buffer, int length) {
 // --------------------------------------------------------------------------
 extern const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue);
 
+string SToJSON(const int64_t value, const bool forceString) {
+    return SToJSON(to_string(value), forceString);
+}
+
 string SToJSON(const string& value, const bool forceString) {
     // Is it an integer?
     if (SToStr(SToInt64(value.c_str())) == value) {
