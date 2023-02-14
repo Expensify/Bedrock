@@ -464,6 +464,7 @@ template <typename T> string SComposeList(const T& valueList, const string& sepa
 // --------------------------------------------------------------------------
 // JSON message management
 string SToJSON(const string& value, const bool forceString = false);
+string SToJSON(const int64_t value, const bool forceString = false);
 
 template <typename T>
 string SComposeJSONArray(const T& valueList) {
