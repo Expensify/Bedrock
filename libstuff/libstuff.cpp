@@ -2614,15 +2614,14 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     }
     uint64_t elapsed = STimeNow() - startTime;
 
-    // Warn if it took longer than the specified threshold
+    // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
     string sqlToLog = sql;
+    // We should always avoid logging authTokens because they give access to accounts
+    pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
+
+    // We remove anything inside "html" because we intentionally don't log chats
+    pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &sqlToLog);
     if ((int64_t)elapsed > warnThreshold) {
-        // We should always avoid logging authTokens because they give access to accounts
-        pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
-
-        // We remove anything inside "html" because we intentionally don't log chats
-        pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &sqlToLog);
-
         if (isSyncThread) {
             SWARN("Slow query sync '" << e << "' ("
                   << "loops: " << numLoops << ", "
@@ -2639,6 +2638,10 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         if (wasSlow != nullptr) {
             *wasSlow = true;
         }
+    } else if ((int64_t)elapsed > 1000) {
+        // We log the time the queries took, as long as they are over 1ms (to reduce noise of many queries that are
+        // consistently faster)
+        SINFO("Query completed (" << elapsed / 1000 << "ms): " << sqlToLog);
     }
 
     // Log this if enabled
