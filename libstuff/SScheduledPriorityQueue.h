@@ -1,6 +1,8 @@
 #pragma once
 #include <libstuff/libstuff.h>
 
+#include <condition_variable>
+
 // A scheduled priority queue does the following:
 // Enqueues items with a scheduled time, a priority, and a timeout.
 // Both the scheduled time and timeout are epoch times in microseconds.

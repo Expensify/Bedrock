@@ -265,7 +265,7 @@ void BedrockServer::sync()
         // auto-revert when we're finished.
         {
             // Set the default log prefix.
-            SAUTOPREFIX(SData());
+            SAUTOPREFIX(SData{});
 
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
