@@ -68,15 +68,12 @@ void SSetSignalHandlerDieFunc(function<void()>&& func);
 // A very simple name/value pair table with case-insensitive name matching
 // --------------------------------------------------------------------------
 // See: http://stackoverflow.com/questions/1801892/making-mapfind-operation-case-insensitive
-class STableComp : binary_function<string, string, bool> {
+class STableComp {
   public:
-    bool operator()(const string& s1, const string& s2) const;
-
-  private:
-    class nocase_compare : public binary_function<unsigned char, unsigned char, bool> {
-      public:
-        bool operator()(const unsigned char& c1, const unsigned char& c2) const;
+    struct nocase_compare {
+      bool operator() (const unsigned char& c1, const unsigned char& c2) const;
     };
+    bool operator() (const string& s1, const string& s2) const;
 };
 
 // An SString is just a string with special assignment operators so that we get automatic conversion from arithmetic
