@@ -520,7 +520,6 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     if (_enableRewrite) {
         resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, true);
         if (resultCode == SQLITE_AUTH) {
-
             // Run re-written query.
             _currentlyRunningRewritten = true;
             SASSERT(SEndsWith(_rewrittenQuery, ";"));
