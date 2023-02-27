@@ -428,11 +428,7 @@ bool SQLite::read(const string& query, SQResult& result) {
         queryResult = true;
     } else {
         _isDeterministicQuery = true;
-        string label = "read only query";
-        if (_queryCount == 1) {
-            label += " [first query of transaction]";
-        }
-        queryResult = !SQuery(_db, label.c_str(), query, result);
+        queryResult = !SQuery(_db, "read only query", query, result);
         if (_isDeterministicQuery && queryResult) {
             _queryCache.emplace(make_pair(query, result));
         }
@@ -502,11 +498,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
 
     // First, check our current state
     SQResult results;
-    string label = "looking up schema version";
-    if (_queryCount == 1) {
-        label += " [first query of transaction]";
-    }
-    SASSERT(!SQuery(_db, label.c_str(), "PRAGMA schema_version;", results));
+    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
 
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaBefore = SToUInt64(results[0][0]);
