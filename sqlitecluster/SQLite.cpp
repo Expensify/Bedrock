@@ -786,9 +786,7 @@ bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) 
                                     (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     query = "SELECT hash, query FROM (" + query  + ") ORDER BY id";
-
-    // These queries run with no transaction wrapping them. This makes them effectively the "first" query.
-    return !SQuery(_db, "getting commits [first query of transaction]", query, result);
+    return !SQuery(_db, "getting commits", query, result);
 }
 
 int64_t SQLite::getLastInsertRowID() {
