@@ -237,7 +237,6 @@ SQLite::SQLite(const SQLite& from) :
 int SQLite::_progressHandlerCallback(void* arg) {
     SQLite* sqlite = static_cast<SQLite*>(arg);
     uint64_t now = STimeNow();
-    sqlite->_progressHandlerInvocationTimestamps.push_back(now);
     if (sqlite->_timeoutLimit && now > sqlite->_timeoutLimit) {
         // Timeout! We don't throw here, we let `read` and `write` do it so we don't throw out of the middle of a
         // sqlite3 operation.
@@ -433,7 +432,6 @@ bool SQLite::read(const string& query, SQResult& result) {
         if (_queryCount == 1) {
             label += " [first query of transaction]";
         }
-        _progressHandlerInvocationTimestamps.clear();
         queryResult = !SQuery(_db, label.c_str(), query, result, 2'000'000, false);
         if (_isDeterministicQuery && queryResult) {
             _queryCache.emplace(make_pair(query, result));
@@ -508,7 +506,6 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     if (_queryCount == 1) {
         label += " [first query of transaction]";
     }
-    _progressHandlerInvocationTimestamps.clear();
     SASSERT(!SQuery(_db, label.c_str(), "PRAGMA schema_version;", results, 2'000'000, false));
 
     SASSERT(!results.empty() && !results[0].empty());
@@ -519,11 +516,9 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     uint64_t before = STimeNow();
     bool usedRewrittenQuery = false;
     int resultCode = 0;
-    _progressHandlerInvocationTimestamps.clear();
     if (_enableRewrite) {
         resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, true);
         if (resultCode == SQLITE_AUTH) {
-            _progressHandlerInvocationTimestamps.clear();
 
             // Run re-written query.
             _currentlyRunningRewritten = true;
