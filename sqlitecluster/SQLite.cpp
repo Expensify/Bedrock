@@ -499,7 +499,6 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     // First, check our current state
     SQResult results;
     SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
-
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaBefore = SToUInt64(results[0][0]);
     uint64_t changesBefore = sqlite3_total_changes(_db);
