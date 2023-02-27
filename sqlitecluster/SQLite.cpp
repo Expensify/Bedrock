@@ -237,6 +237,7 @@ SQLite::SQLite(const SQLite& from) :
 int SQLite::_progressHandlerCallback(void* arg) {
     SQLite* sqlite = static_cast<SQLite*>(arg);
     uint64_t now = STimeNow();
+    sqlite->_progressHandlerInvocationTimestamps.push_back(now);
     if (sqlite->_timeoutLimit && now > sqlite->_timeoutLimit) {
         // Timeout! We don't throw here, we let `read` and `write` do it so we don't throw out of the middle of a
         // sqlite3 operation.
@@ -428,7 +429,12 @@ bool SQLite::read(const string& query, SQResult& result) {
         queryResult = true;
     } else {
         _isDeterministicQuery = true;
-        queryResult = !SQuery(_db, "read only query", query, result);
+        string label = "read only query";
+        if (_queryCount == 1) {
+            label += " [first query of transaction]";
+        }
+        _progressHandlerInvocationTimestamps.clear();
+        queryResult = !SQuery(_db, label.c_str(), query, result, 2'000'000, false);
         if (_isDeterministicQuery && queryResult) {
             _queryCache.emplace(make_pair(query, result));
         }
@@ -498,7 +504,13 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
 
     // First, check our current state
     SQResult results;
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+    string label = "looking up schema version";
+    if (_queryCount == 1) {
+        label += " [first query of transaction]";
+    }
+    _progressHandlerInvocationTimestamps.clear();
+    SASSERT(!SQuery(_db, label.c_str(), "PRAGMA schema_version;", results, 2'000'000, false));
+
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaBefore = SToUInt64(results[0][0]);
     uint64_t changesBefore = sqlite3_total_changes(_db);
@@ -507,18 +519,21 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     uint64_t before = STimeNow();
     bool usedRewrittenQuery = false;
     int resultCode = 0;
+    _progressHandlerInvocationTimestamps.clear();
     if (_enableRewrite) {
-        resultCode = SQuery(_db, "read/write transaction", query, 2000 * STIME_US_PER_MS, true);
+        resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, true);
         if (resultCode == SQLITE_AUTH) {
+            _progressHandlerInvocationTimestamps.clear();
+
             // Run re-written query.
             _currentlyRunningRewritten = true;
             SASSERT(SEndsWith(_rewrittenQuery, ";"));
-            resultCode = SQuery(_db, "read/write transaction", _rewrittenQuery);
+            resultCode = SQuery(_db, "read/write transaction", _rewrittenQuery, 2'000'000, false);
             usedRewrittenQuery = true;
             _currentlyRunningRewritten = false;
         }
     } else {
-        resultCode = SQuery(_db, "read/write transaction", query);
+        resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, false);
     }
 
     // If we got a constraints error, throw that.
@@ -785,7 +800,10 @@ bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) 
     string query = _getJournalQuery({"SELECT id, hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
                                     (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
-    return !SQuery(_db, "getting commits", query, result);
+    query = "SELECT hash, query FROM (" + query  + ") ORDER BY id";
+
+    // These queries run with no transaction wrapping them. This makes them effectively the "first" query.
+    return !SQuery(_db, "getting commits [first query of transaction]", query, result);
 }
 
 int64_t SQLite::getLastInsertRowID() {
