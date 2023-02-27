@@ -2628,7 +2628,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &sqlToLog);
         if ((int64_t)elapsed > warnThreshold) {
             if (isSyncThread) {
-                SWARN("Slow query sync '" << e << "' ("
+                SWARN("Slow query sync ("
                       << "loops: " << numLoops << ", "
                       << "prepare US: " << prepareTimeUS << ", "
                       << "steps: " << numSteps << ", "
@@ -2636,7 +2636,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                       << "longest step US: " << longestStepTimeUS << "): "
                       << sqlToLog);
             } else {
-                SWARN("Slow query '" << e << "' (" << elapsed / 1000 << "ms): " << sqlToLog);
+                SWARN("Slow query (" << elapsed / 1000 << "ms): " << sqlToLog);
             }
         } else {
             // We log the time the queries took, as long as they are over 10ms (to reduce noise of many queries that are
