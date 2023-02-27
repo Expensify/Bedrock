@@ -432,7 +432,7 @@ bool SQLite::read(const string& query, SQResult& result) {
         if (_queryCount == 1) {
             label += " [first query of transaction]";
         }
-        queryResult = !SQuery(_db, label.c_str(), query, result, 2'000'000, false);
+        queryResult = !SQuery(_db, label.c_str(), query, result);
         if (_isDeterministicQuery && queryResult) {
             _queryCache.emplace(make_pair(query, result));
         }
@@ -506,7 +506,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     if (_queryCount == 1) {
         label += " [first query of transaction]";
     }
-    SASSERT(!SQuery(_db, label.c_str(), "PRAGMA schema_version;", results, 2'000'000, false));
+    SASSERT(!SQuery(_db, label.c_str(), "PRAGMA schema_version;", results));
 
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaBefore = SToUInt64(results[0][0]);
@@ -523,12 +523,12 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
             // Run re-written query.
             _currentlyRunningRewritten = true;
             SASSERT(SEndsWith(_rewrittenQuery, ";"));
-            resultCode = SQuery(_db, "read/write transaction", _rewrittenQuery, 2'000'000, false);
+            resultCode = SQuery(_db, "read/write transaction", _rewrittenQuery);
             usedRewrittenQuery = true;
             _currentlyRunningRewritten = false;
         }
     } else {
-        resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, false);
+        resultCode = SQuery(_db, "read/write transaction", query);
     }
 
     // If we got a constraints error, throw that.
