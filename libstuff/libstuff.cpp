@@ -2621,6 +2621,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         // We should always avoid logging authTokens because they give access to accounts
         pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
 
+        // Let's redact queries that contain encrypted fields since there's no value in logging them
+        pcrecpp::RE("v[0-9]+:[0-9A-F]{10,}").GlobalReplace("<REDACTED>", &sqlToLog);
+
         // We remove anything inside "html" because we intentionally don't log chats
         pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &sqlToLog);
         if ((int64_t)elapsed > warnThreshold) {
