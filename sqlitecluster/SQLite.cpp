@@ -1,4 +1,5 @@
 #include "SQLite.h"
+#include "SQLiteNode.h"
 
 #include <linux/limits.h>
 #include <string.h>
@@ -205,7 +206,7 @@ void SQLite::commonConstructorInitialization() {
     }
 }
 
-SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
+SQLite::SQLite(atomic<SQLiteNodeState>& serverState, const string& filename, int cacheSize, int maxJournalSize,
                int minJournalTables, const string& synchronous, int64_t mmapSizeGB) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
@@ -215,6 +216,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
+    _serverState(serverState),
     _mmapSizeGB(mmapSizeGB)
 {
     commonConstructorInitialization();
@@ -229,6 +231,7 @@ SQLite::SQLite(const SQLite& from) :
     _journalSize(from._journalSize),
     _cacheSize(from._cacheSize),
     _synchronous(from._synchronous),
+    _serverState(from._serverState),
     _mmapSizeGB(from._mmapSizeGB)
 {
     commonConstructorInitialization();
@@ -490,12 +493,9 @@ bool SQLite::writeUnmodified(const string& query) {
 }
 
 bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
-    // TODO:
-    /*
-    if (plugin.server.getState() != SQLiteNodeState::LEADING && plugin.server.getState() != SQLiteNodeState::STANDINGDOWN) {
+    if (_serverState.load() != SQLiteNodeState::LEADING && _serverState.load() != SQLiteNodeState::STANDINGDOWN) {
         throw NotLeading();
     }
-    */
 
     SASSERT(_insideTransaction);
     _queryCache.clear();

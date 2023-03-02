@@ -13,7 +13,7 @@ SQLitePool::SQLitePool(atomic<SQLiteNodeState>& serverState,
                        )
 : _serverState(serverState),
   _maxDBs(max(maxDBs, 1ul)),
-  _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, synchronous, mmapSizeGB),
+  _baseDB(_serverState, filename, cacheSize, maxJournalSize, minJournalTables, synchronous, mmapSizeGB),
   _objects(_maxDBs, nullptr)
 {
 }

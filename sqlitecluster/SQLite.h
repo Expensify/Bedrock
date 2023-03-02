@@ -2,6 +2,8 @@
 #include <libstuff/sqlite3.h>
 #include <libstuff/SPerformanceTimer.h>
 
+enum class SQLiteNodeState;
+
 class SQLite {
   public:
 
@@ -61,12 +63,12 @@ class SQLite {
     //                   passed, no tables are created.
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
-    SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
+    SQLite(atomic<SQLiteNodeState>& serverState, const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
            const string& synchronous = "", int64_t mmapSizeGB = 0);
 
     // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
-    SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
-        SQLite(filename, cacheSize, maxJournalSize, minJournalTables, "") {}
+    SQLite(atomic<SQLiteNodeState>& serverState, const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
+        SQLite(serverState, filename, cacheSize, maxJournalSize, minJournalTables, "") {}
     
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
@@ -468,6 +470,7 @@ class SQLite {
     // Copies of parameters used to initialize the DB that we store if we make child objects based on this one.
     int _cacheSize;
     const string _synchronous;
+    atomic<SQLiteNodeState>& _serverState;
     int64_t _mmapSizeGB;
 
     // This is a string (which may be empty) containing the most recent logged error by SQLite in this thread.
