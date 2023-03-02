@@ -136,7 +136,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         _handleCommandException(command, e);
     } catch (const SNotLeading& e) {
         command->repeek = false;
-        returnValue = RESULT::SHOULD_PROCESS;
+        returnValue = RESULT::SERVER_NOT_LEADING;
         SINFO("Command '" << request.methodLine << "' needs to be leading.");
     } catch (...) {
         command->repeek = false;
@@ -211,6 +211,10 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                     SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
                 }
                 STHROW("555 Timeout processing command");
+            } catch (const SNotLeading& e) {
+                command->repeek = false;
+                SINFO("Command '" << request.methodLine << "' needs to be leading.");
+                return RESULT::SERVER_NOT_LEADING;
             }
         }
 
