@@ -59,6 +59,11 @@ class SQLiteNode : public STCPManager {
     friend class SQLiteNodeTester;
 
   public:
+    // Compatibility with Auth. Remove once auth is changed to use SQLiteNodeState;
+    static const SQLiteNodeState LEADING = SQLiteNodeState::LEADING;
+    static const SQLiteNodeState FOLLOWING = SQLiteNodeState::FOLLOWING;
+    static const SQLiteNodeState STANDINGDOWN = SQLiteNodeState::STANDINGDOWN;
+
     // These are the possible states a transaction can be in.
     enum class CommitState {
         UNINITIALIZED,
