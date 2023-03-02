@@ -170,7 +170,7 @@ class BedrockServer : public SQLiteServer {
             _nodeStateSnapshot.store(owner._replicationState);
         }
         ~ScopedStateSnapshot() {
-            _nodeStateSnapshot.store(SQLiteNode::UNKNOWN);
+            _nodeStateSnapshot.store(SQLiteNodeState::UNKNOWN);
         }
 
       private:

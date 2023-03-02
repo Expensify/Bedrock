@@ -41,15 +41,15 @@ class SQLitePeer;
 
 // Possible states of a node in a DB cluster
 enum class SQLiteNodeState {
-    SQLiteNodeState::UNKNOWN,
-    SQLiteNodeState::SEARCHING,     // Searching for peers
-    SQLiteNodeState::SYNCHRONIZING, // Synchronizing with highest priority peer
-    SQLiteNodeState::WAITING,       // Waiting for an opportunity to leader or follower
-    SQLiteNodeState::STANDINGUP,    // Taking over leadership
-    SQLiteNodeState::LEADING,       // Acting as leader node
-    SQLiteNodeState::STANDINGDOWN,  // Giving up leader role
-    SQLiteNodeState::SUBSCRIBING,   // Preparing to follow the leader
-    SQLiteNodeState::FOLLOWING      // Following the leader node
+    UNKNOWN,
+    SEARCHING,     // Searching for peers
+    SYNCHRONIZING, // Synchronizing with highest priority peer
+    WAITING,       // Waiting for an opportunity to leader or follower
+    STANDINGUP,    // Taking over leadership
+    LEADING,       // Acting as leader node
+    STANDINGDOWN,  // Giving up leader role
+    SUBSCRIBING,   // Preparing to follow the leader
+    FOLLOWING      // Following the leader node
 };
 
 // Distributed, leader/follower, failover, transactional DB cluster
