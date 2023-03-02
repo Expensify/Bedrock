@@ -475,6 +475,10 @@ void SQLite::_checkInterruptErrors(const string& error) {
 }
 
 bool SQLite::write(const string& query) {
+    if (_serverState.load() != SQLiteNodeState::LEADING && _serverState.load() != SQLiteNodeState::STANDINGDOWN) {
+        throw NotLeading();
+    }
+
     if (_noopUpdateMode) {
         SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
         return true;
@@ -485,18 +489,19 @@ bool SQLite::write(const string& query) {
 }
 
 bool SQLite::writeIdempotent(const string& query) {
-    return _writeIdempotent(query);
-}
-
-bool SQLite::writeUnmodified(const string& query) {
-    return _writeIdempotent(query, true);
-}
-
-bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     if (_serverState.load() != SQLiteNodeState::LEADING && _serverState.load() != SQLiteNodeState::STANDINGDOWN) {
         throw NotLeading();
     }
 
+    return _writeIdempotent(query);
+}
+
+bool SQLite::writeUnmodified(const string& query) {
+    // This function does not check for leading, because it's intended to be run specifically during replication on followers.
+    return _writeIdempotent(query, true);
+}
+
+bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     SASSERT(_insideTransaction);
     _queryCache.clear();
     _queryCount++;
