@@ -172,6 +172,10 @@ class BedrockCommand : public SQLiteCommand {
     // Time at which this command was initially scheduled (typically the time of creation).
     const uint64_t scheduledTime;
 
+    virtual bool processOnFollowers() const {
+        return false;
+    }
+
   protected:
     // The plugin that owns this command.
     BedrockPlugin* _plugin;
