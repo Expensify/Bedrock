@@ -490,6 +490,13 @@ bool SQLite::writeUnmodified(const string& query) {
 }
 
 bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
+    // TODO:
+    /*
+    if (plugin.server.getState() != SQLiteNodeState::LEADING && plugin.server.getState() != SQLiteNodeState::STANDINGDOWN) {
+        throw NotLeading();
+    }
+    */
+
     SASSERT(_insideTransaction);
     _queryCache.clear();
     _queryCount++;

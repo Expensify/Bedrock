@@ -39,6 +39,19 @@ class SQLiteCommand;
 class SQLiteServer;
 class SQLitePeer;
 
+// Possible states of a node in a DB cluster
+enum class SQLiteNodeState {
+    UNKNOWN,
+    SEARCHING,     // Searching for peers
+    SYNCHRONIZING, // Synchronizing with highest priority peer
+    WAITING,       // Waiting for an opportunity to leader or follower
+    STANDINGUP,    // Taking over leadership
+    LEADING,       // Acting as leader node
+    STANDINGDOWN,  // Giving up leader role
+    SUBSCRIBING,   // Preparing to follow the leader
+    FOLLOWING      // Following the leader node
+};
+
 // Distributed, leader/follower, failover, transactional DB cluster
 class SQLiteNode : public STCPManager {
     // This exists to expose internal state to a test harness. It is not used otherwise.
@@ -63,27 +76,14 @@ class SQLiteNode : public STCPManager {
         NUM_CONSISTENCY_LEVELS
     };
 
-    // Possible states of a node in a DB cluster
-    enum State {
-        UNKNOWN,
-        SEARCHING,     // Searching for peers
-        SYNCHRONIZING, // Synchronizing with highest priority peer
-        WAITING,       // Waiting for an opportunity to leader or follower
-        STANDINGUP,    // Taking over leadership
-        LEADING,       // Acting as leader node
-        STANDINGDOWN,  // Giving up leader role
-        SUBSCRIBING,   // Preparing to follow the leader
-        FOLLOWING      // Following the leader node
-    };
-
     // Receive timeout for cluster messages.
     static const uint64_t RECV_TIMEOUT;
 
     // Get and SQLiteNode State from it's name.
-    static State stateFromName(const string& name);
+    static SQLiteNodeState stateFromName(const string& name);
 
     // Return the string representing an SQLiteNode State
-    static const string& stateName(State state);
+    static const string& stateName(SQLiteNodeState state);
 
     // True from when we call 'startCommit' until the commit has been sent to (and, if it required replication,
     // acknowledged by) peers.
@@ -112,7 +112,7 @@ class SQLiteNode : public STCPManager {
 
     // Returns our current state.
     // Does not block.
-    State getState() const;
+    SQLiteNodeState getState() const;
 
     // Returns true if we're LEADING with enough FOLLOWERs to commit a quorum transaction.
     // Can block.
@@ -124,7 +124,7 @@ class SQLiteNode : public STCPManager {
 
     // Return the state of the lead peer. Returns UNKNOWN if there is no leader, or if we are the leader.
     // Does not block.
-    State leaderState() const;
+    SQLiteNodeState leaderState() const;
 
     // Tell the node a commit has been made by another thread, so that we can interrupt our poll loop if we're waiting
     // for data, and send the new commit.
@@ -199,7 +199,7 @@ class SQLiteNode : public STCPManager {
     // Add required headers for messages being sent to peers.
     SData _addPeerHeaders(SData message);
 
-    void _changeState(State newState);
+    void _changeState(SQLiteNodeState newState);
 
     // Handlers for transaction messages.
     void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message, bool wasConflict);
@@ -324,7 +324,7 @@ class SQLiteNode : public STCPManager {
     SStopwatch _standDownTimeout;
 
    // Our current State.
-    atomic<State> _state;
+    atomic<SQLiteNodeState> _state;
 
     // This is an integer that increments every time we change states. This is useful for responses to state changes
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,

@@ -2,14 +2,17 @@
 #include "SQLite.h"
 #include "SQLitePool.h"
 
-SQLitePool::SQLitePool(size_t maxDBs,
+SQLitePool::SQLitePool(atomic<SQLiteNodeState>& serverState,
+                       size_t maxDBs,
                        const string& filename,
                        int cacheSize,
                        int maxJournalSize,
                        int minJournalTables,
                        const string& synchronous,
-                       int64_t mmapSizeGB)
-: _maxDBs(max(maxDBs, 1ul)),
+                       int64_t mmapSizeGB
+                       )
+: _serverState(serverState),
+  _maxDBs(max(maxDBs, 1ul)),
   _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, synchronous, mmapSizeGB),
   _objects(_maxDBs, nullptr)
 {
