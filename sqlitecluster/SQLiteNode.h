@@ -39,6 +39,19 @@ class SQLiteCommand;
 class SQLiteServer;
 class SQLitePeer;
 
+// Possible states of a node in a DB cluster
+enum class SQLiteNodeState {
+    UNKNOWN,
+    SEARCHING,     // Searching for peers
+    SYNCHRONIZING, // Synchronizing with highest priority peer
+    WAITING,       // Waiting for an opportunity to leader or follower
+    STANDINGUP,    // Taking over leadership
+    LEADING,       // Acting as leader node
+    STANDINGDOWN,  // Giving up leader role
+    SUBSCRIBING,   // Preparing to follow the leader
+    FOLLOWING      // Following the leader node
+};
+
 // Distributed, leader/follower, failover, transactional DB cluster
 class SQLiteNode : public STCPManager {
     // This exists to expose internal state to a test harness. It is not used otherwise.
@@ -61,19 +74,6 @@ class SQLiteNode : public STCPManager {
         ONE,    // Require exactly one approval (likely from a peer on the same LAN)
         QUORUM, // Require majority approval
         NUM_CONSISTENCY_LEVELS
-    };
-
-    // Possible states of a node in a DB cluster
-    enum State {
-        UNKNOWN,
-        SEARCHING,     // Searching for peers
-        SYNCHRONIZING, // Synchronizing with highest priority peer
-        WAITING,       // Waiting for an opportunity to leader or follower
-        STANDINGUP,    // Taking over leadership
-        LEADING,       // Acting as leader node
-        STANDINGDOWN,  // Giving up leader role
-        SUBSCRIBING,   // Preparing to follow the leader
-        FOLLOWING      // Following the leader node
     };
 
     // Receive timeout for cluster messages.
