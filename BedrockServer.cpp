@@ -18,7 +18,7 @@
 
 set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
-thread_local atomic<SQLiteNode::State> BedrockServer::_nodeStateSnapshot = SQLiteNode::UNKNOWN;
+thread_local atomic<SQLiteNodeState> BedrockServer::_nodeStateSnapshot = SQLiteNodeState::UNKNOWN;
 
 bool BedrockServer::canStandDown() {
     // Here's all the commands in existence.
@@ -276,18 +276,18 @@ void BedrockServer::sync()
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
         // state when it's finished.
-        SQLiteNode::State preUpdateState = _syncNode->getState();
+        SQLiteNodeState preUpdateState = _syncNode->getState();
         while (_syncNode->update()) {}
-        SQLiteNode::State nodeState = _syncNode->getState();
+        SQLiteNodeState nodeState = _syncNode->getState();
         _replicationState.store(nodeState);
         _leaderVersion.store(_syncNode->getLeaderVersion());
 
         // If anything was in the stand down queue, move it back to the main queue.
-        if (nodeState != SQLiteNode::STANDINGDOWN) {
+        if (nodeState != SQLiteNodeState::STANDINGDOWN) {
             while (_standDownQueue.size()) {
                 _commandQueue.push(_standDownQueue.pop());
             }
-        } else if (preUpdateState != SQLiteNode::STANDINGDOWN) {
+        } else if (preUpdateState != SQLiteNodeState::STANDINGDOWN) {
             // Otherwise,if we just started standing down, discard any commands that had been scheduled in the future.
             // In theory, it should be fine to keep these, as they shouldn't have sockets associated with them, and
             // they could be re-escalated to leader in the future, but there's not currently a way to decide if we've
@@ -298,8 +298,8 @@ void BedrockServer::sync()
 
         // If we were LEADING, but we've transitioned, then something's gone wrong (perhaps we got disconnected
         // from the cluster). Reset some state and try again.
-        if ((preUpdateState == SQLiteNode::LEADING || preUpdateState == SQLiteNode::STANDINGDOWN) &&
-            (nodeState != SQLiteNode::LEADING && nodeState != SQLiteNode::STANDINGDOWN)) {
+        if ((preUpdateState == SQLiteNodeState::LEADING || preUpdateState == SQLiteNodeState::STANDINGDOWN) &&
+            (nodeState != SQLiteNodeState::LEADING && nodeState != SQLiteNodeState::STANDINGDOWN)) {
 
             // If we bailed out while doing a upgradeDB, clear state
             if (_upgradeInProgress) {
@@ -336,7 +336,7 @@ void BedrockServer::sync()
 
         // Now that we've cleared any state associated with switching away from leading, we can bail out and try again
         // until we're either leading or following.
-        if (nodeState != SQLiteNode::LEADING && nodeState != SQLiteNode::FOLLOWING && nodeState != SQLiteNode::STANDINGDOWN) {
+        if (nodeState != SQLiteNodeState::LEADING && nodeState != SQLiteNodeState::FOLLOWING && nodeState != SQLiteNodeState::STANDINGDOWN) {
             continue;
         }
 
@@ -346,8 +346,8 @@ void BedrockServer::sync()
         // receive the transaction when we started. In this case, we'll try the upgrade again if we were already
         // leading, and the upgrade is still in progress (because the first try failed), and we're not currently
         // attempting to commit it.
-        if ((preUpdateState != SQLiteNode::LEADING && nodeState == SQLiteNode::LEADING) ||
-            (nodeState == SQLiteNode::LEADING && _upgradeInProgress && !committingCommand)) {
+        if ((preUpdateState != SQLiteNodeState::LEADING && nodeState == SQLiteNodeState::LEADING) ||
+            (nodeState == SQLiteNodeState::LEADING && _upgradeInProgress && !committingCommand)) {
             // Store this before we start writing to the DB, which can take a while depending on what changes were made
             // (for instance, adding an index).
             _upgradeInProgress = true;
@@ -437,7 +437,7 @@ void BedrockServer::sync()
             // until one of these states changes. This prevents an endless loop of escalating commands, having
             // SQLiteNode re-queue them because leader is standing down, and then escalating them again until leader
             // sorts itself out.
-            if (nodeState == SQLiteNode::FOLLOWING && _syncNode->leaderState() == SQLiteNode::STANDINGDOWN) {
+            if (nodeState == SQLiteNodeState::FOLLOWING && _syncNode->leaderState() == SQLiteNodeState::STANDINGDOWN) {
                 continue;
             }
 
@@ -480,7 +480,7 @@ void BedrockServer::sync()
                 });
 
                 // And now we'll decide how to handle it.
-                if (nodeState == SQLiteNode::LEADING || nodeState == SQLiteNode::STANDINGDOWN) {
+                if (nodeState == SQLiteNodeState::LEADING || nodeState == SQLiteNodeState::STANDINGDOWN) {
                     // We peek commands here in the sync thread to be able to run peek and process as part of the same
                     // transaction. This guarantees that any checks made in peek are still valid in process, as the DB can't
                     // have changed in the meantime.
@@ -551,7 +551,7 @@ void BedrockServer::sync()
 
                     // When we're leading, we'll try and handle one command and then stop.
                     break;
-                } else if (nodeState == SQLiteNode::FOLLOWING) {
+                } else if (nodeState == SQLiteNodeState::FOLLOWING) {
                     SWARN("Sync thread has command when following. Re-queueing");
                     _commandQueue.push(move(command));
                 }
@@ -582,12 +582,12 @@ void BedrockServer::sync()
     // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
     // the writing replication thread exits.
     _replicationState.store(_syncNode->getState());
-    if (_replicationState.load() > SQLiteNode::WAITING) {
+    if (_replicationState.load() > SQLiteNodeState::WAITING) {
         // This is because the graceful shutdown timer fired and syncNode.shutdownComplete() returned `true` above, but
         // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
         // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
         SWARN("Sync thread exiting in state " << _replicationState.load() << ". Setting to SEARCHING.");
-        _replicationState.store(SQLiteNode::SEARCHING);
+        _replicationState.store(SQLiteNodeState::SEARCHING);
     } else {
         SINFO("Sync thread exiting, setting state to: " << _replicationState.load());
     }
@@ -712,9 +712,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
     // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
     while (_upgradeInProgress ||
-           (_replicationState.load() != SQLiteNode::LEADING &&
-            _replicationState.load() != SQLiteNode::FOLLOWING &&
-            _replicationState.load() != SQLiteNode::STANDINGDOWN)
+           (_replicationState.load() != SQLiteNodeState::LEADING &&
+            _replicationState.load() != SQLiteNodeState::FOLLOWING &&
+            _replicationState.load() != SQLiteNodeState::STANDINGDOWN)
     ) {
         // Make sure that the node isn't shutting down, leaving us in an endless loop.
         if (_shutdownState.load() != RUNNING) {
@@ -735,13 +735,13 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // LEADING, we'll just peek this command and return it's result, which should be harmless. If we think
     // we're leading, we'll go ahead and start a `process` for the command, but we'll synchronously verify
     // our state right before we commit.
-    SQLiteNode::State state = _replicationState.load();
+    SQLiteNodeState state = _replicationState.load();
 
     // If we're following, we will automatically escalate any command that's not already complete (complete
     // commands are likely already returned from leader with legacy escalation) and is marked as
     // `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
     // for a previous commit to be delivered to this follower), OR if we're on a different version from leader.
-    if (state == SQLiteNode::FOLLOWING && (_version != _leaderVersion.load() || command->escalateImmediately) && !command->complete) {
+    if (state == SQLiteNodeState::FOLLOWING && (_version != _leaderVersion.load() || command->escalateImmediately) && !command->complete) {
         auto _clusterMessengerCopy = _clusterMessenger;
         if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
             // command->complete is now true for this command. It will get handled a few lines below.
@@ -784,7 +784,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     }
 
     // More checks for parallel writing.
-    canWriteParallel = canWriteParallel && (state == SQLiteNode::LEADING);
+    canWriteParallel = canWriteParallel && (state == SQLiteNodeState::LEADING);
     canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
 
     while (true) {
@@ -831,7 +831,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
             // If we've changed out of leading, we need to notice that.
             state = _replicationState.load();
-            canWriteParallel = canWriteParallel && (state == SQLiteNode::LEADING);
+            canWriteParallel = canWriteParallel && (state == SQLiteNodeState::LEADING);
 
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
             // command has specifically asked for that.
@@ -851,7 +851,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     // This *should* be impossible, but previous bugs have existed where it's feasible that we call
                     // `peekCommand` while leading, and by the time we're done, we're FOLLOWING, so we check just
                     // in case we ever introduce another similar bug.
-                    if (state != SQLiteNode::LEADING && state != SQLiteNode::STANDINGDOWN) {
+                    if (state != SQLiteNodeState::LEADING && state != SQLiteNodeState::STANDINGDOWN) {
                         SALERT("Not leading or standing down (" << SQLiteNode::stateName(state)
                                << ") but have outstanding HTTPS command: " << command->request.methodLine
                                << ", returning 500.");
@@ -899,14 +899,14 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     // Roll back the transaction, it'll get re-run in the sync thread.
                     core.rollback();
                     auto _clusterMessengerCopy = _clusterMessenger;
-                    if (state == SQLiteNode::LEADING) {
+                    if (state == SQLiteNodeState::LEADING) {
                         // Limit the command timeout to 20s to avoid blocking the sync thread long enough to cause the cluster to give up and elect a new leader (causing a fork), which happens
                         // after 30s.
                         command->setTimeout(20'000);
                         SINFO("Sending non-parallel command " << command->request.methodLine
                               << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
                         _syncNodeQueuedCommands.push(move(command));
-                    } else if (state == SQLiteNode::STANDINGDOWN) {
+                    } else if (state == SQLiteNodeState::STANDINGDOWN) {
                         SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
                         _standDownQueue.push(move(command));
                     } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
@@ -948,8 +948,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         // doesn't really help. In those cases, it's possible that we fork the DB here, but that's
                         // possible with or without a mutex for this, so we've removed it for the sake of
                         // simplicity.
-                        if (_replicationState.load() != SQLiteNode::LEADING &&
-                            _replicationState.load() != SQLiteNode::STANDINGDOWN) {
+                        if (_replicationState.load() != SQLiteNodeState::LEADING &&
+                            _replicationState.load() != SQLiteNodeState::STANDINGDOWN) {
                             SALERT("Node State changed from LEADING to "
                                    << SQLiteNode::stateName(_replicationState.load())
                                    << " during worker commit. Rolling back transaction!");
@@ -1123,7 +1123,7 @@ void BedrockServer::_resetServer() {
     lock_guard<mutex> lock(_portMutex);
 
     _requestCount = 0;
-    _replicationState = SQLiteNode::SEARCHING;
+    _replicationState = SQLiteNodeState::SEARCHING;
     _upgradeInProgress = false;
     if (_commandPortBlockReasons.size()) {
         SWARN("Clearing leftover command port blocks in resetServer (" << _commandPortBlockReasons.size() << " blocks remaining).");
@@ -1143,13 +1143,13 @@ void BedrockServer::_resetServer() {
     }
 }
 
-BedrockServer::BedrockServer(SQLiteNode::State state, const SData& args_)
-  : SQLiteServer(), args(args_), _replicationState(SQLiteNode::LEADING),
+BedrockServer::BedrockServer(SQLiteNodeState state, const SData& args_)
+  : SQLiteServer(), args(args_), _replicationState(SQLiteNodeState::LEADING),
     _syncNode(nullptr), _clusterMessenger(nullptr)
 {}
 
 BedrockServer::BedrockServer(const SData& args_)
-  : SQLiteServer(), shutdownWhileDetached(false), args(args_), _requestCount(0), _replicationState(SQLiteNode::SEARCHING),
+  : SQLiteServer(), shutdownWhileDetached(false), args(args_), _requestCount(0), _replicationState(SQLiteNodeState::SEARCHING),
     _upgradeInProgress(false),
     _isCommandPortLikelyBlocked(false),
     _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(nullptr), _shutdownState(RUNNING),
@@ -1297,10 +1297,10 @@ void BedrockServer::prePoll(fd_map& fdm) {
 void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // NOTE: There are no sockets managed here, just ports.
     // Open the port the first time we enter a command-processing state
-    SQLiteNode::State state = _replicationState.load();
+    SQLiteNodeState state = _replicationState.load();
     {
         lock_guard<mutex> lock(_portMutex);
-        if (_commandPortBlockReasons.empty() && (state == SQLiteNode::LEADING || state == SQLiteNode::FOLLOWING) && _shutdownState.load() == RUNNING) {
+        if (_commandPortBlockReasons.empty() && (state == SQLiteNodeState::LEADING || state == SQLiteNodeState::FOLLOWING) && _shutdownState.load() == RUNNING) {
 
             // Open the port
             if (!_commandPortPublic) {
@@ -1550,8 +1550,8 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         // pretend to be an HTTP server for this purpose. This allows us to load balance incoming requests.
         //
         // HAProxy interprets 2xx/3xx level responses as alive, 4xx/5xx level responses as dead.
-        SQLiteNode::State state = _replicationState.load();
-        if (state == SQLiteNode::FOLLOWING) {
+        SQLiteNodeState state = _replicationState.load();
+        if (state == SQLiteNodeState::FOLLOWING) {
             response.methodLine = "HTTP/1.1 200 Following";
         } else {
             response.methodLine = "HTTP/1.1 500 Not Following. State=" + SQLiteNode::stateName(state);
@@ -1562,10 +1562,10 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         if (_version != _leaderVersion.load()) {
             response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version;
         } else {
-            SQLiteNode::State state = _replicationState.load();
+            SQLiteNodeState state = _replicationState.load();
             string method = "HTTP/1.1 ";
 
-            if (state == SQLiteNode::FOLLOWING || state == SQLiteNode::LEADING || state == SQLiteNode::STANDINGDOWN) {
+            if (state == SQLiteNodeState::FOLLOWING || state == SQLiteNodeState::LEADING || state == SQLiteNodeState::STANDINGDOWN) {
                 method += "200";
             } else {
                 method += "500";
@@ -1582,14 +1582,14 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
     // This collects the current state of the server, which also includes some state from the underlying SQLiteNode.
     else if (SIEquals(request.methodLine, STATUS_STATUS)) {
         STable content;
-        SQLiteNode::State state = _replicationState.load();
+        SQLiteNodeState state = _replicationState.load();
         list<string> pluginList;
         for (auto plugin : plugins) {
             STable pluginData = plugin.second->getInfo();
             pluginData["name"] = plugin.second->getName();
             pluginList.push_back(SComposeJSONObject(pluginData));
         }
-        content["isLeader"] = state == SQLiteNode::LEADING ? "true" : "false";
+        content["isLeader"] = state == SQLiteNodeState::LEADING ? "true" : "false";
         content["plugins"]  = SComposeJSONArray(pluginList);
         content["state"]    = SQLiteNode::stateName(state);
         content["version"]  = _version;
@@ -1606,7 +1606,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         }
 
         // On leader, return the current multi-write blacklists.
-        if (state == SQLiteNode::LEADING) {
+        if (state == SQLiteNodeState::LEADING) {
             // Both of these need to be in the correct state for multi-write to be enabled.
             content["multiWriteEnabled"] = _multiWriteEnabled ? "true" : "false";
             content["multiWriteManualBlacklist"] = SComposeJSONArray(_blacklistedParallelCommands);
@@ -1807,7 +1807,7 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
         // By default, we can poll up to 5 min.
         uint64_t maxWaitMs = 5 * 60 * 1'000;
         auto _syncNodeCopy = atomic_load(&_syncNode);
-        if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN)) {
+        if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNodeState::STANDINGDOWN)) {
             // But if we're trying to shut down, we give up after 5 seconds.
             maxWaitMs = 5'000;
         }
@@ -2195,7 +2195,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
                         // Now we queue or run this command.
                         auto _syncNodeCopy = atomic_load(&_syncNode);
-                        if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNode::STANDINGDOWN) {
+                        if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNodeState::STANDINGDOWN) {
                             _standDownQueue.push(move(command));
                         } else {
                             SINFO("Running new '" << command->request.methodLine << "' command from local client, with " << _commandQueue.size() << " commands already queued.");
@@ -2248,6 +2248,6 @@ void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
     _newCommandsWaiting.push(true);
 }
 
-const atomic<SQLiteNode::State>& BedrockServer::getState() const {
-    return _nodeStateSnapshot == SQLiteNode::UNKNOWN ? _replicationState : _nodeStateSnapshot;
+const atomic<SQLiteNodeState>& BedrockServer::getState() const {
+    return _nodeStateSnapshot == SQLiteNodeState::UNKNOWN ? _replicationState : _nodeStateSnapshot;
 }

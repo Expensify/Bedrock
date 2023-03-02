@@ -157,7 +157,7 @@ class BedrockServer : public SQLiteServer {
 
     // A constructor that builds an object that does nothing. This exists only to pass to stubbed-out test methods that
     // require a BedrockServer object.
-    BedrockServer(SQLiteNode::State state, const SData& args_);
+    BedrockServer(SQLiteNodeState state, const SData& args_);
 
     // Destructor
     virtual ~BedrockServer();
@@ -191,7 +191,7 @@ class BedrockServer : public SQLiteServer {
     // Exposes the replication state to plugins. Note that this is guaranteed not to change inside a call to
     // `peekCommand` or `processCommand`, but this is only from the command's point-of-view - the underlying value can
     // change at any time.
-    const atomic<SQLiteNode::State>& getState() const;
+    const atomic<SQLiteNodeState>& getState() const;
 
     // When a peer node logs in, we'll send it our crash command list.
     void onNodeLogin(SQLitePeer* peer);
@@ -267,7 +267,7 @@ class BedrockServer : public SQLiteServer {
 
     // This is the replication state of the sync node. It's updated after every SQLiteNode::update() iteration. A
     // reference to this object is passed to the sync thread to allow this update.
-    atomic<SQLiteNode::State> _replicationState;
+    atomic<SQLiteNodeState> _replicationState;
 
     // This gets set to true when a database upgrade is in progress, letting workers know not to try to start any work.
     atomic<bool> _upgradeInProgress;
@@ -465,7 +465,7 @@ class BedrockServer : public SQLiteServer {
 
     // This is a snapshot of the state of the node taken at the beginning of any call to peekCommand or processCommand
     // so that the state can't change for the lifetime of that call, from the view of that function.
-    static thread_local atomic<SQLiteNode::State> _nodeStateSnapshot;
+    static thread_local atomic<SQLiteNodeState> _nodeStateSnapshot;
 
     // Setup a new command from a bare request.
     unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket& s, bool shouldTreatAsLocalhost);
