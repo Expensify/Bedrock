@@ -343,7 +343,7 @@ bool SQLiteNode::shutdownComplete() const {
     }
 }
 
-SQLiteNode::State SQLiteNode::getState() const {
+SQLiteNodeState SQLiteNode::getState() const {
     // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
     // private methods.
     return _state;
@@ -2292,7 +2292,7 @@ void SQLiteNode::_handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const 
     db.rollback();
 }
 
-SQLiteNode::State SQLiteNode::leaderState() const {
+SQLiteNodeState SQLiteNode::leaderState() const {
     shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
     if (_leadPeer) {
         return _leadPeer.load()->state;
@@ -2522,7 +2522,7 @@ SQLitePeer* SQLiteNode::getPeerByName(const string& name) const {
 }
 
 
-const string& SQLiteNode::stateName(SQLiteNode::State state) {
+const string& SQLiteNode::stateName(SQLiteNodeState state) {
     static string placeholder = "";
     static map<State, string> lookup = {
         {SQLiteNodeState::UNKNOWN, "UNKNOWN"},
@@ -2543,7 +2543,7 @@ const string& SQLiteNode::stateName(SQLiteNode::State state) {
     }
 }
 
-SQLiteNode::State SQLiteNode::stateFromName(const string& name) {
+SQLiteNodeState SQLiteNode::stateFromName(const string& name) {
     const string normalizedName = SToUpper(name);
     static map<string, State> lookup = {
         {"SEARCHING", SQLiteNodeState::SEARCHING},
