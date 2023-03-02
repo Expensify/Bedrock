@@ -687,9 +687,12 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
 
         // Similarly, record WAL file size.
         sqlite3_file *pWal = 0;
-        sqlite3_int64 sz;
+        sqlite3_int64 sz = 0;
         sqlite3_file_control(_db, "main", SQLITE_FCNTL_JOURNAL_POINTER, &pWal);
-        pWal->pMethods->xFileSize(pWal, &sz);
+        if( pWal ){
+          // pWal is NULL for hctree databases.
+          pWal->pMethods->xFileSize(pWal, &sz);
+        }
 
         _commitElapsed += STimeNow() - before;
         _journalSize = newJournalSize;
