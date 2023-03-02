@@ -847,7 +847,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     } else {
                         SALERT("Following with no cluster messenger!");
                     }
-                } 
+                } else {
+                    // I don't know if there's anything to do here. Re-queue the command?
+                }
                 _reply(command);
                 break;
             }
