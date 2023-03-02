@@ -5,6 +5,12 @@
 class SQLite {
   public:
 
+    class NotLeading : public SNotLeading {
+        const char* what() {
+            return "Can't write to DB when not leading";
+        }
+    };
+
     class timeout_error : public exception {
       public :
         timeout_error(const string& e, uint64_t time) : _what(e), _time(time) {};

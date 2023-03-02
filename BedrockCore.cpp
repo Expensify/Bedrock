@@ -134,10 +134,10 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     } catch (const SException& e) {
         command->repeek = false;
         _handleCommandException(command, e);
-    } catch (const SHTTPSManager::NotLeading& e) {
+    } catch (const SNotLeading& e) {
         command->repeek = false;
         returnValue = RESULT::SHOULD_PROCESS;
-        SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
+        SINFO("Command '" << request.methodLine << "' needs to be leading.");
     } catch (...) {
         command->repeek = false;
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);

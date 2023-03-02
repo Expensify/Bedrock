@@ -79,6 +79,13 @@ class STableComp : binary_function<string, string, bool> {
     };
 };
 
+class SNotLeading : public exception {
+  public:
+    virtual const char* what() {
+        return "not leading";
+    }
+};
+
 // An SString is just a string with special assignment operators so that we get automatic conversion from arithmetic
 // types.
 class SString : public string {

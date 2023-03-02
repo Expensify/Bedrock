@@ -69,7 +69,7 @@ class SHTTPSManager : public SStandaloneHTTPSManager {
     SHTTPSManager(BedrockPlugin& plugin_);
     SHTTPSManager(BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt);
 
-    class NotLeading : public exception {
+    class NotLeading : public SNotLeading {
         const char* what() {
             return "Can't create SHTTPSManager::Transaction when not leading";
         }
