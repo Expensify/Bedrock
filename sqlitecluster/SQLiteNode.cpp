@@ -70,7 +70,7 @@ atomic<int64_t> SQLiteNode::currentReplicateThreadID(0);
 const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString) {
     // Make the logging macro work in the static initializer.
     auto _name = "init";
-    State _state = SQLiteNodeState::UNKNOWN;
+    SQLiteNodeState _state = SQLiteNodeState::UNKNOWN;
 
     vector<SQLitePeer*> peerList;
     list<string> parsedPeerList = SParseList(peerListString);
@@ -619,7 +619,7 @@ bool SQLiteNode::update() {
     ///             clear "StandupResponse" on all peers
     ///             goto STANDINGUP
     ///
-    case WAITING: {
+    case SQLiteNodeState::WAITING: {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
@@ -1140,7 +1140,7 @@ bool SQLiteNode::update() {
         break;
 
     default:
-        SERROR("Invalid state #" << _state);
+        SERROR("Invalid state #" << stateName(_state));
     }
 
     // Don't update immediately
@@ -1229,10 +1229,10 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             if (!message.isSet("Priority")) {
                 STHROW("missing Priority");
             }
-            const State from = peer->state;
+            const SQLiteNodeState from = peer->state;
             peer->priority = message.calc("Priority");
             peer->state = stateFromName(message["State"]);
-            const State to = peer->state;
+            const SQLiteNodeState to = peer->state;
             if (from == to) {
                 // No state change, just new commits?
                 PINFO("Peer received new commit in state '" << stateName(from) << "', commit #" << message["CommitCount"] << " ("
@@ -1780,7 +1780,7 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     }
 }
 
-void SQLiteNode::_changeState(SQLiteNode::State newState) {
+void SQLiteNode::_changeState(SQLiteNodeState newState) {
     SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
     _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
@@ -2524,7 +2524,7 @@ SQLitePeer* SQLiteNode::getPeerByName(const string& name) const {
 
 const string& SQLiteNode::stateName(SQLiteNodeState state) {
     static string placeholder = "";
-    static map<State, string> lookup = {
+    static map<SQLiteNodeState, string> lookup = {
         {SQLiteNodeState::UNKNOWN, "UNKNOWN"},
         {SQLiteNodeState::SEARCHING, "SEARCHING"},
         {SQLiteNodeState::SYNCHRONIZING, "SYNCHRONIZING"},
@@ -2545,7 +2545,7 @@ const string& SQLiteNode::stateName(SQLiteNodeState state) {
 
 SQLiteNodeState SQLiteNode::stateFromName(const string& name) {
     const string normalizedName = SToUpper(name);
-    static map<string, State> lookup = {
+    static map<string, SQLiteNodeState> lookup = {
         {"SEARCHING", SQLiteNodeState::SEARCHING},
         {"SYNCHRONIZING", SQLiteNodeState::SYNCHRONIZING},
         {"WAITING", SQLiteNodeState::WAITING},

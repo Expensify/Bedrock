@@ -586,10 +586,10 @@ void BedrockServer::sync()
         // This is because the graceful shutdown timer fired and syncNode.shutdownComplete() returned `true` above, but
         // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
         // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
-        SWARN("Sync thread exiting in state " << _replicationState.load() << ". Setting to SEARCHING.");
+        SWARN("Sync thread exiting in state " << SQLiteNode::stateName(_replicationState.load()) << ". Setting to SEARCHING.");
         _replicationState.store(SQLiteNodeState::SEARCHING);
     } else {
-        SINFO("Sync thread exiting, setting state to: " << _replicationState.load());
+        SINFO("Sync thread exiting, setting state to: " << SQLiteNode::stateName(_replicationState.load()));
     }
 
     // Wait for the worker threads to finish.
