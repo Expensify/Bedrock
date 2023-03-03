@@ -293,4 +293,9 @@ void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, c
 
     // Add the commitCount header to the response.
     command->response["commitCount"] = to_string(_db.getCommitCount());
+
+    if (_server.args.isSet("-extraExceptionLogging")) {
+        auto stack = e.details();
+        command->response["exceptionSource"] = stack.back();
+    }
 }
