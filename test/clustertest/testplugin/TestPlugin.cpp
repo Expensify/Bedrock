@@ -120,7 +120,7 @@ TestPluginCommand::~TestPluginCommand()
         // The intention here is to verify that the destructor on our follower is the last thing that runs, however we
         // check simply that we're not leading, because this should also fail if we end up in some weird state (we
         // don't want the test to pass if our follower is actually `WAITING` or something strange).
-        if (serverState != SQLiteNode::stateName(SQLiteNode::LEADING)) {
+        if (serverState != SQLiteNode::stateName(SQLiteNodeState::LEADING)) {
             SASSERT(escalated);
             string fileContents = fileLockAndLoad(request["tempFile"]);
             SFileDelete(request["tempFile"]);
@@ -193,7 +193,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         response["stored_not_special"] = plugin().arbitraryData["not_special"];
         return true;
     } else if (SStartsWith(request.methodLine, "sendrequest")) {
-        if (plugin().server.getState() != SQLiteNode::LEADING && plugin().server.getState() != SQLiteNode::STANDINGDOWN) {
+        if (plugin().server.getState() != SQLiteNodeState::LEADING && plugin().server.getState() != SQLiteNodeState::STANDINGDOWN) {
             // Only start HTTPS requests on leader, otherwise, we'll escalate.
             return false;
         }

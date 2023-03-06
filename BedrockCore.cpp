@@ -165,8 +165,8 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     // We need to be leading (including standing down) and we need to have peeked this command in the same set of
     // states, or we can't complete this command (we can't commit the command if we're not leading, and if we're
     // leading but were following when we peeked, we may try to read HTTPS requests we never made).
-    if ((command->lastPeekedOrProcessedInState != SQLiteNode::LEADING && command->lastPeekedOrProcessedInState != SQLiteNode::STANDINGDOWN) ||
-        (_server.getState() != SQLiteNode::LEADING && _server.getState() != SQLiteNode::STANDINGDOWN)) {
+    if ((command->lastPeekedOrProcessedInState != SQLiteNodeState::LEADING && command->lastPeekedOrProcessedInState != SQLiteNodeState::STANDINGDOWN) ||
+        (_server.getState() != SQLiteNodeState::LEADING && _server.getState() != SQLiteNodeState::STANDINGDOWN)) {
         return RESULT::SERVER_NOT_LEADING;
     }
     command->lastPeekedOrProcessedInState = _server.getState();
@@ -298,4 +298,9 @@ void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, c
 
     // Add the commitCount header to the response.
     command->response["commitCount"] = to_string(_db.getCommitCount());
+
+    if (_server.args.isSet("-extraExceptionLogging")) {
+        auto stack = e.details();
+        command->response["exceptionSource"] = stack.back();
+    }
 }
