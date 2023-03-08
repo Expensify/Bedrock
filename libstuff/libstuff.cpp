@@ -1320,8 +1320,8 @@ string SToJSON(const string& value, const bool forceString) {
 
     // Otherwise, it's a string -- escape and return
     // We need to escape all control characters in the string, not just the white-space control characters.
-    return "\"" + SEscape(value, "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f"
-                                 "\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f\"\\/",
+    return "\"" + SEscape(value,     "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f"
+                                 "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f\"\\/",
                           '\\') +
            "\"";
 }
