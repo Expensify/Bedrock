@@ -452,12 +452,13 @@ string SEscape(const char* lhs, const string& unsafe, char escaper) {
                 working += 'r';
             else if (c == '\t')
                 working += 't';
-            else if (c > 0x00 && c < 0x20) {
+            else if ((c > 0x00 && c < 0x20) || c == 0x7f) {
                 char utfCode[6] = {0};
                 sprintf(utfCode, "u%04x", c);
                 working += utfCode;
-            } else
+            } else {
                 working += c;
+            }
         } else {
             // Insert as normal
             working += *lhs;
@@ -1318,10 +1319,9 @@ string SToJSON(const string& value, const bool forceString) {
     }
 
     // Otherwise, it's a string -- escape and return
-    // We need to escape all control characters in the string, not just the
-    // white-space control characters.
-    return "\"" + SEscape(value, "\x01\x02\x03\x04\x05\x06\x07\b\t\n\x0b\f\r\x0e\x0f\x10\x11"
-                                 "\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f\"\\/",
+    // We need to escape all control characters in the string, not just the white-space control characters.
+    return "\"" + SEscape(value,     "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f"
+                                 "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x7f\"\\/",
                           '\\') +
            "\"";
 }
@@ -2503,7 +2503,7 @@ void SQueryLogClose() {
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn, bool* wasSlow) {
+int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn) {
 #define MAX_TRIES 3
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
@@ -2621,11 +2621,14 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         // We should always avoid logging authTokens because they give access to accounts
         pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
 
+        // Let's redact queries that contain encrypted fields since there's no value in logging them
+        pcrecpp::RE("v[0-9]+:[0-9A-F]{10,}").GlobalReplace("<REDACTED>", &sqlToLog);
+
         // We remove anything inside "html" because we intentionally don't log chats
         pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &sqlToLog);
         if ((int64_t)elapsed > warnThreshold) {
             if (isSyncThread) {
-                SWARN("Slow query sync '" << e << "' ("
+                SWARN("Slow query sync ("
                       << "loops: " << numLoops << ", "
                       << "prepare US: " << prepareTimeUS << ", "
                       << "steps: " << numSteps << ", "
@@ -2633,12 +2636,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                       << "longest step US: " << longestStepTimeUS << "): "
                       << sqlToLog);
             } else {
-                SWARN("Slow query '" << e << "' (" << elapsed / 1000 << "ms): " << sqlToLog);
-            }
-
-            // Notify the caller that this was a slow query.
-            if (wasSlow != nullptr) {
-                *wasSlow = true;
+                SWARN("Slow query (" << elapsed / 1000 << "ms): " << sqlToLog);
             }
         } else {
             // We log the time the queries took, as long as they are over 10ms (to reduce noise of many queries that are
@@ -2998,9 +2996,9 @@ string SQ(double val) {
     return SToStr(val);
 }
 
-int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipWarn, bool* wasSlow) {
+int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipWarn) {
     SQResult ignore;
-    return SQuery(db, e, sql, ignore, warnThreshold, skipWarn, wasSlow);
+    return SQuery(db, e, sql, ignore, warnThreshold, skipWarn);
 }
 
 string SUNQUOTED_TIMESTAMP(uint64_t when) {

@@ -162,7 +162,7 @@ class BedrockCommand : public SQLiteCommand {
     const bool escalateImmediately;
 
     // Record the state we were acting under in the last call to `peek` or `process`.
-    SQLiteNode::State lastPeekedOrProcessedInState = SQLiteNode::UNKNOWN;
+    SQLiteNodeState lastPeekedOrProcessedInState = SQLiteNodeState::UNKNOWN;
 
     // If someone is waiting for this command to complete, this will be called in the destructor.
     function<void()>* destructionCallback;
