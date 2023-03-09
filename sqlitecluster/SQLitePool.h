@@ -1,7 +1,6 @@
 #pragma once
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLite.h>
-
 #include <condition_variable>
 
 class SQLitePool {

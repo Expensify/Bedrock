@@ -1,7 +1,6 @@
 #pragma once
 #include <libstuff/libstuff.h>
 #include "SQLite.h"
-
 #include <condition_variable>
 
 class SQLiteSequentialNotifier {
