@@ -1,7 +1,6 @@
 #pragma once
 #include <libstuff/STCPManager.h>
 #include <chrono>
-
 #include <condition_variable>
 
 class SSocketPool {

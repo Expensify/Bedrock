@@ -3,13 +3,11 @@
 # to be set, but for the time being we need to override the defaults so that our existing dev environment works. This
 # can be removed when that is resolved.
 ifeq ($(CC),cc)
-CC = /usr/local/bin/gcc
+CC = gcc-9
 endif
 ifeq ($(CXX),g++)
-CXX = /usr/local/bin/g++
+CXX = g++-9
 endif
-CC = /usr/local/bin/gcc
-CXX = /usr/local/bin/g++
 
 # Set the optimization level from the environment, or default to -O2.
 ifndef BEDROCK_OPTIM_COMPILE_FLAG

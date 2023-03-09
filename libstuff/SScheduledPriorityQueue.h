@@ -1,6 +1,5 @@
 #pragma once
 #include <libstuff/libstuff.h>
-
 #include <condition_variable>
 
 // A scheduled priority queue does the following:
