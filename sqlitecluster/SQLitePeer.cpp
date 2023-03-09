@@ -17,7 +17,7 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     loggedIn(false),
     nextReconnect(0),
     priority(0),
-    state(SQLiteNode::SEARCHING),
+    state(SQLiteNodeState::SEARCHING),
     standupResponse(Response::NONE),
     subscribed(false),
     transactionResponse(Response::NONE),
@@ -41,7 +41,7 @@ void SQLitePeer::reset() {
     priority = 0;
     delete socket;
     socket = nullptr;
-    state = SQLiteNode::SEARCHING;
+    state = SQLiteNodeState::SEARCHING;
     standupResponse = Response::NONE;
     subscribed = false;
     transactionResponse = Response::NONE;

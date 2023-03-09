@@ -75,6 +75,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-maxJournalSize", "25000"},
         {"-v", ""},
         {"-hctree", ""},
+        {"-extraExceptionLogging", ""},
         {"-enableMultiWrite", "true"},
         {"-escalateOverHTTP", "true"},
         {"-cacheSize", "1000"},
@@ -290,7 +291,7 @@ string BedrockTester::executeWaitVerifyContent(SData request, const string& expe
     if (!SStartsWith(results[0].methodLine, expectedResult)) {
         STable temp;
         temp["originalMethod"] = results[0].methodLine;
-        STHROW("Expected " + expectedResult + ", but got '" + results[0].methodLine + "'.", temp);
+        STHROW("Expected " + expectedResult + ", but got '" + results[0].methodLine + "'. " + results[0]["exceptionSource"], temp);
     }
 
     return results[0].content;
