@@ -80,7 +80,7 @@ class SQLitePeer {
     atomic<bool> loggedIn;
     atomic<uint64_t> nextReconnect;
     atomic<int> priority;
-    atomic<SQLiteNode::State> state;
+    atomic<SQLiteNodeState> state;
     atomic<Response> standupResponse;
     atomic<bool> subscribed;
     atomic<Response> transactionResponse;

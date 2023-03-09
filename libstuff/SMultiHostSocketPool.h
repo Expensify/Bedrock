@@ -1,6 +1,7 @@
 #pragma once
 #include <libstuff/STCPManager.h>
 #include <libstuff/SSocketPool.h>
+#include <condition_variable>
 
 class SMultiHostSocketPool {
   public:

@@ -68,15 +68,12 @@ void SSetSignalHandlerDieFunc(function<void()>&& func);
 // A very simple name/value pair table with case-insensitive name matching
 // --------------------------------------------------------------------------
 // See: http://stackoverflow.com/questions/1801892/making-mapfind-operation-case-insensitive
-class STableComp : binary_function<string, string, bool> {
+class STableComp {
   public:
-    bool operator()(const string& s1, const string& s2) const;
-
-  private:
-    class nocase_compare : public binary_function<unsigned char, unsigned char, bool> {
-      public:
-        bool operator()(const unsigned char& c1, const unsigned char& c2) const;
+    struct nocase_compare {
+      bool operator() (const unsigned char& c1, const unsigned char& c2) const;
     };
+    bool operator() (const string& s1, const string& s2) const;
 };
 
 // An SString is just a string with special assignment operators so that we get automatic conversion from arithmetic
@@ -464,6 +461,7 @@ template <typename T> string SComposeList(const T& valueList, const string& sepa
 // --------------------------------------------------------------------------
 // JSON message management
 string SToJSON(const string& value, const bool forceString = false);
+string SToJSON(const int64_t value, const bool forceString = false);
 
 template <typename T>
 string SComposeJSONArray(const T& valueList) {
@@ -583,8 +581,8 @@ void SQueryLogOpen(const string& logFilename);
 void SQueryLogClose();
 
 // Returns an SQLite result code.
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false, bool* wasSlow = nullptr);
-int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false, bool* wasSlow = nullptr);
+int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false);
+int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipWarn = false);
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
 bool SQVerifyTableExists(sqlite3* db, const string& tableName);
 
