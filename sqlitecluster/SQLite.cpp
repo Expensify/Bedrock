@@ -256,7 +256,8 @@ int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, 
 
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     _mostRecentSQLiteErrorLog = "{SQLITE} Code: "s + to_string(iErrCode) + ", Message: "s + zMsg;
-    SSYSLOG(LOG_INFO, "[info] " << _mostRecentSQLiteErrorLog);
+    pcrecpp::RE("\"authToken\":\".*\"?").GlobalReplace("\"authToken\":\"<REDACTED>\"", &_mostRecentSQLiteErrorLog);
+    SINFO(_mostRecentSQLiteErrorLog);
 }
 
 int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {
