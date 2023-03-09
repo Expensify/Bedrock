@@ -5,6 +5,7 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SQResult.h>
+#include <pcrecpp.h> // sudo apt-get install libpcre++-dev
 
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
