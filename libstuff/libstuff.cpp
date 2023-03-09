@@ -2659,7 +2659,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && !skipWarn) {
         // We remove anything inside "html" because we intentionally don't log chats
         pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &sqlToLog);
-        pcrecpp::RE("\"authToken\":\".*\"").GlobalReplace("\"authToken\":\"<REDACTED>\"", &sqlToLog);
+        pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
 
         SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
     }
