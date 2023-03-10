@@ -2618,14 +2618,8 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     string sqlToLog = sql;
 
     if ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000) {
-        // We should always avoid logging authTokens because they give access to accounts
-        pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
+        redactSensitiveValues(sqlToLog);
 
-        // Let's redact queries that contain encrypted fields since there's no value in logging them
-        pcrecpp::RE("v[0-9]+:[0-9A-F]{10,}").GlobalReplace("<REDACTED>", &sqlToLog);
-
-        // We remove anything inside "html" because we intentionally don't log chats
-        pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &sqlToLog);
         if ((int64_t)elapsed > warnThreshold) {
             if (isSyncThread) {
                 SWARN("Slow query sync ("
@@ -2657,9 +2651,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     // Only OK and commit conflicts are allowed without warning because they're the only "successful" results that we expect here.
     // OK means it succeeds, conflicts will get retried further up the call stack.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && !skipWarn) {
-        // We remove anything inside "html" because we intentionally don't log chats
-        pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &sqlToLog);
-        pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
+        redactSensitiveValues(sqlToLog);
 
         SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
     }
