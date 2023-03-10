@@ -2761,6 +2761,18 @@ bool SREMatch(const string& regExp, const string& s, string& match) {
     return pcrecpp::RE(regExp).FullMatch(s, &match);
 }
 
+void redactredactSensitiveValues(string& s) {
+    // The message may be truncated midway through the authToken, so there may not be a closing quote (") at the end of
+    // the authToken, so we need to optionally match the closing quote with a question mark (?).
+    pcrecpp::RE("\"authToken\":\".*\"?").GlobalReplace("\"authToken\":<REDACTED>", s);
+
+    // Redact queries that contain encrypted fields since there's no value in logging them.
+    pcrecpp::RE("v[0-9]+:[0-9A-F]{10,}").GlobalReplace("<REDACTED>", s);
+
+    // Remove anything inside "html" because we intentionally don't log chats.
+    pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", s);
+}
+
 SStopwatch::SStopwatch() {
     start();
     alarmDuration.store(0);
