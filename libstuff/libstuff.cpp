@@ -43,7 +43,7 @@
 
 // Common error definitions
 #define S_errno errno
-#define S_NOTINITIALISED 0xFEFEFEFE // Doesn't exist for Linux
+#define S_NOTINITIALISED ((int)0xFEFEFEFE) // Doesn't exist for Linux
 #ifdef __APPLE__
 // The above doesn't even build on OS X with C++11 turned on. I don't know why
 // we even have that check, but I'm leaving it and just setting this to INT_MAX
