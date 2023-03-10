@@ -386,6 +386,9 @@ bool SConstantTimeIEquals(const string& secret, const string& userInput);
 bool SREMatch(const string& regExp, const string& s);
 bool SREMatch(const string& regExp, const string& s, string& match);
 
+// Redact values that should not be logged.
+void SRedactSensitiveValues(string& s);
+
 // Case testing and conversion
 string SToLower(string value);
 string SToUpper(string value);
