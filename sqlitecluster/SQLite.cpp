@@ -267,10 +267,7 @@ int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, 
 
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     _mostRecentSQLiteErrorLog = "{SQLITE} Code: "s + to_string(iErrCode) + ", Message: "s + zMsg;
-
-    // The message may be truncated midway through the authToken, so there may not be a closing quote (") at the end of
-    // the authToken, so we need to optionally match the closing quote with a question mark (?).
-    pcrecpp::RE("\"authToken\":\".*\"?").GlobalReplace("\"authToken\":\"<REDACTED>\"", &_mostRecentSQLiteErrorLog);
+    redactSensitiveValues(_mostRecentSQLiteErrorLog);
     SINFO(_mostRecentSQLiteErrorLog);
 }
 
