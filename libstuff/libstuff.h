@@ -387,7 +387,7 @@ bool SREMatch(const string& regExp, const string& s);
 bool SREMatch(const string& regExp, const string& s, string& match);
 
 // Redact values that should not be logged.
-void redactSensitiveValues(string& s);
+void SRedactSensitiveValues(string& s);
 
 // Case testing and conversion
 string SToLower(string value);

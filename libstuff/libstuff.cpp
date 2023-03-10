@@ -2618,7 +2618,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     string sqlToLog = sql;
 
     if ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000) {
-        redactSensitiveValues(sqlToLog);
+        SRedactSensitiveValues(sqlToLog);
 
         if ((int64_t)elapsed > warnThreshold) {
             if (isSyncThread) {
@@ -2651,7 +2651,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     // Only OK and commit conflicts are allowed without warning because they're the only "successful" results that we expect here.
     // OK means it succeeds, conflicts will get retried further up the call stack.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && !skipWarn) {
-        redactSensitiveValues(sqlToLog);
+        SRedactSensitiveValues(sqlToLog);
 
         SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
     }
@@ -2753,7 +2753,7 @@ bool SREMatch(const string& regExp, const string& s, string& match) {
     return pcrecpp::RE(regExp).FullMatch(s, &match);
 }
 
-void redactredactSensitiveValues(string& s) {
+void SRedactSensitiveValues(string& s) {
     // The message may be truncated midway through the authToken, so there may not be a closing quote (") at the end of
     // the authToken, so we need to optionally match the closing quote with a question mark (?).
     pcrecpp::RE("\"authToken\":\".*\"?").GlobalReplace("\"authToken\":<REDACTED>", &s);
