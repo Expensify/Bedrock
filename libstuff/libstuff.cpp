@@ -2618,14 +2618,8 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     string sqlToLog = sql;
 
     if ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000) {
-        // We should always avoid logging authTokens because they give access to accounts
-        pcrecpp::RE("\"authToken\":\"[0-9A-F]{400,1024}\"").GlobalReplace("\"authToken\":<REDACTED>", &sqlToLog);
+        SRedactSensitiveValues(sqlToLog);
 
-        // Let's redact queries that contain encrypted fields since there's no value in logging them
-        pcrecpp::RE("v[0-9]+:[0-9A-F]{10,}").GlobalReplace("<REDACTED>", &sqlToLog);
-
-        // We remove anything inside "html" because we intentionally don't log chats
-        pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &sqlToLog);
         if ((int64_t)elapsed > warnThreshold) {
             if (isSyncThread) {
                 SWARN("Slow query sync ("
@@ -2657,8 +2651,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     // Only OK and commit conflicts are allowed without warning because they're the only "successful" results that we expect here.
     // OK means it succeeds, conflicts will get retried further up the call stack.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && !skipWarn) {
-        // We remove anything inside "html" because we intentionally don't log chats
-        pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &sqlToLog);
+        SRedactSensitiveValues(sqlToLog);
 
         SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
     }
@@ -2758,6 +2751,18 @@ bool SREMatch(const string& regExp, const string& s) {
 
 bool SREMatch(const string& regExp, const string& s, string& match) {
     return pcrecpp::RE(regExp).FullMatch(s, &match);
+}
+
+void SRedactSensitiveValues(string& s) {
+    // The message may be truncated midway through the authToken, so there may not be a closing quote (") at the end of
+    // the authToken, so we need to optionally match the closing quote with a question mark (?).
+    pcrecpp::RE("\"authToken\":\".*\"?").GlobalReplace("\"authToken\":<REDACTED>", &s);
+
+    // Redact queries that contain encrypted fields since there's no value in logging them.
+    pcrecpp::RE("v[0-9]+:[0-9A-F]{10,}").GlobalReplace("<REDACTED>", &s);
+
+    // Remove anything inside "html" because we intentionally don't log chats.
+    pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &s);
 }
 
 SStopwatch::SStopwatch() {
