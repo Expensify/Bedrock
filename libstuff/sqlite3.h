@@ -148,7 +148,7 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.41.0"
 #define SQLITE_VERSION_NUMBER 3041000
-#define SQLITE_SOURCE_ID      "2023-02-03 20:51:25 a379942d7654baa98d052c891bdeafcd8ead52fcddb27ba81b0a140689c8d7c4"
+#define SQLITE_SOURCE_ID      "2023-03-10 17:08:45 539dc37a36bdf78f80f513eddf576a886beb894d7e919c435e81db819533ab91"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -9820,7 +9820,7 @@ SQLITE_API int sqlite3_vtab_in(sqlite3_index_info*, int iCons, int bHandle);
 **
 ** <blockquote><pre>
 ** &nbsp;  for(rc=sqlite3_vtab_in_first(pList, &pVal);
-** &nbsp;      rc==SQLITE_OK && pVal
+** &nbsp;      rc==SQLITE_OK && pVal;
 ** &nbsp;      rc=sqlite3_vtab_in_next(pList, &pVal)
 ** &nbsp;  ){
 ** &nbsp;    // do something with pVal
@@ -10560,6 +10560,19 @@ SQLITE_API int sqlite3_deserialize(
 
 SQLITE_API void sqlite3_hct_cas_failure(int nCASFailCnt, int nCASFailReset);
 SQLITE_API void sqlite3_hct_proc_failure(int nProcFailCnt);
+
+#if defined(__wasi__)
+# undef SQLITE_WASI
+# define SQLITE_WASI 1
+# undef SQLITE_OMIT_WAL
+# define SQLITE_OMIT_WAL 1/* because it requires shared memory APIs */
+# ifndef SQLITE_OMIT_LOAD_EXTENSION
+#  define SQLITE_OMIT_LOAD_EXTENSION
+# endif
+# ifndef SQLITE_THREADSAFE
+#  define SQLITE_THREADSAFE 0
+# endif
+#endif
 
 #ifdef __cplusplus
 }  /* End of the 'extern "C"' block */
