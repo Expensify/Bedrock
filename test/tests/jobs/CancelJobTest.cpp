@@ -21,14 +21,6 @@ struct CancelJobTest : tpunit::TestFixture {
 
     void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
 
-    string singleValueQuery(const string& query) {
-        SData command("Query");
-        command["Query"] = query;
-        command["Format"] = "JSON";
-        auto row0 = SParseJSONObject(tester->executeWaitMultipleData({command})[0].content)["rows"];
-        return SParseJSONArray(SParseJSONArray(row0).front()).front();
-    }
-
     // Reset the jobs table
     void tearDown() {
         SData command("Query");
@@ -92,7 +84,9 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Assert parent is in QUEUED state
-        ASSERT_EQUAL(singleValueQuery("SELECT state FROM jobs WHERE jobID = " + parentID + ";"), "QUEUED");
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
 
         // Cannot finish a job with a child
         command.clear();
@@ -136,7 +130,9 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Assert job is in RUNNING state
-        ASSERT_EQUAL(singleValueQuery("SELECT state FROM jobs WHERE jobID = " + jobID + ";"), "RUNNING");
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "RUNNING");
 
         // Cannot finish a job in RUNNING state
         command.clear();
@@ -145,7 +141,8 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Assert job state is unchanged
-        ASSERT_EQUAL(singleValueQuery("SELECT state FROM jobs WHERE jobID = " + jobID + ";"), "RUNNING");
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "RUNNING");
     }
 
     // Ignore canceljob for FINISHED jobs
@@ -187,7 +184,9 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Assert job is in FINISHED state
-        ASSERT_EQUAL(singleValueQuery("SELECT state FROM jobs WHERE jobID = " + childID + ";"), "FINISHED");
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
+        ASSERT_EQUAL(result[0][0], "FINISHED");
 
         // Cannot finish a job in FINISHED state
         command.clear();
@@ -196,7 +195,8 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Assert job state is unchanged
-        ASSERT_EQUAL(singleValueQuery("SELECT state FROM jobs WHERE jobID = " + childID + ";"), "FINISHED");
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
+        ASSERT_EQUAL(result[0][0], "FINISHED");
     }
 
     // Ignore canceljob for PAUSED jobs
@@ -222,7 +222,9 @@ struct CancelJobTest : tpunit::TestFixture {
         string childID = response["jobID"];
 
         // Assert job is in PAUSED state
-        ASSERT_EQUAL(singleValueQuery("SELECT state FROM jobs WHERE jobID = " + childID + ";"), "PAUSED");
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
+        ASSERT_EQUAL(result[0][0], "PAUSED");
 
         // Cannot finish a job in PAUSED state
         command.clear();
@@ -231,7 +233,8 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Assert job state is unchanged
-        ASSERT_EQUAL(singleValueQuery("SELECT state FROM jobs WHERE jobID = " + childID + ";"), "PAUSED");
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
+        ASSERT_EQUAL(result[0][0], "PAUSED");
     }
 
     // Cancel a child job
@@ -282,9 +285,13 @@ struct CancelJobTest : tpunit::TestFixture {
         command["jobID"] = childID;
         tester->executeWaitVerifyContent(command);
 
-        // Assert job state is canceled, but sibling is still running
-        ASSERT_EQUAL(singleValueQuery("SELECT state FROM jobs WHERE jobID = " + childID + ";"), "CANCELLED");
-        ASSERT_EQUAL(singleValueQuery("SELECT state FROM jobs WHERE jobID = " + siblingID + ";"), "RUNNING");
+        // Assert job state is cancelled, but sibling is still running
+        SQResult result;        
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
+        ASSERT_EQUAL(result[0][0], "CANCELLED");
+
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + siblingID + ";", result);
+        ASSERT_EQUAL(result[0][0], "RUNNING");
     }
 
     // Cancel a child job that doesn't have a parent
@@ -345,7 +352,9 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Parent should still be PAUSED
-        ASSERT_EQUAL(singleValueQuery("SELECT state FROM jobs WHERE jobID = " + parentID + ";"), "PAUSED");
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
+        ASSERT_EQUAL(result[0][0], "PAUSED");
 
         // The parent may have other children from mock requests, delete them.
         command.clear();
@@ -360,6 +369,7 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Parent should be queued
-        ASSERT_EQUAL(singleValueQuery("SELECT state FROM jobs WHERE jobID = " + parentID + ";"), "QUEUED");
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + parentID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
     }
 } __CancelJobTest;
