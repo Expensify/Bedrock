@@ -8,6 +8,7 @@
 
 #include <libstuff/SData.h>
 #include <libstuff/SFastBuffer.h>
+#include <libstuff/SQResult.h>
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
 #include <test/lib/tpunit++.hpp>
@@ -517,20 +518,47 @@ SQLite& BedrockTester::getSQLiteDB()
 
 string BedrockTester::readDB(const string& query)
 {
+    SData command("Query");
+    command["Query"] = query;
+    command["Format"] = "JSON";
+    auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
+    return SParseJSONArray(SParseJSONArray(row0).front()).front();
+
+    /* Old version.
     SQLite& db = getSQLiteDB();
     db.beginTransaction();
     string result = db.read(query);
     db.rollback();
     return result;
+    */
 }
 
 bool BedrockTester::readDB(const string& query, SQResult& result)
 {
+    result.clear();
+    SData command("Query");
+    command["Query"] = query;
+    command["Format"] = "JSON";
+    auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
+
+    list<string> rows = SParseJSONArray(row0);
+    for (const string& rowStr : rows) {
+        list<string> vals = SParseJSONArray(rowStr);
+        vector<string> row;
+        for (auto& v : vals) {
+            row.push_back(v);
+        }
+        result.rows.push_back(row);
+    }
+    return true;
+
+    /* old version.
     SQLite& db = getSQLiteDB();
     db.beginTransaction();
     bool success = db.read(query, result);
     db.rollback();
     return success;
+    */
 }
 
 bool BedrockTester::waitForStatusTerm(const string& term, const string& testValue, uint64_t timeoutUS) {
