@@ -45,6 +45,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
     _controlPort(controlPort ?: ports.getPort()),
     _commandPortPrivate(ports.getPort())
 {
+    const bool hctree = true;
     {
         lock_guard<decltype(_testersMutex)> lock(_testersMutex);
         _testers.insert(this);
@@ -62,8 +63,10 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         serverName = bedrockBinary;
     }
 
+    string dbFileName = getTempFileName();
+
     map <string, string> defaultArgs = {
-        {"-db", getTempFileName()},
+        {"-db", dbFileName},
         {"-serverHost", "127.0.0.1:" + to_string(_serverPort)},
         {"-nodeName", "bedrock_test"},
         {"-nodeHost", "localhost:" + to_string(_nodePort)},
@@ -86,6 +89,10 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-testName", currentTestName},
     };
 
+    if (hctree) {
+        defaultArgs["-hctree"] = "";
+    }
+
     // Set defaults.
     for (auto& row : defaultArgs) {
         _args[row.first] = row.second;
@@ -101,7 +108,11 @@ BedrockTester::BedrockTester(const map<string, string>& args,
     if (queries.size()) {
         sqlite3* db;
         sqlite3_initialize();
-        sqlite3_open_v2(_args["-db"].c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
+        string completeFilename = dbFileName;
+        if (hctree) {
+            completeFilename = "file://" + completeFilename + "?hctree=1";
+        }
+        sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
         for (string query : queries) {
             int error = sqlite3_exec(db, query.c_str(), 0, 0, 0);
             if (error) {
