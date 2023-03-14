@@ -111,7 +111,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         if (hctree) {
             completeFilename = "file://" + completeFilename + "?hctree=1";
         }
-        sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
+        sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL);
         for (string query : queries) {
             int error = sqlite3_exec(db, query.c_str(), 0, 0, 0);
             if (error) {
