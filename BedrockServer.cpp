@@ -119,7 +119,7 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
     int fdLimit = args.isSet("-live") ? 25'000 : 250;
     SINFO("Setting dbPool size to: " << fdLimit);
-    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB);
+    _dbPool = make_shared<SQLitePool>(_replicationState, fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB);
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
@@ -784,7 +784,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     }
 
     // More checks for parallel writing.
-    canWriteParallel = canWriteParallel && (state == SQLiteNodeState::LEADING);
     canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
 
     while (true) {
@@ -829,10 +828,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 return;
             }
 
-            // If we've changed out of leading, we need to notice that.
-            state = _replicationState.load();
-            canWriteParallel = canWriteParallel && (state == SQLiteNodeState::LEADING);
-
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
             // command has specifically asked for that.
             // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
@@ -841,6 +836,22 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             if (command->repeek || !command->httpsRequests.size()) {
                 peekResult = core.peekCommand(command, isBlocking);
                 calledPeek = true;
+            }
+
+            // If the command wants to be escalated, let it.
+            if (peekResult == BedrockCore::RESULT::SERVER_NOT_LEADING) {
+                if (_replicationState.load() == SQLiteNodeState::FOLLOWING) {
+                    auto _clusterMessengerCopy = _clusterMessenger;
+                    if (_clusterMessengerCopy) {
+                        _clusterMessengerCopy->runOnLeader(*command);
+                    } else {
+                        SALERT("Following with no cluster messenger!");
+                    }
+                } else {
+                    // I don't know if there's anything to do here. Re-queue the command?
+                }
+                _reply(command);
+                break;
             }
 
             if (!calledPeek || peekResult == BedrockCore::RESULT::SHOULD_PROCESS) {
@@ -895,7 +906,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 // We check `onlyProcessOnSyncThread` here, rather than before processing the command, because it's
                 // not set at creation time, it's set in `peek`, so we need to wait at least until after peek is
                 // called to check it.
-                if (command->onlyProcessOnSyncThread() || !canWriteParallel) {
+                if (!command->processOnFollowers() || command->onlyProcessOnSyncThread() || !canWriteParallel) {
                     // Roll back the transaction, it'll get re-run in the sync thread.
                     core.rollback();
                     auto _clusterMessengerCopy = _clusterMessenger;
@@ -980,9 +991,22 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     // We won't write regardless.
                     core.rollback();
 
+                    // If we are just following, run this command on leader.
+                    if (_replicationState.load() == SQLiteNodeState::FOLLOWING) {
+                        auto _clusterMessengerCopy = _clusterMessenger;
+                        if (_clusterMessengerCopy) {
+                            _clusterMessengerCopy->runOnLeader(*command);
+                        } else {
+                            SALERT("Following with no cluster messenger!");
+                        }
+                        _reply(command);
+                        break;
+                    } 
+
+                    // Otherwise we may have fallen out of a valid state.
                     // If there are no HTTPS requests, we can just re-queue this command, otherwise, we will
                     // potentially run the same HTTPS requests twice.
-                    if (command->httpsRequests.size()) {
+                    else if (command->httpsRequests.size()) {
                         SALERT("Server stopped leading while running command with HTTPS requests!");
                         command->response.methodLine = "500 Leader stopped leading";
                         _reply(command);

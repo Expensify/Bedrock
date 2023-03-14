@@ -1,4 +1,5 @@
 #include "SQLite.h"
+#include "SQLiteNode.h"
 
 #include <linux/limits.h>
 #include <string.h>
@@ -205,7 +206,7 @@ void SQLite::commonConstructorInitialization() {
     }
 }
 
-SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
+SQLite::SQLite(atomic<SQLiteNodeState>& serverState, const string& filename, int cacheSize, int maxJournalSize,
                int minJournalTables, const string& synchronous, int64_t mmapSizeGB) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
@@ -215,6 +216,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
+    _serverState(serverState),
     _mmapSizeGB(mmapSizeGB)
 {
     commonConstructorInitialization();
@@ -229,6 +231,7 @@ SQLite::SQLite(const SQLite& from) :
     _journalSize(from._journalSize),
     _cacheSize(from._cacheSize),
     _synchronous(from._synchronous),
+    _serverState(from._serverState),
     _mmapSizeGB(from._mmapSizeGB)
 {
     commonConstructorInitialization();
@@ -473,6 +476,10 @@ void SQLite::_checkInterruptErrors(const string& error) {
 }
 
 bool SQLite::write(const string& query) {
+    if (_serverState.load() != SQLiteNodeState::LEADING && _serverState.load() != SQLiteNodeState::STANDINGDOWN) {
+        throw NotLeading();
+    }
+
     if (_noopUpdateMode) {
         SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
         return true;
@@ -483,10 +490,15 @@ bool SQLite::write(const string& query) {
 }
 
 bool SQLite::writeIdempotent(const string& query) {
+    if (_serverState.load() != SQLiteNodeState::LEADING && _serverState.load() != SQLiteNodeState::STANDINGDOWN) {
+        throw NotLeading();
+    }
+
     return _writeIdempotent(query);
 }
 
 bool SQLite::writeUnmodified(const string& query) {
+    // This function does not check for leading, because it's intended to be run specifically during replication on followers.
     return _writeIdempotent(query, true);
 }
 

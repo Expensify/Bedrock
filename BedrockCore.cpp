@@ -67,7 +67,6 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
 BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     BedrockServer::ScopedStateSnapshot snapshot(_server);
-    command->lastPeekedOrProcessedInState = _server.getState();
 
     // Convenience references to commonly used properties.
     const SData& request = command->request;
@@ -134,10 +133,10 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     } catch (const SException& e) {
         command->repeek = false;
         _handleCommandException(command, e);
-    } catch (const SHTTPSManager::NotLeading& e) {
+    } catch (const SNotLeading& e) {
         command->repeek = false;
-        returnValue = RESULT::SHOULD_PROCESS;
-        SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
+        returnValue = RESULT::SERVER_NOT_LEADING;
+        SINFO("Command '" << request.methodLine << "' needs to be leading.");
     } catch (...) {
         command->repeek = false;
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
@@ -160,16 +159,8 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
 
 BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
     AutoTimer timer(command, BedrockCommand::PROCESS);
+    SINFO("Adding process timer for command");
     BedrockServer::ScopedStateSnapshot snapshot(_server);
-
-    // We need to be leading (including standing down) and we need to have peeked this command in the same set of
-    // states, or we can't complete this command (we can't commit the command if we're not leading, and if we're
-    // leading but were following when we peeked, we may try to read HTTPS requests we never made).
-    if ((command->lastPeekedOrProcessedInState != SQLiteNodeState::LEADING && command->lastPeekedOrProcessedInState != SQLiteNodeState::STANDINGDOWN) ||
-        (_server.getState() != SQLiteNodeState::LEADING && _server.getState() != SQLiteNodeState::STANDINGDOWN)) {
-        return RESULT::SERVER_NOT_LEADING;
-    }
-    command->lastPeekedOrProcessedInState = _server.getState();
 
     // Convenience references to commonly used properties.
     const SData& request = command->request;
@@ -211,6 +202,10 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                     SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
                 }
                 STHROW("555 Timeout processing command");
+            } catch (const SNotLeading& e) {
+                command->repeek = false;
+                SINFO("Command '" << request.methodLine << "' needs to be leading.");
+                return RESULT::SERVER_NOT_LEADING;
             }
         }
 

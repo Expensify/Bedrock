@@ -42,6 +42,9 @@ class TestPluginCommand : public BedrockCommand {
     virtual bool peek(SQLite& db);
     virtual void process(SQLite& db);
     virtual void reset(BedrockCommand::STAGE stage) override;
+    virtual bool processOnFollowers() const override {
+        return true;
+    }
 
   private:
     BedrockPlugin_TestPlugin& plugin() { return static_cast<BedrockPlugin_TestPlugin&>(*_plugin); }

@@ -161,9 +161,6 @@ class BedrockCommand : public SQLiteCommand {
     // in `process` instead of peek, as it will always be escalated to leader 
     const bool escalateImmediately;
 
-    // Record the state we were acting under in the last call to `peek` or `process`.
-    SQLiteNodeState lastPeekedOrProcessedInState = SQLiteNodeState::UNKNOWN;
-
     // If someone is waiting for this command to complete, this will be called in the destructor.
     function<void()>* destructionCallback;
 
@@ -174,6 +171,10 @@ class BedrockCommand : public SQLiteCommand {
 
     // Time at which this command was initially scheduled (typically the time of creation).
     const uint64_t scheduledTime;
+
+    virtual bool processOnFollowers() const {
+        return false;
+    }
 
   protected:
     // The plugin that owns this command.

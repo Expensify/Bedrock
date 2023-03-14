@@ -3,10 +3,12 @@
 #include <sqlitecluster/SQLite.h>
 #include <condition_variable>
 
+enum class SQLiteNodeState;
+
 class SQLitePool {
   public:
     // Create a pool of DB handles.
-    SQLitePool(size_t maxDBs, const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
+    SQLitePool(atomic<SQLiteNodeState>& serverState, size_t maxDBs, const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
                const string& synchronous = "", int64_t mmapSizeGB = 0);
     ~SQLitePool();
 
@@ -29,6 +31,8 @@ class SQLitePool {
     void returnToPool(size_t index);
 
   private:
+    atomic<SQLiteNodeState>& _serverState;
+
     // Synchronization variables.
     mutex _sync;
     condition_variable _wait;
