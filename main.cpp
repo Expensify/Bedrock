@@ -309,6 +309,15 @@ int main(int argc, char* argv[]) {
         SDEBUG("Resetting database");
         string db = args["-db"];
         unlink(db.c_str());
+    } else if (args.isSet("-bootstrap")) {
+        // Allow for bootstraping a node with no database file in place.
+        SINFO("Loading in bootstrap mode, skipping check for database existance.");
+    } else if (args.isSet("-hctree")) {
+        SINFO("Starting in hctree mode, skipping check for database existance.");
+    } else {
+        // Otherwise verify the database exists
+        SDEBUG("Verifying database exists");
+        SASSERT(SFileExists(args["-db"]));
     }
 
     // Set our soft limit to the same as our hard limit to allow for more file handles.
