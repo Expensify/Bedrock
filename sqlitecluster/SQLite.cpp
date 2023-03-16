@@ -100,9 +100,10 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool h
     sqlite3* db;
     string completeFilename = filename;
     if (hctree) {
+        // Per the docs here: https://sqlite.org/hctree/doc/hctree/doc/hctree/index.html
+        // We only need to specify the full URL when creating new DBs. Existing DBs will be auto-detected as HC-Tree or not.
         completeFilename = "file://" + completeFilename + "?hctree=1";
     }
-    SINFO("Opening DB: " << completeFilename);
     SASSERT(!sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL));
 
     // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
@@ -241,6 +242,7 @@ SQLite::SQLite(const SQLite& from) :
     _synchronous(from._synchronous),
     _mmapSizeGB(from._mmapSizeGB)
 {
+    // This can always pass "true" because the copy constructor does not need to set the DB to WAL2 mode, it would have been set in the object being copied.
     commonConstructorInitialization(true);
 }
 
