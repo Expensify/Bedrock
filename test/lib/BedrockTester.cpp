@@ -16,6 +16,7 @@
 PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
+const bool BedrockTester::ENABLE_HCTREE{false};
 
 string BedrockTester::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
@@ -45,7 +46,6 @@ BedrockTester::BedrockTester(const map<string, string>& args,
     _controlPort(controlPort ?: ports.getPort()),
     _commandPortPrivate(ports.getPort())
 {
-    const bool hctree = true;
     {
         lock_guard<decltype(_testersMutex)> lock(_testersMutex);
         _testers.insert(this);
@@ -64,7 +64,6 @@ BedrockTester::BedrockTester(const map<string, string>& args,
     }
 
     string dbFileName = getTempFileName();
-
     map <string, string> defaultArgs = {
         {"-db", dbFileName},
         {"-serverHost", "127.0.0.1:" + to_string(_serverPort)},
@@ -89,7 +88,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-testName", currentTestName},
     };
 
-    if (hctree) {
+    if (ENABLE_HCTREE) {
         defaultArgs["-hctree"] = "";
     }
 
@@ -109,7 +108,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         sqlite3* db;
         sqlite3_initialize();
         string completeFilename = dbFileName;
-        if (hctree) {
+        if (ENABLE_HCTREE) {
             completeFilename = "file://" + completeFilename + "?hctree=1";
         }
         sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL);
@@ -529,47 +528,47 @@ SQLite& BedrockTester::getSQLiteDB()
 
 string BedrockTester::readDB(const string& query)
 {
-    SData command("Query");
-    command["Query"] = query;
-    command["Format"] = "JSON";
-    auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
-    return SParseJSONArray(SParseJSONArray(row0).front()).front();
-
-    /* Old version.
-    SQLite& db = getSQLiteDB();
-    db.beginTransaction();
-    string result = db.read(query);
-    db.rollback();
-    return result;
-    */
+    if (ENABLE_HCTREE) {
+        SData command("Query");
+        command["Query"] = query;
+        command["Format"] = "JSON";
+        auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
+        return SParseJSONArray(SParseJSONArray(row0).front()).front();
+    } else {
+        SQLite& db = getSQLiteDB();
+        db.beginTransaction();
+        string result = db.read(query);
+        db.rollback();
+        return result;
+    }
 }
 
 bool BedrockTester::readDB(const string& query, SQResult& result)
 {
-    result.clear();
-    SData command("Query");
-    command["Query"] = query;
-    command["Format"] = "JSON";
-    auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
+    if (ENABLE_HCTREE) {
+        result.clear();
+        SData command("Query");
+        command["Query"] = query;
+        command["Format"] = "JSON";
+        auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
 
-    list<string> rows = SParseJSONArray(row0);
-    for (const string& rowStr : rows) {
-        list<string> vals = SParseJSONArray(rowStr);
-        vector<string> row;
-        for (auto& v : vals) {
-            row.push_back(v);
+        list<string> rows = SParseJSONArray(row0);
+        for (const string& rowStr : rows) {
+            list<string> vals = SParseJSONArray(rowStr);
+            vector<string> row;
+            for (auto& v : vals) {
+                row.push_back(v);
+            }
+            result.rows.push_back(row);
         }
-        result.rows.push_back(row);
+        return true;
+    } else {
+        SQLite& db = getSQLiteDB();
+        db.beginTransaction();
+        bool success = db.read(query, result);
+        db.rollback();
+        return success;
     }
-    return true;
-
-    /* old version.
-    SQLite& db = getSQLiteDB();
-    db.beginTransaction();
-    bool success = db.read(query, result);
-    db.rollback();
-    return success;
-    */
 }
 
 bool BedrockTester::waitForStatusTerm(const string& term, const string& testValue, uint64_t timeoutUS) {
