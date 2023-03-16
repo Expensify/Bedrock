@@ -312,6 +312,8 @@ int main(int argc, char* argv[]) {
     } else if (args.isSet("-bootstrap")) {
         // Allow for bootstraping a node with no database file in place.
         SINFO("Loading in bootstrap mode, skipping check for database existance.");
+    } else if (args.isSet("-hctree")) {
+        SINFO("Starting in hctree mode, skipping check for database existance.");
     } else {
         // Otherwise verify the database exists
         SDEBUG("Verifying database exists");
