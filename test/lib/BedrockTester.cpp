@@ -8,6 +8,7 @@
 
 #include <libstuff/SData.h>
 #include <libstuff/SFastBuffer.h>
+#include <libstuff/SQResult.h>
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
 #include <test/lib/tpunit++.hpp>
@@ -15,6 +16,7 @@
 PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
+const bool BedrockTester::ENABLE_HCTREE{false};
 
 string BedrockTester::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
@@ -61,8 +63,9 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         serverName = bedrockBinary;
     }
 
+    string dbFileName = getTempFileName();
     map <string, string> defaultArgs = {
-        {"-db", getTempFileName()},
+        {"-db", dbFileName},
         {"-serverHost", "127.0.0.1:" + to_string(_serverPort)},
         {"-nodeName", "bedrock_test"},
         {"-nodeHost", "localhost:" + to_string(_nodePort)},
@@ -84,6 +87,10 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-testName", currentTestName},
     };
 
+    if (ENABLE_HCTREE) {
+        defaultArgs["-hctree"] = "";
+    }
+
     // Set defaults.
     for (auto& row : defaultArgs) {
         _args[row.first] = row.second;
@@ -94,17 +101,16 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         _args[row.first] = row.second;
     }
     
-    // If the DB file doesn't exist, create it.
-    if (!SFileExists(_args["-db"])) {
-        SFileSave(_args["-db"], "");
-    }
-
     // Run any supplied queries on the DB.
     // We don't use SQLite here, because we specifically want to avoid dealing with journal tables.
     if (queries.size()) {
         sqlite3* db;
         sqlite3_initialize();
-        sqlite3_open_v2(_args["-db"].c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
+        string completeFilename = dbFileName;
+        if (ENABLE_HCTREE) {
+            completeFilename = "file://" + completeFilename + "?hctree=1";
+        }
+        sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL);
         for (string query : queries) {
             int error = sqlite3_exec(db, query.c_str(), 0, 0, 0);
             if (error) {
@@ -521,20 +527,47 @@ SQLite& BedrockTester::getSQLiteDB()
 
 string BedrockTester::readDB(const string& query)
 {
-    SQLite& db = getSQLiteDB();
-    db.beginTransaction();
-    string result = db.read(query);
-    db.rollback();
-    return result;
+    if (ENABLE_HCTREE) {
+        SData command("Query");
+        command["Query"] = query;
+        command["Format"] = "JSON";
+        auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
+        return SParseJSONArray(SParseJSONArray(row0).front()).front();
+    } else {
+        SQLite& db = getSQLiteDB();
+        db.beginTransaction();
+        string result = db.read(query);
+        db.rollback();
+        return result;
+    }
 }
 
 bool BedrockTester::readDB(const string& query, SQResult& result)
 {
-    SQLite& db = getSQLiteDB();
-    db.beginTransaction();
-    bool success = db.read(query, result);
-    db.rollback();
-    return success;
+    if (ENABLE_HCTREE) {
+        result.clear();
+        SData command("Query");
+        command["Query"] = query;
+        command["Format"] = "JSON";
+        auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
+
+        list<string> rows = SParseJSONArray(row0);
+        for (const string& rowStr : rows) {
+            list<string> vals = SParseJSONArray(rowStr);
+            vector<string> row;
+            for (auto& v : vals) {
+                row.push_back(v);
+            }
+            result.rows.push_back(row);
+        }
+        return true;
+    } else {
+        SQLite& db = getSQLiteDB();
+        db.beginTransaction();
+        bool success = db.read(query, result);
+        db.rollback();
+        return success;
+    }
 }
 
 bool BedrockTester::waitForStatusTerm(const string& term, const string& testValue, uint64_t timeoutUS) {

@@ -8,6 +8,8 @@ class SQLite;
 
 class BedrockTester {
   public:
+    static const bool ENABLE_HCTREE;
+
     // This is an allocator for TCP ports, new servers can get new port numbers from this object and return them when
     // they're done.
     static PortMap ports;

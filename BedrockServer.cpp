@@ -108,7 +108,7 @@ void BedrockServer::sync()
     // If still no value, use the number of cores on the machine, if available.
     workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
 
-    // A minumum of *2* worker threads are required. One for blocking writes, one for other commands.
+    // A minimum of *2* worker threads are required. One for blocking writes, one for other commands.
     if (workerThreads < 2) {
         workerThreads = 2;
     }
@@ -119,7 +119,7 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
     int fdLimit = args.isSet("-live") ? 25'000 : 250;
     SINFO("Setting dbPool size to: " << fdLimit);
-    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB);
+    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
