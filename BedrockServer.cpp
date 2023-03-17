@@ -108,7 +108,7 @@ void BedrockServer::sync()
     // If still no value, use the number of cores on the machine, if available.
     workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
 
-    // A minumum of *2* worker threads are required. One for blocking writes, one for other commands.
+    // A minimum of *2* worker threads are required. One for blocking writes, one for other commands.
     if (workerThreads < 2) {
         workerThreads = 2;
     }
