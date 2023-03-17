@@ -217,7 +217,7 @@ void SQLite::commonConstructorInitialization(bool hctree) {
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB) :
+               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool hctree) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB, hctree)),
