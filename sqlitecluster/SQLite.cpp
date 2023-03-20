@@ -32,13 +32,16 @@ string SQLite::initializeFilename(const string& filename) {
         char resolvedPath[PATH_MAX];
         char* result = realpath(filename.c_str(), resolvedPath);
         if (!result) {
+            if (errno == ENOENT) {
+                return filename;
+            }
             SERROR("Couldn't resolve pathname for: " << filename);
         }
         return resolvedPath;
     }
 }
 
-SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames) {
+SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool hctree) {
     static struct SharedDataLookupMapType {
         map<string, SharedData*> m;
         ~SharedDataLookupMapType() {
@@ -61,7 +64,7 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
         bool isDBCurrentlyUsingWAL2 = result.rows.size() && result.rows[0][0] == "wal2";
 
         // If the intended wal setting doesn't match the existing wal setting, change it.
-        if (!isDBCurrentlyUsingWAL2) {
+        if (!hctree && !isDBCurrentlyUsingWAL2) {
             SASSERT(!SQuery(db, "", "PRAGMA journal_mode = delete;", result));
             SASSERT(!SQuery(db, "", "PRAGMA journal_mode = WAL2;", result));
         }
@@ -91,11 +94,17 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
     }
 }
 
-sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB) {
+sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree) {
     // Open the DB in read-write mode.
     SINFO((SFileExists(filename) ? "Opening" : "Creating") << " database '" << filename << "'.");
     sqlite3* db;
-    SASSERT(!sqlite3_open_v2(filename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL));
+    string completeFilename = filename;
+    if (hctree) {
+        // Per the docs here: https://sqlite.org/hctree/doc/hctree/doc/hctree/index.html
+        // We only need to specify the full URL when creating new DBs. Existing DBs will be auto-detected as HC-Tree or not.
+        completeFilename = "file://" + completeFilename + "?hctree=1";
+    }
+    SASSERT(!sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL));
 
     // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
     // any tables to be effective.
@@ -167,14 +176,16 @@ uint64_t SQLite::initializeJournalSize(sqlite3* db, const vector<string>& journa
     return max - min;
 }
 
-void SQLite::commonConstructorInitialization() {
+void SQLite::commonConstructorInitialization(bool hctree) {
     // Perform sanity checks.
     SASSERT(!_filename.empty());
     SASSERT(_cacheSize > 0);
     SASSERT(_maxJournalSize > 0);
 
     // WAL is what allows simultaneous read/writing.
-    SASSERT(!SQuery(_db, "enabling write ahead logging (wal2)", "PRAGMA journal_mode = wal2;"));
+    if (!hctree) {
+        SASSERT(!SQuery(_db, "enabling write ahead logging (wal2)", "PRAGMA journal_mode = wal2;"));
+    }
 
     if (_mmapSizeGB) {
         SASSERT(!SQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
@@ -206,24 +217,24 @@ void SQLite::commonConstructorInitialization() {
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB) :
+               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool hctree) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
-    _db(initializeDB(_filename, mmapSizeGB)),
+    _db(initializeDB(_filename, mmapSizeGB, hctree)),
     _journalNames(initializeJournal(_db, minJournalTables)),
-    _sharedData(initializeSharedData(_db, _filename, _journalNames)),
+    _sharedData(initializeSharedData(_db, _filename, _journalNames, hctree)),
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
     _mmapSizeGB(mmapSizeGB)
 {
-    commonConstructorInitialization();
+    commonConstructorInitialization(hctree);
 }
 
 SQLite::SQLite(const SQLite& from) :
     _filename(from._filename),
     _maxJournalSize(from._maxJournalSize),
-    _db(initializeDB(_filename, from._mmapSizeGB)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
+    _db(initializeDB(_filename, from._mmapSizeGB, false)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
     _journalNames(from._journalNames),
     _sharedData(from._sharedData),
     _journalSize(from._journalSize),
@@ -231,7 +242,8 @@ SQLite::SQLite(const SQLite& from) :
     _synchronous(from._synchronous),
     _mmapSizeGB(from._mmapSizeGB)
 {
-    commonConstructorInitialization();
+    // This can always pass "true" because the copy constructor does not need to set the DB to WAL2 mode, it would have been set in the object being copied.
+    commonConstructorInitialization(true);
 }
 
 int SQLite::_progressHandlerCallback(void* arg) {
@@ -644,9 +656,12 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
 
         // Similarly, record WAL file size.
         sqlite3_file *pWal = 0;
-        sqlite3_int64 sz;
+        sqlite3_int64 sz = 0;
         sqlite3_file_control(_db, "main", SQLITE_FCNTL_JOURNAL_POINTER, &pWal);
-        pWal->pMethods->xFileSize(pWal, &sz);
+        if (pWal) {
+            // This is not set for HC-tree DBs.
+            pWal->pMethods->xFileSize(pWal, &sz);
+        }
 
         _commitElapsed += STimeNow() - before;
         _journalSize = newJournalSize;
