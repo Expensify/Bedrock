@@ -530,9 +530,8 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(result.size(), 1);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
 
-
         // What we need to confirm is that the next run time of the two jobs we got above is correct.
-        tester->readDB("SELECT nextRun, jobID FROM jobs WHERE JSON_EXTRACT(data, '$.mockRequest') IS NULL AND jobID IN (" + SQ(jobID1) + ", " + SQ(jobID2) + ")", result);
+        tester->readDB("SELECT nextRun, jobID FROM jobs WHERE JSON_EXTRACT(data, '$.mockRequest') IS NULL AND jobID IN (" + SQ(jobID1) + ", " + SQ(jobID2) + ");", result);
         ASSERT_EQUAL(result.size(), 2);
 
         // Make sure both run times are in the allowable range.
