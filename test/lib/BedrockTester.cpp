@@ -367,7 +367,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                                 *errorCode = 2;
                             }
                             if (timeout) {
-                                cout << "executeWaitMultiple(): ran out of time waiting for socket" << endl;
+                                cout << "executeWaitMultipleData(): ran out of time waiting for socket" << endl;
                             }
                             return;
                         }
@@ -525,18 +525,27 @@ SQLite& BedrockTester::getSQLiteDB()
 {
     if (!_db) {
         // Assumes wal2 mode.
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, "", 0);
+        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, "", 0, ENABLE_HCTREE);
     }
     return *_db;
 }
 
-string BedrockTester::readDB(const string& query)
+void BedrockTester::freeDB() {
+    delete _db;
+    _db = nullptr;
+}
+
+string BedrockTester::readDB(const string& query, bool online)
 {
-    if (ENABLE_HCTREE) {
+    if (ENABLE_HCTREE && online) {
         SData command("Query");
         command["Query"] = query;
         command["Format"] = "JSON";
         auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
+        if (row0 == "") {
+            return "";
+        }
+
         return SParseJSONArray(SParseJSONArray(row0).front()).front();
     } else {
         SQLite& db = getSQLiteDB();
@@ -547,9 +556,9 @@ string BedrockTester::readDB(const string& query)
     }
 }
 
-bool BedrockTester::readDB(const string& query, SQResult& result)
+bool BedrockTester::readDB(const string& query, SQResult& result, bool online)
 {
-    if (ENABLE_HCTREE) {
+    if (ENABLE_HCTREE && online) {
         result.clear();
         SData command("Query");
         command["Query"] = query;
