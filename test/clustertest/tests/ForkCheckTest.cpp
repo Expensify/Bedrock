@@ -15,9 +15,7 @@ struct ForkCheckTest : tpunit::TestFixture {
         uint64_t maxJournalCommit = 0;
         string maxJournalTable;
         for (auto& row : journals.rows) {
-            cout << "Got journal row: " << row[0] << endl;
             string maxID = tester.readDB("SELECT MAX(id) FROM " + row[0] + ";");
-            cout << "maxID: " << maxID << endl;
             try {
                 uint64_t maxCommitNum = stoull(maxID);
                 if (maxCommitNum > maxJournalCommit) {
@@ -32,55 +30,42 @@ struct ForkCheckTest : tpunit::TestFixture {
         return make_pair(maxJournalCommit, maxJournalTable);
     }
 
-
     static int offlineLookupCallback(void* ref, int numcol, char** colvals, char** colnames) {
-        list<string>& res = *(static_cast<list<string>*>(ref));
+        vector<string>& res = *(static_cast<vector<string>*>(ref));
         if (numcol) {
             res.push_back(colvals[0]);
         }
+
         return SQLITE_OK;
     }
 
     pair<uint64_t, string> getMaxJournalCommitOffline(BedrockTester& tester) {
         string filename = tester.getArg("-db");
-        list<string> results;
+        uint64_t maxJournalCommit = 0;
+        string maxJournalTable;
+        vector<string> results;
         sqlite3* db = nullptr;
         sqlite3_open_v2(filename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
         char* errMsg = nullptr;
-        sqlite3_exec(db, "SELECT name FROM sqlite_schema WHERE type ='table' AND name LIKE 'journal%';", &offlineLookupCallback, 0, &errMsg);
+        sqlite3_exec(db, "SELECT name FROM sqlite_schema WHERE type ='table' AND name LIKE 'journal%';", &offlineLookupCallback, &results, &errMsg);
         if (errMsg) {
             cout << "Error updating db: " << errMsg << endl;
         }
 
-        for (auto& str : results) {
-            cout << "Result table: " << str << endl;
+        for (auto& journal : results) {
+            results.clear();
+            sqlite3_exec(db, string("SELECT MAX(id) FROM " + journal + ";").c_str(), &offlineLookupCallback, &results, &errMsg);
+            if (results.size() && results[0] != "") {
+                uint64_t maxCommitNum = stoull(results[0]);
+                if (maxCommitNum > maxJournalCommit) {
+                    maxJournalCommit = maxCommitNum;
+                    maxJournalTable = journal;
+                }
+            }
         }
         sqlite3_close_v2(db);
 
-
-        /*
-        SQResult journals;
-        tester.readDB("SELECT name FROM sqlite_schema WHERE type ='table' AND name LIKE 'journal%';", journals);
-        uint64_t maxJournalCommit = 0;
-        string maxJournalTable;
-        for (auto& row : journals.rows) {
-            cout << "Got journal row: " << row[0] << endl;
-            string maxID = tester.readDB("SELECT MAX(id) FROM " + row[0] + ";");
-            cout << "maxID: " << maxID << endl;
-            try {
-                uint64_t maxCommitNum = stoull(maxID);
-                if (maxCommitNum > maxJournalCommit) {
-                    maxJournalCommit = maxCommitNum;
-                    maxJournalTable = row[0];
-                }
-            } catch (const invalid_argument& e) {
-                // do nothing, skip this journal with no entries.
-                continue;
-            }
-        }
         return make_pair(maxJournalCommit, maxJournalTable);
-        */
-        return make_pair(0, "");
     }
 
     void test() {
@@ -132,11 +117,9 @@ struct ForkCheckTest : tpunit::TestFixture {
         }
 
         // Break the journal on leader intentionally to fake a fork.
-        cout << "tester 0" << endl;
         auto result = getMaxJournalCommitOffline(tester.getTester(0));
         uint64_t leaderMaxCommit = result.first;
         string leaderMaxCommitJournal = result.second;
-        cout << "tester 1" << endl;
         result = getMaxJournalCommit(tester.getTester(1));
         uint64_t followerMaxCommit = result.first;
 
@@ -147,11 +130,6 @@ struct ForkCheckTest : tpunit::TestFixture {
         {
             string filename = tester.getTester(0).getArg("-db");
             string query = "UPDATE " + leaderMaxCommitJournal + " SET hash = 'abcdef123456' WHERE id = " + to_string(leaderMaxCommit) + ";";
-            cout << query << endl;
-            cout << "filename: " << filename << endl;
-            string temp;
-            cout << "Type something to open." << endl;
-            cin >> temp;
 
             sqlite3* db = nullptr;
             sqlite3_open_v2(filename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, NULL);
