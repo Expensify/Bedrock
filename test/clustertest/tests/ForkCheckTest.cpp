@@ -80,6 +80,7 @@ struct ForkCheckTest : tpunit::TestFixture {
 
         // Break the journal on leader intentionally to fake a fork.
         auto result = getMaxJournalCommit(tester.getTester(0), false);
+
         uint64_t leaderMaxCommit = result.first;
         string leaderMaxCommitJournal = result.second;
         result = getMaxJournalCommit(tester.getTester(1));
@@ -87,6 +88,9 @@ struct ForkCheckTest : tpunit::TestFixture {
 
         // Make sure the follower got farther than the leader.
         ASSERT_GREATER_THAN(followerMaxCommit, leaderMaxCommit);
+
+        // We need to release any DB that the tester is holding.
+        tester.getTester(0).freeDB();
 
         // Break leader.
         {

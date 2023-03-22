@@ -367,7 +367,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                                 *errorCode = 2;
                             }
                             if (timeout) {
-                                cout << "executeWaitMultiple(): ran out of time waiting for socket" << endl;
+                                cout << "executeWaitMultipleData(): ran out of time waiting for socket" << endl;
                             }
                             return;
                         }
@@ -528,6 +528,11 @@ SQLite& BedrockTester::getSQLiteDB()
         _db = new SQLite(_args["-db"], 1000000, 3000000, -1, "", 0, ENABLE_HCTREE);
     }
     return *_db;
+}
+
+void BedrockTester::freeDB() {
+    delete _db;
+    _db = nullptr;
 }
 
 string BedrockTester::readDB(const string& query, bool online)

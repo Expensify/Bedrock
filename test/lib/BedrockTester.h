@@ -77,6 +77,9 @@ class BedrockTester {
     string readDB(const string& query, bool online = true);
     bool readDB(const string& query, SQResult& result, bool online = true);
 
+    // Closes and releases any existing DB file.
+    void freeDB();
+
     // Wait for a particular key in a `Status` message to equal a particular value, for up to `timeoutUS` us. Returns
     // true if a match was found, or times out otherwose.
     bool waitForStatusTerm(const string& term, const string& testValue, uint64_t timeoutUS = 60'000'000);
