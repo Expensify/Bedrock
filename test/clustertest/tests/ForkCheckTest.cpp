@@ -9,13 +9,13 @@ struct ForkCheckTest : tpunit::TestFixture {
     ForkCheckTest()
         : tpunit::TestFixture("ForkCheck", TEST(ForkCheckTest::test)) {}
 
-    pair<uint64_t, string> getMaxJournalCommit(BedrockTester& tester) {
+    pair<uint64_t, string> getMaxJournalCommit(BedrockTester& tester, bool online = true) {
         SQResult journals;
-        tester.readDB("SELECT name FROM sqlite_schema WHERE type ='table' AND name LIKE 'journal%';", journals);
+        tester.readDB("SELECT name FROM sqlite_schema WHERE type ='table' AND name LIKE 'journal%';", journals, online);
         uint64_t maxJournalCommit = 0;
         string maxJournalTable;
         for (auto& row : journals.rows) {
-            string maxID = tester.readDB("SELECT MAX(id) FROM " + row[0] + ";");
+            string maxID = tester.readDB("SELECT MAX(id) FROM " + row[0] + ";", online);
             try {
                 uint64_t maxCommitNum = stoull(maxID);
                 if (maxCommitNum > maxJournalCommit) {
@@ -79,7 +79,8 @@ struct ForkCheckTest : tpunit::TestFixture {
         }
 
         // Break the journal on leader intentionally to fake a fork.
-        auto result = getMaxJournalCommit(tester.getTester(0));
+        auto result = getMaxJournalCommit(tester.getTester(0), false);
+
         uint64_t leaderMaxCommit = result.first;
         string leaderMaxCommitJournal = result.second;
         result = getMaxJournalCommit(tester.getTester(1));
@@ -87,6 +88,9 @@ struct ForkCheckTest : tpunit::TestFixture {
 
         // Make sure the follower got farther than the leader.
         ASSERT_GREATER_THAN(followerMaxCommit, leaderMaxCommit);
+
+        // We need to release any DB that the tester is holding.
+        tester.getTester(0).freeDB();
 
         // Break leader.
         {
@@ -107,7 +111,7 @@ struct ForkCheckTest : tpunit::TestFixture {
         tester.getTester(0).startServer(false);
 
         // We expect it to die shortly.
-        int status;
+        int status = 0;
         waitpid(tester.getTester(0).getPID(), &status, 0);
 
         // Should have gotten a signal when it died.
