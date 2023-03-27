@@ -2612,13 +2612,14 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             sleep(1);
         }
     }
+
     uint64_t elapsed = STimeNow() - startTime;
-
-    // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
     string sqlToLog = sql;
-
     if ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000) {
         SRedactSensitiveValues(sqlToLog);
+
+        // Avoid logging queries so long that we need dozens of lines to log them.
+        sqlToLog = sqlToLog.substr(0, 20000);
 
         if ((int64_t)elapsed > warnThreshold) {
             if (isSyncThread) {
@@ -2754,6 +2755,7 @@ bool SREMatch(const string& regExp, const string& s, string& match) {
 }
 
 void SRedactSensitiveValues(string& s) {
+    // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
     // The message may be truncated midway through the authToken, so there may not be a closing quote (") at the end of
     // the authToken, so we need to optionally match the closing quote with a question mark (?).
     pcrecpp::RE("\"authToken\":\".*\"?").GlobalReplace("\"authToken\":<REDACTED>", &s);
