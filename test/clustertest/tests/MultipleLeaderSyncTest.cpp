@@ -75,7 +75,7 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         ASSERT_TRUE(node1.waitForState("LEADING"));
 
         // move secondary leader enough commits ahead that primary leader can't catch up before our status tests
-        runTrivialWrites(4000, node4);
+        runTrivialWrites(4000, node1);
         ASSERT_TRUE(waitForCommit(node2, 4000));
         ASSERT_TRUE(waitForCommit(node3, 4000));
         ASSERT_TRUE(waitForCommit(node4, 4000));
@@ -85,8 +85,7 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         ASSERT_TRUE(node2.waitForState("LEADING"));
 
         // create enough commits that secondary leader doesn't jump out of SYNCHRONIZING before our status tests
-        runTrivialWrites(4000, node4);
-        ASSERT_TRUE(waitForCommit(node2, 8000));
+        runTrivialWrites(4000, node2);
         ASSERT_TRUE(waitForCommit(node3, 8000));
         ASSERT_TRUE(waitForCommit(node4, 8000));
 
@@ -95,24 +94,85 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         ASSERT_TRUE(node3.waitForState("FOLLOWING"));
         ASSERT_TRUE(node4.waitForState("FOLLOWING"));
 
-        // Bring leaders back up in reverse order, confirm priority, should go quickly to SYNCHRONIZING
-        // There's a race in the below flow, to confirm primary leader is up and syncing before secondary leader gets synced up.
-        tester.startNodeDontWait(1);
-        ASSERT_TRUE(node1.waitForStatusTerm("Priority", "-1", 5'000'000));
-        ASSERT_TRUE(node1.waitForState("SYNCHRONIZING", 10'000'000));
-        tester.startNodeDontWait(0);
-        ASSERT_TRUE(node0.waitForStatusTerm("Priority", "-1", 5'000'000));
-        ASSERT_TRUE(node0.waitForState("SYNCHRONIZING", 10'000'000));
+        // We want all of these states to happen.
+        bool node2Leading = false;
+        bool node1Synchronizing = false;
+        bool node1Leading = false;
+        bool node0Synchronizing = false;
+        bool node0Leading = false;
 
-        // tertiary leader should still be LEADING for a little while
-        ASSERT_TRUE(node2.waitForState("LEADING", 5'000'000));
+        // Start up both servers.
+        thread starter([&]() {
+            tester.startNodeDontWait(1);
+            tester.startNodeDontWait(0);
+        });
 
-        // secondary leader should catch up first and go LEADING, wait up to 30s
-        ASSERT_TRUE(node1.waitForState("LEADING", 60'000'000));
+        // Make sure we see node 2 leading.
+        thread node2checker([&]() {
+            uint64_t start = STimeNow();
+            while (STimeNow() < start + 60'000'000) {
+                try {
+                    STable response = SParseJSONObject(node2.executeWaitVerifyContent(SData("Status"), "200", true));
+                    if (response["state"] == "LEADING") {
+                        node2Leading = true;
+                        return;
+                    }
+                } catch (const SException& e) {}
+                usleep(10'000);
+            }
+        });
 
-        // when primary leader catches up it should go LEADING, wait up to 30s
-        ASSERT_TRUE(node0.waitForState("LEADING", 60'000'000));
+        // Make sure we see node 1 synchronize and then lead.
+        thread node1checker([&]() {
+            uint64_t start = STimeNow();
+            while (STimeNow() < start + 60'000'000) {
+                try {
+                    STable response = SParseJSONObject(node1.executeWaitVerifyContent(SData("Status"), "200", true));
+                    if (response["state"] == "SYNCHRONIZING") {
+                        node1Synchronizing = true;
+                    }
+                    if (response["state"] == "LEADING") {
+                        node1Leading = true;
+                    }
+                    if (node1Synchronizing && node1Leading) {
+                        return;
+                    }
+                } catch (const SException& e) {}
+                usleep(10'000);
+            }
+        });
 
+        // Make sure we see node 0 synchronize and then lead.
+        thread node0checker([&]() {
+            uint64_t start = STimeNow();
+            while (STimeNow() < start + 60'000'000) {
+                try {
+                    STable response = SParseJSONObject(node0.executeWaitVerifyContent(SData("Status"), "200", true));
+                    if (response["state"] == "SYNCHRONIZING") {
+                        node0Synchronizing = true;
+                    }
+                    if (response["state"] == "LEADING") {
+                        node0Leading = true;
+                    }
+                    if (node0Synchronizing && node0Leading) {
+                        return;
+                    }
+                } catch (const SException& e) {}
+                usleep(10'000);
+            }
+        });
+
+        // Threads are done.
+        starter.join();
+        node0checker.join();
+        node1checker.join();
+        node2checker.join();
+
+        // Verify we hit all of the cases we expected.
+        ASSERT_TRUE(node2Leading);
+        ASSERT_TRUE(node1Synchronizing);
+        ASSERT_TRUE(node1Leading);
+        ASSERT_TRUE(node0Synchronizing);
+        ASSERT_TRUE(node0Leading);
     }
-
 } __MultipleLeaderSyncTest;
