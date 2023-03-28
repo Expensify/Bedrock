@@ -101,8 +101,6 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         bool node0Synchronizing = false;
         bool node0Leading = false;
 
-        syslog(LOG_INFO, "bedrock TYLER");
-
         // Start up both servers.
         thread starter([&]() {
             tester.startNodeDontWait(1);
