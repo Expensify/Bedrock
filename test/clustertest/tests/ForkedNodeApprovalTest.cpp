@@ -8,7 +8,7 @@
 
 struct ForkedNodeApprovalTest : tpunit::TestFixture {
     ForkedNodeApprovalTest()
-        : tpunit::TestFixture("ForkCheck", TEST(ForkedNodeApprovalTest::test)) {}
+        : tpunit::TestFixture("ForkedNodeApproval", TEST(ForkedNodeApprovalTest::test)) {}
 
     pair<uint64_t, string> getMaxJournalCommit(BedrockTester& tester, bool online = true) {
         SQResult journals;
@@ -92,6 +92,7 @@ struct ForkedNodeApprovalTest : tpunit::TestFixture {
 
         // We need to release any DB that the tester is holding.
         tester.getTester(0).freeDB();
+        tester.getTester(1).freeDB();
 
         // Break leader.
         {
@@ -111,18 +112,27 @@ struct ForkedNodeApprovalTest : tpunit::TestFixture {
         // Stop the second follower.
         tester.getTester(2).stopServer();
 
+        syslog(LOG_INFO, "bedrock TYLER");
+
         // Start the broken leader back up.
         tester.getTester(0).startServer(false);
 
         // We should not get a leader, the primary leader needs to synchronize, but can't because it's forked.
         // The secondary leader should go leading, but can't, because it only receives `abstain` responses to standup requests.
-
         threads.clear();
+        auto start = chrono::steady_clock::now();
         for (auto i: {0, 1} ) {
-            threads.emplace_back([i, &tester](){
-                SData command("Status");
-                auto response = tester.getTester(i).executeWaitMultipleData({command});
-                cout << response.front().serialize() << endl;
+            threads.emplace_back([i, start, &tester](){
+                while (true) {
+                    if (chrono::steady_clock::now() - start > 10s) {
+                        cout << "It's been 10 seconds." << endl;
+                        return;
+                    }
+                    SData command("Status");
+                    auto response = tester.getTester(i).executeWaitMultipleData({command}, 1, true);
+                    cout << response.front().serialize() << endl;
+                    usleep(50'000);
+                }
             });
         }
 
