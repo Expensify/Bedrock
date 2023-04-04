@@ -105,6 +105,7 @@ struct ForkedNodeApprovalTest : tpunit::TestFixture {
             sqlite3_exec(db, query.c_str(), 0, 0, &errMsg);
             if (errMsg) {
                 cout << "Error updating db: " << errMsg << endl;
+                ASSERT_TRUE(false);
             }
             sqlite3_close_v2(db);
         }
