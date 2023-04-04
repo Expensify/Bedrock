@@ -79,7 +79,7 @@ struct ForkedNodeApprovalTest : tpunit::TestFixture {
             t.join();
         }
 
-        // Break the journal on leader intentionally to fake a fork.
+        // Fetch the latest journal commits on leader and follower
         auto result = getMaxJournalCommit(tester.getTester(0), false);
 
         uint64_t leaderMaxCommit = result.first;
