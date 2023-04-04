@@ -752,13 +752,15 @@ bool SQLiteNode::update() {
         SASSERTWARN(_db.getUncommittedHash().empty());
         // Wait for everyone to respond
         bool allResponded = true;
-        int numFullPeers = 0;
-        int numLoggedInFullPeers = 0;
+        size_t numFullPeers = 0;
+        size_t numLoggedInFullPeers = 0;
+        size_t approveCount = 0;
         if (_isShuttingDown) {
             SINFO("Shutting down while standing up, setting state to SEARCHING");
             _changeState(SQLiteNodeState::SEARCHING);
             return true; // Re-update
         }
+
         for (auto peer : _peerList) {
             // Check this peer; if not logged in, tacit approval
             if (!peer->permaFollower) {
@@ -771,11 +773,16 @@ bool SQLiteNode::update() {
                     if (peer->standupResponse == SQLitePeer::Response::NONE) {
                         // At least one logged in full peer hasn't responded
                         allResponded = false;
-                    } else if (peer->standupResponse != SQLitePeer::Response::APPROVE) {
+                        break;
+                    } else if (peer->standupResponse == SQLitePeer::Response::ABSTAIN) {
+                        PHMMM("Peer abstained from participation in quorum");
+                    } else if (peer->standupResponse == SQLitePeer::Response::DENY) {
                         // It responeded, but didn't approve -- abort
-                        PHMMM("Refused our STANDUP, cancel and RESEARCH");
+                        PHMMM("Refused our STANDUP, cancel and RE-SEARCH");
                         _changeState(SQLiteNodeState::SEARCHING);
                         return true; // Re-update
+                    } else if (peer->standupResponse == SQLitePeer::Response::APPROVE) {
+                        approveCount++;
                     }
                 }
             }
@@ -783,9 +790,10 @@ bool SQLiteNode::update() {
 
         // If everyone's responded with approval and we form a majority, then finish standup.
         bool majorityConnected = numLoggedInFullPeers * 2 >= numFullPeers;
-        if (allResponded && majorityConnected) {
+        bool quorumApproved = approveCount * 2 >= numFullPeers;
+        if (allResponded && majorityConnected && quorumApproved) {
             // Complete standup
-            SINFO("All peers approved standup, going LEADING.");
+            SINFO("All peers responded, going LEADING.");
             _changeState(SQLiteNodeState::LEADING);
             return true; // Re-update
         }
@@ -1293,19 +1301,27 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     // STANDINGUP: When a peer announces it intends to stand up, we immediately respond with approval or
                     // denial. We determine this by checking to see if there is any  other peer who is already leader or
                     // also trying to stand up.
-                    //
-                    // **FIXME**: Should it also deny if it knows of a higher priority peer?
                     SData response("STANDUP_RESPONSE");
+
                     // Parrot back the node's attempt count so that it can differentiate stale responses.
                     response["StateChangeCount"] = message["StateChangeCount"];
 
                     // Reason we would deny, if we do.
-                    string reason;
                     if (peer->permaFollower) {
                         // We think it's a permafollower, deny
                         PHMMM("Permafollower trying to stand up, denying.");
                         response["Response"] = "deny";
-                        reason = "You're a permafollower";
+                        response["Reason"] = "You're a permafollower";
+                        _sendToPeer(peer, response);
+                        return;
+                    }
+
+                    if (_forkedFrom.count(peer->name)) {
+                        PHMMM("Forked from peer, can't approve standup.");
+                        response["Response"] = "abstain";
+                        response["Reason"] = "We are forked";
+                        _sendToPeer(peer, response);
+                        return;
                     }
 
                     // What's our state
@@ -1327,7 +1343,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                         } else {
                             // Deny because we're currently in the process of leading and we're higher priority.
                             response["Response"] = "deny";
-                            reason = "I am leading";
+                            response["Reason"] = "I am leading";
 
                             // Hmm, why is a lower priority peer trying to stand up? Is it possible we're no longer in
                             // control of the cluster? Let's see how many nodes are subscribed.
@@ -1359,7 +1375,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                                 if (otherPeer->state == SQLiteNodeState::STANDINGUP || otherPeer->state == SQLiteNodeState::LEADING || otherPeer->state == SQLiteNodeState::STANDINGDOWN) {
                                     // We need to contest this standup
                                     response["Response"] = "deny";
-                                    reason = "peer '" + otherPeer->name + "' is '" + stateName(otherPeer->state) + "'";
+                                    response["Reason"] = "peer '" + otherPeer->name + "' is '" + stateName(otherPeer->state) + "'";
                                     break;
                                 }
                             }
@@ -1370,7 +1386,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     if (SIEquals(response["Response"], "approve")) {
                         PINFO("Approving standup request");
                     } else {
-                        PHMMM("Denying standup request because " << reason);
+                        PHMMM("Not approving standup request because " << response["Reason"]);
                     }
                     _sendToPeer(peer, response);
                 } else if (from == SQLiteNodeState::STANDINGDOWN) {
@@ -1411,6 +1427,9 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 if (SIEquals(message["Response"], "approve")) {
                     PINFO("Received standup approval");
                     peer->standupResponse = SQLitePeer::Response::APPROVE;
+                } else if (SIEquals(message["Response"], "abstain")) {
+                    PINFO("Received standup abstain");
+                    peer->standupResponse = SQLitePeer::Response::ABSTAIN;
                 } else {
                     PHMMM("Received standup denial: reason='" << message["Reason"] << "'");
                     peer->standupResponse = SQLitePeer::Response::DENY;
