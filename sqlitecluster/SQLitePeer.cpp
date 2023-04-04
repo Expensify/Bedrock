@@ -233,10 +233,11 @@ bool SQLitePeer::isPermafollower(const STable& params) {
 void SQLitePeer::sendMessage(const SData& message) {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
-        if (socket->send(message.serialize())) {
-            SINFO("Successfully sent " << message.methodLine << " to peer " << name << ".");
+        size_t byesSent = 0;
+        if (socket->send(message.serialize(), &byesSent)) {
+            SINFO("No error sending " << message.methodLine << " to peer " << name << " (" << byesSent << " bytes actually sent).");
         } else {
-            SHMMM("Could not send " << message.methodLine << " to peer " << name << ".");
+            SHMMM("Error sending " << message.methodLine << " to peer " << name << ".");
         }
     } else {
         SINFO("Tried to send " << message.methodLine << " to peer " << name << ", but not available.");
