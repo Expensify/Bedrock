@@ -112,32 +112,44 @@ struct ForkedNodeApprovalTest : tpunit::TestFixture {
         // Stop the second follower.
         tester.getTester(2).stopServer();
 
-        syslog(LOG_INFO, "bedrock TYLER");
-
         // Start the broken leader back up.
         tester.getTester(0).startServer(false);
 
         // We should not get a leader, the primary leader needs to synchronize, but can't because it's forked.
         // The secondary leader should go leading, but can't, because it only receives `abstain` responses to standup requests.
-        threads.clear();
+        // It's possible for the secondary leader to go leading once, but it should quickly fall out of leading when the fork is detected and primary leader reconnects.
+        // After that, it should not go leading again, primary leader should abstain from participation.
         auto start = chrono::steady_clock::now();
-        for (auto i: {0, 1} ) {
-            threads.emplace_back([i, start, &tester](){
-                while (true) {
-                    if (chrono::steady_clock::now() - start > 10s) {
-                        cout << "It's been 10 seconds." << endl;
-                        return;
-                    }
-                    SData command("Status");
-                    auto response = tester.getTester(i).executeWaitMultipleData({command}, 1, true);
-                    cout << response.front().serialize() << endl;
-                    usleep(50'000);
+        bool abstainDetected = false;
+        while (true) {
+            if (chrono::steady_clock::now() - start > 30s) {
+                cout << "It's been 30 seconds." << endl;
+                break;
+            }
+            SData command("Status");
+            auto responseJson = tester.getTester(1).executeWaitMultipleData({command}, 1, true)[0].content;
+
+            auto json = SParseJSONObject(responseJson);
+            auto peers = SParseJSONArray(json["peerList"]);
+            for (auto& peer : peers) {
+                auto peerJSON = SParseJSONObject(peer);
+                if (peerJSON["name"] == "cluster_node_0" && peerJSON["standupResponse"] == "ABSTAIN") {
+                    abstainDetected = true;
+                    break;
                 }
-            });
+            }
+            if (abstainDetected) {
+                break;
+            }
+
+            // try again.
+            usleep(50'000);
         }
 
-        for (auto& t : threads) {
-            t.join();
-        }
+        ASSERT_TRUE(abstainDetected);
+
+        // Ok, now we can start the second follower back up and secondary leader should be able to lead.
+        tester.getTester(2).startServer(false);
+        ASSERT_TRUE(tester.getTester(1).waitForState("LEADING"));
     }
 } __ForkedNodeApprovalTest;

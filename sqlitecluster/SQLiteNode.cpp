@@ -1301,9 +1301,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     // STANDINGUP: When a peer announces it intends to stand up, we immediately respond with approval or
                     // denial. We determine this by checking to see if there is any  other peer who is already leader or
                     // also trying to stand up.
-                    //
-                    // **FIXME**: Should it also deny if it knows of a higher priority peer?
                     SData response("STANDUP_RESPONSE");
+
                     // Parrot back the node's attempt count so that it can differentiate stale responses.
                     response["StateChangeCount"] = message["StateChangeCount"];
 
@@ -1313,12 +1312,16 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                         PHMMM("Permafollower trying to stand up, denying.");
                         response["Response"] = "deny";
                         response["Reason"] = "You're a permafollower";
+                        _sendToPeer(peer, response);
+                        return;
                     }
 
                     if (_forkedFrom.count(peer->name)) {
                         PHMMM("Forked from peer, can't approve standup.");
                         response["Response"] = "abstain";
                         response["Reason"] = "We are forked";
+                        _sendToPeer(peer, response);
+                        return;
                     }
 
                     // What's our state
