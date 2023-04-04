@@ -257,8 +257,7 @@ bool STCPManager::Socket::send(size_t* bytesSentCount) {
     } else if (s > 0) {
         result = S_sendconsume(s, sendBuffer);
     }
-    size_t newSize = sendBuffer.size();
-    size_t bytesSent = oldSize - newSize;
+    size_t bytesSent = oldSize - sendBuffer.size();
     if (bytesSent) {
         lastSendTime = STimeNow();
         if (bytesSentCount) {
