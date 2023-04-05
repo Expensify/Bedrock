@@ -247,7 +247,7 @@ STCPManager::Socket::~Socket() {
     }
 }
 
-bool STCPManager::Socket::send() {
+bool STCPManager::Socket::send(size_t* bytesSentCount) {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
     // Send data
     bool result = false;
@@ -257,13 +257,17 @@ bool STCPManager::Socket::send() {
     } else if (s > 0) {
         result = S_sendconsume(s, sendBuffer);
     }
-    if (oldSize - sendBuffer.size()) {
+    size_t bytesSent = oldSize - sendBuffer.size();
+    if (bytesSent) {
         lastSendTime = STimeNow();
+        if (bytesSentCount) {
+            *bytesSentCount = bytesSent;
+        }
     }
     return result;
 }
 
-bool STCPManager::Socket::send(const string& buffer) {
+bool STCPManager::Socket::send(const string& buffer, size_t* bytesSentCount) {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
 
     // If the socket's in a valid state for sending, append to the sendBuffer, otherwise warn
@@ -274,7 +278,7 @@ bool STCPManager::Socket::send(const string& buffer) {
     }
 
     // Send anything we've got.
-    return send();
+    return send(bytesSentCount);
 }
 
 bool STCPManager::Socket::sendBufferEmpty() {

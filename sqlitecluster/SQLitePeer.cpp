@@ -173,6 +173,9 @@ string SQLitePeer::responseName(Response response) {
         case Response::DENY:
             return "DENY";
             break;
+        case Response::ABSTAIN:
+            return "ABSTAIN";
+            break;
         default:
             return "";
     }
@@ -230,10 +233,11 @@ bool SQLitePeer::isPermafollower(const STable& params) {
 void SQLitePeer::sendMessage(const SData& message) {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
-        if (socket->send(message.serialize())) {
-            SINFO("Successfully sent " << message.methodLine << " to peer " << name << ".");
+        size_t bytesSent = 0;
+        if (socket->send(message.serialize(), &bytesSent)) {
+            SINFO("No error sending " << message.methodLine << " to peer " << name << " (" << bytesSent << " bytes actually sent).");
         } else {
-            SHMMM("Could not send " << message.methodLine << " to peer " << name << ".");
+            SHMMM("Error sending " << message.methodLine << " to peer " << name << ".");
         }
     } else {
         SINFO("Tried to send " << message.methodLine << " to peer " << name << ", but not available.");

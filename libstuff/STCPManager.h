@@ -36,8 +36,8 @@ struct STCPManager {
         uint64_t lastRecvTime;
         SSSLState* ssl;
         void* data;
-        bool send();
-        bool send(const string& buffer);
+        bool send(size_t* bytesSentCount = nullptr);
+        bool send(const string& buffer, size_t* bytesSentCount = nullptr);
         bool recv();
         void shutdown(State toState = SHUTTINGDOWN);
         uint64_t id;
