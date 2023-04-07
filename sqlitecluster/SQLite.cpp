@@ -576,7 +576,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     string committedQuery, committedHash;
     uint64_t commitCount = _sharedData.commitCount;
 
-
     // Queue up the journal entry
     string lastCommittedHash = getCommittedHash(); // This is why we need the lock.
     _uncommittedHash = SToHex(SHashSHA1(lastCommittedHash + _uncommittedQuery));
