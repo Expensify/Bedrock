@@ -20,7 +20,6 @@ class SStandaloneHTTPSManager : public STCPManager {
         SData fullRequest;
         SData fullResponse;
         int response;
-        STable values;
         SStandaloneHTTPSManager& manager;
         uint64_t sentTime;
         const string requestID;
