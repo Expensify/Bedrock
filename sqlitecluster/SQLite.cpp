@@ -561,7 +561,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     return true;
 }
 
-bool SQLite::prepare() {
+bool SQLite::prepare(uint64_t* commitID) {
     SASSERT(_insideTransaction);
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
@@ -575,6 +575,9 @@ bool SQLite::prepare() {
     // SharedData object to get these values as we know it can't currently change.
     string committedQuery, committedHash;
     uint64_t commitCount = _sharedData.commitCount;
+    if (commitID) {
+        *commitID = commitCount + 1;
+    }
 
     // Queue up the journal entry
     string lastCommittedHash = getCommittedHash(); // This is why we need the lock.

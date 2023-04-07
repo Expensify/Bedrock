@@ -937,6 +937,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     // conflict as long as we don't commit while it's performing a transaction. This is scoped
                     // to the minimum time required.
                     bool commitSuccess = false;
+                    uint64_t transactionID = 0;
                     {
                         // There used to be a mutex protecting this state change, with the idea that if we
                         // prevented state changes, we couldn't fall out of leading in the middle of processing a
@@ -956,7 +957,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             core.rollback();
                         } else {
                             BedrockCore::AutoTimer timer(command, BedrockCommand::COMMIT_WORKER);
-                            commitSuccess = core.commit(SQLiteNode::stateName(_replicationState));
+                            commitSuccess = core.commit(SQLiteNode::stateName(_replicationState), transactionID);
                         }
                     }
                     if (commitSuccess) {
@@ -964,7 +965,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         // loop and send it to followers. NOTE: we don't check for null here, that should be
                         // impossible inside a worker thread.
                         _syncNode->notifyCommit();
-                        SINFO("Successfully committed " << command->request.methodLine << " on worker thread. blocking: "
+                        SINFO("Successfully committed " << command->request.methodLine << ", transaction #" <<  transactionID << ", blocking: "
                               << (isBlocking ? "true" : "false"));
                         // So we must still be leading, and at this point our commit has succeeded, let's
                         // mark it as complete. We add the currentCommit count here as well.
