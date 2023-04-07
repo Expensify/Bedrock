@@ -6,9 +6,9 @@
 SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 { }
 
-bool SQLiteCore::commit(const string& description, uint64_t& commitID) {
+bool SQLiteCore::commit(const string& description, uint64_t& commitID, string& transactionHash) {
     // This should always succeed.
-    SASSERT(_db.prepare(&commitID));
+    SASSERT(_db.prepare(&commitID, &transactionHash));
 
     // If there's nothing to commit, we won't bother, but warn, as we should have noticed this already.
     if (_db.getUncommittedHash().empty()) {
