@@ -235,12 +235,12 @@ void SQLitePeer::sendMessage(const SData& message) {
     if (socket) {
         size_t bytesSent = 0;
         if (socket->send(message.serialize(), &bytesSent)) {
-            SINFO("No error sending " << message.methodLine << " to peer " << name << " (" << bytesSent << " bytes actually sent).");
+            SSUPPRESSABLE_INFO(SQLiteNode::NOISY_FORK_LOGS, "No error sending " << message.methodLine << " to peer " << name << " (" << bytesSent << " bytes actually sent).");
         } else {
-            SHMMM("Error sending " << message.methodLine << " to peer " << name << ".");
+            SSUPPRESSABLE_HMMM(SQLiteNode::NOISY_FORK_LOGS, "Error sending " << message.methodLine << " to peer " << name << ".");
         }
     } else {
-        SINFO("Tried to send " << message.methodLine << " to peer " << name << ", but not available.");
+        SSUPPRESSABLE_INFO(SQLiteNode::NOISY_FORK_LOGS, "Tried to send " << message.methodLine << " to peer " << name << ", but not available.");
     }
 }
 

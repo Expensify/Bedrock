@@ -67,6 +67,8 @@ const string SQLiteNode::CONSISTENCY_LEVEL_NAMES[] = {"ASYNC",
 
 atomic<int64_t> SQLiteNode::currentReplicateThreadID(0);
 
+const string SQLiteNode::NOISY_FORK_LOGS = "SQLiteNode::NOISY_FORK_LOGS";
+
 const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString) {
     // Make the logging macro work in the static initializer.
     auto _name = "init";
@@ -527,7 +529,7 @@ bool SQLiteNode::update() {
             // Find the freshest non-broken peer (including permafollowers).
             if (peer->loggedIn) {
                 if (_forkedFrom.count(peer->name)) {
-                    SWARN("Hash mismatch. Forked from peer " << peer->name << " so not considering it.");
+                    SSUPPRESSABLE_WARN(NOISY_FORK_LOGS, "Hash mismatch. Forked from peer " << peer->name << " so not considering it.");
                     continue;
                 }
 
@@ -538,7 +540,7 @@ bool SQLiteNode::update() {
             }
         }
 
-        SINFO("Signed in to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << _peerList.size() << " with permafollowers).");
+        SSUPPRESSABLE_INFO(NOISY_FORK_LOGS, "Signed in to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << _peerList.size() << " with permafollowers).");
 
         // We just keep searching until we are connected to at least half the full peers.
         // Note that `numLoggedInFullPeers == numFullPeers` is adequate to satisfy the cluster size, because we do not include ourselves in the cluster size.
@@ -558,7 +560,7 @@ bool SQLiteNode::update() {
 
         // If we're at or ahead of the freshest peer, we can move forward towards LEADING or FOLLOWING.
         if (_db.getCommitCount() >= freshestPeer->commitCount) {
-            SINFO("Synchronized with the freshest peer '" << freshestPeer->name << "', WAITING.");
+            SSUPPRESSABLE_INFO(NOISY_FORK_LOGS, "Synchronized with the freshest peer '" << freshestPeer->name << "', WAITING.");
             _changeState(SQLiteNodeState::WAITING);
 
             // Run `update` again immediately.
@@ -709,7 +711,7 @@ bool SQLiteNode::update() {
         // while waiting.
         if (freshestPeer->commitCount > _db.getCommitCount()) {
             // Out of sync with a peer -- resynchronize
-            SHMMM("Lost synchronization while waiting; re-SEARCHING.");
+            SSUPPRESSABLE_HMMM(NOISY_FORK_LOGS, "Lost synchronization while waiting; re-SEARCHING.");
             _changeState(SQLiteNodeState::SEARCHING);
             return true; // Re-update
         }
@@ -1800,7 +1802,7 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
 }
 
 void SQLiteNode::_changeState(SQLiteNodeState newState) {
-    SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
+    SSUPPRESSABLE_INFO(NOISY_FORK_LOGS, "[NOTIFY] setting commit count to: " << _db.getCommitCount());
     _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
     if (newState != _state) {
@@ -1836,7 +1838,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
         }
 
         // Depending on the state, set a timeout
-        SINFO("Switching from '" << stateName(_state) << "' to '" << stateName(newState) << "'");
+        SSUPPRESSABLE_INFO(NOISY_FORK_LOGS, "Switching from '" << stateName(_state) << "' to '" << stateName(newState) << "'");
         uint64_t timeout = 0;
         if (newState == SQLiteNodeState::STANDINGUP) {
             // If two nodes try to stand up simultaneously, they can get in a conflicted state where they're waiting
@@ -2043,7 +2045,7 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message) {
         _db.commit(stateName(_state));
 
         // Should work here.
-        SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
+        SSUPPRESSABLE_INFO(NOISY_FORK_LOGS, "[NOTIFY] setting commit count to: " << _db.getCommitCount());
         _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
         if (_db.getCommittedHash() != commit["Hash"])

@@ -79,6 +79,9 @@ class SQLiteNode : public STCPManager {
     // Receive timeout for cluster messages.
     static const uint64_t RECV_TIMEOUT;
 
+    // For defining a set of suppressable log messages.
+    static const string NOISY_FORK_LOGS;
+
     // Get and SQLiteNode State from it's name.
     static SQLiteNodeState stateFromName(const string& name);
 
