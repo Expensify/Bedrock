@@ -240,30 +240,12 @@ extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
         }                                                                       \
     } while (false)
 
-void SSuppressLogSet(const string& setName);
-void SUnsuppressLogSet(const string& setName);
-bool SIsLogSetSuppressed(const string& setName);
-
-#define SSUPPRESSABLE_SYSLOG(_SET_, _PRI_, _MSG_) \
-    do { \
-        if (!SIsLogSetSuppressed(_SET_)) { \
-            SSYSLOG(_PRI_, _MSG_); \
-        } \
-    } while (false)
-
 #define SLOGPREFIX ""
 #define SDEBUG(_MSG_) SSYSLOG(LOG_DEBUG, "[dbug] " << SLOGPREFIX << _MSG_)
 #define SINFO(_MSG_) SSYSLOG(LOG_INFO, "[info] " << SLOGPREFIX << _MSG_)
 #define SHMMM(_MSG_) SSYSLOG(LOG_NOTICE, "[hmmm] " << SLOGPREFIX << _MSG_)
 #define SWARN(_MSG_) SSYSLOG(LOG_WARNING, "[warn] " << SLOGPREFIX << _MSG_)
 #define SALERT(_MSG_) SSYSLOG(LOG_ALERT, "[alrt] " << SLOGPREFIX << _MSG_)
-
-#define SSUPPRESSABLE_DEBUG(_SET_, _MSG_) SSUPPRESSABLE_SYSLOG(_SET_, LOG_DEBUG, "[dbug] " << SLOGPREFIX << _MSG_)
-#define SSUPPRESSABLE_INFO(_SET_, _MSG_) SSUPPRESSABLE_SYSLOG(_SET_, LOG_INFO, "[info] " << SLOGPREFIX << _MSG_)
-#define SSUPPRESSABLE_HMMM(_SET_, _MSG_) SSUPPRESSABLE_SYSLOG(_SET_, LOG_NOTICE, "[hmmm] " << SLOGPREFIX << _MSG_)
-#define SSUPPRESSABLE_WARN(_SET_, _MSG_) SSUPPRESSABLE_SYSLOG(_SET_, LOG_WARNING, "[warn] " << SLOGPREFIX << _MSG_)
-#define SSUPPRESSABLE_ALERT(_SET_, _MSG_) SSUPPRESSABLE_SYSLOG(_SET_, LOG_ALERT, "[alrt] " << SLOGPREFIX << _MSG_)
-
 #define SERROR(_MSG_)                                       \
     do {                                                    \
         SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_); \

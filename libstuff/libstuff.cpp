@@ -97,23 +97,6 @@ atomic_flag SLogSocketsInitialized = ATOMIC_FLAG_INIT;
 // Set to `syslog` or `SSyslogSocketDirect`.
 atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc = &syslog;
 
-mutex __suppressionLock;
-set<string> __suppressedLogSets;
-void SSuppressLogSet(const string& setName) {
-    lock_guard<mutex> l(__suppressionLock);
-    __suppressedLogSets.insert(setName);
-}
-
-void SUnsuppressLogSet(const string& setName) {
-    lock_guard<mutex> l(__suppressionLock);
-    __suppressedLogSets.erase(setName);
-}
-
-bool SIsLogSetSuppressed(const string& setName) {
-    lock_guard<mutex> l(__suppressionLock);
-    return __suppressedLogSets.count(setName);
-}
-
 void SInitialize(string threadName, const char* processName) {
     isSyncThread = false;
     // This is not really thread safe. It's guaranteed to run only once, because of the atomic flag, but it's not
