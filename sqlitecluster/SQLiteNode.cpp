@@ -1887,6 +1887,14 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
             _db.setCommitEnabled(true);
         }
 
+        // If we're going searching and have forked from at least 1 peer, sleep for a second. This is intended to prevent thousands of lines of log spam when this happens in an infinite
+        // loop. It's entirely possible that we do this for valid reasons - it may be the peer that has the bad database and not us, and there are plenty of other reasons we could switch to
+        // SEARCHING, but in those cases, we just wait an extra second before trying again.
+        if (newState == SQLiteNodeState::SEARCHING && _forkedFrom.size()) {
+            SWARN("Going searching while forked peers present, sleeping 1 second.");
+            sleep(1);
+        }
+
         // Additional logic for some new states
         if (newState == SQLiteNodeState::LEADING) {
             // Seed our last sent transaction.
