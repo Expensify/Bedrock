@@ -538,7 +538,7 @@ bool SQLiteNode::update() {
             }
         }
 
-        SINFO("Signed in to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (" << _peerList.size() << " with permafollowers).");
+        SINFO("Signed in to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (plus " << (_peerList.size() - numFullPeers) << " permafollowers).");
 
         // We just keep searching until we are connected to at least half the full peers.
         // Note that `numLoggedInFullPeers == numFullPeers` is adequate to satisfy the cluster size, because we do not include ourselves in the cluster size.
