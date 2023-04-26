@@ -573,7 +573,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
 
     // Now that we've locked anybody else from committing, look up the state of the database. We don't need to lock the
     // SharedData object to get these values as we know it can't currently change.
-    string committedQuery, committedHash;
     uint64_t commitCount = _sharedData.commitCount;
 
     // Queue up the journal entry
