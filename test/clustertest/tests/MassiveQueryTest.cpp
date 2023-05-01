@@ -13,10 +13,10 @@ struct MassiveQueryTest : tpunit::TestFixture {
         SData cmd("bigquery");
         cmd["writeConsistency"] = "ASYNC";
         auto r1 = brtester.executeWaitMultipleData({cmd})[0];
-        cout << r1.serialize() << endl;
-        cout << "QuerySize: " << r1["QuerySize"] << endl;
         uint64_t commitCount = stoull(r1["CommitCount"]);
         uint64_t commitCount2 = 0;
+
+        cout << "QuerySize: " << r1["QuerySize"] << endl;
 
         SData status("Status");
         for (size_t i = 0; i < 60; i++) {
@@ -26,6 +26,7 @@ struct MassiveQueryTest : tpunit::TestFixture {
                 cout << "Commit counts match at " << commitCount << endl;
                 break;
             }
+            sleep(1);
         }
 
         ASSERT_EQUAL(commitCount, commitCount2);
