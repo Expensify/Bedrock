@@ -94,6 +94,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "generatesegfaultprocess",
         "idcollision",
         "slowprocessquery",
+        "bigquery",
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -323,9 +324,13 @@ void TestPluginCommand::process(SQLite& db) {
         int nextID = SToInt(result[0][0]) + 1;
         const string value = "THIS IS A TEST STRING WITH EXACTLY 48 CHARACTERS";
         db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(value) + ";");
-        for (size_t i = 0; i < 100; i++) {
-            db.write("UPDATE TEST SET VALUE = " + SQ(value) + " WHERE id = " + SQ(nextID) + ";");
+        size_t querySize = 0;
+        for (size_t i = 0; i < 1'000'000; i++) {
+            string nq = "UPDATE TEST SET VALUE = " + SQ(value) + " WHERE id = " + SQ(nextID) + ";";
+            db.write(nq);
+            querySize += nq.size();
         }
+        response["QuerySize"] = to_string(querySize);
     } else if (SStartsWith(request.methodLine, "sendrequest")) {
         // This flag makes us pass through the response we got from the server, rather than returning 200 if every
         // response we got from the server was < 400. I.e., if the server returns 202, or 304, or anything less than
