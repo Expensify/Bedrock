@@ -2529,13 +2529,19 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                 beforePrepare = STimeNow();
             }
 
-            // The `+1` at the end is for the null terminator and is MASSIVELY IMPORTANT. Documentation here: https://www.sqlite.org/c3ref/prepare.html
-            // talks of the nByte parameter and says:
-            // > there is a small performance advantage to passing an nByte parameter that is the number of bytes in the input string including the nul-terminator.
+            // sql.size() is the number of bytes in the string, excluding the null terminator.
+            // statementRemainder points to the first unused byte in this string, meaning `statementRemainder - sql.c_str()` is the number of already-used bytes.
+            // sql.size() minus the already-used bytes, is the number of bytes remaining, and we add one more for the null terminator.
             //
-            // This performance change is enourmous for long strings of small concatenated queries. It seems to avoid a call to strlen() or similar, for each sub-query run.
+            // The null-terminator here is MASSIVELY IMPORTANT.
+            // The docs here: https://www.sqlite.org/c3ref/prepare.html, indicate:
+            // "there is a small performance advantage to passing an nByte parameter that is the number of bytes in the input string including the null-terminator."
+            //
+            // This is a massive understatement in some situations. Namely, this seems to avoid a call to strlen() on the whole string.
+            // For long queries (say 100mb+), this can save 50ms per query. Further, if these queries are actually a large number of small queries concatenated together,
+            // then this saves that 50ms for each of the smaller queries, which means those savings could be multiplied thousands of times.
             size_t maxLength = sql.size() - (statementRemainder - sql.c_str()) + 1;
-            error = sqlite3_prepare_v2(db, statementRemainder, maxLength + 1, &preparedStatement, &statementRemainder);
+            error = sqlite3_prepare_v2(db, statementRemainder, maxLength, &preparedStatement, &statementRemainder);
             if (isSyncThread) {
                 prepareTimeUS += STimeNow() - beforePrepare;
             }
