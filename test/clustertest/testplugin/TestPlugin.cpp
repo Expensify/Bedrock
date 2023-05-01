@@ -316,7 +316,17 @@ void TestPluginCommand::process(SQLite& db) {
     if (request.calc("ProcessSleep")) {
         usleep(request.calc("ProcessSleep") * 1000);
     }
-    if (SStartsWith(request.methodLine, "sendrequest")) {
+    if (SStartsWith(request.methodLine, "bigquery")) {
+        SQResult result;
+        db.read("SELECT MAX(id) FROM test", result);
+        SASSERT(result.size());
+        int nextID = SToInt(result[0][0]) + 1;
+        const string value = "THIS IS A TEST STRING WITH EXACTLY 48 CHARACTERS";
+        db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(value) + ";");
+        for (size_t i = 0; i < 100; i++) {
+            db.write("UPDATE TEST SET VALUE = " + SQ(value) + " WHERE id = " + SQ(nextID) + ";");
+        }
+    } else if (SStartsWith(request.methodLine, "sendrequest")) {
         // This flag makes us pass through the response we got from the server, rather than returning 200 if every
         // response we got from the server was < 400. I.e., if the server returns 202, or 304, or anything less than
         // 400, we return 200 except when this flag is set.
