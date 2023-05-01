@@ -2516,38 +2516,29 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     size_t stepTimeUS = 0;
     size_t longestStepTimeUS = 0;
 
-    size_t phCounter = 0;
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
         SDEBUG(sql.substr(0, 50));
 
-
-        uint64_t c1 = 0;
-        uint64_t c2 = 0;
-        uint64_t c3 = 0;
-        uint64_t c4 = 0;
-        uint64_t c5 = 0;
-        uint64_t c6 = 0;
-        //uint64_t c7 = 0;
-        //uint64_t c8 = 0;
-
         const char *statementRemainder = sql.c_str();
         do {
-            c1 = STimeNow();
             numLoops++;
             sqlite3_stmt *preparedStatement = nullptr;
             size_t beforePrepare = 0;
             if (isSyncThread) {
                 beforePrepare = STimeNow();
             }
-            size_t maxLength = sql.size() - (statementRemainder - sql.c_str());
-            c2 = STimeNow();
-            //SINFO("Stack sizes: " << sql.size() << ", " << maxLength);
-            error = sqlite3_prepare_v2(db, statementRemainder, maxLength, &preparedStatement, &statementRemainder);
+
+            // The `+1` at the end is for the null terminator and is MASSIVELY IMPORTANT. Documentation here: https://www.sqlite.org/c3ref/prepare.html
+            // talks of the nByte parameter and says:
+            // > there is a small performance advantage to passing an nByte parameter that is the number of bytes in the input string including the nul-terminator.
+            //
+            // This performance change is enourmous for long strings of small concatenated queries. It seems to avoid a call to strlen() or similar, for each sub-query run.
+            size_t maxLength = sql.size() - (statementRemainder - sql.c_str()) + 1;
+            error = sqlite3_prepare_v2(db, statementRemainder, maxLength + 1, &preparedStatement, &statementRemainder);
             if (isSyncThread) {
                 prepareTimeUS += STimeNow() - beforePrepare;
             }
-            c3 = STimeNow();
             if (error) {
                 // Delete our statement.
                 sqlite3_finalize(preparedStatement);
@@ -2559,11 +2550,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                 error = SQLITE_OK;
                 break;
             }
-            c4 = STimeNow();
             int numColumns = sqlite3_column_count(preparedStatement);
             result.headers.resize(numColumns);
 
-            c5 = STimeNow();
             while (true) {
                 size_t beforeStep = 0;
                 if (isSyncThread) {
@@ -2613,9 +2602,8 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                     break;
                 }
             }
-            c6 = STimeNow();
             sqlite3_finalize(preparedStatement);
-            SINFO("progress handler should get called. " << phCounter++ << "Times: " << (c2-c1) << " " << (c3-c2) << " " << (c4-c3) << " " << (c5-c4) << " " << (c6-c5));
+            SINFO("progress handler should get called.");
         } while (*statementRemainder != 0 && error == SQLITE_OK);
 
         extErr = sqlite3_extended_errcode(db);
