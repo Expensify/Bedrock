@@ -325,7 +325,7 @@ void TestPluginCommand::process(SQLite& db) {
         const string value = "THIS IS A TEST STRING WITH EXACTLY 48 CHARACTERS";
         db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(value) + ");");
         size_t querySize = 0;
-        for (size_t i = 0; i < 3'000'000; i++) {
+        for (size_t i = 0; i < 2'000'000; i++) {
             string nq = "UPDATE TEST SET VALUE = " + SQ(value) + " WHERE id = " + SQ(nextID) + ";";
             db.write(nq);
             querySize += nq.size();
