@@ -2540,6 +2540,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             // This is a massive understatement in some situations. Namely, this seems to avoid a call to strlen() on the whole string.
             // For long queries (say 100mb+), this can save 50ms per query. Further, if these queries are actually a large number of small queries concatenated together,
             // then this saves that 50ms for each of the smaller queries, which means those savings could be multiplied thousands of times.
+            //
+            // Calling strlen() or any function that iterates across the whole string here is a giant performance problem, and all the operations chosen here have
+            // been picked specifically to avoid that.
             size_t maxLength = sql.size() - (statementRemainder - sql.c_str()) + 1;
             error = sqlite3_prepare_v2(db, statementRemainder, maxLength, &preparedStatement, &statementRemainder);
             if (isSyncThread) {
