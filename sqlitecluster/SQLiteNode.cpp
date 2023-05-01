@@ -199,6 +199,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                     try {
                         auto start = chrono::steady_clock::now();
                         _handleBeginTransaction(db, peer, command, commitAttemptCount > 1);
+                        SINFO("Began.");
 
                         // Now we need to wait for the DB to be up-to-date (if the transaction is QUORUM, we can
                         // skip this, we did it above) to enforce that commits are in the same order on followers as on
@@ -2186,14 +2187,17 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
     // else can attempt to commit anyway, but this logs our time spent in the commit mutex in EXCLUSIVE rather
     // than SHARED mode.
     ++_concurrentReplicateTransactions;
+    SINFO("Calling db.beginTransaction");
     if (!db.beginTransaction(wasConflict ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
         STHROW("failed to begin transaction");
     }
 
     // Inside transaction; get ready to back out on error
+    SINFO("Calling db.writeUnmodified");
     if (!db.writeUnmodified(message.content)) {
         STHROW("failed to write transaction");
     }
+    SINFO("Called");
 }
 
 void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime, uint64_t threadStartTime) {
@@ -2216,11 +2220,13 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
     }
 
     bool success = true;
+    SINFO("Calling prepare");
     if (!db.prepare()) {
         SALERT("failed to prepare transaction");
         success = false;
         db.rollback();
     }
+    SINFO("prepare complete.");
 
     // Are we participating in quorum?
     if (_priority) {

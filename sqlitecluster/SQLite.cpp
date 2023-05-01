@@ -252,6 +252,7 @@ SQLite::SQLite(const SQLite& from) :
 int SQLite::_progressHandlerCallback(void* arg) {
     SQLite* sqlite = static_cast<SQLite*>(arg);
     uint64_t now = STimeNow();
+    SINFO("progress handler called.");
     if (sqlite->_timeoutLimit && now > sqlite->_timeoutLimit) {
         // Timeout! We don't throw here, we let `read` and `write` do it so we don't throw out of the middle of a
         // sqlite3 operation.
