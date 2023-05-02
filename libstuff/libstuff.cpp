@@ -2518,7 +2518,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
-        SDEBUG(sql);
+        SDEBUG(sql.substr(0, 20000));
 
         const char *statementRemainder = sql.c_str();
         do {
@@ -2528,7 +2528,23 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             if (isSyncThread) {
                 beforePrepare = STimeNow();
             }
-            error = sqlite3_prepare_v2(db, statementRemainder, strlen(statementRemainder), &preparedStatement, &statementRemainder);
+
+            // sql.size() is the number of bytes in the string, excluding the null terminator.
+            // statementRemainder points to the first unused byte in this string, meaning `statementRemainder - sql.c_str()` is the number of already-used bytes.
+            // sql.size() minus the already-used bytes, is the number of bytes remaining, and we add one more for the null terminator.
+            //
+            // The null-terminator here is MASSIVELY IMPORTANT.
+            // The docs here: https://www.sqlite.org/c3ref/prepare.html, indicate:
+            // "there is a small performance advantage to passing an nByte parameter that is the number of bytes in the input string including the null-terminator."
+            //
+            // This is a massive understatement in some situations. Namely, this seems to avoid a call to strlen() on the whole string.
+            // For long queries (say 100mb+), this can save 50ms per query. Further, if these queries are actually a large number of small queries concatenated together,
+            // then this saves that 50ms for each of the smaller queries, which means those savings could be multiplied thousands of times.
+            //
+            // Calling strlen() or any function that iterates across the whole string here is a giant performance problem, and all the operations chosen here have
+            // been picked specifically to avoid that.
+            size_t maxLength = sql.size() - (statementRemainder - sql.c_str()) + 1;
+            error = sqlite3_prepare_v2(db, statementRemainder, maxLength, &preparedStatement, &statementRemainder);
             if (isSyncThread) {
                 prepareTimeUS += STimeNow() - beforePrepare;
             }
@@ -2614,12 +2630,10 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     }
 
     uint64_t elapsed = STimeNow() - startTime;
-    string sqlToLog = sql;
     if ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000) {
-        SRedactSensitiveValues(sqlToLog);
-
         // Avoid logging queries so long that we need dozens of lines to log them.
-        sqlToLog = sqlToLog.substr(0, 20000);
+        string sqlToLog = sql.substr(0, 20000);
+        SRedactSensitiveValues(sqlToLog);
 
         if ((int64_t)elapsed > warnThreshold) {
             if (isSyncThread) {
@@ -2642,6 +2656,8 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // Log this if enabled
     if (_g_sQueryLogFP) {
+        string sqlToLog = sql.substr(0, 20000);
+
         // Log this query as an SQL statement ready for insertion
         const string& dbFilename = sqlite3_db_filename(db, "main");
         const string& csvRow =
@@ -2652,6 +2668,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     // Only OK and commit conflicts are allowed without warning because they're the only "successful" results that we expect here.
     // OK means it succeeds, conflicts will get retried further up the call stack.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && !skipWarn) {
+        string sqlToLog = sql.substr(0, 20000);
         SRedactSensitiveValues(sqlToLog);
 
         SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
