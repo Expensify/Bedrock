@@ -962,12 +962,20 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         }
                     }
                     if (commitSuccess) {
+
+                        uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
+                        uint64_t totalElapsed = db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed,
+                                                                            prepareElapsed, commitElapsed, rollbackElapsed);
                         // Tell the sync node that there's been a commit so that it can jump out of it's "poll"
                         // loop and send it to followers. NOTE: we don't check for null here, that should be
                         // impossible inside a worker thread.
                         _syncNode->notifyCommit();
                         SINFO("Committed leader transaction #" << transactionID << "(" << transactionHash << "). Command: '" << command->request.methodLine << "', blocking: "
-                              << (isBlocking ? "true" : "false"));
+                              << (isBlocking ? "true" : "false")
+                              << ", in " << totalElapsed / 1000 << " ms ("
+                              << beginElapsed / 1000 << "+" << readElapsed / 1000 << "+"
+                              << writeElapsed / 1000 << "+" << prepareElapsed / 1000 << "+"
+                              << commitElapsed / 1000 << "+" << rollbackElapsed / 1000 << "ms)");
                         // So we must still be leading, and at this point our commit has succeeded, let's
                         // mark it as complete. We add the currentCommit count here as well.
                         command->response["commitCount"] = to_string(db.getCommitCount());
