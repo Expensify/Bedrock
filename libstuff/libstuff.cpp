@@ -2612,7 +2612,6 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                 }
             }
             sqlite3_finalize(preparedStatement);
-            SINFO("progress handler should get called.");
         } while (*statementRemainder != 0 && error == SQLITE_OK);
 
         extErr = sqlite3_extended_errcode(db);
