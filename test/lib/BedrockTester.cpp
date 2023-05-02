@@ -466,8 +466,8 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         }
                         break;
                     } else {
-                        // If it's been over 60s, give up.
-                        if (recvStart + 60'000'000 < STimeNow()) {
+                        // If it's been over 240s, give up.
+                        if (recvStart + 240'000'000 < STimeNow()) {
                             timedOut = true;
                             break;
                         }
