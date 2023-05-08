@@ -35,3 +35,25 @@ void BedrockConflictManager::recordTables(const string& commandName, const set<s
     // And increase the count for each used table.
     SINFO("Command " << commandName << " used tables: " << SComposeList(tables));
 }
+
+string BedrockConflictManager::generateReport() {
+    stringstream out;
+    {
+        lock_guard<mutex> lock(m);
+        for (auto& p : _commandInfo) {
+            const string& commandName = p.first;
+            const BedrockConflictManagerCommandInfo& commandInfo = p.second;
+
+            out << "Command: " << commandName << endl;
+            out << "Total Count: " << commandInfo.count << endl;
+            out << "Table usage:" << endl;
+            for (const auto& t : commandInfo.tableUseCounts) {
+                const string& tableName = t.first;
+                const size_t& count = t.second;
+                out << tableName << ": " << count << endl;
+                out << endl;
+            }
+        }
+    }
+    return out.str();
+}

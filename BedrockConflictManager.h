@@ -16,6 +16,7 @@ class BedrockConflictManager {
   public:
     BedrockConflictManager();
     void recordTables(const string& commandName, const set<string>& tables);
+    string generateReport();
 
   private:
     mutex m;
