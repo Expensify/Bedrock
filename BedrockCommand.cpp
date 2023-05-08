@@ -126,6 +126,7 @@ void BedrockCommand::finalizeTimingInfo() {
     uint64_t commitSyncTotal = 0;
     uint64_t queueWorkerTotal = 0;
     uint64_t queueSyncTotal = 0;
+    uint64_t queueBlockingTotal = 0;
     for (const auto& entry: timingInfo) {
         if (get<0>(entry) == PEEK) {
             peekTotal += get<2>(entry) - get<1>(entry);
@@ -137,6 +138,8 @@ void BedrockCommand::finalizeTimingInfo() {
             commitSyncTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == QUEUE_WORKER) {
             queueWorkerTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == QUEUE_BLOCKING) {
+            queueBlockingTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == QUEUE_SYNC) {
             queueSyncTotal += get<2>(entry) - get<1>(entry);
         }
@@ -147,7 +150,7 @@ void BedrockCommand::finalizeTimingInfo() {
 
     // Time that wasn't accounted for in all the other metrics.
     uint64_t unaccountedTime = totalTime - (peekTotal + processTotal + commitWorkerTotal + commitSyncTotal +
-                                            escalationTimeUS + queueWorkerTotal + queueSyncTotal);
+                                            escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal);
 
     // Build a map of the values we care about.
     map<string, uint64_t> valuePairs = {
@@ -210,6 +213,7 @@ void BedrockCommand::finalizeTimingInfo() {
           << commitSyncTotal/1000 << ", "
           << queueWorkerTotal/1000 << ", "
           << queueSyncTotal/1000 << ", "
+          << queueBlockingTotal/1000 << ", "
           << totalTime/1000 << ", "
           << unaccountedTime/1000 << ", "
           << escalationTimeUS/1000 << ". Upstream: "
