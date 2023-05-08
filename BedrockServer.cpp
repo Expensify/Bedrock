@@ -1690,6 +1690,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "SuppressCommandPort")    ||
         SIEquals(command->request.methodLine, "ClearCommandPort")       ||
         SIEquals(command->request.methodLine, "ClearCrashCommands")     ||
+        SIEquals(command->request.methodLine, "ConflictReport")         ||
         SIEquals(command->request.methodLine, "Detach")                 ||
         SIEquals(command->request.methodLine, "Attach")                 ||
         SIEquals(command->request.methodLine, "SetConflictParams")      ||
@@ -1723,6 +1724,8 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
     } else if (SIEquals(command->request.methodLine, "ClearCrashCommands")) {
         unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
         _crashCommands.clear();
+    } else if (SIEquals(command->request.methodLine, "ConflictReport")) {
+        response.content = _conflictManager.generateReport();
     } else if (SIEquals(command->request.methodLine, "Detach")) {
         response.methodLine = "203 DETACHING";
         _beginShutdown("Detach", true);
