@@ -22,6 +22,10 @@ void BedrockConflictManager::recordTables(const string& commandName, const set<s
                 continue;
             }
 
+            if (t == "json_each") {
+                continue;
+            }
+
             // Does this command already have this table?
             auto tableInfo = commandInfo->second.tableUseCounts.find(t);
             if (tableInfo == commandInfo->second.tableUseCounts.end()) {
@@ -46,13 +50,13 @@ string BedrockConflictManager::generateReport() {
 
             out << "Command: " << commandName << endl;
             out << "Total Count: " << commandInfo.count << endl;
-            out << "Table usage:" << endl;
+            out << "Table usage" << endl;
             for (const auto& t : commandInfo.tableUseCounts) {
                 const string& tableName = t.first;
                 const size_t& count = t.second;
-                out << tableName << ": " << count << endl;
-                out << endl;
+                out << "    " << tableName << ": " << count << endl;
             }
+            out << endl;
         }
     }
     return out.str();
