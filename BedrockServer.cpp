@@ -398,7 +398,7 @@ void BedrockServer::sync()
             if (_syncNode->commitSucceeded()) {
                 if (command) {
                     SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
-                    SINFO("Tables used: " << SComposeList(db.getTablesUsed()));
+                    _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
 
                     // Otherwise, save the commit count, mark this command as complete, and reply.
                     command->response["commitCount"] = to_string(db.getCommitCount());
@@ -969,7 +969,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         _syncNode->notifyCommit();
                         SINFO("Committed leader transaction #" << transactionID << "(" << transactionHash << "). Command: '" << command->request.methodLine << "', blocking: "
                               << (isBlocking ? "true" : "false"));
-                        SINFO("Tables used: " << SComposeList(db.getTablesUsed()));
+                        _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
                         // So we must still be leading, and at this point our commit has succeeded, let's
                         // mark it as complete. We add the currentCommit count here as well.
                         command->response["commitCount"] = to_string(db.getCommitCount());
