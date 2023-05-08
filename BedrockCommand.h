@@ -192,6 +192,8 @@ class BedrockCommand : public SQLiteCommand {
     // This is a timestamp in *microseconds* for when this command should timeout.
     uint64_t _timeout;
 
+    set<string> _tablesUsed;
+
     static atomic<size_t> _commandCount;
 
     static const string defaultPluginName;

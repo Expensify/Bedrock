@@ -854,6 +854,11 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
         return SQLITE_DENY;
     }
 
+    // Record all tables touched.
+    if (set<int>{SQLITE_INSERT, SQLITE_DELETE, SQLITE_READ, SQLITE_UPDATE}.count(actionCode)) {
+        SINFO("Touching " << detail2);
+    }
+
     // Here's where we can check for non-deterministic functions for the cache.
     if (actionCode == SQLITE_FUNCTION && detail2) {
         if (!strcmp(detail2, "random") ||
