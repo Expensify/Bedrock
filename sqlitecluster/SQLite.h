@@ -248,6 +248,9 @@ class SQLite {
     // Set this DB handle to be query-only to prevent accidental writes in places we don't expect them.
     void setQueryOnly(bool enabled);
 
+    void exclusiveLockDB();
+    void exclusiveUnlockDB();
+
   private:
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
