@@ -1,7 +1,8 @@
 #pragma once
 #include <libstuff/libstuff.h>
 #include "BedrockCommandQueue.h"
-#include "BedrockCommand.h"
+
+class BedrockCommand;
 
 class BedrockBlockingCommandQueue : public BedrockCommandQueue {
   public:
