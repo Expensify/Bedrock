@@ -310,6 +310,14 @@ SQLite::~SQLite() {
     DBINFO("Database closed.");
 }
 
+void SQLite::exclusiveLockDB() {
+    _sharedData.commitLock.lock();
+}
+
+void SQLite::exclusiveUnlockDB() {
+    _sharedData.commitLock.unlock();
+}
+
 bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
         if (isSyncThread) {
