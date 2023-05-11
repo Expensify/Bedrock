@@ -239,7 +239,7 @@ namespace tpunit {
             };
             unsigned char _type;
 
-            method* _next;
+            method* _next = nullptr;
          };
 
          /**
@@ -380,11 +380,11 @@ namespace tpunit {
           */
          void printTestBuffer();
 
-         method* _afters;
-         method* _after_classes;
-         method* _befores;
-         method* _before_classes;
-         method* _tests;
+         method* _afters = nullptr;
+         method* _after_classes = nullptr;
+         method* _befores = nullptr;
+         method* _before_classes = nullptr;
+         method* _tests = nullptr;
 
          // True if running multithreaded.
          bool _multiThreaded;
