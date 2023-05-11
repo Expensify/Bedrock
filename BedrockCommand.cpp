@@ -205,7 +205,7 @@ void BedrockCommand::finalizeTimingInfo() {
         }
     }
 
-    // Log all this info.
+    // TODO: I'll remove the next SINFO at the end, I'll keep it while testing logsToStatsd.pl
     SINFO("command '" << methodName << "' timing info (ms): "
           << peekTotal/1000 << " (" << peekCount << "), "
           << processTotal/1000 << " (" << processCount << "), "
@@ -213,7 +213,6 @@ void BedrockCommand::finalizeTimingInfo() {
           << commitSyncTotal/1000 << ", "
           << queueWorkerTotal/1000 << ", "
           << queueSyncTotal/1000 << ", "
-          << queueBlockingTotal/1000 << ", "
           << totalTime/1000 << ", "
           << unaccountedTime/1000 << ", "
           << escalationTimeUS/1000 << ". Upstream: "
@@ -221,6 +220,26 @@ void BedrockCommand::finalizeTimingInfo() {
           << upstreamProcessTime/1000 << ", "
           << upstreamTotalTime/1000 << ", "
           << upstreamUnaccountedTime/1000 << "."
+    );
+
+    SINFO("command '" << methodName << "' timing info (ms): "
+          "peek:" << peekTotal/1000 << " (count:" << peekCount << "), "
+          "process:" << processTotal/1000 << " (count:" << processCount << "), "
+          "total:" << totalTime/1000 << ", "
+          "unaccounted:" << unaccountedTime/1000 <<
+          ". Commit: "
+          "worker:" << commitWorkerTotal/1000 << ", "
+          "sync:"<< commitSyncTotal/1000 <<
+          ". Queue: "
+          "worker:" << queueWorkerTotal/1000 << ", "
+          "sync:" << queueSyncTotal/1000 << ", "
+          "blocking:" << queueBlockingTotal/1000 << ", "
+          "escalation:" << escalationTimeUS/1000 <<
+          ". Upstream: "
+          "peek:" << upstreamPeekTime/1000 << ", "
+          "process:"<< upstreamProcessTime/1000 << ", "
+          "total:" << upstreamTotalTime/1000 << ", "
+          "unaccounted:" << upstreamUnaccountedTime/1000 << "."
     );
 
     // And here's where we set our own values.
