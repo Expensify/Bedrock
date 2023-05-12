@@ -1695,6 +1695,8 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "Attach")                 ||
         SIEquals(command->request.methodLine, "SetConflictParams")      ||
         SIEquals(command->request.methodLine, "EnableSQLTracing")       ||
+        SIEquals(command->request.methodLine, "BlockWrites")            ||
+        SIEquals(command->request.methodLine, "UnblockWrites")          ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
         ) {
         return true;
@@ -1772,6 +1774,24 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             SINFO("Setting _maxConflictRetries to " << _maxConflictRetries);
             response["previousMaxConflictRetries"] = to_string(_maxConflictRetries.load());
             _maxConflictRetries.store(maxConflictRetries);
+        }
+    } else if (SIEquals(command->request.methodLine, "BlockWrites")) {
+        shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
+        if (dbPoolCopy) {
+            SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
+            SQLite& db = dbScope.db();
+            db.exclusiveLockDB();
+        } else {
+            response.methodLine = "404 DB Pool Not Found";
+        }
+    } else if (SIEquals(command->request.methodLine, "UnblockWrites")) {
+        shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
+        if (dbPoolCopy) {
+            SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
+            SQLite& db = dbScope.db();
+            db.exclusiveUnlockDB();
+        } else {
+            response.methodLine = "404 DB Pool Not Found";
         }
     }
 }
