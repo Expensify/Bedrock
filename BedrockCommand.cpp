@@ -205,23 +205,6 @@ void BedrockCommand::finalizeTimingInfo() {
         }
     }
 
-    // TODO: I'll remove the next SINFO at the end, I'll keep it while testing logsToStatsd.pl
-    SINFO("command '" << methodName << "' timing info (ms): "
-          << peekTotal/1000 << " (" << peekCount << "), "
-          << processTotal/1000 << " (" << processCount << "), "
-          << commitWorkerTotal/1000 << ", "
-          << commitSyncTotal/1000 << ", "
-          << queueWorkerTotal/1000 << ", "
-          << queueSyncTotal/1000 << ", "
-          << totalTime/1000 << ", "
-          << unaccountedTime/1000 << ", "
-          << escalationTimeUS/1000 << ". Upstream: "
-          << upstreamPeekTime/1000 << ", "
-          << upstreamProcessTime/1000 << ", "
-          << upstreamTotalTime/1000 << ", "
-          << upstreamUnaccountedTime/1000 << "."
-    );
-
     SINFO("command '" << methodName << "' timing info (ms): "
           "peek:" << peekTotal/1000 << " (count:" << peekCount << "), "
           "process:" << processTotal/1000 << " (count:" << processCount << "), "
