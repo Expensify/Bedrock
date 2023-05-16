@@ -41,6 +41,10 @@ string SQLite::initializeFilename(const string& filename) {
     }
 }
 
+const set<string>& SQLite::getTablesUsed() const {
+    return _tablesUsed;
+}
+
 SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool hctree) {
     static struct SharedDataLookupMapType {
         map<string, SharedData*> m;
@@ -350,6 +354,7 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     // the above `BEGIN CONCURRENT` and the `getCommitCount` call in a lock, which is worse.
     _dbCountAtStart = getCommitCount();
     _queryCache.clear();
+    _tablesUsed.clear();
     _queryCount = 0;
     _cacheHits = 0;
     _beginElapsed = STimeNow() - before;
@@ -860,6 +865,11 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
     if (_enableRewrite && !_currentlyRunningRewritten && (*_rewriteHandler)(actionCode, detail1, _rewrittenQuery)) {
         // Deny the original query, we'll re-run on the re-written version.
         return SQLITE_DENY;
+    }
+
+    // Record all tables touched.
+    if (set<int>{SQLITE_INSERT, SQLITE_DELETE, SQLITE_READ, SQLITE_UPDATE}.count(actionCode)) {
+        _tablesUsed.insert(detail1);
     }
 
     // Here's where we can check for non-deterministic functions for the cache.
