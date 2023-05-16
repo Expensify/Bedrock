@@ -18,7 +18,7 @@ void BedrockConflictManager::recordTables(const string& commandName, const set<s
 
         // And for each table (that's not a journal).
         for (auto& table : tables) {
-            // Skip journal.
+            // Skip journals, they change on every instance of a command running and thus aren't useful for profiling which commands access which tables most frequently.
             if (SStartsWith(table, "journal")) {
                 continue;
             }
