@@ -6,6 +6,10 @@
 class BedrockCommandQueue : public SScheduledPriorityQueue<unique_ptr<BedrockCommand>> {
   public:
     BedrockCommandQueue();
+    BedrockCommandQueue(
+      function<void(unique_ptr<BedrockCommand>& item)> startFunction,
+      function<void(unique_ptr<BedrockCommand>& item)> endFunction
+    );
 
     // Functions to start and stop timing on the commands when they're inserted/removed from the queue.
     static void startTiming(unique_ptr<BedrockCommand>& command);
