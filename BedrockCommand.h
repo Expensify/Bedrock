@@ -22,6 +22,7 @@ class BedrockCommand : public SQLiteCommand {
         COMMIT_SYNC,
         QUEUE_WORKER,
         QUEUE_SYNC,
+        QUEUE_BLOCKING,
     };
 
     enum class STAGE {
@@ -191,6 +192,8 @@ class BedrockCommand : public SQLiteCommand {
 
     // This is a timestamp in *microseconds* for when this command should timeout.
     uint64_t _timeout;
+
+    set<string> _tablesUsed;
 
     static atomic<size_t> _commandCount;
 

@@ -126,6 +126,7 @@ void BedrockCommand::finalizeTimingInfo() {
     uint64_t commitSyncTotal = 0;
     uint64_t queueWorkerTotal = 0;
     uint64_t queueSyncTotal = 0;
+    uint64_t queueBlockingTotal = 0;
     for (const auto& entry: timingInfo) {
         if (get<0>(entry) == PEEK) {
             peekTotal += get<2>(entry) - get<1>(entry);
@@ -137,6 +138,8 @@ void BedrockCommand::finalizeTimingInfo() {
             commitSyncTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == QUEUE_WORKER) {
             queueWorkerTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == QUEUE_BLOCKING) {
+            queueBlockingTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == QUEUE_SYNC) {
             queueSyncTotal += get<2>(entry) - get<1>(entry);
         }
@@ -147,7 +150,7 @@ void BedrockCommand::finalizeTimingInfo() {
 
     // Time that wasn't accounted for in all the other metrics.
     uint64_t unaccountedTime = totalTime - (peekTotal + processTotal + commitWorkerTotal + commitSyncTotal +
-                                            escalationTimeUS + queueWorkerTotal + queueSyncTotal);
+                                            escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal);
 
     // Build a map of the values we care about.
     map<string, uint64_t> valuePairs = {
@@ -202,21 +205,24 @@ void BedrockCommand::finalizeTimingInfo() {
         }
     }
 
-    // Log all this info.
     SINFO("command '" << methodName << "' timing info (ms): "
-          << peekTotal/1000 << " (" << peekCount << "), "
-          << processTotal/1000 << " (" << processCount << "), "
-          << commitWorkerTotal/1000 << ", "
-          << commitSyncTotal/1000 << ", "
-          << queueWorkerTotal/1000 << ", "
-          << queueSyncTotal/1000 << ", "
-          << totalTime/1000 << ", "
-          << unaccountedTime/1000 << ", "
-          << escalationTimeUS/1000 << ". Upstream: "
-          << upstreamPeekTime/1000 << ", "
-          << upstreamProcessTime/1000 << ", "
-          << upstreamTotalTime/1000 << ", "
-          << upstreamUnaccountedTime/1000 << "."
+          "peek:" << peekTotal/1000 << " (count:" << peekCount << "), "
+          "process:" << processTotal/1000 << " (count:" << processCount << "), "
+          "total:" << totalTime/1000 << ", "
+          "unaccounted:" << unaccountedTime/1000 <<
+          ". Commit: "
+          "worker:" << commitWorkerTotal/1000 << ", "
+          "sync:"<< commitSyncTotal/1000 <<
+          ". Queue: "
+          "worker:" << queueWorkerTotal/1000 << ", "
+          "sync:" << queueSyncTotal/1000 << ", "
+          "blocking:" << queueBlockingTotal/1000 << ", "
+          "escalation:" << escalationTimeUS/1000 <<
+          ". Upstream: "
+          "peek:" << upstreamPeekTime/1000 << ", "
+          "process:"<< upstreamProcessTime/1000 << ", "
+          "total:" << upstreamTotalTime/1000 << ", "
+          "unaccounted:" << upstreamUnaccountedTime/1000 << "."
     );
 
     // And here's where we set our own values.
