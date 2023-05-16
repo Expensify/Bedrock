@@ -5,6 +5,7 @@
 #include <sqlitecluster/SQLiteClusterMessenger.h>
 #include "BedrockPlugin.h"
 #include "BedrockCommandQueue.h"
+#include "BedrockBlockingCommandQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
 
 class SQLitePeer;
@@ -260,7 +261,7 @@ class BedrockServer : public SQLiteServer {
     BedrockCommandQueue _commandQueue;
 
     // These are commands that will be processed in a blacking fashion.
-    BedrockCommandQueue _blockingCommandQueue;
+    BedrockBlockingCommandQueue _blockingCommandQueue;
 
     // Each time we read a new request from a client, we give it a unique ID.
     atomic<uint64_t> _requestCount;
