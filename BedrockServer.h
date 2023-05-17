@@ -5,6 +5,7 @@
 #include <sqlitecluster/SQLiteClusterMessenger.h>
 #include "BedrockPlugin.h"
 #include "BedrockCommandQueue.h"
+#include "BedrockConflictManager.h"
 #include "BedrockBlockingCommandQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
 
@@ -259,6 +260,8 @@ class BedrockServer : public SQLiteServer {
 
     // Commands that aren't currently being processed are kept here.
     BedrockCommandQueue _commandQueue;
+
+    BedrockConflictManager _conflictManager;
 
     // These are commands that will be processed in a blacking fashion.
     BedrockBlockingCommandQueue _blockingCommandQueue;
