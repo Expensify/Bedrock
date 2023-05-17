@@ -398,7 +398,6 @@ void BedrockServer::sync()
             if (_syncNode->commitSucceeded()) {
                 if (command) {
                     SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
-                    _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
 
                     // Otherwise, save the commit count, mark this command as complete, and reply.
                     command->response["commitCount"] = to_string(db.getCommitCount());
@@ -969,7 +968,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         _syncNode->notifyCommit();
                         SINFO("Committed leader transaction #" << transactionID << "(" << transactionHash << "). Command: '" << command->request.methodLine << "', blocking: "
                               << (isBlocking ? "true" : "false"));
-                        _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
                         // So we must still be leading, and at this point our commit has succeeded, let's
                         // mark it as complete. We add the currentCommit count here as well.
                         command->response["commitCount"] = to_string(db.getCommitCount());
@@ -1690,7 +1688,6 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "SuppressCommandPort")    ||
         SIEquals(command->request.methodLine, "ClearCommandPort")       ||
         SIEquals(command->request.methodLine, "ClearCrashCommands")     ||
-        SIEquals(command->request.methodLine, "ConflictReport")         ||
         SIEquals(command->request.methodLine, "Detach")                 ||
         SIEquals(command->request.methodLine, "Attach")                 ||
         SIEquals(command->request.methodLine, "SetConflictParams")      ||
@@ -1726,8 +1723,6 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
     } else if (SIEquals(command->request.methodLine, "ClearCrashCommands")) {
         unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
         _crashCommands.clear();
-    } else if (SIEquals(command->request.methodLine, "ConflictReport")) {
-        response.content = _conflictManager.generateReport();
     } else if (SIEquals(command->request.methodLine, "Detach")) {
         response.methodLine = "203 DETACHING";
         _beginShutdown("Detach", true);
