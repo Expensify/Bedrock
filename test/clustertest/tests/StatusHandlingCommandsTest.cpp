@@ -3,15 +3,25 @@
 
 struct StatusHandlingCommandsTest : tpunit::TestFixture {
     StatusHandlingCommandsTest()
-        : tpunit::TestFixture("StatusHandlingCommands", TEST(StatusHandlingCommandsTest::test)) { }
+        : tpunit::TestFixture("StatusHandlingCommands",
+                              BEFORE_CLASS(StatusHandlingCommandsTest::setup),
+                              AFTER_CLASS(StatusHandlingCommandsTest::teardown),
+                              TEST(StatusHandlingCommandsTest::test)) { }
+
+    BedrockClusterTester* tester;
+
+    void setup () {
+        tester = new BedrockClusterTester();
+    }
+
+    void teardown() {
+        delete tester;
+    }
 
     void test() {
-        BedrockClusterTester tester;
-        BedrockTester& leader = tester.getTester(0);
-        BedrockTester& follower = tester.getTester(1);
-        vector<string> results(2);
-
-        leader.stopServer();
+        vector<string> results(3);
+        BedrockTester& leader = tester->getTester(0);
+        BedrockTester& follower = tester->getTester(1);
 
         thread healthCheckThread([this, &results, &follower](){
             SData cmd("GET /status/handlingCommands HTTP/1.1");
@@ -29,20 +39,30 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture {
                 } else if (result == "HTTP/1.1 200 FOLLOWING") {
                     results[1] = result;
                     foundFollower = true;
-
-                    // If we get here, it's not going back to leading/standingdown.
-                    break;
+                } else if (result == "HTTP/1.1 200 STANDINGDOWN") {
+                    results[2] = result;
+                    foundStandingdown = true;
                 }
             }
         });
 
-        sleep(1);
+        leader.stopServer();
+
+        // Execute a slow query while the follower is leading so when the
+        // leader is brought back up, it will be STANDINGDOWN until it finishes
+        thread slowQueryThread([this, &follower](){
+            SData slow("slowquery");
+            slow["timeout"] = "5000"; // 5s
+            follower.executeWaitVerifyContent(slow, "555 Timeout peeking command");
+        });
+
         leader.startServer(false);
+        slowQueryThread.join();
         healthCheckThread.join();
 
         ASSERT_EQUAL(results[0], "HTTP/1.1 200 LEADING")
         ASSERT_EQUAL(results[1], "HTTP/1.1 200 FOLLOWING")
-        // We don't test STANDINGDOWN because it's unreliable to get it to show up in the status, we can move straight through it too quickly.
+        ASSERT_EQUAL(results[2], "HTTP/1.1 200 STANDINGDOWN")
     }
 
 } __StatusHandlingCommandsTest;
