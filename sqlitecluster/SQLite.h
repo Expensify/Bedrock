@@ -122,8 +122,6 @@ class SQLite {
     void setUpdateNoopMode(bool enabled);
     bool getUpdateNoopMode() const;
 
-    const set<string>& getTablesUsed() const;
-
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
     // The transactionID and transactionHash, if passed, will be updated with the values prepared for this transaction.
@@ -453,9 +451,6 @@ class SQLite {
     // A map of queries to their cached results. This is populated only with deterministic queries, and is reset on any
     // write, rollback, or commit.
     map<string, SQResult> _queryCache;
-
-    // List of table names used during this transaction.
-    set<string> _tablesUsed;
 
     // Number of queries that have been attempted in this transaction (for metrics only).
     int64_t _queryCount = 0;
