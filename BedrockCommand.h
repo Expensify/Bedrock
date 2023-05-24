@@ -98,7 +98,8 @@ class BedrockCommand : public SQLiteCommand {
     // Each command is assigned a priority.
     Priority priority;
 
-    // We track how many times we `peek` and `process` each command.
+    // We track how many times we `prePeek`, `peek` and `process` each command.
+    int prePeekCount;
     int peekCount;
     int processCount;
 

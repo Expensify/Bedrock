@@ -9,6 +9,7 @@ const string BedrockCommand::defaultPluginName("NO_PLUGIN");
 BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin, bool escalateImmediately_) :
     SQLiteCommand(move(baseCommand)),
     priority(PRIORITY_NORMAL),
+    prePeekCount(0),
     peekCount(0),
     processCount(0),
     repeek(false),
@@ -120,6 +121,7 @@ void BedrockCommand::reset(BedrockCommand::STAGE stage) {
 }
 
 void BedrockCommand::finalizeTimingInfo() {
+    uint64_t prePeekTotal = 0;
     uint64_t peekTotal = 0;
     uint64_t processTotal = 0;
     uint64_t commitWorkerTotal = 0;
