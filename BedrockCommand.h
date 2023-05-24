@@ -30,8 +30,7 @@ class BedrockCommand : public SQLiteCommand {
     enum class STAGE {
         PREPEEK,
         PEEK,
-        PROCESS,
-        POSTPROCESS
+        PROCESS
     };
 
     // Times in *milliseconds*.
