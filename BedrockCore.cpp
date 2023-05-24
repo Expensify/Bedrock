@@ -93,11 +93,11 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
 
             // prePeek.
             command->reset(BedrockCommand::STAGE::PREPEEK);
-            bool completed = command->prePeek(_db);
+            bool skipToProcess = command->prePeek(_db);
             SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
 
-            if (!completed) {
-                SDEBUG("Command '" << request.methodLine << "' not finished in prePeek, re-queuing.");
+            if (!skipToProcess) {
+                SDEBUG("Command '" << request.methodLine << "' not finished with reads in prePeek, re-queuing for peek.");
                 _db.resetTiming();
                 _db.setQueryOnly(false);
                 return RESULT::SHOULD_PEEK;
