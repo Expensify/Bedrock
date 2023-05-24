@@ -64,7 +64,7 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
     return false;
 }
 
-BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
+BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
     AutoTimer timer(command, BedrockCommand::PREPEEK);
     BedrockServer::ScopedStateSnapshot snapshot(_server);
     command->lastPeekedOrProcessedInState = _server.getState();
@@ -84,8 +84,8 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
         _db.startTiming(timeout);
 
         try {
-            if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
+            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
+                STHROW("501 Failed to begin shared prePeek transaction");
             }
 
             // Make sure no writes happen while in prePeek command
