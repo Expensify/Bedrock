@@ -11,10 +11,11 @@ class BedrockCore : public SQLiteCore {
     enum class RESULT {
         INVALID = 0,
         COMPLETE = 1,
-        SHOULD_PROCESS = 2,
-        NEEDS_COMMIT = 3,
-        NO_COMMIT_REQUIRED = 4,
-        SERVER_NOT_LEADING = 5
+        SHOULD_PEEK = 2,
+        SHOULD_PROCESS = 3,
+        NEEDS_COMMIT = 4,
+        NO_COMMIT_REQUIRED = 5,
+        SERVER_NOT_LEADING = 6
     };
 
     // Automatic timing class that records an entry corresponding to its lifespan.
