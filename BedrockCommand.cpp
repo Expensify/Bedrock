@@ -229,7 +229,7 @@ void BedrockCommand::finalizeTimingInfo() {
           "escalation:" << escalationTimeUS/1000 <<
           ". Blocking: "
           "peek:" << blockingPeekTotal/1000 << ", "
-          "process:" << blockingProcessTotal/1000 <<
+          "process:" << blockingProcessTotal/1000 << ", "
           "commit:" << blockingCommitWorkerTotal/1000 <<
           ". Upstream: "
           "peek:" << upstreamPeekTime/1000 << ", "
