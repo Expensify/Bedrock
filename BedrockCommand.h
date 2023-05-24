@@ -63,7 +63,7 @@ class BedrockCommand : public SQLiteCommand {
     // Optionally called to execute read-only operations for a command in a separate transaction than the transaction
     // that can execute write operations for a command (i.e. the transaction that runs peek and process). This must be
     // called after the transaction that executes write operations.
-    virtual bool postProcess(SQLite& db) { STHROW("500 Base class prePeek called"); }
+    virtual bool postProcess(SQLite& db) { STHROW("500 Base class postProcess called"); }
 
     // Reset the command after a commit conflict. This is called both before `peek` and `process`. Typically, we don't
     // want to reset anything in `process`, because we may have specifically stored values there in `peek` that we want
@@ -106,6 +106,7 @@ class BedrockCommand : public SQLiteCommand {
     int prePeekCount;
     int peekCount;
     int processCount;
+    int postProcessCount;
 
     // A plugin can optionally handle a command for which the reply to the caller was undeliverable.
     // Note that it gets no reference to the DB, this happens after the transaction is already complete.

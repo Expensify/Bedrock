@@ -12,6 +12,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
     prePeekCount(0),
     peekCount(0),
     processCount(0),
+    postProcessCount(0),
     repeek(false),
     crashIdentifyingValues(*this),
     escalateImmediately(escalateImmediately_),
@@ -124,6 +125,7 @@ void BedrockCommand::finalizeTimingInfo() {
     uint64_t prePeekTotal = 0;
     uint64_t peekTotal = 0;
     uint64_t processTotal = 0;
+    uint64_t postProcessTotal = 0;
     uint64_t commitWorkerTotal = 0;
     uint64_t commitSyncTotal = 0;
     uint64_t queueWorkerTotal = 0;
@@ -136,6 +138,8 @@ void BedrockCommand::finalizeTimingInfo() {
             peekTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == PROCESS) {
             processTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == POSTPROCESS) {
+            postProcessTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == COMMIT_WORKER) {
             commitWorkerTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == COMMIT_SYNC) {
@@ -153,7 +157,7 @@ void BedrockCommand::finalizeTimingInfo() {
     uint64_t totalTime = STimeNow() - creationTime;
 
     // Time that wasn't accounted for in all the other metrics.
-    uint64_t unaccountedTime = totalTime - (prePeekTotal + peekTotal + processTotal + commitWorkerTotal + commitSyncTotal +
+    uint64_t unaccountedTime = totalTime - (prePeekTotal + peekTotal + processTotal + postProcessTotal +commitWorkerTotal + commitSyncTotal +
                                             escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal);
 
     // Build a map of the values we care about.
@@ -161,6 +165,7 @@ void BedrockCommand::finalizeTimingInfo() {
         {"prePeekTime",     prePeekTotal},
         {"peekTime",        peekTotal},
         {"processTime",     processTotal},
+        {"postProcessTime", postProcessTotal},
         {"totalTime",       totalTime},
         {"unaccountedTime", unaccountedTime},
     };
@@ -214,6 +219,7 @@ void BedrockCommand::finalizeTimingInfo() {
           "prePeek: " << prePeekTotal/1000 << " (count: " << prePeekCount << "), "
           "peek:" << peekTotal/1000 << " (count:" << peekCount << "), "
           "process:" << processTotal/1000 << " (count:" << processCount << "), "
+          "postProcess:" << postProcessTotal/1000 << " (count:" << postProcessCount << "), "
           "total:" << totalTime/1000 << ", "
           "unaccounted:" << unaccountedTime/1000 <<
           ". Commit: "

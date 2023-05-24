@@ -134,7 +134,7 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
     } catch (const SException& e) {
         _handleCommandException(command, e);
     } catch (const SHTTPSManager::NotLeading& e) {
-        STHROW("405 https requests cannot be made in prePeek")
+        STHROW("405 https requests cannot be made in prePeek");
     } catch (...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
