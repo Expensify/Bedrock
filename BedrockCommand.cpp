@@ -130,7 +130,9 @@ void BedrockCommand::finalizeTimingInfo() {
     uint64_t queueSyncTotal = 0;
     uint64_t queueBlockingTotal = 0;
     for (const auto& entry: timingInfo) {
-        if (get<0>(entry) == PEEK) {
+        if (get<0>(entry) == PREPEEK) {
+            prePeekTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == PEEK) {
             peekTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == PROCESS) {
             processTotal += get<2>(entry) - get<1>(entry);
@@ -151,11 +153,12 @@ void BedrockCommand::finalizeTimingInfo() {
     uint64_t totalTime = STimeNow() - creationTime;
 
     // Time that wasn't accounted for in all the other metrics.
-    uint64_t unaccountedTime = totalTime - (peekTotal + processTotal + commitWorkerTotal + commitSyncTotal +
+    uint64_t unaccountedTime = totalTime - (prePeekTotal + peekTotal + processTotal + commitWorkerTotal + commitSyncTotal +
                                             escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal);
 
     // Build a map of the values we care about.
     map<string, uint64_t> valuePairs = {
+        {"prePeekTime",     prePeekTotal},
         {"peekTime",        peekTotal},
         {"processTime",     processTotal},
         {"totalTime",       totalTime},
@@ -208,6 +211,7 @@ void BedrockCommand::finalizeTimingInfo() {
     }
 
     SINFO("command '" << methodName << "' timing info (ms): "
+          "prePeek: " << prePeekTotal/1000 << " (count: " << prePeekCount << "), "
           "peek:" << peekTotal/1000 << " (count:" << peekCount << "), "
           "process:" << processTotal/1000 << " (count:" << processCount << "), "
           "total:" << totalTime/1000 << ", "
