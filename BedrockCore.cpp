@@ -77,7 +77,7 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
     // We catch any exception and handle in `_handleCommandException`.
     RESULT returnValue = RESULT::COMPLETE;
     try {
-        SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command->priority);
+        SDEBUG("prePeeking at '" << request.methodLine << "' with priority: " << command->priority);
         uint64_t timeout = _getRemainingTime(command, false);
         command->prePeekCount++;
 
@@ -134,11 +134,8 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
     } catch (const SException& e) {
         _handleCommandException(command, e);
     } catch (const SHTTPSManager::NotLeading& e) {
-        command->repeek = false;
-        returnValue = RESULT::SHOULD_PROCESS;
-        SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
+        STHROW("405 https requests cannot be made in prePeek")
     } catch (...) {
-        command->repeek = false;
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
     }
