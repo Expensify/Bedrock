@@ -834,10 +834,13 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             state = _replicationState.load();
             canWriteParallel = canWriteParallel && (state == SQLiteNodeState::LEADING);
 
-            // If the command should run prePeek opertions, do that now and assign the result to the peekResult.
+            // If the command should run prePeek, do that now and assign the result to the peekResult.
             BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
-            if (!command->repeek && !command->httpsRequests.size() && shouldPrePeek()) {
+            if (!command->repeek && !command->httpsRequests.size() && command->shouldPrePeek()) {
                 peekResult = core.prePeekCommand(command);
+                if (peekResult != BedrockCore::RESULT::SHOULD_PEEK && peekResult != BedrockCore::RESULT::COMPLETE) {
+                    STHROW("500 Invalid prePeekResult");
+                }
             }
 
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the

@@ -116,6 +116,10 @@ class BedrockCommand : public SQLiteCommand {
     // Set to true if we don't want to log timeout alerts, and let the caller deal with it.
     virtual bool shouldSuppressTimeoutWarnings() { return false; }
 
+    virtual bool shouldPrePeek() { return false; }
+
+    virtual bool shouldPostProcess() { return false; }
+
     // A command can set this to true to indicate it would like to have `peek` called again after completing a HTTPS
     // request. This allows a single command to make multiple serial HTTPS requests. The command should clear this when
     // all HTTPS requests are complete. It will be automatically cleared if the command throws an exception.
