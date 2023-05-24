@@ -64,6 +64,99 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
     return false;
 }
 
+BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
+    AutoTimer timer(command, BedrockCommand::PREPEEK);
+    BedrockServer::ScopedStateSnapshot snapshot(_server);
+    command->lastPeekedOrProcessedInState = _server.getState();
+
+    // Convenience references to commonly used properties.
+    const SData& request = command->request;
+    SData& response = command->response;
+    STable& content = command->jsonContent;
+
+    // We catch any exception and handle in `_handleCommandException`.
+    RESULT returnValue = RESULT::COMPLETE;
+    try {
+        SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command->priority);
+        uint64_t timeout = _getRemainingTime(command, false);
+        command->prePeekCount++;
+
+        _db.startTiming(timeout);
+
+        try {
+            if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
+                STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
+            }
+
+            // Make sure no writes happen while in prePeek command
+            _db.setQueryOnly(true);
+
+            // prePeek.
+            command->reset(BedrockCommand::STAGE::PREPEEK);
+            bool completed = command->prePeek(_db);
+            SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
+
+            if (!completed) {
+                SDEBUG("Command '" << request.methodLine << "' not finished in prePeek, re-queuing.");
+                _db.resetTiming();
+                _db.setQueryOnly(false);
+                return RESULT::SHOULD_PEEK;
+            }
+
+        } catch (const SQLite::timeout_error& e) {
+            // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
+            if (!command->shouldSuppressTimeoutWarnings()) {
+                SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
+            }
+            STHROW("555 Timeout prePeeking command");
+        }
+
+        // If no response was set, assume 200 OK
+        if (response.methodLine == "") {
+            response.methodLine = "200 OK";
+        }
+
+        // Add the commitCount header to the response.
+        response["commitCount"] = to_string(_db.getCommitCount());
+
+        // Success. If a command has set "content", encode it in the response.
+        SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
+        if (!content.empty()) {
+            // Make sure we're not overwriting anything different.
+            string newContent = SComposeJSONObject(content);
+            if (response.content != newContent) {
+                if (!response.content.empty()) {
+                    SWARN("Replacing existing response content in " << request.methodLine);
+                }
+                response.content = newContent;
+            }
+        }
+    } catch (const SException& e) {
+        _handleCommandException(command, e);
+    } catch (const SHTTPSManager::NotLeading& e) {
+        command->repeek = false;
+        returnValue = RESULT::SHOULD_PROCESS;
+        SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
+    } catch (...) {
+        command->repeek = false;
+        SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
+        command->response.methodLine = "500 Unhandled Exception";
+    }
+
+    // Unless an exception handler set this to something different, the command is complete.
+    command->complete = returnValue == RESULT::COMPLETE;
+
+    // Back out of the current transaction, it doesn't need to do anything.
+    _db.rollback();
+    _db.resetTiming();
+
+    // Reset, we can write now.
+    _db.setQueryOnly(false);
+
+    // Done.
+    return returnValue;
+}
+
 BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
     AutoTimer timer(command, BedrockCommand::PEEK);
     BedrockServer::ScopedStateSnapshot snapshot(_server);
