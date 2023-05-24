@@ -75,7 +75,7 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
     STable& content = command->jsonContent;
 
     // We catch any exception and handle in `_handleCommandException`.
-    RESULT returnValue = RESULT::COMPLETE;
+    RESULT returnValue = RESULT::SHOULD_PEEK;
     try {
         SDEBUG("prePeeking at '" << request.methodLine << "' with priority: " << command->priority);
         uint64_t timeout = _getRemainingTime(command, false);
@@ -96,11 +96,11 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
             bool skipToProcess = command->prePeek(_db);
             SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
 
-            if (!skipToProcess) {
-                SDEBUG("Command '" << request.methodLine << "' not finished with reads in prePeek, re-queuing for peek.");
+            if (skipToProcess) {
+                SDEBUG("Command '" << request.methodLine << "' finished with reads in prePeek, re-queuing for process.");
                 _db.resetTiming();
                 _db.setQueryOnly(false);
-                return RESULT::SHOULD_PEEK;
+                return RESULT::SHOULD_PROCESS;
             }
 
         } catch (const SQLite::timeout_error& e) {
@@ -139,9 +139,6 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
     }
-
-    // Unless an exception handler set this to something different, the command is complete.
-    command->complete = returnValue == RESULT::COMPLETE;
 
     // Back out of the current transaction, it doesn't need to do anything.
     _db.rollback();

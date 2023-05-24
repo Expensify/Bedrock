@@ -838,7 +838,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
             if (!command->repeek && !command->httpsRequests.size() && command->shouldPrePeek()) {
                 peekResult = core.prePeekCommand(command);
-                if (peekResult != BedrockCore::RESULT::SHOULD_PEEK && peekResult != BedrockCore::RESULT::COMPLETE) {
+                if (peekResult != BedrockCore::RESULT::SHOULD_PEEK && peekResult != BedrockCore::RESULT::SHOULD_PROCESS) {
                     STHROW("500 Invalid prePeekResult");
                 }
             }
