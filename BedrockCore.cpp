@@ -96,6 +96,10 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
             bool completed = command->prePeek(_db);
             SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
 
+            if (command->httpsRequests.size()) {
+                STHROW("405 https requests cannot be made in prePeek");
+            }
+
             if (!completed) {
                 SDEBUG("Command '" << request.methodLine << "' not finished in prePeek, re-queuing.");
                 _db.rollback();
@@ -133,8 +137,6 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
         }
     } catch (const SException& e) {
         _handleCommandException(command, e);
-    } catch (const SHTTPSManager::NotLeading& e) {
-        STHROW("405 https requests cannot be made in prePeek");
     } catch (...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
@@ -424,8 +426,6 @@ BedrockCore::RESULT BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& 
         }
     } catch (const SException& e) {
         _handleCommandException(command, e);
-    } catch (const SHTTPSManager::NotLeading& e) {
-        STHROW("405 https requests cannot be made in prePeek");
     } catch (...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
