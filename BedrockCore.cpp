@@ -357,6 +357,93 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     return needsCommit ? RESULT::NEEDS_COMMIT : RESULT::NO_COMMIT_REQUIRED;
 }
 
+BedrockCore::RESULT BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
+    AutoTimer timer(command, BedrockCommand::POSTPROCESS);
+    BedrockServer::ScopedStateSnapshot snapshot(_server);
+    command->lastPeekedOrProcessedInState = _server.getState();
+
+    // Convenience references to commonly used properties.
+    const SData& request = command->request;
+    SData& response = command->response;
+    STable& content = command->jsonContent;
+
+    // We catch any exception and handle in `_handleCommandException`.
+    try {
+        SDEBUG("postProcessing at '" << request.methodLine << "' with priority: " << command->priority);
+        uint64_t timeout = _getRemainingTime(command, false);
+        command->postProcessCount++;
+
+        _db.startTiming(timeout);
+
+        try {
+            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
+                STHROW("501 Failed to begin shared postProcess transaction");
+            }
+
+            // Make sure no writes happen while in postProcess command
+            _db.setQueryOnly(true);
+
+            // postProcess.
+            command->reset(BedrockCommand::STAGE::POSTPROCESS);
+            bool completed = command->postProcess(_db);
+            SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
+
+            if (!completed) {
+                SDEBUG("Command '" << request.methodLine << "' not finished in prePeek, re-queuing.");
+                STHROW("Command '" << request.methodLine << "' should always complete in post process");
+            }
+
+        } catch (const SQLite::timeout_error& e) {
+            // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
+            if (!command->shouldSuppressTimeoutWarnings()) {
+                SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
+            }
+            STHROW("555 Timeout prePeeking command");
+        }
+
+        // If no response was set, assume 200 OK
+        if (response.methodLine == "") {
+            response.methodLine = "200 OK";
+        }
+
+        // Add the commitCount header to the response.
+        response["commitCount"] = to_string(_db.getCommitCount());
+
+        // Success. If a command has set "content", encode it in the response.
+        SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
+        if (!content.empty()) {
+            // Make sure we're not overwriting anything different.
+            string newContent = SComposeJSONObject(content);
+            if (response.content != newContent) {
+                if (!response.content.empty()) {
+                    SWARN("Replacing existing response content in " << request.methodLine);
+                }
+                response.content = newContent;
+            }
+        }
+    } catch (const SException& e) {
+        _handleCommandException(command, e);
+    } catch (const SHTTPSManager::NotLeading& e) {
+        STHROW("405 https requests cannot be made in prePeek");
+    } catch (...) {
+        SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
+        command->response.methodLine = "500 Unhandled Exception";
+    }
+
+    // The command is complete.
+    command->complete = true;
+
+    // Back out of the current transaction, it doesn't need to do anything.
+    _db.rollback();
+    _db.resetTiming();
+
+    // Reset, we can write now.
+    _db.setQueryOnly(false);
+
+    // Done.
+    return returnValue;
+}
+
 void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e) {
     string msg = "Error processing command '" + command->request.methodLine + "' (" + e.what() + "), ignoring.";
     if (!e.body.empty()) {
