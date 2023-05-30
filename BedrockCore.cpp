@@ -441,7 +441,7 @@ BedrockCore::RESULT BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& 
     _db.setQueryOnly(false);
 
     // Done.
-    return returnValue;
+    return RESULT::COMPLETE;
 }
 
 void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e) {
