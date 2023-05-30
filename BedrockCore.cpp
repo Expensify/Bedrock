@@ -98,6 +98,7 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
 
             if (!completed) {
                 SDEBUG("Command '" << request.methodLine << "' not finished in prePeek, re-queuing.");
+                _db.rollback();
                 _db.resetTiming();
                 return RESULT::SHOULD_PEEK;
             }
