@@ -395,6 +395,14 @@ void BedrockServer::sync()
                 continue;
             }
 
+            if (command->shouldPostProcess()) {
+                BedrockCore::RESULT postProcessResult = BedrockCore::RESULT::INVALID;
+                postProcessResult = core.postProcessCommand(command);
+                if (postProcessResult != BedrockCore::RESULT::COMPLETE) {
+                    STHROW("500 Invalid postProcess result");
+                }
+            }
+
             if (_syncNode->commitSucceeded()) {
                 if (command) {
                     SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
@@ -995,6 +1003,13 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         // So we must still be leading, and at this point our commit has succeeded, let's
                         // mark it as complete. We add the currentCommit count here as well.
                         command->response["commitCount"] = to_string(db.getCommitCount());
+
+                        if (command->shouldPostProcess()) {
+                            result = core.postProcessCommand(command);
+                            if (result != BedrockCore::RESULT::COMPLETE) {
+                                STHROW("500 Invalid postProcess result");
+                            }
+                        }
                         command->complete = true;
                     } else {
                         SINFO("Conflict or state change committing " << command->request.methodLine << " on worker thread.");
@@ -1002,6 +1017,12 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                     // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
                     // of this block.
+                    if (command->shouldPostProcess()) {
+                        result = core.postProcessCommand(command);
+                        if (result != BedrockCore::RESULT::COMPLETE) {
+                            STHROW("500 Invalid postProcess result");
+                        }
+                    }
                 } else if (result == BedrockCore::RESULT::SERVER_NOT_LEADING) {
                     // We won't write regardless.
                     core.rollback();

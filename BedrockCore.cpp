@@ -389,8 +389,8 @@ BedrockCore::RESULT BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& 
             SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
 
             if (!completed) {
-                SDEBUG("Command '" << request.methodLine << "' not finished in prePeek, re-queuing.");
-                STHROW("Command '" << request.methodLine << "' should always complete in post process");
+                SDEBUG("Command '" << request.methodLine << "' not finished in postProcess, re-queuing.");
+                STHROW("501 Command incomplete in post process");
             }
 
         } catch (const SQLite::timeout_error& e) {
@@ -398,7 +398,7 @@ BedrockCore::RESULT BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& 
             if (!command->shouldSuppressTimeoutWarnings()) {
                 SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
             }
-            STHROW("555 Timeout prePeeking command");
+            STHROW("555 Timeout postProcessing command");
         }
 
         // If no response was set, assume 200 OK
