@@ -493,11 +493,10 @@ void BedrockServer::sync()
                     // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                     // re-verify that any checks made in peek are still valid in process.
                     if (!command->httpsRequests.size()) {
-                        BedrockCore::RESULT result = BedrockCore::RESULT::INVALID;
                         if (command->shouldPrePeek()) {
                             core.prePeekCommand(command);
                         }
-                        result = core.peekCommand(command, true);
+                        BedrockCore::RESULT result = core.peekCommand(command, true);
                         if (result == BedrockCore::RESULT::COMPLETE) {
                             // This command completed in peek, respond to it appropriately, either directly or by sending it
                             // back to the sync thread.
@@ -842,8 +841,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             state = _replicationState.load();
             canWriteParallel = canWriteParallel && (state == SQLiteNodeState::LEADING);
 
-            // If the command should run prePeek, do that now and assign the result to the peekResult.
-            BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
+            // If the command should run prePeek, do that now .
             if (!command->repeek && !command->httpsRequests.size() && command->shouldPrePeek()) {
                 core.prePeekCommand(command);
             }
@@ -852,6 +850,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             // command has specifically asked for that.
             // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
             bool calledPeek = false;
+            BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
             if (command->repeek || !command->httpsRequests.size()) {
                 peekResult = core.peekCommand(command, isBlocking);
                 calledPeek = true;
