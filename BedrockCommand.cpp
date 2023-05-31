@@ -134,14 +134,17 @@ void BedrockCommand::finalizeTimingInfo() {
         if (get<0>(entry) == PEEK) {
             peekTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == BLOCKING_PEEK) {
+            peekTotal += get<2>(entry) - get<1>(entry);
             blockingPeekTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == PROCESS) {
             processTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == BLOCKING_PROCESS) {
+            processTotal += get<2>(entry) - get<1>(entry);
             blockingProcessTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == COMMIT_WORKER) {
             commitWorkerTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == BLOCKING_COMMIT_WORKER) {
+            commitWorkerTotal += get<2>(entry) - get<1>(entry);
             blockingCommitWorkerTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == COMMIT_SYNC) {
             commitSyncTotal += get<2>(entry) - get<1>(entry);

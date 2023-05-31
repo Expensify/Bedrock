@@ -26,7 +26,6 @@ class BedrockCommand : public SQLiteCommand {
         BLOCKING_PEEK,
         BLOCKING_PROCESS,
         BLOCKING_COMMIT_WORKER,
-        NONE,
     };
 
     enum class STAGE {

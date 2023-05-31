@@ -20,19 +20,15 @@ class BedrockCore : public SQLiteCore {
     // Automatic timing class that records an entry corresponding to its lifespan.
     class AutoTimer {
       public:
-        AutoTimer(unique_ptr<BedrockCommand>& command, BedrockCommand::TIMING_INFO type, BedrockCommand::TIMING_INFO blockingType) :
-        _command(command), _type(type), _blockingType(blockingType), _start(STimeNow()) { }
+        AutoTimer(unique_ptr<BedrockCommand>& command, BedrockCommand::TIMING_INFO type) :
+        _command(command), _type(type), _start(STimeNow()) { }
         ~AutoTimer() {
           int64_t now = STimeNow();
           _command->timingInfo.emplace_back(make_tuple(_type, _start, now));
-          if (_blockingType != BedrockCommand::NONE) {
-            _command->timingInfo.emplace_back(make_tuple(_blockingType, _start, now));
-          }
         }
       private:
         unique_ptr<BedrockCommand>& _command;
         BedrockCommand::TIMING_INFO _type;
-        BedrockCommand::TIMING_INFO _blockingType;
         uint64_t _start;
     };
 
