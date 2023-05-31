@@ -59,7 +59,7 @@ class BedrockCore : public SQLiteCore {
     // this command *will be passed to process again in the future to retry*.
     RESULT processCommand(unique_ptr<BedrockCommand>& command, bool exclusive = false);
 
-    RESULT postProcessCommand(unique_ptr<BedrockCommand>& command);
+    void postProcessCommand(unique_ptr<BedrockCommand>& command);
 
   private:
     // When called in the context of handling an exception, returns the demangled (if possible) name of the exception.

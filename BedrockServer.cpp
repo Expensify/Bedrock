@@ -396,11 +396,7 @@ void BedrockServer::sync()
             }
 
             if (command->shouldPostProcess()) {
-                BedrockCore::RESULT postProcessResult = BedrockCore::RESULT::INVALID;
-                postProcessResult = core.postProcessCommand(command);
-                if (postProcessResult != BedrockCore::RESULT::COMPLETE) {
-                    STHROW("500 Invalid postProcess result");
-                }
+                core.postProcessCommand(command);
             }
 
             if (_syncNode->commitSucceeded()) {
@@ -992,10 +988,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         command->response["commitCount"] = to_string(db.getCommitCount());
 
                         if (command->shouldPostProcess()) {
-                            result = core.postProcessCommand(command);
-                            if (result != BedrockCore::RESULT::COMPLETE) {
-                                STHROW("500 Invalid postProcess result");
-                            }
+                            core.postProcessCommand(command);
                         }
                         command->complete = true;
                     } else {
@@ -1005,10 +998,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
                     // of this block.
                     if (command->shouldPostProcess()) {
-                        result = core.postProcessCommand(command);
-                        if (result != BedrockCore::RESULT::COMPLETE) {
-                            STHROW("500 Invalid postProcess result");
-                        }
+                        core.postProcessCommand(command);
                     }
                 } else if (result == BedrockCore::RESULT::SERVER_NOT_LEADING) {
                     // We won't write regardless.

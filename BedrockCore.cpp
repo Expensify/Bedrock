@@ -319,7 +319,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     return needsCommit ? RESULT::NEEDS_COMMIT : RESULT::NO_COMMIT_REQUIRED;
 }
 
-BedrockCore::RESULT BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
+void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
     AutoTimer timer(command, BedrockCommand::POSTPROCESS);
     BedrockServer::ScopedStateSnapshot snapshot(_server);
     command->lastPeekedOrProcessedInState = _server.getState();
@@ -393,9 +393,6 @@ BedrockCore::RESULT BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& 
 
     // Reset, we can write now.
     _db.setQueryOnly(false);
-
-    // Done.
-    return RESULT::COMPLETE;
 }
 
 void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e) {
