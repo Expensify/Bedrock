@@ -499,17 +499,7 @@ void BedrockServer::sync()
                     if (!command->httpsRequests.size()) {
                         BedrockCore::RESULT result = BedrockCore::RESULT::INVALID;
                         if (command->shouldPrePeek()) {
-                            result = core.prePeekCommand(command);
-                            if (result != BedrockCore::RESULT::SHOULD_PEEK && result != BedrockCore::RESULT::COMPLETE) {
-                                STHROW("500 Invalid prePeekResult");
-                            }
-                            if (result == BedrockCore::RESULT::COMPLETE) {
-                                // This command completed in prePeek, respond to it appropriately, either directly or by
-                                // sending it back to the sync thread.
-                                SASSERT(command->complete);
-                                _reply(command);
-                                break;
-                            }
+                            core.prePeekCommand(command);
                         }
                         result = core.peekCommand(command, true);
                         if (result == BedrockCore::RESULT::COMPLETE) {
@@ -859,17 +849,14 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             // If the command should run prePeek, do that now and assign the result to the peekResult.
             BedrockCore::RESULT peekResult = BedrockCore::RESULT::INVALID;
             if (!command->repeek && !command->httpsRequests.size() && command->shouldPrePeek()) {
-                peekResult = core.prePeekCommand(command);
-                if (peekResult != BedrockCore::RESULT::SHOULD_PEEK && peekResult != BedrockCore::RESULT::COMPLETE) {
-                    STHROW("500 Invalid prePeekResult");
-                }
+                core.prePeekCommand(command);
             }
 
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
             // command has specifically asked for that.
             // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
             bool calledPeek = false;
-            if (peekResult == BedrockCore::RESULT::SHOULD_PEEK || command->repeek || !command->httpsRequests.size()) {
+            if (command->repeek || !command->httpsRequests.size()) {
                 peekResult = core.peekCommand(command, isBlocking);
                 calledPeek = true;
             }

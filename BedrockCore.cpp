@@ -64,7 +64,7 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
     return false;
 }
 
-BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
+void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
     AutoTimer timer(command, BedrockCommand::PREPEEK);
     BedrockServer::ScopedStateSnapshot snapshot(_server);
     command->lastPeekedOrProcessedInState = _server.getState();
@@ -113,9 +113,6 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
 
     // Reset, we can write now.
     _db.setQueryOnly(false);
-
-    // Done.
-    return RESULT::SHOULD_PEEK;
 }
 
 BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
@@ -350,14 +347,8 @@ BedrockCore::RESULT BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& 
 
             // postProcess.
             command->reset(BedrockCommand::STAGE::POSTPROCESS);
-            bool completed = command->postProcess(_db);
+            command->postProcess(_db);
             SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
-
-            if (!completed) {
-                SDEBUG("Command '" << request.methodLine << "' not finished in postProcess, re-queuing.");
-                STHROW("501 Command incomplete in post process");
-            }
-
         } catch (const SQLite::timeout_error& e) {
             // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
             if (!command->shouldSuppressTimeoutWarnings()) {

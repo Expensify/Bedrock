@@ -11,11 +11,10 @@ class BedrockCore : public SQLiteCore {
     enum class RESULT {
         INVALID = 0,
         COMPLETE = 1,
-        SHOULD_PEEK = 2,
-        SHOULD_PROCESS = 3,
-        NEEDS_COMMIT = 4,
-        NO_COMMIT_REQUIRED = 5,
-        SERVER_NOT_LEADING = 6
+        SHOULD_PROCESS = 2,
+        NEEDS_COMMIT = 3,
+        NO_COMMIT_REQUIRED = 4,
+        SERVER_NOT_LEADING = 5
     };
 
     // Automatic timing class that records an entry corresponding to its lifespan.
@@ -37,7 +36,7 @@ class BedrockCore : public SQLiteCore {
     // the command hasn't timed out.
     bool isTimedOut(unique_ptr<BedrockCommand>& command);
 
-    RESULT prePeekCommand(unique_ptr<BedrockCommand>& command);
+    void prePeekCommand(unique_ptr<BedrockCommand>& command);
 
     // Peek lets you pre-process a command. It will be called on each command before `process` is called on the same
     // command, and it *may be called multiple times*. Preventing duplicate actions on calling peek multiple times is
