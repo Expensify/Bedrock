@@ -23,8 +23,7 @@ class BedrockCore : public SQLiteCore {
         AutoTimer(unique_ptr<BedrockCommand>& command, BedrockCommand::TIMING_INFO type) :
         _command(command), _type(type), _start(STimeNow()) { }
         ~AutoTimer() {
-          int64_t now = STimeNow();
-          _command->timingInfo.emplace_back(make_tuple(_type, _start, now));
+          _command->timingInfo.emplace_back(make_tuple(_type, _start, STimeNow()));
         }
       private:
         unique_ptr<BedrockCommand>& _command;
