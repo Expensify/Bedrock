@@ -337,33 +337,22 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
 
         _db.startTiming(timeout);
 
-        try {
-            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("501 Failed to begin shared postProcess transaction");
-            }
-
-            // Make sure no writes happen while in postProcess command
-            _db.setQueryOnly(true);
-
-            // postProcess.
-            command->reset(BedrockCommand::STAGE::POSTPROCESS);
-            command->postProcess(_db);
-            SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
-        } catch (const SQLite::timeout_error& e) {
-            // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
-            if (!command->shouldSuppressTimeoutWarnings()) {
-                SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
-            }
-            STHROW("555 Timeout postProcessing command");
+        if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
+            STHROW("501 Failed to begin shared postProcess transaction");
         }
+
+        // Make sure no writes happen while in postProcess command
+        _db.setQueryOnly(true);
+
+        // postProcess.
+        command->reset(BedrockCommand::STAGE::POSTPROCESS);
+        command->postProcess(_db);
+        SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
 
         // If no response was set, assume 200 OK
         if (response.methodLine == "") {
             response.methodLine = "200 OK";
         }
-
-        // Add the commitCount header to the response.
-        response["commitCount"] = to_string(_db.getCommitCount());
 
         // Success. If a command has set "content", encode it in the response.
         SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
@@ -377,6 +366,12 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
                 response.content = newContent;
             }
         }
+    } catch (const SQLite::timeout_error& e) {
+        // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
+        if (!command->shouldSuppressTimeoutWarnings()) {
+            SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
+        }
+        STHROW("555 Timeout postProcessing command");
     } catch (const SException& e) {
         _handleCommandException(command, e);
     } catch (...) {
