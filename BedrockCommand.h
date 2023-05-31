@@ -48,7 +48,7 @@ class BedrockCommand : public SQLiteCommand {
     // Optionally called to execute read-only operations for a command in a separate transaction than the transaction
     // that can execute write operations for a command (i.e. the transaction that runs peek and process). This must be
     // called before the transaction that executes write operations.
-    virtual bool prePeek(SQLite& db) { STHROW("500 Base class prePeek called"); }
+    virtual void prePeek(SQLite& db) { STHROW("500 Base class prePeek called"); }
 
     // Called to attempt to handle a command in a read-only fashion. Should return true if the command has been
     // completely handled and a response has been written into `command.response`, which can be returned to the client.

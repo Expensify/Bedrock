@@ -71,11 +71,7 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
 
     // Convenience references to commonly used properties.
     const SData& request = command->request;
-    SData& response = command->response;
-    STable& content = command->jsonContent;
 
-    // We catch any exception and handle in `_handleCommandException`.
-    RESULT returnValue = RESULT::COMPLETE;
     try {
         SDEBUG("prePeeking at '" << request.methodLine << "' with priority: " << command->priority);
         uint64_t timeout = _getRemainingTime(command, false);
@@ -83,67 +79,33 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
 
         _db.startTiming(timeout);
 
-        try {
-            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("501 Failed to begin shared prePeek transaction");
-            }
-
-            // Make sure no writes happen while in prePeek command
-            _db.setQueryOnly(true);
-
-            // prePeek.
-            command->reset(BedrockCommand::STAGE::PREPEEK);
-            bool completed = command->prePeek(_db);
-            SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
-
-            if (command->httpsRequests.size()) {
-                STHROW("405 https requests cannot be made in prePeek");
-            }
-
-            if (!completed) {
-                SDEBUG("Command '" << request.methodLine << "' not finished in prePeek, re-queuing.");
-                _db.rollback();
-                _db.resetTiming();
-                return RESULT::SHOULD_PEEK;
-            }
-
-        } catch (const SQLite::timeout_error& e) {
-            // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
-            if (!command->shouldSuppressTimeoutWarnings()) {
-                SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
-            }
-            STHROW("555 Timeout prePeeking command");
+        if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
+            STHROW("501 Failed to begin shared prePeek transaction");
         }
 
-        // If no response was set, assume 200 OK
-        if (response.methodLine == "") {
-            response.methodLine = "200 OK";
-        }
+        // Make sure no writes happen while in prePeek command
+        _db.setQueryOnly(true);
 
-        // Add the commitCount header to the response.
-        response["commitCount"] = to_string(_db.getCommitCount());
+        // prePeek.
+        command->reset(BedrockCommand::STAGE::PREPEEK);
+        command->prePeek(_db);
+        SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
 
-        // Success. If a command has set "content", encode it in the response.
-        SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
-        if (!content.empty()) {
-            // Make sure we're not overwriting anything different.
-            string newContent = SComposeJSONObject(content);
-            if (response.content != newContent) {
-                if (!response.content.empty()) {
-                    SWARN("Replacing existing response content in " << request.methodLine);
-                }
-                response.content = newContent;
-            }
+        if (command->httpsRequests.size()) {
+            STHROW("405 https requests cannot be made in prePeek");
         }
+    } catch (const SQLite::timeout_error& e) {
+        // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
+        if (!command->shouldSuppressTimeoutWarnings()) {
+            SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
+        }
+        STHROW("555 Timeout prePeeking command");
     } catch (const SException& e) {
         _handleCommandException(command, e);
     } catch (...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
     }
-
-    // Unless an exception handler set this to something different, the command is complete.
-    command->complete = returnValue == RESULT::COMPLETE;
 
     // Back out of the current transaction, it doesn't need to do anything.
     _db.rollback();
@@ -153,7 +115,7 @@ BedrockCore::RESULT BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& comm
     _db.setQueryOnly(false);
 
     // Done.
-    return returnValue;
+    return RESULT::SHOULD_PEEK;
 }
 
 BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
