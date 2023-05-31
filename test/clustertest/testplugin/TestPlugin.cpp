@@ -95,6 +95,9 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "idcollision",
         "slowprocessquery",
         "bigquery",
+        "prepeekcommand",
+        "postprocesscommand",
+        "prepeekpostprocesscommand",
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
