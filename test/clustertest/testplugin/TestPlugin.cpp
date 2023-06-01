@@ -152,9 +152,7 @@ void TestPluginCommand::reset(BedrockCommand::STAGE stage) {
 };
 
 bool TestPluginCommand::shouldPrePeek() {
-    if (request.methodLine == "prepeekcommand") {
-        return true;
-    } else if (request.methodLine == "testescalate") {
+    if (request.methodLine == "prepeekcommand" || request.methodLine == "prepeekpostprocesscommand") {
         return true;
     } else {
         return false;
@@ -162,9 +160,7 @@ bool TestPluginCommand::shouldPrePeek() {
 }
 
 bool TestPluginCommand::shouldPostProcess() {
-    if (request.methodLine == "postprocesscommand") {
-        return true;
-    } else if (request.methodLine == "prepeekpostprocesscommand") {
+    if (request.methodLine == "postprocesscommand" || request.methodLine == "prepeekpostprocesscommand") {
         return true;
     } else {
         return false;
@@ -176,10 +172,8 @@ bool BedrockPlugin_TestPlugin::preventAttach() {
 }
 
 void TestPluginCommand::prePeek(SQLite& db) {
-    if (request.methodLine == "prepeekcommand") {
-        SINFO("running a prePeek");
-    } else if (request.methodLine == "prepeekpostprocesscommand") {
-        SINFO("running a prePeek");
+    if (request.methodLine == "prepeekcommand" || request.methodLine == "prepeekpostprocesscommand") {
+        jsonContent["prePeekInfo"] = "this was returned in prePeekInfo";
     } else {
         STHROW("500 no prePeek defined, shouldPrePeek should be false");
     }
@@ -475,10 +469,8 @@ void TestPluginCommand::process(SQLite& db) {
 }
 
 void TestPluginCommand::postProcess(SQLite& db) {
-    if (request.methodLine == "postprocesscommand") {
-        SINFO("running a postProcess");
-    } else if (request.methodLine == "prepeekpostprocesscommand") {
-        SINFO("running a postProcess");
+    if (request.methodLine == "postprocesscommand" || request.methodLine == "prepeekpostprocesscommand") {
+        jsonContent["postProcessInfo"] = "this was returned in postProcessInfo";
     } else {
         STHROW("500 no prePeek defined, shouldPrePeek should be false");
     }
