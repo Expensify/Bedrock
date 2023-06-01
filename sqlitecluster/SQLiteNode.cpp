@@ -153,7 +153,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
 
-    // Actual thread startup time. 
+    // Actual thread startup time.
     uint64_t threadStartTime = STimeNow();
 
     // Allow the DB handle to be returned regardless of how this function exits.
@@ -720,8 +720,8 @@ bool SQLiteNode::update() {
         }
 
         // No leader and we're in sync, perhaps everybody is waiting for us
-        // to stand up?  If we're higher than the highest priority, are using 
-        // a real priority and are not a permafollower, and are connected to 
+        // to stand up?  If we're higher than the highest priority, are using
+        // a real priority and are not a permafollower, and are connected to
         // enough full peers to achieve quorum, we should be leader.
         if (!currentLeader && numLoggedInFullPeers * 2 >= numFullPeers &&
             _priority > 0 && _priority > highestPriorityPeer->priority) {
@@ -1880,7 +1880,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
         if (newState < SQLiteNodeState::SUBSCRIBING) {
             // We're no longer SUBSCRIBING or FOLLOWING, so we have no leader
             _leadPeer = nullptr;
-        } 
+        }
 
         if (newState >= SQLiteNodeState::STANDINGUP) {
             // Not forked from anyone. Note that this includes both LEADING and FOLLOWING.
@@ -2448,7 +2448,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             // for all communication until it breaks.
                             peer->reset();
                             _onDisconnect(peer);
-                            STHROW("Peer " + peer->name + " seems already connected."); 
+                            STHROW("Peer " + peer->name + " seems already connected.");
                         }
                     } else {
                         STHROW("Unauthenticated node '" + message["Name"] + "' attempted to connected, rejecting.");
