@@ -71,6 +71,8 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
 
     // Convenience references to commonly used properties.
     const SData& request = command->request;
+    SData& response = command->response;
+    STable& content = command->jsonContent;
 
     try {
         SDEBUG("prePeeking at '" << request.methodLine << "' with priority: " << command->priority);
@@ -93,6 +95,17 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
 
         if (command->httpsRequests.size()) {
             STHROW("405 https requests cannot be made in prePeek");
+        }
+
+        if (!content.empty()) {
+            // Make sure we're not overwriting anything different.
+            string newContent = SComposeJSONObject(content);
+            if (response.content != newContent) {
+                if (!response.content.empty()) {
+                    SWARN("Replacing existing response content in " << request.methodLine);
+                }
+                response.content = newContent;
+            }
         }
     } catch (const SQLite::timeout_error& e) {
         // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
