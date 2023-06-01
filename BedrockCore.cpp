@@ -209,7 +209,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     }
 
     // Unless an exception handler set this to something different, the command is complete.
-    command->complete = returnValue == RESULT::COMPLETE;
+    command->complete = returnValue == RESULT::COMPLETE && !command->shouldPostProcess();
 
     // Back out of the current transaction, it doesn't need to do anything.
     _db.rollback();
@@ -327,7 +327,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     _db.resetTiming();
 
     // Done, return whether or not we need the parent to commit our transaction.
-    command->complete = !needsCommit;
+    command->complete = !needsCommit && !command->shouldPostProcess();
 
     return needsCommit ? RESULT::NEEDS_COMMIT : RESULT::NO_COMMIT_REQUIRED;
 }
