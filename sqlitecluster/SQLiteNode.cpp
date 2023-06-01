@@ -93,6 +93,11 @@ const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString) {
         peer->nextReconnect = STimeNow() + SRandom::rand64() % (STIME_US_PER_S * 2);
         peerList.push_back(peer);
     }
+
+    // Sort the peerList by name so we can get peers by name efficiently with binary search
+    std::sort(peerList.begin(), peerList.end(),
+              [](const SQLitePeer* peer1, const SQLitePeer* peer2) { return peer1->name < peer2->name; });
+
     return peerList;
 }
 
