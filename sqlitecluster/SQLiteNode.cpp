@@ -2544,15 +2544,14 @@ void SQLiteNode::_sendPING(SQLitePeer* peer) {
 }
 
 SQLitePeer* SQLiteNode::getPeerByName(const string& name) const {
-    // TODO: Store peers in sorted order by name and binary search the list here.
-    for (const auto& peer : _peerList) {
-        if (peer->name == name) {
-            return peer;
-        }
+    // Binary search for the peer by name
+    SQLitePeer searchPeer(name, "", STable(), 1);
+    auto it = std::lower_bound(_peerList.begin(), _peerList.end(), &searchPeer, [](const SQLitePeer* peer1, const SQLitePeer* peer2) { return peer1->name < peer2->name; });
+    if (it != _peerList.end() && (*it)->name == name) {
+        return *it;
     }
     return nullptr;
 }
-
 
 const string& SQLiteNode::stateName(SQLiteNodeState state) {
     static string placeholder = "";
