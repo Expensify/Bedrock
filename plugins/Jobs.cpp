@@ -636,7 +636,7 @@ void BedrockJobsCommand::process(SQLite& db) {
     else if (SIEquals(requestVerb, "GetJob") || SIEquals(requestVerb, "GetJobs")) {
         // If we're here it's because peekCommand found some data; re-execute
         // the query for real now.  However, this time we will order by
-        // priority.  We do this as three separate queries so we only have one
+        // priority.  We do this as six separate queries so we only have one
         // unbounded column in each query.  Additionally, we wrap each inner
         // query in a "SELECT *" such that we can have an "ORDER BY" and
         // "LIMIT" *before* we UNION ALL them together.  Looks gnarly, but it
