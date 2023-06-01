@@ -493,7 +493,7 @@ void BedrockServer::sync()
                     // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                     // re-verify that any checks made in peek are still valid in process.
                     if (!command->httpsRequests.size()) {
-                        if (command->shouldPrePeek()) {
+                        if (command->shouldPrePeek() && !command->repeek) {
                             core.prePeekCommand(command);
                         }
                         BedrockCore::RESULT result = core.peekCommand(command, true);
@@ -985,10 +985,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         // So we must still be leading, and at this point our commit has succeeded, let's
                         // mark it as complete. We add the currentCommit count here as well.
                         command->response["commitCount"] = to_string(db.getCommitCount());
-
-                        if (command->shouldPostProcess()) {
-                            core.postProcessCommand(command);
-                        }
                         command->complete = true;
                     } else {
                         SINFO("Conflict or state change committing " << command->request.methodLine << " on worker thread.");
@@ -1018,15 +1014,17 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                 }
             }
-        }
+            // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
+            // a conflict or the command was abandoned for a checkpoint, and we'll retry.
+            if (command->complete) {
+                if (command->shouldPostProcess()) {
+                    core.postProcessCommand(command);
+                }
+                _reply(command);
 
-        // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
-        // a conflict or the command was abandoned for a checkpoint, and we'll retry.
-        if (command->complete) {
-            _reply(command);
-
-            // Don't need to retry.
-            break;
+                // Don't need to retry.
+                break;
+            }
         }
 
         // If we're shutting down, or have set a specific max retries, we just try several times in a row and then move the command to the blocking queue.
