@@ -115,7 +115,7 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
 }
 
 void BedrockCommand::reset(BedrockCommand::STAGE stage) {
-    if (stage == STAGE::PEEK) {
+    if (stage == STAGE::PEEK && !shouldPrePeek()) {
         jsonContent.clear();
         response.clear();
     }
