@@ -29,26 +29,32 @@ class TestServer : public SQLiteServer {
 
 struct SQLiteNodeTest : tpunit::TestFixture {
     SQLiteNodeTest() : tpunit::TestFixture("SQLiteNode",
+                                           BEFORE_CLASS(SQLiteNodeTest::setup),
                                            AFTER_CLASS(SQLiteNodeTest::teardown),
-                                           TEST(SQLiteNodeTest::testFindSyncPeer)) { }
+                                           TEST(SQLiteNodeTest::testFindSyncPeer),
+                                           TEST(SQLiteNodeTest::testGetPeerByName)) { }
 
     // Filename for temp DB.
     char filenameTemplate[17] = "br_sync_dbXXXXXX";
     char filename[17];
+
+    TestServer server;
+    string peerList = "host1.fake:15555?nodeName=peer1,host2.fake:16666?nodeName=peer2,host3.fake:17777?nodeName=peer3,host4.fake:18888?nodeName=peer4";
+    shared_ptr<SQLitePool> dbPool;
+
+    void setup() {
+        // This exposes just enough to test the peer selection logic.
+        strcpy(filename, filenameTemplate);
+        int fd = mkstemp(filename);
+        close(fd);
+        dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0);
+    }
 
     void teardown() {
         unlink(filename);
     }
 
     void testFindSyncPeer() {
-
-        // This exposes just enough to test the peer selection logic.
-        strcpy(filename, filenameTemplate);
-        int fd = mkstemp(filename);
-        close(fd);
-        shared_ptr<SQLitePool> dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0);
-        TestServer server;
-        string peerList = "host1.fake:15555?nodeName=peer1,host2.fake:16666?nodeName=peer2,host3.fake:17777?nodeName=peer3,host4.fake:18888?nodeName=peer4";
         SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, 1, 1000000000, "1.0");
 
         // Do a base test, with one peer with no latency.
@@ -117,6 +123,12 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         }
         SQLiteNodeTester::updateSyncPeer(testNode);
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
+    }
+
+    void testGetPeerByName() {
+        SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, 1, 1000000000, "1.0");
+        ASSERT_EQUAL(testNode.getPeerByName("peer1")->name, "peer1");
+        ASSERT_EQUAL(testNode.getPeerByName("peer9"), nullptr);
     }
 
 } __SQLiteNodeTest;
