@@ -151,10 +151,39 @@ void TestPluginCommand::reset(BedrockCommand::STAGE stage) {
     BedrockCommand::reset(stage);
 };
 
+bool TestPluginCommand::shouldPrePeek() {
+    if (request.methodLine == "prepeekcommand") {
+        return true;
+    } else if (request.methodLine == "testescalate") {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+bool TestPluginCommand::shouldPostProcess() {
+    if (request.methodLine == "postprocesscommand") {
+        return true;
+    } else if (request.methodLine == "prepeekpostprocesscommand") {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 bool BedrockPlugin_TestPlugin::preventAttach() {
     return shouldPreventAttach;
 }
 
+void TestPluginCommand::prePeek(SQLite& db) {
+    if (request.methodLine == "prepeekcommand") {
+        SINFO("running a prePeek");
+    } else if (request.methodLine == "prepeekpostprocesscommand") {
+        SINFO("running a prePeek");
+    } else {
+        STHROW("500 no prePeek defined, shouldPrePeek should be false");
+    }
+}
 bool TestPluginCommand::peek(SQLite& db) {
     // Always blacklist on userID.
     crashIdentifyingValues.insert("userID");
@@ -442,6 +471,16 @@ void TestPluginCommand::process(SQLite& db) {
         string statString = "Processing testescalate (" + serverState + ")\n";
         fileAppend(request["tempFile"], statString);
         return;
+    }
+}
+
+void TestPluginCommand::postProcess(SQLite& db) {
+    if (request.methodLine == "postprocesscommand") {
+        SINFO("running a postProcess");
+    } else if (request.methodLine == "prepeekpostprocesscommand") {
+        SINFO("running a postProcess");
+    } else {
+        STHROW("500 no prePeek defined, shouldPrePeek should be false");
     }
 }
 

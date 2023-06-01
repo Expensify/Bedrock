@@ -39,8 +39,12 @@ class TestPluginCommand : public BedrockCommand {
   public:
     TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_TestPlugin* plugin);
     ~TestPluginCommand();
+    virtual void prePeek(SQLite& db);
     virtual bool peek(SQLite& db);
     virtual void process(SQLite& db);
+    virtual void postProcess(SQLite& db);
+    virtual bool shouldPrePeek();
+    virtual bool shouldPostProcess();
     virtual void reset(BedrockCommand::STAGE stage) override;
 
   private:
