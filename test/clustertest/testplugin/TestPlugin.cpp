@@ -152,19 +152,11 @@ void TestPluginCommand::reset(BedrockCommand::STAGE stage) {
 };
 
 bool TestPluginCommand::shouldPrePeek() {
-    if (request.methodLine == "prepeekcommand" || request.methodLine == "prepeekpostprocesscommand") {
-        return true;
-    } else {
-        return false;
-    }
+    return request.methodLine == "prepeekcommand" || request.methodLine == "prepeekpostprocesscommand";
 }
 
 bool TestPluginCommand::shouldPostProcess() {
-    if (request.methodLine == "postprocesscommand" || request.methodLine == "prepeekpostprocesscommand") {
-        return true;
-    } else {
-        return false;
-    }
+    return request.methodLine == "postprocesscommand" || request.methodLine == "prepeekpostprocesscommand";
 }
 
 bool BedrockPlugin_TestPlugin::preventAttach() {
