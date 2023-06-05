@@ -127,7 +127,7 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
 }
 
 BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
-    AutoTimer timer(command, BedrockCommand::PEEK);
+    AutoTimer timer(command, exclusive ? BedrockCommand::BLOCKING_PEEK : BedrockCommand::PEEK);
     BedrockServer::ScopedStateSnapshot snapshot(_server);
     command->lastPeekedOrProcessedInState = _server.getState();
 
@@ -221,7 +221,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
 }
 
 BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
-    AutoTimer timer(command, BedrockCommand::PROCESS);
+    AutoTimer timer(command, exclusive ? BedrockCommand::BLOCKING_PROCESS : BedrockCommand::PROCESS);
     BedrockServer::ScopedStateSnapshot snapshot(_server);
 
     // We need to be leading (including standing down) and we need to have peeked this command in the same set of
