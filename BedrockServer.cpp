@@ -1713,6 +1713,11 @@ bool BedrockServer::_isNonSecureControlCommand(const unique_ptr<BedrockCommand>&
         SIEquals(command->request.methodLine, "CRASH_COMMAND");
 }
 
+// State management for blocking writes to the DB.
+mutex __quiesceLock;
+atomic<bool> __quiesceShouldUnlock(false);
+thread* __quiesceThread = nullptr;
+
 void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
     SData& response = command->response;
     response.methodLine = "200 OK";
@@ -1776,25 +1781,48 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             _maxConflictRetries.store(maxConflictRetries);
         }
     } else if (SIEquals(command->request.methodLine, "BlockWrites")) {
-        shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
-        if (dbPoolCopy) {
-            SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
-            SQLite& db = dbScope.db();
-            bool result = db.exclusiveLockDB();
-            if (!result) {
-                response.methodLine = "500 lock failed";
-            }
+        atomic<bool> locked(false);
+        lock_guard lock(__quiesceLock);
+        if (__quiesceThread) {
+            response.methodLine = "400 Already Blocked";
         } else {
-            response.methodLine = "404 DB Pool Not Found";
+            __quiesceThread = new thread([&]() {
+                shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
+                if (dbPoolCopy) {
+                    SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
+                    SQLite& db = dbScope.db();
+                    db.exclusiveLockDB();
+                    locked = true;
+                    while (true) {
+                        if (__quiesceShouldUnlock) {
+                            db.exclusiveUnlockDB();
+                            __quiesceShouldUnlock = false;
+                            return;
+                        }
+
+                        // Wait 10ms for the next check.
+                        usleep(10'000);
+                    }
+                }
+            });
+
+            // Repeatedly wait 10ms for the lock until the thread indicates it's been acquired.
+            while (locked == false) {
+                usleep(10'000);
+            }
+
+            response.methodLine = "200 Blocked";
         }
     } else if (SIEquals(command->request.methodLine, "UnblockWrites")) {
-        shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
-        if (dbPoolCopy) {
-            SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
-            SQLite& db = dbScope.db();
-            db.exclusiveUnlockDB();
+        lock_guard lock(__quiesceLock);
+        if (!__quiesceThread) {
+            response.methodLine = "400 Existing lock not found";
         } else {
-            response.methodLine = "404 DB Pool Not Found";
+            __quiesceShouldUnlock = true;
+            __quiesceThread->join();
+            delete __quiesceThread;
+            __quiesceThread = nullptr;
+            response.methodLine = "200 Unblocked";
         }
     }
 }

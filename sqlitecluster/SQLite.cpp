@@ -314,8 +314,8 @@ SQLite::~SQLite() {
     DBINFO("Database closed.");
 }
 
-bool SQLite::exclusiveLockDB() {
-    return _sharedData.commitLock.try_lock_for(5s);
+void SQLite::exclusiveLockDB() {
+    _sharedData.commitLock.lock();
 }
 
 void SQLite::exclusiveUnlockDB() {
