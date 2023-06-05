@@ -250,7 +250,7 @@ class SQLite {
     // Set this DB handle to be query-only to prevent accidental writes in places we don't expect them.
     void setQueryOnly(bool enabled);
 
-    void exclusiveLockDB();
+    bool exclusiveLockDB();
     void exclusiveUnlockDB();
 
   private:

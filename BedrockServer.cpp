@@ -1780,7 +1780,10 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         if (dbPoolCopy) {
             SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
             SQLite& db = dbScope.db();
-            db.exclusiveLockDB();
+            bool result = db.exclusiveLockDB();
+            if (!result) {
+                response.methodLine = "500 lock failed";
+            }
         } else {
             response.methodLine = "404 DB Pool Not Found";
         }
