@@ -23,6 +23,9 @@ class BedrockCommand : public SQLiteCommand {
         QUEUE_WORKER,
         QUEUE_SYNC,
         QUEUE_BLOCKING,
+        BLOCKING_PEEK,
+        BLOCKING_PROCESS,
+        BLOCKING_COMMIT_WORKER,
     };
 
     enum class STAGE {
