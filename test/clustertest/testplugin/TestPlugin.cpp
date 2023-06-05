@@ -321,6 +321,17 @@ bool TestPluginCommand::peek(SQLite& db) {
             // case
             return false;
         }
+    } else if (request.methodLine == "prepeekcommand" || request.methodLine == "postprocesscommand" || request.methodLine == "prepeekpostprocesscommand") {
+        // Do something in here that reads from the database and sets a jsonResponse
+        jsonContent["peekInfo"] = "this was returned in peekInfo";
+        SQResult result;
+        db.read("SELECT COUNT(*) FROM test WHERE id = 999999999", result);
+        jsonContent["peekCount"] = result[0][0];
+        if (request.methodLine == "prepeekcommand") {
+            return true;
+        } else {
+            return false;
+        }
     } else if (request.methodLine == "testescalate") {
         string serverState = SQLiteNode::stateName(plugin().server.getState());
         string statString = "Peeking testescalate (" + serverState + ")\n";
