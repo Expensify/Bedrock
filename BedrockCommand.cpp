@@ -121,8 +121,11 @@ void BedrockCommand::reset(BedrockCommand::STAGE stage) {
 
 void BedrockCommand::finalizeTimingInfo() {
     uint64_t peekTotal = 0;
+    uint64_t blockingPeekTotal = 0;
     uint64_t processTotal = 0;
+    uint64_t blockingProcessTotal = 0;
     uint64_t commitWorkerTotal = 0;
+    uint64_t blockingCommitWorkerTotal = 0;
     uint64_t commitSyncTotal = 0;
     uint64_t queueWorkerTotal = 0;
     uint64_t queueSyncTotal = 0;
@@ -130,10 +133,19 @@ void BedrockCommand::finalizeTimingInfo() {
     for (const auto& entry: timingInfo) {
         if (get<0>(entry) == PEEK) {
             peekTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == BLOCKING_PEEK) {
+            peekTotal += get<2>(entry) - get<1>(entry);
+            blockingPeekTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == PROCESS) {
             processTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == BLOCKING_PROCESS) {
+            processTotal += get<2>(entry) - get<1>(entry);
+            blockingProcessTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == COMMIT_WORKER) {
             commitWorkerTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == BLOCKING_COMMIT_WORKER) {
+            commitWorkerTotal += get<2>(entry) - get<1>(entry);
+            blockingCommitWorkerTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == COMMIT_SYNC) {
             commitSyncTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == QUEUE_WORKER) {
@@ -218,6 +230,10 @@ void BedrockCommand::finalizeTimingInfo() {
           "sync:" << queueSyncTotal/1000 << ", "
           "blocking:" << queueBlockingTotal/1000 << ", "
           "escalation:" << escalationTimeUS/1000 <<
+          ". Blocking: "
+          "peek:" << blockingPeekTotal/1000 << ", "
+          "process:" << blockingProcessTotal/1000 << ", "
+          "commit:" << blockingCommitWorkerTotal/1000 <<
           ". Upstream: "
           "peek:" << upstreamPeekTime/1000 << ", "
           "process:"<< upstreamProcessTime/1000 << ", "
