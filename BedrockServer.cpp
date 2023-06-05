@@ -992,9 +992,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                     // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
                     // of this block.
-                    if (command->shouldPostProcess()) {
-                        core.postProcessCommand(command);
-                    }
                 } else if (result == BedrockCore::RESULT::SERVER_NOT_LEADING) {
                     // We won't write regardless.
                     core.rollback();
