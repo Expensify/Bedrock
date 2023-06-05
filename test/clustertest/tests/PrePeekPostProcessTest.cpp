@@ -55,8 +55,17 @@ struct PrePeekPostProcessTest : tpunit::TestFixture {
         BedrockTester& brtester = tester->getTester(1);
         SData cmd("prepeekpostprocesscommand");
         STable response = SParseJSONObject(brtester.executeWaitMultipleData({cmd})[0].content);
+
+        // Confirm that the information returned from prePeek, peek, process and postProcess is all in the response.
         ASSERT_EQUAL(response["prePeekInfo"], "this was returned in prePeekInfo");
+        ASSERT_EQUAL(response["peekInfo"], "this was returned in peekInfo");
+        ASSERT_EQUAL(response["processInfo"], "this was returned in processInfo");
         ASSERT_EQUAL(response["postProcessInfo"], "this was returned in postProcessInfo");
+
+        // prepeekpostprocesscommand deletes a row from the "test" table during the process. We need to make sure the
+        // row exists during peek, and that it no longer exists during postProcess.
+        ASSERT_EQUAL(response["peekCount"], "1");
+        ASSERT_EQUAL(response["postProcessCount"], "0");
     }
 
 } __PrePeekPostProcessTest;
