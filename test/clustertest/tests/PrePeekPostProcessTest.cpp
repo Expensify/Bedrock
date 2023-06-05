@@ -24,7 +24,13 @@ struct PrePeekPostProcessTest : tpunit::TestFixture {
         BedrockTester& brtester = tester->getTester(1);
         SData cmd("prepeekcommand");
         STable response = SParseJSONObject(brtester.executeWaitMultipleData({cmd})[0].content);
+
+        // Confirm that information returned from prePeek and peek is all in the response.
         ASSERT_EQUAL(response["prePeekInfo"], "this was returned in prePeekInfo");
+        ASSERT_EQUAL(response["peekInfo"], "this was returned in peekInfo");
+
+        // No counted row has been inserted into the test table yet, so the "peekCount" should be zero.
+        ASSERT_EQUAL(response["peekCount"], "0");
     }
 
     void postProcess()
