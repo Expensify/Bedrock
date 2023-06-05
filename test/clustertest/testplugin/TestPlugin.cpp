@@ -468,12 +468,23 @@ void TestPluginCommand::process(SQLite& db) {
         string statString = "Processing testescalate (" + serverState + ")\n";
         fileAppend(request["tempFile"], statString);
         return;
+    } else if (request.methodLine == "postprocesscommand") {
+        jsonContent["processInfo"] = "this was returned in processInfo";
+        db.write("INSERT INTO test (id, value) VALUES (999999999, 'this is a test');");
+        return;
+    } else if (request.methodLine == "prepeekpostprocesscommand") {
+        jsonContent["processInfo"] = "this was returned in processInfo";
+        db.write("DELETE FROM test WHERE id = 999999999;");
+        return;
     }
 }
 
 void TestPluginCommand::postProcess(SQLite& db) {
     if (request.methodLine == "postprocesscommand" || request.methodLine == "prepeekpostprocesscommand") {
         jsonContent["postProcessInfo"] = "this was returned in postProcessInfo";
+        SQResult result;
+        db.read("SELECT COUNT(*) FROM test WHERE id = 999999999", result);
+        jsonContent["postProcessCount"] = result[0][0];
     } else {
         STHROW("500 no prePeek defined, shouldPrePeek should be false");
     }
