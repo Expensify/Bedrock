@@ -395,6 +395,10 @@ void BedrockServer::sync()
                 continue;
             }
 
+            if (command->shouldPostProcess()) {
+                core.postProcessCommand(command);
+            }
+
             if (_syncNode->commitSucceeded()) {
                 if (command) {
                     SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
@@ -489,6 +493,9 @@ void BedrockServer::sync()
                     // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                     // re-verify that any checks made in peek are still valid in process.
                     if (!command->httpsRequests.size()) {
+                        if (command->shouldPrePeek() && !command->repeek) {
+                            core.prePeekCommand(command);
+                        }
                         BedrockCore::RESULT result = core.peekCommand(command, true);
                         if (result == BedrockCore::RESULT::COMPLETE) {
                             // This command completed in peek, respond to it appropriately, either directly or by sending it
@@ -834,6 +841,11 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             state = _replicationState.load();
             canWriteParallel = canWriteParallel && (state == SQLiteNodeState::LEADING);
 
+            // If the command should run prePeek, do that now .
+            if (!command->repeek && !command->httpsRequests.size() && command->shouldPrePeek()) {
+                core.prePeekCommand(command);
+            }
+
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
             // command has specifically asked for that.
             // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
@@ -999,15 +1011,17 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                 }
             }
-        }
+            // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
+            // a conflict or the command was abandoned for a checkpoint, and we'll retry.
+            if (command->complete) {
+                if (command->shouldPostProcess()) {
+                    core.postProcessCommand(command);
+                }
+                _reply(command);
 
-        // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
-        // a conflict or the command was abandoned for a checkpoint, and we'll retry.
-        if (command->complete) {
-            _reply(command);
-
-            // Don't need to retry.
-            break;
+                // Don't need to retry.
+                break;
+            }
         }
 
         // If we're shutting down, or have set a specific max retries, we just try several times in a row and then move the command to the blocking queue.

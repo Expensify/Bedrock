@@ -9,8 +9,10 @@ const string BedrockCommand::defaultPluginName("NO_PLUGIN");
 BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin, bool escalateImmediately_) :
     SQLiteCommand(move(baseCommand)),
     priority(PRIORITY_NORMAL),
+    prePeekCount(0),
     peekCount(0),
     processCount(0),
+    postProcessCount(0),
     repeek(false),
     crashIdentifyingValues(*this),
     escalateImmediately(escalateImmediately_),
@@ -113,16 +115,18 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
 }
 
 void BedrockCommand::reset(BedrockCommand::STAGE stage) {
-    if (stage == STAGE::PEEK) {
+    if (stage == STAGE::PEEK && !shouldPrePeek()) {
         jsonContent.clear();
         response.clear();
     }
 }
 
 void BedrockCommand::finalizeTimingInfo() {
+    uint64_t prePeekTotal = 0;
     uint64_t peekTotal = 0;
     uint64_t blockingPeekTotal = 0;
     uint64_t processTotal = 0;
+    uint64_t postProcessTotal = 0;
     uint64_t blockingProcessTotal = 0;
     uint64_t commitWorkerTotal = 0;
     uint64_t blockingCommitWorkerTotal = 0;
@@ -131,13 +135,17 @@ void BedrockCommand::finalizeTimingInfo() {
     uint64_t queueSyncTotal = 0;
     uint64_t queueBlockingTotal = 0;
     for (const auto& entry: timingInfo) {
-        if (get<0>(entry) == PEEK) {
+        if (get<0>(entry) == PREPEEK) {
+            prePeekTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == PEEK) {
             peekTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == BLOCKING_PEEK) {
             peekTotal += get<2>(entry) - get<1>(entry);
             blockingPeekTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == PROCESS) {
             processTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == POSTPROCESS) {
+            postProcessTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == BLOCKING_PROCESS) {
             processTotal += get<2>(entry) - get<1>(entry);
             blockingProcessTotal += get<2>(entry) - get<1>(entry);
@@ -161,13 +169,15 @@ void BedrockCommand::finalizeTimingInfo() {
     uint64_t totalTime = STimeNow() - creationTime;
 
     // Time that wasn't accounted for in all the other metrics.
-    uint64_t unaccountedTime = totalTime - (peekTotal + processTotal + commitWorkerTotal + commitSyncTotal +
+    uint64_t unaccountedTime = totalTime - (prePeekTotal + peekTotal + processTotal + postProcessTotal +commitWorkerTotal + commitSyncTotal +
                                             escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal);
 
     // Build a map of the values we care about.
     map<string, uint64_t> valuePairs = {
+        {"prePeekTime",     prePeekTotal},
         {"peekTime",        peekTotal},
         {"processTime",     processTotal},
+        {"postProcessTime", postProcessTotal},
         {"totalTime",       totalTime},
         {"unaccountedTime", unaccountedTime},
     };
@@ -218,8 +228,10 @@ void BedrockCommand::finalizeTimingInfo() {
     }
 
     SINFO("command '" << methodName << "' timing info (ms): "
+          "prePeek: " << prePeekTotal/1000 << " (count: " << prePeekCount << "), "
           "peek:" << peekTotal/1000 << " (count:" << peekCount << "), "
           "process:" << processTotal/1000 << " (count:" << processCount << "), "
+          "postProcess:" << postProcessTotal/1000 << " (count:" << postProcessCount << "), "
           "total:" << totalTime/1000 << ", "
           "unaccounted:" << unaccountedTime/1000 <<
           ". Commit: "
