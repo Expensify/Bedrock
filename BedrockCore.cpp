@@ -91,10 +91,6 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
         command->prePeek(_db);
         SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
 
-        if (command->httpsRequests.size()) {
-            STHROW("405 https requests cannot be made in prePeek");
-        }
-
         if (!content.empty()) {
             // Make sure we're not overwriting anything different.
             string newContent = SComposeJSONObject(content);
