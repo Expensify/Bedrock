@@ -354,11 +354,6 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
         command->postProcess(_db);
         SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
 
-        // If no response was set, assume 200 OK
-        if (response.methodLine == "") {
-            response.methodLine = "200 OK";
-        }
-
         // Success. If a command has set "content", encode it in the response.
         SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
         if (!content.empty()) {
