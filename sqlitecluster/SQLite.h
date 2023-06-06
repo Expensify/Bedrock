@@ -307,6 +307,9 @@ class SQLite {
         // no ill effects, but currently we use it to set a floor on the number of frames we will try and checkpoint.
         atomic<size_t> outstandingFramesToCheckpoint = 0;
 
+        // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
+        shared_mutex writeLock;
+
       private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.

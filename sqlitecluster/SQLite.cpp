@@ -315,11 +315,13 @@ SQLite::~SQLite() {
 }
 
 void SQLite::exclusiveLockDB() {
+    _sharedData.writeLock.lock();
     _sharedData.commitLock.lock();
 }
 
 void SQLite::exclusiveUnlockDB() {
     _sharedData.commitLock.unlock();
+    _sharedData.writeLock.unlock();
 }
 
 bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
@@ -536,18 +538,21 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     uint64_t before = STimeNow();
     bool usedRewrittenQuery = false;
     int resultCode = 0;
-    if (_enableRewrite) {
-        resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, true);
-        if (resultCode == SQLITE_AUTH) {
-            // Run re-written query.
-            _currentlyRunningRewritten = true;
-            SASSERT(SEndsWith(_rewrittenQuery, ";"));
-            resultCode = SQuery(_db, "read/write transaction", _rewrittenQuery);
-            usedRewrittenQuery = true;
-            _currentlyRunningRewritten = false;
+    {
+        shared_lock<shared_mutex> lock(_sharedData.writeLock);
+        if (_enableRewrite) {
+            resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, true);
+            if (resultCode == SQLITE_AUTH) {
+                // Run re-written query.
+                _currentlyRunningRewritten = true;
+                SASSERT(SEndsWith(_rewrittenQuery, ";"));
+                resultCode = SQuery(_db, "read/write transaction", _rewrittenQuery);
+                usedRewrittenQuery = true;
+                _currentlyRunningRewritten = false;
+            }
+        } else {
+            resultCode = SQuery(_db, "read/write transaction", query);
         }
-    } else {
-        resultCode = SQuery(_db, "read/write transaction", query);
     }
 
     // If we got a constraints error, throw that.
