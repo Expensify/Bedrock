@@ -1816,7 +1816,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
     } else if (SIEquals(command->request.methodLine, "UnblockWrites")) {
         lock_guard lock(__quiesceLock);
         if (!__quiesceThread) {
-            response.methodLine = "400 Existing lock not found";
+            response.methodLine = "200 Not Blocked";
         } else {
             __quiesceShouldUnlock = true;
             __quiesceThread->join();
