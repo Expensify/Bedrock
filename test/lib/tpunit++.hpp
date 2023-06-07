@@ -365,6 +365,8 @@ namespace tpunit {
 
       private:
 
+         static void tpunit_run_test_class(TestFixture*);
+
          static void tpunit_detail_do_method(method* m);
 
          static void tpunit_detail_do_methods(method* m);

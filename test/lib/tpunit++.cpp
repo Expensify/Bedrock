@@ -93,6 +93,27 @@ int tpunit::TestFixture::tpunit_detail_do_run(int threads, std::function<void()>
     return tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction);
 }
 
+void tpunit::TestFixture::tpunit_run_test_class(TestFixture* f) {
+   f->_stats._assertions = 0;
+   f->_stats._exceptions = 0;
+   tpunit_detail_do_methods(f->_before_classes);
+   if (f->_stats._assertions || f->_stats._exceptions) {
+      tpunit_detail_stats()._failures++;
+      tpunit_detail_stats()._failureNames.emplace(f->_name + "::BEFORE_CLASS"s);
+      cout << "\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C initializing " << f->_name << ". Skipping tests." << endl;
+   } else {
+       tpunit_detail_do_tests(f);
+   }
+   f->_stats._assertions = 0;
+   f->_stats._exceptions = 0;
+   tpunit_detail_do_methods(f->_after_classes);
+   if (f->_stats._assertions || f->_stats._exceptions) {
+      tpunit_detail_stats()._failures++;
+      tpunit_detail_stats()._failureNames.emplace(f->_name + "::AFTER_CLASS"s);
+      cout << "\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C cleaning up " << f->_name << "." << endl;
+   }
+}
+
 int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const set<string>& exclude,
                                               const list<string>& before, const list<string>& after, int threads,
                                               std::function<void()> threadInitFunction) {
@@ -236,17 +257,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                        }
                    }
 
-                   f->_stats._assertions = 0;
-                   f->_stats._exceptions = 0;
-                   tpunit_detail_do_methods(f->_before_classes);
-                   if (f->_stats._assertions || f->_stats._exceptions) {
-                      cout << "2 Got exception or assertion in before_classes" << endl;
-                   }
-                   tpunit_detail_do_tests(f);
-                   tpunit_detail_do_methods(f->_after_classes);
-                   if (f->_stats._assertions || f->_stats._exceptions) {
-                      cout << "2 Got exception or assertion in _after_classes" << endl;
-                   }
+                   tpunit_run_test_class(f);
                 }
             } catch (ShutdownException se) {
                 // This will have broken us out of our main loop, so we'll just exit. We also set the exit flag to let
