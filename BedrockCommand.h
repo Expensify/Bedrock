@@ -16,8 +16,10 @@ class BedrockCommand : public SQLiteCommand {
 
     enum TIMING_INFO {
         INVALID,
+        PREPEEK,
         PEEK,
         PROCESS,
+        POSTPROCESS,
         COMMIT_WORKER,
         COMMIT_SYNC,
         QUEUE_WORKER,
@@ -29,8 +31,10 @@ class BedrockCommand : public SQLiteCommand {
     };
 
     enum class STAGE {
+        PREPEEK,
         PEEK,
-        PROCESS
+        PROCESS,
+        POSTPROCESS
     };
 
     // Times in *milliseconds*.
@@ -44,6 +48,11 @@ class BedrockCommand : public SQLiteCommand {
     // Destructor.
     virtual ~BedrockCommand();
 
+    // Optionally called to execute read-only operations for a command in a separate transaction than the transaction
+    // that can execute write operations for a command (i.e. the transaction that runs peek and process). This must be
+    // called before the transaction that executes write operations.
+    virtual void prePeek(SQLite& db) { STHROW("500 Base class prePeek called"); }
+
     // Called to attempt to handle a command in a read-only fashion. Should return true if the command has been
     // completely handled and a response has been written into `command.response`, which can be returned to the client.
     // Should return `false` if the command needs to write to the database or otherwise could not be finished in a
@@ -53,6 +62,11 @@ class BedrockCommand : public SQLiteCommand {
     // Called after a command has returned `false` to peek, and will attempt to commit and distribute a transaction
     // with any changes to the DB made by this plugin.
     virtual void process(SQLite& db) { STHROW("500 Base class process called"); }
+
+    // Optionally called to execute read-only operations for a command in a separate transaction than the transaction
+    // that can execute write operations for a command (i.e. the transaction that runs peek and process). This must be
+    // called after the transaction that executes write operations.
+    virtual void postProcess(SQLite& db) { STHROW("500 Base class postProcess called"); }
 
     // Reset the command after a commit conflict. This is called both before `peek` and `process`. Typically, we don't
     // want to reset anything in `process`, because we may have specifically stored values there in `peek` that we want
@@ -91,9 +105,11 @@ class BedrockCommand : public SQLiteCommand {
     // Each command is assigned a priority.
     Priority priority;
 
-    // We track how many times we `peek` and `process` each command.
+    // We track how many times we `prePeek`, `peek` and `process` each command.
+    int prePeekCount;
     int peekCount;
     int processCount;
+    int postProcessCount;
 
     // A plugin can optionally handle a command for which the reply to the caller was undeliverable.
     // Note that it gets no reference to the DB, this happens after the transaction is already complete.
@@ -103,6 +119,10 @@ class BedrockCommand : public SQLiteCommand {
 
     // Set to true if we don't want to log timeout alerts, and let the caller deal with it.
     virtual bool shouldSuppressTimeoutWarnings() { return false; }
+
+    virtual bool shouldPrePeek() { return false; }
+
+    virtual bool shouldPostProcess() { return false; }
 
     // A command can set this to true to indicate it would like to have `peek` called again after completing a HTTPS
     // request. This allows a single command to make multiple serial HTTPS requests. The command should clear this when

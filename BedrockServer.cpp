@@ -395,6 +395,10 @@ void BedrockServer::sync()
                 continue;
             }
 
+            if (command->shouldPostProcess()) {
+                core.postProcessCommand(command);
+            }
+
             if (_syncNode->commitSucceeded()) {
                 if (command) {
                     SINFO("[performance] Sync thread finished committing command " << command->request.methodLine);
@@ -489,6 +493,9 @@ void BedrockServer::sync()
                     // risk duplicating that request. If your command creates an HTTPS request, it needs to explicitly
                     // re-verify that any checks made in peek are still valid in process.
                     if (!command->httpsRequests.size()) {
+                        if (command->shouldPrePeek() && !command->repeek) {
+                            core.prePeekCommand(command);
+                        }
                         BedrockCore::RESULT result = core.peekCommand(command, true);
                         if (result == BedrockCore::RESULT::COMPLETE) {
                             // This command completed in peek, respond to it appropriately, either directly or by sending it
@@ -834,6 +841,11 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             state = _replicationState.load();
             canWriteParallel = canWriteParallel && (state == SQLiteNodeState::LEADING);
 
+            // If the command should run prePeek, do that now .
+            if (!command->repeek && !command->httpsRequests.size() && command->shouldPrePeek()) {
+                core.prePeekCommand(command);
+            }
+
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
             // command has specifically asked for that.
             // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
@@ -999,15 +1011,17 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     SERROR("processCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                 }
             }
-        }
+            // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
+            // a conflict or the command was abandoned for a checkpoint, and we'll retry.
+            if (command->complete) {
+                if (command->shouldPostProcess()) {
+                    core.postProcessCommand(command);
+                }
+                _reply(command);
 
-        // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
-        // a conflict or the command was abandoned for a checkpoint, and we'll retry.
-        if (command->complete) {
-            _reply(command);
-
-            // Don't need to retry.
-            break;
+                // Don't need to retry.
+                break;
+            }
         }
 
         // If we're shutting down, or have set a specific max retries, we just try several times in a row and then move the command to the blocking queue.
@@ -1713,6 +1727,11 @@ bool BedrockServer::_isNonSecureControlCommand(const unique_ptr<BedrockCommand>&
         SIEquals(command->request.methodLine, "CRASH_COMMAND");
 }
 
+// State management for blocking writes to the DB.
+mutex __quiesceLock;
+atomic<bool> __quiesceShouldUnlock(false);
+thread* __quiesceThread = nullptr;
+
 void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
     SData& response = command->response;
     response.methodLine = "200 OK";
@@ -1776,22 +1795,48 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             _maxConflictRetries.store(maxConflictRetries);
         }
     } else if (SIEquals(command->request.methodLine, "BlockWrites")) {
-        shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
-        if (dbPoolCopy) {
-            SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
-            SQLite& db = dbScope.db();
-            db.exclusiveLockDB();
+        atomic<bool> locked(false);
+        lock_guard lock(__quiesceLock);
+        if (__quiesceThread) {
+            response.methodLine = "400 Already Blocked";
         } else {
-            response.methodLine = "404 DB Pool Not Found";
+            __quiesceThread = new thread([&]() {
+                shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
+                if (dbPoolCopy) {
+                    SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
+                    SQLite& db = dbScope.db();
+                    db.exclusiveLockDB();
+                    locked = true;
+                    while (true) {
+                        if (__quiesceShouldUnlock) {
+                            db.exclusiveUnlockDB();
+                            __quiesceShouldUnlock = false;
+                            return;
+                        }
+
+                        // Wait 10ms for the next check.
+                        usleep(10'000);
+                    }
+                }
+            });
+
+            // Repeatedly wait 10ms for the lock until the thread indicates it's been acquired.
+            while (locked == false) {
+                usleep(10'000);
+            }
+
+            response.methodLine = "200 Blocked";
         }
     } else if (SIEquals(command->request.methodLine, "UnblockWrites")) {
-        shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
-        if (dbPoolCopy) {
-            SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
-            SQLite& db = dbScope.db();
-            db.exclusiveUnlockDB();
+        lock_guard lock(__quiesceLock);
+        if (!__quiesceThread) {
+            response.methodLine = "200 Not Blocked";
         } else {
-            response.methodLine = "404 DB Pool Not Found";
+            __quiesceShouldUnlock = true;
+            __quiesceThread->join();
+            delete __quiesceThread;
+            __quiesceThread = nullptr;
+            response.methodLine = "200 Unblocked";
         }
     }
 }

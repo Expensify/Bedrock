@@ -36,6 +36,8 @@ class BedrockCore : public SQLiteCore {
     // the command hasn't timed out.
     bool isTimedOut(unique_ptr<BedrockCommand>& command);
 
+    void prePeekCommand(unique_ptr<BedrockCommand>& command);
+
     // Peek lets you pre-process a command. It will be called on each command before `process` is called on the same
     // command, and it *may be called multiple times*. Preventing duplicate actions on calling peek multiple times is
     // up to the implementer, and may happen *across multiple servers*. I.e., a follower server may call `peek`, and on
@@ -56,6 +58,8 @@ class BedrockCore : public SQLiteCore {
     // `COMMIT` and replicate the transaction to follower nodes. It's allowable for this `COMMIT` to fail, in which case
     // this command *will be passed to process again in the future to retry*.
     RESULT processCommand(unique_ptr<BedrockCommand>& command, bool exclusive = false);
+
+    void postProcessCommand(unique_ptr<BedrockCommand>& command);
 
   private:
     // When called in the context of handling an exception, returns the demangled (if possible) name of the exception.
