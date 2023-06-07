@@ -152,17 +152,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
 
                // Run the test.
                printf("--------------\n");
-               fixture->_stats._assertions = 0;
-               fixture->_stats._exceptions = 0;
-               tpunit_detail_do_methods(fixture->_before_classes);
-               if (fixture->_stats._assertions || fixture->_stats._exceptions) {
-                  cout << "1 Got exception or assertion in before_classes" << endl;
-               }
-               tpunit_detail_do_tests(fixture);
-               tpunit_detail_do_methods(fixture->_after_classes);
-               if (fixture->_stats._assertions || fixture->_stats._exceptions) {
-                  cout << "1 Got exception or assertion in _after_classes" << endl;
-               }
+               tpunit_run_test_class(fixture);
 
                continue; // Don't bother checking the rest of the tests.
             }
@@ -286,17 +276,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
 
                // Run the test.
                printf("--------------\n");
-               fixture->_stats._assertions = 0;
-               fixture->_stats._exceptions = 0;
-               tpunit_detail_do_methods(fixture->_before_classes);
-               if (fixture->_stats._assertions || fixture->_stats._exceptions) {
-                  cout << "3 Got exception or assertion in before_classes" << endl;
-               }
-               tpunit_detail_do_tests(fixture);
-               tpunit_detail_do_methods(fixture->_after_classes);
-               if (fixture->_stats._assertions || fixture->_stats._exceptions) {
-                  cout << "3 Got exception or assertion in _after_classes" << endl;
-               }
+               tpunit_run_test_class(fixture);
 
                continue; // Don't bother checking the rest of the tests.
             }
