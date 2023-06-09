@@ -19,6 +19,7 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testChunkedEncoding),
                                     TEST(LibStuff::testDaysInMonth),
                                     TEST(LibStuff::testGZip),
+                                    TEST(LibStuff::testZstZip),
                                     TEST(LibStuff::testConstantTimeEquals),
                                     TEST(LibStuff::testParseIntegerList),
                                     TEST(LibStuff::testSData),
@@ -326,10 +327,38 @@ struct LibStuff : tpunit::TestFixture {
 
         // Ok, this actually tests for correctness.
         data = "this is a test";
+        // You can verify this value using this command:
+        // echo -n "this is a test" | gzip -c - | xxd -ps -c 60 -u
         ASSERT_EQUAL(SToHex(SGZip(data)), "1F8B08000000000002032BC9C82C5600A2448592D4E21200EAE71E0D0E000000");
 
         // Test end to end.
         ASSERT_EQUAL(SGUnzip(SGZip(data)), data);
+    }
+
+    void testZstZip() {
+
+        // All these really test is that we won't segfault or anything.
+        string data = "";
+        ASSERT_TRUE(SZstZip(data).length() > 1);
+
+        data += (char)(SRandom::rand64() % 256);
+        ASSERT_TRUE(SZstZip(data).length() > 1);
+
+        // data = "";
+        // for (int i = 0; i < 10000000; i++) {
+        //     data += (char)(SRandom::rand64() % 256);
+        // }
+        // ASSERT_TRUE(SZstZip(data).length() > 1);
+
+        // Ok, this actually tests for correctness.
+        data = "this is a test";
+        cout << "Hex: " << SToHex(SZstZip(data)) << endl;
+        // You can verify using this command:
+        // echo -n "this is a test" | zstd -c - | xxd -ps -c 60 -u
+        // ASSERT_EQUAL(SToHex(SZstZip(data)), "28B52FFD04587100007468697320697320612074657374827F0F0D");
+
+        // // Test end to end.
+        // ASSERT_EQUAL(SZstUnzip(SZstZip(data)), data);
     }
 
     void testConstantTimeEquals() {

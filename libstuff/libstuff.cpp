@@ -11,8 +11,10 @@
 #include <sys/ioctl.h>
 
 #include "libstuff.h"
+#include <iostream>
 #include <sys/stat.h>
 #include <zlib.h>
+#include <zstd.h>
 
 #include <mbedtls/aes.h>
 #include <mbedtls/base64.h>
@@ -1699,6 +1701,34 @@ string SGUnzip (const string& content) {
     return data;
 }
 
+string SZstZip(const string& content) {
+    cout << "COLE content is " << content << endl;
+    size_t fSize = content.size();
+    cout << "COLE content size is " << fSize << endl;
+    const void* inBuffer = &content;
+    // cout << "COLE buffer is " << inBuffer;
+    size_t const outBuffSize = ZSTD_compressBound(fSize);
+    void* outBuffer = malloc(outBuffSize);
+    string result;
+
+    const size_t ret = ZSTD_compress(outBuffer, outBuffSize, inBuffer, fSize, 1);
+    cout << "COLE ret " << ret << endl;
+    if (ZSTD_isError(ret)) {
+        cout << "COLE ZST compression failed " << ZSTD_getErrorName(ret) << endl;
+        return result;
+    }
+    string* sp = static_cast<string*>(outBuffer);
+    result = *sp;
+    cout << "COLE result is " <<  SToHex(result) << endl;
+
+    free(outBuffer);
+
+    return result;
+}
+
+// string SZstUnzip() {
+
+// }
 /////////////////////////////////////////////////////////////////////////////
 // Socket helpers
 /////////////////////////////////////////////////////////////////////////////

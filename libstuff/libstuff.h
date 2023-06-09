@@ -602,6 +602,7 @@ string SCURRENT_TIMESTAMP_MS();
 // Compression
 string SGZip(const string& content);
 string SGUnzip(const string& content);
+string SZstZip(const string& content);
 
 // Command-line helpers
 STable SParseCommandLine(int argc, char* argv[]);
