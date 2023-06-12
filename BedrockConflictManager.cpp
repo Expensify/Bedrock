@@ -64,3 +64,24 @@ string BedrockConflictManager::generateReport() {
     }
     return out.str();
 }
+
+mutex PageLockGuard::controlMutex;
+map<int64_t, PageLockGuard::MPair> PageLockGuard::mutexCounts;
+list<int64_t> PageLockGuard::mutexOrder;
+
+PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
+    lock_guard<mutex> lock(controlMutex);
+    auto result = mutexCounts.find(page);
+    if (result == mutexCounts.end()) {
+        result = mutexCounts.emplace(piecewise_construct, forward_as_tuple(page), forward_as_tuple()).first;
+        mutexOrder.push_front(page);
+    } else {
+        result->second.count++;
+    }
+    _mref = &(result->second.m);
+    _mref->lock();
+}
+
+PageLockGuard::~PageLockGuard() {
+    _mref->unlock();
+}

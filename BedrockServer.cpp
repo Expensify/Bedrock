@@ -846,6 +846,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 core.prePeekCommand(command);
             }
 
+            // Block page here? Yeah, here.
+
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
             // command has specifically asked for that.
             // If peek succeeds, then it's finished, and all we need to do is respond to the command at the bottom.
