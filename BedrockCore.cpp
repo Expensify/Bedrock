@@ -105,18 +105,19 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
         } catch (const SQLite::timeout_error& e) {
             // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
             if (!command->shouldSuppressTimeoutWarnings()) {
-                SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
+                SALERT("Command " << command->request.methodLine << " timed out after " << e.time() / 1000 << "ms.");
             }
             STHROW("555 Timeout prePeeking command");
         } catch (const SException& e) {
             _handleCommandException(command, e);
             command->complete = true;
         } catch (...) {
-            SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
+            SALERT("Unhandled exception typename: " << SGetCurrentExceptionName()
+                                                    << ", command: " << request.methodLine);
             command->response.methodLine = "500 Unhandled Exception";
             command->complete = true;
         }
-    catch (const SException& e) {
+    } catch (const SException& e) {
         _handleCommandException(command, e);
         command->complete = true;
     }
