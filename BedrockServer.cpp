@@ -991,7 +991,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         command->complete = true;
                     } else {
                         SINFO("Conflict or state change committing " << command->request.methodLine << " on worker thread.");
-                        //lastConflictPage = db.getLastConflictPage();
+                        lastConflictPage = db.getLastConflictPage();
                     }
                 } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                     // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out

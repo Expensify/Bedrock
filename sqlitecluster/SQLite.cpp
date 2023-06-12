@@ -282,8 +282,7 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     if (SStartsWith(zMsg, "cannot commit")) {
         // 17 is the length of "conflict at page" and the following space.
         const char* offset = strstr(zMsg, "conflict at page") + 17;
-        int64_t conflictPage = atol(offset);
-        SINFO("TYLER conflict page: " << conflictPage);
+        _lastConflictPage = atol(offset);
     }
 }
 
@@ -734,6 +733,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _queryCount = 0;
         _cacheHits = 0;
         _dbCountAtStart = 0;
+        _lastConflictPage = 0;
     } else {
         SINFO("Commit failed, waiting for rollback.");
     }
@@ -786,6 +786,7 @@ void SQLite::rollback() {
     _queryCount = 0;
     _cacheHits = 0;
     _dbCountAtStart = 0;
+    _lastConflictPage = 0;
 }
 
 uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
@@ -1055,6 +1056,10 @@ void SQLite::setQueryOnly(bool enabled) {
     SQResult result;
     string query = "PRAGMA query_only = "s + (enabled ? "true" : "false") + ";";
     SQuery(_db, "set query_only", query, result);
+}
+
+int64_t SQLite::getLastConflictPage() const {
+    return _lastConflictPage;
 }
 
 SQLite::SharedData::SharedData() :
