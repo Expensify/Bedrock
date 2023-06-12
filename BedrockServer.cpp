@@ -844,6 +844,13 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             // If the command should run prePeek, do that now .
             if (!command->repeek && !command->httpsRequests.size() && command->shouldPrePeek()) {
                 core.prePeekCommand(command);
+
+                if (command->complete) {
+                    _reply(command);
+
+                    // Don't need to retry.
+                    break;
+                }
             }
 
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the

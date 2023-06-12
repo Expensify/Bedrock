@@ -107,11 +107,14 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
             SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
         }
         STHROW("555 Timeout prePeeking command");
+        command->complete = true;
     } catch (const SException& e) {
         _handleCommandException(command, e);
+        command->complete = true;
     } catch (...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
+        command->complete = true;
     }
 
     // Back out of the current transaction, it doesn't need to do anything.
