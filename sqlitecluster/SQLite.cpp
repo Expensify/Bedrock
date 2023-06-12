@@ -277,6 +277,14 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     _mostRecentSQLiteErrorLog = "{SQLITE} Code: "s + to_string(iErrCode) + ", Message: "s + zMsg;
     SRedactSensitiveValues(_mostRecentSQLiteErrorLog);
     SINFO(_mostRecentSQLiteErrorLog);
+
+    // This is sort of hacky to parse this from the logging info. If it works we could ask sqlite for a better interface to get this info.
+    if (SStartsWith(zMsg, "cannot commit")) {
+        // 17 is the length of "conflict at page" and the following space.
+        const char* offset = strstr(zMsg, "conflict at page") + 17;
+        int64_t conflictPage = atol(offset);
+        SINFO("TYLER conflict page: " << conflictPage);
+    }
 }
 
 int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {

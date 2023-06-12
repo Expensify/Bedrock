@@ -795,6 +795,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     canWriteParallel = canWriteParallel && (state == SQLiteNodeState::LEADING);
     canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
 
+    int64_t lastConflictPage = 0;
     while (true) {
         // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
         if (!_dbPool) {
@@ -846,7 +847,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 core.prePeekCommand(command);
             }
 
-            // Block page here? Yeah, here.
+            PageLockGuard pageLock(lastConflictPage);
 
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
             // command has specifically asked for that.
@@ -990,6 +991,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         command->complete = true;
                     } else {
                         SINFO("Conflict or state change committing " << command->request.methodLine << " on worker thread.");
+                        //lastConflictPage = db.getLastConflictPage();
                     }
                 } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                     // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out

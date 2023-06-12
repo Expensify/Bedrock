@@ -40,5 +40,5 @@ class PageLockGuard {
     static map<int64_t, MPair> mutexCounts;
     static list<int64_t> mutexOrder;
     int64_t _page;
-    mutex* _mref;
+    mutex* _mref = nullptr;
 };

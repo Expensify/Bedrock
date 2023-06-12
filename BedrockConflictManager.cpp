@@ -70,6 +70,10 @@ map<int64_t, PageLockGuard::MPair> PageLockGuard::mutexCounts;
 list<int64_t> PageLockGuard::mutexOrder;
 
 PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
+    if (page == 0) {
+        return;
+    }
+
     lock_guard<mutex> lock(controlMutex);
     auto result = mutexCounts.find(page);
     if (result == mutexCounts.end()) {
@@ -83,5 +87,7 @@ PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
 }
 
 PageLockGuard::~PageLockGuard() {
-    _mref->unlock();
+    if (_mref) {
+        _mref->unlock();
+    }
 }
