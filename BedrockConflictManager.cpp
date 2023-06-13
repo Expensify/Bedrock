@@ -101,8 +101,9 @@ PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
             }
         }
 
-        if (mutexes.size() > 500) {
-            size_t iterationsToTry = mutexes.size() - 500;
+        static const size_t MAX_PAGE_MUTEXES = 500;
+        if (mutexes.size() > MAX_PAGE_MUTEXES) {
+            size_t iterationsToTry = mutexes.size() - MAX_PAGE_MUTEXES;
             auto pageIt = mutexOrder.end();
             for (size_t i = 0; i < iterationsToTry; i++) {
                 pageIt--;
