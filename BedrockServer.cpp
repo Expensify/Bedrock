@@ -998,7 +998,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         command->complete = true;
                     } else {
                         SINFO("Conflict or state change committing " << command->request.methodLine << " on worker thread.");
-                        lastConflictPage = db.getLastConflictPage();
+                        if (_enableConflictPageLocks) {
+                            lastConflictPage = db.getLastConflictPage();
+                        }
                     }
                 } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                     // Nothing to do in this case, `command->complete` will be set and we'll finish as we fall out
@@ -1182,7 +1184,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _upgradeInProgress(false),
     _isCommandPortLikelyBlocked(false),
     _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(nullptr), _shutdownState(RUNNING),
-    _multiWriteEnabled(args.test("-enableMultiWrite")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
+    _multiWriteEnabled(args.test("-enableMultiWrite")), _enableConflictPageLocks(!args.test("-disableConflictPageLocks")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false)
@@ -1719,6 +1721,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "Detach")                 ||
         SIEquals(command->request.methodLine, "Attach")                 ||
         SIEquals(command->request.methodLine, "SetConflictParams")      ||
+        SIEquals(command->request.methodLine, "SetConflictPageLocks")   ||
         SIEquals(command->request.methodLine, "EnableSQLTracing")       ||
         SIEquals(command->request.methodLine, "BlockWrites")            ||
         SIEquals(command->request.methodLine, "UnblockWrites")          ||
@@ -1805,6 +1808,8 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             response["previousMaxConflictRetries"] = to_string(_maxConflictRetries.load());
             _maxConflictRetries.store(maxConflictRetries);
         }
+    } else if (SIEquals(command->request.methodLine, "SetConflictPageLocks")) {
+        _enableConflictPageLocks = command->request.test("enable");
     } else if (SIEquals(command->request.methodLine, "BlockWrites")) {
         atomic<bool> locked(false);
         lock_guard lock(__quiesceLock);

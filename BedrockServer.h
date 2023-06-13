@@ -389,6 +389,8 @@ class BedrockServer : public SQLiteServer {
     // Flag indicating whether multi-write is enabled.
     atomic<bool> _multiWriteEnabled;
 
+    atomic<bool> _enableConflictPageLocks = true;
+
     // Set this to cause a backup to run in detached mode
     bool _shouldBackup;
     atomic<bool> _detach;
