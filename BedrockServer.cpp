@@ -847,7 +847,14 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 core.prePeekCommand(command);
             }
 
+            uint64_t conflictLockStartTime = 0;
+            if (lastConflictPage) {
+                conflictLockStartTime = STimeNow();
+            }
             PageLockGuard pageLock(lastConflictPage);
+            if (lastConflictPage) {
+                SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on db page " << lastConflictPage << ".");
+            }
 
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
             // command has specifically asked for that.

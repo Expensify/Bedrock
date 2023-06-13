@@ -16,6 +16,7 @@ sqlite3* SQLite::getDBHandle() {
 }
 
 thread_local string SQLite::_mostRecentSQLiteErrorLog;
+thread_local int64_t SQLite::_conflictPage;
 
 const string SQLite::getMostRecentSQLiteErrorLog() const {
     return _mostRecentSQLiteErrorLog;
@@ -282,7 +283,7 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     if (SStartsWith(zMsg, "cannot commit")) {
         // 17 is the length of "conflict at page" and the following space.
         const char* offset = strstr(zMsg, "conflict at page") + 17;
-        _lastConflictPage = atol(offset);
+        _conflictPage = atol(offset);
     }
 }
 
@@ -372,6 +373,7 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     _prepareElapsed = 0;
     _commitElapsed = 0;
     _rollbackElapsed = 0;
+    _lastConflictPage = 0;
     return _insideTransaction;
 }
 
@@ -675,9 +677,14 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     int startPages, dummy;
     sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &startPages, &dummy, 0);
 
+    _conflictPage = 0;
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
+    _lastConflictPage = _conflictPage;
+    if (_lastConflictPage) {
+        SINFO("part of last conflcit page: " << _lastConflictPage);
+    }
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
@@ -786,7 +793,6 @@ void SQLite::rollback() {
     _queryCount = 0;
     _cacheHits = 0;
     _dbCountAtStart = 0;
-    _lastConflictPage = 0;
 }
 
 uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
