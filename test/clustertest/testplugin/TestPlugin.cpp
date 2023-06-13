@@ -98,7 +98,6 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "prepeekcommand",
         "postprocesscommand",
         "prepeekpostprocesscommand",
-        "throwinpeek",
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -180,9 +179,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         usleep(request.calc("PeekSleep") * 1000);
     }
 
-    if (SStartsWith(request.methodLine,"throwinpeek")) {
-        STHROW("500 Peek");
-    } else if (SStartsWith(request.methodLine,"testcommand")) {
+    if (SStartsWith(request.methodLine,"testcommand")) {
         if (!request["response"].empty()) {
             response.methodLine = request["response"];
         } else {
