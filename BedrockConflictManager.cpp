@@ -101,6 +101,21 @@ PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
             }
         }
 
+        if (mutexes.size() > 500) {
+            size_t iterationsToTry = mutexes.size() - 500;
+            auto pageIt = mutexOrder.end();
+            for (size_t i = 0; i < iterationsToTry; i++) {
+                pageIt--;
+                int64_t pageToDelete = *pageIt;
+                if (mutexCounts[pageToDelete] == 0) {
+                    mutexes.erase(pageToDelete);
+                    mutexCounts.erase(pageToDelete);
+                    mutexOrder.erase(mutexOrderFastLookup[pageToDelete]);
+                    mutexOrderFastLookup.erase(pageToDelete);
+                }
+            }
+        }
+
         m = &mutexPair->second;
     }
     m->lock();
