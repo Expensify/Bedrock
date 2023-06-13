@@ -68,6 +68,7 @@ string BedrockConflictManager::generateReport() {
 mutex PageLockGuard::controlMutex;
 map<int64_t, mutex> PageLockGuard::mutexes;
 list<int64_t> PageLockGuard::mutexOrder;
+map<int64_t, int64_t> PageLockGuard::mutexCounts;
 
 PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
     if (_page == 0) {
@@ -78,11 +79,12 @@ PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
     mutex* m;
     {
         lock_guard<mutex> lock(controlMutex);
-        auto result = mutexes.find(_page);
-        if (result == mutexes.end()) {
-            result = mutexes.emplace(piecewise_construct, forward_as_tuple(_page), forward_as_tuple()).first;
+        auto mutexPair = mutexes.find(_page);
+        if (mutexPair == mutexes.end()) {
+            mutexPair = mutexes.emplace(piecewise_construct, forward_as_tuple(_page), forward_as_tuple()).first;
+            mutexCounts.emplace(make_pair(_page, 1l));
         }
-        m = &result->second;
+        m = &mutexPair->second;
     }
     m->lock();
 }
@@ -93,6 +95,9 @@ PageLockGuard::~PageLockGuard() {
     }
 
     lock_guard<mutex> lock(controlMutex);
-    auto result = mutexes.find(_page);
-    result->second.unlock();
+    auto mutexPair = mutexes.find(_page);
+    mutexPair->second.unlock();
+
+    auto mutexCount = mutexCounts.find(_page);
+    mutexCount->second--;
 }
