@@ -110,8 +110,8 @@ PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
                 if (mutexCounts[pageToDelete] == 0) {
                     mutexes.erase(pageToDelete);
                     mutexCounts.erase(pageToDelete);
-                    mutexOrder.erase(mutexOrderFastLookup[pageToDelete]);
                     mutexOrderFastLookup.erase(pageToDelete);
+                    pageIt = mutexOrder.erase(pageIt);
                 }
             }
         }
