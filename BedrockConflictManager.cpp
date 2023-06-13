@@ -86,6 +86,7 @@ PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
             mutexCounts.emplace(make_pair(_page, 1l));
             mutexOrder.push_front(_page);
             mutexOrderFastLookup.emplace(make_pair(_page, mutexOrder.begin()));
+            SINFO("TYLER page " << _page << " added to lock list.");
         } else {
             // Increment the reference count.
             mutexCounts[_page]++;
@@ -98,11 +99,15 @@ PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
 
                 // And save the new fast lookup at the front.
                 mutexOrderFastLookup[_page] = mutexOrder.begin();
+                SINFO("TYLER Page moved to front of list: " << _page);
+            } else {
+                SINFO("TYLER page " << _page << " already at front, not moving.");
             }
         }
 
-        static const size_t MAX_PAGE_MUTEXES = 500;
+        static const size_t MAX_PAGE_MUTEXES = 5;
         if (mutexes.size() > MAX_PAGE_MUTEXES) {
+            list<int64_t> removedPages;
             size_t iterationsToTry = mutexes.size() - MAX_PAGE_MUTEXES;
             auto pageIt = mutexOrder.end();
             for (size_t i = 0; i < iterationsToTry; i++) {
@@ -113,8 +118,10 @@ PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
                     mutexCounts.erase(pageToDelete);
                     mutexOrderFastLookup.erase(pageToDelete);
                     pageIt = mutexOrder.erase(pageIt);
+                    removedPages.push_back(pageToDelete);
                 }
             }
+            SINFO("TYLER Removed " << removedPages.size() << " old page lock mutexes (pages: " << SComposeList(removedPages) << "). " << mutexes.size() << " remaining." << SComposeList(mutexOrder));
         }
 
         m = &mutexPair->second;
