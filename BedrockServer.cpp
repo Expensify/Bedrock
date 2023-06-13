@@ -1184,7 +1184,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _upgradeInProgress(false),
     _isCommandPortLikelyBlocked(false),
     _syncThreadComplete(false), _syncNode(nullptr), _clusterMessenger(nullptr), _shutdownState(RUNNING),
-    _multiWriteEnabled(args.test("-enableMultiWrite")), _enableConflictPageLocks(!args.test("-disableConflictPageLocks")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
+    _multiWriteEnabled(args.test("-enableMultiWrite")), _enableConflictPageLocks(args.test("-enableConflictPageLocks")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false)
