@@ -66,28 +66,33 @@ string BedrockConflictManager::generateReport() {
 }
 
 mutex PageLockGuard::controlMutex;
-map<int64_t, PageLockGuard::MPair> PageLockGuard::mutexCounts;
+map<int64_t, mutex> PageLockGuard::mutexes;
 list<int64_t> PageLockGuard::mutexOrder;
 
 PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
-    if (page == 0) {
+    if (_page == 0) {
+        return;
+    }
+
+    // We need access to the mutex outside of the control lock, so that we aren't blocking other PageLockGuard users while we wait for the page.
+    mutex* m;
+    {
+        lock_guard<mutex> lock(controlMutex);
+        auto result = mutexes.find(_page);
+        if (result == mutexes.end()) {
+            result = mutexes.emplace(piecewise_construct, forward_as_tuple(_page), forward_as_tuple()).first;
+        }
+        m = &result->second;
+    }
+    m->lock();
+}
+
+PageLockGuard::~PageLockGuard() {
+    if (_page == 0) {
         return;
     }
 
     lock_guard<mutex> lock(controlMutex);
-    auto result = mutexCounts.find(page);
-    if (result == mutexCounts.end()) {
-        result = mutexCounts.emplace(piecewise_construct, forward_as_tuple(page), forward_as_tuple()).first;
-        mutexOrder.push_front(page);
-    } else {
-        result->second.count++;
-    }
-    _mref = &(result->second.m);
-    _mref->lock();
-}
-
-PageLockGuard::~PageLockGuard() {
-    if (_mref) {
-        _mref->unlock();
-    }
+    auto result = mutexes.find(_page);
+    result->second.unlock();
 }

@@ -30,15 +30,12 @@ class PageLockGuard {
     ~PageLockGuard();
 
   private:
-    struct MPair {
-        int64_t count = 1;
-        mutex m;
-    };
 
     // For controlling access to internals.
     static mutex controlMutex;
-    static map<int64_t, MPair> mutexCounts;
+    static map<int64_t, mutex> mutexes;
+
+    // We need some sort of reference count and LRU mechanism if we want to clean these up.
     static list<int64_t> mutexOrder;
     int64_t _page;
-    mutex* _mref = nullptr;
 };
