@@ -847,8 +847,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
                 if (command->complete) {
                     _reply(command);
-
-                    // Don't need to retry.
                     break;
                 }
             }
