@@ -68,6 +68,7 @@ string BedrockConflictManager::generateReport() {
 mutex PageLockGuard::controlMutex;
 map<int64_t, mutex> PageLockGuard::mutexes;
 list<int64_t> PageLockGuard::mutexOrder;
+map<int64_t, list<int64_t>::iterator> PageLockGuard::mutexOrderFastLookup;
 map<int64_t, int64_t> PageLockGuard::mutexCounts;
 
 PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
@@ -83,7 +84,23 @@ PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
         if (mutexPair == mutexes.end()) {
             mutexPair = mutexes.emplace(piecewise_construct, forward_as_tuple(_page), forward_as_tuple()).first;
             mutexCounts.emplace(make_pair(_page, 1l));
+            mutexOrder.push_front(_page);
+            mutexOrderFastLookup.emplace(make_pair(_page, mutexOrder.begin()));
+        } else {
+            // Increment the reference count.
+            mutexCounts[_page]++;
+
+            // If the current mutex was already at the front of the order list, no updates are needed.
+            if (mutexOrder.front() != _page) {
+                // Erase the old location of this mutex in the order list and move it to the front.
+                mutexOrder.erase(mutexOrderFastLookup.at(_page));
+                mutexOrder.push_front(_page);
+
+                // And save the new fast lookup at the front.
+                mutexOrderFastLookup[_page] = mutexOrder.begin();
+            }
         }
+
         m = &mutexPair->second;
     }
     m->lock();
