@@ -73,45 +73,49 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
     STable& content = command->jsonContent;
 
     try {
-        SDEBUG("prePeeking at '" << request.methodLine << "' with priority: " << command->priority);
-        uint64_t timeout = _getRemainingTime(command, false);
-        command->prePeekCount++;
+        try {
+            SDEBUG("prePeeking at '" << request.methodLine << "' with priority: " << command->priority);
+            uint64_t timeout = _getRemainingTime(command, false);
+            command->prePeekCount++;
 
-        _db.startTiming(timeout);
+            _db.startTiming(timeout);
 
-        if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
-            STHROW("501 Failed to begin shared prePeek transaction");
-        }
-
-        // Make sure no writes happen while in prePeek command
-        _db.setQueryOnly(true);
-
-        // prePeek.
-        command->reset(BedrockCommand::STAGE::PREPEEK);
-        command->prePeek(_db);
-        SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
-
-        if (!content.empty()) {
-            // Make sure we're not overwriting anything different.
-            string newContent = SComposeJSONObject(content);
-            if (response.content != newContent) {
-                if (!response.content.empty()) {
-                    SWARN("Replacing existing response content in " << request.methodLine);
-                }
-                response.content = newContent;
+            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
+                STHROW("501 Failed to begin shared prePeek transaction");
             }
+
+            // Make sure no writes happen while in prePeek command
+            _db.setQueryOnly(true);
+
+            // prePeek.
+            command->reset(BedrockCommand::STAGE::PREPEEK);
+            command->prePeek(_db);
+            SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
+
+            if (!content.empty()) {
+                // Make sure we're not overwriting anything different.
+                string newContent = SComposeJSONObject(content);
+                if (response.content != newContent) {
+                    if (!response.content.empty()) {
+                        SWARN("Replacing existing response content in " << request.methodLine);
+                    }
+                    response.content = newContent;
+                }
+            }
+        } catch (const SQLite::timeout_error& e) {
+            // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
+            if (!command->shouldSuppressTimeoutWarnings()) {
+                SALERT("Command " << command->request.methodLine << " timed out after " << e.time() / 1000 << "ms.");
+            }
+            STHROW("555 Timeout prePeeking command");
         }
-    } catch (const SQLite::timeout_error& e) {
-        // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
-        if (!command->shouldSuppressTimeoutWarnings()) {
-            SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
-        }
-        STHROW("555 Timeout prePeeking command");
     } catch (const SException& e) {
         _handleCommandException(command, e);
+        command->complete = true;
     } catch (...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
+        command->complete = true;
     }
 
     // Back out of the current transaction, it doesn't need to do anything.
