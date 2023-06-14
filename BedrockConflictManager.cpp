@@ -71,8 +71,8 @@ list<int64_t> PageLockGuard::mutexOrder;
 map<int64_t, list<int64_t>::iterator> PageLockGuard::mutexOrderFastLookup;
 map<int64_t, int64_t> PageLockGuard::mutexCounts;
 
-PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
-    if (_page == 0) {
+PageLockGuard::PageLockGuard(int64_t pageNumber) : _pageNumber(pageNumber) {
+    if (_pageNumber == 0) {
         return;
     }
 
@@ -80,24 +80,24 @@ PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
     mutex* m;
     {
         lock_guard<mutex> lock(controlMutex);
-        auto mutexPair = mutexes.find(_page);
+        auto mutexPair = mutexes.find(_pageNumber);
         if (mutexPair == mutexes.end()) {
-            mutexPair = mutexes.emplace(piecewise_construct, forward_as_tuple(_page), forward_as_tuple()).first;
-            mutexCounts.emplace(make_pair(_page, 1l));
-            mutexOrder.push_front(_page);
-            mutexOrderFastLookup.emplace(make_pair(_page, mutexOrder.begin()));
+            mutexPair = mutexes.emplace(piecewise_construct, forward_as_tuple(_pageNumber), forward_as_tuple()).first;
+            mutexCounts.emplace(make_pair(_pageNumber, 1l));
+            mutexOrder.push_front(_pageNumber);
+            mutexOrderFastLookup.emplace(make_pair(_pageNumber, mutexOrder.begin()));
         } else {
             // Increment the reference count.
-            mutexCounts[_page]++;
+            mutexCounts[_pageNumber]++;
 
             // If the current mutex was already at the front of the order list, no updates are needed.
-            if (mutexOrder.front() != _page) {
+            if (mutexOrder.front() != _pageNumber) {
                 // Erase the old location of this mutex in the order list and move it to the front.
-                mutexOrder.erase(mutexOrderFastLookup.at(_page));
-                mutexOrder.push_front(_page);
+                mutexOrder.erase(mutexOrderFastLookup.at(_pageNumber));
+                mutexOrder.push_front(_pageNumber);
 
                 // And save the new fast lookup at the front.
-                mutexOrderFastLookup[_page] = mutexOrder.begin();
+                mutexOrderFastLookup[_pageNumber] = mutexOrder.begin();
             }
         }
 
@@ -123,14 +123,14 @@ PageLockGuard::PageLockGuard(int64_t page) : _page(page) {
 }
 
 PageLockGuard::~PageLockGuard() {
-    if (_page == 0) {
+    if (_pageNumber == 0) {
         return;
     }
 
     lock_guard<mutex> lock(controlMutex);
-    auto mutexPair = mutexes.find(_page);
+    auto mutexPair = mutexes.find(_pageNumber);
     mutexPair->second.unlock();
 
-    auto mutexCount = mutexCounts.find(_page);
+    auto mutexCount = mutexCounts.find(_pageNumber);
     mutexCount->second--;
 }

@@ -26,7 +26,7 @@ class BedrockConflictManager {
 
 class PageLockGuard {
   public:
-    PageLockGuard(int64_t page);
+    PageLockGuard(int64_t pageNumber);
     ~PageLockGuard();
 
   private:
@@ -37,5 +37,5 @@ class PageLockGuard {
     static map<int64_t, int64_t> mutexCounts;
     static list<int64_t> mutexOrder;
     static map<int64_t, list<int64_t>::iterator> mutexOrderFastLookup;
-    int64_t _page;
+    int64_t _pageNumber;
 };
