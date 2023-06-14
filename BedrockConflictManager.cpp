@@ -82,12 +82,20 @@ PageLockGuard::PageLockGuard(int64_t pageNumber) : _pageNumber(pageNumber) {
         lock_guard<mutex> lock(controlMutex);
         auto mutexPair = mutexes.find(_pageNumber);
         if (mutexPair == mutexes.end()) {
+            // If there's no mutex for this page, create one. The weird `piecewise_construct` syntax here allows us to create a mutex directly in the map,
+            // since mutexes are neither movable nor copyable.
             mutexPair = mutexes.emplace(piecewise_construct, forward_as_tuple(_pageNumber), forward_as_tuple()).first;
+
+            // Set the reference count to 1.
             mutexCounts.emplace(make_pair(_pageNumber, 1l));
+
+            // Set this as the most recently acccessed mutex.
             mutexOrder.push_front(_pageNumber);
+
+            // Store a reference to this item in the list, so that we can quickly find it later.
             mutexOrderFastLookup.emplace(make_pair(_pageNumber, mutexOrder.begin()));
         } else {
-            // Increment the reference count.
+            // If the mutex already exists, increment the reference count.
             mutexCounts[_pageNumber]++;
 
             // If the current mutex was already at the front of the order list, no updates are needed.
@@ -101,24 +109,41 @@ PageLockGuard::PageLockGuard(int64_t pageNumber) : _pageNumber(pageNumber) {
             }
         }
 
+        // In order to keep this list growing forever, we attempt to prune it if it exceeds this value.
         static const size_t MAX_PAGE_MUTEXES = 500;
         if (mutexes.size() > MAX_PAGE_MUTEXES) {
             size_t iterationsToTry = mutexes.size() - MAX_PAGE_MUTEXES;
+
+            // We start at the back - the least recently used page - to avoid iterating a bunch of times through the front of the list that we're keeping.
             auto pageIt = mutexOrder.end();
             for (size_t i = 0; i < iterationsToTry; i++) {
+                // Move to the previous item in the list. Note we started at `end()`, so we are initially past the end of the list.
                 pageIt--;
                 int64_t pageToDelete = *pageIt;
+
+                // If there are no threads using this mutex, let's delete it.
                 if (mutexCounts[pageToDelete] == 0) {
+                    // Delete the mutex itself.
                     mutexes.erase(pageToDelete);
+
+                    // Delete the reference count.
                     mutexCounts.erase(pageToDelete);
+
+                    // Delete the index to the mutex in the order list.
                     mutexOrderFastLookup.erase(pageToDelete);
+
+                    // Remove it from the orderList, and set pageIt to a new valid value (the item just behind the one being deleted).
+                    // This will get decremented on the next iteration of this loop, and end up pointing at the item just in front of the one deleted.
                     pageIt = mutexOrder.erase(pageIt);
                 }
             }
         }
 
+        // save the mutex such that it will still be accessible one this block ends.
         m = &mutexPair->second;
     }
+
+    // Wait for the given page to be unlocked, and lock it ourself.
     m->lock();
 }
 
