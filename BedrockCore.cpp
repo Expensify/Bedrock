@@ -350,7 +350,6 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
         _db.setQueryOnly(true);
 
         // postProcess.
-        command->reset(BedrockCommand::STAGE::POSTPROCESS);
         command->postProcess(_db);
         SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
 
