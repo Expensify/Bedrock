@@ -395,7 +395,8 @@ void BedrockServer::sync()
                 continue;
             }
 
-            if (command->shouldPostProcess()) {
+            if (command->shouldPostProcess() && command->response.methodLine == "200 OK") {
+                // PostProcess if the command should run postProcess, and there have been no errors thrown thus far.
                 core.postProcessCommand(command);
             }
 
@@ -1019,7 +1020,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             // If the command was completed above, then we'll go ahead and respond. Otherwise there must have been
             // a conflict or the command was abandoned for a checkpoint, and we'll retry.
             if (command->complete) {
-                if (command->shouldPostProcess()) {
+                if (command->shouldPostProcess() && command->response.methodLine == "200 OK") {
+                    // PostProcess if the command should run postProcess, and there have been no errors thrown thus far.
                     core.postProcessCommand(command);
                 }
                 _reply(command);
