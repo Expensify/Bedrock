@@ -110,6 +110,13 @@ PageLockGuard::PageLockGuard(int64_t pageNumber) : _pageNumber(pageNumber) {
         }
 
         // In order to keep this list growing forever, we attempt to prune it if it exceeds this value.
+        // This value was chosen arbitrarily, but is intended to be sufficiently large. At 500, we'd need 500 separate
+        // groups of conflicting commands (each group conflicting on it's own page) all executing simultaneously to hit
+        // the limit. This requires at least 500 commands executing simultaneously, and for these mutexes to be useful,
+        // it requires significantly more than that, since each mutex is supposed to apply to a set of commands acting
+        // on the same page.
+        // Additionally, mutexes can't be pruned while in use, so the list will grow over 500 if we do manage to have
+        // enough mutexes all attempting to be locked simultaneously.
         static const size_t MAX_PAGE_MUTEXES = 500;
         if (mutexes.size() > MAX_PAGE_MUTEXES) {
             size_t iterationsToTry = mutexes.size() - MAX_PAGE_MUTEXES;
