@@ -16,6 +16,7 @@ sqlite3* SQLite::getDBHandle() {
 }
 
 thread_local string SQLite::_mostRecentSQLiteErrorLog;
+thread_local int64_t SQLite::_conflictPage;
 
 const string SQLite::getMostRecentSQLiteErrorLog() const {
     return _mostRecentSQLiteErrorLog;
@@ -277,6 +278,13 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     _mostRecentSQLiteErrorLog = "{SQLITE} Code: "s + to_string(iErrCode) + ", Message: "s + zMsg;
     SRedactSensitiveValues(_mostRecentSQLiteErrorLog);
     SINFO(_mostRecentSQLiteErrorLog);
+
+    // This is sort of hacky to parse this from the logging info. If it works we could ask sqlite for a better interface to get this info.
+    if (SStartsWith(zMsg, "cannot commit")) {
+        // 17 is the length of "conflict at page" and the following space.
+        const char* offset = strstr(zMsg, "conflict at page") + 17;
+        _conflictPage = atol(offset);
+    }
 }
 
 int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {
@@ -365,6 +373,7 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     _prepareElapsed = 0;
     _commitElapsed = 0;
     _rollbackElapsed = 0;
+    _lastConflictPage = 0;
     return _insideTransaction;
 }
 
@@ -668,9 +677,14 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     int startPages, dummy;
     sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &startPages, &dummy, 0);
 
+    _conflictPage = 0;
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
+    _lastConflictPage = _conflictPage;
+    if (_lastConflictPage) {
+        SINFO("part of last conflcit page: " << _lastConflictPage);
+    }
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
@@ -726,6 +740,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _queryCount = 0;
         _cacheHits = 0;
         _dbCountAtStart = 0;
+        _lastConflictPage = 0;
     } else {
         SINFO("Commit failed, waiting for rollback.");
     }
@@ -1047,6 +1062,10 @@ void SQLite::setQueryOnly(bool enabled) {
     SQResult result;
     string query = "PRAGMA query_only = "s + (enabled ? "true" : "false") + ";";
     SQuery(_db, "set query_only", query, result);
+}
+
+int64_t SQLite::getLastConflictPage() const {
+    return _lastConflictPage;
 }
 
 SQLite::SharedData::SharedData() :
