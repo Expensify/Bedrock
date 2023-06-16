@@ -230,6 +230,8 @@ class SQLite {
     // public read-only accessor for _dbCountAtStart.
     uint64_t getDBCountAtStart() const;
 
+    int64_t getLastConflictPage() const;
+
     // This is the callback function we use to log SQLite's internal errors.
     static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
 
@@ -378,6 +380,9 @@ class SQLite {
     // we call `rollback`. Note that this indicates whether this object has locked the mutex, not whether the mutex is
     // locked (i.e., this is `false` if some other DB object has locked the mutex).
     bool _mutexLocked = false;
+
+    atomic<int64_t> _lastConflictPage = 0;
+    static thread_local int64_t _conflictPage;
 
     bool _writeIdempotent(const string& query, bool alwaysKeepQueries = false);
 
