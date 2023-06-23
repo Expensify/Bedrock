@@ -6,6 +6,7 @@ struct PrePeekPostProcessTest : tpunit::TestFixture {
     PrePeekPostProcessTest() : tpunit::TestFixture("PrePeekPostProcess", BEFORE_CLASS(PrePeekPostProcessTest::setup),
                                                                          AFTER_CLASS(PrePeekPostProcessTest::teardown),
                                                                          TEST(PrePeekPostProcessTest::prePeek),
+                                                                         TEST(PrePeekPostProcessTest::prePeekThrow),
                                                                          TEST(PrePeekPostProcessTest::postProcess),
                                                                          TEST(PrePeekPostProcessTest::prePeekPostProcess)) { }
 
@@ -31,6 +32,13 @@ struct PrePeekPostProcessTest : tpunit::TestFixture {
 
         // No counted row has been inserted into the test table yet, so the "peekCount" should be zero.
         ASSERT_EQUAL(response["peekCount"], "0");
+    }
+
+    void prePeekThrow() {
+        BedrockTester& brtester = tester->getTester(1);
+        SData cmd("prepeekcommand");
+        cmd["shouldThrow"] = "true";
+        brtester.executeWaitVerifyContent({cmd}, "501 ERROR");
     }
 
     void postProcess()
