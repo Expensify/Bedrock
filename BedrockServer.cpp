@@ -498,6 +498,15 @@ void BedrockServer::sync()
                         if (command->shouldPrePeek() && !command->repeek) {
                             core.prePeekCommand(command);
                         }
+
+                        // This command finsihed in prePeek, which likely means it threw. 
+                        // We'll respond to it now, either directly or by sending it back to the sync thread. 
+                        if (command->complete) {
+                            SINFO("Command completed in prePeek, replying now.");
+                            _reply(command);
+                            break;
+                        }
+
                         BedrockCore::RESULT result = core.peekCommand(command, true);
                         if (result == BedrockCore::RESULT::COMPLETE) {
                             // This command completed in peek, respond to it appropriately, either directly or by sending it

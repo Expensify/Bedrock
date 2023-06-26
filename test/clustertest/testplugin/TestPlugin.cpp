@@ -165,6 +165,9 @@ bool BedrockPlugin_TestPlugin::preventAttach() {
 
 void TestPluginCommand::prePeek(SQLite& db) {
     if (request.methodLine == "prepeekcommand" || request.methodLine == "prepeekpostprocesscommand") {
+        if (request["shouldThrow"] == "true") {
+            STHROW("501 ERROR");
+        }
         jsonContent["prePeekInfo"] = "this was returned in prePeekInfo";
     } else {
         STHROW("500 no prePeek defined, shouldPrePeek should be false");
