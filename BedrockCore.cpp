@@ -84,8 +84,8 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
                 }
             }
 
-            list<string> upperCaseAttrs = {"validateCode"};
-            for (string attribute : upperCaseAttrs) {
+            list<string> upperCaseAttributes = {"validateCode"};
+            for (string attribute : upperCaseAttributes) {
                 if (request.isSet(attribute)) {
                     const_cast<SData&>(request)[attribute] = SToUpper(request[attribute]);
                 }
