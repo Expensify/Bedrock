@@ -75,6 +75,22 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
     try {
         try {
             SDEBUG("prePeeking at '" << request.methodLine << "' with priority: " << command->priority);
+
+            // Regularize case
+            list<string> lowerCaseAttributes = {"email", "partnerUserID", "partnerName"};
+            for (string attribute : lowerCaseAttributes) {
+                if (request.isSet(attribute)) {
+                    const_cast<SData&>(request)[attribute] = SToLower(request[attribute]);
+                }
+            }
+
+            list<string> upperCaseAttrs = {"validateCode"};
+            for (string attribute : upperCaseAttrs) {
+                if (request.isSet(attribute)) {
+                    const_cast<SData&>(request)[attribute] = SToUpper(request[attribute]);
+                }
+            }
+
             uint64_t timeout = _getRemainingTime(command, false);
             command->prePeekCount++;
 
