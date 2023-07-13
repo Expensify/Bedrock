@@ -25,6 +25,7 @@ class TestServer : public SQLiteServer {
 
     virtual bool canStandDown() { return true; }
     virtual void onNodeLogin(SQLitePeer* peer) { }
+    virtual void notifyPlugins(SQLiteNodeState newState) {}
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {

@@ -14,4 +14,6 @@ class SQLiteServer : public STCPManager {
 
     // When a node connects to the cluster, this function will be called on the sync thread.
     virtual void onNodeLogin(SQLitePeer* peer) = 0;
+
+    virtual void notifyPlugins(SQLiteNodeState newState) = 0;
 };
