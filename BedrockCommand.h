@@ -25,6 +25,7 @@ class BedrockCommand : public SQLiteCommand {
         QUEUE_WORKER,
         QUEUE_SYNC,
         QUEUE_BLOCKING,
+        QUEUE_PAGE_LOCK,
         BLOCKING_PEEK,
         BLOCKING_PROCESS,
         BLOCKING_COMMIT_WORKER,
@@ -182,7 +183,7 @@ class BedrockCommand : public SQLiteCommand {
     static size_t getCommandCount() { return _commandCount.load(); }
 
     // True if this command should be escalated immediately. This can be true for any command that does all of its work
-    // in `process` instead of peek, as it will always be escalated to leader 
+    // in `process` instead of peek, as it will always be escalated to leader
     const bool escalateImmediately;
 
     // Record the state we were acting under in the last call to `peek` or `process`.

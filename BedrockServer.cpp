@@ -499,8 +499,8 @@ void BedrockServer::sync()
                             core.prePeekCommand(command);
                         }
 
-                        // This command finsihed in prePeek, which likely means it threw. 
-                        // We'll respond to it now, either directly or by sending it back to the sync thread. 
+                        // This command finsihed in prePeek, which likely means it threw.
+                        // We'll respond to it now, either directly or by sending it back to the sync thread.
                         if (command->complete) {
                             SINFO("Command completed in prePeek, replying now.");
                             _reply(command);
@@ -863,13 +863,16 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 }
             }
 
-            uint64_t conflictLockStartTime = 0;
-            if (lastConflictPage) {
-                conflictLockStartTime = STimeNow();
-            }
-            PageLockGuard pageLock(lastConflictPage);
-            if (lastConflictPage) {
-                SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on db page " << lastConflictPage << ".");
+            {
+                BedrockCore::AutoTimer timer(command, BedrockCommand::QUEUE_PAGE_LOCK);
+                uint64_t conflictLockStartTime = 0;
+                if (lastConflictPage) {
+                    conflictLockStartTime = STimeNow();
+                }
+                PageLockGuard pageLock(lastConflictPage);
+                if (lastConflictPage) {
+                    SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on db page " << lastConflictPage << ".");
+                }
             }
 
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
