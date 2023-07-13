@@ -498,5 +498,6 @@ class BedrockServer : public SQLiteServer {
     // destroy the pool at shutdown.
     shared_ptr<SQLitePool> _dbPool;
 
-    void notifyPlugins(SQLiteNodeState newState);
+    // We call this method whenever a node changes state
+    void notifyStateChangeToPlugins(SQLiteNodeState newState) override;
 };

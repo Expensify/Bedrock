@@ -1810,7 +1810,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
 
     if (newState != _state) {
         // First, we notify all plugins about the state change
-        _server.notifyPlugins(newState);
+        _server.notifyStateChangeToPlugins(newState);
 
         // If we were following, and now we're not, we give up an any replications.
         if (_state == SQLiteNodeState::FOLLOWING) {

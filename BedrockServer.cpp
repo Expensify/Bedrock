@@ -2357,7 +2357,7 @@ const atomic<SQLiteNodeState>& BedrockServer::getState() const {
     return _nodeStateSnapshot == SQLiteNodeState::UNKNOWN ? _replicationState : _nodeStateSnapshot;
 }
 
-void BedrockServer::notifyPlugins(SQLiteNodeState newState) {
+void BedrockServer::notifyStateChangeToPlugins(SQLiteNodeState newState) {
     for (auto plugin : plugins) {
         plugin.second->stateChanged(newState);
     }
