@@ -16,5 +16,5 @@ class SQLiteServer : public STCPManager {
     virtual void onNodeLogin(SQLitePeer* peer) = 0;
 
     // We call this method whenever a node changes state
-    virtual void notifyStateChangeToPlugins(SQLiteNodeState newState) = 0;
+    virtual void notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState) = 0;
 };

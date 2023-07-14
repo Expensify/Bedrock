@@ -499,5 +499,5 @@ class BedrockServer : public SQLiteServer {
     shared_ptr<SQLitePool> _dbPool;
 
     // We call this method whenever a node changes state
-    void notifyStateChangeToPlugins(SQLiteNodeState newState) override;
+    void notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState) override;
 };
