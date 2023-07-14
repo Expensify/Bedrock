@@ -497,4 +497,7 @@ class BedrockServer : public SQLiteServer {
     // syncNode while the sync thread exists, it's a shared pointer to allow for the last socket thread using it to
     // destroy the pool at shutdown.
     shared_ptr<SQLitePool> _dbPool;
+
+    // We call this method whenever a node changes state
+    void notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState) override;
 };

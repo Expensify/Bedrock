@@ -2356,3 +2356,9 @@ void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
 const atomic<SQLiteNodeState>& BedrockServer::getState() const {
     return _nodeStateSnapshot == SQLiteNodeState::UNKNOWN ? _replicationState : _nodeStateSnapshot;
 }
+
+void BedrockServer::notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState) {
+    for (auto plugin : plugins) {
+        plugin.second->stateChanged(db, newState);
+    }
+}

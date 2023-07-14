@@ -1809,6 +1809,9 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
     _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
     if (newState != _state) {
+        // First, we notify all plugins about the state change
+        _server.notifyStateChangeToPlugins(_db, newState);
+
         // If we were following, and now we're not, we give up an any replications.
         if (_state == SQLiteNodeState::FOLLOWING) {
             _replicationThreadsShouldExit = true;
