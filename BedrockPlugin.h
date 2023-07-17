@@ -76,6 +76,9 @@ class BedrockPlugin {
     // re-open those connections if not handled elsewhere in the plugin.
     virtual void onAttach() {}
 
+    // Called when a node changes state
+    virtual void stateChanged(SQLite& db, SQLiteNodeState newState) {}
+
     // Map of plugin names to functions that will return a new plugin of the given type.
     static map<string, function<BedrockPlugin*(BedrockServer&)>> g_registeredPluginList;
 
