@@ -863,8 +863,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 }
             }
 
-            {
-                BedrockCore::AutoTimer timer(command, BedrockCommand::QUEUE_PAGE_LOCK);
+                BedrockCore::AutoTimer *timer = new BedrockCore::AutoTimer(command, BedrockCommand::QUEUE_PAGE_LOCK);
                 uint64_t conflictLockStartTime = 0;
                 if (lastConflictPage) {
                     conflictLockStartTime = STimeNow();
@@ -873,6 +872,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 if (lastConflictPage) {
                     SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on db page " << lastConflictPage << ".");
                 }
+                delete timer;
             }
 
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
