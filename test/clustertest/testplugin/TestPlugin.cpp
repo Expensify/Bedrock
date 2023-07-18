@@ -20,7 +20,7 @@ extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s) {
 }
 
 BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin(BedrockServer& s) :
-BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this))
+BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this)), _maxID(-1)
 {
 }
 
@@ -346,6 +346,10 @@ bool TestPluginCommand::peek(SQLite& db) {
 }
 
 void TestPluginCommand::process(SQLite& db) {
+    while (plugin()._maxID < 0) {
+        SINFO("COLE waiting for _maxID " << plugin()._maxID);
+        usleep(50'000);
+    }
     if (request.calc("ProcessSleep")) {
         usleep(request.calc("ProcessSleep") * 1000);
     }
@@ -499,6 +503,22 @@ void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {
                                         "id    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
                                         "value )", ignore));
     SASSERT(db.verifyTable("test", "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)", ignore));
+}
+
+void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState){
+    thread([&]() {
+        if (newState != SQLiteNodeState::LEADING) {
+            return;
+        }
+        while (!server.isUpgradeComplete()) {
+            usleep(50'000);
+        }
+
+        SQResult result;
+        db.read("SELECT count(*) FROM dbupgrade", result);
+        _maxID = SToInt64(result[0][0]);
+        SINFO("Server completed upgrade, _maxID " << _maxID);
+    }).detach();
 }
 
 

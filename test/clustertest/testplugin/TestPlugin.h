@@ -23,6 +23,7 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
     virtual const string& getName() const;
     static const string name;
     virtual bool preventAttach();
+    void stateChanged(SQLite& db, SQLiteNodeState newState);
 
     virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
 
@@ -33,6 +34,9 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
     // of one command from another, even if the first command never sends a response.
     static mutex dataLock;
     static map<string, string> arbitraryData;
+
+    // Tests setting of an ID value in stateChanged after an upgrade is completed.
+    atomic<int64_t> _maxID;
 };
 
 class TestPluginCommand : public BedrockCommand {
