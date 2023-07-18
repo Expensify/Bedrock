@@ -29,6 +29,26 @@ class AutoScopeRewrite {
     bool (*_handler)(int, const char*, string&);
 };
 
+// RAII-style mechanism for automatically setting and unsetting an on commit handler
+class AutoScopeOnCommit {
+  public:
+    AutoScopeOnCommit(bool enable, SQLite& db, void (*handler)()) : _enable(enable), _db(db), _handler(handler) {
+        if (_enable) {
+            _db.setOnCommitHandler(_handler);
+        }
+    }
+    ~AutoScopeOnCommit() {
+        if (_enable) {
+            _db.setOnCommitHandler(nullptr);
+        }
+    }
+
+  private:
+    bool _enable;
+    SQLite& _db;
+    void (*_handler)();
+};
+
 uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing) {
     int64_t timeout = command->timeout();
     int64_t now = STimeNow();
@@ -265,6 +285,9 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             bool (*handler)(int, const char*, string&) = nullptr;
             bool enable = command->shouldEnableQueryRewriting(_db, &handler);
             AutoScopeRewrite rewrite(enable, _db, handler);
+            void (*onCommitHandler)() = nullptr;
+            bool enableOnCommitNotifications = command->shouldEnableOnCommitNotification(_db, &handler);
+            AutoScopeOnCommit onCommit(enableOnCommitNotifications, _db, onCommitHandler);
             try {
                 command->reset(BedrockCommand::STAGE::PROCESS);
                 command->process(_db);

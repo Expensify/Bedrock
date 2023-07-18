@@ -86,6 +86,13 @@ class BedrockCommand : public SQLiteCommand {
         return false;
     }
 
+    // Bedrock will call this before each `processCommand` (note: not `peekCommand`) for each plugin to allow it to
+    // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
+    // set the rewriteHandler it would like to use.
+    virtual bool shouldEnableOnCommitNotification(const SQLite& db, void (**onCommitHandler)()) {
+        return false;
+    }
+
     // Start recording time for a given action type.
     void startTiming(TIMING_INFO type);
 

@@ -689,6 +689,9 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
+        if (_onCommitHandlder != nullptr) {
+            (*_onCommitHandlder)();
+        }
         char time[16];
         snprintf(time, 16, "%.2fms", (double)(STimeNow() - beforeCommit) / 1000.0);
 
@@ -871,6 +874,10 @@ void SQLite::enableRewrite(bool enable) {
 
 void SQLite::setRewriteHandler(bool (*handler)(int, const char*, string&)) {
     _rewriteHandler = handler;
+}
+
+void SQLite::setOnCommitHandler(void (*handler)()) {
+    _onCommitHandlder = handler;
 }
 
 int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const char* detail1, const char* detail2,
