@@ -29,17 +29,19 @@ class AutoScopeRewrite {
     bool (*_handler)(int, const char*, string&);
 };
 
-// RAII-style mechanism for automatically setting and unsetting an on commit handler
-class AutoScopeOnCommit {
+// RAII-style mechanism for automatically setting and unsetting an on prepare handler
+class AutoScopeOnPrepare {
   public:
-    AutoScopeOnCommit(bool enable, SQLite& db, void (*handler)()) : _enable(enable), _db(db), _handler(handler) {
+    AutoScopeOnPrepare(bool enable, SQLite& db, void (*handler)()) : _enable(enable), _db(db), _handler(handler) {
         if (_enable) {
-            _db.setOnCommitHandler(_handler);
+            _db.setOnPrepareHandler(_handler);
+            _db.enablePrepareNotifications(true);
         }
     }
-    ~AutoScopeOnCommit() {
+    ~AutoScopeOnPrepare() {
         if (_enable) {
-            _db.setOnCommitHandler(nullptr);
+            _db.setOnPrepareHandler(nullptr);
+            _db.enablePrepareNotifications(false);
         }
     }
 
@@ -285,9 +287,9 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             bool (*handler)(int, const char*, string&) = nullptr;
             bool enable = command->shouldEnableQueryRewriting(_db, &handler);
             AutoScopeRewrite rewrite(enable, _db, handler);
-            void (*onCommitHandler)() = nullptr;
-            bool enableOnCommitNotifications = command->shouldEnableOnCommitNotification(_db, &handler);
-            AutoScopeOnCommit onCommit(enableOnCommitNotifications, _db, onCommitHandler);
+            void (*onPrepareHandler)() = nullptr;
+            bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(_db, &onPrepareHandler);
+            AutoScopeOnPrepare onPrepare(enableOnPrepareNotifications, _db, onPrepareHandler);
             try {
                 command->reset(BedrockCommand::STAGE::PROCESS);
                 command->process(_db);

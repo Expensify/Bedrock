@@ -86,10 +86,10 @@ class BedrockCommand : public SQLiteCommand {
         return false;
     }
 
-    // Bedrock will call this before each `processCommand` (note: not `peekCommand`) for each plugin to allow it to
-    // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
-    // set the rewriteHandler it would like to use.
-    virtual bool shouldEnableOnCommitNotification(const SQLite& db, void (**onCommitHandler)()) {
+    // Bedrock will call this before writing to the database after it has prepared a transaction for each plugin to allow it to
+    // enable a handler function for prepare If a plugin would like to perform operations after prepare but before commit, this should 
+    // return true, and it should set the prepareHandler it would like to use.
+    virtual bool shouldEnableOnPrepareNotification(const SQLite& db, void (**onPrepareHandler)()) {
         return false;
     }
 

@@ -153,12 +153,18 @@ class SQLite {
     // Important: there can be only one re-write handler for a given DB at once.
     void setRewriteHandler(bool (*handler)(int, const char*, string&));
 
-    // Update the on commit handler.
-    // The on commit handler allows a plugin to run code inside the commit lock. This code should be time sensitive
+    // Enables the on prepare handler.
+    // The on commit handler allows a plugin to be notified when a transaction is prepared but not yet committed. 
+    // This allows the plugin to take arbitrary actions prior to committing to the database. Bedrock does not
+    // pass up any information in this case, it simply notifies the plugin that a transaction was prepared.
+    void enablePrepareNotifications(bool enable);
+
+    // Update the on prepare handler.
+    // The on prepare handler allows a plugin to run code inside the commit lock. This code should be time sensitive
     // as increases to the amount of time this lock is held increase conflict chances and decreases the parallelness
     // of bedrock commands.
-    // Important: there can be only one on-commit handler for a given DB at once.
-    void setOnCommitHandler(void (*handler)());
+    // Important: there can be only one on-prepare handler for a given DB at once.
+    void setOnPrepareHandler(void (*handler)());
 
     // Commits the current transaction to disk. Returns an sqlite3 result code.
     // preCheckpointCallback is an optional callback that will be called before the checkpoint code runs, after the commit has completed. Note that if the commit fails, this is not called.
@@ -431,8 +437,11 @@ class SQLite {
     // When the rewrite handler indicates a query needs to be re-written, the new query is set here.
     string _rewrittenQuery;
 
-    // Pointer to the current on commit handler.
-    void (*_onCommitHandler)();
+    // Should we notify plugins once a transaction is prepared?
+    bool _shouldNotifyPluginsOnPrepare = false;
+
+    // Pointer to the current on prepare handler.
+    void (*_onPrepareHandler)();
 
     // Causes the current query to skip re-write checking if it's already a re-written query.
     bool _currentlyRunningRewritten = false;

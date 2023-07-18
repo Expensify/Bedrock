@@ -598,6 +598,10 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
         _mutexLocked = true;
     }
 
+    if (_shouldNotifyPluginsOnPrepare) {
+        (*_onPrepareHandler)();
+    }
+
     // Now that we've locked anybody else from committing, look up the state of the database. We don't need to lock the
     // SharedData object to get these values as we know it can't currently change.
     uint64_t commitCount = _sharedData.commitCount;
@@ -689,9 +693,6 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
-        if (_onCommitHandlder != nullptr) {
-            (*_onCommitHandlder)();
-        }
         char time[16];
         snprintf(time, 16, "%.2fms", (double)(STimeNow() - beforeCommit) / 1000.0);
 
@@ -876,8 +877,12 @@ void SQLite::setRewriteHandler(bool (*handler)(int, const char*, string&)) {
     _rewriteHandler = handler;
 }
 
-void SQLite::setOnCommitHandler(void (*handler)()) {
-    _onCommitHandlder = handler;
+void SQLite::enablePrepareNotifications(bool enable) {
+    _shouldNotifyPluginsOnPrepare = enable;
+}
+
+void SQLite::setOnPrepareHandler(void (*handler)()) {
+    _onPrepareHandler = handler;
 }
 
 int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const char* detail1, const char* detail2,
