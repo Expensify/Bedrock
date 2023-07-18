@@ -1588,6 +1588,10 @@ bool BedrockServer::isDetached() {
     return _detach && _syncThreadComplete && _pluginsDetached;
 }
 
+bool BedrockServer::isUpgradeInProgress() {
+    return _upgradeInProgress;
+}
+
 void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
     const SData& request  = command->request;
     SData& response = command->response;

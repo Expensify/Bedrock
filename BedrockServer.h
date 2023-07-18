@@ -231,6 +231,9 @@ class BedrockServer : public SQLiteServer {
     // Returns if we are detached and the sync thread has exited.
     bool isDetached();
 
+    // Returns if we are upgrading the DB
+    bool isUpgradeInProgress();
+
     // See if there's a plugin that can turn this request into a command.
     // If not, we'll create a command that returns `430 Unrecognized command`.
     unique_ptr<BedrockCommand> getCommandFromPlugins(SData&& request);
