@@ -372,6 +372,7 @@ void BedrockServer::sync()
                 // If we're not doing an upgrade, we don't need to keep suppressing multi-write, and we're done with
                 // the upgradeInProgress flag.
                 _upgradeInProgress = false;
+                _upgradeCompleted = true;
                 SINFO("UpgradeDB skipped, done.");
             }
         }
@@ -389,6 +390,7 @@ void BedrockServer::sync()
             if (_upgradeInProgress) {
                 if (_syncNode->commitSucceeded()) {
                     _upgradeInProgress = false;
+                    _upgradeCompleted = true;
                     SINFO("UpgradeDB succeeded, done.");
                 } else {
                     SINFO("UpgradeDB failed, trying again.");
@@ -1187,6 +1189,7 @@ void BedrockServer::_resetServer() {
     _commandPortPublic = nullptr;
     _commandPortPrivate = nullptr;
     _pluginsDetached = false;
+    _upgradeCompleted = false;
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {
@@ -1207,7 +1210,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _multiWriteEnabled(args.test("-enableMultiWrite")), _enableConflictPageLocks(args.test("-enableConflictPageLocks")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
-    _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false)
+    _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _upgradeCompleted(false)
 {
     _version = VERSION;
 
@@ -1589,6 +1592,10 @@ void BedrockServer::setDetach(bool detach) {
 
 bool BedrockServer::isDetached() {
     return _detach && _syncThreadComplete && _pluginsDetached;
+}
+
+bool BedrockServer::isUpgradeComplete() {
+    return _upgradeCompleted;
 }
 
 void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {

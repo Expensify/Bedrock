@@ -20,7 +20,7 @@ extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s) {
 }
 
 BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin(BedrockServer& s) :
-BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this))
+BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this)), _maxID(-1)
 {
 }
 
@@ -348,6 +348,18 @@ bool TestPluginCommand::peek(SQLite& db) {
 }
 
 void TestPluginCommand::process(SQLite& db) {
+    // If `stateChanged` hasn't finished, we need to wait.
+    // This simulates what we want in our internal plugins, because we don't want
+    // any command processed until the leader server knows the maxID value.
+    // This is really only here in case of a race condition between the sync thread finishing
+    // upgradeDatabase and the thread running in `stateChanged`, it is possible the sync thread
+    // tries to accept a command on a loop before `stateChanged` queries and gets a value for _maxID.
+    // Also note this really doesn't matter in production, because we don't use `upgradeDatabase` this
+    // truly only exists for dev and testing to function properly. 
+    while (plugin()._maxID < 0) {
+        SINFO("Waiting for _maxID " << plugin()._maxID);
+        usleep(50'000);
+    }
     if (request.calc("ProcessSleep")) {
         usleep(request.calc("ProcessSleep") * 1000);
     }
@@ -520,6 +532,29 @@ void BedrockPlugin_TestPlugin::onPrepareHandler(SQLite& db, int64_t tableID) {
     int64_t tid = 999999999 + tableID;
     db.write("INSERT INTO test (id, value) VALUES (" + to_string(tid) + ", 'this is written in onPrepareHandler');");
 }
+void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState){
+    // We spin this up in another thread because `stateChanged` is called from the `sync` thread in bedrock
+    // so this function cannot do any sort of waiting or it will block the sync thread. By offloading this,
+    // we can let the code wait for a condition to be met before it actually runs. In our case, we want to
+    // wait until upgradeDatabase has completed so that we can run a query on a table.
+    SINFO("Running stateChanged new state " << SQLiteNode::stateName(newState));
+    thread([&, newState]() {
+        if (newState != SQLiteNodeState::LEADING) {
+            SINFO("Returning early stateChanged new state " << SQLiteNode::stateName(newState));
+            return;
+        }
+        SINFO("Sleeping until the server is done upgrading.");
+        while (!server.isUpgradeComplete()) {
+            usleep(50'000);
+        }
+
+        SQResult result;
+        db.read("SELECT count(*) FROM dbupgrade", result);
+        _maxID = SToInt64(result[0][0]);
+        SINFO("Server completed upgrade, _maxID " << _maxID);
+    }).detach();
+}
+
 
 bool TestHTTPSManager::_onRecv(Transaction* transaction) {
     string methodLine = transaction->fullResponse.methodLine;
