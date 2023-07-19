@@ -355,7 +355,7 @@ void TestPluginCommand::process(SQLite& db) {
     // Also note this really doesn't matter in production, because we don't use `upgradeDatabase` this
     // truly only exists for dev and testing to function properly. 
     while (plugin()._maxID < 0) {
-        SINFO("COLE waiting for _maxID " << plugin()._maxID);
+        SINFO("Waiting for _maxID " << plugin()._maxID);
         usleep(50'000);
     }
     if (request.calc("ProcessSleep")) {
@@ -515,13 +515,14 @@ void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {
 
 void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState){
     // We spin this up in another thread because `stateChanged` is called from the `sync` thread in bedrock
-    // so this funciton cannot do any sort of waiting or it will block the sync thread. By offlagin this,
-    // we can let the code wait for acondition to be met before it actually runs. In our case, we want to
-    // wait until upgradeDatabase has completed so that we can run a query on a table. 
+    // so this function cannot do any sort of waiting or it will block the sync thread. By offloading this,
+    // we can let the code wait for a condition to be met before it actually runs. In our case, we want to
+    // wait until upgradeDatabase has completed so that we can run a query on a table.
     thread([&]() {
         if (newState != SQLiteNodeState::LEADING) {
             return;
         }
+        SINFO("Sleeping until the server is done upgrading.");
         while (!server.isUpgradeComplete()) {
             usleep(50'000);
         }
