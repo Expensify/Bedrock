@@ -518,8 +518,10 @@ void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState
     // so this function cannot do any sort of waiting or it will block the sync thread. By offloading this,
     // we can let the code wait for a condition to be met before it actually runs. In our case, we want to
     // wait until upgradeDatabase has completed so that we can run a query on a table.
-    thread([&]() {
+    SINFO("Running stateChanged new state " << SQLiteNode::stateName(newState));
+    thread([&, newState]() {
         if (newState != SQLiteNodeState::LEADING) {
+            SINFO("Returning early stateChanged new state " << SQLiteNode::stateName(newState));
             return;
         }
         SINFO("Sleeping until the server is done upgrading.");
