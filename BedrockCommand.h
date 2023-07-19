@@ -89,7 +89,7 @@ class BedrockCommand : public SQLiteCommand {
     // Bedrock will call this before writing to the database after it has prepared a transaction for each plugin to allow it to
     // enable a handler function for prepare If a plugin would like to perform operations after prepare but before commit, this should 
     // return true, and it should set the prepareHandler it would like to use.
-    virtual bool shouldEnableOnPrepareNotification(const SQLite& db, void (**onPrepareHandler)()) {
+    virtual bool shouldEnableOnPrepareNotification(const SQLite& db, void (**onPrepareHandler)(SQLite& _db, int64_t tableID)) {
         return false;
     }
 

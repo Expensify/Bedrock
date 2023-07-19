@@ -164,7 +164,7 @@ class SQLite {
     // as increases to the amount of time this lock is held increase conflict chances and decreases the parallelness
     // of bedrock commands.
     // Important: there can be only one on-prepare handler for a given DB at once.
-    void setOnPrepareHandler(void (*handler)());
+    void setOnPrepareHandler(void (*handler)(SQLite& _db, int64_t tableID));
 
     // Commits the current transaction to disk. Returns an sqlite3 result code.
     // preCheckpointCallback is an optional callback that will be called before the checkpoint code runs, after the commit has completed. Note that if the commit fails, this is not called.
@@ -441,7 +441,7 @@ class SQLite {
     bool _shouldNotifyPluginsOnPrepare = false;
 
     // Pointer to the current on prepare handler.
-    void (*_onPrepareHandler)();
+    void (*_onPrepareHandler)(SQLite& _db, int64_t tableID);
 
     // Causes the current query to skip re-write checking if it's already a re-written query.
     bool _currentlyRunningRewritten = false;

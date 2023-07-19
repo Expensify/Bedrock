@@ -598,8 +598,9 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
         _mutexLocked = true;
     }
 
+    _journalName = _journalNames[_sharedData.nextJournalCount++ % _journalNames.size()];
     if (_shouldNotifyPluginsOnPrepare) {
-        (*_onPrepareHandler)();
+        (*_onPrepareHandler)(*this, SToInt64(SAfter(_journalName, "journal")));
     }
 
     // Now that we've locked anybody else from committing, look up the state of the database. We don't need to lock the
@@ -619,8 +620,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
         *transactionhash = _uncommittedHash;
     }
 
-    // Crete our query.
-    _journalName = _journalNames[_sharedData.nextJournalCount++ % _journalNames.size()];
+    // Create our query.
     string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
 
     // These are the values we're currently operating on, until we either commit or rollback.
@@ -881,7 +881,7 @@ void SQLite::enablePrepareNotifications(bool enable) {
     _shouldNotifyPluginsOnPrepare = enable;
 }
 
-void SQLite::setOnPrepareHandler(void (*handler)()) {
+void SQLite::setOnPrepareHandler(void (*handler)(SQLite& _db, int64_t tableID)) {
     _onPrepareHandler = handler;
 }
 

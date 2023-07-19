@@ -32,7 +32,7 @@ class AutoScopeRewrite {
 // RAII-style mechanism for automatically setting and unsetting an on prepare handler
 class AutoScopeOnPrepare {
   public:
-    AutoScopeOnPrepare(bool enable, SQLite& db, void (*handler)()) : _enable(enable), _db(db), _handler(handler) {
+    AutoScopeOnPrepare(bool enable, SQLite& db, void (*handler)(SQLite& _db, int64_t tableID)) : _enable(enable), _db(db), _handler(handler) {
         if (_enable) {
             _db.setOnPrepareHandler(_handler);
             _db.enablePrepareNotifications(true);
@@ -48,7 +48,7 @@ class AutoScopeOnPrepare {
   private:
     bool _enable;
     SQLite& _db;
-    void (*_handler)();
+    void (*_handler)(SQLite& _db, int64_t tableID);
 };
 
 uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing) {
@@ -287,9 +287,6 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             bool (*handler)(int, const char*, string&) = nullptr;
             bool enable = command->shouldEnableQueryRewriting(_db, &handler);
             AutoScopeRewrite rewrite(enable, _db, handler);
-            void (*onPrepareHandler)() = nullptr;
-            bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(_db, &onPrepareHandler);
-            AutoScopeOnPrepare onPrepare(enableOnPrepareNotifications, _db, onPrepareHandler);
             try {
                 command->reset(BedrockCommand::STAGE::PROCESS);
                 command->process(_db);

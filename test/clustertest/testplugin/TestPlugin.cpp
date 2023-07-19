@@ -98,6 +98,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "prepeekcommand",
         "postprocesscommand",
         "prepeekpostprocesscommand",
+        "preparehandler"
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -156,7 +157,8 @@ bool TestPluginCommand::shouldPrePeek() {
 }
 
 bool TestPluginCommand::shouldPostProcess() {
-    return request.methodLine == "postprocesscommand" || request.methodLine == "prepeekpostprocesscommand";
+    return request.methodLine == "postprocesscommand" || request.methodLine == "prepeekpostprocesscommand" ||
+               request.methodLine == "preparehandler";
 }
 
 bool BedrockPlugin_TestPlugin::preventAttach() {
@@ -479,6 +481,10 @@ void TestPluginCommand::process(SQLite& db) {
         jsonContent["processInfo"] = "this was returned in processInfo";
         db.write("DELETE FROM test WHERE id = 999999999;");
         return;
+    } else if (request.methodLine == "preparehandler") {
+        jsonContent["cole"] = "hello";
+        db.write("INSERT INTO test (id, value) VALUES (999999888, 'this is a test');");
+        return;
     }
 }
 
@@ -488,9 +494,18 @@ void TestPluginCommand::postProcess(SQLite& db) {
         SQResult result;
         db.read("SELECT COUNT(*) FROM test WHERE id = 999999999", result);
         jsonContent["postProcessCount"] = result[0][0];
+    } else if (request.methodLine == "preparehandler") {
+        SQResult result;
+        db.read("SELECT id FROM test WHERE value = 'this is written in onPrepareHandler'", result);
+        jsonContent["tableID"] = result[0][0];
     } else {
         STHROW("500 no prePeek defined, shouldPrePeek should be false");
     }
+}
+
+bool TestPluginCommand::shouldEnableOnPrepareNotification(const SQLite& db, void (**handler)(SQLite& _db, int64_t tableID)) {
+    *handler = BedrockPlugin_TestPlugin::onPrepareHandler;
+    return request.methodLine == "preparehandler";
 }
 
 void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {
@@ -501,6 +516,10 @@ void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {
     SASSERT(db.verifyTable("test", "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)", ignore));
 }
 
+void BedrockPlugin_TestPlugin::onPrepareHandler(SQLite& db, int64_t tableID) {
+    int64_t tid = 999999999 + tableID;
+    db.write("INSERT INTO test (id, value) VALUES (" + to_string(tid) + ", 'this is written in onPrepareHandler');");
+}
 
 bool TestHTTPSManager::_onRecv(Transaction* transaction) {
     string methodLine = transaction->fullResponse.methodLine;
