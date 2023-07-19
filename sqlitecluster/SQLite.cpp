@@ -600,7 +600,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
 
     // We pass the journal number selected to the handler so that a caller can utilize the
     // same method bedrock does for accessing 1 table per thread, in order to attempt to
-    // reduce conflicts on tables that are written do on every command
+    // reduce conflicts on tables that are written to on every command
     const int64_t journalID = _sharedData.nextJournalCount++;
     _journalName = _journalNames[journalID % _journalNames.size()];
     if (_shouldNotifyPluginsOnPrepare) {
