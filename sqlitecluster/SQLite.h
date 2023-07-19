@@ -160,10 +160,13 @@ class SQLite {
     void enablePrepareNotifications(bool enable);
 
     // Update the on prepare handler.
-    // The on prepare handler allows a plugin to run code inside the commit lock. This code should be time sensitive
+    // The on prepare handler accepts a reference to this SQLiteDB object and an int tableID. The tableID is the
+    // same ID that is used for the journal number in the current running thread. This allows the handler to utilize
+    // SQLite.cpp's method for avoiding conflicts on tables written on every command. 
+    // IMPORTANT: The on prepare handler allows a plugin to run code inside the commit lock. This code should be time sensitive
     // as increases to the amount of time this lock is held increase conflict chances and decreases the parallelness
-    // of bedrock commands.
-    // Important: there can be only one on-prepare handler for a given DB at once.
+    // of bedrock commands. 
+    // IMPORTANT: there can be only one on-prepare handler for a given DB at once.
     void setOnPrepareHandler(void (*handler)(SQLite& _db, int64_t tableID));
 
     // Commits the current transaction to disk. Returns an sqlite3 result code.

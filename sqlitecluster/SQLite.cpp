@@ -598,6 +598,9 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
         _mutexLocked = true;
     }
 
+    // We pass the journal number selected to the handler so that a caller can utilize the
+    // same method bedrock does for accessing 1 table per thread, in order to attempt to
+    // reduce conflicts on tables that are written do on every command
     _journalName = _journalNames[_sharedData.nextJournalCount++ % _journalNames.size()];
     if (_shouldNotifyPluginsOnPrepare) {
         (*_onPrepareHandler)(*this, SToInt64(SAfter(_journalName, "journal")));
