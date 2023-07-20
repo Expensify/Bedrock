@@ -501,8 +501,8 @@ void BedrockServer::sync()
                             core.prePeekCommand(command);
                         }
 
-                        // This command finsihed in prePeek, which likely means it threw. 
-                        // We'll respond to it now, either directly or by sending it back to the sync thread. 
+                        // This command finsihed in prePeek, which likely means it threw.
+                        // We'll respond to it now, either directly or by sending it back to the sync thread.
                         if (command->complete) {
                             SINFO("Command completed in prePeek, replying now.");
                             _reply(command);
@@ -865,6 +865,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 }
             }
 
+            auto *timer = new BedrockCore::AutoTimer(command, BedrockCommand::QUEUE_PAGE_LOCK);
             uint64_t conflictLockStartTime = 0;
             if (lastConflictPage) {
                 conflictLockStartTime = STimeNow();
@@ -873,6 +874,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             if (lastConflictPage) {
                 SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on db page " << lastConflictPage << ".");
             }
+            delete timer;
 
             // If the command has any httpsRequests from a previous `peek`, we won't peek it again unless the
             // command has specifically asked for that.
@@ -999,7 +1001,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             core.rollback();
                         } else {
                             BedrockCore::AutoTimer timer(command, isBlocking ? BedrockCommand::BLOCKING_COMMIT_WORKER : BedrockCommand::COMMIT_WORKER);
-                            commitSuccess = core.commit(SQLiteNode::stateName(_replicationState), transactionID, transactionHash);
+                            void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
+                            bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
+                            commitSuccess = core.commit(SQLiteNode::stateName(_replicationState), transactionID,
+                                                        transactionHash, enableOnPrepareNotifications, onPrepareHandler);
                         }
                     }
                     if (commitSuccess) {

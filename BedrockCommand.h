@@ -25,6 +25,7 @@ class BedrockCommand : public SQLiteCommand {
         QUEUE_WORKER,
         QUEUE_SYNC,
         QUEUE_BLOCKING,
+        QUEUE_PAGE_LOCK,
         BLOCKING_PEEK,
         BLOCKING_PROCESS,
         BLOCKING_COMMIT_WORKER,
@@ -83,6 +84,13 @@ class BedrockCommand : public SQLiteCommand {
     // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
     // set the rewriteHandler it would like to use.
     virtual bool shouldEnableQueryRewriting(const SQLite& db, bool (**rewriteHandler)(int, const char*, string&)) {
+        return false;
+    }
+
+    // Bedrock will call this before writing to the database after it has prepared a transaction for each plugin to allow it to
+    // enable a handler function for prepare If a plugin would like to perform operations after prepare but before commit, this should 
+    // return true, and it should set the prepareHandler it would like to use.
+    virtual bool shouldEnableOnPrepareNotification(const SQLite& db, void (**onPrepareHandler)(SQLite& _db, int64_t tableID)) {
         return false;
     }
 
@@ -182,7 +190,7 @@ class BedrockCommand : public SQLiteCommand {
     static size_t getCommandCount() { return _commandCount.load(); }
 
     // True if this command should be escalated immediately. This can be true for any command that does all of its work
-    // in `process` instead of peek, as it will always be escalated to leader 
+    // in `process` instead of peek, as it will always be escalated to leader
     const bool escalateImmediately;
 
     // Record the state we were acting under in the last call to `peek` or `process`.

@@ -23,6 +23,7 @@ class BedrockPlugin_TestPlugin : public BedrockPlugin
     virtual const string& getName() const;
     static const string name;
     virtual bool preventAttach();
+    static void onPrepareHandler(SQLite& db, int64_t tableID);
     void stateChanged(SQLite& db, SQLiteNodeState newState);
 
     virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
@@ -50,6 +51,7 @@ class TestPluginCommand : public BedrockCommand {
     virtual bool shouldPrePeek();
     virtual bool shouldPostProcess();
     virtual void reset(BedrockCommand::STAGE stage) override;
+    bool shouldEnableOnPrepareNotification(const SQLite& db, void (**handler)(SQLite& _db, int64_t tableID));
 
   private:
     BedrockPlugin_TestPlugin& plugin() { return static_cast<BedrockPlugin_TestPlugin&>(*_plugin); }
