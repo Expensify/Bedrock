@@ -231,6 +231,9 @@ class BedrockServer : public SQLiteServer {
     // Returns if we are detached and the sync thread has exited.
     bool isDetached();
 
+    // Returns if all plugins have completed calling UpgradeDB
+    bool isUpgradeComplete();
+
     // See if there's a plugin that can turn this request into a command.
     // If not, we'll create a command that returns `430 Unrecognized command`.
     unique_ptr<BedrockCommand> getCommandFromPlugins(SData&& request);
@@ -486,6 +489,10 @@ class BedrockServer : public SQLiteServer {
     // If we hit the point where we're unable to create new socket threads, we block doing so.
     bool _shouldBlockNewSocketThreads;
     mutex _newSocketThreadBlockedMutex;
+
+    // This gets set to true when the database upgrade is completed, letting workers or plugins know that the database
+    // tables in any expected schemas should now be available.
+    atomic<bool> _upgradeCompleted;
 
     // This mutex prevents the check for whether there are outstanding commands preventing shutdown from running at the
     // same time a control port command is running (which would indicate that there is a command blocking shutdown -
