@@ -1001,7 +1001,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             core.rollback();
                         } else {
                             BedrockCore::AutoTimer timer(command, isBlocking ? BedrockCommand::BLOCKING_COMMIT_WORKER : BedrockCommand::COMMIT_WORKER);
-                            commitSuccess = core.commit(SQLiteNode::stateName(_replicationState), transactionID, transactionHash);
+                            void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
+                            bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
+                            commitSuccess = core.commit(SQLiteNode::stateName(_replicationState), transactionID,
+                                                        transactionHash, enableOnPrepareNotifications, onPrepareHandler);
                         }
                     }
                     if (commitSuccess) {

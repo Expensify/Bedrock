@@ -598,6 +598,15 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
         _mutexLocked = true;
     }
 
+    // We pass the journal number selected to the handler so that a caller can utilize the
+    // same method bedrock does for accessing 1 table per thread, in order to attempt to
+    // reduce conflicts on tables that are written to on every command
+    const int64_t journalID = _sharedData.nextJournalCount++;
+    _journalName = _journalNames[journalID % _journalNames.size()];
+    if (_shouldNotifyPluginsOnPrepare) {
+        (*_onPrepareHandler)(*this, journalID);
+    }
+
     // Now that we've locked anybody else from committing, look up the state of the database. We don't need to lock the
     // SharedData object to get these values as we know it can't currently change.
     uint64_t commitCount = _sharedData.commitCount;
@@ -615,8 +624,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
         *transactionhash = _uncommittedHash;
     }
 
-    // Crete our query.
-    _journalName = _journalNames[_sharedData.nextJournalCount++ % _journalNames.size()];
+    // Create our query.
     string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
 
     // These are the values we're currently operating on, until we either commit or rollback.
@@ -871,6 +879,14 @@ void SQLite::enableRewrite(bool enable) {
 
 void SQLite::setRewriteHandler(bool (*handler)(int, const char*, string&)) {
     _rewriteHandler = handler;
+}
+
+void SQLite::enablePrepareNotifications(bool enable) {
+    _shouldNotifyPluginsOnPrepare = enable;
+}
+
+void SQLite::setOnPrepareHandler(void (*handler)(SQLite& _db, int64_t tableID)) {
+    _onPrepareHandler = handler;
 }
 
 int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const char* detail1, const char* detail2,

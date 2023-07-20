@@ -153,6 +153,22 @@ class SQLite {
     // Important: there can be only one re-write handler for a given DB at once.
     void setRewriteHandler(bool (*handler)(int, const char*, string&));
 
+    // Enables the on prepare handler.
+    // The on commit handler allows a plugin to be notified when a transaction is prepared but not yet committed. 
+    // This allows the plugin to take arbitrary actions prior to committing to the database. Bedrock does not
+    // pass up any information in this case, it simply notifies the plugin that a transaction was prepared.
+    void enablePrepareNotifications(bool enable);
+
+    // Update the on prepare handler.
+    // The on prepare handler accepts a reference to this SQLiteDB object and an int tableID. The tableID is the
+    // same ID that is used for the journal number in the current running thread. This allows the handler to utilize
+    // SQLite.cpp's method for avoiding conflicts on tables written on every command. 
+    // IMPORTANT: The on prepare handler allows a plugin to run code inside the commit lock. This code should be time sensitive
+    // as increases to the amount of time this lock is held increase conflict chances and decreases the parallelness
+    // of bedrock commands. 
+    // IMPORTANT: there can be only one on-prepare handler for a given DB at once.
+    void setOnPrepareHandler(void (*handler)(SQLite& _db, int64_t tableID));
+
     // Commits the current transaction to disk. Returns an sqlite3 result code.
     // preCheckpointCallback is an optional callback that will be called before the checkpoint code runs, after the commit has completed. Note that if the commit fails, this is not called.
     // The main purpose of this is to allow replications in SQLiteNode to notify other waiting threads that the commit has finished even before the checkpoint is done.
@@ -423,6 +439,12 @@ class SQLite {
 
     // When the rewrite handler indicates a query needs to be re-written, the new query is set here.
     string _rewrittenQuery;
+
+    // Should we notify plugins once a transaction is prepared?
+    bool _shouldNotifyPluginsOnPrepare = false;
+
+    // Pointer to the current on prepare handler.
+    void (*_onPrepareHandler)(SQLite& _db, int64_t tableID);
 
     // Causes the current query to skip re-write checking if it's already a re-written query.
     bool _currentlyRunningRewritten = false;
