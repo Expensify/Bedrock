@@ -164,6 +164,11 @@ class SQLiteNode : public STCPManager {
     // access _peerList and peer->name, both of which are const. So it is safe
     // to call from other public functions.
     SQLitePeer* getPeerByName(const string& name) const;
+
+    // Pointer to the current on prepare handler to be passed on commit to SQLite
+    void (*onPrepareHandler)(SQLite& _db, int64_t tableID);
+    bool onPrepareHandlerEnabled;
+
   private:
     // Utility class that can decrement _replicationThreadCount when objects go out of scope.
     template <typename CounterType>

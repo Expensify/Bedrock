@@ -58,6 +58,29 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
 
+// RAII-style mechanism for automatically setting and unsetting an on prepare handler
+class AutoScopeOnPrepare {
+  public:
+    AutoScopeOnPrepare(bool enable, SQLite& db, void (*handler)(SQLite& _db, int64_t tableID))
+        : _enable(enable), _db(db), _handler(handler) {
+        if (_enable) {
+            _db.setOnPrepareHandler(_handler);
+            _db.enablePrepareNotifications(true);
+        }
+    }
+    ~AutoScopeOnPrepare() {
+        if (_enable) {
+            _db.setOnPrepareHandler(nullptr);
+            _db.enablePrepareNotifications(false);
+        }
+    }
+
+  private:
+    bool _enable;
+    SQLite& _db;
+    void (*_handler)(SQLite& _db, int64_t tableID);
+};
+
 // Initializations for static vars.
 const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S * 30};
 
@@ -127,6 +150,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _syncPeer(nullptr)
 {
     SASSERT(_originalPriority >= 0);
+    onPrepareHandlerEnabled = false;
     SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
     _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
@@ -999,7 +1023,10 @@ bool SQLiteNode::update() {
 
             // There's no handling for a failed prepare. This should only happen if the DB has been corrupted or
             // something catastrophic like that.
-            SASSERT(_db.prepare());
+            {
+                AutoScopeOnPrepare(onPrepareHandlerEnabled, _db, onPrepareHandler);
+                SASSERT(_db.prepare());
+            }
 
             // Begin the distributed transaction
             SData transaction("BEGIN_TRANSACTION");
