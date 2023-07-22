@@ -1,5 +1,5 @@
 #pragma once
-#include "../SQLiteCluster/SQLite.h"
+#include <sqlitecluster/SQLite.h>
 using namespace std;
 
 // RAII-style mechanism for automatically setting and unsetting an on prepare handler
