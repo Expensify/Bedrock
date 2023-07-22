@@ -2,6 +2,7 @@
 
 #include <unistd.h>
 
+#include <libstuff/AutoScopeOnPrepare.h>
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 #include <libstuff/SQResult.h>
@@ -127,6 +128,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _syncPeer(nullptr)
 {
     SASSERT(_originalPriority >= 0);
+    onPrepareHandlerEnabled = false;
     SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
     _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
@@ -999,7 +1001,10 @@ bool SQLiteNode::update() {
 
             // There's no handling for a failed prepare. This should only happen if the DB has been corrupted or
             // something catastrophic like that.
-            SASSERT(_db.prepare());
+            {
+                AutoScopeOnPrepare onPrepare(onPrepareHandlerEnabled, _db, onPrepareHandler);
+                SASSERT(_db.prepare());
+            }
 
             // Begin the distributed transaction
             SData transaction("BEGIN_TRANSACTION");

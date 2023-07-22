@@ -278,6 +278,17 @@ void BedrockServer::sync()
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
         // state when it's finished.
         SQLiteNodeState preUpdateState = _syncNode->getState();
+        if(command && committingCommand) {
+            void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
+            bool enabled = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
+            if (enabled) {
+                _syncNode->onPrepareHandlerEnabled = enabled;
+                _syncNode->onPrepareHandler = onPrepareHandler;
+            }
+        } else {
+            _syncNode->onPrepareHandlerEnabled = false;
+            _syncNode->onPrepareHandler = nullptr;
+        }
         while (_syncNode->update()) {}
         SQLiteNodeState nodeState = _syncNode->getState();
         _replicationState.store(nodeState);
