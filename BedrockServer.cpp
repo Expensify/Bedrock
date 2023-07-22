@@ -285,6 +285,9 @@ void BedrockServer::sync()
                 _syncNode->onPrepareHandlerEnabled = enabled;
                 _syncNode->onPrepareHandler = onPrepareHandler;
             }
+        } else {
+            _syncNode->onPrepareHandlerEnabled = false;
+            _syncNode->onPrepareHandler = nullptr;
         }
         while (_syncNode->update()) {}
         SQLiteNodeState nodeState = _syncNode->getState();

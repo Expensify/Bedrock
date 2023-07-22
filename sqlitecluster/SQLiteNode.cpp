@@ -1024,7 +1024,7 @@ bool SQLiteNode::update() {
             // There's no handling for a failed prepare. This should only happen if the DB has been corrupted or
             // something catastrophic like that.
             {
-                AutoScopeOnPrepare(onPrepareHandlerEnabled, _db, onPrepareHandler);
+                AutoScopeOnPrepare onPrepare(onPrepareHandlerEnabled, _db, onPrepareHandler);
                 SASSERT(_db.prepare());
             }
 
