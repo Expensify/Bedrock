@@ -2,6 +2,7 @@
 
 #include <unistd.h>
 
+#include <libstuff/AutoScopeOnPrepare.h>
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 #include <libstuff/SQResult.h>
@@ -57,29 +58,6 @@
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
-
-// RAII-style mechanism for automatically setting and unsetting an on prepare handler
-class AutoScopeOnPrepare {
-  public:
-    AutoScopeOnPrepare(bool enable, SQLite& db, void (*handler)(SQLite& _db, int64_t tableID))
-        : _enable(enable), _db(db), _handler(handler) {
-        if (_enable) {
-            _db.setOnPrepareHandler(_handler);
-            _db.enablePrepareNotifications(true);
-        }
-    }
-    ~AutoScopeOnPrepare() {
-        if (_enable) {
-            _db.setOnPrepareHandler(nullptr);
-            _db.enablePrepareNotifications(false);
-        }
-    }
-
-  private:
-    bool _enable;
-    SQLite& _db;
-    void (*_handler)(SQLite& _db, int64_t tableID);
-};
 
 // Initializations for static vars.
 const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S * 30};
