@@ -356,4 +356,8 @@ class SQLiteNode : public STCPManager {
     // while we're online.
     // In the event that this list becomes longer than half the cluster size, the node kills itself and logs that it's in an unrecoverable state.
     set<string> _forkedFrom;
+
+    // A pointer to a SQLite instance that is passed to plugin's stateChanged function. This prevents plugins from operating on the same handle that
+    // the sync node is when they run queries in stateChanged.
+    SQLite* pluginDB;
 };
