@@ -1504,6 +1504,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     const string& pluginName = command->request["plugin"];
 
     if (command->socket) {
+        SINFO("[performance] Command " << command->response.methodLine << " has a socket, going to try to reply.");
         if (!pluginName.empty()) {
             // Let the plugin handle it
             SINFO("Plugin '" << pluginName << "' handling response '" << command->response.methodLine
@@ -1516,13 +1517,13 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
             }
         } else {
             // Otherwise we send the standard response.
-            SDEBUG("About to reply to command " << command->request.methodLine);
+            SINFO("[performance] About to reply to command " << command->request.methodLine);
             if (!command->socket->send(command->response.serialize())) {
                 // If we can't send (client closed the socket?), alert our plugin it's response was never sent.
                 SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
                 command->handleFailedReply();
             } else {
-                SDEBUG("Replied");
+                SINFO("[performance] Replied");
             }
         }
 
@@ -1538,6 +1539,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
         }
         command->handleFailedReply();
     }
+    SINFO("[performance] Finished replying to command " << command->request.methodLine << " moving on to the next command.");
 }
 
 
