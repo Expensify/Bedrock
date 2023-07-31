@@ -56,7 +56,7 @@ class SScheduledPriorityQueue {
     // Get an item from the queue. Optionally, a timeout can be specified.
     // If timeout is non-zero, a timeout_error exception will be thrown after waitUS microseconds, if no work was
     // available.
-    T get(uint64_t waitUS = 0);
+    T get(uint64_t waitUS = 0, bool loggingEnabled = false);
 
     // Add an item to the queue. The queue takes ownership of the item and the caller's copy is invalidated.
     void push(T&& item, Priority priority, Scheduled scheduled, Timeout timeout);
@@ -113,7 +113,7 @@ size_t SScheduledPriorityQueue<T>::size()  {
 }
 
 template<typename T>
-T SScheduledPriorityQueue<T>::get(uint64_t waitUS) {
+T SScheduledPriorityQueue<T>::get(uint64_t waitUS, bool loggingEnabled) {
     unique_lock<mutex> queueLock(_queueMutex);
 
     // NOTE:
@@ -137,9 +137,14 @@ T SScheduledPriorityQueue<T>::get(uint64_t waitUS) {
     if (waitUS) {
         auto timeout = chrono::steady_clock::now() + chrono::microseconds(waitUS);
         while (true) {
+            if (loggingEnabled) {
+                SINFO("[performance] Waiting for internal notify or timeout.");
+            }
             // Wait until we hit our timeout, or someone gives us some work.
             _queueCondition.wait_until(queueLock, timeout);
-            
+            if (loggingEnabled) {
+                SINFO("[performance] Notified or timed out, trying to return work.");
+            }
             // If we got any work, return it.
             try {
                 return _dequeue();
@@ -149,7 +154,13 @@ T SScheduledPriorityQueue<T>::get(uint64_t waitUS) {
 
             // Did we go past our timeout? If so, we give up. Otherwise, we awoke spuriously, and will retry.
             if (chrono::steady_clock::now() > timeout) {
+                if (loggingEnabled) {
+                    SINFO("[performance] Timed out and there was no work to be done.");
+                }
                 throw timeout_error();
+            }
+            if (loggingEnabled) {
+                SINFO("[performance] Returned work from the queue, relooping.");
             }
         }
     } else {
