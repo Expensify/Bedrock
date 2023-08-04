@@ -2,6 +2,7 @@
 
 #include <unistd.h>
 
+#include <libstuff/AutoScopeOnPrepare.h>
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 #include <libstuff/SQResult.h>
@@ -127,6 +128,12 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _syncPeer(nullptr)
 {
     SASSERT(_originalPriority >= 0);
+    onPrepareHandlerEnabled = false;
+    
+    // We create a copy of the database handle here so that the sync node can operate on its handle and the plugin gets
+    // its own handle to operate on. This avoids conflicts where the sync thread and the plugin are trying to both run
+    // queries at the same time. This also avoids the need to create any share locking between the two.
+    pluginDB = new SQLite(_db);
     SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
     _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
@@ -146,6 +153,10 @@ SQLiteNode::~SQLiteNode() {
 
     for (SQLitePeer* peer : _peerList) {
         delete peer;
+    }
+
+    if (pluginDB != nullptr) {
+        delete pluginDB;
     }
 }
 
@@ -1015,7 +1026,10 @@ bool SQLiteNode::update() {
 
             // There's no handling for a failed prepare. This should only happen if the DB has been corrupted or
             // something catastrophic like that.
-            SASSERT(_db.prepare());
+            {
+                AutoScopeOnPrepare onPrepare(onPrepareHandlerEnabled, _db, onPrepareHandler);
+                SASSERT(_db.prepare());
+            }
 
             // Begin the distributed transaction
             SData transaction("BEGIN_TRANSACTION");
@@ -1826,7 +1840,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
 
     if (newState != _state) {
         // First, we notify all plugins about the state change
-        _server.notifyStateChangeToPlugins(_db, newState);
+        _server.notifyStateChangeToPlugins(*pluginDB, newState);
 
         // If we were following, and now we're not, we give up an any replications.
         if (_state == SQLiteNodeState::FOLLOWING) {

@@ -278,6 +278,17 @@ void BedrockServer::sync()
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
         // state when it's finished.
         SQLiteNodeState preUpdateState = _syncNode->getState();
+        if(command && committingCommand) {
+            void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
+            bool enabled = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
+            if (enabled) {
+                _syncNode->onPrepareHandlerEnabled = enabled;
+                _syncNode->onPrepareHandler = onPrepareHandler;
+            }
+        } else {
+            _syncNode->onPrepareHandlerEnabled = false;
+            _syncNode->onPrepareHandler = nullptr;
+        }
         while (_syncNode->update()) {}
         SQLiteNodeState nodeState = _syncNode->getState();
         _replicationState.store(nodeState);
@@ -673,7 +684,7 @@ void BedrockServer::worker(int threadId)
             });
 
             // Get the next one.
-            command = commandQueue.get(1000000);
+            command = commandQueue.get(1000000, !threadId);
 
             SAUTOPREFIX(command->request);
             SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
@@ -1509,6 +1520,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     const string& pluginName = command->request["plugin"];
 
     if (command->socket) {
+        SINFO("[performance] Command " << command->response.methodLine << " has a socket, going to try to reply.");
         if (!pluginName.empty()) {
             // Let the plugin handle it
             SINFO("Plugin '" << pluginName << "' handling response '" << command->response.methodLine
@@ -1521,13 +1533,13 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
             }
         } else {
             // Otherwise we send the standard response.
-            SDEBUG("About to reply to command " << command->request.methodLine);
+            SINFO("[performance] About to reply to command " << command->request.methodLine);
             if (!command->socket->send(command->response.serialize())) {
                 // If we can't send (client closed the socket?), alert our plugin it's response was never sent.
                 SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
                 command->handleFailedReply();
             } else {
-                SDEBUG("Replied");
+                SINFO("[performance] Replied");
             }
         }
 
@@ -1543,6 +1555,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
         }
         command->handleFailedReply();
     }
+    SINFO("[performance] Finished replying to command " << command->request.methodLine << " moving on to the next command.");
 }
 
 
