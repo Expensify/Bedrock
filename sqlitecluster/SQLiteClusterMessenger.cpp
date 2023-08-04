@@ -241,6 +241,13 @@ unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(s
     return s;
 }
 
+bool SQLiteClusterMessenger::runOnValidFollowerPeer(BedrockCommand& command) {
+    
+    const string peer = _node->getEligibleFollowerForForwarding();
+    
+    return false;
+}
+
 bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
     auto start = chrono::steady_clock::now();
     bool sent = false;

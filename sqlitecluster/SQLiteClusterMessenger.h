@@ -27,6 +27,8 @@ class SQLiteClusterMessenger {
     // no connection to leader could be made).
     bool runOnLeader(BedrockCommand& command);
 
+    bool runOnValidFollowerPeer(BedrockCommand& command);
+
     // Attempts to run command on every peer. This is done in threads, so the
     // order in which the peers run the command is not deterministic. Returns a
     // vector of response objects from each command after they are run. It is
