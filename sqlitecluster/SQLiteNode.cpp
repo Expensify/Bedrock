@@ -447,6 +447,22 @@ list<STable> SQLiteNode::getPeerInfo() const {
     return peerData;
 }
 
+string SQLiteNode::getEligibleFollowerForForwarding() const {
+    vector<string> validPeers;
+    const string leaderVersion = getLeaderVersion();
+    for (SQLitePeer* peer : _peerList) {
+        // We want only nodes that are using the same version as leader and are currently followers
+        if (peer->version.load() != leaderVersion || peer->state.load() != SQLiteNodeState::FOLLOWING) {
+            continue;
+        }
+        validPeers.push_back(peer->name);
+    }
+    if (validPeers.empty()) {
+        return "";
+    }
+    return validPeers[rand() % validPeers.size()];
+}
+
 // --------------------------------------------------------------------------
 // State Machine
 // --------------------------------------------------------------------------

@@ -106,6 +106,9 @@ class SQLiteNode : public STCPManager {
     // Can block.
     list<STable> getPeerInfo() const;
 
+    // Gets a random follower peer that is in the same version as leader.
+    string getEligibleFollowerForForwarding() const;
+
     // Returns our current priority.
     // Does not block.
     int getPriority() const;
