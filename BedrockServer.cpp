@@ -761,14 +761,30 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // If we're following, we will automatically escalate any command that's not already complete (complete
     // commands are likely already returned from leader with legacy escalation) and is marked as
     // `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
-    // for a previous commit to be delivered to this follower), OR if we're on a different version from leader.
-    if (state == SQLiteNodeState::FOLLOWING && (_version != _leaderVersion.load() || command->escalateImmediately) && !command->complete) {
+    // for a previous commit to be delivered to this follower). 
+    if (state == SQLiteNodeState::FOLLOWING && command->escalateImmediately && !command->complete) {
         auto _clusterMessengerCopy = _clusterMessenger;
         if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
             // command->complete is now true for this command. It will get handled a few lines below.
             SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
         } else {
             SINFO("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
+            _commandQueue.push(move(command));
+            return;
+        }
+    }
+
+    // If we're on a different version from leader AND this is not a command that was escalatedImmediatly, 
+    // we'll  return a 542 error so that the client knows it needs to call another server from the cluster. 
+    // We're doing this to prevent overloading leader with requests from all servers instead of spreading 
+    // them equaly between available servers.
+    if (state == SQLiteNodeState::FOLLOWING && _version != _leaderVersion.load() && !command->escalateImmediately && !command->complete) {
+        auto _clusterMessengerCopy = _clusterMessenger;
+        if (_clusterMessengerCopy && _clusterMessengerCopy->runOnValidFollowerPeer(*command)) {
+            // command->complete is now true for this command. It will get handled a few lines below.
+            SINFO("Escalated " << command->request.methodLine << " to follower peer.");
+        } else {
+            SINFO("Couldn't escalate command " << command->request.methodLine << " to follower peer, queuing it again.");
             _commandQueue.push(move(command));
             return;
         }
