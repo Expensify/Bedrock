@@ -148,7 +148,7 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.43.0"
 #define SQLITE_VERSION_NUMBER 3043000
-#define SQLITE_SOURCE_ID      "2023-07-28 18:52:09 1d6ded3234bbfa3226ef718eec8d0ce06ae2844628866cb6197383c9bf06267c"
+#define SQLITE_SOURCE_ID      "2023-08-04 13:29:22 a8872aa588dd1367997924ea65267af6bd85e076e00f40fe150e3f33ef6d0dda"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -4426,10 +4426,10 @@ SQLITE_API int sqlite3_stmt_isexplain(sqlite3_stmt *pStmt);
 ** METHOD: sqlite3_stmt
 **
 ** The sqlite3_stmt_explain(S,E) interface changes the EXPLAIN
-** setting for prepared statement S.  If E is zero, then S becomes
+** setting for [prepared statement] S.  If E is zero, then S becomes
 ** a normal prepared statement.  If E is 1, then S behaves as if
-** its SQL text began with "EXPLAIN".  If E is 2, then S behaves as if
-** its SQL text began with "EXPLAIN QUERY PLAN".
+** its SQL text began with "[EXPLAIN]".  If E is 2, then S behaves as if
+** its SQL text began with "[EXPLAIN QUERY PLAN]".
 **
 ** Calling sqlite3_stmt_explain(S,E) might cause S to be reprepared.
 ** SQLite tries to avoid a reprepare, but a reprepare might be necessary
@@ -4437,8 +4437,8 @@ SQLITE_API int sqlite3_stmt_isexplain(sqlite3_stmt *pStmt);
 **
 ** Because of the potential need to reprepare, a call to
 ** sqlite3_stmt_explain(S,E) will fail with SQLITE_ERROR if S cannot be
-** reprepared because it was created using sqlite3_prepare() instead of
-** the newer sqlite_prepare_v2() or sqlite3_prepare_v3() interfaces and
+** reprepared because it was created using [sqlite3_prepare()] instead of
+** the newer [sqlite3_prepare_v2()] or [sqlite3_prepare_v3()] interfaces and
 ** hence has no saved SQL text with which to reprepare.
 **
 ** Changing the explain setting for a prepared statement does not change
@@ -12952,7 +12952,7 @@ struct Fts5PhraseIter {
 **   See xPhraseFirstColumn above.
 */
 struct Fts5ExtensionApi {
-  int iVersion;                   /* Currently always set to 3 */
+  int iVersion;                   /* Currently always set to 2 */
 
   void *(*xUserData)(Fts5Context*);
 
