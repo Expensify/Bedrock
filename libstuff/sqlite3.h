@@ -148,7 +148,7 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.43.0"
 #define SQLITE_VERSION_NUMBER 3043000
-#define SQLITE_SOURCE_ID      "2023-08-04 13:29:22 a8872aa588dd1367997924ea65267af6bd85e076e00f40fe150e3f33ef6d0dda"
+#define SQLITE_SOURCE_ID      "2023-08-11 11:46:08 859932ebce830c757cf4e889f2efc54807bd4d7947cf5d64a5d9e570bf75ed80"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -13230,7 +13230,7 @@ struct fts5_api {
   int (*xCreateTokenizer)(
     fts5_api *pApi,
     const char *zName,
-    void *pContext,
+    void *pUserData,
     fts5_tokenizer *pTokenizer,
     void (*xDestroy)(void*)
   );
@@ -13239,7 +13239,7 @@ struct fts5_api {
   int (*xFindTokenizer)(
     fts5_api *pApi,
     const char *zName,
-    void **ppContext,
+    void **ppUserData,
     fts5_tokenizer *pTokenizer
   );
 
@@ -13247,7 +13247,7 @@ struct fts5_api {
   int (*xCreateFunction)(
     fts5_api *pApi,
     const char *zName,
-    void *pContext,
+    void *pUserData,
     fts5_extension_function xFunction,
     void (*xDestroy)(void*)
   );
