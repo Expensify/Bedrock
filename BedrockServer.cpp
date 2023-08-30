@@ -316,6 +316,7 @@ void BedrockServer::sync()
             // If we bailed out while doing a upgradeDB, clear state
             if (_upgradeInProgress) {
                 _upgradeInProgress = false;
+                _upgradeCompleted = false;
                 if (committingCommand) {
                     db.rollback();
                     committingCommand = false;
