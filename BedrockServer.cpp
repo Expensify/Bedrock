@@ -316,12 +316,14 @@ void BedrockServer::sync()
             // If we bailed out while doing a upgradeDB, clear state
             if (_upgradeInProgress) {
                 _upgradeInProgress = false;
-                _upgradeCompleted = false;
                 if (committingCommand) {
                     db.rollback();
                     committingCommand = false;
                 }
             }
+
+            // If we're not leading, we're not upgrading, but we will need to check for upgrades again next time we go leading, so be ready for that.
+            _upgradeCompleted = false;
 
             // We should give up an any commands, and let them be re-escalated. If commands were initiated locally,
             // we can just re-queue them, they will get re-checked once things clear up, and then they'll get
