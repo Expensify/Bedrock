@@ -322,6 +322,9 @@ void BedrockServer::sync()
                 }
             }
 
+            // If we're not leading, we're not upgrading, but we will need to check for upgrades again next time we go leading, so be ready for that.
+            _upgradeCompleted = false;
+
             // We should give up an any commands, and let them be re-escalated. If commands were initiated locally,
             // we can just re-queue them, they will get re-checked once things clear up, and then they'll get
             // processed here, or escalated to the new leader. Commands initiated on followers just get dropped,
