@@ -207,9 +207,16 @@ class BedrockCommand : public SQLiteCommand {
     // Time at which this command was initially scheduled (typically the time of creation).
     const uint64_t scheduledTime;
 
+    // Returns _commitEmptyTransactions.
+    bool shouldCommitEmptyTransactions() const;
+
   protected:
     // The plugin that owns this command.
     BedrockPlugin* _plugin;
+
+    // Commands can set this flag to indicate they want the commit process to be run even though it doesn't appear that any writes have occurred.
+    // The main use of this is to cause commands that use SQLite::onPrepareHandler to do additional writing to run these final writes.
+    bool _commitEmptyTransactions;
 
   private:
     // Set certain initial state on construction. Common functionality to several constructors.

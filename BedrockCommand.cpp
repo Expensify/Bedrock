@@ -20,6 +20,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
     socket(nullptr),
     scheduledTime(request.isSet("commandExecuteTime") ? request.calc64("commandExecuteTime") : STimeNow()),
     _plugin(plugin),
+    _commitEmptyTransactions(false),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request, scheduledTime))
 {
@@ -297,4 +298,8 @@ void BedrockCommand::setTimeout(uint64_t timeoutDurationMS) {
     timeoutDurationMS *= 1'000;
     timeoutDurationMS += STimeNow();
     _timeout = timeoutDurationMS;
+}
+
+bool BedrockCommand::shouldCommitEmptyTransactions() const {
+    return _commitEmptyTransactions;
 }
