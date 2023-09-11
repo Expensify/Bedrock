@@ -1510,8 +1510,13 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
         command->handleFailedReply();
         return;
     }
+    
+    // This line will generate the node list that processed the command. 
+    // If the current node is on the right version of the cluster, then it will return the node itself
+    // If it's not on the right version, it will escalate to another follower
+    // The names will be generated in a way the the left-most node name is the last escalation step
 
-    command->response["nodeName"] = args["-nodeName"];
+    command->response["nodeNames"] = string(command->response["nodeNames"]).empty() ? args["-nodeName"] : args["-nodeName"] +  "," + command->response["nodeNames"];
 
     // If we're shutting down, tell the caller to close the connection.
     // Also, if the caller wanted us to close the connection, we'll parrot that back.
