@@ -117,12 +117,6 @@ TestPluginCommand::TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_
 
 TestPluginCommand::~TestPluginCommand()
 {
-    // This line will generate the node list that processed the command. 
-    // If the current node is on the right version of the cluster, then it will return the node itself
-    // If it's not on the right version, it will escalate to another follower
-    // The names will be generated in a way the the left-most node name is the last escalation step
-    response["nodesPath"] = string(response["nodesPath"]).empty() ? args["-nodeName"] : args["-nodeName"] +  "," + response["nodesPath"];
-
     if (request.methodLine == "testescalate") {
         string serverState = SQLiteNode::stateName(plugin().server.getState());
         string statString = "Destroying testescalate (" + serverState + ")\n";
