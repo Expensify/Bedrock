@@ -38,12 +38,12 @@ struct VersionMismatchTest : tpunit::TestFixture {
             // should be no upstream times. However, on a follower on a different version to leader, it should
             // escalates even read commands.
             if (i == 2){
-                ASSERT_TRUE(SStartsWith(result["nodeNames"], "cluster_node_2"));
-                ASSERT_EQUAL(result["nodeNames"].length(), 29);
+                ASSERT_TRUE(SStartsWith(result["nodesPath"], "cluster_node_2"));
+                ASSERT_EQUAL(result["nodesPath"].length(), 29);
             }
             if (i == 4){
-                ASSERT_TRUE(SStartsWith(result["nodeNames"], "cluster_node_4"));
-                ASSERT_EQUAL(result["nodeNames"].length(), 29);
+                ASSERT_TRUE(SStartsWith(result["nodesPath"], "cluster_node_4"));
+                ASSERT_EQUAL(result["nodesPath"].length(), 29);
             }
         }
     }
@@ -63,33 +63,33 @@ struct VersionMismatchTest : tpunit::TestFixture {
             // should be no upstream times. However, on a follower on a different version to leader, it should
             // escalates even read commands.
             if (i == 0){
-                ASSERT_EQUAL(result["nodeNames"], "cluster_node_0");
+                ASSERT_EQUAL(result["nodesPath"], "cluster_node_0");
             }
             if (i == 1){
-                ASSERT_EQUAL(result["nodeNames"], "cluster_node_1,cluster_node_0");
+                ASSERT_EQUAL(result["nodesPath"], "cluster_node_1,cluster_node_0");
             }
             if (i == 2){
-                ASSERT_TRUE(SEndsWith(result["nodeNames"], "cluster_node_0"));
+                ASSERT_TRUE(SEndsWith(result["nodesPath"], "cluster_node_0"));
 
                 // Since the follower selection is ramdon, there's no way to guarantee which server will
                 // be the one in the middle. So let's just confirm that the string size is enough to do
                 // only 3 servers in the path.
                 // length: cluster_node_2,cluster_node_3,cluster_node_0 = 44
-                ASSERT_EQUAL(result["nodeNames"].length(), 44);
+                ASSERT_EQUAL(result["nodesPath"].length(), 44);
             }
             if (i == 3){
-                ASSERT_EQUAL(result["nodeNames"], "cluster_node_3,cluster_node_0");
+                ASSERT_EQUAL(result["nodesPath"], "cluster_node_3,cluster_node_0");
             }
             if (i == 4) {
-                ASSERT_TRUE(SEndsWith(result["nodeNames"], "cluster_node_0"));
+                ASSERT_TRUE(SEndsWith(result["nodesPath"], "cluster_node_0"));
                 // Since the follower selection is ramdon, there's no way to guarantee which server will
                 // be the one in the middle. So let's just confirm that the string size is enough to do
                 // only 3 servers in the path.
                 // length: cluster_node_4,cluster_node_3,cluster_node_0 = 44
-                ASSERT_EQUAL(result["nodeNames"].length(), 44);
+                ASSERT_EQUAL(result["nodesPath"].length(), 44);
             }
             if (i == 5){
-                ASSERT_EQUAL(result["nodeNames"], "cluster_node_5,cluster_node_0");
+                ASSERT_EQUAL(result["nodesPath"], "cluster_node_5,cluster_node_0");
             }
         }
     }
