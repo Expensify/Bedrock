@@ -241,23 +241,30 @@ unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(s
     return s;
 }
 
-bool SQLiteClusterMessenger::runOnValidFollowerPeer(BedrockCommand& command) {
+bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, bool runOnLeader) {
     auto start = chrono::steady_clock::now();
     bool sent = false;
+    string peerType = runOnLeader ? "leader" : "follower peer";
     size_t sleepsDueToFailures = 0;
     string peerAddress;
 
     unique_ptr<SHTTPSManager::Socket> s;
     while (chrono::steady_clock::now() < (start + 5s) && !sent) {
-        const string peerName = _node->getEligibleFollowerForForwarding();
-        if (peerName.empty()) {
-            // Otherwise, just wait until there is a peer available.
-            SINFO("[HTTPPEERESC] No peers available.");
+        peerAddress = runOnLeader ? _node->leaderCommandAddress() : _node->getEligibleFollowerForForwardingAddress();
+        if (peerAddress.empty()) {
+            // If there's no leader, it's possible we're supposed to be the leader. In this case, we can exit early.
+            auto myState = _node->getState();
+            if (runOnLeader && (myState == SQLiteNodeState::LEADING || myState == SQLiteNodeState::STANDINGUP)) {
+                SINFO("[HTTPESC] I'm the leader now! Exiting early.");
+                return false;
+            }
+
+            // Otherwise, just wait until there is a leader.
+            SINFO("[HTTPESC] No " + peerType + " address.");
             sleepsDueToFailures++;
             usleep(500'000);
             continue;
         }
-        peerAddress = _node->getPeerByName(peerName)->commandAddress.load();
 
         // Start our escalation timing
         command.escalationTimeUS = STimeNow();
@@ -275,74 +282,9 @@ bool SQLiteClusterMessenger::runOnValidFollowerPeer(BedrockCommand& command) {
         }
     }
 
-    // If we fell out of the loop simply because we did not get a peer address in time, we can return false and retry later.
-    if (peerAddress.empty()) {
-        SINFO("[HTTPPEERESC] Could not get peer address in 5s, will retry later.");
-        return false;
-    }
-
-    // If we succeeded but were delayed, log that and continue.
-    if (sleepsDueToFailures) {
-        auto msElapsed = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start).count();
-        SINFO("[HTTPPEERESC] Problems connecting for escalation to peer but succeeded in " << msElapsed << "ms.");
-    }
-
-    // If we got here, the command is complete.
-    command.escalated = true;
-
-    // Finish our escalation timing.
-    command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
-
-    // Since everything went fine with this command, we can save its socket, unless it's being closed.
-    if (!commandWillCloseSocket(command)) {
-        _socketPool.returnSocket(move(s), peerAddress);
-    }
-    return false;
-}
-
-bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
-    auto start = chrono::steady_clock::now();
-    bool sent = false;
-    size_t sleepsDueToFailures = 0;
-    string leaderAddress;
-
-    unique_ptr<SHTTPSManager::Socket> s;
-    while (chrono::steady_clock::now() < (start + 5s) && !sent) {
-        leaderAddress = _node->leaderCommandAddress();
-        if (leaderAddress.empty()) {
-            // If there's no leader, it's possible we're supposed to be the leader. In this case, we can exit early.
-            auto myState = _node->getState();
-            if (myState == SQLiteNodeState::LEADING || myState == SQLiteNodeState::STANDINGUP) {
-                SINFO("[HTTPESC] I'm the leader now! Exiting early.");
-                return false;
-            }
-
-            // Otherwise, just wait until there is a leader.
-            SINFO("[HTTPESC] No leader address.");
-            sleepsDueToFailures++;
-            usleep(500'000);
-            continue;
-        }
-
-        // Start our escalation timing
-        command.escalationTimeUS = STimeNow();
-
-        s = _getSocketForAddress(leaderAddress);
-        if (!s) {
-            command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
-            return false;
-        }
-
-        sent = _sendCommandOnSocket(*s, command);
-        if (!sent) {
-            command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
-            return false;
-        }
-    }
-
     // If we fell out of the loop simply because we did not get a leader address in time, we can return false and retry later.
-    if (leaderAddress.empty()) {
-        SINFO("[HTTPESC] Could not get leader address in 5s, will retry later.");
+    if (peerAddress.empty()) {
+        SINFO("[HTTPESC] Could not get " + peerType + " address in 5s, will retry later.");
         return false;
     }
 
@@ -360,7 +302,7 @@ bool SQLiteClusterMessenger::runOnLeader(BedrockCommand& command) {
 
     // Since everything went fine with this command, we can save its socket, unless it's being closed.
     if (!commandWillCloseSocket(command)) {
-        _socketPool.returnSocket(move(s), leaderAddress);
+        _socketPool.returnSocket(move(s), peerAddress);
     }
 
     return true;

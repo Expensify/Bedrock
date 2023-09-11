@@ -20,14 +20,12 @@ class SQLiteClusterMessenger {
 
     SQLiteClusterMessenger(const shared_ptr<const SQLiteNode> node);
 
-    // Attempts to make a TCP connection to the leader, and run the given command there, setting the appropriate
-    // response from leader in the command, and marking it as complete if possible.
+    // Attempts to make a TCP connection to a peer, that could be the leader or not, and run the given command there,
+    //  setting the appropriate response from the pear in the command, and marking it as complete if possible.
     // Returns command->complete at the end of the function, this is true if the command was successfully completed on
-    // leader, or if a fatal error occurred. This will be false if the command can be re-tried later (for instance, if
+    // the peer, or if a fatal error occurred. This will be false if the command can be re-tried later (for instance, if
     // no connection to leader could be made).
-    bool runOnLeader(BedrockCommand& command);
-
-    bool runOnValidFollowerPeer(BedrockCommand& command);
+    bool runOnPeer(BedrockCommand& command, bool runOnLeader);
 
     // Attempts to run command on every peer. This is done in threads, so the
     // order in which the peers run the command is not deterministic. Returns a
