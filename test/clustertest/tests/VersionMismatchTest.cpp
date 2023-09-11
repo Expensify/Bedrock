@@ -42,7 +42,7 @@ struct VersionMismatchTest : tpunit::TestFixture {
                 ASSERT_EQUAL(result["nodeNames"].length(), 29);
             }
             if (i == 4){
-                ASSERT_TRUE(SStartsWith(result["nodeNames"], "cluster_node_4");
+                ASSERT_TRUE(SStartsWith(result["nodeNames"], "cluster_node_4"));
                 ASSERT_EQUAL(result["nodeNames"].length(), 29);
             }
         }
