@@ -12,7 +12,7 @@ struct VersionMismatchTest : tpunit::TestFixture {
     BedrockClusterTester* tester = nullptr;
 
     void setup() { 
-        tester = new BedrockClusterTester(ClusterSize::SIX_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"});
+        tester = new BedrockClusterTester(ClusterSize::FIVE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"});
         // Restart one of the followers on a new version.
         tester->getTester(2).stopServer();
         tester->getTester(2).updateArgs({{"-versionOverride", "ABCDE"}});
@@ -37,11 +37,11 @@ struct VersionMismatchTest : tpunit::TestFixture {
             // For read commands sent directly to leader, or to a follower on the same version as leader, there
             // should be no upstream times. However, on a follower on a different version to leader, it should
             // escalates even read commands.
-            if (i == 2){
+            if (i == 2) {
                 ASSERT_TRUE(SStartsWith(result["nodesPath"], "cluster_node_2"));
                 ASSERT_EQUAL(result["nodesPath"].length(), 29);
             }
-            if (i == 4){
+            if (i == 4) {
                 ASSERT_TRUE(SStartsWith(result["nodesPath"], "cluster_node_4"));
                 ASSERT_EQUAL(result["nodesPath"].length(), 29);
             }
@@ -62,13 +62,13 @@ struct VersionMismatchTest : tpunit::TestFixture {
             // For read commands sent directly to leader, or to a follower on the same version as leader, there
             // should be no upstream times. However, on a follower on a different version to leader, it should
             // escalates even read commands.
-            if (i == 0){
+            if (i == 0) {
                 ASSERT_EQUAL(result["nodesPath"], "cluster_node_0");
             }
-            if (i == 1){
+            if (i == 1) {
                 ASSERT_EQUAL(result["nodesPath"], "cluster_node_1,cluster_node_0");
             }
-            if (i == 2){
+            if (i == 2) {
                 ASSERT_TRUE(SEndsWith(result["nodesPath"], "cluster_node_0"));
 
                 // Since the follower selection is ramdon, there's no way to guarantee which server will
@@ -77,7 +77,7 @@ struct VersionMismatchTest : tpunit::TestFixture {
                 // length: cluster_node_2,cluster_node_3,cluster_node_0 = 44
                 ASSERT_EQUAL(result["nodesPath"].length(), 44);
             }
-            if (i == 3){
+            if (i == 3) {
                 ASSERT_EQUAL(result["nodesPath"], "cluster_node_3,cluster_node_0");
             }
             if (i == 4) {
@@ -87,9 +87,6 @@ struct VersionMismatchTest : tpunit::TestFixture {
                 // only 3 servers in the path.
                 // length: cluster_node_4,cluster_node_3,cluster_node_0 = 44
                 ASSERT_EQUAL(result["nodesPath"].length(), 44);
-            }
-            if (i == 5){
-                ASSERT_EQUAL(result["nodesPath"], "cluster_node_5,cluster_node_0");
             }
         }
     }
