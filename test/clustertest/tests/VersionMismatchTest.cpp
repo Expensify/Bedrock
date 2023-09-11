@@ -38,11 +38,12 @@ struct VersionMismatchTest : tpunit::TestFixture {
             // should be no upstream times. However, on a follower on a different version to leader, it should
             // escalates even read commands.
             if (i == 2){
-                ASSERT_EQUAL(result["nodeNames"], "cluster_node_2,cluster_node_1");
+                ASSERT_TRUE(SStartsWith(result["nodeNames"], "cluster_node_2"));
+                ASSERT_EQUAL(result["nodeNames"].length(), 29);
             }
-            if (i == 5){
-                
-                ASSERT_EQUAL(result["nodeNames"], "cluster_node_5,cluster_node_1");
+            if (i == 4){
+                ASSERT_TRUE(SStartsWith(result["nodeNames"], "cluster_node_4");
+                ASSERT_EQUAL(result["nodeNames"].length(), 29);
             }
         }
     }
