@@ -85,6 +85,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         STHROW("Couldn't get CWD");
     }
     if (SFileExists(string(cwd) + "/testplugin/testplugin.so") && !SContains(pluginsToLoad, "testplugin")) {
+        SINFO("LOADING TESTPLUGIN");
         pluginsToLoad += pluginsToLoad.size() ? "," : "";
         pluginsToLoad += string(cwd) + "/testplugin/testplugin.so";
     }

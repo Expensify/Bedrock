@@ -98,10 +98,12 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "prepeekcommand",
         "postprocesscommand",
         "prepeekpostprocesscommand",
-        "preparehandler"
+        "preparehandler",
+        "testquery"
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
+            SINFO("Called test plugin method " + baseCommand.request.methodLine);
             return make_unique<TestPluginCommand>(move(baseCommand), this);
         }
     }
@@ -342,6 +344,20 @@ bool TestPluginCommand::peek(SQLite& db) {
         string statString = "Peeking testescalate (" + serverState + ")\n";
         fileAppend(request["tempFile"], statString);
         return false;
+    } else if (request.methodLine == "testquery") {
+        const string nodeName = plugin().server.args["-nodeName"];
+        
+        // This line will generate the node list that processed the command. 
+        // If the current node is on the right version of the cluster, then it will return the node itself
+        // If it's not on the right version, it will escalate to another follower
+        // The names will be generated in a way the the left-most node name is the last escalation step
+        response["nodesPath"] = string(response["nodesPath"]).empty() ? nodeName : nodeName +  "," + response["nodesPath"];
+
+        if (SStartsWith(request["Query"], "select")) {
+            db.read(request["Query"]);
+            return true;
+        }
+        return false;
     }
 
     return false;
@@ -497,6 +513,8 @@ void TestPluginCommand::process(SQLite& db) {
         jsonContent["cole"] = "hello";
         db.write("INSERT INTO test (id, value) VALUES (999999888, 'this is a test');");
         return;
+    } else if (request.methodLine == "testquery") {
+        db.write(request["Query"]);
     }
 }
 

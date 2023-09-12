@@ -12,7 +12,7 @@ struct VersionMismatchTest : tpunit::TestFixture {
     BedrockClusterTester* tester = nullptr;
 
     void setup() { 
-        tester = new BedrockClusterTester(ClusterSize::FIVE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"});
+        tester = new BedrockClusterTester(ClusterSize::FIVE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"}, {}, {}, "testplugin");
         // Restart one of the followers on a new version.
         tester->getTester(2).stopServer();
         tester->getTester(2).updateArgs({{"-versionOverride", "ABCDE"}});
@@ -30,7 +30,7 @@ struct VersionMismatchTest : tpunit::TestFixture {
     {
         // Send a query to all three and make sure the version-mismatched one escalates.
         for (size_t i = 0; i < 5; i++) {
-            SData command("Query");
+            SData command("testquery");
             command["Query"] = "SELECT 1;";
             auto result = tester->getTester(i).executeWaitMultipleData({command})[0];
 
@@ -55,7 +55,7 @@ struct VersionMismatchTest : tpunit::TestFixture {
         tester->getTester(2).startServer();
 
         for (int64_t i = 0; i < 5; i++) {
-            SData command("Query");
+            SData command("testquery");
             command["Query"] = "INSERT INTO test VALUES(" + SQ(i) + ", " + SQ("val") + ");";
             auto result = tester->getTester(i).executeWaitMultipleData({command})[0];
 
