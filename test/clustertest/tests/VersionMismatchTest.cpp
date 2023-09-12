@@ -12,7 +12,7 @@ struct VersionMismatchTest : tpunit::TestFixture {
     BedrockClusterTester* tester = nullptr;
 
     void setup() { 
-        tester = new BedrockClusterTester(ClusterSize::FIVE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"}, {}, {}, "testplugin");
+        tester = new BedrockClusterTester(ClusterSize::FIVE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"});
         // Restart one of the followers on a new version.
         tester->getTester(2).stopServer();
         tester->getTester(2).updateArgs({{"-versionOverride", "ABCDE"}});
@@ -35,59 +35,28 @@ struct VersionMismatchTest : tpunit::TestFixture {
             auto result = tester->getTester(i).executeWaitMultipleData({command})[0];
 
             // For read commands sent directly to leader, or to a follower on the same version as leader, there
-            // should be no upstream times. However, on a follower on a different version to leader, it should
-            // escalates even read commands.
-            if (i == 2) {
-                ASSERT_TRUE(SStartsWith(result["nodesPath"], "cluster_node_2"));
-                ASSERT_EQUAL(result["nodesPath"].length(), 29);
-            }
-            if (i == 4) {
-                ASSERT_TRUE(SStartsWith(result["nodesPath"], "cluster_node_4"));
-                ASSERT_EQUAL(result["nodesPath"].length(), 29);
+            // we don't care about how they are executed. However, on a follower on a different version to leader,
+            // it should escalates even read commands to follower peers.
+            ASSERT_TRUE(result["nodeRequestWasExecuted"].length() > 0);
+            if (i == 2 || i == 4) {
+                // Confirm it didn't execute in leader
+                ASSERT_NOT_EQUAL(result["nodeRequestWasExecuted"], "cluster_node_0");
+
+                // Confirm it didn't execute in the server with version mismatch
+                ASSERT_NOT_EQUAL(result["nodeRequestWasExecuted"], "cluster_node_" + to_string(i));
             }
         }
     }
     void testWriteEscalation()
     {
-        // Restart one of the followers on a new version.
-        tester->getTester(2).stopServer();
-        tester->getTester(2).updateArgs({{"-versionOverride", "ABCDE"}});
-        tester->getTester(2).startServer();
-
         for (int64_t i = 0; i < 5; i++) {
             SData command("testquery");
             command["Query"] = "INSERT INTO test VALUES(" + SQ(i) + ", " + SQ("val") + ");";
             auto result = tester->getTester(i).executeWaitMultipleData({command})[0];
 
-            // For read commands sent directly to leader, or to a follower on the same version as leader, there
-            // should be no upstream times. However, on a follower on a different version to leader, it should
-            // escalates even read commands.
-            if (i == 0) {
-                ASSERT_EQUAL(result["nodesPath"], "cluster_node_0");
-            }
-            if (i == 1) {
-                ASSERT_EQUAL(result["nodesPath"], "cluster_node_1,cluster_node_0");
-            }
-            if (i == 2) {
-                ASSERT_TRUE(SEndsWith(result["nodesPath"], "cluster_node_0"));
-
-                // Since the follower selection is ramdon, there's no way to guarantee which server will
-                // be the one in the middle. So let's just confirm that the string size is enough to do
-                // only 3 servers in the path.
-                // length: cluster_node_2,cluster_node_3,cluster_node_0 = 44
-                ASSERT_EQUAL(result["nodesPath"].length(), 44);
-            }
-            if (i == 3) {
-                ASSERT_EQUAL(result["nodesPath"], "cluster_node_3,cluster_node_0");
-            }
-            if (i == 4) {
-                ASSERT_TRUE(SEndsWith(result["nodesPath"], "cluster_node_0"));
-                // Since the follower selection is ramdon, there's no way to guarantee which server will
-                // be the one in the middle. So let's just confirm that the string size is enough to do
-                // only 3 servers in the path.
-                // length: cluster_node_4,cluster_node_3,cluster_node_0 = 44
-                ASSERT_EQUAL(result["nodesPath"].length(), 44);
-            }
+            // For read commands sent directly to leader, or to a follower on the same version as leader, the one
+            // that will final execute the request should always be the leader
+            ASSERT_EQUAL(result["nodeRequestWasExecuted"], "cluster_node_0");
         }
     }
 } __VersionMismatchTest;
