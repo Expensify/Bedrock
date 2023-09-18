@@ -772,17 +772,21 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // our state right before we commit.
     SQLiteNodeState state = _replicationState.load();
 
-    // If we're following, we will automatically escalate any command that's not already complete (complete
-    // commands are likely already returned from leader with legacy escalation) and is marked as
-    // `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
-    // for a previous commit to be delivered to this follower), OR if we're on a different version from leader.
-    if (state == SQLiteNodeState::FOLLOWING && (_version != _leaderVersion.load() || command->escalateImmediately) && !command->complete) {
+    // If we're following, we will automatically escalate any command that's:
+    // 1. Not already complete (complete commands are likely already returned from leader with legacy escalation) 
+    // and is marked as `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
+    // for a previous commit to be delivered to this follower);
+    // 2. Any commands if the current version of the code is not the same one as leader is executing.
+    if (state == SQLiteNodeState::FOLLOWING && !command->complete && (command->escalateImmediately || _version != _leaderVersion.load())) {
         auto _clusterMessengerCopy = _clusterMessenger;
-        if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
+        string escalatedTo = "";
+        if (command->escalateImmediately && _clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
             // command->complete is now true for this command. It will get handled a few lines below.
             SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
+        } else if (_version != _leaderVersion.load() && _clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, false)) {
+            SINFO("Escalated " << command->request.methodLine << " to follower peer.");
         } else {
-            SINFO("Couldn't immediately escalate command " << command->request.methodLine << " to leader, queuing normally.");
+            SINFO("Couldn't escalate command " << command->request.methodLine << " to " << (command->escalateImmediately ? "leader" : "follower peer") << ", queuing it again.");
             _commandQueue.push(move(command));
             return;
         }
@@ -966,7 +970,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     } else if (state == SQLiteNodeState::STANDINGDOWN) {
                         SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
                         _standDownQueue.push(move(command));
-                    } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnLeader(*command)) {
+                    } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
                         SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
                         _reply(command);
                     } else {
