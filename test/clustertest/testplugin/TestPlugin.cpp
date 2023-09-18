@@ -98,7 +98,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "prepeekcommand",
         "postprocesscommand",
         "prepeekpostprocesscommand",
-        "preparehandler"
+        "preparehandler",
+        "testquery"
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -342,6 +343,13 @@ bool TestPluginCommand::peek(SQLite& db) {
         string statString = "Peeking testescalate (" + serverState + ")\n";
         fileAppend(request["tempFile"], statString);
         return false;
+    } else if (request.methodLine == "testquery") {
+        response["nodeRequestWasExecuted"] = plugin().server.args["-nodeName"];
+        if (SStartsWith(request["Query"], "SELECT")) {
+            db.read(request["Query"]);
+            return true;
+        }
+        return false;
     }
 
     return false;
@@ -497,6 +505,8 @@ void TestPluginCommand::process(SQLite& db) {
         jsonContent["cole"] = "hello";
         db.write("INSERT INTO test (id, value) VALUES (999999888, 'this is a test');");
         return;
+    } else if (request.methodLine == "testquery") {
+        db.write(request["Query"]);
     }
 }
 
