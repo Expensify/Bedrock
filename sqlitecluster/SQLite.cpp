@@ -492,7 +492,6 @@ void SQLite::_checkInterruptErrors(const string& error) const {
         }
         if (_timeoutError) {
             time = _timeoutError;
-            resetTiming();
             errorCode = 1;
         }
     }
@@ -1005,13 +1004,13 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
     return SQLITE_DENY;
 }
 
-void SQLite::startTiming(uint64_t timeLimitUS) {
+void SQLite::setTimeout(uint64_t timeLimitUS) {
     _timeoutStart = STimeNow();
     _timeoutLimit = _timeoutStart + timeLimitUS;
     _timeoutError = 0;
 }
 
-void SQLite::resetTiming() const {
+void SQLite::clearTimeout() {
     _timeoutLimit = 0;
     _timeoutStart = 0;
     _timeoutError = 0;

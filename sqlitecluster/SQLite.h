@@ -223,11 +223,11 @@ class SQLite {
     // Looks up a range of commits.
     bool getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result);
 
-    // Start a timing operation, that will time out after the given number of microseconds.
-    void startTiming(uint64_t timeLimitUS);
+    // Set a time limit for this transaction, in US from the current time.
+    void setTimeout(uint64_t timeLimitUS);
 
-    // Reset timing after finishing a timed operation.
-    void resetTiming() const;
+    // Reset all timeout information to 0, to be ready for the next operation.
+    void clearTimeout();
 
     // This atomically removes and returns committed transactions from our internal list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to tuples of (query, hash, dbCountAtTransactionStart), so that those
