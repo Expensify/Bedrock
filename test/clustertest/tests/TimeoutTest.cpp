@@ -10,6 +10,7 @@ struct TimeoutTest : tpunit::TestFixture {
                               TEST(TimeoutTest::test),
                               TEST(TimeoutTest::longerThanDefaultProcess),
                               TEST(TimeoutTest::testprocess),
+                              TEST(TimeoutTest::testPostProcess),
                               TEST(TimeoutTest::totalTimeout),
                               TEST(TimeoutTest::quorumHTTPS),
                               TEST(TimeoutTest::futureCommitTimeout)) { }
@@ -78,6 +79,13 @@ struct TimeoutTest : tpunit::TestFixture {
         slow["size"] = "100";
         slow["count"] = "10000";
         brtester.executeWaitVerifyContent(slow, "555 Timeout processing command");
+    }
+
+    void testPostProcess() {
+        BedrockTester& brtester = tester->getTester(0);
+        SData slow("testPostProcessTimeout");
+        slow["timeout"] = "500"; // 0.5s
+        brtester.executeWaitVerifyContent(slow, "555 Timeout postProcessing command");
     }
 
     void totalTimeout() {

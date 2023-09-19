@@ -333,39 +333,41 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
-        SDEBUG("postProcessing at '" << request.methodLine << "' with priority: " << command->priority);
-        command->postProcessCount++;
-        _db.setTimeout(_getRemainingTime(command, false));
+        try {
+            SDEBUG("postProcessing at '" << request.methodLine << "' with priority: " << command->priority);
+            command->postProcessCount++;
+            _db.setTimeout(_getRemainingTime(command, false));
 
-        if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
-            STHROW("501 Failed to begin shared postProcess transaction");
-        }
-
-        // Make sure no writes happen while in postProcess command
-        _db.setQueryOnly(true);
-
-        // postProcess.
-        command->postProcess(_db);
-        SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
-
-        // Success. If a command has set "content", encode it in the response.
-        SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
-        if (!content.empty()) {
-            // Make sure we're not overwriting anything different.
-            string newContent = SComposeJSONObject(content);
-            if (response.content != newContent) {
-                if (!response.content.empty()) {
-                    SWARN("Replacing existing response content in " << request.methodLine);
-                }
-                response.content = newContent;
+            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
+                STHROW("501 Failed to begin shared postProcess transaction");
             }
+
+            // Make sure no writes happen while in postProcess command
+            _db.setQueryOnly(true);
+
+            // postProcess.
+            command->postProcess(_db);
+            SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
+
+            // Success. If a command has set "content", encode it in the response.
+            SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
+            if (!content.empty()) {
+                // Make sure we're not overwriting anything different.
+                string newContent = SComposeJSONObject(content);
+                if (response.content != newContent) {
+                    if (!response.content.empty()) {
+                        SWARN("Replacing existing response content in " << request.methodLine);
+                    }
+                    response.content = newContent;
+                }
+            }
+        } catch (const SQLite::timeout_error& e) {
+            // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
+            if (!command->shouldSuppressTimeoutWarnings()) {
+                SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
+            }
+            STHROW("555 Timeout postProcessing command");
         }
-    } catch (const SQLite::timeout_error& e) {
-        // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
-        if (!command->shouldSuppressTimeoutWarnings()) {
-            SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
-        }
-        STHROW("555 Timeout postProcessing command");
     } catch (const SException& e) {
         _handleCommandException(command, e);
     } catch (...) {
