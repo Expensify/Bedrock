@@ -99,7 +99,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "postprocesscommand",
         "prepeekpostprocesscommand",
         "preparehandler",
-        "testquery"
+        "testquery",
+        "testPostProcessTimeout"
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -158,8 +159,12 @@ bool TestPluginCommand::shouldPrePeek() {
 }
 
 bool TestPluginCommand::shouldPostProcess() {
-    return request.methodLine == "postprocesscommand" || request.methodLine == "prepeekpostprocesscommand" ||
-               request.methodLine == "preparehandler";
+    return set<string>{
+        "postprocesscommand",
+        "prepeekpostprocesscommand",
+        "testPostProcessTimeout",
+        "preparehandler",
+    }.count(request.methodLine);
 }
 
 bool BedrockPlugin_TestPlugin::preventAttach() {
@@ -520,6 +525,12 @@ void TestPluginCommand::postProcess(SQLite& db) {
         SQResult result;
         db.read("SELECT id FROM test WHERE value = 'this is written in onPrepareHandler'", result);
         jsonContent["tableID"] = result[0][0];
+    } else if (request.methodLine == "testPostProcessTimeout") {
+        // It'll timeout eventually.
+        while (true) {
+            SQResult result;
+            db.read("SELECT COUNT(*) FROM test WHERE id = 999999999", result);
+        }
     } else {
         STHROW("500 no prePeek defined, shouldPrePeek should be false");
     }

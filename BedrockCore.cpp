@@ -75,11 +75,8 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
     try {
         try {
             SDEBUG("prePeeking at '" << request.methodLine << "' with priority: " << command->priority);
-
-            uint64_t timeout = _getRemainingTime(command, false);
             command->prePeekCount++;
-
-            _db.startTiming(timeout);
+            _db.setTimeout(_getRemainingTime(command, false));
 
             if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin shared prePeek transaction");
@@ -121,7 +118,7 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
 
     // Back out of the current transaction, it doesn't need to do anything.
     _db.rollback();
-    _db.resetTiming();
+    _db.clearTimeout();
 
     // Reset, we can write now.
     _db.setQueryOnly(false);
@@ -141,10 +138,8 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     RESULT returnValue = RESULT::COMPLETE;
     try {
         SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command->priority);
-        uint64_t timeout = _getRemainingTime(command, false);
         command->peekCount++;
-
-        _db.startTiming(timeout);
+        _db.setTimeout(_getRemainingTime(command, false));
 
         try {
             if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
@@ -161,7 +156,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
 
             if (!completed) {
                 SDEBUG("Command '" << request.methodLine << "' not finished in peek, re-queuing.");
-                _db.resetTiming();
+                _db.clearTimeout();
                 _db.setQueryOnly(false);
                 return RESULT::SHOULD_PROCESS;
             }
@@ -212,7 +207,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
 
     // Back out of the current transaction, it doesn't need to do anything.
     _db.rollback();
-    _db.resetTiming();
+    _db.clearTimeout();
 
     // Reset, we can write now.
     _db.setQueryOnly(false);
@@ -243,11 +238,8 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     bool needsCommit = false;
     try {
         SDEBUG("Processing '" << request.methodLine << "'");
-        uint64_t timeout = _getRemainingTime(command, true);
         command->processCount++;
-
-        // Time in US.
-        _db.startTiming(timeout);
+        _db.setTimeout(_getRemainingTime(command, true));
         if (!_db.insideTransaction()) {
             // If a transaction was already begun in `peek`, then this won't run. We call it here to support the case where
             // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
@@ -323,7 +315,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     _db.setUpdateNoopMode(false);
 
     // We can reset the timing info for the next command.
-    _db.resetTiming();
+    _db.clearTimeout();
 
     // Done, return whether or not we need the parent to commit our transaction.
     command->complete = !needsCommit;
@@ -341,41 +333,41 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
 
     // We catch any exception and handle in `_handleCommandException`.
     try {
-        SDEBUG("postProcessing at '" << request.methodLine << "' with priority: " << command->priority);
-        uint64_t timeout = _getRemainingTime(command, false);
-        command->postProcessCount++;
+        try {
+            SDEBUG("postProcessing at '" << request.methodLine << "' with priority: " << command->priority);
+            command->postProcessCount++;
+            _db.setTimeout(_getRemainingTime(command, false));
 
-        _db.startTiming(timeout);
-
-        if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
-            STHROW("501 Failed to begin shared postProcess transaction");
-        }
-
-        // Make sure no writes happen while in postProcess command
-        _db.setQueryOnly(true);
-
-        // postProcess.
-        command->postProcess(_db);
-        SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
-
-        // Success. If a command has set "content", encode it in the response.
-        SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
-        if (!content.empty()) {
-            // Make sure we're not overwriting anything different.
-            string newContent = SComposeJSONObject(content);
-            if (response.content != newContent) {
-                if (!response.content.empty()) {
-                    SWARN("Replacing existing response content in " << request.methodLine);
-                }
-                response.content = newContent;
+            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
+                STHROW("501 Failed to begin shared postProcess transaction");
             }
+
+            // Make sure no writes happen while in postProcess command
+            _db.setQueryOnly(true);
+
+            // postProcess.
+            command->postProcess(_db);
+            SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
+
+            // Success. If a command has set "content", encode it in the response.
+            SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
+            if (!content.empty()) {
+                // Make sure we're not overwriting anything different.
+                string newContent = SComposeJSONObject(content);
+                if (response.content != newContent) {
+                    if (!response.content.empty()) {
+                        SWARN("Replacing existing response content in " << request.methodLine);
+                    }
+                    response.content = newContent;
+                }
+            }
+        } catch (const SQLite::timeout_error& e) {
+            // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
+            if (!command->shouldSuppressTimeoutWarnings()) {
+                SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
+            }
+            STHROW("555 Timeout postProcessing command");
         }
-    } catch (const SQLite::timeout_error& e) {
-        // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
-        if (!command->shouldSuppressTimeoutWarnings()) {
-            SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
-        }
-        STHROW("555 Timeout postProcessing command");
     } catch (const SException& e) {
         _handleCommandException(command, e);
     } catch (...) {
@@ -388,7 +380,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
 
     // Back out of the current transaction, it doesn't need to do anything.
     _db.rollback();
-    _db.resetTiming();
+    _db.clearTimeout();
 
     // Reset, we can write now.
     _db.setQueryOnly(false);
