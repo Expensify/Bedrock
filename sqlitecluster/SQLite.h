@@ -75,10 +75,10 @@ class SQLite {
 
     // Performs a read-only query (eg, SELECT). This can be done inside or outside a transaction. Returns true on
     // success, and fills the 'result' with the result of the query.
-    bool read(const string& query, SQResult& result);
+    bool read(const string& query, SQResult& result) const;
 
     // Performs a read-only query (eg, SELECT) that returns a single value.
-    string read(const string& query);
+    string read(const string& query) const;
 
     // Types of transactions that we can begin.
     enum class TRANSACTION_TYPE {
@@ -227,7 +227,7 @@ class SQLite {
     void startTiming(uint64_t timeLimitUS);
 
     // Reset timing after finishing a timed operation.
-    void resetTiming();
+    void resetTiming() const;
 
     // This atomically removes and returns committed transactions from our internal list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to tuples of (query, hash, dbCountAtTransactionStart), so that those
@@ -385,8 +385,8 @@ class SQLite {
     uint64_t _dbCountAtStart = 0;
 
     // Timing information.
-    uint64_t _beginElapsed = 0;
-    uint64_t _readElapsed = 0;
+    mutable uint64_t _beginElapsed = 0;
+    mutable uint64_t _readElapsed = 0;
     uint64_t _writeElapsed = 0;
     uint64_t _prepareElapsed = 0;
     uint64_t _commitElapsed = 0;
@@ -459,13 +459,13 @@ class SQLite {
     // Registering this has the important side effect of preventing the DB from auto-checkpointing.
     static int _walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize);
 
-    uint64_t _timeoutLimit = 0;
-    uint64_t _timeoutStart;
-    uint64_t _timeoutError;
+    mutable uint64_t _timeoutLimit = 0;
+    mutable uint64_t _timeoutStart;
+    mutable uint64_t _timeoutError;
 
     // Check out various error cases that can interrupt a query.
     // We check them all together because we need to make sure we atomically pick a single one to handle.
-    void _checkInterruptErrors(const string& error);
+    void _checkInterruptErrors(const string& error) const;
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     int _authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4);
@@ -476,28 +476,28 @@ class SQLite {
     // `rollback` is called, we don't double-rollback, generating an error. This allows the externally visible SQLite
     // API to be consistent and not have to handle this special case. Consumers can just always call `rollback` after a
     // failed query, regardless of whether or not it was already rolled back internally.
-    bool _autoRolledBack = false;
+    mutable bool _autoRolledBack = false;
 
     bool _noopUpdateMode = false;
 
     // A map of queries to their cached results. This is populated only with deterministic queries, and is reset on any
     // write, rollback, or commit.
-    map<string, SQResult> _queryCache;
+    mutable map<string, SQResult> _queryCache;
 
     // List of table names used during this transaction.
     set<string> _tablesUsed;
 
     // Number of queries that have been attempted in this transaction (for metrics only).
-    int64_t _queryCount = 0;
+    mutable int64_t _queryCount = 0;
 
     // Number of queries found in cache in this transaction (for metrics only).
-    int64_t _cacheHits = 0;
+    mutable int64_t _cacheHits = 0;
 
     // A string indicating the name of the transaction (typically a command name) for metric purposes.
     string _transactionName;
 
     // Will be set to false while running a non-deterministic query to prevent it's result being cached.
-    bool _isDeterministicQuery = false;
+    mutable bool _isDeterministicQuery = false;
 
     // Copies of parameters used to initialize the DB that we store if we make child objects based on this one.
     int _cacheSize;
