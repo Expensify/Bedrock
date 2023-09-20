@@ -445,7 +445,7 @@ bool SQLite::addColumn(const string& tableName, const string& column, const stri
     return false;
 }
 
-string SQLite::read(const string& query) {
+string SQLite::read(const string& query) const {
     // Execute the read-only query
     SQResult result;
     if (!read(query, result)) {
@@ -457,7 +457,7 @@ string SQLite::read(const string& query) {
     return result[0][0];
 }
 
-bool SQLite::read(const string& query, SQResult& result) {
+bool SQLite::read(const string& query, SQResult& result) const {
     uint64_t before = STimeNow();
     bool queryResult = false;
     _queryCount++;
@@ -478,7 +478,7 @@ bool SQLite::read(const string& query, SQResult& result) {
     return queryResult;
 }
 
-void SQLite::_checkInterruptErrors(const string& error) {
+void SQLite::_checkInterruptErrors(const string& error) const {
 
     // Local error code.
     int errorCode = 0;
@@ -492,7 +492,6 @@ void SQLite::_checkInterruptErrors(const string& error) {
         }
         if (_timeoutError) {
             time = _timeoutError;
-            resetTiming();
             errorCode = 1;
         }
     }
@@ -1005,13 +1004,13 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
     return SQLITE_DENY;
 }
 
-void SQLite::startTiming(uint64_t timeLimitUS) {
+void SQLite::setTimeout(uint64_t timeLimitUS) {
     _timeoutStart = STimeNow();
     _timeoutLimit = _timeoutStart + timeLimitUS;
     _timeoutError = 0;
 }
 
-void SQLite::resetTiming() {
+void SQLite::clearTimeout() {
     _timeoutLimit = 0;
     _timeoutStart = 0;
     _timeoutError = 0;
