@@ -4,7 +4,7 @@
 #include <libstuff/SRandom.h>
 #include <sqlitecluster/SQLite.h>
 
-int64_t SQLiteUtils::getRandomID(SQLite& db, const string& tableName, const string& column) {
+int64_t SQLiteUtils::getRandomID(const SQLite& db, const string& tableName, const string& column) {
     int64_t newID = 0;
     while (!newID) {
         // Select a random number.
