@@ -690,13 +690,13 @@ bool SQLiteNode::update() {
         SQLitePeer* currentLeader = nullptr;
         for (auto peer : _peerList) {
             if (peer->permaFollower) {
-                // Permafollowers are none of the things we care about.
+                // Permafollowers are treated as ineligible for leader, etc.
                 continue;
             }
 
             if (_forkedFrom.count(peer->name)) {
-                SHMMM("Not counting forked peer " << peer->name << " for freshest, highestPriority, or currentLeader"); 
-                // Forked nodes are treated as ineligible as leader, etc.
+                // Forked nodes are treated as ineligible for leader, etc.
+                SHMMM("Not counting forked peer " << peer->name << " for freshest, highestPriority, or currentLeader.");
                 continue;
             }
 
