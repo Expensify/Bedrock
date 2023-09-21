@@ -689,28 +689,38 @@ bool SQLiteNode::update() {
         SQLitePeer* freshestPeer = nullptr;
         SQLitePeer* currentLeader = nullptr;
         for (auto peer : _peerList) {
-            // Make sure we're a full peer
-            if (!peer->permaFollower) {
-                // Verify we're logged in
-                ++numFullPeers;
-                if (peer->loggedIn) {
-                    // Verify we're still fresh
-                    ++numLoggedInFullPeers;
-                    if (!freshestPeer || peer->commitCount > freshestPeer->commitCount)
-                        freshestPeer = peer;
+            if (peer->permaFollower) {
+                // Permafollowers are none of the things we care about.
+                continue;
+            }
 
-                    // See if it's the highest priority
-                    if (!highestPriorityPeer || peer->priority > highestPriorityPeer->priority)
-                        highestPriorityPeer = peer;
+            if (_forkedFrom.count(peer->name)) {
+                SHMMM("Not counting forked peer " << peer->name << " for freshest, highestPriority, or currentLeader"); 
+                // Forked nodes are treated as ineligible as leader, etc.
+                continue;
+            }
 
-                    // See if it is currently the leader (or standing up/down)
-                    if (peer->state == SQLiteNodeState::STANDINGUP || peer->state == SQLiteNodeState::LEADING || peer->state == SQLiteNodeState::STANDINGDOWN) {
-                        // Found the current leader
-                        if (currentLeader)
-                            PHMMM("Multiple peers trying to stand up (also '" << currentLeader->name
-                                                                              << "'), let's hope they sort it out.");
-                        currentLeader = peer;
+            // Verify we're logged in
+            ++numFullPeers;
+            if (peer->loggedIn) {
+                // Verify we're still fresh
+                ++numLoggedInFullPeers;
+                if (!freshestPeer || peer->commitCount > freshestPeer->commitCount) {
+                    freshestPeer = peer;
+                }
+
+                // See if it's the highest priority
+                if (!highestPriorityPeer || peer->priority > highestPriorityPeer->priority) {
+                    highestPriorityPeer = peer;
+                }
+
+                // See if it is currently the leader (or standing up/down)
+                if (peer->state == SQLiteNodeState::STANDINGUP || peer->state == SQLiteNodeState::LEADING || peer->state == SQLiteNodeState::STANDINGDOWN) {
+                    // Found the current leader
+                    if (currentLeader) {
+                        PHMMM("Multiple peers trying to stand up (also '" << currentLeader->name << "'), let's hope they sort it out.");
                     }
+                    currentLeader = peer;
                 }
             }
         }
