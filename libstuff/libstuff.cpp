@@ -658,7 +658,7 @@ list<int64_t> SParseIntegerList(const string& value, char separator) {
 set<int64_t> SParseIntegerSet(const string& value, char separator) {
     set<int64_t> valueSet;
     list<string> strings = SParseList(value, separator);
-    for (string str : strings) {
+    for (const string& str : strings) {
         valueSet.insert(SToInt64(str));
     }
     return valueSet;
