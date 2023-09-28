@@ -61,7 +61,7 @@
 
 // Initializations for static vars.
 const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S * 30};
-const uint64_t SQLiteNode::MAX_PEER_FALL_BEHIND{1000};
+const uint64_t SQLiteNode::MAX_PEER_FALL_BEHIND{500};
 
 const string SQLiteNode::CONSISTENCY_LEVEL_NAMES[] = {"ASYNC",
                                                     "ONE",
@@ -1716,51 +1716,57 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
             // is ready to commit. Note that this peer approves the transaction for use in the LEADING and STANDINGDOWN
             // update loop.
-            if (!message.isSet("ID")) {
-                STHROW("missing ID");
-            }
-            if (!message.isSet("NewCount")) {
-                STHROW("missing NewCount");
-            }
-            if (!message.isSet("NewHash")) {
-                STHROW("missing NewHash");
-            }
-            if (_state != SQLiteNodeState::LEADING && _state != SQLiteNodeState::STANDINGDOWN) {
-                STHROW("not leading");
-            }
-            SQLitePeer::Response response = SIEquals(message.methodLine, "APPROVE_TRANSACTION") ? SQLitePeer::Response::APPROVE : SQLitePeer::Response::DENY;
-            try {
-                // We ignore late approvals of commits that have already been finalized. They could have been committed
-                // already, in which case `_lastSentTransactionID` will have incremented, or they could have been rolled
-                // back due to a conflict, which would cuase them to have the wrong hash (the hash of the previous attempt
-                // at committing the transaction with this ID).
-                bool hashMatch = message["NewHash"] == _db.getUncommittedHash();
-                if (hashMatch && to_string(_lastSentTransactionID + 1) == message["ID"]) {
-                    if (message.calcU64("NewCount") != _db.getCommitCount() + 1) {
-                        STHROW("commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: "
-                              + to_string(_db.getCommitCount() + 1));
-                    }
-                    if (peer->permaFollower) {
-                        STHROW("permafollowers shouldn't approve/deny");
-                    }
-                    PINFO("Peer " << response << " transaction #" << message["NewCount"] << " (" << message["NewHash"] << ")");
-                    peer->transactionResponse = response;
-                } else {
-                    // Old command.  Nothing to do.  We already sent a commit or rollback.
-                    PINFO("Peer '" << message.methodLine << "' transaction #" << message["NewCount"]
-                          << " (" << message["NewHash"] << ") after " << (hashMatch ? "commit" : "rollback") << ".");
+
+            // If it's DENY or AsyncNotification is set means that it's not just a simple notification that the follower has some commit number.
+            // It's either a real DENY, or a real APPROVE of a quorum transaction.
+            if (SIEquals(message.methodLine, "DENY_TRANSACTION") || !message.isSet("AsyncNotification")) {
+                if (!message.isSet("ID")) {
+                    STHROW("missing ID");
                 }
-            } catch (const SException& e) {
-                // Doesn't correspond to the outstanding transaction not necessarily fatal. This can happen if, for
-                // example, a command is escalated from/ one follower, approved by the second, but where the first follower dies
-                // before the second's approval is received by the leader. In this case the leader will drop the command
-                // when the initiating peer is lost, and thus won't have an outstanding transaction (or will be processing
-                // a new transaction) when the old, outdated approval is received. Furthermore, in this case we will have
-                // already sent a ROLLBACK, so it will already correct itself. If not, then we'll wait for the follower to
-                // determine it's screwed and reconnect.
-                SWARN("Received " << message.methodLine << " for transaction #"
-                      << message.calc("NewCount") << " (" << message["NewHash"] << ", " << message["ID"] << ") but '"
-                      << e.what() << "', ignoring.");
+                if (!message.isSet("NewCount")) {
+                    STHROW("missing NewCount");
+                }
+                if (!message.isSet("NewHash")) {
+                    STHROW("missing NewHash");
+                }
+                if (_state != SQLiteNodeState::LEADING && _state != SQLiteNodeState::STANDINGDOWN) {
+                    STHROW("not leading");
+                }
+                SQLitePeer::Response response = SIEquals(message.methodLine, "APPROVE_TRANSACTION") ? SQLitePeer::Response::APPROVE : SQLitePeer::Response::DENY;
+                try {
+                    // We ignore late approvals of commits that have already been finalized. They could have been committed
+                    // already, in which case `_lastSentTransactionID` will have incremented, or they could have been rolled
+                    // back due to a conflict, which would cause them to have the wrong hash (the hash of the previous attempt
+                    // at committing the transaction with this ID).
+                    bool hashMatch = message["NewHash"] == _db.getUncommittedHash();
+                    if (hashMatch && to_string(_lastSentTransactionID + 1) == message["ID"]) {
+                        if (message.calcU64("NewCount") != _db.getCommitCount() + 1) {
+                            STHROW("commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: "
+                                  + to_string(_db.getCommitCount() + 1));
+                        }
+                        if (peer->permaFollower) {
+                            STHROW("permafollowers shouldn't approve/deny");
+                        }
+                        PINFO("Peer " << response << " transaction #" << message["NewCount"] << " (" << message["NewHash"] << ")");
+                        peer->transactionResponse = response;
+                    } else {
+                        // Old command.  Nothing to do.  We already sent a commit or rollback.
+                        // Shut this up.
+                        PINFO("Peer '" << message.methodLine << "' transaction #" << message["NewCount"]
+                              << " (" << message["NewHash"] << ") after " << (hashMatch ? "commit" : "rollback") << ".");
+                    }
+                } catch (const SException& e) {
+                    // Doesn't correspond to the outstanding transaction not necessarily fatal. This can happen if, for
+                    // example, a command is escalated from/ one follower, approved by the second, but where the first follower dies
+                    // before the second's approval is received by the leader. In this case the leader will drop the command
+                    // when the initiating peer is lost, and thus won't have an outstanding transaction (or will be processing
+                    // a new transaction) when the old, outdated approval is received. Furthermore, in this case we will have
+                    // already sent a ROLLBACK, so it will already correct itself. If not, then we'll wait for the follower to
+                    // determine it's screwed and reconnect.
+                    SWARN("Received " << message.methodLine << " for transaction #"
+                          << message.calc("NewCount") << " (" << message["NewHash"] << ", " << message["ID"] << ") but '"
+                          << e.what() << "', ignoring.");
+                }
             }
         } else {
             STHROW("unrecognized message");
@@ -2342,15 +2348,21 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
 
     // Are we participating in quorum?
     if (_priority) {
-        // If the ID is /ASYNC_\d+/, no need to respond, leader will ignore it anyway.
+        // If the ID is /ASYNC_\d+/, leader will keep going regardless, but we send every 10th response anyway, jsut so leader keeps relatively current with our commit count.
         string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
-        if (!SStartsWith(message["ID"], "ASYNC_")) {
+        uint64_t currentCommitCount = db.getCommitCount();
+        bool isAsync = SStartsWith(message["ID"], "ASYNC_");
+        bool asyncNotification = isAsync && (currentCommitCount % 10 == 0);
+        if (!isAsync || asyncNotification) {
             // Not a permafollower, approve the transaction
-            PINFO(verb << " #" << db.getCommitCount() + 1 << " (" << message["NewHash"] << ").");
+            PINFO(verb << " #" << currentCommitCount + 1 << " (" << message["NewHash"] << ").");
             SData response(verb);
-            response["NewCount"] = SToStr(db.getCommitCount() + 1);
+            response["NewCount"] = SToStr(currentCommitCount + 1);
             response["NewHash"] = success ? db.getUncommittedHash() : message["NewHash"];
             response["ID"] = message["ID"];
+            if (asyncNotification) {
+                response["AsyncNotification"] = "true";
+            }
             if (_leadPeer) {
                 _sendToPeer(_leadPeer, response);
             } else {
