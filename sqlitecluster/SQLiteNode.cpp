@@ -61,6 +61,7 @@
 
 // Initializations for static vars.
 const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S * 30};
+const uint64_t SQLiteNode::MAX_PEER_FALL_BEHIND{1000};
 
 const string SQLiteNode::CONSISTENCY_LEVEL_NAMES[] = {"ASYNC",
                                                     "ONE",
@@ -102,6 +103,17 @@ const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString) {
     return peerList;
 }
 
+size_t SQLiteNode::_initQuorumSize(const vector<SQLitePeer*>& _peerList, const int priority) {
+    // We will start with one node required for quorum unless we're a permafollower, in which case, we'll start with 0 to exclude ourself.
+    size_t result{priority ? 1ul : 0ul};
+    for (const auto& p : _peerList) {
+        if (!p->permaFollower) {
+            ++result;
+        }
+    }
+    return result;
+}
+
 SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name,
                        const string& host, const string& peerList, int priority, uint64_t firstTimeout,
                        const string& version, const string& commandPort)
@@ -110,6 +122,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _name(name),
       _peerList(_initPeers(peerList)),
       _originalPriority(priority),
+      _quorumSize(_initQuorumSize(_peerList, _originalPriority)),
       _port(host.empty() ? nullptr : openPort(host, 30)),
       _version(version),
       _commitState(CommitState::UNINITIALIZED),
@@ -1238,6 +1251,40 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
         }
         peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
 
+        // If we're leading, see if this peer meets the definition of "up-to-date", which is to say, it's close enough to in-sync with us.
+        if (_state == SQLiteNodeState::LEADING) {
+            if (peer->commitCount > getCommitCount() - MAX_PEER_FALL_BEHIND) {
+                _upToDatePeers.insert(peer);
+            } else {
+                _upToDatePeers.erase(peer);
+            }
+
+            // Example
+            //   Quorum size 3:
+            //     We have 1 up-to-date peer.
+            //     1 >= 3/2
+            //     Integer division, so 3/2 = 1.
+            //     1 >= 1.
+            //     quorumUpToDate = true
+            bool quorumUpToDate = _upToDatePeers.size() >= (_quorumSize / 2);
+
+            if (quorumUpToDate && _commitsBlocked) {
+                _commitsBlocked = false;
+                SWARN("[clustersync] Cluster is no longer behind by over " << MAX_PEER_FALL_BEHIND << " commits. Unblocking new commits.");
+                _db.exclusiveUnlockDB();
+            } else if (!quorumUpToDate && !_commitsBlocked) {
+                _commitsBlocked = true;
+                uint64_t myCommitCount = getCommitCount();
+                SWARN("[clustersync] Cluster is behind by over " << MAX_PEER_FALL_BEHIND << " commits. New commits blocked until the cluster catches up.");
+                uint64_t start = STimeNow();
+                _db.exclusiveLockDB();
+                SWARN("[clustersync] Blocking commits took" << (STimeNow() - start) << "us. Dumping cluster commit state. I have commit: " << myCommitCount);
+                for (const auto& p : _peerList) {
+                    SWARN("[clustersync] Peer " << p->name  << " has commit " << p->commitCount << ", behind by: " << (myCommitCount - p->commitCount));
+                }
+            }
+        }
+
         // Classify and process the message
         if (SIEquals(message.methodLine, "LOGIN")) {
             // LOGIN: This is the first message sent to and received from a new peer. It communicates the current state of
@@ -1954,6 +2001,14 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
                 _db.popCommittedTransactions();
                 _lastSentTransactionID = _db.getCommitCount();
             }
+
+            // Mark peers that are up-to-date so we have a valid starting state.
+            _upToDatePeers.clear();
+            for (const auto& peer : _peerList) {
+                if (peer->commitCount > getCommitCount() - MAX_PEER_FALL_BEHIND) {
+                    _upToDatePeers.insert(peer);
+                }
+            }
         } else if (newState == SQLiteNodeState::STANDINGDOWN) {
             // start the timeout countdown.
             _standDownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
@@ -1964,6 +2019,14 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
         } else if (newState == SQLiteNodeState::WAITING) {
             // The first time we enter WAITING, we're caught up and ready to join the cluster - use our real priority from now on
             _priority = _originalPriority;
+        }
+
+        // If we're switching from LEADING or STANDINGDOWN to anything else (aside from the case where we switch from LEADING to STANDINGDOWN), we unblock commits.
+        if ((_state == SQLiteNodeState::LEADING || _state == SQLiteNodeState::STANDINGDOWN) && newState != SQLiteNodeState::STANDINGDOWN) {
+            if (_commitsBlocked) {
+                _commitsBlocked = false;
+                _db.exclusiveUnlockDB();
+            }
         }
 
         // Send to everyone we're connected to, whether or not
