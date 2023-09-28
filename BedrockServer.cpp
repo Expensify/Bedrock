@@ -1839,6 +1839,10 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
     } else if (SIEquals(command->request.methodLine, "CRASH_COMMAND")) {
         SData request;
         request.deserialize(command->request.content);
+        if (request.empty()) {
+            SINFO("Got CRASH_COMMAND with malformed command body. Is someone running this by hand? Nothing to blacklist.");
+            return;
+        }
 
         // Take a unique lock so nobody else can read from this table while we update it.
         unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
