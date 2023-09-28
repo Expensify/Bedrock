@@ -1253,7 +1253,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
 
         // If we're leading, see if this peer meets the definition of "up-to-date", which is to say, it's close enough to in-sync with us.
         if (_state == SQLiteNodeState::LEADING) {
-            if (peer->commitCount > getCommitCount() - MAX_PEER_FALL_BEHIND) {
+            if (peer->commitCount + MAX_PEER_FALL_BEHIND > getCommitCount()) {
                 _upToDatePeers.insert(peer);
             } else {
                 _upToDatePeers.erase(peer);
@@ -1276,9 +1276,12 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 _commitsBlocked = true;
                 uint64_t myCommitCount = getCommitCount();
                 SWARN("[clustersync] Cluster is behind by over " << MAX_PEER_FALL_BEHIND << " commits. New commits blocked until the cluster catches up.");
+                for (const auto& p : _upToDatePeers) {
+                    SWARN("[clustersync] " << p->name << " is up-to-date.");
+                }
                 uint64_t start = STimeNow();
                 _db.exclusiveLockDB();
-                SWARN("[clustersync] Blocking commits took" << (STimeNow() - start) << "us. Dumping cluster commit state. I have commit: " << myCommitCount);
+                SWARN("[clustersync] Blocking commits took " << (STimeNow() - start) << "us. Dumping cluster commit state. I have commit: " << myCommitCount);
                 for (const auto& p : _peerList) {
                     SWARN("[clustersync] Peer " << p->name  << " has commit " << p->commitCount << ", behind by: " << (myCommitCount - p->commitCount));
                 }
@@ -2005,7 +2008,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
             // Mark peers that are up-to-date so we have a valid starting state.
             _upToDatePeers.clear();
             for (const auto& peer : _peerList) {
-                if (peer->commitCount > getCommitCount() - MAX_PEER_FALL_BEHIND) {
+                if (peer->commitCount + MAX_PEER_FALL_BEHIND > getCommitCount()) {
                     _upToDatePeers.insert(peer);
                 }
             }
