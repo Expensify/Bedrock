@@ -1252,7 +1252,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
         peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
 
         // If we're leading, see if this peer meets the definition of "up-to-date", which is to say, it's close enough to in-sync with us.
-        if (_state == SQLiteNodeState::LEADING) {
+        // We can skip checking if the peer is a permafollower, because we don't care about his state.
+        if (!peer->permaFollower && _state == SQLiteNodeState::LEADING) {
             if (peer->commitCount + MAX_PEER_FALL_BEHIND > getCommitCount()) {
                 _upToDatePeers.insert(peer);
             } else {
@@ -2008,7 +2009,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
             // Mark peers that are up-to-date so we have a valid starting state.
             _upToDatePeers.clear();
             for (const auto& peer : _peerList) {
-                if (peer->commitCount + MAX_PEER_FALL_BEHIND > getCommitCount()) {
+                if (!peer->permaFollower && (peer->commitCount + MAX_PEER_FALL_BEHIND > getCommitCount())) {
                     _upToDatePeers.insert(peer);
                 }
             }
