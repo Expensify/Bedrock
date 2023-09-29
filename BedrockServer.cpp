@@ -236,9 +236,6 @@ void BedrockServer::sync()
         // activity. Once any of them has activity (or the timeout ends), poll will return.
         fd_map fdm;
 
-        // Prepare our commands for `poll` (for instance, in case they're making HTTP requests).
-        _prePollCommands(fdm);
-
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
         _syncNode->prePoll(fdm);
 
@@ -263,7 +260,6 @@ void BedrockServer::sync()
 
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
-            _postPollCommands(fdm, nextActivity);
             _syncNode->postPoll(fdm, nextActivity);
             _syncNodeQueuedCommands.postPoll(fdm);
         }
@@ -531,18 +527,13 @@ void BedrockServer::sync()
                             SERROR("peekCommand (" << command->request.getVerb() << ") returned invalid result code: " << (int)result);
                         }
 
-                        // If we just started a new HTTPS request, save it for later.
+                        // If this command attempted an HTTP request, kill it.
                         if (command->httpsRequests.size()) {
-                            waitForHTTPS(move(command));
-                            // TODO:
-                            // Move the HTTPS loop into the worker, so that the worker can poll on its own requests.
-                            // This is the first step toward linear workers that run start->finish without being
-                            // interrupted and bounced back and forth between a bunch of queues.
-                            //
-                            // The follow-up to that is to allow direct escalations from workers to leader, which can
-                            // be done as a simple HTTPS request for the exact same command.
-
-                            // Move on to the next command until this one finishes.
+                            SWARN("Killing command " << command->request.methodLine << " that attempted HTTPS request in sync thread.");
+                            command->response.clear();
+                            command->response.methodLine = "500 Refused";
+                            command->complete = true;
+                            _reply(command);
                             core.rollback();
                             break;
                         }
@@ -1927,54 +1918,6 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
     return !db.getUncommittedQuery().empty();
 }
 
-void BedrockServer::_prePollCommands(fd_map& fdm) {
-    lock_guard<decltype(_httpsCommandMutex)> lock(_httpsCommandMutex);
-    for (auto& command : _outstandingHTTPSCommands) {
-        command->prePoll(fdm);
-    }
-
-    // Make sure that waiting for an HTTPS command interrupts the current `poll` in the sync thread.
-    _newCommandsWaiting.prePoll(fdm);
-}
-
-void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
-    lock_guard<decltype(_httpsCommandMutex)> lock(_httpsCommandMutex);
-
-    // Just clear this, it doesn't matter what the contents are.
-    _newCommandsWaiting.postPoll(fdm);
-    _newCommandsWaiting.clear();
-
-    // Because we modify this list as we walk across it, we use an iterator to our current position.
-    auto it = _outstandingHTTPSCommands.begin();
-    while (it != _outstandingHTTPSCommands.end()) {
-        auto& command = *it;
-        SAUTOPREFIX(command->request);
-
-        // By default, we can poll up to 5 min.
-        uint64_t maxWaitMs = 5 * 60 * 1'000;
-        auto _syncNodeCopy = atomic_load(&_syncNode);
-        if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNodeState::STANDINGDOWN)) {
-            // But if we're trying to shut down, we give up after 5 seconds.
-            maxWaitMs = 5'000;
-        }
-        command->postPoll(fdm, nextActivity, maxWaitMs);
-
-        // If it finished all it's requests, put it back in the main queue.
-        if (command->areHttpsRequestsComplete()) {
-            SINFO("All HTTPS requests complete, returning to main queue.");
-
-            // Because sets contain only `const` data, they can't be moved-from without these weird `extract`
-            // semantics. This invalidates our iterator, so we save the one we want before we break it.
-            auto nextIt = next(it);
-            _commandQueue.push(move(_outstandingHTTPSCommands.extract(it).value()));
-            it = nextIt;
-        } else {
-            // otherwise just move on to the next command.
-            it++;
-        }
-    }
-}
-
 void BedrockServer::_beginShutdown(const string& reason, bool detach) {
     if (_shutdownState.load() == RUNNING) {
         _detach = detach;
@@ -2383,15 +2326,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
             unblockCommandPort("NOT_ENOUGH_THREADS");
         }
     }
-}
-
-void BedrockServer::waitForHTTPS(unique_ptr<BedrockCommand>&& command) {
-    SAUTOPREFIX(command->request);
-    lock_guard<mutex> lock(_httpsCommandMutex);
-    _outstandingHTTPSCommands.insert(move(command));
-
-    // Interrupt `poll` in the sync thread.
-    _newCommandsWaiting.push(true);
 }
 
 const atomic<SQLiteNodeState>& BedrockServer::getState() const {
