@@ -1944,6 +1944,7 @@ void BedrockServer::_postPollCommands(fd_map& fdm, uint64_t nextActivity) {
     auto it = _outstandingHTTPSCommands.begin();
     while (it != _outstandingHTTPSCommands.end()) {
         auto& command = *it;
+        SAUTOPREFIX(command->request);
 
         // By default, we can poll up to 5 min.
         uint64_t maxWaitMs = 5 * 60 * 1'000;

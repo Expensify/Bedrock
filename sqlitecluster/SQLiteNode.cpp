@@ -1810,7 +1810,10 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
             //
             // It works for the sync thread as well, as there's handling in _changeState to rollback a commit when
             // dropping out of leading or standing down (and there can't be commits in progress in other states).
-            SWARN("We were " << stateName(_state) << " but lost quorum. Going to SEARCHING.");
+            SWARN("[clustersync] We were " << stateName(_state) << " but lost quorum (Disconnected from " << peer->name << "). Going to SEARCHING.");
+            for (const auto* p : _peerList) {
+                SWARN("[clustersync] Peer " << p->name << " logged in? " << (p->loggedIn ? "TRUE" : "FALSE") << (p->permaFollower ? " (permaFollower)" : ""));
+            }
             _changeState(SQLiteNodeState::SEARCHING);
         }
     }
