@@ -2495,9 +2495,6 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             // interrupt that chain in a way that will cause the remote end to think you've had an
                             // error, and start over. So, once a connection is established, we should just use that one
                             // for all communication until it breaks.
-                            peer->reset();
-                            // This line is broken.
-                            _onDisconnect(peer);
                             STHROW("Peer " + peer->name + " seems already connected.");
                         }
                     } else {
