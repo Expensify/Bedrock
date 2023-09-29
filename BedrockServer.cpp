@@ -32,12 +32,6 @@ bool BedrockServer::canStandDown() {
         size_t blockingQueueSize = _blockingCommandQueue.size();
         size_t syncNodeQueueSize = _syncNodeQueuedCommands.size();
 
-        // These two aren't all nicely packaged so we need to lock them ourselves.
-        size_t outstandingHTTPSCommandsSize = 0;
-        {
-            lock_guard<decltype(_httpsCommandMutex)> lock(_httpsCommandMutex);
-            outstandingHTTPSCommandsSize = _outstandingHTTPSCommands.size();
-        }
         size_t futureCommitCommandsSize = 0;
         {
             lock_guard<decltype(_futureCommitCommandMutex)> lock(_futureCommitCommandMutex);
@@ -48,7 +42,6 @@ bool BedrockServer::canStandDown() {
               << "mainQueueSize: " << mainQueueSize << ", "
               << "blockingQueueSize: " << blockingQueueSize << ", "
               << "syncNodeQueueSize: " << syncNodeQueueSize << ", "
-              << "outstandingHTTPSCommandsSize: " << outstandingHTTPSCommandsSize << ", "
               << "futureCommitCommandsSize: " << futureCommitCommandsSize << ", "
               << "standDownQueueSize: " << standDownQueueSize << ".");
         return false;
@@ -828,6 +821,27 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
     int64_t lastConflictPage = 0;
     while (true) {
+
+        // If there are outstanding HTTPS requests on this command (from a previous call to `peek`) we process them here.
+        while (!command->areHttpsRequestsComplete()) {
+            SINFO("Running command network activity loop.");
+            fd_map fdm;
+            command->prePoll(fdm);
+            const uint64_t now = STimeNow();
+            uint64_t nextActivity = 0;
+            S_poll(fdm, max(nextActivity, now) - now);
+
+            // TODO: These timeouts are wrong but I don't care right now.
+            // By default, we can poll up to 5 min.
+            uint64_t maxWaitMs = 5 * 60 * 1'000;
+            auto _syncNodeCopy = atomic_load(&_syncNode);
+            if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNodeState::STANDINGDOWN)) {
+                // But if we're trying to shut down, we give up after 5 seconds.
+                maxWaitMs = 5'000;
+            }
+            command->postPoll(fdm, nextActivity, maxWaitMs);
+        }
+
         // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
         if (!_dbPool) {
             SERROR("Can't run a command with no DB pool");
@@ -922,24 +936,14 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         break;
                     }
 
-                    // If the command isn't complete, we'll re-queue it.
                     if (command->repeek || !command->areHttpsRequestsComplete()) {
                         // Roll back the existing transaction, but only if we are inside an transaction
                         if (calledPeek) {
                             core.rollback();
                         }
 
-                        if (!command->areHttpsRequestsComplete()) {
-                            // If it has outstanding HTTPS requests, we'll wait for them.
-                            waitForHTTPS(move(command));
-                        } else if (command->repeek) {
-                            // Otherwise, it needs to be re-peeked, but had no outstanding requests, so it goes
-                            // back in the main queue.
-                            _commandQueue.push(move(command));
-                        }
-
-                        // Move on to the next command until this one finishes.
-                        break;
+                        // Jump back to the top of our main `while (true)` loop and run the network activity loop again.
+                        continue;
                     }
                 } else {
                     // If we haven't sent a quorum command to the sync thread in a while, auto-promote one.
