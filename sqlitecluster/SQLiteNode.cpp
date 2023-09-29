@@ -2548,9 +2548,9 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case SQLitePeer::PeerPostPollStatus::OK:
             {
-                auto lastSendTime = peer->lastSendTime();
-                if (lastSendTime && STimeNow() - lastSendTime > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
-                    SINFO("Close to timeout, sending PING to peer '" << peer->name << "'");
+                auto lastActivityTime = max(peer->lastSendTime(), peer->lastRecvTime());
+                if (lastActivityTime && STimeNow() - lastActivityTime > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
+                    SINFO("Close to timeout (" << (STimeNow() - lastActivityTime) << "us since last activity), sending PING to peer '" << peer->name << "'");
                     _sendPING(peer);
                 }
                 try {
