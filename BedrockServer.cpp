@@ -822,15 +822,22 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             uint64_t nextActivity = 0;
             S_poll(fdm, max(nextActivity, now) - now);
 
-            // TODO: These timeouts are wrong but I don't care right now.
-            // By default, we can poll up to 5 min.
+            // Timeout is five minutes unless we're shutting down or standing down, in which case it's 5 seconds.
+            // Note that BedrockCommad::postPoll sets the timeout to the command's timeout if it's lower than this value anyway,
+            // So this only has an effect if it will be shorter than the command's timeout.
             uint64_t maxWaitMs = 5 * 60 * 1'000;
             auto _syncNodeCopy = atomic_load(&_syncNode);
             if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNodeState::STANDINGDOWN)) {
-                // But if we're trying to shut down, we give up after 5 seconds.
                 maxWaitMs = 5'000;
             }
+
+            auto start = STimeNow();
             command->postPoll(fdm, nextActivity, maxWaitMs);
+            auto elapsedUS = STimeNow() - start;
+            if (elapsedUS > 100'000) {
+                // We warn here as this is a potential serious performance issue that seems to happen sometimes.
+                SWARN("Post poll on command '" << command->request.methodLine << "' took " << elapsedUS << "us.");
+            }
         }
 
         // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
