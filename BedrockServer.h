@@ -313,11 +313,6 @@ class BedrockServer : public SQLiteServer {
     // becomes leader. It will return true if the DB has changed and needs to be committed.
     bool _upgradeDB(SQLite& db);
 
-    // Iterate across all of our plugins and call `prePoll` and `postPoll` on any httpsManagers they've created.
-    // TODO: Can we kill `nextActivity`?
-    void _prePollCommands(fd_map& fdm);
-    void _postPollCommands(fd_map& fdm, uint64_t nextActivity);
-
     // Resets the server state so when the sync node restarts it is as if the BedrockServer object was just created.
     void _resetServer();
 
@@ -422,19 +417,6 @@ class BedrockServer : public SQLiteServer {
     atomic<int> _maxConflictRetries;
 
     mutex _httpsCommandMutex;
-
-    // This contains all of the command that _outstandingHTTPSRequests` points at. This allows us to keep only a single
-    // copy of each command, even if it has multiple requests. Sorted with the above `compareCommandByTimeout`.
-    set<unique_ptr<BedrockCommand>> _outstandingHTTPSCommands;
-
-    // Takes a command that has an outstanding HTTPS request and saves it in _outstandingHTTPSCommands until its HTTPS
-    // requests are complete.
-    void waitForHTTPS(unique_ptr<BedrockCommand>&& command);
-
-    // This doesn't really do anything in itself, but when we need to add new sockets to a poll loop (like when we
-    // create an outgoing http request) we queue something here, so that the poll loop in `sync` gets interrupted. This
-    // allows it to start again and pick up the new socket we just created.
-    SSynchronizedQueue<bool> _newCommandsWaiting;
 
     // When we're standing down, we temporarily dump newly received commands here (this lets all existing
     // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
