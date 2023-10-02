@@ -814,8 +814,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     while (true) {
 
         // If there are outstanding HTTPS requests on this command (from a previous call to `peek`) we process them here.
+        size_t networkLoopCount = 0;
+        uint64_t postPollCumulativeTime = 0;
         while (!command->areHttpsRequestsComplete()) {
-            SINFO("Running command network activity loop.");
+            networkLoopCount++;
             fd_map fdm;
             command->prePoll(fdm);
             const uint64_t now = STimeNow();
@@ -833,11 +835,11 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
             auto start = STimeNow();
             command->postPoll(fdm, nextActivity, maxWaitMs);
-            auto elapsedUS = STimeNow() - start;
-            if (elapsedUS > 100'000) {
-                // We warn here as this is a potential serious performance issue that seems to happen sometimes.
-                SWARN("Post poll on command '" << command->request.methodLine << "' took " << elapsedUS << "us.");
-            }
+            postPollCumulativeTime += (STimeNow() - start);
+        }
+
+        if (networkLoopCount) {
+            SINFO("Completed HTTPS request in " << networkLoopCount << " loops with " << postPollCumulativeTime << " total time in postPoll");
         }
 
         // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
