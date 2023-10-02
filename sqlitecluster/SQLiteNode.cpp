@@ -1810,7 +1810,10 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
             //
             // It works for the sync thread as well, as there's handling in _changeState to rollback a commit when
             // dropping out of leading or standing down (and there can't be commits in progress in other states).
-            SWARN("We were " << stateName(_state) << " but lost quorum. Going to SEARCHING.");
+            SWARN("[clustersync] We were " << stateName(_state) << " but lost quorum (Disconnected from " << peer->name << "). Going to SEARCHING.");
+            for (const auto* p : _peerList) {
+                SWARN("[clustersync] Peer " << p->name << " logged in? " << (p->loggedIn ? "TRUE" : "FALSE") << (p->permaFollower ? " (permaFollower)" : ""));
+            }
             _changeState(SQLiteNodeState::SEARCHING);
         }
     }
@@ -2492,8 +2495,6 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                             // interrupt that chain in a way that will cause the remote end to think you've had an
                             // error, and start over. So, once a connection is established, we should just use that one
                             // for all communication until it breaks.
-                            peer->reset();
-                            _onDisconnect(peer);
                             STHROW("Peer " + peer->name + " seems already connected.");
                         }
                     } else {
@@ -2545,9 +2546,9 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case SQLitePeer::PeerPostPollStatus::OK:
             {
-                auto lastSendTime = peer->lastSendTime();
-                if (lastSendTime && STimeNow() - lastSendTime > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
-                    SINFO("Close to timeout, sending PING to peer '" << peer->name << "'");
+                auto lastActivityTime = max(peer->lastSendTime(), peer->lastRecvTime());
+                if (lastActivityTime && STimeNow() - lastActivityTime > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
+                    SINFO("Close to timeout (" << (STimeNow() - lastActivityTime) << "us since last activity), sending PING to peer '" << peer->name << "'");
                     _sendPING(peer);
                 }
                 try {
