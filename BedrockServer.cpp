@@ -845,21 +845,27 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             }
 
             // Also, if we're shutting down or standing down, wait 1 second. This keeps the rest of the server from being blocked on commands that won't finish.
+            bool shuttingDown = false;
             auto _syncNodeCopy = atomic_load(&_syncNode);
             if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNodeState::STANDINGDOWN)) {
                 maxWaitUs = 1'000'000;
+                shuttingDown = true;
             }
 
             // Ok, go ahead and `poll`.
             S_poll(fdm, maxWaitUs);
 
+
+            // The 3rd parameter to `postPoll` here is the total allowed idle time on this connection. We will kill connections that do nothing at all after 5 minutes normally,
+            // or after only 5 seconds when we're shutting down so that we can clean up and move along.
+            uint64_t ignore{0};
             auto start = STimeNow();
-            command->postPoll(fdm, maxWaitUs, maxWaitUs / 1000);
+            command->postPoll(fdm, ignore, shuttingDown ? 5'000 : 300'000);
             postPollCumulativeTime += (STimeNow() - start);
         }
 
         if (networkLoopCount) {
-            SINFO("Completed HTTPS request in " << networkLoopCount << " loops with " << postPollCumulativeTime << " total time in postPoll");
+            SINFO("Completed HTTPS request in " << networkLoopCount << " loops with " << postPollCumulativeTime << "us total time in postPoll");
         }
 
         // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
