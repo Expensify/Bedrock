@@ -820,20 +820,21 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             networkLoopCount++;
             fd_map fdm;
             command->prePoll(fdm);
+            const uint64_t now = STimeNow();
+            uint64_t nextActivity = 0;
+            S_poll(fdm, max(nextActivity, now) - now);
 
             // Timeout is five minutes unless we're shutting down or standing down, in which case it's 5 seconds.
             // Note that BedrockCommad::postPoll sets the timeout to the command's timeout if it's lower than this value anyway,
             // So this only has an effect if it will be shorter than the command's timeout.
-            uint64_t maxWaitUs = 5 * 60 * 1'000'000;
+            uint64_t maxWaitMs = 5 * 60 * 1'000;
             auto _syncNodeCopy = atomic_load(&_syncNode);
             if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNodeState::STANDINGDOWN)) {
-                maxWaitUs = 5'000'000;
+                maxWaitMs = 5'000;
             }
 
-            S_poll(fdm, maxWaitUs);
-
             auto start = STimeNow();
-            command->postPoll(fdm, maxWaitUs, maxWaitUs);
+            command->postPoll(fdm, nextActivity, maxWaitMs);
             postPollCumulativeTime += (STimeNow() - start);
         }
 
