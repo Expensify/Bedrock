@@ -820,21 +820,41 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             networkLoopCount++;
             fd_map fdm;
             command->prePoll(fdm);
-            const uint64_t now = STimeNow();
-            uint64_t nextActivity = 0;
-            S_poll(fdm, max(nextActivity, now) - now);
 
-            // Timeout is five minutes unless we're shutting down or standing down, in which case it's 5 seconds.
-            // Note that BedrockCommad::postPoll sets the timeout to the command's timeout if it's lower than this value anyway,
-            // So this only has an effect if it will be shorter than the command's timeout.
-            uint64_t maxWaitMs = 5 * 60 * 1'000;
-            auto _syncNodeCopy = atomic_load(&_syncNode);
-            if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNodeState::STANDINGDOWN)) {
-                maxWaitMs = 5'000;
+            // Determine how long we'll wait in `poll`.
+            uint64_t maxWaitUs = 0;
+
+            // The default case is to wait until the command will time out.
+            uint64_t now = STimeNow();
+            if (now < command->timeout()) {
+                maxWaitUs = command->timeout() - now;
+            } else {
+                // The command is already timed out. This will hit the check for core.isTimedOut(command) below.
+                break;
             }
 
+            // There are two other special cases for the time to wait.
+            if (fdm.empty()) {
+                // If there are no sockets to poll, wait 1 second.
+                // Why would there be no sockets? It's because Auth::Stripe, as a rate-limiting feature, attaches sockets to requests after their made.
+                // This means a request can sit around with no actual socket attached to it for some length of time until it's turn to talk to Stripe comes up.
+                // If that happens though, and we're sitting in `poll` when it becomes our turn, we will wait the full five minute timeout of the original `poll`
+                // call before we time out and try again wit the newly-attached socket.
+                // Setting this to one second lets us try again more frequently. This is probably not the ideal way to handle this, but it works for now.
+                maxWaitUs = 1'000'000;
+            }
+
+            // Also, if we're shutting down or standing down, wait 1 second. This keeps the rest of the server from being blocked on commands that won't finish.
+            auto _syncNodeCopy = atomic_load(&_syncNode);
+            if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNodeState::STANDINGDOWN)) {
+                maxWaitUs = 1'000'000;
+            }
+
+            // Ok, go ahead and `poll`.
+            S_poll(fdm, maxWaitUs);
+
             auto start = STimeNow();
-            command->postPoll(fdm, nextActivity, maxWaitMs);
+            command->postPoll(fdm, maxWaitUs, maxWaitUs / 1000);
             postPollCumulativeTime += (STimeNow() - start);
         }
 
