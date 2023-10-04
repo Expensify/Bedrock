@@ -33,6 +33,8 @@ class SStandaloneHTTPSManager : public STCPManager {
     void prePoll(fd_map& fdm, Transaction& transaction);
 
     // Default timeout for HTTPS requests is 5 minutes.This can be changed on any call to postPoll.
+    // This is a total amount of milliseconds of idle activity since the last send on a socket before killing it.
+    // The purpose of this is to be able to shut down when no activity is happening.
     void postPoll(fd_map& fdm, Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS = (5 * 60 * 1000));
 
     // Close a transaction and remove it from our internal lists.
