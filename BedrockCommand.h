@@ -140,10 +140,6 @@ class BedrockCommand : public SQLiteCommand {
     // A list of timing sets, with an info type, start, and end.
     list<tuple<TIMING_INFO, uint64_t, uint64_t>> timingInfo;
 
-    // This defaults to false, but a specific plugin can set it to 'true' to force this command to be passed
-    // to the sync thread for processing, thus guaranteeing that process() will not result in a conflict.
-    virtual bool onlyProcessOnSyncThread() { return false; }
-
     // Add any sockets that this command has opened (not the socket the client sent it on, but any outgoing sockets
     // it's opened itself) to a fd_map so that they can be polled for activity.
     void prePoll(fd_map& fdm);

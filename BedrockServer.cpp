@@ -983,10 +983,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 }
 
                 // Peek wasn't enough to handle this command. See if we think it should be writable in parallel.
-                // We check `onlyProcessOnSyncThread` here, rather than before processing the command, because it's
-                // not set at creation time, it's set in `peek`, so we need to wait at least until after peek is
-                // called to check it.
-                if (command->onlyProcessOnSyncThread() || !canWriteParallel) {
+                if (!canWriteParallel) {
                     // Roll back the transaction, it'll get re-run in the sync thread.
                     core.rollback();
                     auto _clusterMessengerCopy = _clusterMessenger;
