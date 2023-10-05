@@ -767,8 +767,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         if (command->escalateImmediately && _clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
             // command->complete is now true for this command. It will get handled a few lines below.
             SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
-        } else if (_version != _leaderVersion.load() && _clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, false)) {
-            SINFO("Escalated " << command->request.methodLine << " to follower peer.");
+        } else if (_version != _leaderVersion.load()) {
+            STHROW("556 Version mismatch");
         } else {
             SINFO("Couldn't escalate command " << command->request.methodLine << " to " << (command->escalateImmediately ? "leader" : "follower peer") << ", queuing it again.");
             _commandQueue.push(move(command));
