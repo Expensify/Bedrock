@@ -1273,7 +1273,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 _commitsBlocked = false;
                 SWARN("[clustersync] Cluster is no longer behind by over " << MAX_PEER_FALL_BEHIND << " commits. Unblocking new commits.");
                 _db.exclusiveUnlockDB();
-            } else if (!quorumUpToDate && !_commitsBlocked) {
+            } else if (!quorumUpToDate && !_commitsBlocked && !_db.insideTransaction()) {
                 _commitsBlocked = true;
                 uint64_t myCommitCount = getCommitCount();
                 SWARN("[clustersync] Cluster is behind by over " << MAX_PEER_FALL_BEHIND << " commits. New commits blocked until the cluster catches up.");
