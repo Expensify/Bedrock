@@ -80,7 +80,7 @@ class SQLiteNode : public STCPManager {
     static const uint64_t RECV_TIMEOUT;
 
     // The maximum number of commits behind we'll allow a quorum number of peers to be before we block commits on leader.
-    static const uint64_t MAX_PEER_FALL_BEHIND;
+    static atomic<uint64_t> MAX_PEER_FALL_BEHIND;
 
     // Get and SQLiteNode State from it's name.
     static SQLiteNodeState stateFromName(const string& name);

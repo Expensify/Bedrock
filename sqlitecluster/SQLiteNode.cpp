@@ -61,7 +61,7 @@
 
 // Initializations for static vars.
 const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S * 30};
-const uint64_t SQLiteNode::MAX_PEER_FALL_BEHIND{500};
+atomic<uint64_t> SQLiteNode::MAX_PEER_FALL_BEHIND{500};
 
 const string SQLiteNode::CONSISTENCY_LEVEL_NAMES[] = {"ASYNC",
                                                     "ONE",
