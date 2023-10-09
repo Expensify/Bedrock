@@ -64,7 +64,7 @@ const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S * 30};
 
 // Setting this to 10 or lower may deadlock the server, as followers are only guaranteed to respond to every 10th message.
 // If the threshold for blocking commits is less than 10, we may block, but never receive a message indicating that we should unblock.
-atomic<uint64_t> SQLiteNode::MAX_PEER_FALL_BEHIND{20};
+atomic<uint64_t> SQLiteNode::MAX_PEER_FALL_BEHIND{500};
 
 const string SQLiteNode::CONSISTENCY_LEVEL_NAMES[] = {"ASYNC",
                                                     "ONE",
@@ -182,8 +182,6 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
 
     // Actual thread startup time.
     uint64_t threadStartTime = STimeNow();
-
-    usleep(50'000);
 
     // Allow the DB handle to be returned regardless of how this function exits.
     SQLiteScopedHandle dbScope(*_dbPool, sqlitePoolIndex);
