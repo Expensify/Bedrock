@@ -323,14 +323,21 @@ SQLite::~SQLite() {
 }
 
 void SQLite::exclusiveLockDB() {
-    // This is buggy, writeLock does not always get locked first. For exclusive transactions (sync thread, blockingCommit thread) commitLock is locked before anything is written.
-    // _sharedData.writeLock.lock();
+    // This order is important and not intuitive. It seems like we should lock `writeLock` before `commitLock` because that's the order these occur in a typical database operation,
+    // however, there are two possible flows here. For a non-blocking transaction (i.e., one run in parallel with other transactions), the lock order is:
+    // writeLock, commitLock, but importantly, in this case, these are not locked simultaneously. writeLock is only locked for the time of the actual DB write query, and then released.
+    // So for a non-blocking transaction, this becomes unimportant, these are used singly.
+    // However, for a blocking transaction (one run by the blocking commit thread) the commit lock is acquired at the BEGIN of the transaction, and critically - held for the duration
+    // of the transaction. So in these instances, we lock commitLock first, and then writeLock, but the critical difference is we hold the commitLock through the entire duration of all
+    // writes in this case.
+    // So when these are both locked by the same thread at the same time, `commitLock` is always locked first, and we do it the same way here to avoid deadlocks.
     _sharedData.commitLock.lock();
+    _sharedData.writeLock.lock();
 }
 
 void SQLite::exclusiveUnlockDB() {
+    _sharedData.writeLock.unlock();
     _sharedData.commitLock.unlock();
-    // _sharedData.writeLock.unlock();
 }
 
 bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
