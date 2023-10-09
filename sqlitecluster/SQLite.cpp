@@ -323,13 +323,14 @@ SQLite::~SQLite() {
 }
 
 void SQLite::exclusiveLockDB() {
-    _sharedData.writeLock.lock();
+    // This is buggy, writeLock does not always get locked first. For exclusive transactions (sync thread, blockingCommit thread) commitLock is locked before anything is written.
+    // _sharedData.writeLock.lock();
     _sharedData.commitLock.lock();
 }
 
 void SQLite::exclusiveUnlockDB() {
     _sharedData.commitLock.unlock();
-    _sharedData.writeLock.unlock();
+    // _sharedData.writeLock.unlock();
 }
 
 bool SQLite::beginTransaction(TRANSACTION_TYPE type) {

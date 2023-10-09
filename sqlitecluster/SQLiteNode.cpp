@@ -61,7 +61,10 @@
 
 // Initializations for static vars.
 const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S * 30};
-atomic<uint64_t> SQLiteNode::MAX_PEER_FALL_BEHIND{500};
+
+// Setting this to 10 or lower may deadlock the server, as followers are only guaranteed to respond to every 10th message.
+// If the threshold for blocking commits is less than 10, we may block, but never receive a message indicating that we should unblock.
+atomic<uint64_t> SQLiteNode::MAX_PEER_FALL_BEHIND{20};
 
 const string SQLiteNode::CONSISTENCY_LEVEL_NAMES[] = {"ASYNC",
                                                     "ONE",
@@ -176,6 +179,8 @@ SQLiteNode::~SQLiteNode() {
 void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp) {
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
+
+    usleep(50'000);
 
     // Actual thread startup time.
     uint64_t threadStartTime = STimeNow();
@@ -1277,12 +1282,9 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 _commitsBlocked = true;
                 uint64_t myCommitCount = getCommitCount();
                 SWARN("[clustersync] Cluster is behind by over " << MAX_PEER_FALL_BEHIND << " commits. New commits blocked until the cluster catches up.");
-                for (const auto& p : _upToDatePeers) {
-                    SWARN("[clustersync] " << p->name << " is up-to-date.");
-                }
                 uint64_t start = STimeNow();
                 _db.exclusiveLockDB();
-                SWARN("[clustersync] Blocking commits took " << (STimeNow() - start) << "us. Dumping cluster commit state. I have commit: " << myCommitCount);
+                SWARN("[clustersync] Took " << (STimeNow() - start) << "us to block commits. Dumping cluster commit state. I have commit: " << myCommitCount);
                 for (const auto& p : _peerList) {
                     SWARN("[clustersync] Peer " << p->name  << " has commit " << p->commitCount << ", behind by: " << (myCommitCount - p->commitCount));
                 }
