@@ -833,28 +833,23 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 break;
             }
 
-            // There are two other special cases for the time to wait.
-            if (fdm.empty()) {
-                // If there are no sockets to poll, wait 1 second.
-                // Why would there be no sockets? It's because Auth::Stripe, as a rate-limiting feature, attaches sockets to requests after their made.
-                // This means a request can sit around with no actual socket attached to it for some length of time until it's turn to talk to Stripe comes up.
-                // If that happens though, and we're sitting in `poll` when it becomes our turn, we will wait the full five minute timeout of the original `poll`
-                // call before we time out and try again wit the newly-attached socket.
-                // Setting this to one second lets us try again more frequently. This is probably not the ideal way to handle this, but it works for now.
-                maxWaitUs = 1'000'000;
-            }
-
-            // Also, if we're shutting down or standing down, wait 1 second. This keeps the rest of the server from being blocked on commands that won't finish.
+            // We never wait more than 1 second in `poll`. There are two uses for this. One is that at shutdown, we want to kill any sockets that have are making no progress.
+            // We don't want these to be stuck sitting for 5 minutes doing nothing while thew server hangs, so we will interrupt every second to check on them.
+            // The other case is that there can be no sockets at all.
+            // Why would there be no sockets? It's because Auth::Stripe, as a rate-limiting feature, attaches sockets to requests after their made.
+            // This means a request can sit around with no actual socket attached to it for some length of time until it's turn to talk to Stripe comes up.
+            // If that happens though, and we're sitting in `poll` when it becomes our turn, we will wait the full five minute timeout of the original `poll`
+            // call before we time out and try again wit the newly-attached socket.
+            // Setting this to one second lets us try again more frequently.
+            maxWaitUs = min(maxWaitUs, 1'000'000ul);
             bool shuttingDown = false;
             auto _syncNodeCopy = atomic_load(&_syncNode);
             if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNodeState::STANDINGDOWN)) {
-                maxWaitUs = 1'000'000;
                 shuttingDown = true;
             }
 
             // Ok, go ahead and `poll`.
             S_poll(fdm, maxWaitUs);
-
 
             // The 3rd parameter to `postPoll` here is the total allowed idle time on this connection. We will kill connections that do nothing at all after 5 minutes normally,
             // or after only 5 seconds when we're shutting down so that we can clean up and move along.
