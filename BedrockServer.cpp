@@ -671,7 +671,7 @@ void BedrockServer::worker(int threadId)
             });
 
             // Get the next one.
-            command = commandQueue.get(1000000, !threadId);
+            command = commandQueue.get(1000000);
 
             SAUTOPREFIX(command->request);
             SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
