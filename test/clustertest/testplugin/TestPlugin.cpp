@@ -448,7 +448,7 @@ void TestPluginCommand::process(SQLite& db) {
         return;
     } else if (SStartsWith(request.methodLine, "httpsdelay")) {
         SINFO("Saving HTTPS response.");
-        response.content = httpsRequests.front()->fullResponse.content;
+        response.content = "HTTPS Manager response code: " + to_string(httpsRequests.front()->response);
     } else if (SStartsWith(request.methodLine, "idcollision")) {
         usleep(1001); // for TimingTest to not get 0 values.
         SQResult result;

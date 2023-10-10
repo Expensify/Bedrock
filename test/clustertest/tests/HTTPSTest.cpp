@@ -108,13 +108,13 @@ struct HTTPSTest : tpunit::TestFixture {
     }
 
     void testBlockingShutdown() {
-        for (auto delaySec : {0,5,10,20,30}) {
+        for (auto delaySec : {0,3,5,10,20,30}) {
             thread t([this, delaySec]() {
                 BedrockTester& brtester = tester->getTester(0);
                 SData request("httpsdelay");
                 request["Delay-Sec"] = to_string(delaySec);
                 auto result = brtester.executeWaitMultipleData({request})[0];
-                cout << "PHP responded: " << result.content << endl;
+                cout << result.content << endl;
             });
 
             // See how long it takes to shut down the server.
