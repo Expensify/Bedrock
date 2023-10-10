@@ -21,9 +21,8 @@ struct HTTPSTest : tpunit::TestFixture {
         : tpunit::TestFixture("HTTPS",
                               BEFORE_CLASS(HTTPSTest::setup),
                               AFTER_CLASS(HTTPSTest::teardown),
-                              /*TEST(HTTPSTest::testMultipleRequests),*/
-                              TEST(HTTPSTest::testBlockingShutdown)/*,
-                              TEST(HTTPSTest::test)*/) { }
+                              TEST(HTTPSTest::testMultipleRequests),
+                              TEST(HTTPSTest::test)) { }
 
     BedrockClusterTester* tester;
 
@@ -104,28 +103,6 @@ struct HTTPSTest : tpunit::TestFixture {
                 cout << "[HTTPSTest] Bad code: " << code << endl;
             }
             ASSERT_EQUAL(SToInt(code), 200);
-        }
-    }
-
-    void testBlockingShutdown() {
-        for (auto delaySec : {0,3,5,10,20,30}) {
-            thread t([this, delaySec]() {
-                BedrockTester& brtester = tester->getTester(0);
-                SData request("httpsdelay");
-                request["Delay-Sec"] = to_string(delaySec);
-                auto result = brtester.executeWaitMultipleData({request})[0];
-                cout << result.content << endl;
-            });
-
-            // See how long it takes to shut down the server.
-            usleep(500'000);
-            auto start = STimeNow();
-            tester->getTester(0).stopServer();
-            cout << "Stopped server in " << ((STimeNow() - start) / 1'000'000) << " seconds. HTTPS request was delayed by " << delaySec << " seconds." << endl;
-            t.join();
-            tester->getTester(0).startServer();
-            tester->getTester(0).waitForState("LEADING");
-            cout << "Server is leading again." << endl;
         }
     }
 } __HTTPSTest;
