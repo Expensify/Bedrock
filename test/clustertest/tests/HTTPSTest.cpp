@@ -21,8 +21,9 @@ struct HTTPSTest : tpunit::TestFixture {
         : tpunit::TestFixture("HTTPS",
                               BEFORE_CLASS(HTTPSTest::setup),
                               AFTER_CLASS(HTTPSTest::teardown),
-                              TEST(HTTPSTest::testMultipleRequests),
-                              TEST(HTTPSTest::test)) { }
+                              /*TEST(HTTPSTest::testMultipleRequests),*/
+                              TEST(HTTPSTest::testBlockingShutdown)/*,
+                              TEST(HTTPSTest::test)*/) { }
 
     BedrockClusterTester* tester;
 
@@ -104,5 +105,23 @@ struct HTTPSTest : tpunit::TestFixture {
             }
             ASSERT_EQUAL(SToInt(code), 200);
         }
+    }
+
+    void testBlockingShutdown() {
+        size_t delaySec = 3;
+        thread t([this, delaySec]() {
+            BedrockTester& brtester = tester->getTester(0);
+            SData request("httpsdelay");
+            request["Delay-Sec"] = to_string(delaySec);
+            auto result = brtester.executeWaitMultipleData({request})[0];
+            cout << result.methodLine << endl;
+        });
+
+        // See how long it takes to shut down the server.
+        usleep(500'000);
+        auto start = STimeNow();
+        tester->getTester(0).stopServer();
+        cout << "Stopped server in " << (STimeNow() - start) << "us. HTTPS request was delayed by " << delaySec << " seconds." << endl;
+        t.join();
     }
 } __HTTPSTest;

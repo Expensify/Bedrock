@@ -84,6 +84,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "sendrequest",
         "slowquery",
         "httpstimeout",
+        "httpsdelay",
         "exceptioninpeek",
         "generatesegfaultpeek",
         "generateassertpeek",
@@ -275,6 +276,12 @@ bool TestPluginCommand::peek(SQLite& db) {
                 transaction->s->send(newRequest.serialize());
             }).detach();
         }
+    } else if (SStartsWith(request.methodLine, "httpsdelay")) {
+        SINFO("Sending HTTPS request");
+        SData newRequest("GET /delay.php HTTP/1.1");
+        newRequest["Host"] = "www.expensify.com.dev";
+        newRequest["Delay-Sec"] = request["Delay-Sec"];
+        httpsRequests.push_back(plugin().httpsManager->send("https://www.expensify.com.dev/", newRequest));
     } else if (SStartsWith(request.methodLine, "exceptioninpeek")) {
         throw 1;
     } else if (SStartsWith(request.methodLine, "generatesegfaultpeek")) {
@@ -439,6 +446,9 @@ void TestPluginCommand::process(SQLite& db) {
 
         // Done.
         return;
+    } else if (SStartsWith(request.methodLine, "httpsdelay")) {
+        SINFO("Saving HTTPS response.");
+        response.content = httpsRequests.front()->fullResponse.content;
     } else if (SStartsWith(request.methodLine, "idcollision")) {
         usleep(1001); // for TimingTest to not get 0 values.
         SQResult result;
