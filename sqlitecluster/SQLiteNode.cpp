@@ -1719,7 +1719,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             // is ready to commit. Note that this peer approves the transaction for use in the LEADING and STANDINGDOWN
             // update loop.
 
-            // If it's DENY or AsyncNotification is set means that it's not just a simple notification that the follower has some commit number.
+            // If it's DENY, or AsyncNotification isn't set, this means that it's not just a simple notification that the follower has some commit number.
             // It's either a real DENY, or a real APPROVE of a quorum transaction.
             if (SIEquals(message.methodLine, "DENY_TRANSACTION") || !message.isSet("AsyncNotification")) {
                 if (!message.isSet("ID")) {
