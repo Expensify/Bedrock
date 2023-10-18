@@ -2348,7 +2348,7 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
 
     // Are we participating in quorum?
     if (_priority) {
-        // If the ID is /ASYNC_\d+/, leader will keep going regardless, but we send every 10th response anyway, jsut so leader keeps relatively current with our commit count.
+        // If the ID is /ASYNC_\d+/, leader will keep going regardless, but we send every 10th response anyway, just so leader keeps relatively current with our commit count.
         string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
         uint64_t currentCommitCount = db.getCommitCount();
         bool isAsync = SStartsWith(message["ID"], "ASYNC_");
