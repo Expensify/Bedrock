@@ -79,6 +79,10 @@ class SQLiteNode : public STCPManager {
     // Receive timeout for cluster messages.
     static const uint64_t RECV_TIMEOUT;
 
+    // The minimum frequency of APPROVE_TRANSACTION messages we'll send when following, back to leader, to indicate our own current synchronization state.
+    // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th BEGIN_TRANSACTION message.
+    static const size_t MIN_APPROVE_FREQUENCY;
+
     // The maximum number of commits behind we'll allow a quorum number of peers to be before we block commits on leader.
     static atomic<uint64_t> MAX_PEER_FALL_BEHIND;
 

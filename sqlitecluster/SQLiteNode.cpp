@@ -72,6 +72,8 @@ const string SQLiteNode::CONSISTENCY_LEVEL_NAMES[] = {"ASYNC",
 
 atomic<int64_t> SQLiteNode::currentReplicateThreadID(0);
 
+const size_t SQLiteNode::MIN_APPROVE_FREQUENCY{10};
+
 const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString) {
     // Make the logging macro work in the static initializer.
     auto _name = "init";
@@ -2350,7 +2352,7 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
         string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
         uint64_t currentCommitCount = db.getCommitCount();
         bool isAsync = SStartsWith(message["ID"], "ASYNC_");
-        bool asyncNotification = isAsync && (currentCommitCount % 10 == 0);
+        bool asyncNotification = isAsync && (currentCommitCount % MIN_APPROVE_FREQUENCY == 0);
         if (!isAsync || asyncNotification) {
             // Not a permafollower, approve the transaction
             PINFO(verb << " #" << currentCommitCount + 1 << " (" << message["NewHash"] << ").");

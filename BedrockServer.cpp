@@ -1936,9 +1936,9 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         response["previousValue"] = to_string(existingValue);
 
         uint64_t newValue = command->request.calcU64("value");
-        if (newValue < 50) {
+        if (newValue < SQLiteNode::MIN_APPROVE_FREQUENCY) {
             // We won't break everything in purpose. This can be used to check the existing value without changing anything by passing `0`.
-            response.methodLine = "400 Refusing to set peer fall behind below 50";
+            response.methodLine = "400 Refusing to set peer fall behind below " + to_string(SQLiteNode::MIN_APPROVE_FREQUENCY);
         } else {
             // Set the new value and return 200 OK.
             SQLiteNode::MAX_PEER_FALL_BEHIND = newValue;
