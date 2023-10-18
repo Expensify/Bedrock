@@ -1749,11 +1749,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                         }
                         PINFO("Peer " << response << " transaction #" << message["NewCount"] << " (" << message["NewHash"] << ")");
                         peer->transactionResponse = response;
-                    } else {
-                        // Old command.  Nothing to do.  We already sent a commit or rollback.
-                        // Shut this up.
-                        PINFO("Peer '" << message.methodLine << "' transaction #" << message["NewCount"]
-                              << " (" << message["NewHash"] << ") after " << (hashMatch ? "commit" : "rollback") << ".");
                     }
                 } catch (const SException& e) {
                     // Doesn't correspond to the outstanding transaction not necessarily fatal. This can happen if, for
