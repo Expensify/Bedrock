@@ -1752,7 +1752,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     }
                 } catch (const SException& e) {
                     // Doesn't correspond to the outstanding transaction not necessarily fatal. This can happen if, for
-                    // example, a command is escalated from/ one follower, approved by the second, but where the first follower dies
+                    // example, a command is escalated from one follower, approved by the second, but where the first follower dies
                     // before the second's approval is received by the leader. In this case the leader will drop the command
                     // when the initiating peer is lost, and thus won't have an outstanding transaction (or will be processing
                     // a new transaction) when the old, outdated approval is received. Furthermore, in this case we will have
