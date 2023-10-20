@@ -237,6 +237,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB, hctree)),
     _sharedData(initializeSharedData(_db, _filename, initializeJournal(_db, minJournalTables), hctree)),
+    _journalID(INT_MAX),
     _journalSize(initializeJournalSize(_db, _sharedData.journalNames)),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
@@ -250,6 +251,7 @@ SQLite::SQLite(const SQLite& from) :
     _maxJournalSize(from._maxJournalSize),
     _db(initializeDB(_filename, from._mmapSizeGB, false)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
     _sharedData(from._sharedData),
+    _journalID(INT_MAX),
     _journalSize(from._journalSize),
     _cacheSize(from._cacheSize),
     _synchronous(from._synchronous),
@@ -605,10 +607,9 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     // We pass the journal number selected to the handler so that a caller can utilize the
     // same method bedrock does for accessing 1 table per thread, in order to attempt to
     // reduce conflicts on tables that are written to on every command
-    const int64_t journalID = _sharedData.nextJournalCount++;
-    _journalName = _sharedData.journalNames[journalID % _sharedData.journalNames.size()];
+    _journalID = _sharedData.reserveJournalNumber();
     if (_shouldNotifyPluginsOnPrepare) {
-        (*_onPrepareHandler)(*this, journalID);
+        (*_onPrepareHandler)(*this, _journalID);
     }
 
     // Now that we've locked anybody else from committing, look up the state of the database. We don't need to lock the
@@ -629,7 +630,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     }
 
     // Create our query.
-    string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
+    string query = "INSERT INTO " + _sharedData.journalNames[_journalID] + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
 
     // These are the values we're currently operating on, until we either commit or rollback.
     _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
@@ -665,16 +666,16 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     if (newJournalSize > _maxJournalSize) {
         // Delete the oldest entry
         uint64_t before = STimeNow();
-        string query = "DELETE FROM " + _journalName + " "
-                       "WHERE id < (SELECT MAX(id) FROM " + _journalName + ") - " + SQ(_maxJournalSize) + " "
+        string query = "DELETE FROM " + _sharedData.journalNames[_journalID] + " "
+                       "WHERE id < (SELECT MAX(id) FROM " + _sharedData.journalNames[_journalID] + ") - " + SQ(_maxJournalSize) + " "
                        "LIMIT 10";
         SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
 
         // Figure out the new journal size.
         SQResult result;
-        SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) AS id FROM " + _journalName, result));
+        SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) AS id FROM " + _sharedData.journalNames[_journalID], result));
         uint64_t min = SToUInt64(result[0][0]);
-        SASSERT(!SQuery(_db, "getting commit max", "SELECT MAX(id) AS id FROM " + _journalName, result));
+        SASSERT(!SQuery(_db, "getting commit max", "SELECT MAX(id) AS id FROM " + _sharedData.journalNames[_journalID], result));
         uint64_t max = SToUInt64(result[0][0]);
         newJournalSize = max - min;
 
@@ -695,7 +696,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     result = SQuery(_db, "committing db transaction", "COMMIT");
     _lastConflictPage = _conflictPage;
     if (_lastConflictPage) {
-        SINFO("part of last conflcit page: " << _lastConflictPage);
+        SINFO("part of last conflict page: " << _lastConflictPage);
     }
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
@@ -727,6 +728,10 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _sharedData.commitLock.unlock();
         _mutexLocked = false;
         _queryCache.clear();
+
+        // Return the journal.
+        _sharedData.returnJournalNumber(_journalID);
+        _journalID = INT_MAX;
 
         if (preCheckpointCallback != nullptr) {
             (*preCheckpointCallback)();
@@ -796,6 +801,12 @@ void SQLite::rollback() {
             _mutexLocked = false;
             _sharedData._commitLockTimer.stop();
             _sharedData.commitLock.unlock();
+        }
+
+        // Return the journal.
+        if (_journalID != INT_MAX) {
+            _sharedData.returnJournalNumber(_journalID);
+            _journalID = INT_MAX;
         }
     } else {
         SINFO("Rolling back but not inside transaction, ignoring.");
@@ -1090,7 +1101,6 @@ int64_t SQLite::getLastConflictPage() const {
 
 SQLite::SharedData::SharedData(const vector<string>& journalNames_) :
 journalNames(journalNames_),
-nextJournalCount(0),
 _commitEnabled(true),
 _commitLockTimer("commit lock timer", {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},

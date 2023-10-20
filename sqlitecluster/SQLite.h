@@ -2,6 +2,8 @@
 #include <libstuff/sqlite3.h>
 #include <libstuff/SPerformanceTimer.h>
 
+#include <climits>
+
 class SQLite {
   public:
 
@@ -295,15 +297,11 @@ class SQLite {
         // This is the last committed hash by *any* thread for this file.
         atomic<string> lastCommittedHash;
 
-        // An identifier used to choose the next journal table to use with this set of DB handles. Only used to
-        // initialize new objects.
-        atomic<int64_t> nextJournalCount;
-
         mutex availableJournalsMutex;
         list<size_t> availableJournalNumbers;
         condition_variable availableJournalCV;
 
-        int64_t reserveJournalNumber() {
+        size_t reserveJournalNumber() {
             unique_lock<mutex> lock(availableJournalsMutex);
             size_t number{0};
             while (true) {
@@ -320,7 +318,7 @@ class SQLite {
             }
         }
 
-        void returnJournalNumber(int64_t journalNumber) {
+        void returnJournalNumber(size_t journalNumber) {
             lock_guard<mutex> lock(availableJournalsMutex);
             availableJournalNumbers.push_back(journalNumber);
             availableJournalCV.notify_one();
@@ -389,9 +387,8 @@ class SQLite {
     // Pointer to our SharedData object, which is shared between all SQLite DB objects for the same file.
     SharedData& _sharedData;
 
-    // The name of the journal table that this particular DB handle with write to.
-    string _journalName;
-    int64_t _journalID;
+    // The index number of the currently reserved journal. INT_MAX when not set.
+    size_t _journalID;
 
     // The current size of the journal, in rows. TODO: Why isn't this in SharedData?
     uint64_t _journalSize;
