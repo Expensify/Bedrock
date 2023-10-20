@@ -296,6 +296,33 @@ class SQLite {
         // initialize new objects.
         atomic<int64_t> nextJournalCount;
 
+        mutex availableJournalsMutex;
+        list<int64_t> availableJournalNumbers;
+        condition_variable availableJournalCV;
+
+        int64_t reserveJournalNumber() {
+            unique_lock<mutex> lock(availableJournalsMutex);
+            int64_t number{0};
+            while (true) {
+                if (availableJournalNumbers) {
+                    number = availableJournalNumbers.front();
+                    availableJournalNumbers.pop_front();
+                    return number;
+                } else {
+                    // Wait until a journal is added.
+                    SINFO("All journals are reserved, waiting.");
+                    availableJournalCV.wait(lock);
+                    SINFO("Notified that journal is available, trying again.");
+                }
+            }
+        }
+
+        void returnJournalNumber(int64_t journalNumber) {
+            lock_guard<mutex> lock(availableJournalsMutex);
+            availableJournalNumbers.push_back(journalNumber);
+            availableJournalCV.notify_one();
+        }
+
         // When `SQLite::prepare` is called, we need to save a set of info that will be broadcast to peers when the
         // transaction is ultimately committed. This should be cleared out if the transaction is rolled back.
         void prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash, uint64_t dbCountAtTransactionStart);
@@ -364,6 +391,7 @@ class SQLite {
 
     // The name of the journal table that this particular DB handle with write to.
     string _journalName;
+    int64_t _journalID;
 
     // The current size of the journal, in rows. TODO: Why isn't this in SharedData?
     uint64_t _journalSize;

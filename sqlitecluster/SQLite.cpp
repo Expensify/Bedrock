@@ -162,6 +162,17 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables) {
     return journalNames;
 }
 
+// Assumes that initializeJournal has already run.
+list<int64_t> initializeJournalNumbers() {
+    int64_t i = 0;
+    list<int64_t> result;
+    for (auto & j : journalNames) {
+        result.push_back(i);
+        ++i;
+    }
+    return result;
+}
+
 uint64_t SQLite::initializeJournalSize(sqlite3* db, const vector<string>& journalNames) {
     // We keep track of the number of rows in the journal, so that we can delete old entries when we're over our size
     // limit.
