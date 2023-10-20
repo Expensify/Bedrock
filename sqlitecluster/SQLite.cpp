@@ -1137,3 +1137,27 @@ map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::popCommittedT
     _committedTransactions.clear();
     return result;
 }
+
+size_t SQLite::SharedData::reserveJournalNumber() {
+    unique_lock<mutex> lock(availableJournalsMutex);
+    size_t number{0};
+    while (true) {
+        if (availableJournalNumbers.size()) {
+            number = availableJournalNumbers.front();
+            availableJournalNumbers.pop_front();
+            return number;
+        } else {
+            // Wait until a journal is added.
+            SINFO("All journals are reserved, waiting.");
+            availableJournalCV.wait(lock);
+            SINFO("Notified that journal is available, trying again.");
+        }
+    }
+}
+
+void SQLite::SharedData::returnJournalNumber(size_t journalNumber) {
+    lock_guard<mutex> lock(availableJournalsMutex);
+    availableJournalNumbers.push_back(journalNumber);
+    availableJournalCV.notify_one();
+}
+
