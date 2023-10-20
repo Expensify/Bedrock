@@ -81,7 +81,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
 
                 // Let's make ourselves 20 commands to spam at each node.
                 vector<SData> requests;
-                int numCommands = 200;
+                int numCommands = 20000;
                 for (int j = 0; j < numCommands; j++) {
                     SData query("idcollision b2");
                     query["writeConsistency"] = "ASYNC";
@@ -91,7 +91,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 }
 
                 // Ok, send them all!
-                auto results = brtester.executeWaitMultipleData(requests);
+                auto results = brtester.executeWaitMultipleData(requests, 50);
 
                 int failures = 0;
                 for (auto row : results) {

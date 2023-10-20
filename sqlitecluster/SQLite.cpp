@@ -340,6 +340,10 @@ void SQLite::exclusiveUnlockDB() {
 }
 
 bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
+
+    // We reserve a journal number at the start of our transaction.
+    _journalID = _sharedData.reserveJournalNumber();
+
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
         if (isSyncThread) {
             // Blocking the sync thread has catastrophic results (forking) and so we either get this quickly, or we fail the transaction.
@@ -607,7 +611,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     // We pass the journal number selected to the handler so that a caller can utilize the
     // same method bedrock does for accessing 1 table per thread, in order to attempt to
     // reduce conflicts on tables that are written to on every command
-    _journalID = _sharedData.reserveJournalNumber();
     if (_shouldNotifyPluginsOnPrepare) {
         (*_onPrepareHandler)(*this, _journalID);
     }
@@ -1148,9 +1151,9 @@ size_t SQLite::SharedData::reserveJournalNumber() {
             return number;
         } else {
             // Wait until a journal is added.
-            SINFO("All journals are reserved, waiting.");
+            SINFO("[ncj] All journals are reserved, waiting.");
             availableJournalCV.wait(lock);
-            SINFO("Notified that journal is available, trying again.");
+            SINFO("[ncj] Notified that journal is available, trying again.");
         }
     }
 }
