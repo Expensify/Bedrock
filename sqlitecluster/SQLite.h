@@ -297,6 +297,7 @@ class SQLite {
         // This is the last committed hash by *any* thread for this file.
         atomic<string> lastCommittedHash;
 
+        // Data structures and methods required for letting threads reserve specific journal tables.
         mutex availableJournalsMutex;
         list<size_t> availableJournalNumbers;
         condition_variable availableJournalCV;
