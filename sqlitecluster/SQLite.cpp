@@ -61,7 +61,14 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
     lock_guard<mutex> lock(instantiationMutex);
     auto sharedDataIterator = sharedDataLookupMap.m.find(filename);
     if (sharedDataIterator == sharedDataLookupMap.m.end()) {
-        SharedData* sharedData = new SharedData(); // This is never deleted.
+        SharedData* sharedData = new SharedData(journalNames); // This is never deleted.
+
+        // Set up the available journal numbers. No locking required in this case because nobody can access these yet.
+        size_t journalIndex{0};
+        while (journalIndex < sharedData->journalNames.size()) {
+            sharedData->availableJournalNumbers.push_back(journalIndex);
+            ++journalIndex;
+        }
 
         // Look up the existing wal setting for this DB.
         SQResult result;
@@ -162,17 +169,6 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables) {
     return journalNames;
 }
 
-// Assumes that initializeJournal has already run.
-list<int64_t> initializeJournalNumbers() {
-    int64_t i = 0;
-    list<int64_t> result;
-    for (auto & j : journalNames) {
-        result.push_back(i);
-        ++i;
-    }
-    return result;
-}
-
 uint64_t SQLite::initializeJournalSize(sqlite3* db, const vector<string>& journalNames) {
     // We keep track of the number of rows in the journal, so that we can delete old entries when we're over our size
     // limit.
@@ -240,9 +236,8 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB, hctree)),
-    _journalNames(initializeJournal(_db, minJournalTables)),
-    _sharedData(initializeSharedData(_db, _filename, _journalNames, hctree)),
-    _journalSize(initializeJournalSize(_db, _journalNames)),
+    _sharedData(initializeSharedData(_db, _filename, initializeJournal(_db, minJournalTables), hctree)),
+    _journalSize(initializeJournalSize(_db, _sharedData.journalNames)),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
     _mmapSizeGB(mmapSizeGB)
@@ -254,7 +249,6 @@ SQLite::SQLite(const SQLite& from) :
     _filename(from._filename),
     _maxJournalSize(from._maxJournalSize),
     _db(initializeDB(_filename, from._mmapSizeGB, false)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
-    _journalNames(from._journalNames),
     _sharedData(from._sharedData),
     _journalSize(from._journalSize),
     _cacheSize(from._cacheSize),
@@ -306,7 +300,7 @@ int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void*
 }
 
 string SQLite::_getJournalQuery(const list<string>& queryParts, bool append) {
-    return _getJournalQuery(_journalNames, queryParts, append);
+    return _getJournalQuery(_sharedData.journalNames, queryParts, append);
 }
 
 string SQLite::_getJournalQuery(const vector<string>& journalNames, const list<string>& queryParts, bool append) {
@@ -612,7 +606,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     // same method bedrock does for accessing 1 table per thread, in order to attempt to
     // reduce conflicts on tables that are written to on every command
     const int64_t journalID = _sharedData.nextJournalCount++;
-    _journalName = _journalNames[journalID % _journalNames.size()];
+    _journalName = _sharedData.journalNames[journalID % _sharedData.journalNames.size()];
     if (_shouldNotifyPluginsOnPrepare) {
         (*_onPrepareHandler)(*this, journalID);
     }
@@ -826,7 +820,7 @@ uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint6
 }
 
 bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
-    return getCommit(_db, _journalNames, id, query, hash);
+    return getCommit(_db, _sharedData.journalNames, id, query, hash);
 }
 
 bool SQLite::getCommit(sqlite3* db, const vector<string> journalNames, uint64_t id, string& query, string& hash) {
@@ -1094,7 +1088,8 @@ int64_t SQLite::getLastConflictPage() const {
     return _lastConflictPage;
 }
 
-SQLite::SharedData::SharedData() :
+SQLite::SharedData::SharedData(const vector<string>& journalNames_) :
+journalNames(journalNames_),
 nextJournalCount(0),
 _commitEnabled(true),
 _commitLockTimer("commit lock timer", {

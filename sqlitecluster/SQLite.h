@@ -277,7 +277,7 @@ class SQLite {
     class SharedData {
       public:
         // Constructor.
-        SharedData();
+        SharedData(const vector<string>& journalNames_);
 
         // Enable or disable commits for the DB.
         void setCommitEnabled(bool enable);
@@ -289,6 +289,9 @@ class SQLite {
         // This removes and returns all committed transactions.
         map<uint64_t, tuple<string, string, uint64_t>> popCommittedTransactions();
 
+        // Names of ALL journal tables for this database.
+        const vector<string> journalNames;
+
         // This is the last committed hash by *any* thread for this file.
         atomic<string> lastCommittedHash;
 
@@ -297,14 +300,14 @@ class SQLite {
         atomic<int64_t> nextJournalCount;
 
         mutex availableJournalsMutex;
-        list<int64_t> availableJournalNumbers;
+        list<size_t> availableJournalNumbers;
         condition_variable availableJournalCV;
 
         int64_t reserveJournalNumber() {
             unique_lock<mutex> lock(availableJournalsMutex);
-            int64_t number{0};
+            size_t number{0};
             while (true) {
-                if (availableJournalNumbers) {
+                if (availableJournalNumbers.size()) {
                     number = availableJournalNumbers.front();
                     availableJournalNumbers.pop_front();
                     return number;
@@ -382,9 +385,6 @@ class SQLite {
 
     // The underlying sqlite3 DB handle.
     sqlite3* _db;
-
-    // Names of ALL journal tables for this database.
-    const vector<string> _journalNames;
 
     // Pointer to our SharedData object, which is shared between all SQLite DB objects for the same file.
     SharedData& _sharedData;
