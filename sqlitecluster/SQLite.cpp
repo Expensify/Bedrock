@@ -17,6 +17,7 @@ sqlite3* SQLite::getDBHandle() {
 
 thread_local string SQLite::_mostRecentSQLiteErrorLog;
 thread_local int64_t SQLite::_conflictPage;
+thread_local bool SQLite::_journalConflict{false};
 
 const string SQLite::getMostRecentSQLiteErrorLog() const {
     return _mostRecentSQLiteErrorLog;
@@ -291,6 +292,13 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
         // 17 is the length of "conflict at page" and the following space.
         const char* offset = strstr(zMsg, "conflict at page") + 17;
         _conflictPage = atol(offset);
+        if (offset) {
+            const char* journal = strstr(offset, "journal");
+            if (journal) {
+                _journalConflict = true;
+                SINFO("[ncj] " << zMsg);
+            }
+        }
     }
 }
 
@@ -341,8 +349,11 @@ void SQLite::exclusiveUnlockDB() {
 
 bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
 
-    // We reserve a journal number at the start of our transaction.
-    _journalID = _sharedData.reserveJournalNumber();
+    // We reserve a journal number at the start of our transaction if we've conflicted before.
+    if (_journalConflict) {
+        _journalID = _sharedData.reserveJournalNumber();
+        SINFO("[ncj] Reserved journal " << _journalID << " after conflict.");
+    }
 
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
         if (isSyncThread) {
@@ -608,6 +619,11 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
         _mutexLocked = true;
     }
 
+    // If we didn't get a journal at the beginning of the transaction, get one now.
+    if (_journalID == INT_MAX) {
+        _journalID = _sharedData.reserveJournalNumber();
+    }
+
     // We pass the journal number selected to the handler so that a caller can utilize the
     // same method bedrock does for accessing 1 table per thread, in order to attempt to
     // reduce conflicts on tables that are written to on every command
@@ -638,7 +654,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     // These are the values we're currently operating on, until we either commit or rollback.
     _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
 
-    int result = SQuery(_db, "updating journal", query);
+    int result = SQuery(_db, "[ncj] updating journal", query);
     _prepareElapsed += STimeNow() - before;
     if (result) {
         // Couldn't insert into the journal; roll back the original commit
@@ -761,6 +777,12 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _cacheHits = 0;
         _dbCountAtStart = 0;
         _lastConflictPage = 0;
+        if (_journalConflict) {
+            SINFO("[ncj] Successful commit cleared journal conflict flag.");
+            // There's an issue where if we complete a command without successfully committing, i.e., we attempt a commit and it fails and a subsequent attempt completes in `peek`, we will
+            // never clear this, we'll always grab journals afterward until another successful commit. Need to fix this.
+        }
+        _journalConflict = false;
     } else {
         SINFO("Commit failed, waiting for rollback.");
     }
@@ -808,6 +830,9 @@ void SQLite::rollback() {
 
         // Return the journal.
         if (_journalID != INT_MAX) {
+            if (_journalConflict) {
+                SINFO("[ncj] Freeing journal " << _journalID << " while still flagging journal conflict. Will grab another journal.");
+            }
             _sharedData.returnJournalNumber(_journalID);
             _journalID = INT_MAX;
         }

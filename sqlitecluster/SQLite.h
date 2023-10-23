@@ -404,6 +404,7 @@ class SQLite {
 
     atomic<int64_t> _lastConflictPage = 0;
     static thread_local int64_t _conflictPage;
+    static thread_local bool _journalConflict;
 
     bool _writeIdempotent(const string& query, bool alwaysKeepQueries = false);
 
