@@ -190,6 +190,7 @@ bool BedrockCacheCommand::peek(SQLite& db) {
             SASSERT(result[0].size() == 2);
             response["name"] = result[0][0];
             response.content = result[0][1];
+            SINFO("Pushing " << response["name"] << " to LRU cache");
 
             // Update the LRU Map
             plugin()._lruMap.pushMRU(response["name"]);
@@ -261,6 +262,7 @@ void BedrockCacheCommand::process(SQLite& db) {
             auto popResult = plugin()._lruMap.popLRU();
             const string& name = (popResult.second ? popResult.first : db.read("SELECT name FROM cache LIMIT 1"));
             SASSERT(!name.empty());
+            SINFO("Deleting " << response["name"] << " from the cache");
 
             // Delete it
             if (!db.write("DELETE FROM cache WHERE name=" + SQ(name) + ";")) {
