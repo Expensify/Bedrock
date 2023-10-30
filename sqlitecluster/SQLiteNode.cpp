@@ -1276,7 +1276,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
 
             if (quorumUpToDate && _commitsBlocked) {
                 _commitsBlocked = false;
-                SWARN("[clustersync] Cluster is no longer behind by over " << MAX_PEER_FALL_BEHIND << " commits. Unblocking new commits.");
+                SINFO("[clustersync] Cluster is no longer behind by over " << MAX_PEER_FALL_BEHIND << " commits. Unblocking new commits.");
                 _db.exclusiveUnlockDB();
             } else if (!quorumUpToDate && !_commitsBlocked && !_db.insideTransaction()) {
                 _commitsBlocked = true;
@@ -1284,9 +1284,9 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SWARN("[clustersync] Cluster is behind by over " << MAX_PEER_FALL_BEHIND << " commits. New commits blocked until the cluster catches up.");
                 uint64_t start = STimeNow();
                 _db.exclusiveLockDB();
-                SWARN("[clustersync] Took " << (STimeNow() - start) << "us to block commits. Dumping cluster commit state. I have commit: " << myCommitCount);
+                SINFO("[clustersync] Took " << (STimeNow() - start) << "us to block commits. Dumping cluster commit state. I have commit: " << myCommitCount);
                 for (const auto& p : _peerList) {
-                    SWARN("[clustersync] Peer " << p->name  << " has commit " << p->commitCount << ", behind by: " << (myCommitCount - p->commitCount));
+                    SINFO("[clustersync] Peer " << p->name  << " has commit " << p->commitCount << ", behind by: " << (myCommitCount - p->commitCount));
                 }
             }
         }
