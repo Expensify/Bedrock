@@ -359,7 +359,6 @@ namespace tpunit {
           */
          static bool tpunit_detail_fp_equal(double lhs, double rhs, unsigned char ulps);
 
-       protected:
          const char* _name;
 
          bool _parallel = false;
