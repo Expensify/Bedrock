@@ -60,10 +60,10 @@ using namespace std;
  * TRACE(message); adds a trace to the test output with a user
  * specified string message.
  */
-#define ABORT() tpunit_detail_assert(this, __FILE__, __LINE__); return;
-#define FAIL()  tpunit_detail_assert(this, __FILE__, __LINE__);
+#define ABORT() tpunit::TestFixture::tpunit_detail_assert(tpunit::currentTestPtr, __FILE__, __LINE__); return;
+#define FAIL()  tpunit::TestFixture::tpunit_detail_assert(tpunit::currentTestPtr, __FILE__, __LINE__);
 #define PASS()  /* do nothing */
-#define TRACE(message) tpunit_detail_trace(this, __FILE__, __LINE__, message);
+#define TRACE(message) tpunit::TestFixture::tpunit_detail_trace(tpunit::currentTestPtr, __FILE__, __LINE__, message);
 
 /**
  * The set of core macros for basic predicate testing of boolean
@@ -353,12 +353,14 @@ namespace tpunit {
           */
          static bool tpunit_detail_fp_equal(double lhs, double rhs, unsigned char ulps);
 
+       public:
          static void tpunit_detail_assert(TestFixture* f, const char* _file, int _line);
 
          static void tpunit_detail_exception(TestFixture* f, method* _method, const char* _message);
 
          static void tpunit_detail_trace(TestFixture* f, const char* _file, int _line, const char* _message);
 
+       protected:
          const char* _name;
 
          bool _parallel = false;
@@ -391,6 +393,8 @@ namespace tpunit {
          // True if running multithreaded.
          bool _multiThreaded;
    };
+
+   extern thread_local tpunit::TestFixture* currentTestPtr;
 
    /**
     * Convenience class containing the entry point to run all registered tests.
