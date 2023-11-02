@@ -335,6 +335,12 @@ namespace tpunit {
           */
          void TESTINFO(const string& newLog);
 
+         static void tpunit_detail_assert(TestFixture* f, const char* _file, int _line);
+
+         static void tpunit_detail_exception(TestFixture* f, method* _method, const char* _message);
+
+         static void tpunit_detail_trace(TestFixture* f, const char* _file, int _line, const char* _message);
+
       protected:
 
          /**
@@ -352,13 +358,6 @@ namespace tpunit {
           * http://www.cygnus-software.com/papers/comparingfloats/comparingfloats.htm
           */
          static bool tpunit_detail_fp_equal(double lhs, double rhs, unsigned char ulps);
-
-       public:
-         static void tpunit_detail_assert(TestFixture* f, const char* _file, int _line);
-
-         static void tpunit_detail_exception(TestFixture* f, method* _method, const char* _message);
-
-         static void tpunit_detail_trace(TestFixture* f, const char* _file, int _line, const char* _message);
 
        protected:
          const char* _name;
