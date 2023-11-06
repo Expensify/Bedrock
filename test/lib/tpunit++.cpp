@@ -6,6 +6,7 @@ using namespace tpunit;
 
 bool tpunit::TestFixture::exitFlag = false;
 thread_local string tpunit::currentTestName;
+thread_local tpunit::TestFixture* tpunit::currentTestPtr = nullptr;
 thread_local mutex tpunit::currentTestNameMutex;
 
 thread_local int tpunit::TestFixture::perFixtureStats::_assertions = 0;
@@ -239,6 +240,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                    }
                    {
                        lock_guard<mutex> lock(currentTestNameMutex);
+                       currentTestPtr = f;
                        if (f->_name) {
                            currentTestName = f->_name;
                        } else {
@@ -412,6 +414,7 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
         testThreads.push_back(thread([t, f]() {
             recursive_mutex& m = *(f->_mutex);
             currentTestName = f->_name;
+            currentTestPtr = f;
             f->_stats._assertions = 0;
             f->_stats._exceptions = 0;
             f->testOutputBuffer = "";

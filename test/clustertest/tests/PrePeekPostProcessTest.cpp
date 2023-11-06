@@ -2,6 +2,10 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
+void checkWithoutThis() {
+    ASSERT_EQUAL(1, 1);
+}
+
 struct PrePeekPostProcessTest : tpunit::TestFixture {
     PrePeekPostProcessTest() : tpunit::TestFixture("PrePeekPostProcess", BEFORE_CLASS(PrePeekPostProcessTest::setup),
                                                                          AFTER_CLASS(PrePeekPostProcessTest::teardown),
@@ -22,6 +26,8 @@ struct PrePeekPostProcessTest : tpunit::TestFixture {
 
     void prePeek()
     {
+        checkWithoutThis();
+
         BedrockTester& brtester = tester->getTester(1);
         SData cmd("prepeekcommand");
         STable response = SParseJSONObject(brtester.executeWaitMultipleData({cmd})[0].content);
