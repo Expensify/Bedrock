@@ -101,10 +101,10 @@ using namespace std;
  * ASSERT|EXPECT_FLOAT_NEAR(lhs, rhs, abs_error); generates a failure if
  * the given floating-point values exceed the absolute error.
  */
-#define ASSERT_FLOAT_EQUAL(lhs, rhs) if(tpunit_detail_fp_equal(lhs, rhs, 4)) { PASS(); } else { "incorrectly asserted " + SToStr(lhs) + " = " + SToStr(rhs); ABORT(); }
-#define EXPECT_FLOAT_EQUAL(lhs, rhs) if(tpunit_detail_fp_equal(lhs, rhs, 4)) { PASS(); } else { "incorrectly expected " + SToStr(lhs) + " = " + SToStr(rhs); FAIL(); }
-#define ASSERT_FLOAT_NEAR(lhs, rhs, abs_error) if((((lhs) > (rhs)) ? (lhs) - (rhs) : (rhs) - (lhs)) <= (abs_error)) { PASS(); } else { "incorrectly asserted " + SToStr(lhs) + " near " + SToStr(rhs); ABORT(); }
-#define EXPECT_FLOAT_NEAR(lhs, rhs, abs_error) if((((lhs) > (rhs)) ? (lhs) - (rhs) : (rhs) - (lhs)) <= (abs_error)) { PASS(); } else { "incorrectly expected " + SToStr(lhs) + " near " + SToStr(rhs); FAIL(); }
+#define ASSERT_FLOAT_EQUAL(lhs, rhs) if(tpunit_detail_fp_equal(lhs, rhs, 4)) { PASS(); } else { PrintEquality(lhs, rhs, false); ABORT(); }
+#define EXPECT_FLOAT_EQUAL(lhs, rhs) if(tpunit_detail_fp_equal(lhs, rhs, 4)) { PASS(); } else { PrintEquality(lhs, rhs, false); FAIL(); }
+#define ASSERT_FLOAT_NEAR(lhs, rhs, abs_error) if((((lhs) > (rhs)) ? (lhs) - (rhs) : (rhs) - (lhs)) <= (abs_error)) { PASS(); } else { TESTINFO("incorrectly asserted " + SToStr(lhs) + " near " + SToStr(rhs)); ABORT(); }
+#define EXPECT_FLOAT_NEAR(lhs, rhs, abs_error) if((((lhs) > (rhs)) ? (lhs) - (rhs) : (rhs) - (lhs)) <= (abs_error)) { PASS(); } else { TESTINFO("incorrectly expected " + SToStr(lhs) + " near " + SToStr(rhs)); FAIL(); }
 
 /**
  * The set of macros for checking whether a statement will throw or not
