@@ -111,3 +111,10 @@ struct SData {
     static SData create(const string& rhs);
     static const string placeholder;
 };
+
+// Support output stream operations.
+inline ostream& operator<<(ostream& output, const SData& val)
+{
+    output << val.serialize();
+    return output;
+}
