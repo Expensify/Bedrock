@@ -40,7 +40,7 @@ You can build from scratch as follows:
     # Install some dependencies
     sudo add-apt-repository ppa:ubuntu-toolchain-r/test
     sudo apt-get update
-    sudo apt-get install build-essential gcc-13 g++-13 libpcre++-dev zlib1g-dev
+    sudo apt-get install build-essential gcc-9 g++-9 libpcre++-dev zlib1g-dev
 
     # Build it
     cd Bedrock
@@ -73,7 +73,7 @@ You can build from scratch as follows:
 
     # Install some dependencies with Brew (see: https://brew.sh/)
     brew update
-    brew install gcc@13
+    brew install gcc@6
 
     # Configure PCRE to use C++17 and compile from source
     brew uninstall --ignore-dependencies pcre
@@ -81,7 +81,7 @@ You can build from scratch as follows:
     # Add these to the end of the `system "./configure"` command:
     #     "--enable-cpp",
     #     "--enable-pcre64",
-    #     "CXX=/usr/local/bin/g++-13",
+    #     "CXX=/usr/local/bin/g++-9",
     #     "CXXFLAGS=--std=gnu++14"
     brew install --build-from-source pcre
 
