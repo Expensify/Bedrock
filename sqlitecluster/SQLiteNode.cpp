@@ -147,7 +147,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
 {
     SASSERT(_originalPriority >= 0);
     onPrepareHandlerEnabled = false;
-    
+
     // We create a copy of the database handle here so that the sync node can operate on its handle and the plugin gets
     // its own handle to operate on. This avoids conflicts where the sync thread and the plugin are trying to both run
     // queries at the same time. This also avoids the need to create any share locking between the two.
@@ -567,7 +567,7 @@ bool SQLiteNode::update() {
         size_t numFullPeers = 0;
         size_t numLoggedInFullPeers = 0;
         SQLitePeer* freshestPeer = nullptr;
-        for (const auto peer : _peerList) {
+        for (const auto& peer : _peerList) {
             // Count how many full peers (non-permafollowers) we have, and how many are logged in.
             // Note that the `permaFollower` property is const and this value will always be the same for a given peer.
             if (!peer->permaFollower) {
