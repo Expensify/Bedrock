@@ -8,6 +8,7 @@ class BedrockPlugin_DB : public BedrockPlugin {
     virtual const string& getName() const;
     virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
     static const string name;
+    virtual void upgradeDatabase(SQLite& db);
 };
 
 class BedrockDBCommand : public BedrockCommand {
