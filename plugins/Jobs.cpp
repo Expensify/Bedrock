@@ -1391,12 +1391,18 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
     }
 
     for (const string& part : parts) {
+        // This isn't supported natively by SQLite, so do it manually here instead.
         if (SToUpper(part) == "START OF HOUR") {
-            // Transform to strftime.
+            SQResult result;
+            if (!db.read("SELECT STRFTIME('%Y-%m-%d %H:00:00', " + base + ");", result) || result.empty()) {
+                SWARN("Syntax error, failed parsing repeat "+part);
+                return "";
+            }
 
+            base = SQ(result[0][0]);
         } else if (!SIsValidSQLiteDateModifier(part)){
             // Validate the sqlite date modifiers
-            SWARN("Syntax error, failed parsing repeat "+part);
+            SWARN("Syntax error, failed parsing repeat " + part);
             return "";
         } else {
             SQResult result;
