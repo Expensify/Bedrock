@@ -1377,32 +1377,39 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
     }
 
     // Make sure the first part indicates the base (eg, what we are modifying)
-    list<string> safeParts;
     string base = parts.front();
     parts.pop_front();
     if (base == "SCHEDULED") {
-        safeParts.push_back(SQ(lastScheduled));
+        base = SQ(lastScheduled);
     } else if (base == "STARTED") {
-        safeParts.push_back(SQ(lastRun));
+        base = SQ(lastRun);
     } else if (base == "FINISHED") {
-        safeParts.push_back(SCURRENT_TIMESTAMP());
+        base = SCURRENT_TIMESTAMP();
     } else {
         SWARN("Syntax error, failed parsing repeat '" << repeat << "': missing base (" << base << ")");
         return "";
     }
 
     for (const string& part : parts) {
-        // Validate the sqlite date modifiers
-        if (!SIsValidSQLiteDateModifier(part)){
+        if (SToUpper(part) == "START OF HOUR") {
+            // Transform to strftime.
+
+        } else if (!SIsValidSQLiteDateModifier(part)){
+            // Validate the sqlite date modifiers
             SWARN("Syntax error, failed parsing repeat "+part);
             return "";
-        }
+        } else {
+            SQResult result;
+            if (!db.read("SELECT DATETIME(" + base + ", " + SQ(part) + ");", result) || result.empty()) {
+                SWARN("Syntax error, failed parsing repeat "+part);
+                return "";
+            }
 
-        safeParts.push_back(SQ(part));
+            base = SQ(result[0][0]);
+        }
     }
 
-    // Combine the parts together and return the full DATETIME statement
-    return "DATETIME( " + SComposeList(safeParts) + " )";
+    return base;
 }
 
 // ==========================================================================
