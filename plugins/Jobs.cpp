@@ -1377,16 +1377,16 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
     }
 
     // Make sure the first part indicates the base (eg, what we are modifying)
-    string base = parts.front();
+    string nextRun = parts.front();
     parts.pop_front();
-    if (base == "SCHEDULED") {
-        base = SQ(lastScheduled);
-    } else if (base == "STARTED") {
-        base = SQ(lastRun);
-    } else if (base == "FINISHED") {
-        base = SCURRENT_TIMESTAMP();
+    if (nextRun == "SCHEDULED") {
+        nextRun = SQ(lastScheduled);
+    } else if (nextRun == "STARTED") {
+        nextRun = SQ(lastRun);
+    } else if (nextRun == "FINISHED") {
+        nextRun = SCURRENT_TIMESTAMP();
     } else {
-        SWARN("Syntax error, failed parsing repeat '" << repeat << "': missing base (" << base << ")");
+        SWARN("Syntax error, failed parsing repeat '" << repeat << "': missing base (" << nextRun << ")");
         return "";
     }
 
@@ -1394,28 +1394,28 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
         // This isn't supported natively by SQLite, so do it manually here instead.
         if (SToUpper(part) == "START OF HOUR") {
             SQResult result;
-            if (!db.read("SELECT STRFTIME('%Y-%m-%d %H:00:00', " + base + ");", result) || result.empty()) {
+            if (!db.read("SELECT STRFTIME('%Y-%m-%d %H:00:00', " + nextRun + ");", result) || result.empty()) {
                 SWARN("Syntax error, failed parsing repeat "+part);
                 return "";
             }
 
-            base = SQ(result[0][0]);
+            nextRun = SQ(result[0][0]);
         } else if (!SIsValidSQLiteDateModifier(part)){
             // Validate the sqlite date modifiers
             SWARN("Syntax error, failed parsing repeat " + part);
             return "";
         } else {
             SQResult result;
-            if (!db.read("SELECT DATETIME(" + base + ", " + SQ(part) + ");", result) || result.empty()) {
+            if (!db.read("SELECT DATETIME(" + nextRun + ", " + SQ(part) + ");", result) || result.empty()) {
                 SWARN("Syntax error, failed parsing repeat "+part);
                 return "";
             }
 
-            base = SQ(result[0][0]);
+            nextRun = SQ(result[0][0]);
         }
     }
 
-    return "DATETIME(" + base + ")";
+    return "DATETIME(" + nextRun + ")";
 }
 
 // ==========================================================================
