@@ -1415,7 +1415,7 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
         }
     }
 
-    return base;
+    return "DATETIME(" + base + ")";
 }
 
 // ==========================================================================
