@@ -385,13 +385,13 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     return _insideTransaction;
 }
 
-bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created) {
+bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created, const string& type) {
     // sqlite trims semicolon, so let's not supply it else we get confused later
     SASSERT(!SEndsWith(sql, ";"));
 
     // First, see if it's there
     SQResult result;
-    SASSERT(read("SELECT sql FROM sqlite_master WHERE type='table' AND tbl_name=" + SQ(tableName) + ";", result));
+    SASSERT(read("SELECT sql FROM sqlite_master WHERE type=" + SQ(type) + " AND tbl_name=" + SQ(tableName) + ";", result));
     const string& collapsedSQL = SCollapse(sql);
     if (result.empty()) {
         // Table doesn't already exist, create it
