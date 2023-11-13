@@ -1395,7 +1395,7 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
         if (SToUpper(part) == "START OF HOUR") {
             SQResult result;
             if (!db.read("SELECT STRFTIME('%Y-%m-%d %H:00:00', " + nextRun + ");", result) || result.empty()) {
-                SWARN("Syntax error, failed parsing repeat "+part);
+                SWARN("Syntax error, failed parsing repeat " + part);
                 return "";
             }
 
@@ -1407,7 +1407,7 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
         } else {
             SQResult result;
             if (!db.read("SELECT DATETIME(" + nextRun + ", " + SQ(part) + ");", result) || result.empty()) {
-                SWARN("Syntax error, failed parsing repeat "+part);
+                SWARN("Syntax error, failed parsing repeat " + part);
                 return "";
             }
 
