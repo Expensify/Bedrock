@@ -540,8 +540,9 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     SASSERT(_insideTransaction);
     _queryCache.clear();
     _queryCount++;
-    SASSERT(query.empty() || SEndsWith(query, ";"));                        // Must finish everything with semicolon
-    SASSERTWARN(SToUpper(query).find("CURRENT_TIMESTAMP") == string::npos); // Else will be replayed wrong
+
+    // Must finish everything with semicolon.
+    SASSERT(query.empty() || SEndsWith(query, ";"));
 
     // First, check our current state
     SQResult results;
@@ -550,6 +551,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     uint64_t schemaBefore = SToUInt64(results[0][0]);
     uint64_t changesBefore = sqlite3_total_changes(_db);
 
+    _currentlyWriting = true;
     // Try to execute the query
     uint64_t before = STimeNow();
     bool usedRewrittenQuery = false;
@@ -573,12 +575,14 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
 
     // If we got a constraints error, throw that.
     if (resultCode == SQLITE_CONSTRAINT) {
+        _currentlyWriting = false;
         throw constraint_error();
     }
 
     _checkInterruptErrors("SQLite::write"s);
     _writeElapsed += STimeNow() - before;
     if (resultCode) {
+        _currentlyWriting = false;
         return false;
     }
 
@@ -592,6 +596,8 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     if (alwaysKeepQueries || (schemaAfter > schemaBefore) || (changesAfter > changesBefore)) {
         _uncommittedQuery += usedRewrittenQuery ? _rewrittenQuery : query;
     }
+
+    _currentlyWriting = false;
     return true;
 }
 
@@ -928,6 +934,13 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
             !strcmp(detail2, "sqlite3_version")
         ) {
             _isDeterministicQuery = false;
+        }
+
+        if (!strcmp(detail2, "current_timestamp")) {
+            if (_currentlyWriting) {
+                // Prevent using `current_timestamp` in writes which could cause synchronization with followers to result in inconsistent data.
+                return SQLITE_DENY;
+            }
         }
     }
 
