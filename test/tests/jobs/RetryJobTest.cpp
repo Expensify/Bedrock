@@ -344,7 +344,7 @@ struct RetryJobTest : tpunit::TestFixture {
         SData command("CreateJob");
         command["name"] = "job";
         command["repeat"] = "SCHEDULED, START OF DAY, +5 MINUTES, START OF HOUR";
-        command["nextRun"] = now;
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", now);
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
@@ -375,7 +375,7 @@ struct RetryJobTest : tpunit::TestFixture {
         SData command("CreateJob");
         command["name"] = "job";
         command["repeat"] = "SCHEDULED, START OF DAY, +30 MINUTES, START OF HOUR, +5 MINUTES";
-        command["nextRun"] = now;
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", now);
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
