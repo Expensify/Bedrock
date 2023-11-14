@@ -506,4 +506,7 @@ class SQLite {
 
     // This is a string (which may be empty) containing the most recent logged error by SQLite in this thread.
     static thread_local string _mostRecentSQLiteErrorLog;
+
+    // Set to true inside of a write query.
+    bool _currentlyWriting{false};
 };
