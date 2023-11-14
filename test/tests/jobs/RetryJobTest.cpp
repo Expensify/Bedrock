@@ -16,6 +16,8 @@ struct RetryJobTest : tpunit::TestFixture {
                               TEST(RetryJobTest::positiveDelay),
                               TEST(RetryJobTest::delayError),
                               TEST(RetryJobTest::hasRepeat),
+                              TEST(RetryJobTest::hasRepeatStartOfHour),
+                              TEST(RetryJobTest::hasRepeatStartOfHourNotLast),
                               TEST(RetryJobTest::inRunqueuedState),
                               TEST(RetryJobTest::simplyRetryWithNextRun),
                               TEST(RetryJobTest::changeNameAndPriority),
@@ -332,6 +334,68 @@ struct RetryJobTest : tpunit::TestFixture {
         time_t createdTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
         time_t nextRunTime = JobTestHelper::getTimestampForDateTimeString(result[0][1]);
         ASSERT_EQUAL(difftime(nextRunTime, createdTime), 3600);
+    }
+
+    // Retry a job with a repeat that uses the custom "START OF HOUR" modifier
+    void hasRepeatStartOfHour() {
+        uint64_t now = STimeNow();
+
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "SCHEDULED, START OF DAY, +5 MINUTES, START OF HOUR";
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", now);
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm nextRun is at the beginning of the day and not 5 minutes after
+        SQResult result;
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], SComposeTime("%Y-%m-%d 00:00:00", now));
+    }
+
+    // Same as hasRepeatStartOfHour but "START OF HOUR" is not last, to confirm it works when not last.
+    void hasRepeatStartOfHourNotLast() {
+        uint64_t now = STimeNow();
+
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "SCHEDULED, START OF DAY, +30 MINUTES, START OF HOUR, +5 MINUTES";
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", now);
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // Confirm nextRun is at the beginning of the day and not 5 minutes after
+        SQResult result;
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], SComposeTime("%Y-%m-%d 00:05:00", now));
     }
 
     // Retry job in RUNQUEUED state

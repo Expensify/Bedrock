@@ -515,7 +515,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                     SWARN("Repeat is set in CreateJob, but is set to the empty string. Job Name: "
                           << job["name"] << ", removing attribute.");
                     job.erase("repeat");
-                } else if (!_validateRepeat(job["repeat"])) {
+                } else if (!_validateRepeat(db, job["repeat"])) {
                     STHROW("402 Malformed repeat");
                 }
             }
@@ -840,7 +840,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                 }
                 string currentTime = SUNQUOTED_CURRENT_TIMESTAMP();
                 string retryAfterDateTime = "DATETIME(" + SQ(currentTime) + ", " + SQ(job["retryAfter"]) + ")";
-                string repeatDateTime = _constructNextRunDATETIME(job["nextRun"], currentTime, job["repeat"]);
+                string repeatDateTime = _constructNextRunDATETIME(db, job["nextRun"], currentTime, job["repeat"]);
                 string nextRunDateTime = repeatDateTime != "" ? "MIN(" + retryAfterDateTime + ", " + repeatDateTime + ")" : retryAfterDateTime;
                 bool isRepeatBasedOnScheduledTime = SToUpper(job["repeat"]).find("SCHEDULED") != string::npos;
                 string dataUpdateQuery = " ";
@@ -908,7 +908,7 @@ void BedrockJobsCommand::process(SQLite& db) {
             if (request["repeat"].empty()) {
                 SWARN("Repeat is set in UpdateJob, but is set to the empty string. jobID: "
                       << request["jobID"] << ".");
-            } else if (!_validateRepeat(request["repeat"])) {
+            } else if (!_validateRepeat(db, request["repeat"])) {
                 STHROW("402 Malformed repeat");
             }
         }
@@ -946,7 +946,7 @@ void BedrockJobsCommand::process(SQLite& db) {
         // Passed next run takes priority over the one computed via the repeat feature
         string newNextRun;
         if (request["nextRun"].empty()) {
-            newNextRun = request["repeat"].size() ? _constructNextRunDATETIME(nextRun, lastRun, request["repeat"]) : "";
+            newNextRun = request["repeat"].size() ? _constructNextRunDATETIME(db, nextRun, lastRun, request["repeat"]) : "";
         } else {
             newNextRun = SQ(request["nextRun"]);
         }
@@ -1134,7 +1134,7 @@ void BedrockJobsCommand::process(SQLite& db) {
             if (!retryAfter.empty() && SToUpper(repeat).find("SCHEDULED") != string::npos) {
                 lastScheduled = originalDataNextRun;
             }
-            safeNewNextRun = _constructNextRunDATETIME(lastScheduled, lastRun, repeat);
+            safeNewNextRun = _constructNextRunDATETIME(db, lastScheduled, lastRun, repeat);
         } else if (SIEquals(requestVerb, "RetryJob")) {
             const string& newNextRun = request["nextRun"];
 
@@ -1145,7 +1145,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                     STHROW("402 Must specify a non-negative delay when retrying");
                 }
                 repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
-                safeNewNextRun = _constructNextRunDATETIME(nextRun, lastRun, repeat);
+                safeNewNextRun = _constructNextRunDATETIME(db, nextRun, lastRun, repeat);
                 if (safeNewNextRun.empty()) {
                     STHROW("402 Malformed delay");
                 }
@@ -1356,7 +1356,7 @@ void BedrockJobsCommand::process(SQLite& db) {
     }
 }
 
-string BedrockJobsCommand::_constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat) {
+string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& lastScheduled, const string& lastRun, const string& repeat) {
     if (repeat.empty()) {
         return "";
     }
@@ -1377,32 +1377,45 @@ string BedrockJobsCommand::_constructNextRunDATETIME(const string& lastScheduled
     }
 
     // Make sure the first part indicates the base (eg, what we are modifying)
-    list<string> safeParts;
-    string base = parts.front();
+    string nextRun = parts.front();
     parts.pop_front();
-    if (base == "SCHEDULED") {
-        safeParts.push_back(SQ(lastScheduled));
-    } else if (base == "STARTED") {
-        safeParts.push_back(SQ(lastRun));
-    } else if (base == "FINISHED") {
-        safeParts.push_back(SCURRENT_TIMESTAMP());
+    if (nextRun == "SCHEDULED") {
+        nextRun = SQ(lastScheduled);
+    } else if (nextRun == "STARTED") {
+        nextRun = SQ(lastRun);
+    } else if (nextRun == "FINISHED") {
+        nextRun = SCURRENT_TIMESTAMP();
     } else {
-        SWARN("Syntax error, failed parsing repeat '" << repeat << "': missing base (" << base << ")");
+        SWARN("Syntax error, failed parsing repeat '" << repeat << "': missing base (" << nextRun << ")");
         return "";
     }
 
     for (const string& part : parts) {
-        // Validate the sqlite date modifiers
-        if (!SIsValidSQLiteDateModifier(part)){
-            SWARN("Syntax error, failed parsing repeat "+part);
-            return "";
-        }
+        // This isn't supported natively by SQLite, so do it manually here instead.
+        if (SToUpper(part) == "START OF HOUR") {
+            SQResult result;
+            if (!db.read("SELECT STRFTIME('%Y-%m-%d %H:00:00', " + nextRun + ");", result) || result.empty()) {
+                SWARN("Syntax error, failed parsing repeat " + part);
+                return "";
+            }
 
-        safeParts.push_back(SQ(part));
+            nextRun = SQ(result[0][0]);
+        } else if (!SIsValidSQLiteDateModifier(part)){
+            // Validate the sqlite date modifiers
+            SWARN("Syntax error, failed parsing repeat " + part);
+            return "";
+        } else {
+            SQResult result;
+            if (!db.read("SELECT DATETIME(" + nextRun + ", " + SQ(part) + ");", result) || result.empty()) {
+                SWARN("Syntax error, failed parsing repeat " + part);
+                return "";
+            }
+
+            nextRun = SQ(result[0][0]);
+        }
     }
 
-    // Combine the parts together and return the full DATETIME statement
-    return "DATETIME( " + SComposeList(safeParts) + " )";
+    return "DATETIME(" + nextRun + ")";
 }
 
 // ==========================================================================

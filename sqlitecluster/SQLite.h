@@ -93,7 +93,7 @@ class SQLite {
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
     // table is already there with the wrong schema, it returns false.
-    bool verifyTable(const string& name, const string& sql, bool& created);
+    bool verifyTable(const string& name, const string& sql, bool& created, const string& type = "table");
 
     // Verifies an index exists on the given table with the given definition. Optionally create it if it doesn't exist.
     // Be careful, creating an index can be expensive on large tables!
