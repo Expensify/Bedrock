@@ -33,8 +33,8 @@ class BedrockJobsCommand : public BedrockCommand {
 
   private:
     // Helper functions
-    string _constructNextRunDATETIME(const string& lastScheduled, const string& lastRun, const string& repeat);
-    bool _validateRepeat(const string& repeat) { return !_constructNextRunDATETIME("", "", repeat).empty(); }
+    string _constructNextRunDATETIME(SQLite& db, const string& lastScheduled, const string& lastRun, const string& repeat);
+    bool _validateRepeat(SQLite& db, const string& repeat) { return !_constructNextRunDATETIME(db, "", "", repeat).empty(); }
     bool _hasPendingChildJobs(SQLite& db, int64_t jobID);
     void _validatePriority(const int64_t priority);
 
