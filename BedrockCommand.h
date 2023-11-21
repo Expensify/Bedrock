@@ -39,7 +39,7 @@ class BedrockCommand : public SQLiteCommand {
     };
 
     // Times in *milliseconds*.
-    static const uint64_t DEFAULT_TIMEOUT = 290'000; // 290 seconds, so clients can have a 5 minute timeout.
+    static const uint64_t DEFAULT_TIMEOUT = 110'000; // 110 seconds, so clients can have a 2 minutes timeout.
     static const uint64_t DEFAULT_TIMEOUT_FORGET = 60'000 * 60; // 1 hour for `connection: forget` commands.
     static const uint64_t DEFAULT_PROCESS_TIMEOUT = 30'000; // 30 seconds.
 
