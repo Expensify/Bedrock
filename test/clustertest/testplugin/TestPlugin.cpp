@@ -171,7 +171,7 @@ bool BedrockPlugin_TestPlugin::preventAttach() {
     return shouldPreventAttach;
 }
 
-void TestPluginCommand::prePeek(SQLite& db) {
+bool TestPluginCommand::prePeek(SQLite& db) {
     if (request.methodLine == "prepeekcommand" || request.methodLine == "prepeekpostprocesscommand") {
         if (request["shouldThrow"] == "true") {
             STHROW("501 ERROR");
@@ -180,6 +180,8 @@ void TestPluginCommand::prePeek(SQLite& db) {
     } else {
         STHROW("500 no prePeek defined, shouldPrePeek should be false");
     }
+
+    return false;
 }
 bool TestPluginCommand::peek(SQLite& db) {
     // Always blacklist on userID.
@@ -368,7 +370,7 @@ void TestPluginCommand::process(SQLite& db) {
     // upgradeDatabase and the thread running in `stateChanged`, it is possible the sync thread
     // tries to accept a command on a loop before `stateChanged` queries and gets a value for _maxID.
     // Also note this really doesn't matter in production, because we don't use `upgradeDatabase` this
-    // truly only exists for dev and testing to function properly. 
+    // truly only exists for dev and testing to function properly.
     while (plugin()._maxID < 0) {
         SINFO("Waiting for _maxID " << plugin()._maxID);
         usleep(50'000);

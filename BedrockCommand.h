@@ -49,10 +49,10 @@ class BedrockCommand : public SQLiteCommand {
     // Destructor.
     virtual ~BedrockCommand();
 
-    // Optionally called to execute read-only operations for a command in a separate transaction than the transaction
-    // that can execute write operations for a command (i.e. the transaction that runs peek and process). This must be
+    // Optionally called to execute read-only operations for a command separately
+    // than the execution of write operations for a command (i.e. the transaction that runs peek and process). This must be
     // called before the transaction that executes write operations.
-    virtual void prePeek(SQLite& db) { STHROW("500 Base class prePeek called"); }
+    virtual bool prePeek(SQLite& db) { STHROW("500 Base class prePeek called"); }
 
     // Called to attempt to handle a command in a read-only fashion. Should return true if the command has been
     // completely handled and a response has been written into `command.response`, which can be returned to the client.
@@ -88,7 +88,7 @@ class BedrockCommand : public SQLiteCommand {
     }
 
     // Bedrock will call this before writing to the database after it has prepared a transaction for each plugin to allow it to
-    // enable a handler function for prepare If a plugin would like to perform operations after prepare but before commit, this should 
+    // enable a handler function for prepare If a plugin would like to perform operations after prepare but before commit, this should
     // return true, and it should set the prepareHandler it would like to use.
     virtual bool shouldEnableOnPrepareNotification(const SQLite& db, void (**onPrepareHandler)(SQLite& _db, int64_t tableID)) {
         return false;

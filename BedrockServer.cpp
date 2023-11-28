@@ -757,7 +757,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     SQLiteNodeState state = _replicationState.load();
 
     // If we're following, we will automatically escalate any command that's:
-    // 1. Not already complete (complete commands are likely already returned from leader with legacy escalation) 
+    // 1. Not already complete (complete commands are likely already returned from leader with legacy escalation)
     // and is marked as `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
     // for a previous commit to be delivered to this follower);
     // 2. Any commands if the current version of the code is not the same one as leader is executing.
