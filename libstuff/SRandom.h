@@ -11,7 +11,6 @@ class SRandom {
     static uint64_t rand64();
     static uint64_t limitedRand64(uint64_t min, uint64_t max);
     static string randStr(uint& length);
-    void init();
 
   private:
     static uniform_int_distribution<uint64_t> _distribution64;
