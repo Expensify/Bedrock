@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-export CXX=g++-9
-export CC=gcc-9
+export CXX=g++-13
+export CC=gcc-13
 
 # Add the current working directory to $PATH so that tests can find bedrock.
 export PATH=$PATH:`pwd`
@@ -72,7 +72,7 @@ else
 fi
 
 sudo apt-get update -y
-sudo -E apt-get -yq --no-install-suggests --no-install-recommends $(travis_apt_get_options) install gcc-9 g++-9
+sudo -E apt-get -yq --no-install-suggests --no-install-recommends $(travis_apt_get_options) install gcc-13 g++-13
 
 travis_time_finish
 travis_fold end build_bedrock
