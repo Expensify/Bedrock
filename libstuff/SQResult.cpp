@@ -105,3 +105,21 @@ const vector<string>& SQResult::operator[](size_t rowNum) const {
         STHROW("Out of range");
     }
 }
+
+string& SQResult::cell(size_t row, const string& cellKey) {
+    for (size_t i = 0; i < headers.size(); i++) {
+        if (headers[i] == cellKey) {
+            return rows[row][i];
+        }
+    }
+    throw out_of_range("No column named " + cellKey);
+}
+
+const string& SQResult::cell(size_t row, const string& cellKey) const {
+    for (size_t i = 0; i < headers.size(); i++) {
+        if (headers[i] == cellKey) {
+            return rows[row][i];
+        }
+    }
+    throw out_of_range("No column named " + cellKey);
+}

@@ -721,7 +721,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         sqlite3_file *pWal = 0;
         sqlite3_int64 sz = 0;
         sqlite3_file_control(_db, "main", SQLITE_FCNTL_JOURNAL_POINTER, &pWal);
-        if (pWal) {
+        if (pWal && pWal->pMethods) {
             // This is not set for HC-tree DBs.
             pWal->pMethods->xFileSize(pWal, &sz);
         }

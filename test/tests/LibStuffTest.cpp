@@ -2,7 +2,9 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SData.h>
+#include <libstuff/SQResult.h>
 #include <libstuff/SRandom.h>
+#include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
 
 struct LibStuff : tpunit::TestFixture {
@@ -29,7 +31,9 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testHexConversion),
                                     TEST(LibStuff::testBase32Conversion),
                                     TEST(LibStuff::testContains),
-                                    TEST(LibStuff::testFirstOfMonth))
+                                    TEST(LibStuff::testFirstOfMonth),
+                                    TEST(LibStuff::SQResultTest)
+                                    )
     { }
 
     void testEncryptDecrpyt() {
@@ -632,5 +636,40 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -7), "2019-12-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -13), "2019-06-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -25), "2018-06-01");
+    }
+
+    void SQResultTest() {
+        SQLite db(":memory:", 1000, 1000, 1);
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        db.write("CREATE TABLE testTable(id INTEGER PRIMARY KEY, name STRING, value STRING, created DATE);");
+        db.write ("INSERT INTO testTable VALUES(1, 'name1', 'value1', '2023-12-20');");
+        db.write ("INSERT INTO testTable VALUES(2, 'name2', 'value2', '2023-12-21');");
+        db.write ("INSERT INTO testTable VALUES(3, 'name3', 'value3', '2023-12-22');");
+        db.prepare();
+        db.commit();
+
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
+        SQResult result;
+        db.read("SELECT name, value FROM testTable ORDER BY id;", result);
+        db.rollback();
+
+        // All our names make sense?
+        ASSERT_EQUAL(result.cell(0, "name"), "name1");
+        ASSERT_EQUAL(result.cell(1, "name"), "name2");
+        ASSERT_EQUAL(result.cell(2, "name"), "name3");
+
+        // All our values make sense?
+        ASSERT_EQUAL(result.cell(0, "value"), "value1");
+        ASSERT_EQUAL(result.cell(1, "value"), "value2");
+        ASSERT_EQUAL(result.cell(2, "value"), "value3");
+
+        // Validate our exception handling.
+        bool threw = false;
+        try {
+            string s = result.cell(0, "notacolumn");
+        } catch (const out_of_range& e) {
+            threw = true;
+        }
+        ASSERT_TRUE(threw);
     }
 } __LibStuff;

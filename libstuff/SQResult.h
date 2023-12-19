@@ -21,6 +21,9 @@ class SQResult {
     vector<string>& operator[](size_t rowNum);
     const vector<string>& operator[](size_t rowNum) const;
 
+    string& cell(size_t row, const string& cellKey);
+    const string& cell(size_t row, const string& cellKey) const;
+
     // Serializers
     string serializeToJSON() const;
     string serializeToText() const;
