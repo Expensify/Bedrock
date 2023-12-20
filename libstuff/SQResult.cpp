@@ -1,6 +1,29 @@
 #include <libstuff/libstuff.h>
 #include "SQResult.h"
 
+SQResultRow::SQResultRow(SQResult& result, size_t count) : vector<string>(count), result(&result) {
+}
+
+SQResultRow::SQResultRow() : vector<string>(), result(nullptr) {
+}
+
+void SQResultRow::push_back(const string& s) {
+    vector<string>::push_back(s);
+}
+
+string& SQResultRow::operator[](const size_t& key) {
+    return vector<string>::operator[](key);
+}
+const string& SQResultRow::operator[](const size_t& key) const {
+    return vector<string>::operator[](key);
+}
+
+SQResultRow& SQResultRow::operator=(const SQResultRow& other) {
+    vector<string>::operator=(other);
+    result = other.result;
+    return *this;
+}
+
 string SQResult::serializeToJSON() const {
     // Just output as a simple object
     // **NOTE: This probably isn't super fast, but could be easily optimized
@@ -90,7 +113,7 @@ void SQResult::clear() {
     rows.clear();
 }
 
-vector<string>& SQResult::operator[](size_t rowNum) {
+SQResultRow& SQResult::operator[](size_t rowNum) {
     try {
         return rows.at(rowNum);
     } catch (const out_of_range& e) {
@@ -98,7 +121,7 @@ vector<string>& SQResult::operator[](size_t rowNum) {
     }
 }
 
-const vector<string>& SQResult::operator[](size_t rowNum) const {
+const SQResultRow& SQResult::operator[](size_t rowNum) const {
     try {
         return rows.at(rowNum);
     } catch (const out_of_range& e) {

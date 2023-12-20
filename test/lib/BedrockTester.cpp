@@ -568,7 +568,7 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online)
         list<string> rows = SParseJSONArray(row0);
         for (const string& rowStr : rows) {
             list<string> vals = SParseJSONArray(rowStr);
-            vector<string> row;
+            SQResultRow row(result);
             for (auto& v : vals) {
                 row.push_back(v);
             }

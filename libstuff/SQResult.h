@@ -3,12 +3,28 @@
 #include <string>
 #include <vector>
 using namespace std;
+class SQResult;
+
+class SQResultRow : public vector<string> {
+  public:
+    SQResultRow();
+    SQResultRow(SQResult& result, size_t count = 0);
+    void push_back(const string& s);
+    string& operator[](const size_t& key);
+    const string& operator[](const size_t& key) const;
+    string& operator[](const string& key);
+    const string& operator[](const string& key) const;
+    SQResultRow& operator=(const SQResultRow& other);
+
+  private:
+    SQResult* result = nullptr;
+};
 
 class SQResult {
   public:
     // Attributes
     vector<string> headers;
-    vector<vector<string>> rows;
+    vector<SQResultRow> rows;
 
     // Accessors
     bool empty() const;
@@ -18,8 +34,8 @@ class SQResult {
     void clear();
 
     // Operators
-    vector<string>& operator[](size_t rowNum);
-    const vector<string>& operator[](size_t rowNum) const;
+    SQResultRow& operator[](size_t rowNum);
+    const SQResultRow& operator[](size_t rowNum) const;
 
     string& cell(size_t row, const string& cellKey);
     const string& cell(size_t row, const string& cellKey) const;

@@ -2592,7 +2592,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                 }
 
                 if (error == SQLITE_ROW) {
-                    result.rows.emplace_back(vector<string>(numColumns));
+                    result.rows.emplace_back(SQResultRow(result, numColumns));
                     for (int i = 0; i < numColumns; i++) {
                         int colType = sqlite3_column_type(preparedStatement, i);
                         switch (colType) {
