@@ -37,9 +37,6 @@ class SQResult {
     SQResultRow& operator[](size_t rowNum);
     const SQResultRow& operator[](size_t rowNum) const;
 
-    string& cell(size_t row, const string& cellKey);
-    const string& cell(size_t row, const string& cellKey) const;
-
     // Serializers
     string serializeToJSON() const;
     string serializeToText() const;

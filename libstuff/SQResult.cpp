@@ -24,6 +24,40 @@ SQResultRow& SQResultRow::operator=(const SQResultRow& other) {
     return *this;
 }
 
+string& SQResultRow::operator[](const string& key) {
+    if (result) {
+        for (size_t i = 0; i < result->headers.size(); i++) {
+
+            // If the headers have more entries than the row (they really shouldn't), break early instead of segfaulting.
+            if (i >= size()) {
+                break;
+            }
+
+            if (result->headers[i] == key) {
+                return (*this)[i];
+            }
+        }
+    }
+    throw out_of_range("No column named " + key);
+}
+
+const string& SQResultRow::operator[](const string& key) const {
+    if (result) {
+        for (size_t i = 0; i < result->headers.size(); i++) {
+
+            // If the headers have more entries than the row (they really shouldn't), break early instead of segfaulting.
+            if (i >= size()) {
+                break;
+            }
+
+            if (result->headers[i] == key) {
+                return (*this)[i];
+            }
+        }
+    }
+    throw out_of_range("No column named " + key);
+}
+
 string SQResult::serializeToJSON() const {
     // Just output as a simple object
     // **NOTE: This probably isn't super fast, but could be easily optimized
@@ -127,22 +161,4 @@ const SQResultRow& SQResult::operator[](size_t rowNum) const {
     } catch (const out_of_range& e) {
         STHROW("Out of range");
     }
-}
-
-string& SQResult::cell(size_t row, const string& cellKey) {
-    for (size_t i = 0; i < headers.size(); i++) {
-        if (headers[i] == cellKey) {
-            return rows[row][i];
-        }
-    }
-    throw out_of_range("No column named " + cellKey);
-}
-
-const string& SQResult::cell(size_t row, const string& cellKey) const {
-    for (size_t i = 0; i < headers.size(); i++) {
-        if (headers[i] == cellKey) {
-            return rows[row][i];
-        }
-    }
-    throw out_of_range("No column named " + cellKey);
 }

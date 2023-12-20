@@ -654,22 +654,29 @@ struct LibStuff : tpunit::TestFixture {
         db.rollback();
 
         // All our names make sense?
-        ASSERT_EQUAL(result.cell(0, "name"), "name1");
-        ASSERT_EQUAL(result.cell(1, "name"), "name2");
-        ASSERT_EQUAL(result.cell(2, "name"), "name3");
+        ASSERT_EQUAL(result[0]["name"], "name1");
+        ASSERT_EQUAL(result[1]["name"], "name2");
+        ASSERT_EQUAL(result[2]["name"], "name3");
 
         // All our values make sense?
-        ASSERT_EQUAL(result.cell(0, "value"), "value1");
-        ASSERT_EQUAL(result.cell(1, "value"), "value2");
-        ASSERT_EQUAL(result.cell(2, "value"), "value3");
+        ASSERT_EQUAL(result[0]["value"], "value1");
+        ASSERT_EQUAL(result[1]["value"], "value2");
+        ASSERT_EQUAL(result[2]["value"], "value3");
 
         // Validate our exception handling.
         bool threw = false;
         try {
-            string s = result.cell(0, "notacolumn");
+            string s = result[0]["notacolumn"];
         } catch (const out_of_range& e) {
             threw = true;
         }
         ASSERT_TRUE(threw);
+
+        // Test aliased names.
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
+        result.clear();
+        db.read("SELECT name as caca, value FROM testTable ORDER BY id;", result);
+        db.rollback();
+        ASSERT_EQUAL(result[0]["caca"], "name1");
     }
 } __LibStuff;
