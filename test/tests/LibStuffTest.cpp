@@ -675,8 +675,8 @@ struct LibStuff : tpunit::TestFixture {
         // Test aliased names.
         db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
         result.clear();
-        db.read("SELECT name as caca, value FROM testTable ORDER BY id;", result);
+        db.read("SELECT name as coco, value FROM testTable ORDER BY id;", result);
         db.rollback();
-        ASSERT_EQUAL(result[0]["caca"], "name1");
+        ASSERT_EQUAL(result[0]["coco"], "name1");
     }
 } __LibStuff;
