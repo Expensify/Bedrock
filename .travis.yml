@@ -8,6 +8,7 @@ notifications:
 script: ./travis.sh
 os: linux
 dist: focal
+group: edge
 os: linux
 language: cpp
 vm:
