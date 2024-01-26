@@ -1691,10 +1691,11 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
             pluginList.push_back(SComposeJSONObject(pluginData));
         }
         content["isLeader"] = state == SQLiteNodeState::LEADING ? "true" : "false";
-        content["plugins"]  = SComposeJSONArray(pluginList);
-        content["state"]    = SQLiteNode::stateName(state);
-        content["version"]  = _version;
-        content["host"]     = args["-nodeHost"];
+        content["plugins"] = SComposeJSONArray(pluginList);
+        content["state"] = SQLiteNode::stateName(state);
+        content["version"] = _version;
+        content["host"] = args["-nodeHost"];
+        content["commandCount"] = BedrockCommand::getCommandCount();
 
         {
             // Make it known if anything is known to cause crashes.
