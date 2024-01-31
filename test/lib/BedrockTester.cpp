@@ -497,7 +497,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                             uint64_t newCommitCount = SToUInt64(headers["commitCount"]);
                             if (newCommitCount > _commitCount) {
                                 _commitCount = newCommitCount;
-                                cout << "Updated _commitCount to " << _commitCount << endl;
                             }
                         }
                         responseData.nameValueMap = headers;
