@@ -303,3 +303,16 @@ void BedrockCommand::setTimeout(uint64_t timeoutDurationMS) {
 bool BedrockCommand::shouldCommitEmptyTransactions() const {
     return _commitEmptyTransactions;
 }
+
+void BedrockCommand::addHTTPSRequests(const string& serializedHTTPSRequests) {
+
+    if (serializedHTTPSRequests.empty()) {
+        return;
+    }
+
+    list<string> requests = SParseJSONArray(serializedHTTPSRequests);
+    for (const string& requestStr : requests) {
+        STable request = SParseJSONObject(requestStr);
+        
+    }
+}
