@@ -237,5 +237,7 @@ class BedrockCommand : public SQLiteCommand {
 
     static atomic<size_t> _commandCount;
 
+    static SStandaloneHTTPSManager _noopHTTPSManager;
+
     static const string defaultPluginName;
 };

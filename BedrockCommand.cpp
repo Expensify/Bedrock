@@ -4,6 +4,8 @@
 
 atomic<size_t> BedrockCommand::_commandCount(0);
 
+SStandaloneHTTPSManager BedrockCommand::_noopHTTPSManager;
+
 const string BedrockCommand::defaultPluginName("NO_PLUGIN");
 
 BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin, bool escalateImmediately_) :
