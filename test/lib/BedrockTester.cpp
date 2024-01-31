@@ -396,6 +396,9 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         break;
                     } else {
                         myRequest = requests[myIndex];
+                        if (_enforceCommandOrder) {
+                            myRequest["commitCount"] = to_string(_commitCount);
+                        }
                     }
 
                     // Reset this for the next request that might need it.
@@ -490,6 +493,13 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     } else if (!timedOut) {
                         // Ok, done, let's lock again and insert this in the results.
                         SData responseData;
+                        if (headers.find("commitCount") != headers.end()) {
+                            uint64_t newCommitCount = SToUInt64(headers["commitCount"]);
+                            if (newCommitCount > _commitCount) {
+                                _commitCount = newCommitCount;
+                                cout << "Updated _commitCount to " << _commitCount << endl;
+                            }
+                        }
                         responseData.nameValueMap = headers;
                         responseData.methodLine = methodLine;
                         responseData.content = content;
@@ -610,4 +620,8 @@ bool BedrockTester::waitForState(const string& state, uint64_t timeoutUS)
 int BedrockTester::getPID() const
 {
     return _serverPID;
+}
+
+void BedrockTester::setEnforceCommandOrder(bool enforce) {
+    _enforceCommandOrder = enforce;
 }
