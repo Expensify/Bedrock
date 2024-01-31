@@ -60,7 +60,7 @@ class SHTTPSManager : public SStandaloneHTTPSManager {
     SHTTPSManager(BedrockPlugin& plugin_);
     SHTTPSManager(BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt);
 
-    // TODO: Remove this once AUth no longer checks for it.
+    // TODO: Remove this once Auth no longer checks for it.
     class NotLeading : public exception {
         const char* what() {
             return "Can't create SHTTPSManager::Transaction when not leading";
