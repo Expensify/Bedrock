@@ -8,13 +8,11 @@
 
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_) : plugin(plugin_)
 {
-    plugin.httpsManagers.push_back(this);
 }
 
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt)
   : SStandaloneHTTPSManager(pem, srvCrt, caCrt), plugin(plugin_)
 {
-    plugin.httpsManagers.push_back(this);
 }
 
 SStandaloneHTTPSManager::SStandaloneHTTPSManager()
