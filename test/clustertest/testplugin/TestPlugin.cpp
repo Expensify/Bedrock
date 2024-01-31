@@ -223,10 +223,6 @@ bool TestPluginCommand::peek(SQLite& db) {
         response["stored_not_special"] = plugin().arbitraryData["not_special"];
         return true;
     } else if (SStartsWith(request.methodLine, "sendrequest")) {
-        if (plugin().server.getState() != SQLiteNodeState::LEADING && plugin().server.getState() != SQLiteNodeState::STANDINGDOWN) {
-            // Only start HTTPS requests on leader, otherwise, we'll escalate.
-            return false;
-        }
         int requestCount = 1;
         if (request.isSet("httpsRequestCount")) {
             requestCount = max(request.calc("httpsRequestCount"), 1);

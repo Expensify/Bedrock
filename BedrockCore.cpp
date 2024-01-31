@@ -192,10 +192,6 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     } catch (const SException& e) {
         command->repeek = false;
         _handleCommandException(command, e);
-    } catch (const SHTTPSManager::NotLeading& e) {
-        command->repeek = false;
-        returnValue = RESULT::SHOULD_PROCESS;
-        SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
     } catch (...) {
         command->repeek = false;
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);

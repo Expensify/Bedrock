@@ -80,8 +80,8 @@ class BedrockCommand : public SQLiteCommand {
     // Return the name of the plugin for this command.
     const string& getName() const;
 
-    // Take all of the HTTPS requests attached to this object, and serialize them into an `httpsRequests` header field in the response.
-    void serializeHTTPSRequests();
+    // Take all of the HTTPS requests attached to this object, and serialize them to a string.
+    string serializeHTTPSRequests();
 
     // Take a serialized list of HTTPS requests as from `serializeHTTPSRequests` and deserialize them into the `httpsRequests` object.
     void deserializeHTTPSRequests(const string& serializedHTTPSRequests);

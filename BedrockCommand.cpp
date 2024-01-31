@@ -335,9 +335,9 @@ void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSReque
     }
 }
 
-void BedrockCommand::serializeHTTPSRequests() {
+string BedrockCommand::serializeHTTPSRequests() {
     if (!httpsRequests.size()) {
-        return;
+        return "";
     }
 
     list<string> requests;
@@ -353,5 +353,5 @@ void BedrockCommand::serializeHTTPSRequests() {
         requests.push_back(SComposeJSONObject(data));
     }
 
-    response["httpsRequests"] = SComposeJSONArray(requests);
+    return SComposeJSONArray(requests);
 }
