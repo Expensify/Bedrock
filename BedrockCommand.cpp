@@ -308,7 +308,6 @@ bool BedrockCommand::shouldCommitEmptyTransactions() const {
 }
 
 void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSRequests) {
-
     if (serializedHTTPSRequests.empty()) {
         return;
     }
@@ -324,8 +323,8 @@ void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSReque
         httpsRequest->timeoutAt = SToUInt64(requestMap["timeoutAt"]);
         httpsRequest->sentTime = SToUInt64(requestMap["sentTime"]);
         httpsRequest->response = SToInt(requestMap["response"]);
-        httpsRequest->fullRequest = SDecodeBase64(requestMap["fullRequest"]);
-        httpsRequest->fullResponse = SDecodeBase64(requestMap["fullResponse"]);
+        httpsRequest->fullRequest.deserialize(SDecodeBase64(requestMap["fullRequest"]));
+        httpsRequest->fullResponse.deserialize(SDecodeBase64(requestMap["fullResponse"]));
 
         httpsRequests.push_back(httpsRequest);
 
@@ -334,4 +333,25 @@ void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSReque
             SWARN("Received incomplete HTTPS request.");
         }
     }
+}
+
+void BedrockCommand::serializeHTTPSRequests() {
+    if (!httpsRequests.size()) {
+        return;
+    }
+
+    list<string> requests;
+    for (const auto& httpsRequest : httpsRequests) {
+        STable data;
+        data["created"] = to_string(httpsRequest->created);
+        data["finished"] = to_string(httpsRequest->finished);
+        data["timeoutAt"] = to_string(httpsRequest->timeoutAt);
+        data["sentTime"] = to_string(httpsRequest->sentTime);
+        data["response"] = to_string(httpsRequest->response);
+        data["fullRequest"] = SEncodeBase64(httpsRequest->fullRequest.serialize());
+        data["fullResponse"] = SEncodeBase64(httpsRequest->fullResponse.serialize());
+        requests.push_back(SComposeJSONObject(data));
+    }
+
+    response["httpsRequests"] = SComposeJSONArray(requests);
 }
