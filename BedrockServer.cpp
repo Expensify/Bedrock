@@ -2168,7 +2168,7 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     command->deserializeHTTPSRequests(serializedHTTPSRequests);
     if (command->httpsRequests.size()) {
         command->lastPeekedOrProcessedInState = _syncNode->getState();
-        SINFO("Deserialized " << command->httpsRequests.size() << " HTTPS requests from client.");
+        SINFO("Deserialized " << command->httpsRequests.size() << " HTTPS requests for command " << command->request.methodLine << ".");
     }
 
     SDEBUG("Deserialized command " << command->request.methodLine);
