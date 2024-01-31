@@ -304,7 +304,7 @@ bool BedrockCommand::shouldCommitEmptyTransactions() const {
     return _commitEmptyTransactions;
 }
 
-void BedrockCommand::addHTTPSRequests(const string& serializedHTTPSRequests) {
+void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSRequests) {
 
     if (serializedHTTPSRequests.empty()) {
         return;

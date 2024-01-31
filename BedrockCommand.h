@@ -80,8 +80,11 @@ class BedrockCommand : public SQLiteCommand {
     // Return the name of the plugin for this command.
     const string& getName() const;
 
-    // Take a serialized list of HTTPS requests and apply it to the command.
-    void addHTTPSRequests(const string& serializedHTTPSRequests);
+    // Take all of the HTTPS requests attached to this object, and serialize them into an `httpsRequests` header field in the response.
+    void serializeHTTPSRequests();
+
+    // Take a serialized list of HTTPS requests as from `serializeHTTPSRequests` and deserialize them into the `httpsRequests` object.
+    void deserializeHTTPSRequests(const string& serializedHTTPSRequests);
 
     // Bedrock will call this before each `processCommand` (note: not `peekCommand`) for each plugin to allow it to
     // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
