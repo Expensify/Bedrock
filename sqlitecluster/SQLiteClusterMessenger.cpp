@@ -118,6 +118,9 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, const string& pe
         return false;
     }
 
+    // Make sure we pass any HTTPS requests the command has made.
+    command.serializeHTTPSRequests();
+
     // _sendCommandOnSocket doesn't always call setErrorResponse - if the
     // command is intended for leader, we don't always want to set
     // command.complete = true because that prevents it from being retried. If

@@ -944,19 +944,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 // write it. We'll flag that here, to keep the node from falling out of LEADING/STANDINGDOWN
                 // until we're finished with this command.
                 if (command->httpsRequests.size()) {
-                    // This *should* be impossible, but previous bugs have existed where it's feasible that we call
-                    // `peekCommand` while leading, and by the time we're done, we're FOLLOWING, so we check just
-                    // in case we ever introduce another similar bug.
-                    if (state != SQLiteNodeState::LEADING && state != SQLiteNodeState::STANDINGDOWN) {
-                        SALERT("Not leading or standing down (" << SQLiteNode::stateName(state)
-                               << ") but have outstanding HTTPS command: " << command->request.methodLine
-                               << ", returning 500.");
-                        command->response.methodLine = "500 STANDDOWN TIMEOUT";
-                        _reply(command);
-                        core.rollback();
-                        break;
-                    }
-
                     if (command->repeek || !command->areHttpsRequestsComplete()) {
                         // Roll back the existing transaction, but only if we are inside an transaction
                         if (calledPeek) {
