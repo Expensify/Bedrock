@@ -1,4 +1,5 @@
 #include <libstuff/libstuff.h>
+#include <libstuff/SHTTPSManager.h>
 #include "BedrockCommand.h"
 #include "BedrockPlugin.h"
 
@@ -314,7 +315,23 @@ void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSReque
 
     list<string> requests = SParseJSONArray(serializedHTTPSRequests);
     for (const string& requestStr : requests) {
-        STable request = SParseJSONObject(requestStr);
-        
+        STable requestMap = SParseJSONObject(requestStr);
+
+        SHTTPSManager::Transaction* httpsRequest = new SHTTPSManager::Transaction(_noopHTTPSManager, request["requestID"]);
+        httpsRequest->s = nullptr;
+        httpsRequest->created = SToUInt64(requestMap["created"]);
+        httpsRequest->finished = SToUInt64(requestMap["finished"]);
+        httpsRequest->timeoutAt = SToUInt64(requestMap["timeoutAt"]);
+        httpsRequest->sentTime = SToUInt64(requestMap["sentTime"]);
+        httpsRequest->response = SToInt(requestMap["response"]);
+        httpsRequest->fullRequest = SDecodeBase64(requestMap["fullRequest"]);
+        httpsRequest->fullResponse = SDecodeBase64(requestMap["fullResponse"]);
+
+        httpsRequests.push_back(httpsRequest);
+
+        // These should never be incomplete when passed with a serialized command.
+        if (!httpsRequest->response) {
+            SWARN("Received incomplete HTTPS request.");
+        }
     }
 }

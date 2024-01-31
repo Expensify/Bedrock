@@ -9,7 +9,7 @@ class SStandaloneHTTPSManager : public STCPManager {
   public:
     struct Transaction {
         // Constructor/Destructor
-        Transaction(SStandaloneHTTPSManager& manager_);
+        Transaction(SStandaloneHTTPSManager& manager_, const string& requestID = "");
         ~Transaction();
 
         // Attributes
