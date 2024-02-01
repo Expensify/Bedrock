@@ -191,6 +191,9 @@ class BedrockCommand : public SQLiteCommand {
     // Return the number of commands in existence.
     static size_t getCommandCount() { return _commandCount.load(); }
 
+    virtual string serializeData() const;
+    virtual void deserializeData(const string& data);
+
     // True if this command should be escalated immediately. This can be true for any command that does all of its work
     // in `process` instead of peek, as it will always be escalated to leader
     const bool escalateImmediately;

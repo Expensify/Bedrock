@@ -306,13 +306,16 @@ void BedrockCommand::setTimeout(uint64_t timeoutDurationMS) {
 bool BedrockCommand::shouldCommitEmptyTransactions() const {
     return _commitEmptyTransactions;
 }
-
+#include <iostream>
 void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSRequests) {
     if (serializedHTTPSRequests.empty()) {
         return;
     }
 
     list<string> requests = SParseJSONArray(serializedHTTPSRequests);
+    cout << "Deserializing all: " << endl;
+    cout << serializedHTTPSRequests << endl;
+    cout << "Done with all." << endl;
     for (const string& requestStr : requests) {
         STable requestMap = SParseJSONObject(requestStr);
 
@@ -326,6 +329,8 @@ void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSReque
         httpsRequest->fullRequest.deserialize(SDecodeBase64(requestMap["fullRequest"]));
         httpsRequest->fullResponse.deserialize(SDecodeBase64(requestMap["fullResponse"]));
 
+        cout << "Deserializing: " << httpsRequest->fullResponse.serialize() << endl;
+        cout << "Deserialized." << endl;
         httpsRequests.push_back(httpsRequest);
 
         // These should never be incomplete when passed with a serialized command.
@@ -351,7 +356,17 @@ string BedrockCommand::serializeHTTPSRequests() {
         data["fullRequest"] = SEncodeBase64(httpsRequest->fullRequest.serialize());
         data["fullResponse"] = SEncodeBase64(httpsRequest->fullResponse.serialize());
         requests.push_back(SComposeJSONObject(data));
+
+        cout << "Serializing: " << httpsRequest->fullResponse.serialize() << endl;
+        cout << "Serialized." << endl;
     }
 
     return SComposeJSONArray(requests);
+}
+
+string BedrockCommand::serializeData() const {
+    return "";
+}
+
+void BedrockCommand::deserializeData(const string& data) {
 }
