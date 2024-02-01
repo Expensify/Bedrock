@@ -2159,16 +2159,21 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
 
     // Pull any serialized https requests off the requests object to apply to the command.
     string serializedHTTPSRequests = request["httpsRequests"];
+    string serializedData = request["serializedData"];
     request.erase("httpsRequests");
+    request.erase("serializedData");
 
     // Create a command.
     unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
 
     // Apply HTTPS requests. If we had any, pretend we peeked this command in our current (likely LEADING) state.
-    command->deserializeHTTPSRequests(serializedHTTPSRequests);
-    if (command->httpsRequests.size()) {
+    if (serializedHTTPSRequests.size()) {
+        command->deserializeHTTPSRequests(serializedHTTPSRequests);
         command->lastPeekedOrProcessedInState = _syncNode->getState();
         SINFO("Deserialized " << command->httpsRequests.size() << " HTTPS requests for command " << command->request.methodLine << ".");
+    }
+    if (serializedData.size()) {
+        command->deserializeData(serializedData);
     }
 
     SDEBUG("Deserialized command " << command->request.methodLine);

@@ -137,7 +137,16 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
 
     // This is what we need to send.
     SData request = command.request;
-    request["httpsRequests"] = command.serializeHTTPSRequests();
+    string httpsRequests = command.serializeHTTPSRequests();
+    string serializedData = command.serializeData();
+
+    if (httpsRequests.size()) {
+        request["httpsRequests"] = command.serializeHTTPSRequests();
+    }
+    if (serializedData.size()) {
+        request["serializedData"] = command.serializeData();
+    }
+
     request.nameValueMap["ID"] = command.id;
     SFastBuffer buf(request.serialize());
 
