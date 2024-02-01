@@ -61,7 +61,7 @@ void SStandaloneHTTPSManager::prePoll(fd_map& fdm, SStandaloneHTTPSManager::Tran
     }
     STCPManager::prePoll(fdm, *transaction.s);
 }
-
+#include <iostream>
 void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS) {
     if (!transaction.s || transaction.finished) {
         // If there's no socket, or we're done, skip. Because we call poll on commands, we may poll transactions that
@@ -82,6 +82,8 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     uint64_t now = STimeNow();
     int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
     if (size) {
+
+        cout << "Got: " << transaction.fullResponse.serialize() << endl;
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
         transaction.finished = now;
