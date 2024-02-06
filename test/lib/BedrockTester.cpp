@@ -40,11 +40,13 @@ BedrockTester::BedrockTester(const map<string, string>& args,
                              uint16_t nodePort,
                              uint16_t controlPort,
                              bool startImmediately,
-                             const string& bedrockBinary) :
+                             const string& bedrockBinary,
+                             atomic<uint64_t>* alternateCounter) :
     _serverPort(serverPort ?: ports.getPort()),
     _nodePort(nodePort ?: ports.getPort()),
     _controlPort(controlPort ?: ports.getPort()),
-    _commandPortPrivate(ports.getPort())
+    _commandPortPrivate(ports.getPort()),
+    _commitCount(alternateCounter ? *alternateCounter : _commitCountBase)
 {
     {
         lock_guard<decltype(_testersMutex)> lock(_testersMutex);

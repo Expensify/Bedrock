@@ -32,7 +32,8 @@ class BedrockTester {
                   uint16_t nodePort = 0,
                   uint16_t controlPort = 0,
                   bool startImmediately = true,
-                  const string& bedrockBinary = "");
+                  const string& bedrockBinary = "",
+                  atomic<uint64_t>* alternateCounter = nullptr);
 
     // Destructor.
     ~BedrockTester();
@@ -126,6 +127,7 @@ class BedrockTester {
     uint16_t _commandPortPrivate;
 
     bool _enforceCommandOrder = false;
-    uint64_t _commitCount = 0;
+    atomic<uint64_t> _commitCountBase = 0;
+    atomic<uint64_t>& _commitCount;
 };
 
