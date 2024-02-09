@@ -15,6 +15,13 @@ SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_, const string& pem, const st
 {
 }
 
+void SHTTPSManager::validate() {
+    // These can only be created on a leader node.
+    if (plugin.server.getState() != SQLiteNodeState::LEADING && plugin.server.getState() != SQLiteNodeState::STANDINGDOWN) {
+        throw NotLeading();
+    }
+}
+
 SStandaloneHTTPSManager::SStandaloneHTTPSManager()
 {
 }
@@ -134,6 +141,8 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
     sentTime(0),
     requestID(requestID.empty() ? SThreadLogPrefix : requestID)
 {
+    // TODO: Remove this block to to enable HTTPS on followers. Also the `validate` method can be removed entirely.
+    manager.validate();
 }
 
 SStandaloneHTTPSManager::Transaction::~Transaction() {
@@ -161,6 +170,7 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
         host += ":443";
     }
 
+    // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
     Transaction* transaction = new Transaction(*this);
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
