@@ -35,6 +35,8 @@ class ClusterTester {
     // Stops a given node.
     void stopNode(size_t index);
 
+    atomic<uint64_t> groupCommitCount{0};
+
   private:
 
     // The number of nodes in the cluster.
@@ -140,7 +142,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         }
 
         // And add the new entry in the map.
-        _cluster.emplace_back(args, queries, serverPort, nodePort, controlPort, false, processPath);
+        _cluster.emplace_back(args, queries, serverPort, nodePort, controlPort, false, processPath, &groupCommitCount);
     }
 
     // Now start them all.

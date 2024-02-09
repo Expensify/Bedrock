@@ -32,7 +32,8 @@ class BedrockTester {
                   uint16_t nodePort = 0,
                   uint16_t controlPort = 0,
                   bool startImmediately = true,
-                  const string& bedrockBinary = "");
+                  const string& bedrockBinary = "",
+                  atomic<uint64_t>* alternateCounter = nullptr);
 
     // Destructor.
     ~BedrockTester();
@@ -46,6 +47,10 @@ class BedrockTester {
 
     // Shuts down all bedrock servers associated with any existing testers.
     static void stopAll();
+
+    // If enabled, commands will send the most recent `commitCount` received back from this BedrockTester with each new request,
+    // enforcing that prior commands finish before later commands.
+    void setEnforceCommandOrder(bool enforce);
 
     // Generate a temporary filename with an optional prefix. Used particularly to create new DB files for each server,
     // but can generally be used for any temporary file required.
@@ -120,5 +125,9 @@ class BedrockTester {
     uint16_t _nodePort;
     uint16_t _controlPort;
     uint16_t _commandPortPrivate;
+
+    bool _enforceCommandOrder = false;
+    atomic<uint64_t> _commitCountBase = 0;
+    atomic<uint64_t>& _commitCount;
 };
 
