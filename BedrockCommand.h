@@ -233,5 +233,5 @@ class BedrockCommand : public SQLiteCommand {
 
     static const string defaultPluginName;
 
-    mutable list<SHTTPSManager::Transaction*>::iterator _lastContiguousCompletedTransaction;
+    mutable list<SHTTPSManager::Transaction*>::const_iterator _lastContiguousCompletedTransaction;
 };

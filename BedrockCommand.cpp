@@ -23,7 +23,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
     _commitEmptyTransactions(false),
     _inProgressTiming(INVALID, 0, 0),
     _timeout(_getTimeout(request, scheduledTime)),
-    _lastContiguousCompletedTransaction(httpsRequests.begin())
+    _lastContiguousCompletedTransaction(httpsRequests.end())
 {
     // Initialize the priority, if supplied.
     if (request.isSet("priority")) {
@@ -108,7 +108,7 @@ void BedrockCommand::stopTiming(TIMING_INFO type) {
 }
 
 bool BedrockCommand::areHttpsRequestsComplete() const {
-    list<SHTTPSManager::Transaction*>::iterator requestIt = _lastContiguousCompletedTransaction;
+    auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
     while (requestIt != httpsRequests.end()) {
         if (!(*requestIt)->response) {
             return false;
@@ -279,7 +279,7 @@ void BedrockCommand::finalizeTimingInfo() {
 
 void BedrockCommand::prePoll(fd_map& fdm)
 {
-    list<SHTTPSManager::Transaction*>::iterator requestIt = _lastContiguousCompletedTransaction;
+    auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
     while (requestIt != httpsRequests.end()) {
         SHTTPSManager::Transaction* transaction = *requestIt;
         transaction->manager.prePoll(fdm, *transaction);
@@ -289,7 +289,7 @@ void BedrockCommand::prePoll(fd_map& fdm)
 
 void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWaitMS)
 {
-    list<SHTTPSManager::Transaction*>::iterator requestIt = _lastContiguousCompletedTransaction;
+    auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
     while (requestIt != httpsRequests.end()) {
         SHTTPSManager::Transaction* transaction = *requestIt;
 
