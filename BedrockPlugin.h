@@ -38,10 +38,6 @@ class BedrockPlugin {
     // Called at some point during initiation to allow the plugin to verify/change the database schema.
     virtual void upgradeDatabase(SQLite& db);
 
-    // A list of SHTTPSManagers that the plugin would like the server to watch for activity. It is only guaranteed to
-    // be safe to modify this list during `initialize`.
-    list<SHTTPSManager*> httpsManagers;
-
     // The plugin can register any number of timers it wants. When any of them `ding`, then the `timerFired`
     // function will be called, and passed the timer that is dinging.
     set<SStopwatch*> timers;

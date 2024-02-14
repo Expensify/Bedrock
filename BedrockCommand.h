@@ -80,6 +80,12 @@ class BedrockCommand : public SQLiteCommand {
     // Return the name of the plugin for this command.
     const string& getName() const;
 
+    // Take all of the HTTPS requests attached to this object, and serialize them to a string.
+    string serializeHTTPSRequests();
+
+    // Take a serialized list of HTTPS requests as from `serializeHTTPSRequests` and deserialize them into the `httpsRequests` object.
+    void deserializeHTTPSRequests(const string& serializedHTTPSRequests);
+
     // Bedrock will call this before each `processCommand` (note: not `peekCommand`) for each plugin to allow it to
     // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
     // set the rewriteHandler it would like to use.
@@ -185,6 +191,9 @@ class BedrockCommand : public SQLiteCommand {
     // Return the number of commands in existence.
     static size_t getCommandCount() { return _commandCount.load(); }
 
+    virtual string serializeData() const;
+    virtual void deserializeData(const string& data);
+
     // True if this command should be escalated immediately. This can be true for any command that does all of its work
     // in `process` instead of peek, as it will always be escalated to leader
     const bool escalateImmediately;
@@ -230,6 +239,8 @@ class BedrockCommand : public SQLiteCommand {
     set<string> _tablesUsed;
 
     static atomic<size_t> _commandCount;
+
+    static SStandaloneHTTPSManager _noopHTTPSManager;
 
     static const string defaultPluginName;
 };
