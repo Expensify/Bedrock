@@ -233,5 +233,15 @@ class BedrockCommand : public SQLiteCommand {
 
     static const string defaultPluginName;
 
+    // This refers to the last request in httpsRequests for which all previous requests (including the one referred to) are known to be complete.
+    // For instance, if there are 10 requests (0-9) in httpsRequests, and 0, 1, 2, 5, and 8 are complete, this can refer to request 2, the last one completed
+    // for which all previous requests are also completed.
+    // This is only updated when `areHttpsRequestsComplete()` is called, hence "known to be complete". Requests may have completed that are not yet known, but no
+    // requests can exist before this iterator that are incomplete.
+    // This is used as an optimization. For some operations (areHttpsRequestsComplete, prePoll, postPoll) we iterate across httpsReqeusts, but only actually need to iterate
+    // across httpsRequests that have not yet finished. This allows us to skip known finished requests. If a command has 1,000 attached requests, and on the previous loop
+    // it was known that 990 of them had completed, then on the next loop we can use this to check only the remaining 10 requests rather than all 1,000.
+    //
+    // The default value of this is httpsRequests.end(), which is treated as "no requests completed".
     mutable list<SHTTPSManager::Transaction*>::const_iterator _lastContiguousCompletedTransaction;
 };
