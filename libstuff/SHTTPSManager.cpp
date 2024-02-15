@@ -8,13 +8,11 @@
 
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_) : plugin(plugin_)
 {
-    plugin.httpsManagers.push_back(this);
 }
 
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt)
   : SStandaloneHTTPSManager(pem, srvCrt, caCrt), plugin(plugin_)
 {
-    plugin.httpsManagers.push_back(this);
 }
 
 void SHTTPSManager::validate() {
@@ -102,7 +100,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         // content. Why this is the what constitutes a valid response is lost to time. Any well-formed response should
         // be valid here, and this should get cleaned up. However, this requires testing anything that might rely on
         // the existing behavior, which is an exercise for later.
-        if (handleAllResponses() || SContains(transaction.fullResponse.methodLine, " 200 ") || transaction.fullResponse.content.size()) {
+        if (SContains(transaction.fullResponse.methodLine, " 200 ") || transaction.fullResponse.content.size()) {
             // Pass the transaction down to the subclass.
             _onRecv(&transaction);
         } else {
@@ -133,7 +131,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     }
 }
 
-SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manager_) :
+SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manager_, const string& requestID) :
     s(nullptr),
     created(STimeNow()),
     finished(0),
@@ -141,8 +139,9 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
     response(0),
     manager(manager_),
     sentTime(0),
-    requestID(SThreadLogPrefix)
+    requestID(requestID.empty() ? SThreadLogPrefix : requestID)
 {
+    // TODO: Remove this block to to enable HTTPS on followers. Also the `validate` method can be removed entirely.
     manager.validate();
 }
 

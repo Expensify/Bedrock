@@ -1,8 +1,11 @@
 #include <libstuff/libstuff.h>
+#include <libstuff/SHTTPSManager.h>
 #include "BedrockCommand.h"
 #include "BedrockPlugin.h"
 
 atomic<size_t> BedrockCommand::_commandCount(0);
+
+SStandaloneHTTPSManager BedrockCommand::_noopHTTPSManager;
 
 const string BedrockCommand::defaultPluginName("NO_PLUGIN");
 
@@ -302,4 +305,60 @@ void BedrockCommand::setTimeout(uint64_t timeoutDurationMS) {
 
 bool BedrockCommand::shouldCommitEmptyTransactions() const {
     return _commitEmptyTransactions;
+}
+
+void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSRequests) {
+    if (serializedHTTPSRequests.empty()) {
+        return;
+    }
+
+    list<string> requests = SParseJSONArray(serializedHTTPSRequests);
+    for (const string& requestStr : requests) {
+        STable requestMap = SParseJSONObject(requestStr);
+
+        SHTTPSManager::Transaction* httpsRequest = new SHTTPSManager::Transaction(_noopHTTPSManager, request["requestID"]);
+        httpsRequest->s = nullptr;
+        httpsRequest->created = SToUInt64(requestMap["created"]);
+        httpsRequest->finished = SToUInt64(requestMap["finished"]);
+        httpsRequest->timeoutAt = SToUInt64(requestMap["timeoutAt"]);
+        httpsRequest->sentTime = SToUInt64(requestMap["sentTime"]);
+        httpsRequest->response = SToInt(requestMap["response"]);
+        httpsRequest->fullRequest.deserialize(SDecodeBase64(requestMap["fullRequest"]));
+        httpsRequest->fullResponse.deserialize(SDecodeBase64(requestMap["fullResponse"]));
+
+        httpsRequests.push_back(httpsRequest);
+
+        // These should never be incomplete when passed with a serialized command.
+        if (!httpsRequest->response) {
+            SWARN("Received incomplete HTTPS request.");
+        }
+    }
+}
+
+string BedrockCommand::serializeHTTPSRequests() {
+    if (!httpsRequests.size()) {
+        return "";
+    }
+
+    list<string> requests;
+    for (const auto& httpsRequest : httpsRequests) {
+        STable data;
+        data["created"] = to_string(httpsRequest->created);
+        data["finished"] = to_string(httpsRequest->finished);
+        data["timeoutAt"] = to_string(httpsRequest->timeoutAt);
+        data["sentTime"] = to_string(httpsRequest->sentTime);
+        data["response"] = to_string(httpsRequest->response);
+        data["fullRequest"] = SEncodeBase64(httpsRequest->fullRequest.serialize());
+        data["fullResponse"] = SEncodeBase64(httpsRequest->fullResponse.serialize());
+        requests.push_back(SComposeJSONObject(data));
+    }
+
+    return SComposeJSONArray(requests);
+}
+
+string BedrockCommand::serializeData() const {
+    return "";
+}
+
+void BedrockCommand::deserializeData(const string& data) {
 }

@@ -1460,7 +1460,6 @@ const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, boo
         _JSONASSERTPTR(); // Make sure no parse error.
         if (populateOut) {
             // Got one more
-            SDEBUG("Parsed: '" << name << "':'" << value << "'");
             out[name] = value;
         }
         _JSONLOG();

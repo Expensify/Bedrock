@@ -9,7 +9,7 @@ class SStandaloneHTTPSManager : public STCPManager {
   public:
     struct Transaction {
         // Constructor/Destructor
-        Transaction(SStandaloneHTTPSManager& manager_);
+        Transaction(SStandaloneHTTPSManager& manager_, const string& requestID = "");
         ~Transaction();
 
         // Attributes
@@ -60,9 +60,6 @@ class SStandaloneHTTPSManager : public STCPManager {
     Transaction* _httpsSend(const string& url, const SData& request);
     Transaction* _createErrorTransaction();
     virtual bool _onRecv(Transaction* transaction);
-
-    // Historically we only call _onRecv for `200 OK` responses. This allows manangers to handle all responses.
-    virtual bool handleAllResponses() { return false; }
 };
 
 class SHTTPSManager : public SStandaloneHTTPSManager {
@@ -70,6 +67,7 @@ class SHTTPSManager : public SStandaloneHTTPSManager {
     SHTTPSManager(BedrockPlugin& plugin_);
     SHTTPSManager(BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt);
 
+    // TODO: Remove this once Auth no longer checks for it.
     class NotLeading : public exception {
         const char* what() {
             return "Can't create SHTTPSManager::Transaction when not leading";

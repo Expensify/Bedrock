@@ -35,7 +35,7 @@ struct HTTPSTest : tpunit::TestFixture {
     }
 
     void testMultipleRequests() {
-        BedrockTester& brtester = tester->getTester(0);
+        BedrockTester& brtester = tester->getTester(1);
         SData request("sendrequest");
         request["httpsRequestCount"] = to_string(3);
         auto result = brtester.executeWaitVerifyContent(request);
@@ -45,7 +45,7 @@ struct HTTPSTest : tpunit::TestFixture {
 
     void test() {
         // Send one request to verify that it works.
-        BedrockTester& brtester = tester->getTester(0);
+        BedrockTester& brtester = tester->getTester(1);
 
         SData request("sendrequest a");
         auto result = brtester.executeWaitVerifyContent(request);
@@ -56,7 +56,7 @@ struct HTTPSTest : tpunit::TestFixture {
         // to cause a conflict.
         mutex m;
 
-        // Every 10th request on leader is an HTTP request.
+        // Every 10th request is an HTTP request.
         int nthHasRequest = 10;
 
         // Let's spin up three threads, each spamming commands at one of our nodes.
@@ -66,7 +66,7 @@ struct HTTPSTest : tpunit::TestFixture {
             threads.emplace_back([this, i, nthHasRequest, &responses, &m](){
                 vector<SData> requests;
                 for (int j = 0; j < 200; j++) {
-                    if (i == 0 && (j % nthHasRequest == 0)) {
+                    if (j % nthHasRequest == 0) {
                         // They should throw all sorts of errors if they repeat HTTPS requests.
                         SData request("sendrequest b");
                         request["writeConsistency"] = "ASYNC";

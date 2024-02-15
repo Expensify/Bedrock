@@ -8,9 +8,6 @@ BedrockPlugin::BedrockPlugin(BedrockServer& s) : server(s) {
 }
 
 BedrockPlugin::~BedrockPlugin() {
-    for (auto httpsManager : httpsManagers) {
-        delete httpsManager;
-    }
 }
 
 bool BedrockPlugin::isValidDate(const string& date)

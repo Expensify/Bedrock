@@ -944,19 +944,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 // write it. We'll flag that here, to keep the node from falling out of LEADING/STANDINGDOWN
                 // until we're finished with this command.
                 if (command->httpsRequests.size()) {
-                    // This *should* be impossible, but previous bugs have existed where it's feasible that we call
-                    // `peekCommand` while leading, and by the time we're done, we're FOLLOWING, so we check just
-                    // in case we ever introduce another similar bug.
-                    if (state != SQLiteNodeState::LEADING && state != SQLiteNodeState::STANDINGDOWN) {
-                        SALERT("Not leading or standing down (" << SQLiteNode::stateName(state)
-                               << ") but have outstanding HTTPS command: " << command->request.methodLine
-                               << ", returning 500.");
-                        command->response.methodLine = "500 STANDDOWN TIMEOUT";
-                        _reply(command);
-                        core.rollback();
-                        break;
-                    }
-
                     if (command->repeek || !command->areHttpsRequestsComplete()) {
                         // Roll back the existing transaction, but only if we are inside an transaction
                         if (calledPeek) {
@@ -2170,8 +2157,25 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
         request["_source"] = ip;
     }
 
+    // Pull any serialized https requests off the requests object to apply to the command.
+    string serializedHTTPSRequests = request["httpsRequests"];
+    string serializedData = request["serializedData"];
+    request.erase("httpsRequests");
+    request.erase("serializedData");
+
     // Create a command.
     unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
+
+    // Apply HTTPS requests. If we had any, pretend we peeked this command in our current (likely LEADING) state.
+    if (serializedHTTPSRequests.size()) {
+        command->deserializeHTTPSRequests(serializedHTTPSRequests);
+        command->lastPeekedOrProcessedInState = _syncNode->getState();
+        SINFO("Deserialized " << command->httpsRequests.size() << " HTTPS requests for command " << command->request.methodLine << ".");
+    }
+    if (serializedData.size()) {
+        command->deserializeData(serializedData);
+    }
+
     SDEBUG("Deserialized command " << command->request.methodLine);
     command->socket = fireAndForget ? nullptr : &socket;
 
