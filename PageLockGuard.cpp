@@ -1,4 +1,5 @@
 #include "PageLockGuard.h"
+#include <libstuff/libstuff.h>
 mutex PageLockGuard::controlMutex;
 map<int64_t, mutex> PageLockGuard::mutexes;
 list<int64_t> PageLockGuard::mutexOrder;
