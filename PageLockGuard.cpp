@@ -53,6 +53,8 @@ PageLockGuard::PageLockGuard(int64_t pageNumber) : _pageNumber(pageNumber) {
         // enough mutexes all attempting to be locked simultaneously.
         static const size_t MAX_PAGE_MUTEXES = 500;
         if (mutexes.size() > MAX_PAGE_MUTEXES) {
+            size_t deleted = 0;
+            uint64_t start = STimeNow();
             size_t iterationsToTry = mutexes.size() - MAX_PAGE_MUTEXES;
 
             // We start at the back - the least recently used page - to avoid iterating a bunch of times through the front of the list that we're keeping.
@@ -76,11 +78,15 @@ PageLockGuard::PageLockGuard(int64_t pageNumber) : _pageNumber(pageNumber) {
                     // Remove it from the orderList, and set pageIt to a new valid value (the item just behind the one being deleted).
                     // This will get decremented on the next iteration of this loop, and end up pointing at the item just in front of the one deleted.
                     pageIt = mutexOrder.erase(pageIt);
+
+                    deleted++;
                 }
             }
+
+            SINFO("Deleted " << deleted << " page lock mutexes in " << (STimeNow() - start) << "us, " << mutexes.size() << " remaining.");
         }
 
-        // save the mutex such that it will still be accessible one this block ends.
+        // save the mutex such that it will still be accessible once this block ends.
         m = &mutexPair->second;
     }
 
