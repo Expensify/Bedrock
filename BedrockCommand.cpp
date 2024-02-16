@@ -25,7 +25,8 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
     _plugin(plugin),
     _commitEmptyTransactions(false),
     _inProgressTiming(INVALID, 0, 0),
-    _timeout(_getTimeout(request, scheduledTime))
+    _timeout(_getTimeout(request, scheduledTime)),
+    _lastContiguousCompletedTransaction(httpsRequests.end())
 {
     // Initialize the priority, if supplied.
     if (request.isSet("priority")) {
@@ -110,10 +111,14 @@ void BedrockCommand::stopTiming(TIMING_INFO type) {
 }
 
 bool BedrockCommand::areHttpsRequestsComplete() const {
-    for (auto request : httpsRequests) {
-        if (!request->response) {
+    auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
+    while (requestIt != httpsRequests.end()) {
+        if (!(*requestIt)->response) {
             return false;
+        } else {
+            _lastContiguousCompletedTransaction = requestIt;
         }
+        requestIt++;
     }
     return true;
 }
@@ -277,14 +282,20 @@ void BedrockCommand::finalizeTimingInfo() {
 
 void BedrockCommand::prePoll(fd_map& fdm)
 {
-    for (auto& transaction : httpsRequests) {
+    auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
+    while (requestIt != httpsRequests.end()) {
+        SHTTPSManager::Transaction* transaction = *requestIt;
         transaction->manager.prePoll(fdm, *transaction);
+        requestIt++;
     }
 }
 
 void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWaitMS)
 {
-    for (auto& transaction : httpsRequests) {
+    auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
+    while (requestIt != httpsRequests.end()) {
+        SHTTPSManager::Transaction* transaction = *requestIt;
+
         // If nothing else has set the timeout for this request (i.e., a HTTPS manager that expects to receive a
         // response in a particular time), we will set the timeout here to match the timeout of the command so that we
         // can't go "too long" waiting for a response.
@@ -293,6 +304,7 @@ void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWa
             transaction->timeoutAt = _timeout;
         }
         transaction->manager.postPoll(fdm, *transaction, nextActivity, maxWaitMS);
+        requestIt++;
     }
 }
 
