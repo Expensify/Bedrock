@@ -141,8 +141,6 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
     sentTime(0),
     requestID(requestID.empty() ? SThreadLogPrefix : requestID)
 {
-    // TODO: Remove this block to to enable HTTPS on followers. Also the `validate` method can be removed entirely.
-    manager.validate();
 }
 
 SStandaloneHTTPSManager::Transaction::~Transaction() {
