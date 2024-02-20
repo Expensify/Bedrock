@@ -823,6 +823,9 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                     int numEOLs = 2;
                     while (parseEnd < inputEnd && (*parseEnd == '\r' || *parseEnd == '\n') && numEOLs--)
                         ++parseEnd;
+
+                    // The SData object we've generated is not chunked, we remove this header as it does not describe the state of this request.
+                    nameValueMap.erase("Transfer-Encoding");
                     return (int)(parseEnd - buffer);
                 }
 
