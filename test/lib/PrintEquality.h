@@ -23,17 +23,17 @@ ostream& operator<<(ostream& output, const set<T>& val)
 template<typename T, typename U>
 ostream& operator<<(ostream& output, const map<T, U>& val)
 {
-    output << "[Map]{" << endl;
+    output << "[Map] {" << endl;
     for (const auto& [k, v] : val) {
         output << k << ": " << v << endl;
     }
-    return output << "}" << endl;
+    return output << "}";
 }
 
 class PrintEquality {
     public:
         template <typename U, typename V>
         PrintEquality(const U& a, const V& b, bool isEqual) {
-            cout << (isEqual ? "" : "not ") << "equal " << a << ", " << b << "\n";
+            cout << a << " " << (isEqual ? "=" : "!") << "= " << b << "\n";
         }
 };
