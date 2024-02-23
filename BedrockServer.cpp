@@ -712,7 +712,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // signals, like SIGSEGV, this function will be called.
     SSetSignalHandlerDieFunc([&](){
         _clusterMessenger->runOnAll(_generateCrashMessage(command));
-        _syncNode->kill();
     });
 
     // If we dequeue a status or control command, handle it immediately.
