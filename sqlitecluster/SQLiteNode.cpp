@@ -59,6 +59,8 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
 
+SQLiteNode* SQLiteNode::KILLABLE_SQLITE_NODE{0};
+
 // Initializations for static vars.
 const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S * 30};
 
@@ -145,6 +147,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _stateTimeout(STimeNow() + firstTimeout),
       _syncPeer(nullptr)
 {
+    KILLABLE_SQLITE_NODE = this;
     SASSERT(_originalPriority >= 0);
     onPrepareHandlerEnabled = false;
 
@@ -2714,5 +2717,12 @@ SQLiteNodeState SQLiteNode::stateFromName(const string& name) {
         return SQLiteNodeState::UNKNOWN;
     } else {
         return it->second;
+    }
+}
+
+void SQLiteNode::kill() {
+    for (SQLitePeer* peer : _peerList) {
+        SWARN("Killing peer: " << peer->name);
+        peer->reset();
     }
 }
