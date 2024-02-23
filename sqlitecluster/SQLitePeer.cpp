@@ -72,8 +72,7 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextA
         switch (socket->state.load()) {
             case STCPManager::Socket::CONNECTED: {
                 // socket->lastRecvTime is always set, it's initialized to STimeNow() at creation.
-                auto lastActivityTime = max(socket->lastSendTime, socket->lastRecvTime);
-                if (lastActivityTime + SQLiteNode::RECV_TIMEOUT < STimeNow()) {
+                if (socket->lastRecvTime + SQLiteNode::RECV_TIMEOUT < STimeNow()) {
                     SHMMM("Connection with peer '" << name << "' timed out.");
                     return PeerPostPollStatus::SOCKET_ERROR;
                 }
