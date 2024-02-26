@@ -1,5 +1,5 @@
 #include "libstuff.h"
-
+#include <sqlitecluster/SQLiteNode.h>
 #include <execinfo.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -202,12 +202,19 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
             SWARN("Calling DIE function.");
             SSignalHandlerDieFunc();
             SSignalHandlerDieFunc = [](){};
-            SWARN("DIE function returned, aborting (if not done).");
+            SWARN("DIE function returned.");
+            if (SQLiteNode::KILLABLE_SQLITE_NODE) {
+                SWARN("Killing peer connections.");
+                SQLiteNode::KILLABLE_SQLITE_NODE->kill();
+            }
         }
 
         // If we weren't already in ABORT, we'll call that. The second call will skip the above callstack generation.
         if (signum != SIGABRT) {
+            SWARN("Aborting.");
             abort();
+        } else {
+            SWARN("Already in ABORT.");
         }
     } else {
         SALERT("Non-signal thread got signal " << strsignal(signum) << "(" << signum << "), which wasn't expected");
