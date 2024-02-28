@@ -1153,6 +1153,7 @@ bool SQLiteNode::update() {
 
             // We're no longer waiting on responses from peers, we can re-update immediately and start becoming a
             // follower node instead.
+            // If we get here in our `while(update)` loop, what happens?
             return true;
         }
         break;
@@ -1975,10 +1976,12 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
 
             // Turn off commits. This prevents late commits coming in right after we call `_sendOutstandingTransactions`
             // below, which otherwise could get committed on leader and not replicated to followers.
+            // This blocks on the commit lock. That could hurt.
             _db.setCommitEnabled(false);
 
             // We send any unsent transactions here before we finish switching states, we need to make sure these are
             // all sent to the new leader before we complete the transition.
+            // It seems like we would have done something here, but we didn't log anything. Maybe there weren't any transactions?
             _sendOutstandingTransactions();
         }
 
@@ -1995,6 +1998,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
 
         // Re-enable commits if they were disabled during a previous stand-down.
         if (newState != SQLiteNodeState::SEARCHING) {
+            // Could have hit this.
             _db.setCommitEnabled(true);
         }
 

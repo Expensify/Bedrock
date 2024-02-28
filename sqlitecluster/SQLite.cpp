@@ -701,16 +701,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     _conflictPage = 0;
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
-
-    // This is a last-second check in case we hit the exceptional case where we were unable to acquire the lock when disabling commits.
-    // If we get here, things are not going well but this minimizes the chance that we'll commit a transaction that won't get broadcast to peers.
-    if (!_sharedData._commitEnabled) {
-        return COMMIT_DISABLED;
-    }
     result = SQuery(_db, "committing db transaction", "COMMIT");
-    if (!_sharedData._commitEnabled) {
-        SALERT("This transaction was committed while commits were disabled, it may or may not get sent to peers.");
-    }
     _lastConflictPage = _conflictPage;
     if (_lastConflictPage) {
         SINFO("part of last conflcit page: " << _lastConflictPage);
@@ -1123,28 +1114,13 @@ _commitLockTimer("commit lock timer", {
 { }
 
 void SQLite::SharedData::setCommitEnabled(bool enable) {
-    if (enable) {
-        lock_guard<decltype(commitLock)> lock(commitLock);
-        _commitEnabled = true;
-    } else {
-        // If we are disabling commits, we are standing down, and we don't want to be stuck in the back of a giant queue of commands to be able to do this,
-        // because it blocks the sync thread and prevents the server from standing down at all.
-        unique_lock<decltype(commitLock)> lock(commitLock, defer_lock);
-        bool locked = lock.try_lock_for(3s);
-        if (!locked) {
-            // This may result in a commit that happens after we've stood down, and thus a forked node.
-            // However, waiting indefinitely on this may result in a timeout on the whole cluster, and then a forked node anyway.
-            SALERT("Could not acquire commit lock to disable commits. Doing it anyway!");
-        }
-
-        _commitEnabled = false;
-
-        // This is even hackier, but the idea is that if we set this value in the middle of a commit happening, that commit can finish even though
-        // commits are off. When we return from this function, we're going to want to send all outstanding commits to followers, so we block here for a
-        // couple seconds just to allow a final commit to finish. This doesn't guarantee anything, but it's really just trying to reduce the surface area for failure.
-        sleep(3);
-        SINFO("Done sleeping after failing to acquire commit lock.");
+    if (commitEnabled == enable) {
+        // Exit early without grabbing the lock. It's possible during highly congested times for getting the lock to take long enough to time out the cluster.
+        return;
     }
+
+    lock_guard<decltype(commitLock)> lock(commitLock);
+    _commitEnabled = enable;
 }
 
 void SQLite::SharedData::incrementCommit(const string& commitHash) {
