@@ -1114,7 +1114,7 @@ _commitLockTimer("commit lock timer", {
 { }
 
 void SQLite::SharedData::setCommitEnabled(bool enable) {
-    if (commitEnabled == enable) {
+    if (_commitEnabled == enable) {
         // Exit early without grabbing the lock. It's possible during highly congested times for getting the lock to take long enough to time out the cluster.
         return;
     }
