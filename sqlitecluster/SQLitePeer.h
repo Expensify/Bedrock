@@ -86,6 +86,7 @@ class SQLitePeer {
     atomic<bool> subscribed;
     atomic<Response> transactionResponse;
     atomic<string> version;
+    atomic<uint64_t> lastPingTime;
 
   private:
     // For initializing the permafollower value from the params list.

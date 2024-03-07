@@ -22,6 +22,7 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     subscribed(false),
     transactionResponse(Response::NONE),
     version(),
+    lastPingTime(0),
     hash()
 { }
 
@@ -46,6 +47,7 @@ void SQLitePeer::reset() {
     subscribed = false;
     transactionResponse = Response::NONE;
     version = "";
+    lastPingTime = 0,
     setCommit(0, "");
 }
 
