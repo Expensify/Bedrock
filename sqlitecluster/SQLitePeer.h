@@ -99,8 +99,6 @@ class SQLitePeer {
 
     // Not named with an underscore because it's only sort-of private (see friend class declaration above).
     STCPManager::Socket* socket = nullptr;
-
-    mutable uint64_t _lastRecvTime = 0;
 };
 
 // serialization for Responses.
