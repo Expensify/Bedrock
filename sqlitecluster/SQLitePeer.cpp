@@ -60,7 +60,6 @@ void SQLitePeer::prePoll(fd_map& fdm) const {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         STCPManager::prePoll(fdm, *socket);
-        _lastRecvTime = socket->lastRecvTime;
     }
 }
 
@@ -72,9 +71,6 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextA
         // We have a socket; process based on its state
         switch (socket->state.load()) {
             case STCPManager::Socket::CONNECTED: {
-                if (SQLiteNode::IS_DB2_RNO && state != SQLiteNodeState::LEADING && _lastRecvTime != socket->lastRecvTime) {
-                    SINFO("Updated last recv time from peer " << name);
-                }
                 // socket->lastRecvTime is always set, it's initialized to STimeNow() at creation.
                 if (socket->lastRecvTime + SQLiteNode::RECV_TIMEOUT < STimeNow()) {
                     SHMMM("Connection with peer '" << name << "' timed out.");
@@ -237,15 +233,11 @@ bool SQLitePeer::isPermafollower(const STable& params) {
 void SQLitePeer::sendMessage(const SData& message) {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
-        uint64_t lastSendTime = socket->lastSendTime;
         size_t bytesSent = 0;
         if (socket->send(message.serialize(), &bytesSent)) {
             SINFO("No error sending " << message.methodLine << " to peer " << name << " (" << bytesSent << " bytes actually sent).");
         } else {
             SHMMM("Error sending " << message.methodLine << " to peer " << name << ".");
-        }
-        if (SQLiteNode::IS_DB2_RNO && state != SQLiteNodeState::LEADING && lastSendTime != socket->lastSendTime) {
-            SINFO("Updated last send time to peer " << name);
         }
     } else {
         SINFO("Tried to send " << message.methodLine << " to peer " << name << ", but not available.");
