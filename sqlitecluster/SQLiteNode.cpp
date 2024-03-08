@@ -2420,6 +2420,11 @@ int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uin
         return result;
     }
 
+    // If the commit completed, interrupt the sync thread `poll` loop in case any other threads were waiting on this commit to complete.
+    if (result == SQLITE_OK) {
+        notifyCommit();
+    }
+
     // Clear the list of committed transactions. We're following, so we don't need to send these.
     db.popCommittedTransactions();
 
