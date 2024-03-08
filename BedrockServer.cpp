@@ -88,6 +88,10 @@ void BedrockServer::syncWrapper()
             break;
         }
     }
+
+    // Break out of `poll` in main.cpp.
+    _notifyDone.push(true);
+    SINFO("Exiting syncWrapper");
 }
 
 void BedrockServer::sync()
@@ -250,7 +254,7 @@ void BedrockServer::sync()
         }
 
         // And set our next timeout for 1 second from now.
-        nextActivity = STimeNow() + STIME_US_PER_S;
+         nextActivity = STimeNow() + (STIME_US_PER_MS * 100);
 
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
@@ -644,10 +648,14 @@ void BedrockServer::sync()
     // Note: This is not an atomic operation but should not matter. Nothing should use this that can happen with no
     // sync thread.
     // If there are socket threads in existance, they can be looking at this through a syncThread copy.
+    SINFO("Deleting DB pool");
     _dbPool = nullptr;
+    SINFO("Deleted DB pool");
 
     // We're really done, store our flag so main() can be aware.
+    SINFO("Marking sync thread complete");
     _syncThreadComplete.store(true);
+    SINFO("Marked sync thread complete");
 }
 
 void BedrockServer::worker(int threadId)
@@ -671,7 +679,7 @@ void BedrockServer::worker(int threadId)
             });
 
             // Get the next one.
-            command = commandQueue.get(1000000);
+            command = commandQueue.get(100000);
 
             SAUTOPREFIX(command->request);
             SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
@@ -1346,7 +1354,10 @@ BedrockServer::~BedrockServer() {
 
     // Delete our plugins.
     for (auto& p : plugins) {
+        string name = p.second->getName();
+        SINFO("Deleting " << name << "plugin.");
         delete p.second;
+        SINFO("Done deleting " << name << "plugin.");
     }
 }
 
@@ -1361,6 +1372,9 @@ bool BedrockServer::shutdownComplete() {
 
 void BedrockServer::prePoll(fd_map& fdm) {
     lock_guard<mutex> lock(_portMutex);
+
+    // This will interrupt poll when we shut down.
+    _notifyDone.prePoll(fdm);
 
     // Add all our ports. There are no sockets directly managed here.
     if (_commandPortPublic) {
