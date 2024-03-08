@@ -167,11 +167,15 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
     }
 
     list<TestFixture*> afterTests;
+    mutex testTimeLock;
+    multimap<chrono::milliseconds, string> testTimes;
 
     for (int threadID = 0; threadID < threads; threadID++) {
         // Capture everything by reference except threadID, because we don't want it to be incremented for the
         // next thread in the loop.
         thread t = thread([&, threadID]{
+           auto start = chrono::steady_clock::now();
+
            threadInitFunction();
             try {
                 // Do test.
@@ -259,6 +263,11 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                 exitFlag = true;
                 printf("Thread %d caught shutdown exception, exiting.\n", threadID);
             }
+            auto end = chrono::steady_clock::now();
+            if (currentTestName.size()) {
+                lock_guard<mutex> lock(testTimeLock);
+                testTimes.emplace(make_pair(chrono::duration_cast<std::chrono::milliseconds>(end - start), currentTestName));
+            }
         });
         threadList.push_back(move(t));
     }
@@ -294,6 +303,18 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                 printf("%s\n", failure.c_str());
             }
         }
+
+        cout << endl;
+        cout << "Slowest Test Classes: " << endl;
+        auto it = testTimes.rbegin();
+        for (size_t i = 0; i < 10; i++) {
+            if (it == testTimes.rend()) {
+                break;
+            }
+            cout << it->first << ": " << it->second << endl;
+            it++;
+        }
+
         return tpunit_detail_stats()._failures;
     }
     return 1;
