@@ -68,8 +68,6 @@ class SQLiteNode : public STCPManager {
         FAILED
     };
 
-    static bool IS_DB2_RNO;
-
     // Write consistencies available
     enum ConsistencyLevel {
         ASYNC,  // Fully asynchronous write, no follower approval required.

@@ -86,6 +86,7 @@ class SQLitePeer {
     atomic<bool> subscribed;
     atomic<Response> transactionResponse;
     atomic<string> version;
+    atomic<uint64_t> lastPingTime;
 
   private:
     // For initializing the permafollower value from the params list.
@@ -99,8 +100,6 @@ class SQLitePeer {
 
     // Not named with an underscore because it's only sort-of private (see friend class declaration above).
     STCPManager::Socket* socket = nullptr;
-
-    mutable uint64_t _lastRecvTime = 0;
 };
 
 // serialization for Responses.

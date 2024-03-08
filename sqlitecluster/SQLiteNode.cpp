@@ -61,8 +61,6 @@
 
 SQLiteNode* SQLiteNode::KILLABLE_SQLITE_NODE{0};
 
-bool SQLiteNode::IS_DB2_RNO = false;
-
 // Initializations for static vars.
 const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S * 30};
 
@@ -149,10 +147,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _stateTimeout(STimeNow() + firstTimeout),
       _syncPeer(nullptr)
 {
-    if (_name == "auth.db2.rno") {
-        IS_DB2_RNO = true;
-    }
-
     KILLABLE_SQLITE_NODE = this;
     SASSERT(_originalPriority >= 0);
     onPrepareHandlerEnabled = false;
@@ -2631,18 +2625,15 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case SQLitePeer::PeerPostPollStatus::OK:
             {
+                auto lastRecvTime = peer->lastRecvTime();
                 auto now = STimeNow();
-                if (IS_DB2_RNO && peer->state != SQLiteNodeState::LEADING) {
-                    SINFO("Peer " << peer->name << " lastSent: " << (now - peer->lastSendTime()) << "us ago, lastRecv'ed: " << (now - peer->lastRecvTime()) << "us ago. (raw lastRecvTime: "
-                          << peer->lastSendTime() << ", raw lastSendTime: " << peer->lastRecvTime() << ")");
-                }
-                auto lastActivityTime = max(peer->lastSendTime(), peer->lastRecvTime());
-                if (lastActivityTime && now - lastActivityTime > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
-                    SINFO("Close to timeout (" << (now - lastActivityTime) << "us since last activity), sending PING to peer '" << peer->name << "'");
-                    _sendPING(peer);
-                } else {
-                    if (IS_DB2_RNO && peer->state != SQLiteNodeState::LEADING) {
-                        SINFO("Not close to timeout for peer " << peer->name << ", lastActivityTime: " << lastActivityTime << ", now: " << now);
+                auto elapsed = (now - lastRecvTime);
+                if (lastRecvTime && elapsed > SQLiteNode::RECV_TIMEOUT - 5 * STIME_US_PER_S) {
+                    // Ping the peer (unless it's been less that 1 second since the last ping).
+                    if (now > (peer->lastPingTime + 1'000'000)) {
+                        SINFO("Close to timeout (" << elapsed << "us since last activity), sending PING to peer '" << peer->name << "'");
+                        peer->lastPingTime = now;
+                        _sendPING(peer);
                     }
                 }
                 try {
