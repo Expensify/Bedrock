@@ -180,7 +180,9 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
     }
     auto end = STimeNow();
 
-    cout << "Took " << ((end - start) / 1000) << "ms to start cluster." << endl;
+    if ((end - start) > 5000000) {
+        cout << "Took " << ((end - start) / 1000) << "ms to start cluster." << endl;
+    }
 }
 
 template <typename T>
@@ -190,10 +192,8 @@ ClusterTester<T>::~ClusterTester()
 
     // Shut down everything but the leader first.
     list<thread> threads;
-    cout << "Starting shutdown at " << SCURRENT_TIMESTAMP() << endl;
     for (int i = _size - 1; i > 0; i--) {
         threads.emplace_back([&, i](){
-            cout << "Stopping node " << i << " at " << SCURRENT_TIMESTAMP() << endl;
             stopNode(i);
         });
     }
@@ -202,12 +202,13 @@ ClusterTester<T>::~ClusterTester()
     }
 
     // Then do leader last. This is to avoid getting in a state where nodes try to stand up as leader shuts down.
-    cout << "Stopping node " << 0 << " at " << SCURRENT_TIMESTAMP() << endl;
     stopNode(0);
 
     auto end = STimeNow();
 
-    cout << "Took " << ((end - start) / 1000) << "ms to stop cluster." << endl;
+    if ((end - start) > 5000000) {
+        cout << "Took " << ((end - start) / 1000) << "ms to stop cluster." << endl;
+    }
     _cluster.clear();
 }
 
