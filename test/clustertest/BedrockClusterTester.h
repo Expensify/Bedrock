@@ -153,6 +153,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         threads.emplace_back([it](){
             it->startServer();
         });
+        usleep(100'000);
     }
     for (auto& i : threads) {
         i.join();

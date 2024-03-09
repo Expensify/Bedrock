@@ -131,7 +131,7 @@ void _SSignal_signalHandlerThreadFunc() {
         siginfo_t siginfo = {0};
         struct timespec timeout;
         timeout.tv_sec = 0;
-        timeout.tv_nsec = 100'000;
+        timeout.tv_nsec = 100'000'000; // 100ms in ns.
         int result = -1;
         while (result == -1) {
             result = sigtimedwait(&signals, &siginfo, &timeout);
