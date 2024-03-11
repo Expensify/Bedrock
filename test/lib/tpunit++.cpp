@@ -2,7 +2,6 @@
 #include <string.h>
 #include <iostream>
 #include <regex>
-#include <chrono>
 using namespace tpunit;
 
 bool tpunit::TestFixture::exitFlag = false;
@@ -167,15 +166,11 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
     }
 
     list<TestFixture*> afterTests;
-    mutex testTimeLock;
-    multimap<chrono::milliseconds, string> testTimes;
 
     for (int threadID = 0; threadID < threads; threadID++) {
         // Capture everything by reference except threadID, because we don't want it to be incremented for the
         // next thread in the loop.
         thread t = thread([&, threadID]{
-           auto start = chrono::steady_clock::now();
-
            threadInitFunction();
             try {
                 // Do test.
@@ -263,11 +258,6 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                 exitFlag = true;
                 printf("Thread %d caught shutdown exception, exiting.\n", threadID);
             }
-            auto end = chrono::steady_clock::now();
-            if (currentTestName.size()) {
-                lock_guard<mutex> lock(testTimeLock);
-                testTimes.emplace(make_pair(chrono::duration_cast<std::chrono::milliseconds>(end - start), currentTestName));
-            }
         });
         threadList.push_back(move(t));
     }
@@ -302,17 +292,6 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
             for (const auto& failure : tpunit_detail_stats()._failureNames) {
                 printf("%s\n", failure.c_str());
             }
-        }
-
-        cout << endl;
-        cout << "Slowest Test Classes: " << endl;
-        auto it = testTimes.rbegin();
-        for (size_t i = 0; i < 10; i++) {
-            if (it == testTimes.rend()) {
-                break;
-            }
-            cout << it->first << ": " << it->second << endl;
-            it++;
         }
 
         return tpunit_detail_stats()._failures;
@@ -440,33 +419,23 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
             f->_stats._assertions = 0;
             f->_stats._exceptions = 0;
             f->testOutputBuffer = "";
-            auto start = chrono::steady_clock::now();
             tpunit_detail_do_methods(f->_befores);
             tpunit_detail_do_method(t);
             tpunit_detail_do_methods(f->_afters);
-            auto end = chrono::steady_clock::now();
-            stringstream timeStream;
-            timeStream << "(" << chrono::duration_cast<std::chrono::milliseconds>(end - start);
-            if (chrono::duration_cast<std::chrono::milliseconds>(end - start) > 5000ms) {
-                timeStream << " \xF0\x9F\x90\x8C";
-            }
-            timeStream << ")";
-            string timeStr = timeStream.str();
-            const char* time = timeStr.c_str();
 
             // No new assertions or exceptions. This not currently synchronized correctly. They can cause tests that
             // passed to appear failed when another test failed while this test was running. They cannot cause failed
             // tests to appear to have passed.
             if(!f->_stats._assertions && !f->_stats._exceptions) {
                 lock_guard<recursive_mutex> lock(m);
-                printf("\xE2\x9C\x85 %s %s\n", t->_name, time);
+                printf("\xE2\x9C\x85 %s\n", t->_name);
                 tpunit_detail_stats()._passes++;
             } else {
                 lock_guard<recursive_mutex> lock(m);
 
                 // Dump the test buffer if the test included any log lines.
                 f->printTestBuffer();
-                printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s %s\n", t->_name, time);
+                printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s\n", t->_name);
                 tpunit_detail_stats()._failures++;
                 tpunit_detail_stats()._failureNames.emplace(t->_name);
             }
