@@ -145,12 +145,15 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         _cluster.emplace_back(args, queries, serverPort, nodePort, controlPort, false, processPath, &groupCommitCount);
     }
 
+    auto start = STimeNow();
+
     // Now start them all.
     list<thread> threads;
     for (auto it = _cluster.begin(); it != _cluster.end(); it++) {
         threads.emplace_back([it](){
             it->startServer();
         });
+        usleep(100'000);
     }
     for (auto& i : threads) {
         i.join();
@@ -176,16 +179,37 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
             usleep(100000); // 0.1 seconds.
         }
     }
+    auto end = STimeNow();
+
+    if ((end - start) > 5000000) {
+        cout << "Took " << ((end - start) / 1000) << "ms to start cluster." << endl;
+    }
 }
 
 template <typename T>
 ClusterTester<T>::~ClusterTester()
 {
-    // Shut them down in reverse order so they don't try and stand up as leader in the middle of everything.
-    for (int i = _size - 1; i >= 0; i--) {
-        stopNode(i);
+    auto start = STimeNow();
+
+    // Shut down everything but the leader first.
+    list<thread> threads;
+    for (int i = _size - 1; i > 0; i--) {
+        threads.emplace_back([&, i](){
+            stopNode(i);
+        });
+    }
+    for (auto& t: threads) {
+        t.join();
     }
 
+    // Then do leader last. This is to avoid getting in a state where nodes try to stand up as leader shuts down.
+    stopNode(0);
+
+    auto end = STimeNow();
+
+    if ((end - start) > 5000000) {
+        cout << "Took " << ((end - start) / 1000) << "ms to stop cluster." << endl;
+    }
     _cluster.clear();
 }
 
