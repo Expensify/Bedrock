@@ -173,7 +173,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
             } catch (...) {
                 // This will happen if the server's not up yet. We'll just try again.
             }
-            usleep(500000); // 0.5 seconds.
+            usleep(100000); // 0.1 seconds.
         }
     }
 }
