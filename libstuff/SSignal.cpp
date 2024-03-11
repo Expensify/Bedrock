@@ -130,8 +130,8 @@ void _SSignal_signalHandlerThreadFunc() {
         // Wait for a signal to appear.
         siginfo_t siginfo = {0};
         struct timespec timeout;
-        timeout.tv_sec = 1;
-        timeout.tv_nsec = 0;
+        timeout.tv_sec = 0;
+        timeout.tv_nsec = 100'000'000; // 100ms in ns.
         int result = -1;
         while (result == -1) {
             result = sigtimedwait(&signals, &siginfo, &timeout);
@@ -159,7 +159,7 @@ void _SSignal_signalHandlerThreadFunc() {
 void SStopSignalThread() {
     _SSignal_threadStopFlag = true;
     if (_SSignal_threadInitialized.test_and_set()) {
-        // Send ourselves a singnal to interrupt our thread.
+        // Send ourselves a signal to interrupt our thread.
         SINFO("Joining signal thread.");
         _SSignal_signalThread.join();
         _SSignal_threadInitialized.clear();

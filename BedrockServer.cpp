@@ -88,6 +88,10 @@ void BedrockServer::syncWrapper()
             break;
         }
     }
+
+    // Break out of `poll` in main.cpp.
+    _notifyDone.push(true);
+    SINFO("Exiting syncWrapper");
 }
 
 void BedrockServer::sync()
@@ -230,6 +234,9 @@ void BedrockServer::sync()
         // commands, and we'll shortly run through the existing queue.
         if (_shutdownState.load() == CLIENTS_RESPONDED) {
             _syncNode->beginShutdown();
+
+            // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
+            _notifyDone.push(true);
         }
 
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
@@ -237,6 +244,7 @@ void BedrockServer::sync()
         fd_map fdm;
 
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
+        _notifyDone.prePoll(fdm);
         _syncNode->prePoll(fdm);
 
         // Add our command queues to our fd_map.
@@ -262,6 +270,7 @@ void BedrockServer::sync()
             AutoTimerTime postPollTime(postPollTimer);
             _syncNode->postPoll(fdm, nextActivity);
             _syncNodeQueuedCommands.postPoll(fdm);
+            _notifyDone.postPoll(fdm);
         }
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
@@ -671,7 +680,7 @@ void BedrockServer::worker(int threadId)
             });
 
             // Get the next one.
-            command = commandQueue.get(1000000);
+            command = commandQueue.get(100000);
 
             SAUTOPREFIX(command->request);
             SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
@@ -1362,6 +1371,9 @@ bool BedrockServer::shutdownComplete() {
 void BedrockServer::prePoll(fd_map& fdm) {
     lock_guard<mutex> lock(_portMutex);
 
+    // This will interrupt poll when we shut down.
+    _notifyDone.prePoll(fdm);
+
     // Add all our ports. There are no sockets directly managed here.
     if (_commandPortPublic) {
         SFDset(fdm, _commandPortPublic->s, SREADEVTS);
@@ -1378,6 +1390,8 @@ void BedrockServer::prePoll(fd_map& fdm) {
 }
 
 void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    _notifyDone.postPoll(fdm);
+
     // NOTE: There are no sockets managed here, just ports.
     // Open the port the first time we enter a command-processing state
     SQLiteNodeState state = _replicationState.load();

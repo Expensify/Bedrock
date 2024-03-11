@@ -83,7 +83,7 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextA
             }
             case STCPManager::Socket::CLOSED: {
                 // Done; clean up and try to reconnect
-                uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 5);
+                uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 1);
                 if (socket->connectFailure) {
                     SINFO("SQLitePeer connection failed after " << (STimeNow() - socket->openTime) / 1000 << "ms, reconnecting in " << delay / 1000 << "ms");
                 } else {
