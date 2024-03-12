@@ -29,15 +29,17 @@ struct MassiveQueryTest : tpunit::TestFixture {
 
         SData status("Status");
         for (size_t i = 0; i < 500; i++) {
-            auto r2 = tester.getTester(2).executeWaitMultipleData({status})[0];
+            auto responseList = tester.getTester(2).executeWaitMultipleData({status});
+            auto r2 = responseList[0];
+            auto json = SParseJSONObject(r2.content);
             try {
-                commitCount2 = stoull(r2["CommitCount"]);
+                commitCount2 = stoull(json["CommitCount"]);
             } catch (const invalid_argument& e) {
-                cout << "invalid_argument parsing commitCount2 from: " << SParseJSONObject(r2.content)["CommitCount"] << endl;
-                cout << r2.content << endl;
+                cout << "invalid_argument parsing commitCount2." << endl;
+                cout << r2.serialize() << endl;
             } catch (const out_of_range& e) {
-                cout << "out_of_range parsing commitCount2 from: " << SParseJSONObject(r2.content)["CommitCount"] << endl;
-                cout << r2.content << endl;
+                cout << "out_of_range parsing commitCount2." << endl;
+                cout << r2.serialize() << endl;
             }
             if (commitCount2 == commitCount) {
                 break;
