@@ -31,7 +31,7 @@ struct MassiveQueryTest : tpunit::TestFixture {
         for (size_t i = 0; i < 500; i++) {
             auto r2 = tester.getTester(2).executeWaitMultipleData({status})[0];
             try {
-                commitCount2 = stoull(r1["CommitCount"]);
+                commitCount2 = stoull(r2["CommitCount"]);
             } catch (const invalid_argument& e) {
                 cout << "invalid_argument parsing commitCount2 from: " << SParseJSONObject(r2.content)["CommitCount"] << endl;
                 cout << r2.content << endl;
