@@ -1818,7 +1818,7 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
     if (peer == _leadPeer) {
         // We've lost our leader: make sure we aren't waiting for
         // transaction response and re-SEARCH
-        PHMMM("Lost our LEADER, re-SEARCHING.");
+        PWARN("Lost our LEADER, re-SEARCHING.");
         SASSERTWARN(_state == SQLiteNodeState::SUBSCRIBING || _state == SQLiteNodeState::FOLLOWING);
         {
             _leadPeer = nullptr;
