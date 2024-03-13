@@ -98,8 +98,8 @@ const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString) {
         SINFO("Adding peer #" << peerList.size() << ": " << name << " (" << host << "), " << SComposeJSONObject(params));
         SQLitePeer* peer = new SQLitePeer(name, host, params, peerList.size() + 1);
 
-        // Wait up to 2s before trying the first time
-        peer->nextReconnect = STimeNow() + SRandom::rand64() % (STIME_US_PER_S * 2);
+        // Wait up to 1s before trying the first time
+        peer->nextReconnect = STimeNow() + SRandom::rand64() % STIME_US_PER_S;
         peerList.push_back(peer);
     }
 
@@ -867,8 +867,7 @@ bool SQLiteNode::update() {
         // See if we're taking too long
         if (STimeNow() > _stateTimeout) {
             // Timed out
-            SHMMM("Timed out waiting for STANDUP approval; reconnect all and re-SEARCHING.");
-            _reconnectAll();
+            SHMMM("Timed out waiting for STANDUP approval; re-SEARCHING.");
             _changeState(SQLiteNodeState::SEARCHING);
             return true; // Re-update
         }
@@ -1791,6 +1790,16 @@ void SQLiteNode::_onConnect(SQLitePeer* peer) {
     login["Version"] = _version;
     login["Permafollower"] = _originalPriority ? "false" : "true";
     _sendToPeer(peer, login);
+
+    // If we're STANDINGUP when a peer connects, send them a STATE message so they know they need to APPROVE or DENY the standup.
+    // Otherwise we will wait for their response that's not coming,and can eventually time out the standup.
+    if (_state == SQLiteNodeState::STANDINGUP) {
+        SData state("STATE");
+        state["StateChangeCount"] = to_string(_stateChangeCount);
+        state["State"] = stateName(_state);
+        state["Priority"] = SToStr(_priority);
+        _sendToPeer(peer, state);
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -1809,7 +1818,7 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
     if (peer == _leadPeer) {
         // We've lost our leader: make sure we aren't waiting for
         // transaction response and re-SEARCH
-        PHMMM("Lost our LEADER, re-SEARCHING.");
+        PWARN("Lost our LEADER, re-SEARCHING.");
         SASSERTWARN(_state == SQLiteNodeState::SUBSCRIBING || _state == SQLiteNodeState::FOLLOWING);
         {
             _leadPeer = nullptr;
