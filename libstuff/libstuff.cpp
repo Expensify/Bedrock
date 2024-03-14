@@ -2641,6 +2641,10 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         }
     }
 
+    if (error == SQLITE_CORRUPT) {
+        SERROR("Database corruption was detected, cannot continue, bedrock will exit immediately.");
+    }
+
     uint64_t elapsed = STimeNow() - startTime;
     if ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000) {
         // Avoid logging queries so long that we need dozens of lines to log them.
