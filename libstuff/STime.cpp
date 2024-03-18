@@ -4,9 +4,16 @@
 
 uint64_t STimeNow() {
     // Get the time = microseconds since 00:00:00 UTC, January 1, 1970
-    timeval time;
-    gettimeofday(&time, 0);
-    return ((uint64_t)time.tv_sec * 1000000 + (uint64_t)time.tv_usec);
+    if (true) {
+        // Experimental usage of clock_gettime to explicitly use CLOCK_REALTIME.
+        struct timespec time{0};
+        clock_gettime(CLOCK_REALTIME, &time);
+        return ((uint64_t)time.tv_sec * 1000000 + (uint64_t)time.tv_nsec / 1000);
+    } else {
+        timeval time;
+        gettimeofday(&time, 0);
+        return ((uint64_t)time.tv_sec * 1000000 + (uint64_t)time.tv_usec);
+    }
 }
 
 string SComposeTime(const string& format, uint64_t when) {
