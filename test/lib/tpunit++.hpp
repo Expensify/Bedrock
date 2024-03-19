@@ -122,8 +122,8 @@ using namespace std;
  */
 #define ASSERT_THROW(statement, exception) try { statement; ABORT(); } catch(const exception&) { PASS(); } catch(...) { ABORT(); }
 #define EXPECT_THROW(statement, exception) try { statement; FAIL(); } catch(const exception&) { PASS(); } catch(...) { FAIL(); }
-#define ASSERT_NO_THROW(statement) try { statement; PASS(); } catch(...) { ABORT(); }
-#define EXPECT_NO_THROW(statement) try { statement; PASS(); } catch(...) { FAIL(); }
+#define ASSERT_NO_THROW(statement) try { statement; PASS(); } catch(const exception& e) { cout << "Something threw: " << e.what() << endl; ABORT(); } catch(const char* e) { cout << "Something threw: " << e << endl; ABORT(); } catch(...) { cout << "Something threw, unsure what..." << endl; ABORT(); }
+#define EXPECT_NO_THROW(statement) try { statement; PASS(); } catch(const exception& e) { cout << "Something threw: " << e.what() << endl; FAIL(); } catch(const char* e) { cout << "Something threw: " << e << endl; FAIL(); } catch(...) { cout << "Something threw, unsure what..." << endl; FAIL(); }
 #define ASSERT_ANY_THROW(statement) try { statement; ABORT(); } catch(...) { PASS(); }
 #define EXPECT_ANY_THROW(statement) try { statement; FAIL(); } catch(...) { PASS(); }
 
