@@ -281,7 +281,7 @@ bool BedrockJobsCommand::peek(SQLite& db) {
             }
 
             // Verify unique, but only do so when creating a single job using CreateJob
-            if (SIEquals(requestVerb, "CreateJob") && SContains(job, "unique") && job["unique"] == "true") {
+            if (SContains(job, "unique") && job["unique"] == "true") {
                 SQResult result;
                 SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
                       << (mockRequest ? "true" : "false"));
@@ -296,10 +296,10 @@ bool BedrockJobsCommand::peek(SQLite& db) {
 
                 // If there's no job or the existing job doesn't match the data we've been passed, escalate to leader.
                 if (!result.empty()) {
-                    if (!result[0][2].empty() && result[0][2] != job["parentJobID"]) {
-                        STHROW("404 Trying to create a child that already exists, but it is tied to a different parent (passed: " + job["parentJobID"] + ", saved: " + result[0][2] + ")");
+                    if (result[0][2] != "0" && result[0][2] != job["parentJobID"]) {
+                        STHROW("404 Trying to create a child that already exists, but it is tied to a different parent");
                     }
-                    if ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"])) {
+                    if (SIEquals(requestVerb, "CreateJob") && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
                         // Return early, no need to pass to leader, there are no more jobs to create.
                         SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0] << ", mocked? "
                         << (mockRequest ? "true" : "false"));

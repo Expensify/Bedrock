@@ -11,6 +11,7 @@ struct CreateJobsTest : tpunit::TestFixture {
                               TEST(CreateJobsTest::createWithInvalidJson),
                               TEST(CreateJobsTest::createWithParentIDNotRunning),
                               TEST(CreateJobsTest::createWithParentMocked),
+                              TEST(CreateJobsTest::createUniqueChildWithWrongParent),
                               AFTER(CreateJobsTest::tearDown),
                               AFTER_CLASS(CreateJobsTest::tearDownClass)) { }
 
@@ -195,4 +196,58 @@ struct CreateJobsTest : tpunit::TestFixture {
 
         ASSERT_EQUAL(result.rows.size(), 0);
     }
+
+    void createUniqueChildWithWrongParent()
+    {
+        // Create 2 parents
+        SData command("CreateJob");
+        command["name"] = "createWithParent1";
+        string response = tester->executeWaitVerifyContent(command);
+        STable responseJSON = SParseJSONObject(response);
+        string parentID1 = responseJSON["jobID"];
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "createWithParent2";
+        response = tester->executeWaitVerifyContent(command);
+        responseJSON = SParseJSONObject(response);
+        string parentID2 = responseJSON["jobID"];
+
+        // Get the parents (to set it running)
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "createWithParent1";
+        tester->executeWaitVerifyContent(command);
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "createWithParent2";
+        tester->executeWaitVerifyContent(command);
+
+        // Send the command to create the child in parent1
+        command.clear();
+        command.methodLine = "CreateJobs";
+        STable job1Content;
+        STable data1;
+        data1["blabla"] = "blabla";
+        job1Content["name"] = "createWithParent_child";
+        job1Content["data"] = SComposeJSONObject(data1);
+        job1Content["parentJobID"] = parentID1;
+        vector<string> jobs;
+        jobs.push_back(SComposeJSONObject(job1Content));
+        command["jobs"] = SComposeJSONArray(jobs);
+        tester->executeWaitVerifyContent(command);
+
+        // Try to create the same child with unique, but pass parent2 instead
+        command.clear();
+        command.methodLine = "CreateJobs";
+        data1["blabla"] = "blabla";
+        job1Content["name"] = "createWithParent_child";
+        job1Content["unique"] = "true";
+        job1Content["data"] = SComposeJSONObject(data1);
+        job1Content["parentJobID"] = parentID2;
+        jobs.clear();
+        jobs.push_back(SComposeJSONObject(job1Content));
+        command["jobs"] = SComposeJSONArray(jobs);
+        tester->executeWaitVerifyContent(command, "404 Trying to create a child that already exists, but it is tied to a different parent");
+    }
+
 } __CreateJobsTest;
