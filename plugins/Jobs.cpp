@@ -286,7 +286,7 @@ bool BedrockJobsCommand::peek(SQLite& db) {
                 SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
                       << (mockRequest ? "true" : "false"));
                 string operation = mockRequest ? "IS NOT" : "IS";
-                if (!db.read("SELECT jobID, data "
+                if (!db.read("SELECT jobID, data, parentJobID "
                              "FROM jobs "
                              "WHERE name=" + SQ(job["name"]) +
                              "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
@@ -295,12 +295,17 @@ bool BedrockJobsCommand::peek(SQLite& db) {
                 }
 
                 // If there's no job or the existing job doesn't match the data we've been passed, escalate to leader.
-                if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
-                    // Return early, no need to pass to leader, there are no more jobs to create.
-                    SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0] << ", mocked? "
-                      << (mockRequest ? "true" : "false"));
-                    jsonContent["jobID"] = result[0][0];
-                    return true;
+                if (!result.empty()) {
+                    if (!result[0][2].empty() && result[0][2] != job["parentJobID"]) {
+                        STHROW("404 Trying to create a child that already exists, but it is tied to a different parent (passed: " + job["parentJobID"] + ", saved: " + result[0][2] + ")");
+                    }
+                    if ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"])) {
+                        // Return early, no need to pass to leader, there are no more jobs to create.
+                        SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0] << ", mocked? "
+                        << (mockRequest ? "true" : "false"));
+                        jsonContent["jobID"] = result[0][0];
+                        return true;
+                    }
                 }
             }
         }
