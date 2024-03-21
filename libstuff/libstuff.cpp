@@ -2686,7 +2686,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         // We don't warn for constraints errors because sometimes they're allowed, and BedrockCore.cpp will warn for the ones that aren't.
         // This prevents creating bugbot issues for the allowed cases. We still log as INFO though so we can diagnose the query with the problem.
         if (error == SQLITE_CONSTRAINT) {
-            INFO("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
+            SINFO("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         } else {
             SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         }
