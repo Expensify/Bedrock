@@ -2687,7 +2687,13 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         string sqlToLog = sql.substr(0, 20000);
         SRedactSensitiveValues(sqlToLog);
 
-        SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
+        // We don't warn for constraints errors because sometimes they're allowed, and BedrockCore.cpp will warn for the ones that aren't.
+        // This prevents creating bugbot issues for the allowed cases. We still log as INFO though so we can diagnose the query with the problem.
+        if (error == SQLITE_CONSTRAINT) {
+            SINFO("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
+        } else {
+            SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
+        }
     }
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
