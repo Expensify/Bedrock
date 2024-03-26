@@ -668,7 +668,33 @@ void BedrockServer::sync()
         _blockingCommandQueue.clear();
     }
 
+    // If we've stored these (for instance, from the blocking command queue), we can try and clear them out now.
+    SINFO(_standDownQueue.size() << " stand down commands remaining.");
+    if (_standDownQueue.size()) {
+        while (_standDownQueue.size()) {
+            auto command = _standDownQueue.pop();
+            SAUTOPREFIX(command->request);
+            bool result = _clusterMessenger->runOnPeer(*command, false);
+            if (result) {
+                if (command->socket) {
+                    SINFO("Replying to command in shutdown");
+                    _reply(command);
+                } else {
+                    SINFO("Not replying to command in shutdown");
+                }
+            } else {
+                SINFO("Error running command on peer in shutdown");
+            }
+        }
+        SINFO("Stand down commands completed.");
+    }
+
+    // These could still exist. We don't wait for them on shutdown.
     SINFO(_outstandingSocketThreads << " socket threads remaining.");
+    if (_outstandingSocketThreads) {
+        sleep(1);
+        SINFO("Waited 1 more second, " << _outstandingSocketThreads << " socket threads remaining, that's all we're doing.");
+    }
 
     // We clear this before the _syncNode that it references.
     _clusterMessenger.reset();
