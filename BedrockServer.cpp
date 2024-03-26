@@ -293,7 +293,7 @@ void BedrockServer::sync()
         _leaderVersion.store(_syncNode->getLeaderVersion());
 
         // If anything was in the stand down queue, move it back to the main queue.
-        if (nodeState != SQLiteNodeState::STANDINGDOWN) {
+        if (nodeState == SQLiteNodeState::LEADING || nodeState == SQLiteNodeState::FOLLOWING) {
             while (_standDownQueue.size()) {
                 SINFO("Moving " <<  _standDownQueue.size() << " commands back to main queue from stand down queue");
                 _commandQueue.push(_standDownQueue.pop());
