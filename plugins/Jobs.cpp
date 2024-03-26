@@ -296,7 +296,7 @@ bool BedrockJobsCommand::peek(SQLite& db) {
 
                 // If there's no job or the existing job doesn't match the data we've been passed, escalate to leader.
                 if (!result.empty()) {
-                    // If the parent passed does not much the parent the job already had, then it must mean we did something
+                    // If the parent passed does not match the parent the job already had, then it must mean we did something
                     // wrong or made a bad CQ, so we throw so we can investigate. Updating the parent here would be
                     // confusing, as it could leave the original parent in a bad state (like for example paused forever)
                     if (result[0][2] != "0" && result[0][2] != job["parentJobID"]) {
