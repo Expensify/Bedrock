@@ -347,6 +347,40 @@ void BedrockServer::sync()
             }
         }
 
+        if (preUpdateState == SQLiteNodeState::LEADING && nodeState == SQLiteNodeState::STANDINGDOWN) {
+            SINFO("Beginning standdown, clearing command queues.");
+            if (_syncNodeQueuedCommands.size()) {
+                SINFO("Moving " << _syncNodeQueuedCommands.size() << " sync node commands to stand down queue.");
+                while (_syncNodeQueuedCommands.size()) {
+                    _standDownQueue.push(_syncNodeQueuedCommands.pop());
+                }
+            }
+
+            if (_blockingCommandQueue.size()) {
+                SINFO("Moving " << _blockingCommandQueue.size() << " blocking commands to stand down queue.");
+                while (_blockingCommandQueue.size()) {
+                    _standDownQueue.push(_blockingCommandQueue.getImmediate());
+                }
+            }
+
+            if (_commandQueue.size()) {
+                SINFO("Moving " << _commandQueue.size() << " regular commands to stand down queue.");
+                while (_commandQueue.size()) {
+                    _standDownQueue.push(_commandQueue.getImmediate());
+                }
+            }
+
+            {
+                lock_guard<decltype(_futureCommitCommandMutex)> lock(_futureCommitCommandMutex);
+                if (_futureCommitCommands.size()) {
+                    SINFO("Moving " << _futureCommitCommands.size() << " future commit commands to stand down queue.");
+                    for (auto& p : _futureCommitCommands) {
+                        _standDownQueue.push(move(p.second));
+                    }
+                }
+            }
+        }
+
         // Now that we've cleared any state associated with switching away from leading, we can bail out and try again
         // until we're either leading or following.
         if (nodeState != SQLiteNodeState::LEADING && nodeState != SQLiteNodeState::FOLLOWING && nodeState != SQLiteNodeState::STANDINGDOWN) {

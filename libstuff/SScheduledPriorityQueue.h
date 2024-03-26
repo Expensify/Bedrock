@@ -58,6 +58,10 @@ class SScheduledPriorityQueue {
     // available.
     T get(uint64_t waitUS = 0, bool loggingEnabled = false);
 
+    // Immediately gets the first item in the queue, whether it's ready or not.
+    // It is an error to call this on an empty queue.
+    T getImmediate();
+
     // Add an item to the queue. The queue takes ownership of the item and the caller's copy is invalidated.
     void push(T&& item, Priority priority, Scheduled scheduled, Timeout timeout);
 
@@ -94,6 +98,7 @@ template<typename T>
 void SScheduledPriorityQueue<T>::clear()  {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     _queue.clear();
+    _lookupByTimeout.clear();
 }
 
 template<typename T>
@@ -174,6 +179,56 @@ T SScheduledPriorityQueue<T>::get(uint64_t waitUS, bool loggingEnabled) {
             }
         }
     }
+}
+
+template<typename T>
+T SScheduledPriorityQueue<T>::getImmediate()  {
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
+    for (auto queueIt = _queue.rbegin(); queueIt != _queue.rend(); ++queueIt) {
+
+        // Record the priority of the queue we're currently looking at.
+        Priority queuePriority = queueIt->first;
+
+        // And look at the first item in this particular priority queue.
+        auto itemIt = queueIt->second.begin();
+
+        // Convenience names for legibility.
+        const Scheduled thisItemScheduled = itemIt->first;
+        ItemTimeoutPair& thisItemTimeoutPair = itemIt->second;
+        const Timeout thisItemTimeout = thisItemTimeoutPair.timeout;
+
+        // Pull out the item we want to return.
+        T item = move(thisItemTimeoutPair.item);
+
+        // Delete the entry in this queue.
+        queueIt->second.erase(itemIt);
+
+        // If the whole queue is empty, delete that too.
+        if (queueIt->second.empty()) {
+            // The odd syntax in the argument converts a reverse to forward iterator.
+            _queue.erase(next(queueIt).base());
+        }
+
+        // Remove from the timeout map, as well.
+        auto matchingTimeoutIterators = _lookupByTimeout.equal_range(thisItemTimeout);
+        for (auto it = matchingTimeoutIterators.first; it != matchingTimeoutIterators.second; it++) {
+
+            // Convenience names for legibility.
+            auto& timeoutPair = it->second;
+            Priority& thisTimeoutPriority = timeoutPair.first;
+            Scheduled& thisTimeoutScheduled = timeoutPair.second;
+
+            // If this timeout entry has the same queue that we're in, and the same scheduled time, we can remove it.
+            if (thisTimeoutPriority == queuePriority && thisTimeoutScheduled == thisItemScheduled) {
+                _lookupByTimeout.erase(it);
+                break;
+            }
+        }
+
+        return item;
+    }
+
+    throw out_of_range("No item found.");
 }
 
 template<typename T>
