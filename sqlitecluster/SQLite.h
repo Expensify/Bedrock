@@ -2,6 +2,8 @@
 #include <libstuff/sqlite3.h>
 #include <libstuff/SPerformanceTimer.h>
 
+#include <climits>
+
 class SQLite {
   public:
 
@@ -277,7 +279,7 @@ class SQLite {
     class SharedData {
       public:
         // Constructor.
-        SharedData();
+        SharedData(const vector<string>& journalNames_);
 
         // Enable or disable commits for the DB.
         void setCommitEnabled(bool enable);
@@ -289,12 +291,18 @@ class SQLite {
         // This removes and returns all committed transactions.
         map<uint64_t, tuple<string, string, uint64_t>> popCommittedTransactions();
 
+        // Names of ALL journal tables for this database.
+        const vector<string> journalNames;
+
         // This is the last committed hash by *any* thread for this file.
         atomic<string> lastCommittedHash;
 
-        // An identifier used to choose the next journal table to use with this set of DB handles. Only used to
-        // initialize new objects.
-        atomic<int64_t> nextJournalCount;
+        // Data structures and methods required for letting threads reserve specific journal tables.
+        mutex availableJournalsMutex;
+        list<size_t> availableJournalNumbers;
+        condition_variable availableJournalCV;
+        size_t reserveJournalNumber();
+        void returnJournalNumber(size_t journalNumber);
 
         // When `SQLite::prepare` is called, we need to save a set of info that will be broadcast to peers when the
         // transaction is ultimately committed. This should be cleared out if the transaction is rolled back.
@@ -356,14 +364,11 @@ class SQLite {
     // The underlying sqlite3 DB handle.
     sqlite3* _db;
 
-    // Names of ALL journal tables for this database.
-    const vector<string> _journalNames;
-
     // Pointer to our SharedData object, which is shared between all SQLite DB objects for the same file.
     SharedData& _sharedData;
 
-    // The name of the journal table that this particular DB handle with write to.
-    string _journalName;
+    // The index number of the currently reserved journal. INT_MAX when not set.
+    size_t _journalID;
 
     // The current size of the journal, in rows. TODO: Why isn't this in SharedData?
     uint64_t _journalSize;
@@ -399,6 +404,7 @@ class SQLite {
 
     atomic<int64_t> _lastConflictPage = 0;
     static thread_local int64_t _conflictPage;
+    static thread_local bool _journalConflict;
 
     bool _writeIdempotent(const string& query, bool alwaysKeepQueries = false);
 
