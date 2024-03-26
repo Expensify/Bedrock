@@ -281,12 +281,12 @@ bool BedrockJobsCommand::peek(SQLite& db) {
             }
 
             // Verify unique, but only do so when creating a single job using CreateJob
-            if (SIEquals(requestVerb, "CreateJob") && SContains(job, "unique") && job["unique"] == "true") {
+            if (SContains(job, "unique") && job["unique"] == "true") {
                 SQResult result;
                 SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
                       << (mockRequest ? "true" : "false"));
                 string operation = mockRequest ? "IS NOT" : "IS";
-                if (!db.read("SELECT jobID, data "
+                if (!db.read("SELECT jobID, data, parentJobID "
                              "FROM jobs "
                              "WHERE name=" + SQ(job["name"]) +
                              "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
@@ -295,12 +295,19 @@ bool BedrockJobsCommand::peek(SQLite& db) {
                 }
 
                 // If there's no job or the existing job doesn't match the data we've been passed, escalate to leader.
-                if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
-                    // Return early, no need to pass to leader, there are no more jobs to create.
-                    SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0] << ", mocked? "
-                      << (mockRequest ? "true" : "false"));
-                    jsonContent["jobID"] = result[0][0];
-                    return true;
+                if (!result.empty()) {
+                    // If the parent passed does not match the parent the job already had, then it must mean we did something
+                    // wrong or made a bad CQ, so we throw so we can investigate. Updating the parent here would be
+                    // confusing, as it could leave the original parent in a bad state (like for example paused forever)
+                    if (result[0][2] != "0" && result[0][2] != job["parentJobID"]) {
+                        STHROW("404 Trying to create a child that already exists, but it is tied to a different parent");
+                    }
+                    if (SIEquals(requestVerb, "CreateJob") && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
+                        // Return early, no need to pass to leader, there are no more jobs to create.
+                        SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0] << ", mocked? " << (mockRequest ? "true" : "false"));
+                        jsonContent["jobID"] = result[0][0];
+                        return true;
+                    }
                 }
             }
         }
