@@ -1062,7 +1062,13 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 }
 
                 if (state == SQLiteNodeState::STANDINGDOWN) {
-                    SINFO("Starting process() while standing down.");
+                    if (command->httpsRequests.size()) {
+                        SINFO("Standing down but finishing `process()` because we have HTTPS requests.");
+                    } else {
+                        SINFO("Re-queueing command without HTTPS requests because standing down.");
+                        _standDownQueue.push(move(command));
+                        break;
+                    }
                 }
 
                 // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
