@@ -668,6 +668,8 @@ void BedrockServer::sync()
         _blockingCommandQueue.clear();
     }
 
+    SINFO(_outstandingSocketThreads << " socket threads remaining.");
+
     // We clear this before the _syncNode that it references.
     _clusterMessenger.reset();
 
