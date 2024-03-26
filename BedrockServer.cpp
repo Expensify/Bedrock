@@ -295,15 +295,41 @@ void BedrockServer::sync()
         // If anything was in the stand down queue, move it back to the main queue.
         if (nodeState != SQLiteNodeState::STANDINGDOWN) {
             while (_standDownQueue.size()) {
+                SINFO("Moving " <<  _standDownQueue.size() << " commands back to main queue from stand down queue");
                 _commandQueue.push(_standDownQueue.pop());
             }
         } else if (preUpdateState != SQLiteNodeState::STANDINGDOWN) {
-            // Otherwise,if we just started standing down, discard any commands that had been scheduled in the future.
-            // In theory, it should be fine to keep these, as they shouldn't have sockets associated with them, and
-            // they could be re-escalated to leader in the future, but there's not currently a way to decide if we've
-            // run through all of the commands that might need peer responses before standing down aside from seeing if
-            // the entire queue is empty.
-            _commandQueue.abandonFutureCommands(5000);
+            SINFO("Beginning standdown, clearing command queues.");
+            if (_syncNodeQueuedCommands.size()) {
+                SINFO("Moving " << _syncNodeQueuedCommands.size() << " sync node commands to stand down queue.");
+                while (_syncNodeQueuedCommands.size()) {
+                    _standDownQueue.push(_syncNodeQueuedCommands.pop());
+                }
+            }
+
+            if (_blockingCommandQueue.size()) {
+                SINFO("Moving " << _blockingCommandQueue.size() << " blocking commands to stand down queue.");
+                while (_blockingCommandQueue.size()) {
+                    _standDownQueue.push(_blockingCommandQueue.getImmediate());
+                }
+            }
+
+            if (_commandQueue.size()) {
+                SINFO("Moving " << _commandQueue.size() << " regular commands to stand down queue.");
+                while (_commandQueue.size()) {
+                    _standDownQueue.push(_commandQueue.getImmediate());
+                }
+            }
+
+            {
+                lock_guard<decltype(_futureCommitCommandMutex)> lock(_futureCommitCommandMutex);
+                if (_futureCommitCommands.size()) {
+                    SINFO("Moving " << _futureCommitCommands.size() << " future commit commands to stand down queue.");
+                    for (auto& p : _futureCommitCommands) {
+                        _standDownQueue.push(move(p.second));
+                    }
+                }
+            }
         }
 
         // If we were LEADING, but we've transitioned, then something's gone wrong (perhaps we got disconnected
@@ -344,40 +370,6 @@ void BedrockServer::sync()
 
                 // command will be null here, we should be able to restart the loop.
                 continue;
-            }
-        }
-
-        if (preUpdateState == SQLiteNodeState::LEADING && nodeState == SQLiteNodeState::STANDINGDOWN) {
-            SINFO("Beginning standdown, clearing command queues.");
-            if (_syncNodeQueuedCommands.size()) {
-                SINFO("Moving " << _syncNodeQueuedCommands.size() << " sync node commands to stand down queue.");
-                while (_syncNodeQueuedCommands.size()) {
-                    _standDownQueue.push(_syncNodeQueuedCommands.pop());
-                }
-            }
-
-            if (_blockingCommandQueue.size()) {
-                SINFO("Moving " << _blockingCommandQueue.size() << " blocking commands to stand down queue.");
-                while (_blockingCommandQueue.size()) {
-                    _standDownQueue.push(_blockingCommandQueue.getImmediate());
-                }
-            }
-
-            if (_commandQueue.size()) {
-                SINFO("Moving " << _commandQueue.size() << " regular commands to stand down queue.");
-                while (_commandQueue.size()) {
-                    _standDownQueue.push(_commandQueue.getImmediate());
-                }
-            }
-
-            {
-                lock_guard<decltype(_futureCommitCommandMutex)> lock(_futureCommitCommandMutex);
-                if (_futureCommitCommands.size()) {
-                    SINFO("Moving " << _futureCommitCommands.size() << " future commit commands to stand down queue.");
-                    for (auto& p : _futureCommitCommands) {
-                        _standDownQueue.push(move(p.second));
-                    }
-                }
             }
         }
 
@@ -993,6 +985,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             core.rollback();
                         }
 
+                        if (state == SQLiteNodeState::STANDINGDOWN) {
+                            SINFO("Command with outstanding HTTPS requests while standing down.");
+                        }
+
                         // Jump back to the top of our main `while (true)` loop and run the network activity loop again.
                         continue;
                     }
@@ -1020,6 +1016,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                               << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
                         _syncNodeQueuedCommands.push(move(command));
                     } else if (state == SQLiteNodeState::STANDINGDOWN) {
+                        // How would we ever get here? QUORUM command?
                         SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
                         _standDownQueue.push(move(command));
                     } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
@@ -1034,6 +1031,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
                     // Done with this command, look for the next one.
                     break;
+                }
+
+                if (state == SQLiteNodeState::STANDINGDOWN) {
+                    SINFO("Starting process() while standing down.");
                 }
 
                 // In this case, there's nothing blocking us from processing this in a worker, so let's try it.
@@ -1140,6 +1141,12 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 return;
             }
         } else {
+            if (state == SQLiteNodeState::STANDINGDOWN && !command->httpsRequests.size()) {
+                SINFO("Would retry but standing down (and no https requests), pushing to stand down queue.");
+                _standDownQueue.push(move(command));
+                return;
+            }
+
             // If we're not shutting down, see how long we want to wait until we'll try this command again.
             size_t millisecondsToWait = 0;
             switch (command->processCount) {
