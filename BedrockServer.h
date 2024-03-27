@@ -283,8 +283,6 @@ class BedrockServer : public SQLiteServer {
     // reference to this object is passed to the sync thread to allow this update.
     atomic<string> _leaderVersion;
 
-    atomic<size_t> _commandsWaitingOnNetwork = 0;
-
     // This is a synchronized queued that can wake up a `poll()` call if something is added to it. This contains the
     // list of commands that worker threads were unable to complete on their own that needed to be passed back to the
     // sync thread. A reference is passed to the sync thread.

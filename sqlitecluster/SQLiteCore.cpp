@@ -8,7 +8,7 @@ SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 { }
 
 bool SQLiteCore::commit(const string& description, uint64_t& commitID, string& transactionHash,
-                        bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID)) {
+                        bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID)) noexcept {
     
     // This handler only needs to exist in prepare so we scope it here to automatically unset
     // the handler function once we are done with prepare.

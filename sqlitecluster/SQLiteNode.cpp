@@ -1921,6 +1921,11 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
     _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
     if (newState != _state) {
+
+        // IMPORTANT: Don't return early or throw from this method.
+        // Note: _stateMutex is already locked here (by update, _replicate, or postPoll).
+        _db.exclusiveLockDB();
+
         // First, we notify all plugins about the state change
         _server.notifyStateChangeToPlugins(*pluginDB, newState);
 
@@ -2061,6 +2066,8 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
         state["State"] = stateName(_state);
         state["Priority"] = SToStr(_priority);
         _sendToAllPeers(state);
+
+        _db.exclusiveUnlockDB();
     }
 }
 
@@ -2745,4 +2752,17 @@ void SQLiteNode::kill() {
         SWARN("Killing peer: " << peer->name);
         peer->reset();
     }
+}
+
+SQLiteNode::StateLock::StateLock(SQLiteNode& node) : _node(node) {
+    // only shared locking not so much to prevent other SQLiteNode functions from running, but to prevent serializing all commits on this.
+    _node._stateMutex.lock_shared();
+}
+
+SQLiteNode::StateLock::~StateLock() {
+    _node._stateMutex.unlock_shared();
+}
+
+SQLiteNode::StateLock SQLiteNode::getStateLock() {
+    return StateLock(*this);
 }
