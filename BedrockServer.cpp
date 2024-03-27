@@ -575,7 +575,7 @@ void BedrockServer::sync()
 
     // We've finished shutting down the sync node, tell the workers that it's finished.
     _shutdownState.store(DONE);
-    SINFO("Sync thread finished with commands.");
+    SINFO("SHUTDOWN Sync thread finished with commands.");
 
     // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
     // the writing replication thread exits.
@@ -1455,17 +1455,18 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
         // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
         if (!_outstandingSocketThreads) {
+            SINFO("SHUTDOWN all socket threads are closed.");
             _shutdownState.store(CLIENTS_RESPONDED);
         }
         if (_outstandingSocketThreads) {
-            SINFO("Have " << _outstandingSocketThreads << " socket threads to close.");
+            SINFO("SHUTDOWN Have " << _outstandingSocketThreads << " socket threads to close.");
         }
         size_t count = BedrockCommand::getCommandCount();
         if (count) {
             // For commands not initiated by a client (those with initiatingClientID = -1), we can have commands
             // remaining here even with `CLIENTS_RESPONDED` being true. We may want to address this in the future so
             // that we can't orphan these commands at shutdown.
-            SINFO("Have " << count << " remaining commands to delete.");
+            SINFO("SHUTDOWN Have " << count << " remaining commands to delete.");
         }
     }
 }
@@ -1968,8 +1969,14 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
             _portPluginMap.clear();
             _shutdownState.store(START_SHUTDOWN);
         }
+        SQLiteNodeState currentState = SQLiteNodeState::UNKNOWN; 
+        auto syncNodeCopy = atomic_load(&_syncNode);
+        if (syncNodeCopy) {
+            currentState = syncNodeCopy->getState();
+        }
         SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size()
-              << ", blocking commands queued: " << _blockingCommandQueue.size());
+              << ", blocking commands queued: " << _blockingCommandQueue.size() << ", total commands: " << BedrockCommand::getCommandCount()
+              << ", state: " << SQLiteNode::stateName(currentState));
     }
 }
 

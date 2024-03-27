@@ -1133,7 +1133,7 @@ bool SQLiteNode::update() {
                 SHMMM(standDownReason);
                 // Place 1 where we STAND DOWN
                 _changeState(SQLiteNodeState::STANDINGDOWN);
-                SINFO("Standing down: " << standDownReason);
+                SINFO("SHUTDOWN Standing down: " << standDownReason);
             }
         }
 
@@ -1437,7 +1437,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                                 PWARN("Higher-priority peer is trying to stand up while we are STANDINGUP, SEARCHING.");
                                 _changeState(SQLiteNodeState::SEARCHING);
                             } else if (_state == SQLiteNodeState::LEADING) {
-                                PWARN("Higher-priority peer is trying to stand up while we are LEADING, STANDINGDOWN.");
+                                PINFO("SHUTDOWN Higher-priority peer is trying to stand up while we are LEADING, STANDINGDOWN.");
                                 // Place 2 where we STAND DOWN
                                 _changeState(SQLiteNodeState::STANDINGDOWN);
                             } else {
