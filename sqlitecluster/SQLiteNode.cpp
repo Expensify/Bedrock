@@ -2753,16 +2753,3 @@ void SQLiteNode::kill() {
         peer->reset();
     }
 }
-
-SQLiteNode::StateLock::StateLock(SQLiteNode& node) : _node(node) {
-    // only shared locking not so much to prevent other SQLiteNode functions from running, but to prevent serializing all commits on this.
-    _node._stateMutex.lock_shared();
-}
-
-SQLiteNode::StateLock::~StateLock() {
-    _node._stateMutex.unlock_shared();
-}
-
-SQLiteNode::StateLock SQLiteNode::getStateLock() {
-    return StateLock(*this);
-}

@@ -76,19 +76,6 @@ class SQLiteNode : public STCPManager {
         NUM_CONSISTENCY_LEVELS
     };
 
-    // This exists as a RAII-protected lock on the node state.
-    // Creating one of these prevents the node from changing state until this completes.
-    class StateLock {
-      public:
-        StateLock(SQLiteNode& node);
-        ~StateLock();
-
-      private:
-        SQLiteNode& _node;
-    };
-
-    StateLock getStateLock();
-
     // This is a globally accessible pointer to some node instance. The intention here is to let signal handling code attempt to kill outstanding
     // peer connections on this node before shutting down.
     static SQLiteNode* KILLABLE_SQLITE_NODE;

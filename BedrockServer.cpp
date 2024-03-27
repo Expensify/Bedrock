@@ -1055,8 +1055,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 // So instead, we need to check node state after the commit lock is acquired, which is where db.prepare() is called in SQLiteCore::commit.
                                 //
                                 // I'm worried this is going to have severe performance repercussions by gating commits on `update()` and/or `postPoll()`.
-                                auto stateLock = _syncNode->getStateLock(); 
-                                commitSuccess = core.commit(SQLiteNode::stateName(_replicationState), transactionID, transactionHash, enableOnPrepareNotifications, onPrepareHandler);
+                                commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, enableOnPrepareNotifications, onPrepareHandler);
                             }
                         }
                     }
