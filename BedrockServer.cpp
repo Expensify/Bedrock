@@ -205,8 +205,6 @@ void BedrockServer::sync()
         if (_shutdownState.load() == CLIENTS_RESPONDED) {
             _syncNode->beginShutdown();
 
-            // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
-            _notifyDone.push(true);
         }
 
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
@@ -1015,7 +1013,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
                             // We want to reset the retries on this command if we're not leading.
                             if (_syncNode->getState() != SQLiteNodeState::LEADING) {
-                                SINFO("Stopped leading while trying to commit, retrying.");
+                                SINFO("SHUTDOWN Stopped leading while trying to commit, retrying.");
 
                                 // Jump back to the top of the main loop but skip the check that would push these to the blocking commit queue.
                                 continue;
@@ -1456,7 +1454,11 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
         if (!_outstandingSocketThreads) {
             SINFO("SHUTDOWN all socket threads are closed.");
+
             _shutdownState.store(CLIENTS_RESPONDED);
+
+            // This is supposed to wake up the sync thread.
+            _syncNode->notifyCommit();
         }
         if (_outstandingSocketThreads) {
             SINFO("SHUTDOWN Have " << _outstandingSocketThreads << " socket threads to close.");
@@ -1973,6 +1975,9 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         auto syncNodeCopy = atomic_load(&_syncNode);
         if (syncNodeCopy) {
             currentState = syncNodeCopy->getState();
+
+            SINFO("SHUTDOWN Setting priority to 1 and letting node stop leading if required.");
+            syncNodeCopy->setShutdownPriority();
         }
         SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size()
               << ", blocking commands queued: " << _blockingCommandQueue.size() << ", total commands: " << BedrockCommand::getCommandCount()

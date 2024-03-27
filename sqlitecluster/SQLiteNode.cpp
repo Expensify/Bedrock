@@ -338,6 +338,9 @@ void SQLiteNode::beginShutdown() {
 }
 
 bool SQLiteNode::_isNothingBlockingShutdown() const {
+
+    // We only check this in following?
+    //
     // Don't shutdown if in the middle of a transaction
     if (_db.insideTransaction())
         return false;
@@ -364,6 +367,7 @@ bool SQLiteNode::shutdownComplete() const {
 
     // Not complete unless we're SEARCHING, SYNCHRONIZING, or WAITING
     if (_state > SQLiteNodeState::WAITING) {
+        // This is necessary but not sufficient, we want to be able to go leading->searching->following->searching.
         // Not in a shutdown state
         SINFO("Can't graceful shutdown yet because state=" << stateName(_state) << ", commitInProgress=" << commitInProgress());
         return false;
@@ -390,6 +394,22 @@ int SQLiteNode::getPriority() const {
     // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
     // private methods.
     return _priority;
+}
+
+void SQLiteNode::setShutdownPriority() {
+    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+    _priority = 1;
+
+    if (_state == SQLiteNodeState::LEADING) {
+        _changeState(SQLiteNodeState::STANDINGDOWN);
+    } else {
+        SData state("STATE");
+        state["StateChangeCount"] = to_string(_stateChangeCount);
+        state["State"] = stateName(_state);
+        state["Priority"] = SToStr(_priority);
+        _sendToAllPeers(state);
+    }
+    SINFO("SHUTDOWN Priority changed");
 }
 
 const string SQLiteNode::getLeaderVersion() const {
@@ -554,6 +574,7 @@ bool SQLiteNode::update() {
 
         // If we're trying to shut down, just do nothing, especially don't jump directly to leading and get stuck in an endless loop.
         if (_isShuttingDown) {
+            // This needs to go away.
             return false; // Don't re-update
         }
 
@@ -681,26 +702,8 @@ bool SQLiteNode::update() {
         SASSERTWARN(_db.getUncommittedHash().empty());
         // If we're trying and ready to shut down, do nothing.
         if (_isShuttingDown) {
-            // Do we have an outstanding command?
-            if (1/* TODO: Commit in progress? */) {
-                // Nope!  Let's just halt the FSM here until we shutdown so as to
-                // avoid potential confusion.  (Technically it would be fine to continue
-                // the FSM, but it makes the logs clearer to just stop here.)
-                SINFO("Graceful shutdown underway and no queued commands, do nothing.");
-                return false; // No fast update
-            } else {
-                // We do have outstanding commands, even though a graceful shutdown
-                // has been requested.  This is probably due to us previously being a leader
-                // to which commands had been sent directly -- we got the signal to shutdown,
-                // and stood down immediately.  All the followers will re-escalate whatever
-                // commands they were waiting on us to process, so they're fine.  But our own
-                // commands still need to be processed.  We're no longer the leader, so we
-                // can't do it.  Rather, even though we're trying to do a graceful shutdown,
-                // we need to find and follower to the new leader, and have it process our
-                // commands.  Once the new leader has processed our commands, then we can
-                // shut down gracefully.
-                SHMMM("Graceful shutdown underway but queued commands so continuing...");
-            }
+            // Need to remove this probably.
+            return false; // No fast update
         }
 
         // Loop across peers and find the highest priority and leader
@@ -2040,7 +2043,9 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
             // TODO: No we don't, we finish it, as per other documentation in this file.
         } else if (newState == SQLiteNodeState::WAITING) {
             // The first time we enter WAITING, we're caught up and ready to join the cluster - use our real priority from now on
-            _priority = _originalPriority;
+            if (_priority == -1) {
+                _priority = _originalPriority;
+            }
         }
 
         // If we're switching from LEADING or STANDINGDOWN to anything else (aside from the case where we switch from LEADING to STANDINGDOWN), we unblock commits.

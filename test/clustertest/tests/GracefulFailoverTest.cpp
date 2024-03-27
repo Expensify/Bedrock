@@ -121,6 +121,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         sleep(2);
 
         // Now our clients are spamming all our nodes. Shut down leader.
+        SINFO("SHUTDOWN Stopping leader");
         tester->stopNode(0);
 
         // Wait for node 1 to be leader.
