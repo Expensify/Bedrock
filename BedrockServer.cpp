@@ -44,6 +44,7 @@ bool BedrockServer::canStandDown() {
               << "syncNodeQueueSize: " << syncNodeQueueSize << ", "
               << "futureCommitCommandsSize: " << futureCommitCommandsSize << ", "
               << "standDownQueueSize: " << standDownQueueSize << ".");
+        SINFO("Commands waiting on network activity: " <<  _commandsWaitingOnNetwork);
         return false;
     } else {
         SINFO("Can stand down now.");
@@ -880,6 +881,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         size_t networkLoopCount = 0;
         uint64_t postPollCumulativeTime = 0;
         while (!command->areHttpsRequestsComplete()) {
+            _commandsWaitingOnNetwork++;
             networkLoopCount++;
             fd_map fdm;
             command->prePoll(fdm);
@@ -893,6 +895,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 maxWaitUs = command->timeout() - now;
             } else {
                 // The command is already timed out. This will hit the check for core.isTimedOut(command) below.
+                _commandsWaitingOnNetwork--;
                 break;
             }
 
@@ -920,6 +923,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             auto start = STimeNow();
             command->postPoll(fdm, ignore, shuttingDown ? 5'000 : 300'000);
             postPollCumulativeTime += (STimeNow() - start);
+            _commandsWaitingOnNetwork--;
         }
 
         if (networkLoopCount) {
