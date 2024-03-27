@@ -1921,11 +1921,6 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
     _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
     if (newState != _state) {
-
-        // IMPORTANT: Don't return early or throw from this method.
-        // Note: _stateMutex is already locked here (by update, _replicate, or postPoll).
-        _db.exclusiveLockDB();
-
         // First, we notify all plugins about the state change
         _server.notifyStateChangeToPlugins(*pluginDB, newState);
 
@@ -2055,6 +2050,10 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
                 _db.exclusiveUnlockDB();
             }
         }
+
+        // IMPORTANT: Don't return early or throw from this method after here.
+        // Note: _stateMutex is already locked here (by update, _replicate, or postPoll).
+        _db.exclusiveLockDB();
 
         // Send to everyone we're connected to, whether or not
         // we're "LoggedIn" (else we might change state after sending LOGIN,
