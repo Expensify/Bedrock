@@ -1045,6 +1045,16 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 // For the shared case, this works as it is, but for EXCLUSIVE transactions, the commit mutex is already locked at this point.
                                 // In these cases, I think we can skip locking here?
                                 // Let me contemplate.
+                                //
+                                // If we already have the commit lock, that means that the sync node does not have it. The sync node *could* be attempting to switch states
+                                // to STANDINGDOWN or any other state, but it will be waiting on this lock. So if we have the state lock, we are good.
+                                //
+                                // But I guess we don't need the state lock if we can just check the state inside the commit lock? That avoids the potential pitfall mentioned below,
+                                // where we've gated commits on `update()` and `postPoll()`.
+                                //
+                                // So instead, we need to check node state after the commit lock is acquired, which is where db.prepare() is called in SQLiteCore::commit.
+                                //
+                                // I'm worried this is going to have severe performance repercussions by gating commits on `update()` and/or `postPoll()`.
                                 auto stateLock = _syncNode->getStateLock(); 
                                 commitSuccess = core.commit(SQLiteNode::stateName(_replicationState), transactionID, transactionHash, enableOnPrepareNotifications, onPrepareHandler);
                             }
