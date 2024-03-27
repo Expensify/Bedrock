@@ -669,6 +669,14 @@ void BedrockServer::sync()
         _blockingCommandQueue.clear();
     }
 
+    // These could still exist. We don't wait for them on shutdown. We wait here *before* we check the standDown queue, as
+    // these threads will move unfinished commands there.
+    SINFO(_outstandingSocketThreads << " socket threads remaining.");
+    if (_outstandingSocketThreads) {
+        sleep(1);
+        SINFO("Waited 1 more second, " << _outstandingSocketThreads << " socket threads remaining, that's all we're doing.");
+    }
+
     // If we've stored these (for instance, from the blocking command queue), we can try and clear them out now.
     SINFO(_standDownQueue.size() << " stand down commands remaining.");
     if (_standDownQueue.size()) {
@@ -690,12 +698,12 @@ void BedrockServer::sync()
         SINFO("Stand down commands completed.");
     }
 
-    // These could still exist. We don't wait for them on shutdown.
-    SINFO(_outstandingSocketThreads << " socket threads remaining.");
-    if (_outstandingSocketThreads) {
-        sleep(1);
-        SINFO("Waited 1 more second, " << _outstandingSocketThreads << " socket threads remaining, that's all we're doing.");
-    }
+    /* Ok, so, this is a problem. What if we're the only node in the cluster? If we're a single node, we can't do all this command forwarding above. Hmm.
+     * I think we can just do: 
+     * if (no peers configured) {
+     *     runCommand(command, false, true);
+     * }
+     */
 
     // We clear this before the _syncNode that it references.
     _clusterMessenger.reset();
