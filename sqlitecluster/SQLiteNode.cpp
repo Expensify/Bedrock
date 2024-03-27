@@ -993,6 +993,7 @@ bool SQLiteNode::update() {
                 // Commit this distributed transaction. Either we have quorum, or we don't need it.
                 SDEBUG("Committing current transaction because consistentEnough: " << _db.getUncommittedQuery());
                 uint64_t beforeCommit = STimeNow();
+                // Only other intersting place we commit and would care about node state.
                 int result = _db.commit(stateName(_state));
                 SINFO("SQLite::commit in SQLiteNode took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
 

@@ -17,6 +17,13 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
         SASSERT(_db.prepare(&commitID, &transactionHash));
     }
 
+    // Check for any state other than leading and refuse.
+    if (node.getState() != SQLiteNodeState::LEADING) {
+        SINFO("No longer leading, rolling back.");
+        _db.rollback();
+        return false;
+    }
+
     // If there's nothing to commit, we won't bother, but warn, as we should have noticed this already.
     if (_db.getUncommittedHash().empty()) {
         SWARN("Commit called with nothing to commit.");

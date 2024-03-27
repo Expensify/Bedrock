@@ -738,25 +738,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         return;
     }
 
-    // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
-    while (_upgradeInProgress ||
-           (_replicationState.load() != SQLiteNodeState::LEADING &&
-            _replicationState.load() != SQLiteNodeState::FOLLOWING &&
-            _replicationState.load() != SQLiteNodeState::STANDINGDOWN)
-    ) {
-        // Make sure that the node isn't shutting down, leaving us in an endless loop.
-        if (_shutdownState.load() != RUNNING) {
-            SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '"
-                  << command->request.methodLine << "'.");
-            return;
-        }
-
-        // This sleep call is pretty ugly, but it should almost never happen. We're accepting the potential
-        // looping sleep call for the general case where we just check some bools and continue, instead of
-        // avoiding the sleep call but having every thread lock a mutex here on every loop.
-        usleep(10000);
-    }
-
     // OK, so this is the state right now, which isn't necessarily anything in particular, because the sync
     // node can change it at any time, and we're not synchronizing on it. We're going to go ahead and assume
     // it's something reasonable, because in most cases, that's pretty safe. If we think we're anything but
@@ -821,6 +802,26 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
     int64_t lastConflictPage = 0;
     while (true) {
+
+        // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
+        size_t waitCount = 0;
+        while (_upgradeInProgress || (_replicationState.load() != SQLiteNodeState::LEADING && _replicationState.load() != SQLiteNodeState::FOLLOWING)) {
+            // Make sure that the node isn't shutting down, leaving us in an endless loop.
+            if (_shutdownState.load() != RUNNING) {
+                SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '"
+                      << command->request.methodLine << "'.");
+                return;
+            }
+
+            // This sleep call is pretty ugly, but it should almost never happen. We're accepting the potential
+            // looping sleep call for the general case where we just check some bools and continue, instead of
+            // avoiding the sleep call but having every thread lock a mutex here on every loop.
+            usleep(10000);
+            waitCount++;
+        }
+        if (waitCount) {
+            SINFO("Waited for " << waitCount << " loops for node to be ready.");
+        }
 
         // If there are outstanding HTTPS requests on this command (from a previous call to `peek`) we process them here.
         size_t networkLoopCount = 0;
@@ -1039,23 +1040,14 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             BedrockCore::AutoTimer timer(command, isBlocking ? BedrockCommand::BLOCKING_COMMIT_WORKER : BedrockCommand::COMMIT_WORKER);
                             void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
                             bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
-                            {
-                                // Lock node state mutex.
-                                // The canonical order here is to lock the state mutex first, and then the commit mutex.
-                                // For the shared case, this works as it is, but for EXCLUSIVE transactions, the commit mutex is already locked at this point.
-                                // In these cases, I think we can skip locking here?
-                                // Let me contemplate.
-                                //
-                                // If we already have the commit lock, that means that the sync node does not have it. The sync node *could* be attempting to switch states
-                                // to STANDINGDOWN or any other state, but it will be waiting on this lock. So if we have the state lock, we are good.
-                                //
-                                // But I guess we don't need the state lock if we can just check the state inside the commit lock? That avoids the potential pitfall mentioned below,
-                                // where we've gated commits on `update()` and `postPoll()`.
-                                //
-                                // So instead, we need to check node state after the commit lock is acquired, which is where db.prepare() is called in SQLiteCore::commit.
-                                //
-                                // I'm worried this is going to have severe performance repercussions by gating commits on `update()` and/or `postPoll()`.
-                                commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, enableOnPrepareNotifications, onPrepareHandler);
+                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, enableOnPrepareNotifications, onPrepareHandler);
+
+                            // We want to reset the retries on this command if we're not leading.
+                            if (_syncNode->getState() != SQLiteNodeState::LEADING) {
+                                SINFO("Stopped leading while trying to commit, retrying.");
+
+                                // Jump back to the top of the main loop but skip the check that would push these to the blocking commit queue.
+                                continue;
                             }
                         }
                     }
