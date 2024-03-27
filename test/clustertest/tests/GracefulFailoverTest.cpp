@@ -133,6 +133,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         // Bring leader back up.
         tester->getTester(0).startServer();
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
+
         sleep(15);
 
         // Now let's  stop a follower and make sure everything keeps working.

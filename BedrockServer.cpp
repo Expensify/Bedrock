@@ -203,8 +203,11 @@ void BedrockServer::sync()
         // we're leading, then the next update() loop will set us to standing down, and then we won't accept any new
         // commands, and we'll shortly run through the existing queue.
         if (_shutdownState.load() == CLIENTS_RESPONDED) {
+            SINFO("SHUTDOWN All clients responded to, " << BedrockCommand::getCommandCount() << " remaining. Shutting down sync node.");
             _syncNode->beginShutdown();
 
+            // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
+            _notifyDone.push(true);
         }
 
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
@@ -260,12 +263,7 @@ void BedrockServer::sync()
         _replicationState.store(nodeState);
         _leaderVersion.store(_syncNode->getLeaderVersion());
 
-        // If anything was in the stand down queue, move it back to the main queue.
-        if (nodeState != SQLiteNodeState::STANDINGDOWN) {
-            while (_standDownQueue.size()) {
-                _commandQueue.push(_standDownQueue.pop());
-            }
-        } else if (preUpdateState != SQLiteNodeState::STANDINGDOWN) {
+        if (preUpdateState != SQLiteNodeState::STANDINGDOWN) {
             // Otherwise,if we just started standing down, discard any commands that had been scheduled in the future.
             // In theory, it should be fine to keep these, as they shouldn't have sockets associated with them, and
             // they could be re-escalated to leader in the future, but there's not currently a way to decide if we've
@@ -774,13 +772,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
         size_t waitCount = 0;
         while (_upgradeInProgress || (_replicationState.load() != SQLiteNodeState::LEADING && _replicationState.load() != SQLiteNodeState::FOLLOWING)) {
-            // Make sure that the node isn't shutting down, leaving us in an endless loop.
-            if (_shutdownState.load() != RUNNING) {
-                SWARN("Sync thread shut down while were waiting for it to come up. Discarding command '"
-                      << command->request.methodLine << "'.");
-                return;
-            }
-
             // This sleep call is pretty ugly, but it should almost never happen. We're accepting the potential
             // looping sleep call for the general case where we just check some bools and continue, instead of
             // avoiding the sleep call but having every thread lock a mutex here on every loop.
@@ -883,6 +874,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             }
 
             // If we've changed out of leading, we need to notice that.
+            // Everywhere that we use `state` or _replicationState should just query the sync node directly.
             state = _replicationState.load();
             canWriteParallel = canWriteParallel && (state == SQLiteNodeState::LEADING);
 
@@ -954,9 +946,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         SINFO("Sending non-parallel command " << command->request.methodLine
                               << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
                         _syncNodeQueuedCommands.push(move(command));
-                    } else if (state == SQLiteNodeState::STANDINGDOWN) {
-                        SINFO("Need to process command " << command->request.methodLine << " but STANDINGDOWN, moving to _standDownQueue.");
-                        _standDownQueue.push(move(command));
                     } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
                         SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
                         _reply(command);
@@ -1012,7 +1001,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, enableOnPrepareNotifications, onPrepareHandler);
 
                             // We want to reset the retries on this command if we're not leading.
-                            if (_syncNode->getState() != SQLiteNodeState::LEADING) {
+                            auto state = _syncNode->getState();
+                            if (state != SQLiteNodeState::LEADING) {
+                                _replicationState.store(state);
                                 SINFO("SHUTDOWN Stopped leading while trying to commit, retrying.");
 
                                 // Jump back to the top of the main loop but skip the check that would push these to the blocking commit queue.
@@ -2333,14 +2324,8 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             command->destructionCallback = &callback;
                         }
 
-                        // Now we queue or run this command.
-                        auto _syncNodeCopy = atomic_load(&_syncNode);
-                        if (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNodeState::STANDINGDOWN) {
-                            _standDownQueue.push(move(command));
-                        } else {
-                            SINFO("Running new '" << command->request.methodLine << "' command from local client, with " << _commandQueue.size() << " commands already queued.");
-                            runCommand(move(command));
-                        }
+                        SINFO("Running new '" << command->request.methodLine << "' command from local client, with " << _commandQueue.size() << " commands already queued.");
+                        runCommand(move(command));
 
                         // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
                         // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.

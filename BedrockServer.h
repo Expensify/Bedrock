@@ -414,11 +414,6 @@ class BedrockServer : public SQLiteServer {
 
     mutex _httpsCommandMutex;
 
-    // When we're standing down, we temporarily dump newly received commands here (this lets all existing
-    // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
-    // endless loop of always having new unfinished commands.
-    BedrockTimeoutCommandQueue _standDownQueue;
-
     // The following variables all exist to to handle commands that seem to have caused crashes. This lets us broadcast
     // a command to all peer nodes with information about the crash-causing command, so they can refuse to process it if
     // it gets sent again (i.e., if an end-user clicks 'refresh' after crashing the first node). Because these can
