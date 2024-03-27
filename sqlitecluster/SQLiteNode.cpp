@@ -1102,6 +1102,7 @@ bool SQLiteNode::update() {
                 // Graceful shutdown. Set priority 1 and stand down so we'll re-connect to the new leader and finish
                 // up our commands.
                 standDownReason = "Shutting down, setting priority 1 and STANDINGDOWN.";
+                // Oh, we already do this.
                 _priority = 1;
             } else {
                 // Loop across peers
@@ -1130,6 +1131,7 @@ bool SQLiteNode::update() {
             // Do we want to stand down, and can we?
             if (!standDownReason.empty()) {
                 SHMMM(standDownReason);
+                // Place 1 where we STAND DOWN
                 _changeState(SQLiteNodeState::STANDINGDOWN);
                 SINFO("Standing down: " << standDownReason);
             }
@@ -1142,10 +1144,6 @@ bool SQLiteNode::update() {
             // We can only switch to SEARCHING if the server has no outstanding write work to do.
             if (_standDownTimeout.ringing()) {
                 SWARN("Timeout STANDINGDOWN, giving up on server and continuing.");
-            } else if (!_server.canStandDown()) {
-                // Try again.
-                SINFO("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
-                return false;
             }
             // Standdown complete
             SINFO("STANDDOWN complete, SEARCHING");
@@ -1440,6 +1438,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                                 _changeState(SQLiteNodeState::SEARCHING);
                             } else if (_state == SQLiteNodeState::LEADING) {
                                 PWARN("Higher-priority peer is trying to stand up while we are LEADING, STANDINGDOWN.");
+                                // Place 2 where we STAND DOWN
                                 _changeState(SQLiteNodeState::STANDINGDOWN);
                             } else {
                                 PWARN("Higher-priority peer is trying to stand up while we are STANDINGDOWN, continuing.");

@@ -210,10 +210,6 @@ class BedrockServer : public SQLiteServer {
     // Not atomic because it's only accessed with a lock on _portMutex.
     list<string> commandPortSuppressionReasons;
 
-    // This will return true if there's no outstanding writable activity that we're waiting on. It's called by an
-    // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
-    virtual bool canStandDown();
-
     // Returns whether or not this server was configured to backup.
     bool shouldBackup();
 

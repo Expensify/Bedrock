@@ -21,36 +21,6 @@ set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
 thread_local atomic<SQLiteNodeState> BedrockServer::_nodeStateSnapshot = SQLiteNodeState::UNKNOWN;
 
-bool BedrockServer::canStandDown() {
-    // Here's all the commands in existence.
-    size_t count = BedrockCommand::getCommandCount();
-    size_t standDownQueueSize = _standDownQueue.size();
-
-    // If we have any commands anywhere but the stand-down queue, let's log that.
-    if (count && count != standDownQueueSize) {
-        size_t mainQueueSize = _commandQueue.size();
-        size_t blockingQueueSize = _blockingCommandQueue.size();
-        size_t syncNodeQueueSize = _syncNodeQueuedCommands.size();
-
-        size_t futureCommitCommandsSize = 0;
-        {
-            lock_guard<decltype(_futureCommitCommandMutex)> lock(_futureCommitCommandMutex);
-            futureCommitCommandsSize = _futureCommitCommands.size();
-        }
-
-        SINFO("Can't stand down with " << count << " commands remaining. Queue sizes are: "
-              << "mainQueueSize: " << mainQueueSize << ", "
-              << "blockingQueueSize: " << blockingQueueSize << ", "
-              << "syncNodeQueueSize: " << syncNodeQueueSize << ", "
-              << "futureCommitCommandsSize: " << futureCommitCommandsSize << ", "
-              << "standDownQueueSize: " << standDownQueueSize << ".");
-        return false;
-    } else {
-        SINFO("Can stand down now.");
-        return true;
-    }
-}
-
 void BedrockServer::syncWrapper()
 {
     // Initialize the thread.
@@ -1020,6 +990,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     uint64_t transactionID = 0;
                     string transactionHash;
                     {
+                        // TODO:: Rewrite
                         // There used to be a mutex protecting this state change, with the idea that if we
                         // prevented state changes, we couldn't fall out of leading in the middle of processing a
                         // command. However, for "normal" graceful state changes, these changes are prevented by
