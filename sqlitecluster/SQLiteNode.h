@@ -124,6 +124,10 @@ class SQLiteNode : public STCPManager {
     // Does not block.
     int getPriority() const;
 
+    // Sets the node priority to 1 and broadcasts STATE to the cluster.
+    // Can block.
+    void setShutdownPriority();
+
     // Returns our current state.
     // Does not block.
     SQLiteNodeState getState() const;

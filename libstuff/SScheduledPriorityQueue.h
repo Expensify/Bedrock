@@ -47,6 +47,9 @@ class SScheduledPriorityQueue {
     // Remove all items from the queue.
     void clear();
 
+    // Clears the queue, returning all the commands.
+    list<T> getAll();
+
     // Returns true if there are no queued commands.
     bool empty();
 
@@ -94,6 +97,7 @@ template<typename T>
 void SScheduledPriorityQueue<T>::clear()  {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     _queue.clear();
+    _lookupByTimeout.clear();
 }
 
 template<typename T>
@@ -310,3 +314,20 @@ T SScheduledPriorityQueue<T>::_dequeue() {
     throw out_of_range("No item found.");
 }
 
+template<typename T>
+list<T> SScheduledPriorityQueue<T>::getAll() {
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
+    list<T> items;
+
+    // Iterate across each map in each queue and pull out all the items.
+    for (auto& queue: _queue) {
+        for (auto& p : queue.second) {
+            items.emplace_back(move(p.second.item));
+        }
+    }
+
+    // Empty now.
+    clear();
+
+    return items;
+}

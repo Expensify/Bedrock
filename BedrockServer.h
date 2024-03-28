@@ -147,7 +147,7 @@ class BedrockServer : public SQLiteServer {
     enum SHUTDOWN_STATE {
         RUNNING,
         START_SHUTDOWN,
-        CLIENTS_RESPONDED,
+        CLIENTS_RESPONDED, // TODO: Rename 'COMMANDS_FINISHED'
         DONE
     };
 
@@ -209,10 +209,6 @@ class BedrockServer : public SQLiteServer {
     // created them.
     // Not atomic because it's only accessed with a lock on _portMutex.
     list<string> commandPortSuppressionReasons;
-
-    // This will return true if there's no outstanding writable activity that we're waiting on. It's called by an
-    // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
-    virtual bool canStandDown();
 
     // Returns whether or not this server was configured to backup.
     bool shouldBackup();
@@ -417,11 +413,6 @@ class BedrockServer : public SQLiteServer {
     atomic<int> _maxConflictRetries;
 
     mutex _httpsCommandMutex;
-
-    // When we're standing down, we temporarily dump newly received commands here (this lets all existing
-    // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
-    // endless loop of always having new unfinished commands.
-    BedrockTimeoutCommandQueue _standDownQueue;
 
     // The following variables all exist to to handle commands that seem to have caused crashes. This lets us broadcast
     // a command to all peer nodes with information about the crash-causing command, so they can refuse to process it if
