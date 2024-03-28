@@ -263,6 +263,17 @@ void BedrockServer::sync()
         _replicationState.store(nodeState);
         _leaderVersion.store(_syncNode->getLeaderVersion());
 
+        // If we're not leading, move any commands from the blocking queue back to the main queue.
+        /* not currently working.
+        if (nodeState != SQLiteNodeState::LEADING && nodeState != preUpdateState) {
+            auto commands = _blockingCommandQueue.getAll();
+            for (auto& cmd : commands) {
+                _commandQueue.push(move(cmd));
+            }
+            SINFO("SHUTDOWN Moved " << commands.size() << " commands from blocking queue to main queue.");
+        }
+        */
+
         // If we were LEADING, but we've transitioned, then something's gone wrong (perhaps we got disconnected
         // from the cluster). Reset some state and try again.
         if ((preUpdateState == SQLiteNodeState::LEADING || preUpdateState == SQLiteNodeState::STANDINGDOWN) &&
@@ -994,14 +1005,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             // We want to reset the retries on this command if we're not leading.
                             auto state = _syncNode->getState();
                             if (state != SQLiteNodeState::LEADING) {
-
-                                // We can reset the blocking queue here. It's a weird place to do it, but this command probably can't run until the server is back to FOLLOWING anyway,
-                                // and we don't want to make the sync thread do extra work.
-                                // while (_blockingCommitQueue.size()) {
-                                //     _commandQueue.push(_blockingCommitQueue.pop());
-                                // }
                                 _replicationState.store(state);
-                                SINFO("SHUTDOWN Stopped leading while trying to commit, retrying.");
+                                SINFO("SHUTDOWN Stopped leading while trying to commit, will retry.");
 
                                 // Jump back to the top of the main loop but skip the check that would push these to the blocking commit queue.
                                 continue;
