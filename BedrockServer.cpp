@@ -263,15 +263,6 @@ void BedrockServer::sync()
         _replicationState.store(nodeState);
         _leaderVersion.store(_syncNode->getLeaderVersion());
 
-        if (preUpdateState != SQLiteNodeState::STANDINGDOWN) {
-            // Otherwise,if we just started standing down, discard any commands that had been scheduled in the future.
-            // In theory, it should be fine to keep these, as they shouldn't have sockets associated with them, and
-            // they could be re-escalated to leader in the future, but there's not currently a way to decide if we've
-            // run through all of the commands that might need peer responses before standing down aside from seeing if
-            // the entire queue is empty.
-            _commandQueue.abandonFutureCommands(5000);
-        }
-
         // If we were LEADING, but we've transitioned, then something's gone wrong (perhaps we got disconnected
         // from the cluster). Reset some state and try again.
         if ((preUpdateState == SQLiteNodeState::LEADING || preUpdateState == SQLiteNodeState::STANDINGDOWN) &&
@@ -1003,6 +994,12 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             // We want to reset the retries on this command if we're not leading.
                             auto state = _syncNode->getState();
                             if (state != SQLiteNodeState::LEADING) {
+
+                                // We can reset the blocking queue here. It's a weird place to do it, but this command probably can't run until the server is back to FOLLOWING anyway,
+                                // and we don't want to make the sync thread do extra work.
+                                // while (_blockingCommitQueue.size()) {
+                                //     _commandQueue.push(_blockingCommitQueue.pop());
+                                // }
                                 _replicationState.store(state);
                                 SINFO("SHUTDOWN Stopped leading while trying to commit, retrying.");
 
@@ -1429,6 +1426,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // If we've been told to start shutting down, we'll set the shut down timer.
     if (_shutdownState.load() == START_SHUTDOWN) {
+        // I think we don't want this timer anymore.
         auto _clusterMessengerCopy = _clusterMessenger;
         if (_clusterMessengerCopy) {
             _clusterMessengerCopy->shutdownBy(STimeNow() + 5 * 1'000'000); // 5 seconds from now
@@ -1442,24 +1440,16 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         // if we are detaching.
         unique_lock<shared_mutex> lock(_controlPortExclusionMutex);
 
-        // If we've run out of sockets or hit our timeout, we'll increment _shutdownState.
-        if (!_outstandingSocketThreads) {
-            SINFO("SHUTDOWN all socket threads are closed.");
+        // Notify how many sockets and commands are left. We're not done until they're gone.
+        size_t count = BedrockCommand::getCommandCount();
+        SINFO("SHUTDOWN Have " << _outstandingSocketThreads << " socket threads and " << count << " commands remaining.");
 
+        // Don't tell the sync node to shut down while we still have commands or sockets left.
+        if (!_outstandingSocketThreads && !count) {
             _shutdownState.store(CLIENTS_RESPONDED);
 
-            // This is supposed to wake up the sync thread.
+            // This should interrupt the sync thread's poll() loop.
             _syncNode->notifyCommit();
-        }
-        if (_outstandingSocketThreads) {
-            SINFO("SHUTDOWN Have " << _outstandingSocketThreads << " socket threads to close.");
-        }
-        size_t count = BedrockCommand::getCommandCount();
-        if (count) {
-            // For commands not initiated by a client (those with initiatingClientID = -1), we can have commands
-            // remaining here even with `CLIENTS_RESPONDED` being true. We may want to address this in the future so
-            // that we can't orphan these commands at shutdown.
-            SINFO("SHUTDOWN Have " << count << " remaining commands to delete.");
         }
     }
 }

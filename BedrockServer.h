@@ -147,7 +147,7 @@ class BedrockServer : public SQLiteServer {
     enum SHUTDOWN_STATE {
         RUNNING,
         START_SHUTDOWN,
-        CLIENTS_RESPONDED,
+        CLIENTS_RESPONDED, // TODO: Rename 'COMMANDS_FINISHED'
         DONE
     };
 
