@@ -6,6 +6,7 @@ using namespace std;
 class SQResult;
 
 class SQResultRow : public vector<string> {
+    friend class SQResult;
   public:
     SQResultRow();
     SQResultRow(SQResult& result, size_t count = 0);
@@ -36,6 +37,7 @@ class SQResult {
     // Operators
     SQResultRow& operator[](size_t rowNum);
     const SQResultRow& operator[](size_t rowNum) const;
+    SQResult& operator=(const SQResult& other);
 
     // Serializers
     string serializeToJSON() const;

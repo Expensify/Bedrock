@@ -162,3 +162,12 @@ const SQResultRow& SQResult::operator[](size_t rowNum) const {
         STHROW("Out of range");
     }
 }
+
+SQResult& SQResult::operator=(const SQResult& other) {
+    headers = other.headers;
+    rows = other.rows;
+    for (auto& row : rows) {
+        row.result = this;
+    }
+    return *this;
+}
