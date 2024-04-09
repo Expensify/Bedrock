@@ -302,7 +302,7 @@ namespace tpunit {
                                     m30, m31, m32, m33, m34, m35, m36, m37, m38, m39,
                                     m40, m41, m42, m43, m44, m45, m46, m47, m48, m49,
                                     m50, m51, m52, m53, m54, m55, m56, m57, m58, m59,
-                                    m60, m61, m62, m63, m64, m65, m66, m67, m68, m69, parallel) { }
+                                    m60, m61, m62, m63, m64, m65, m66, m67, m68, m69, name, parallel) { }
 
          /**
           * Base constructor to register methods with the test fixture. A test
