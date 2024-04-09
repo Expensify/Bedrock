@@ -48,6 +48,10 @@ tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* 
                          method* m35, method* m36, method* m37, method* m38, method* m39,
                          method* m40, method* m41, method* m42, method* m43, method* m44,
                          method* m45, method* m46, method* m47, method* m48, method* m49,
+                         method* m50, method* m51, method* m52, method* m53, method* m54,
+                         method* m55, method* m56, method* m57, method* m58, method* m59,
+                         method* m60, method* m61, method* m62, method* m63, method* m64,
+                         method* m65, method* m66, method* m67, method* m68, method* m69,
                          const char* name, bool parallel)
   : _name(name),
     _parallel(parallel)
