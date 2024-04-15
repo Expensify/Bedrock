@@ -142,15 +142,14 @@ SException::SException(const string& file,
                        bool generateCallstack,
                        const string& _method,
                        const STable& _headers,
-                       const string& _body,
-                       bool logStackTrace)
+                       const string& _body)
   : _file(file), _line(line), method(_method), headers(_headers), body(_body) {
     // Build a callstack. We don't convert it to symbols unless someone asks for it later.
     if (generateCallstack) {
         _depth = backtrace(_callstack, CALLSTACK_LIMIT);
     }
     SINFO("Throwing exception with message: '" << _method << "' from " << file << ":" << line);
-    if (logStackTrace) {
+    if (_logStackTrace) {
         SLogStackTrace(LOG_DEBUG);
     }
 }
