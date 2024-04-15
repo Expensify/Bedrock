@@ -140,10 +140,10 @@ void SLogSetThreadName(const string& logName) {
 SException::SException(const string& file,
                        int line,
                        bool generateCallstack,
-                       bool logStackTrace,
                        const string& _method,
                        const STable& _headers,
-                       const string& _body)
+                       const string& _body,
+                       bool logStackTrace)
   : _file(file), _line(line), method(_method), headers(_headers), body(_body) {
     // Build a callstack. We don't convert it to symbols unless someone asks for it later.
     if (generateCallstack) {

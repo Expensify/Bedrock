@@ -114,8 +114,8 @@ typedef map<string, SString, STableComp> STable;
 // body. The STHROW and STHROW_STACK macros will create an SException that logs it's file and line of creation, and
 // optionally, a stack trace at the same time. They can take, 1, 2, or all 3 of the components of an HTTP response
 // as arguments.
-#define STHROW(...) throw SException(__FILE__, __LINE__, false, true, __VA_ARGS__)
-#define STHROW_STACK(...) throw SException(__FILE__, __LINE__, true, false, __VA_ARGS__)
+#define STHROW(...) throw SException(__FILE__, __LINE__, false, __VA_ARGS__, "", {}, "", true)
+#define STHROW_STACK(...) throw SException(__FILE__, __LINE__, true, __VA_ARGS__)
 class SException : public exception {
   private:
     static const int CALLSTACK_LIMIT = 100;
@@ -128,10 +128,10 @@ class SException : public exception {
     SException(const string& file = "unknown",
                int line = 0,
                bool generateCallstack = false,
-               bool logStackTrace = false,
                const string& _method = "",
                const STable& _headers = {},
-               const string& _body = "");
+               const string& _body = "",
+               bool logStackTrace = false);
     const char* what() const noexcept;
     vector<string> details() const noexcept;
 
