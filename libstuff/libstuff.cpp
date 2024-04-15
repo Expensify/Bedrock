@@ -140,6 +140,7 @@ void SLogSetThreadName(const string& logName) {
 SException::SException(const string& file,
                        int line,
                        bool generateCallstack,
+                       bool logStackTrace,
                        const string& _method,
                        const STable& _headers,
                        const string& _body)
@@ -149,6 +150,9 @@ SException::SException(const string& file,
         _depth = backtrace(_callstack, CALLSTACK_LIMIT);
     }
     SINFO("Throwing exception with message: '" << _method << "' from " << file << ":" << line);
+    if (logStackTrace) {
+        SLogStackTrace();
+    }
 }
 
 const char* SException::what() const noexcept {
