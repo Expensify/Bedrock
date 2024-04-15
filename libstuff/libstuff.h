@@ -218,7 +218,7 @@ extern atomic<int> _g_SLogMask;
 void SLogLevel(int level);
 
 // Stack trace logging
-void SLogStackTrace();
+void SLogStackTrace(int level = LOG_WARNING);
 
 void SLogAtLevel(int level, const string& message);
 

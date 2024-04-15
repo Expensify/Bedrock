@@ -151,7 +151,7 @@ SException::SException(const string& file,
     }
     SINFO("Throwing exception with message: '" << _method << "' from " << file << ":" << line);
     if (logStackTrace) {
-        SLogStackTrace();
+        SLogStackTrace(LOG_DEBUG);
     }
 }
 
