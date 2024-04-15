@@ -59,13 +59,15 @@ tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* 
 {
     tpunit_detail_fixture_list()->push_back(this);
 
-    method* methods[50] = { m0,  m1,  m2,  m3,  m4,  m5,  m6,  m7,  m8,  m9,
+    method* methods[70] = { m0,  m1,  m2,  m3,  m4,  m5,  m6,  m7,  m8,  m9,
                             m10, m11, m12, m13, m14, m15, m16, m17, m18, m19,
                             m20, m21, m22, m23, m24, m25, m26, m27, m28, m29,
                             m30, m31, m32, m33, m34, m35, m36, m37, m38, m39,
-                            m40, m41, m42, m43, m44, m45, m46, m47, m48, m49 };
+                            m40, m41, m42, m43, m44, m45, m46, m47, m48, m49,
+                            m50, m51, m52, m53, m54, m55, m56, m57, m58, m59,
+                            m60, m61, m62, m63, m64, m65, m66, m67, m68, m69 };
 
-    for(int i = 0; i < 50; i++) {
+    for(int i = 0; i < 70; i++) {
        if(methods[i]) {
           method** m = 0;
           switch(methods[i]->_type) {
