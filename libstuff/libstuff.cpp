@@ -2844,6 +2844,31 @@ void SLogLevel(int level) {
     setlogmask(_g_SLogMask);
 }
 
+void SLogAtLevel(int level, const string& message) {
+    switch (level) {
+    case LOG_DEBUG:
+        SDEBUG(message);
+        break;
+    case LOG_INFO:
+        SINFO(message);
+        break;
+    case LOG_NOTICE:
+        SHMMM(message);
+        break;
+    case LOG_WARNING:
+        SWARN(message);
+        break;
+    case LOG_ALERT:
+        SALERT(message);
+        break;
+    case LOG_ERR:
+        SERROR(message);
+        break;
+    default:
+        break;
+    }
+}
+
 SAutoThreadPrefix::SAutoThreadPrefix(const SData& request) {
     // Retain the old prefix
     oldPrefix = SThreadLogPrefix;
