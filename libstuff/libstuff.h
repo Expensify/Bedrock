@@ -111,13 +111,12 @@ class SString : public string {
 typedef map<string, SString, STableComp> STable;
 
 // An SException is an exception class that can represent an HTTP-like response, with a method line, headers, and a
-// body. The STHROW and STHROW_STACK macros will create an SException that logs it's file and line of creation, and
-// optionally, a stack trace at the same time. They can take, 1, 2, or all 3 of the components of an HTTP response
-// as arguments. logStackTrace is set outside the constructor to maintain the same API for the SException constructor.
+// body. The STHROW and STHROW_STACK macros will create an SException that logs it's file, line of creation, and
+// a stack trace at the same time. They can take, 1, 2, or all 3 of the components of an HTTP response as arguments.
 #define STHROW(...)                                                     \
 do {                                                                    \
     SException ex = SException(__FILE__, __LINE__, false, __VA_ARGS__); \
-    ex.setLogStackTrace(true);                                          \
+    SLogStackTrace(LOG_DEBUG);                                          \
     throw ex;                                                           \
 } while (false)
 
@@ -129,7 +128,6 @@ class SException : public exception {
     const int _line;
     void* _callstack[CALLSTACK_LIMIT];
     int _depth = 0;
-    bool _logStackTrace = false;
 
   public:
     SException(const string& file = "unknown",
@@ -140,10 +138,6 @@ class SException : public exception {
                const string& _body = "");
     const char* what() const noexcept;
     vector<string> details() const noexcept;
-    void setLogStackTrace(bool value)
-    {
-        _logStackTrace = value;
-    }
 
     const string method;
     const STable headers;
