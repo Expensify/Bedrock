@@ -125,7 +125,6 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
 }
 
 BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
-    AutoTimer timer(command, exclusive ? BedrockCommand::BLOCKING_PEEK : BedrockCommand::PEEK);
     BedrockServer::ScopedStateSnapshot snapshot(_server);
     command->lastPeekedOrProcessedInState = _server.getState();
 
@@ -145,6 +144,9 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
+
+            // We start the timer here to avoid including the time spent acquiring the the lock _sharedData.commitLock
+            AutoTimer timer(command, exclusive ? BedrockCommand::BLOCKING_PEEK : BedrockCommand::PEEK);
 
             // Make sure no writes happen while in peek command
             _db.setQueryOnly(true);
