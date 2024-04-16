@@ -145,7 +145,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
 
-            // We start the timer here to avoid including the time spent acquiring the the lock _sharedData.commitLock
+            // We start the timer here to avoid including the time spent acquiring the lock _sharedData.commitLock
             AutoTimer timer(command, exclusive ? BedrockCommand::BLOCKING_PEEK : BedrockCommand::PEEK);
 
             // Make sure no writes happen while in peek command
