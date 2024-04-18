@@ -202,7 +202,7 @@ void BedrockServer::sync()
         // escalated commands. This is fine though - if we're following, there can't be any escalated commands, and if
         // we're leading, then the next update() loop will set us to standing down, and then we won't accept any new
         // commands, and we'll shortly run through the existing queue.
-        if (_shutdownState.load() == CLIENTS_RESPONDED) {
+        if (_shutdownState.load() == COMMANDS_FINISHED) {
             SINFO("All clients responded to, " << BedrockCommand::getCommandCount() << " commands remaining. Shutting down sync node.");
             _syncNode->beginShutdown();
 
@@ -557,7 +557,7 @@ void BedrockServer::sync()
             // _syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
         }
-    } while (!_syncNode->shutdownComplete());
+    } while (!_syncNode->shutdownComplete() || BedrockCommand::getCommandCount());
 
     SSetSignalHandlerDieFunc([](){SWARN("Dying in shutdown");});
 
@@ -1431,14 +1431,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
     // If we've been told to start shutting down, we'll set the shut down timer.
     if (_shutdownState.load() == START_SHUTDOWN) {
-        // I think we don't want this timer anymore.
-        auto _clusterMessengerCopy = _clusterMessenger;
-        if (_clusterMessengerCopy) {
-            _clusterMessengerCopy->shutdownBy(STimeNow() + 5 * 1'000'000); // 5 seconds from now
-        }
-
         // Locking here means that no commands can be running when we do these checks and then switch to
-        // `CLIENTS_RESPONDED` because we have a shared lock on this mutex in `handleSocket`. This means this check can
+        // `COMMANDS_FINISHED` because we have a shared lock on this mutex in `handleSocket`. This means this check can
         // only run between commands, and `_outstandingSocketThreads` will have been incremented already when we check
         // it here. So, if the check below for `_outstandingSocketThreads` passes at this point, it means there are no
         // commands at this point in time. However, new commands may still be received on the control port after this,
@@ -1451,9 +1445,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
         // Don't tell the sync node to shut down while we still have commands or sockets left.
         if (!_outstandingSocketThreads && !count) {
-            _shutdownState.store(CLIENTS_RESPONDED);
+            _shutdownState.store(COMMANDS_FINISHED);
 
-            // This should interrupt the sync thread's poll() loop.
+            // This interrupts the sync thread's poll() loop so it doesn't wait for up to an extra second to finish.
             _syncNode->notifyCommit();
         }
     }
@@ -1961,8 +1955,6 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         auto syncNodeCopy = atomic_load(&_syncNode);
         if (syncNodeCopy) {
             currentState = syncNodeCopy->getState();
-
-            SINFO("SHUTDOWN Setting priority to 1 and letting node stop leading if required.");
             syncNodeCopy->setShutdownPriority();
         }
         SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size()

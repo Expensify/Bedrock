@@ -42,7 +42,7 @@ class BedrockServer : public SQLiteServer {
     //
     // The server then continues operating as normal until there are no client connections left (because we've stopped
     // accepting them, and closed any connections as we responded to their commands), at which point it switches to
-    // CLIENTS_RESPONDED. The sync node notices this, and on it's next update() loop, it begins shutting down. If it
+    // COMMANDS_FINISHED. The sync node notices this, and on it's next update() loop, it begins shutting down. If it
     // was leading, the first thing it does in this case is switch to STANDINGDOWN. See more on standing down in the
     // next section.
     //
@@ -147,7 +147,7 @@ class BedrockServer : public SQLiteServer {
     enum SHUTDOWN_STATE {
         RUNNING,
         START_SHUTDOWN,
-        CLIENTS_RESPONDED, // TODO: Rename 'COMMANDS_FINISHED'
+        COMMANDS_FINISHED,
         DONE
     };
 
@@ -168,15 +168,12 @@ class BedrockServer : public SQLiteServer {
     // thread until the object goes out of scope.
     class ScopedStateSnapshot {
       public:
-        ScopedStateSnapshot(const BedrockServer& owner) : _owner(owner) {
+        ScopedStateSnapshot(const BedrockServer& owner) {
             _nodeStateSnapshot.store(owner._replicationState);
         }
         ~ScopedStateSnapshot() {
             _nodeStateSnapshot.store(SQLiteNodeState::UNKNOWN);
         }
-
-      private:
-        const BedrockServer& _owner;
     };
 
     // Flush the send buffers
@@ -196,7 +193,7 @@ class BedrockServer : public SQLiteServer {
     const atomic<SQLiteNodeState>& getState() const;
 
     // When a peer node logs in, we'll send it our crash command list.
-    void onNodeLogin(SQLitePeer* peer);
+    void onNodeLogin(SQLitePeer* peer) override;
 
     // You must block and unblock the command port with *identical strings*.
     void blockCommandPort(const string& reason);

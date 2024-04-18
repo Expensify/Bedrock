@@ -121,7 +121,6 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         sleep(2);
 
         // Now our clients are spamming all our nodes. Shut down leader.
-        SINFO("SHUTDOWN Stopping leader");
         tester->stopNode(0);
 
         // Wait for node 1 to be leader.
@@ -133,7 +132,6 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         // Bring leader back up.
         tester->getTester(0).startServer();
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
-
         sleep(15);
 
         // Now let's  stop a follower and make sure everything keeps working.
