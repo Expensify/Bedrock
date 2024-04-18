@@ -7,7 +7,7 @@ struct VersionMismatchTest : tpunit::TestFixture {
             BEFORE_CLASS(VersionMismatchTest::setup),
             TEST(VersionMismatchTest::testReadEscalation), 
             TEST(VersionMismatchTest::testWriteEscalation),
-            AFTER_CLASS(VersionMismatchTest::destroy)) { }
+            AFTER_CLASS(VersionMismatchTest::teardown)) { }
 
     BedrockClusterTester* tester = nullptr;
 
@@ -24,7 +24,7 @@ struct VersionMismatchTest : tpunit::TestFixture {
         tester->getTester(4).startServer();
     }
 
-    void destroy() {
+    void teardown() {
         delete tester;
     }
 

@@ -963,34 +963,19 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         uint64_t transactionID = 0;
                         string transactionHash;
                         {
-                            // TODO: Rewrite
-                            // There used to be a mutex protecting this state change, with the idea that if we
-                            // prevented state changes, we couldn't fall out of leading in the middle of processing a
-                            // command. However, for "normal" graceful state changes, these changes are prevented by
-                            // checking canStandDown(), and we can't fall out of STANDINGDOWN until there are no
-                            // commands left. In the case of non-graceful state changes, i.e., we are spontaneously
-                            // disconnected from the cluster, all this really does is prevent the sync thread from
-                            // telling us about that until after we've already committed this transaction, which
-                            // doesn't really help. In those cases, it's possible that we fork the DB here, but that's
-                            // possible with or without a mutex for this, so we've removed it for the sake of
-                            // simplicity.
-                            if (getState() != SQLiteNodeState::LEADING &&
-                                getState() != SQLiteNodeState::STANDINGDOWN) {
-                                SALERT("Node State changed from LEADING to " << SQLiteNode::stateName(getState()) << " during worker commit. Rolling back transaction!");
-                                core.rollback();
-                            } else {
-                                BedrockCore::AutoTimer timer(command, isBlocking ? BedrockCommand::BLOCKING_COMMIT_WORKER : BedrockCommand::COMMIT_WORKER);
-                                void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
-                                bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
-                                commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, enableOnPrepareNotifications, onPrepareHandler);
+                            BedrockCore::AutoTimer timer(command, isBlocking ? BedrockCommand::BLOCKING_COMMIT_WORKER : BedrockCommand::COMMIT_WORKER);
+                            void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
+                            bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
+                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, enableOnPrepareNotifications, onPrepareHandler);
 
-                                // We want to reset the retries on this command if we're not leading.
-                                if (getState() != SQLiteNodeState::LEADING) {
-                                    SINFO("Stopped leading while trying to commit, will retry.");
+                            if (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::STANDINGDOWN) {
+                                SINFO("Stopped leading while trying to commit, will retry.");
 
-                                    // Jump back to the top of the main loop but skip the check that would push these to the blocking commit queue.
-                                    continue;
-                                }
+                                // Jump back to the top of the main loop but skip the check that would push this to the blocking commit queue.
+                                // It doesn't make sense to run anything in the blocking queue on a follower. There's a possible edge case where this node
+                                // begins leading again before this command runs. In that case, the command will still end up in the blocking commit queue,
+                                // possibly with an extra call to `process` over the maximum expected to be allowed. This is very unlikely, though.
+                                continue;
                             }
                         }
                         if (commitSuccess) {
