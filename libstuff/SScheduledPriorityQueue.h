@@ -326,8 +326,9 @@ list<T> SScheduledPriorityQueue<T>::getAll() {
         }
     }
 
-    // Empty now.
-    clear();
+    // Call the same thing that `clear()` does, but without locking recursively.
+    _queue.clear();
+    _lookupByTimeout.clear();
 
     return items;
 }

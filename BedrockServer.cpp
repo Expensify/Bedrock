@@ -203,7 +203,7 @@ void BedrockServer::sync()
         // we're leading, then the next update() loop will set us to standing down, and then we won't accept any new
         // commands, and we'll shortly run through the existing queue.
         if (_shutdownState.load() == CLIENTS_RESPONDED) {
-            SINFO("SHUTDOWN All clients responded to, " << BedrockCommand::getCommandCount() << " remaining. Shutting down sync node.");
+            SINFO("All clients responded to, " << BedrockCommand::getCommandCount() << " commands remaining. Shutting down sync node.");
             _syncNode->beginShutdown();
 
             // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
@@ -264,15 +264,13 @@ void BedrockServer::sync()
         _leaderVersion.store(_syncNode->getLeaderVersion());
 
         // If we're not leading, move any commands from the blocking queue back to the main queue.
-        /* not currently working.
         if (nodeState != SQLiteNodeState::LEADING && nodeState != preUpdateState) {
             auto commands = _blockingCommandQueue.getAll();
+            SINFO("Moving " << commands.size() << " commands from blocking queue to main queue.");
             for (auto& cmd : commands) {
                 _commandQueue.push(move(cmd));
             }
-            SINFO("SHUTDOWN Moved " << commands.size() << " commands from blocking queue to main queue.");
         }
-        */
 
         // If we were LEADING, but we've transitioned, then something's gone wrong (perhaps we got disconnected
         // from the cluster). Reset some state and try again.
@@ -573,7 +571,7 @@ void BedrockServer::sync()
 
     // We've finished shutting down the sync node, tell the workers that it's finished.
     _shutdownState.store(DONE);
-    SINFO("SHUTDOWN Sync thread finished with commands.");
+    SINFO("Sync thread finished with commands.");
 
     // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
     // the writing replication thread exits.
