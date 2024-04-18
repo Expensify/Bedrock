@@ -7,7 +7,7 @@ struct VersionMismatchTest : tpunit::TestFixture {
             BEFORE_CLASS(VersionMismatchTest::setup),
             TEST(VersionMismatchTest::testReadEscalation), 
             TEST(VersionMismatchTest::testWriteEscalation),
-            AFTER_CLASS(VersionMismatchTest::setup)) { }
+            AFTER_CLASS(VersionMismatchTest::destroy)) { }
 
     BedrockClusterTester* tester = nullptr;
 
@@ -23,9 +23,11 @@ struct VersionMismatchTest : tpunit::TestFixture {
         tester->getTester(4).updateArgs({{"-versionOverride", "ABCDE"}});
         tester->getTester(4).startServer();
     }
+
     void destroy() {
         delete tester;
     }
+
     void testReadEscalation()
     {
         // Send a query to all three and make sure the version-mismatched one escalates.

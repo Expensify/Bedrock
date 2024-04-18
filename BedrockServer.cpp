@@ -1439,13 +1439,14 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         // if we are detaching.
         unique_lock<shared_mutex> lock(_controlPortExclusionMutex);
 
-        // Notify how many sockets and commands are left. We're not done until they're gone.
         size_t count = BedrockCommand::getCommandCount();
         SINFO("SHUTDOWN Have " << _outstandingSocketThreads << " socket threads and " << count << " commands remaining.");
 
         // Don't tell the sync node to shut down while we still have commands or sockets left.
         if (!_outstandingSocketThreads && !count) {
             _shutdownState.store(COMMANDS_FINISHED);
+
+            // This is when we should tell the sync thread to shut down.
 
             // This interrupts the sync thread's poll() loop so it doesn't wait for up to an extra second to finish.
             _syncNode->notifyCommit();

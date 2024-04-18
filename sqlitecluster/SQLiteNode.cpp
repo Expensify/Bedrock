@@ -569,8 +569,13 @@ bool SQLiteNode::update() {
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
 
+        // If we're trying to shut down, just do nothing, especially don't jump directly to leading and get stuck in an endless loop.
+        if (_isShuttingDown) {
+            return false; // Don't re-update
+        }
+
         // If no peers, we're the leader, unless we're shutting down.
-        if (!_isShuttingDown && _peerList.empty()) {
+        if (_peerList.empty()) {
             SHMMM("No peers configured, jumping to LEADING");
             _changeState(SQLiteNodeState::LEADING);
 
@@ -691,10 +696,13 @@ bool SQLiteNode::update() {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
-        // If we're trying and ready to shut down, do nothing.
+
         if (_isShuttingDown) {
-            // Need to remove this probably.
-            return false; // No fast update
+            SWARN("Shutting down in WAITING, how did we here here?");
+
+            // Return false to allow the poll loop to run again. This is here for legacy reasons form before the above warning was added.
+            // Probably this whole block can be removed if that warning never fires.
+            return false;
         }
 
         // Loop across peers and find the highest priority and leader
