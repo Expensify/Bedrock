@@ -259,11 +259,10 @@ void BedrockServer::sync()
             _syncNode->onPrepareHandler = nullptr;
         }
         while (_syncNode->update()) {}
-        SQLiteNodeState nodeState = _syncNode->getState();
         _leaderVersion.store(_syncNode->getLeaderVersion());
 
         // If we're not leading, move any commands from the blocking queue back to the main queue.
-        if (nodeState != SQLiteNodeState::LEADING && nodeState != preUpdateState) {
+        if (getState() != SQLiteNodeState::LEADING && getState() != preUpdateState) {
             auto commands = _blockingCommandQueue.getAll();
             SINFO("Moving " << commands.size() << " commands from blocking queue to main queue.");
             for (auto& cmd : commands) {
@@ -274,7 +273,7 @@ void BedrockServer::sync()
         // If we were LEADING, but we've transitioned, then something's gone wrong (perhaps we got disconnected
         // from the cluster). Reset some state and try again.
         if ((preUpdateState == SQLiteNodeState::LEADING || preUpdateState == SQLiteNodeState::STANDINGDOWN) &&
-            (nodeState != SQLiteNodeState::LEADING && nodeState != SQLiteNodeState::STANDINGDOWN)) {
+            (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::STANDINGDOWN)) {
 
             // If we bailed out while doing a upgradeDB, clear state
             if (_upgradeInProgress) {
@@ -314,7 +313,7 @@ void BedrockServer::sync()
 
         // Now that we've cleared any state associated with switching away from leading, we can bail out and try again
         // until we're either leading or following.
-        if (nodeState != SQLiteNodeState::LEADING && nodeState != SQLiteNodeState::FOLLOWING && nodeState != SQLiteNodeState::STANDINGDOWN) {
+        if (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING && getState() != SQLiteNodeState::STANDINGDOWN) {
             continue;
         }
 
@@ -324,8 +323,8 @@ void BedrockServer::sync()
         // receive the transaction when we started. In this case, we'll try the upgrade again if we were already
         // leading, and the upgrade is still in progress (because the first try failed), and we're not currently
         // attempting to commit it.
-        if ((preUpdateState != SQLiteNodeState::LEADING && nodeState == SQLiteNodeState::LEADING) ||
-            (nodeState == SQLiteNodeState::LEADING && _upgradeInProgress && !committingCommand)) {
+        if ((preUpdateState != SQLiteNodeState::LEADING && getState() == SQLiteNodeState::LEADING) ||
+            (getState() == SQLiteNodeState::LEADING && _upgradeInProgress && !committingCommand)) {
             // Store this before we start writing to the DB, which can take a while depending on what changes were made
             // (for instance, adding an index).
             _upgradeInProgress = true;
@@ -423,7 +422,7 @@ void BedrockServer::sync()
             // until one of these states changes. This prevents an endless loop of escalating commands, having
             // SQLiteNode re-queue them because leader is standing down, and then escalating them again until leader
             // sorts itself out.
-            if (nodeState == SQLiteNodeState::FOLLOWING && _syncNode->leaderState() == SQLiteNodeState::STANDINGDOWN) {
+            if (getState() == SQLiteNodeState::FOLLOWING && _syncNode->leaderState() == SQLiteNodeState::STANDINGDOWN) {
                 continue;
             }
 
@@ -466,7 +465,7 @@ void BedrockServer::sync()
                 });
 
                 // And now we'll decide how to handle it.
-                if (nodeState == SQLiteNodeState::LEADING || nodeState == SQLiteNodeState::STANDINGDOWN) {
+                if (getState() == SQLiteNodeState::LEADING || getState() == SQLiteNodeState::STANDINGDOWN) {
                     // We peek commands here in the sync thread to be able to run peek and process as part of the same
                     // transaction. This guarantees that any checks made in peek are still valid in process, as the DB can't
                     // have changed in the meantime.
@@ -544,7 +543,7 @@ void BedrockServer::sync()
 
                     // When we're leading, we'll try and handle one command and then stop.
                     break;
-                } else if (nodeState == SQLiteNodeState::FOLLOWING) {
+                } else if (getState() == SQLiteNodeState::FOLLOWING) {
                     SWARN("Sync thread has command when following. Re-queueing");
                     _commandQueue.push(move(command));
                 }
@@ -968,7 +967,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
                             commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, enableOnPrepareNotifications, onPrepareHandler);
 
-                            if (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::STANDINGDOWN) {
+                            if (getState() != SQLiteNodeState::LEADING) {
                                 SINFO("Stopped leading while trying to commit, will retry.");
 
                                 // Jump back to the top of the main loop but skip the check that would push this to the blocking commit queue.

@@ -571,6 +571,8 @@ bool SQLiteNode::update() {
 
         // If we're trying to shut down, just do nothing, especially don't jump directly to leading and get stuck in an endless loop.
         if (_isShuttingDown) {
+
+            // We need to exit here.
             return false; // Don't re-update
         }
 
