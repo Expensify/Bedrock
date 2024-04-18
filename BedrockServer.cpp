@@ -1005,7 +1005,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 auto state = _syncNode->getState();
                                 if (state != SQLiteNodeState::LEADING) {
                                     _replicationState.store(state);
-                                    SINFO("SHUTDOWN Stopped leading while trying to commit, will retry.");
+                                    SINFO("Stopped leading while trying to commit, will retry.");
 
                                     // Jump back to the top of the main loop but skip the check that would push these to the blocking commit queue.
                                     continue;
@@ -1446,9 +1446,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         if (!_outstandingSocketThreads && !count) {
             _shutdownState.store(COMMANDS_FINISHED);
 
-            // This is when we should tell the sync thread to shut down.
-
             // This interrupts the sync thread's poll() loop so it doesn't wait for up to an extra second to finish.
+            // When it wakes up, it will begin its own shutdown.
             _syncNode->notifyCommit();
         }
     }
