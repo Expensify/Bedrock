@@ -164,18 +164,6 @@ class BedrockServer : public SQLiteServer {
     // Destructor
     virtual ~BedrockServer();
 
-    // Create a ScopedStateSnapshot to force `getState` to return a snapshot at the current node state for the current
-    // thread until the object goes out of scope.
-    class ScopedStateSnapshot {
-      public:
-        ScopedStateSnapshot(const BedrockServer& owner) {
-            _nodeStateSnapshot.store(owner._replicationState);
-        }
-        ~ScopedStateSnapshot() {
-            _nodeStateSnapshot.store(SQLiteNodeState::UNKNOWN);
-        }
-    };
-
     // Flush the send buffers
     // STCPNode API.
     void prePoll(fd_map& fdm);
@@ -187,10 +175,8 @@ class BedrockServer : public SQLiteServer {
     // Returns true when everything's ready to shutdown.
     bool shutdownComplete();
 
-    // Exposes the replication state to plugins. Note that this is guaranteed not to change inside a call to
-    // `peekCommand` or `processCommand`, but this is only from the command's point-of-view - the underlying value can
-    // change at any time.
-    const atomic<SQLiteNodeState>& getState() const;
+    // Exposes the replication state to plugins.
+    SQLiteNodeState getState() const;
 
     // When a peer node logs in, we'll send it our crash command list.
     void onNodeLogin(SQLitePeer* peer) override;
@@ -264,10 +250,6 @@ class BedrockServer : public SQLiteServer {
 
     // Each time we read a new request from a client, we give it a unique ID.
     atomic<uint64_t> _requestCount;
-
-    // This is the replication state of the sync node. It's updated after every SQLiteNode::update() iteration. A
-    // reference to this object is passed to the sync thread to allow this update.
-    atomic<SQLiteNodeState> _replicationState;
 
     // This gets set to true when a database upgrade is in progress, letting workers know not to try to start any work.
     atomic<bool> _upgradeInProgress;
