@@ -282,7 +282,11 @@ class BedrockServer : public SQLiteServer {
 
     // The actual thread object for the sync thread.
     thread _syncThread;
-    atomic<bool> _syncThreadComplete;
+
+    // This is true from when the sync thread *should* start, until it exits. It may become true again if it should run again
+    // (i.e., after a `Detach` and then `Attach`. It's used to indicate that the sync thread has finished during shutdown.
+    // Notably it's true *before* the sync thread start both at startup and when re-attaching.
+    atomic<bool> _syncLoopShouldBeRunning;
 
     // Give all of our plugins a chance to verify and/or modify the database schema. This will run every time this node
     // becomes leader. It will return true if the DB has changed and needs to be committed.
