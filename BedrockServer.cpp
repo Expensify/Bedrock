@@ -2322,5 +2322,7 @@ SQLiteNodeState BedrockServer::getState() const {
         return _syncNodeCopy->getState();
     }
 
-    return SQLiteNodeState::UNKNOWN;
+    // For historical reasons, we return "SEARCHING" instead of "UNKNOWN" when the node is not available.
+    // Scripts and tests, as well as the status command, expect this result.
+    return SQLiteNodeState::SEARCHING;
 }
