@@ -167,7 +167,7 @@ struct CreateJobTest : tpunit::TestFixture {
     }
 
     // Create a unique job
-    // Then try to recreate the job with the some data
+    // Then try to recreate the job with the same data
     // Make sure the new data is saved
     void uniqueJobMergeData() {
         // Create a unique job
