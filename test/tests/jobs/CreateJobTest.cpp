@@ -174,7 +174,7 @@ struct CreateJobTest : tpunit::TestFixture {
         SData command("CreateJob");
         string jobName = "blabla";
         command["name"] = jobName;
-        command["data"] = "{\"a\":1, \"b\":2, \"nestedObject\": {\"A\":1, \"B\":2}}";
+        command["data"] = "{\"a\":1, \"b\":2, \"nestedObject\": {\"A\":1, \"B\":2}, \"nestedArray\":[1,2]}";
         command["unique"] = "true";
         STable response = tester->executeWaitVerifyContentTable(command);
         int64_t jobID = stol(response["jobID"]);
@@ -188,7 +188,7 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(stol(response["jobID"]), jobID);
 
         // Try to recreate the job with new data, it should get updated.
-        command["data"] = "{\"c\":3, \"d\":4, \"nestedObject\": {\"C\":3, \"D\":4}}";
+        command["data"] = "{\"c\":3, \"d\":4, \"nestedObject\": {\"C\":3, \"D\":4}, \"nestedArray\":[3,4]}";
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(stol(response["jobID"]), jobID);
 
@@ -203,7 +203,7 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(updatedJob[0][4], originalJob[0][4]);
         ASSERT_EQUAL(updatedJob[0][5], originalJob[0][5]);
         ASSERT_EQUAL(updatedJob[0][6], originalJob[0][6]);
-        ASSERT_EQUAL(updatedJob[0][7], "{\"a\":1,\"b\":2,\"nestedObject\":{\"A\":1,\"B\":2,\"C\":3,\"D\":4},\"c\":3,\"d\":4}");
+        ASSERT_EQUAL(updatedJob[0][7], "{\"a\":1,\"b\":2,\"nestedObject\":{\"A\":1,\"B\":2,\"C\":3,\"D\":4},\"nestedArray\":[3,4],\"c\":3,\"d\":4}");
         ASSERT_EQUAL(updatedJob[0][8], originalJob[0][8]);
         ASSERT_EQUAL(updatedJob[0][9], originalJob[0][9]);
     }
