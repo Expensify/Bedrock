@@ -44,10 +44,6 @@ class SQLiteClusterMessenger {
     // to handle the failure.
     bool runOnPeer(BedrockCommand& command, const string& peerName);
 
-    // Set a timestamp by which we should give up on any pending commands. Once set, this is permanent. You will need a
-    // new SQLiteClusterMessenger if you want to shutdown again.
-    void shutdownBy(uint64_t shutdownTimestamp);
-
   private:
     // This takes a pollfd with either POLLIN or POLLOUT set, and waits for the socket to be ready to read or write,
     // respectively. It returns true if ready, or false if error or timeout. The timeout is specified as a timestamp in
@@ -71,11 +67,6 @@ class SQLiteClusterMessenger {
     unique_ptr<SHTTPSManager::Socket> _getSocketForAddress(string address);
 
     const shared_ptr<const SQLiteNode> _node;
-
-    // This is set to a timestamp when the server is shutting down so that we can abandon any commands that would
-    // block that.
-    atomic<uint64_t> _shutDownBy = 0;
-    atomic_flag _shutdownSet = ATOMIC_FLAG_INIT;
 
     // For managing many connections to leader, we have a socket pool.
     SMultiHostSocketPool _socketPool;

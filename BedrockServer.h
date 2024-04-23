@@ -42,7 +42,7 @@ class BedrockServer : public SQLiteServer {
     //
     // The server then continues operating as normal until there are no client connections left (because we've stopped
     // accepting them, and closed any connections as we responded to their commands), at which point it switches to
-    // CLIENTS_RESPONDED. The sync node notices this, and on it's next update() loop, it begins shutting down. If it
+    // COMMANDS_FINISHED. The sync node notices this, and on it's next update() loop, it begins shutting down. If it
     // was leading, the first thing it does in this case is switch to STANDINGDOWN. See more on standing down in the
     // next section.
     //
@@ -147,7 +147,7 @@ class BedrockServer : public SQLiteServer {
     enum SHUTDOWN_STATE {
         RUNNING,
         START_SHUTDOWN,
-        CLIENTS_RESPONDED,
+        COMMANDS_FINISHED,
         DONE
     };
 
@@ -164,21 +164,6 @@ class BedrockServer : public SQLiteServer {
     // Destructor
     virtual ~BedrockServer();
 
-    // Create a ScopedStateSnapshot to force `getState` to return a snapshot at the current node state for the current
-    // thread until the object goes out of scope.
-    class ScopedStateSnapshot {
-      public:
-        ScopedStateSnapshot(const BedrockServer& owner) : _owner(owner) {
-            _nodeStateSnapshot.store(owner._replicationState);
-        }
-        ~ScopedStateSnapshot() {
-            _nodeStateSnapshot.store(SQLiteNodeState::UNKNOWN);
-        }
-
-      private:
-        const BedrockServer& _owner;
-    };
-
     // Flush the send buffers
     // STCPNode API.
     void prePoll(fd_map& fdm);
@@ -190,13 +175,11 @@ class BedrockServer : public SQLiteServer {
     // Returns true when everything's ready to shutdown.
     bool shutdownComplete();
 
-    // Exposes the replication state to plugins. Note that this is guaranteed not to change inside a call to
-    // `peekCommand` or `processCommand`, but this is only from the command's point-of-view - the underlying value can
-    // change at any time.
-    const atomic<SQLiteNodeState>& getState() const;
+    // Exposes the replication state to plugins.
+    SQLiteNodeState getState() const;
 
     // When a peer node logs in, we'll send it our crash command list.
-    void onNodeLogin(SQLitePeer* peer);
+    void onNodeLogin(SQLitePeer* peer) override;
 
     // You must block and unblock the command port with *identical strings*.
     void blockCommandPort(const string& reason);
@@ -209,10 +192,6 @@ class BedrockServer : public SQLiteServer {
     // created them.
     // Not atomic because it's only accessed with a lock on _portMutex.
     list<string> commandPortSuppressionReasons;
-
-    // This will return true if there's no outstanding writable activity that we're waiting on. It's called by an
-    // SQLiteNode in a STANDINGDOWN state to know that it can switch to searching.
-    virtual bool canStandDown();
 
     // Returns whether or not this server was configured to backup.
     bool shouldBackup();
@@ -272,10 +251,6 @@ class BedrockServer : public SQLiteServer {
     // Each time we read a new request from a client, we give it a unique ID.
     atomic<uint64_t> _requestCount;
 
-    // This is the replication state of the sync node. It's updated after every SQLiteNode::update() iteration. A
-    // reference to this object is passed to the sync thread to allow this update.
-    atomic<SQLiteNodeState> _replicationState;
-
     // This gets set to true when a database upgrade is in progress, letting workers know not to try to start any work.
     atomic<bool> _upgradeInProgress;
 
@@ -307,7 +282,11 @@ class BedrockServer : public SQLiteServer {
 
     // The actual thread object for the sync thread.
     thread _syncThread;
-    atomic<bool> _syncThreadComplete;
+
+    // This is true from when the sync thread *should* start, until it exits. It may become true again if it should run again
+    // (i.e., after a `Detach` and then `Attach`. It's used to indicate that the sync thread has finished during shutdown.
+    // Notably it's true *before* the sync thread start both at startup and when re-attaching.
+    atomic<bool> _syncLoopShouldBeRunning;
 
     // Give all of our plugins a chance to verify and/or modify the database schema. This will run every time this node
     // becomes leader. It will return true if the DB has changed and needs to be committed.
@@ -417,11 +396,6 @@ class BedrockServer : public SQLiteServer {
     atomic<int> _maxConflictRetries;
 
     mutex _httpsCommandMutex;
-
-    // When we're standing down, we temporarily dump newly received commands here (this lets all existing
-    // partially-completed commands, like commands with HTTPS requests) finish without risking getting caught in an
-    // endless loop of always having new unfinished commands.
-    BedrockTimeoutCommandQueue _standDownQueue;
 
     // The following variables all exist to to handle commands that seem to have caused crashes. This lets us broadcast
     // a command to all peer nodes with information about the crash-causing command, so they can refuse to process it if

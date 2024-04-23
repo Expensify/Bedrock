@@ -392,6 +392,23 @@ int SQLiteNode::getPriority() const {
     return _priority;
 }
 
+void SQLiteNode::setShutdownPriority() {
+    SINFO("Setting priority to 1, will stop leading if required.");
+    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+    _priority = 1;
+
+    if (_state == SQLiteNodeState::LEADING) {
+        _changeState(SQLiteNodeState::STANDINGDOWN);
+    } else {
+        SData state("STATE");
+        state["StateChangeCount"] = to_string(_stateChangeCount);
+        state["State"] = stateName(_state);
+        state["Priority"] = SToStr(_priority);
+        _sendToAllPeers(state);
+    }
+    SINFO("SHUTDOWN Priority changed");
+}
+
 const string SQLiteNode::getLeaderVersion() const {
     shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
     if (_state == SQLiteNodeState::LEADING || _state == SQLiteNodeState::STANDINGDOWN) {
@@ -554,6 +571,8 @@ bool SQLiteNode::update() {
 
         // If we're trying to shut down, just do nothing, especially don't jump directly to leading and get stuck in an endless loop.
         if (_isShuttingDown) {
+
+            // We need to exit here.
             return false; // Don't re-update
         }
 
@@ -679,28 +698,13 @@ bool SQLiteNode::update() {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
-        // If we're trying and ready to shut down, do nothing.
+
         if (_isShuttingDown) {
-            // Do we have an outstanding command?
-            if (1/* TODO: Commit in progress? */) {
-                // Nope!  Let's just halt the FSM here until we shutdown so as to
-                // avoid potential confusion.  (Technically it would be fine to continue
-                // the FSM, but it makes the logs clearer to just stop here.)
-                SINFO("Graceful shutdown underway and no queued commands, do nothing.");
-                return false; // No fast update
-            } else {
-                // We do have outstanding commands, even though a graceful shutdown
-                // has been requested.  This is probably due to us previously being a leader
-                // to which commands had been sent directly -- we got the signal to shutdown,
-                // and stood down immediately.  All the followers will re-escalate whatever
-                // commands they were waiting on us to process, so they're fine.  But our own
-                // commands still need to be processed.  We're no longer the leader, so we
-                // can't do it.  Rather, even though we're trying to do a graceful shutdown,
-                // we need to find and follower to the new leader, and have it process our
-                // commands.  Once the new leader has processed our commands, then we can
-                // shut down gracefully.
-                SHMMM("Graceful shutdown underway but queued commands so continuing...");
-            }
+            SWARN("Shutting down in WAITING, how did we here here?");
+
+            // Return false to allow the poll loop to run again. This is here for legacy reasons form before the above warning was added.
+            // Probably this whole block can be removed if that warning never fires.
+            return false;
         }
 
         // Loop across peers and find the highest priority and leader
@@ -993,6 +997,7 @@ bool SQLiteNode::update() {
                 // Commit this distributed transaction. Either we have quorum, or we don't need it.
                 SDEBUG("Committing current transaction because consistentEnough: " << _db.getUncommittedQuery());
                 uint64_t beforeCommit = STimeNow();
+                // Only other intersting place we commit and would care about node state.
                 int result = _db.commit(stateName(_state));
                 SINFO("SQLite::commit in SQLiteNode took " << ((STimeNow() - beforeCommit)/1000) << "ms.");
 
@@ -1141,10 +1146,6 @@ bool SQLiteNode::update() {
             // We can only switch to SEARCHING if the server has no outstanding write work to do.
             if (_standDownTimeout.ringing()) {
                 SWARN("Timeout STANDINGDOWN, giving up on server and continuing.");
-            } else if (!_server.canStandDown()) {
-                // Try again.
-                SINFO("Can't switch from STANDINGDOWN to SEARCHING yet, server prevented state change.");
-                return false;
             }
             // Standdown complete
             SINFO("STANDDOWN complete, SEARCHING");
@@ -1438,7 +1439,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                                 PWARN("Higher-priority peer is trying to stand up while we are STANDINGUP, SEARCHING.");
                                 _changeState(SQLiteNodeState::SEARCHING);
                             } else if (_state == SQLiteNodeState::LEADING) {
-                                PWARN("Higher-priority peer is trying to stand up while we are LEADING, STANDINGDOWN.");
+                                PINFO("Higher-priority peer is trying to stand up while we are LEADING, STANDINGDOWN.");
                                 _changeState(SQLiteNodeState::STANDINGDOWN);
                             } else {
                                 PWARN("Higher-priority peer is trying to stand up while we are STANDINGDOWN, continuing.");
@@ -2040,7 +2041,9 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
             // TODO: No we don't, we finish it, as per other documentation in this file.
         } else if (newState == SQLiteNodeState::WAITING) {
             // The first time we enter WAITING, we're caught up and ready to join the cluster - use our real priority from now on
-            _priority = _originalPriority;
+            if (_priority == -1) {
+                _priority = _originalPriority;
+            }
         }
 
         // If we're switching from LEADING or STANDINGDOWN to anything else (aside from the case where we switch from LEADING to STANDINGDOWN), we unblock commits.
@@ -2050,6 +2053,10 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
                 _db.exclusiveUnlockDB();
             }
         }
+
+        // IMPORTANT: Don't return early or throw from this method after here.
+        // Note: _stateMutex is already locked here (by update, _replicate, or postPoll).
+        _db.exclusiveLockDB();
 
         // Send to everyone we're connected to, whether or not
         // we're "LoggedIn" (else we might change state after sending LOGIN,
@@ -2061,6 +2068,8 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
         state["State"] = stateName(_state);
         state["Priority"] = SToStr(_priority);
         _sendToAllPeers(state);
+
+        _db.exclusiveUnlockDB();
     }
 }
 

@@ -15,13 +15,6 @@ SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_, const string& pem, const st
 {
 }
 
-void SHTTPSManager::validate() {
-    // These can only be created on a leader node.
-    if (plugin.server.getState() != SQLiteNodeState::LEADING && plugin.server.getState() != SQLiteNodeState::STANDINGDOWN) {
-        throw NotLeading();
-    }
-}
-
 SStandaloneHTTPSManager::SStandaloneHTTPSManager()
 {
 }
