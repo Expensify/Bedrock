@@ -16,6 +16,7 @@ struct CreateJobTest : tpunit::TestFixture {
                               TEST(CreateJobTest::createWithData),
                               TEST(CreateJobTest::createWithRepeat),
                               TEST(CreateJobTest::uniqueJob),
+                              TEST(CreateJobTest::uniqueJobMergeData),
                               TEST(CreateJobTest::createWithBadData),
                               TEST(CreateJobTest::createWithBadRepeat),
                               TEST(CreateJobTest::createChildWithQueuedParent),
@@ -163,6 +164,48 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(originalJob[0][7], "{}");
         ASSERT_EQUAL(stol(originalJob[0][8]), 500);
         ASSERT_EQUAL(stol(originalJob[0][9]), 0);
+    }
+
+    // Create a unique job
+    // Then try to recreate the job with the same data
+    // Make sure the new data is saved
+    void uniqueJobMergeData() {
+        // Create a unique job
+        SData command("CreateJob");
+        string jobName = "blabla";
+        command["name"] = jobName;
+        command["data"] = "{\"a\":1, \"b\":2, \"nestedObject\": {\"A\":1, \"B\":2}, \"nestedArray\":[1,2]}";
+        command["unique"] = "true";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        int64_t jobID = stol(response["jobID"]);
+        ASSERT_GREATER_THAN(jobID, 0);
+
+        SQResult originalJob;
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", originalJob);
+
+        // Try to recreate the job with the same data.
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(stol(response["jobID"]), jobID);
+
+        // Try to recreate the job with new data, it should get updated.
+        command["data"] = "{\"c\":3, \"d\":4, \"nestedObject\": {\"C\":3, \"D\":4}, \"nestedArray\":[3,4]}";
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(stol(response["jobID"]), jobID);
+
+        SQResult updatedJob;
+        tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID FROM jobs WHERE jobID = " + response["jobID"] + ";", updatedJob);
+        ASSERT_EQUAL(updatedJob.size(), 1);
+        // Assert the values are what we expect
+        ASSERT_EQUAL(updatedJob[0][0], originalJob[0][0]);
+        ASSERT_EQUAL(updatedJob[0][1], originalJob[0][1]);
+        ASSERT_EQUAL(updatedJob[0][2], originalJob[0][2]);
+        ASSERT_EQUAL(updatedJob[0][3], originalJob[0][3]);
+        ASSERT_EQUAL(updatedJob[0][4], originalJob[0][4]);
+        ASSERT_EQUAL(updatedJob[0][5], originalJob[0][5]);
+        ASSERT_EQUAL(updatedJob[0][6], originalJob[0][6]);
+        ASSERT_EQUAL(updatedJob[0][7], "{\"a\":1,\"b\":2,\"nestedObject\":{\"A\":1,\"B\":2,\"C\":3,\"D\":4},\"nestedArray\":[3,4],\"c\":3,\"d\":4}");
+        ASSERT_EQUAL(updatedJob[0][8], originalJob[0][8]);
+        ASSERT_EQUAL(updatedJob[0][9], originalJob[0][9]);
     }
 
     // Create a unique job

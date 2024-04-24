@@ -264,10 +264,11 @@ bool TestPluginCommand::peek(SQLite& db) {
         auto transaction = plugin().httpsManager->httpsDontSend("https://www.google.com/", newRequest);
         httpsRequests.push_back(transaction);
         if (request["neversend"].empty()) {
-            thread([transaction, newRequest](){
-                SINFO("Sleeping 35 seconds for httpstimeout");
-                sleep(35);
-                SINFO("Done Sleeping 35 seconds for httpstimeout");
+            int waitFor = request.isSet("waitFor") ? request.calc("waitFor") : 35;
+            thread([waitFor, transaction, newRequest](){
+                SINFO("Sleeping " << waitFor << " seconds for httpstimeout");
+                sleep(waitFor);
+                SINFO("Done Sleeping " << waitFor << " seconds for httpstimeout");
                 transaction->s->send(newRequest.serialize());
             }).detach();
         }
@@ -508,6 +509,8 @@ void TestPluginCommand::process(SQLite& db) {
         return;
     } else if (request.methodLine == "testquery") {
         db.write(request["Query"]);
+    } else if (request.methodLine == "httpstimeout") {
+        response["processingNode"] = plugin().server.args["-nodeName"];
     }
 }
 
@@ -549,7 +552,8 @@ void BedrockPlugin_TestPlugin::onPrepareHandler(SQLite& db, int64_t tableID) {
     int64_t tid = 999999999 + tableID;
     db.write("INSERT INTO test (id, value) VALUES (" + to_string(tid) + ", 'this is written in onPrepareHandler');");
 }
-void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState){
+
+void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState) {
     // We spin this up in another thread because `stateChanged` is called from the `sync` thread in bedrock
     // so this function cannot do any sort of waiting or it will block the sync thread. By offloading this,
     // we can let the code wait for a condition to be met before it actually runs. In our case, we want to

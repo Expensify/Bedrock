@@ -193,6 +193,18 @@ ClusterTester<T>::~ClusterTester()
 
     // Shut down everything but the leader first.
     list<thread> threads;
+
+    for (int i = 0; i< _size; i++) {
+        // Wait for all the commands to be done before stopping.
+        // If we don't do this, then if the leader loses quorum, because the other nodes have all shut down,
+        // it won't run remaining commands, and it will get stuck forever.
+        // In tests, this can happen with commands that generate other commands that don't expect a response.
+        // We can skip this if the node is already stopped, though.
+        if (getTester(i).getPID()) {
+            getTester(i).waitForStatusTerm("commandCount", "1");
+        }
+    }
+
     for (int i = _size - 1; i > 0; i--) {
         threads.emplace_back([&, i](){
             stopNode(i);

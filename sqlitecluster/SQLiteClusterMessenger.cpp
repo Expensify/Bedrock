@@ -17,14 +17,6 @@ void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command) {
     command.complete = true;
 }
 
-void SQLiteClusterMessenger::shutdownBy(uint64_t shutdownTimestamp) {
-    // If we haven't set a shutdown flag before, set one now.
-    // If it was already set, we don't do anything.
-    if(!_shutdownSet.test_and_set()) {
-        _shutDownBy = shutdownTimestamp;
-    }
-}
-
 // Returns true on ready or false on error or timeout.
 SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) const {
     static const map <int, string> labels = {
@@ -46,12 +38,7 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
     while (true) {
         int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
         if (!result) {
-            // Because _shutDownBy can only change from 0 to non-zero once, there's no race condition here. If it's
-            // true in the non-zero check, it will always be true after that.
-            if (_shutDownBy && STimeNow() > _shutDownBy) {
-                SINFO("[HTTPESC] Giving up because shutting down.");
-                return WaitForReadyResult::SHUTTING_DOWN;
-            } else if (timeoutTimestamp && timeoutTimestamp < STimeNow()) {
+            if (timeoutTimestamp && timeoutTimestamp < STimeNow()) {
                 SINFO("[HTTPESC] Timeout waiting for socket.");
                 return WaitForReadyResult::TIMEOUT;
             }

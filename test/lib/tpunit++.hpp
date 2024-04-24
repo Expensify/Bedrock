@@ -258,6 +258,8 @@ namespace tpunit {
          // Use constructor delegation to add an optional default 'name' parameter that works as a first argument.
          // This lets us keep backwards compatibility with existing tests, and add a name to new tests without having
          // to add 70 '0's for a bunch of unused methods.
+         // DO NOT ADD MORE THAN 70 METHODS TO A TEST FIXTURE. If you need more, split the test file into multiple files
+         // so that you can run these tests more efficiently in parallel.
          TestFixture(const char* name,
                      method* m0,      method* m1  = 0, method* m2  = 0, method* m3  = 0, method* m4  = 0,
                      method* m5  = 0, method* m6  = 0, method* m7  = 0, method* m8  = 0, method* m9  = 0,
@@ -306,7 +308,9 @@ namespace tpunit {
 
          /**
           * Base constructor to register methods with the test fixture. A test
-          * fixture can register up to 70 methods.
+          * fixture can register up to 70 methods. DO NOT expand this beyond 70 tests.
+          * Split your tests into more files/suites if you need more than 70 tests
+          * so that you can run these tests more efficiently in parallel.
           *
           * @param[in] m0..m49 The methods to register with the test fixture.
           */
