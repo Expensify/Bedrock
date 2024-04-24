@@ -125,8 +125,6 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
 }
 
 BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
-    BedrockServer::ScopedStateSnapshot snapshot(_server);
-    command->lastPeekedOrProcessedInState = _server.getState();
 
     // Convenience references to commonly used properties.
     const SData& request = command->request;
@@ -220,16 +218,6 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
 
 BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
     AutoTimer timer(command, exclusive ? BedrockCommand::BLOCKING_PROCESS : BedrockCommand::PROCESS);
-    BedrockServer::ScopedStateSnapshot snapshot(_server);
-
-    // We need to be leading (including standing down) and we need to have peeked this command in the same set of
-    // states, or we can't complete this command (we can't commit the command if we're not leading, and if we're
-    // leading but were following when we peeked, we may try to read HTTPS requests we never made).
-    if ((command->lastPeekedOrProcessedInState != SQLiteNodeState::LEADING && command->lastPeekedOrProcessedInState != SQLiteNodeState::STANDINGDOWN) ||
-        (_server.getState() != SQLiteNodeState::LEADING && _server.getState() != SQLiteNodeState::STANDINGDOWN)) {
-        return RESULT::SERVER_NOT_LEADING;
-    }
-    command->lastPeekedOrProcessedInState = _server.getState();
 
     // Convenience references to commonly used properties.
     const SData& request = command->request;

@@ -42,13 +42,6 @@ class SStandaloneHTTPSManager : public STCPManager {
 
     static int getHTTPResponseCode(const string& methodLine);
 
-    virtual void validate() {
-        // The constructor for a transaction needs to call this on it's manager. It can then throw in cases where this
-        // manager should not be allowed to create transactions. This lets us have different validation behavior for
-        // different managers without needing to subclass Transaction.
-        // The default implementation does nothing.
-    }
-
   protected: // Child API
 
     // Used to create the signing certificate.
@@ -73,8 +66,6 @@ class SHTTPSManager : public SStandaloneHTTPSManager {
             return "Can't create SHTTPSManager::Transaction when not leading";
         }
     };
-
-    virtual void validate() override;
 
     protected:
     // Reference to the plugin that owns this object.
