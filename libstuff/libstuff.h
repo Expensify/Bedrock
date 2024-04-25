@@ -113,11 +113,10 @@ typedef map<string, SString, STableComp> STable;
 // An SException is an exception class that can represent an HTTP-like response, with a method line, headers, and a
 // body. The STHROW and STHROW_STACK macros will create an SException that logs it's file, line of creation, and
 // a stack trace at the same time. They can take, 1, 2, or all 3 of the components of an HTTP response as arguments.
-#define STHROW(...)                                                     \
-do {                                                                    \
-    SException ex = SException(__FILE__, __LINE__, false, __VA_ARGS__); \
-    SLogStackTrace(LOG_DEBUG);                                          \
-    throw ex;                                                           \
+#define STHROW(...)                                           \
+do {                                                          \
+    SLogStackTrace(LOG_DEBUG);                                \
+    throw SException(__FILE__, __LINE__, false, __VA_ARGS__); \
 } while (false)
 
 #define STHROW_STACK(...) throw SException(__FILE__, __LINE__, true, __VA_ARGS__)
