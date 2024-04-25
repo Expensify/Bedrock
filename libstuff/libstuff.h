@@ -223,8 +223,6 @@ void SLogLevel(int level);
 // Stack trace logging
 void SLogStackTrace(int level = LOG_WARNING);
 
-void SLogAtLevel(int level, const string& message);
-
 // This is a drop-in replacement for syslog that directly logs to `/run/systemd/journal/syslog` bypassing journald.
 void SSyslogSocketDirect(int priority, const char* format, ...);
 

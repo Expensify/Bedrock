@@ -10,6 +10,27 @@ void SLogStackTrace(int level) {
     int depth = backtrace(callstack, 100);
     vector<string> stack = SGetCallstack(depth, callstack);
     for (const auto& frame : stack) {
-        SLogAtLevel(level, frame);
+        switch (level) {
+        case LOG_DEBUG:
+            SDEBUG(frame);
+            break;
+        case LOG_INFO:
+            SINFO(frame);
+            break;
+        case LOG_NOTICE:
+            SHMMM(frame);
+            break;
+        case LOG_WARNING:
+            SWARN(frame);
+            break;
+        case LOG_ALERT:
+            SALERT(frame);
+            break;
+        case LOG_ERR:
+            SERROR(frame);
+            break;
+        default:
+            break;
+        }
     }
 }
