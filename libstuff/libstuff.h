@@ -111,10 +111,14 @@ class SString : public string {
 typedef map<string, SString, STableComp> STable;
 
 // An SException is an exception class that can represent an HTTP-like response, with a method line, headers, and a
-// body. The STHROW and STHROW_STACK macros will create an SException that logs it's file and line of creation, and
-// optionally, a stack trace at the same time. They can take, 1, 2, or all 3 of the components of an HTTP response
-// as arguments.
-#define STHROW(...) throw SException(__FILE__, __LINE__, false, __VA_ARGS__)
+// body. The STHROW and STHROW_STACK macros will create an SException that logs it's file, line of creation, and
+// a stack trace at the same time. They can take, 1, 2, or all 3 of the components of an HTTP response as arguments.
+#define STHROW(...)                                           \
+do {                                                          \
+    SLogStackTrace(LOG_DEBUG);                                \
+    throw SException(__FILE__, __LINE__, false, __VA_ARGS__); \
+} while (false)
+
 #define STHROW_STACK(...) throw SException(__FILE__, __LINE__, true, __VA_ARGS__)
 class SException : public exception {
   private:
@@ -217,7 +221,7 @@ extern atomic<int> _g_SLogMask;
 void SLogLevel(int level);
 
 // Stack trace logging
-void SLogStackTrace();
+void SLogStackTrace(int level = LOG_WARNING);
 
 // This is a drop-in replacement for syslog that directly logs to `/run/systemd/journal/syslog` bypassing journald.
 void SSyslogSocketDirect(int priority, const char* format, ...);
@@ -368,7 +372,7 @@ template <class A> inline bool SContains(const set<A>& valueList, const A& value
 
 bool SContains(const list<string>& valueList, const char* value);
 bool SContains(const string& haystack, const string& needle);
-bool SContains(const string& haystack, char needle); 
+bool SContains(const string& haystack, char needle);
 bool SContains(const STable& nameValueMap, const string& name);
 
 bool SIsValidSQLiteDateModifier(const string& modifier);
@@ -378,7 +382,7 @@ bool SIEquals(const string& lhs, const string& rhs);
 bool SIContains(const string& haystack, const string& needle);
 bool SStartsWith(const string& haystack, const string& needle);
 bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize);
-bool SEndsWith(const string& haystack, const string& needle); 
+bool SEndsWith(const string& haystack, const string& needle);
 bool SConstantTimeEquals(const string& secret, const string& userInput);
 bool SConstantTimeIEquals(const string& secret, const string& userInput);
 
