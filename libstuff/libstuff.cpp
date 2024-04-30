@@ -702,7 +702,7 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
 }
 
 // --------------------------------------------------------------------------
-set<int64_t> SParseSet(const string& value, char separator) {
+set<string> SParseSet(const string& value, char separator) {
     set<string> valueSet;
     list<string> strings = SParseList(value, separator);
     for (const string& str : strings) {
