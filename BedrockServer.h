@@ -236,6 +236,9 @@ class BedrockServer : public SQLiteServer {
     // else. In the future, when all command queues are removed, this will not be the case, but right now, you can not rely on the command having completed when this returns.
     void runCommand(unique_ptr<BedrockCommand>&& command, bool isBlocking = false, bool hasDedicatedThread = true);
 
+    // Expose the DB pool to plugins.
+    shared_ptr<SQLitePool> getDBPool();
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";

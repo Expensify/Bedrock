@@ -64,6 +64,10 @@ void BedrockServer::syncWrapper()
     SINFO("Exiting syncWrapper");
 }
 
+shared_ptr<SQLitePool> BedrockServer::getDBPool() {
+    return _dbPool;
+}
+
 void BedrockServer::sync()
 {
     // Parse out the number of worker threads we'll use. The DB needs to know this because it will expect a
