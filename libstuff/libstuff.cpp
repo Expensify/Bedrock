@@ -701,6 +701,16 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator) {
     return (!component.empty());
 }
 
+// --------------------------------------------------------------------------
+set<string> SParseSet(const string& value, char separator) {
+    set<string> valueSet;
+    list<string> strings = SParseList(value, separator);
+    for (const string& str : strings) {
+        valueSet.insert(str);
+    }
+    return valueSet;
+}
+
 STable SParseCommandLine(int argc, char* argv[]) {
     // Just walk across and find the pairs, then put the remainder on a list in the method
     STable results;
