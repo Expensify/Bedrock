@@ -76,18 +76,19 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
         try {
             SDEBUG("prePeeking at '" << request.methodLine << "' with priority: " << command->priority);
             command->prePeekCount++;
-            _db.setTimeout(_getRemainingTime(command, false));
-
-            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("501 Failed to begin shared prePeek transaction");
-            }
 
             // Make sure no writes happen while in prePeek command
             _db.setQueryOnly(true);
 
             // prePeek.
             command->reset(BedrockCommand::STAGE::PREPEEK);
-            command->prePeek(_db);
+            command->complete = command->prePeek(_db);
+
+            // If no response was set, assume 200 OK
+            if (response.methodLine == "") {
+                response.methodLine = "200 OK";
+            }
+
             SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
 
             if (!content.empty()) {
