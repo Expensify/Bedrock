@@ -606,7 +606,12 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     if (!_mutexLocked) {
+        auto start = STimeNow();
         _sharedData.commitLock.lock();
+        auto end = STimeNow();
+        if (end - start > 5'000'000) {
+            SINFO("Waited " << (end - start) << "us for commit lock.");
+        }
         _sharedData._commitLockTimer.start("SHARED");
         _mutexLocked = true;
     }
