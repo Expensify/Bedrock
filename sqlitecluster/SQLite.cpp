@@ -609,7 +609,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
         auto start = STimeNow();
         _sharedData.commitLock.lock();
         auto end = STimeNow();
-        if (end - start > 5'000'000) {
+        if (end - start > 5'000) {
             SINFO("Waited " << (end - start) << "us for commit lock.");
         }
         _sharedData._commitLockTimer.start("SHARED");
