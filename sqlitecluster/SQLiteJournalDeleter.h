@@ -21,8 +21,10 @@ class SQLiteJournalDeleter {
 
   private:
     sqlite3* _db;
-    const TableLimits limits;
+    SQLite& _commitCountHandle;
+    vector<pair<size_t, string>> _limits;
     thread _deleteThread;
     void deleteEntries();
-    atomic<bool> stop{false};
+    atomic<bool> _stop{false};
+    size_t _nextTable{0};
 };

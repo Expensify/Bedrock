@@ -231,7 +231,6 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _db(initializeDB(_filename, mmapSizeGB, hctree)),
     _journalNames(initializeJournal(_db, minJournalTables)),
     _sharedData(initializeSharedData(_db, _filename, _journalNames, hctree)),
-    _journalSize(initializeJournalSize(_db, _journalNames)),
     _cacheSize(cacheSize),
     _synchronous(synchronous),
     _mmapSizeGB(mmapSizeGB)
@@ -245,7 +244,6 @@ SQLite::SQLite(const SQLite& from) :
     _db(initializeDB(_filename, from._mmapSizeGB, false)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
     _journalNames(from._journalNames),
     _sharedData(from._sharedData),
-    _journalSize(from._journalSize),
     _cacheSize(from._cacheSize),
     _synchronous(from._synchronous),
     _mmapSizeGB(from._mmapSizeGB)
@@ -674,28 +672,6 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     SASSERT(!_uncommittedHash.empty()); // Must prepare first
     int result = 0;
 
-    // Do we need to truncate as we go?
-    uint64_t newJournalSize = _journalSize + 1;
-    if (newJournalSize > _maxJournalSize) {
-        // Delete the oldest entry
-        uint64_t before = STimeNow();
-        string query = "DELETE FROM " + _journalName + " "
-                       "WHERE id < (SELECT MAX(id) FROM " + _journalName + ") - " + SQ(_maxJournalSize) + " "
-                       "LIMIT 10";
-        SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
-
-        // Figure out the new journal size.
-        SQResult result;
-        SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) AS id FROM " + _journalName, result));
-        uint64_t min = SToUInt64(result[0][0]);
-        SASSERT(!SQuery(_db, "getting commit max", "SELECT MAX(id) AS id FROM " + _journalName, result));
-        uint64_t max = SToUInt64(result[0][0]);
-        newJournalSize = max - min;
-
-        // Log timing info.
-        _writeElapsed += STimeNow() - before;
-    }
-
     // Make sure one is ready to commit
     SDEBUG("Committing transaction");
 
@@ -732,7 +708,6 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         }
 
         _commitElapsed += STimeNow() - before;
-        _journalSize = newJournalSize;
         _sharedData.incrementCommit(_uncommittedHash);
         _insideTransaction = false;
         _uncommittedHash.clear();
