@@ -54,7 +54,7 @@ void SQLiteJournalDeleter::deleteEntries() {
         }
 
         // Move on to the next table.
-        _nextTable = _limits.size() % (_nextTable + 1);
+        _nextTable = (_nextTable + 1) % _limits.size();
 
         // Sleep 100ms.
         usleep(100'000);
