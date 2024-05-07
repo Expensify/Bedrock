@@ -78,10 +78,6 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
             command->prePeekCount++;
             _db.setTimeout(_getRemainingTime(command, false));
 
-            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("501 Failed to begin shared prePeek transaction");
-            }
-
             // Make sure no writes happen while in prePeek command
             _db.setQueryOnly(true);
 
@@ -115,9 +111,6 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
         command->response.methodLine = "500 Unhandled Exception";
         command->complete = true;
     }
-
-    // Back out of the current transaction, it doesn't need to do anything.
-    _db.rollback();
     _db.clearTimeout();
 
     // Reset, we can write now.
@@ -328,10 +321,6 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
             command->postProcessCount++;
             _db.setTimeout(_getRemainingTime(command, false));
 
-            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("501 Failed to begin shared postProcess transaction");
-            }
-
             // Make sure no writes happen while in postProcess command
             _db.setQueryOnly(true);
 
@@ -367,9 +356,6 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
 
     // The command is complete.
     command->complete = true;
-
-    // Back out of the current transaction, it doesn't need to do anything.
-    _db.rollback();
     _db.clearTimeout();
 
     // Reset, we can write now.
