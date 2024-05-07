@@ -24,6 +24,7 @@ SQLiteJournalDeleter::SQLiteJournalDeleter(SQLiteJournalDeleter::TableLimits lim
 SQLiteJournalDeleter::~SQLiteJournalDeleter() {
     _stop = true;
     _deleteThread.join();
+    SASSERT(!sqlite3_close(_db));
 }
 
 void SQLiteJournalDeleter::deleteEntries() {
