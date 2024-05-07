@@ -16,6 +16,7 @@
 #include <libstuff/AutoTimer.h>
 #include <PageLockGuard.h>
 #include <sqlitecluster/SQLitePeer.h>
+#include <sqlitecluster/SQLiteJournalDeleter.h>
 
 set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
@@ -93,7 +94,7 @@ void BedrockServer::sync()
     SINFO("Setting dbPool size to: " << fdLimit);
     _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
     SQLite& db = _dbPool->getBase();
-    unique_ptr<SQLiteDeleter> cleanupThread = make_unique<SQLiteDeleter>(args.calc("-maxJournalSize"), db);
+    auto cleanupThread = make_unique<SQLiteJournalDeleter>(list<pair<size_t, vector<string>>>{make_pair(args.calc("-maxJournalSize"), db.getJournalNames())}, db);
 
     // Initialize the command processor.
     BedrockCore core(db, *this);

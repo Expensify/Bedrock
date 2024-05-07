@@ -1,15 +1,22 @@
+#pragma once
+#include <atomic>
 #include <list>
 #include <string>
-using namepsace std;
+#include <thread>
+#include <vector>
+
+using namespace std;
+
 class SQLite;
 class sqlite3;
 
-class SQLiteDeleter {
+class SQLiteJournalDeleter {
+  public:
     // Takes a list, where each item in the list is a pair.
-    // each of those pairs is a maximum number of entries, and another list. The list is a set of tablenames that max applies to.
-    SQLiteDeleter(list<pair<size_t, list<string>>, SQLite& db);
+    // each of those pairs is a maximum number of entries, and a vector. The vector is a set of table names that max applies to.
+    SQLiteJournalDeleter(list<pair<size_t, vector<string>>>, SQLite& db);
 
-    ~SQLiteDeleter();
+    ~SQLiteJournalDeleter();
 
   private:
     sqlite3* _db;

@@ -1152,3 +1152,8 @@ map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::popCommittedT
     _committedTransactions.clear();
     return result;
 }
+
+const vector<string> SQLite::getJournalNames() {
+    return _journalNames;
+}
+
