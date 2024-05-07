@@ -94,7 +94,7 @@ void BedrockServer::sync()
     SINFO("Setting dbPool size to: " << fdLimit);
     _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
     SQLite& db = _dbPool->getBase();
-    auto cleanupThread = make_unique<SQLiteJournalDeleter>(list<pair<size_t, vector<string>>>{make_pair(args.calc("-maxJournalSize"), db.getJournalNames())}, db);
+    auto cleanupThread = make_unique<SQLiteJournalDeleter>(SQLiteJournalDeleter::TableLimits{make_pair(args.calc("-maxJournalSize"), db.getJournalNames())}, db);
 
     // Initialize the command processor.
     BedrockCore core(db, *this);

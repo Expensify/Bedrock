@@ -2,7 +2,8 @@
 #include "SQLiteJournalDeleter.h"
 #include "sqlitecluster/SQLite.h"
 
-SQLiteJournalDeleter::SQLiteJournalDeleter(list<pair<size_t, vector<string>>>, SQLite& db) {
+SQLiteJournalDeleter::SQLiteJournalDeleter(SQLiteJournalDeleter::TableLimits limits, SQLite& db) :
+  limits(limits) {
     int result = sqlite3_open_v2(db.getFilename().c_str(), &_db, SQLITE_OPEN_READWRITE, 0);
     if (result != SQLITE_OK) {
         STHROW("500 Couldn't open reader DB");
