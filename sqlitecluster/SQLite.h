@@ -278,7 +278,6 @@ class SQLite {
       public:
         // Constructor.
         SharedData();
-        ~SharedData();
 
         // Enable or disable commits for the DB.
         void setCommitEnabled(bool enable);
@@ -329,8 +328,6 @@ class SQLite {
         // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
         shared_mutex writeLock;
 
-        void startCleanup(SQLite& handle);
-
       private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
@@ -340,12 +337,6 @@ class SQLite {
         // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
         // variety of operations (i.e., updating _committedTransactions, etc).
         recursive_mutex _internalStateMutex;
-
-        mutex cleanupMutex;
-        atomic<bool> finishCleanup{false};
-        thread cleanupThread;
-        void cleanup();
-        SQLite* cleanupHandle{nullptr};
     };
 
     // Initializers to support RAII-style allocation in constructors.
