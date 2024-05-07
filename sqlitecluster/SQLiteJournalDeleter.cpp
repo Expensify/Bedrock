@@ -1,6 +1,6 @@
 #include "libstuff/sqlite3.h"
 #include "SQLiteJournalDeleter.h"
-#include "SQLiteCluster/SQLite.h"
+#include "sqlitecluster/SQLite.h"
 
 SQLiteJournalDeleter::SQLiteJournalDeleter(list<pair<size_t, vector<string>>>, SQLite& db) {
     int result = sqlite3_open_v2(db.getFilename().c_str(), &_db, SQLITE_OPEN_READWRITE, 0);
