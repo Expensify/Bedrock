@@ -132,11 +132,13 @@ void BedrockCommand::reset(BedrockCommand::STAGE stage) {
 
 void BedrockCommand::finalizeTimingInfo() {
     uint64_t prePeekTotal = 0;
+    uint64_t blockingPrePeekTotal = 0;
     uint64_t peekTotal = 0;
     uint64_t blockingPeekTotal = 0;
     uint64_t processTotal = 0;
-    uint64_t postProcessTotal = 0;
     uint64_t blockingProcessTotal = 0;
+    uint64_t postProcessTotal = 0;
+    uint64_t blockingPostProcessTotal = 0;
     uint64_t commitWorkerTotal = 0;
     uint64_t blockingCommitWorkerTotal = 0;
     uint64_t commitSyncTotal = 0;
@@ -147,6 +149,9 @@ void BedrockCommand::finalizeTimingInfo() {
     for (const auto& entry: timingInfo) {
         if (get<0>(entry) == PREPEEK) {
             prePeekTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == BLOCKING_PREPEEK) {
+            prePeekTotal += get<2>(entry) - get<1>(entry);
+            blockingPrePeekTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == PEEK) {
             peekTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == BLOCKING_PEEK) {
@@ -154,11 +159,14 @@ void BedrockCommand::finalizeTimingInfo() {
             blockingPeekTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == PROCESS) {
             processTotal += get<2>(entry) - get<1>(entry);
-        } else if (get<0>(entry) == POSTPROCESS) {
-            postProcessTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == BLOCKING_PROCESS) {
             processTotal += get<2>(entry) - get<1>(entry);
             blockingProcessTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == POSTPROCESS) {
+            postProcessTotal += get<2>(entry) - get<1>(entry);
+        } else if (get<0>(entry) == BLOCKING_POSTPROCESS) {
+            postProcessTotal += get<2>(entry) - get<1>(entry);
+            blockingPostProcessTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == COMMIT_WORKER) {
             commitWorkerTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == BLOCKING_COMMIT_WORKER) {
@@ -184,14 +192,19 @@ void BedrockCommand::finalizeTimingInfo() {
     uint64_t unaccountedTime = totalTime - (prePeekTotal + peekTotal + processTotal + postProcessTotal + commitWorkerTotal + commitSyncTotal +
                                             escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal + queuePageLockTotal);
 
+    uint64_t blockingCommitThreadTime = blockingPrePeekTotal + blockingPeekTotal + blockingProcessTotal + blockingPostProcessTotal + blockingCommitWorkerTotal;
+    uint64_t exclusiveTransactionLockTime = blockingPeekTotal + blockingProcessTotal + blockingCommitWorkerTotal;
+
     // Build a map of the values we care about.
     map<string, uint64_t> valuePairs = {
-        {"prePeekTime",     prePeekTotal},
-        {"peekTime",        peekTotal},
-        {"processTime",     processTotal},
-        {"postProcessTime", postProcessTotal},
-        {"totalTime",       totalTime},
-        {"unaccountedTime", unaccountedTime},
+        {"prePeekTime",                  prePeekTotal},
+        {"peekTime",                     peekTotal},
+        {"processTime",                  processTotal},
+        {"postProcessTime",              postProcessTotal},
+        {"totalTime",                    totalTime},
+        {"unaccountedTime",              unaccountedTime},
+        {"blockingCommitThreadTime",     blockingCommitThreadTime},
+        {"exclusiveTransactionLockTime", exclusiveTransactionLockTime},
     };
 
     // We also want to know what leader did if we're on a follower.
@@ -240,12 +253,14 @@ void BedrockCommand::finalizeTimingInfo() {
     }
 
     SINFO("command '" << methodName << "' timing info (ms): "
-          "prePeek: " << prePeekTotal/1000 << " (count: " << prePeekCount << "), "
+          "prePeek:" << prePeekTotal/1000 << " (count: " << prePeekCount << "), "
           "peek:" << peekTotal/1000 << " (count:" << peekCount << "), "
           "process:" << processTotal/1000 << " (count:" << processCount << "), "
           "postProcess:" << postProcessTotal/1000 << " (count:" << postProcessCount << "), "
           "total:" << totalTime/1000 << ", "
-          "unaccounted:" << unaccountedTime/1000 <<
+          "unaccounted:" << unaccountedTime/1000 << ", "
+          "blockingCommitThreadTime:" << blockingCommitThreadTime/1000 << ", "
+          "exclusiveTransactionLockTime:" << exclusiveTransactionLockTime/1000 <<
           ". Commit: "
           "worker:" << commitWorkerTotal/1000 << ", "
           "sync:"<< commitSyncTotal/1000 <<
@@ -256,8 +271,9 @@ void BedrockCommand::finalizeTimingInfo() {
           "pageLock:" << queuePageLockTotal/1000 << ", "
           "escalation:" << escalationTimeUS/1000 <<
           ". Blocking: "
-          "peek:" << blockingPeekTotal/1000 << ", "
+          "prePeek:" << blockingPrePeekTotal/1000 << ", "
           "process:" << blockingProcessTotal/1000 << ", "
+          "postProcess:" << blockingPostProcessTotal/1000 << ", "
           "commit:" << blockingCommitWorkerTotal/1000 <<
           ". Upstream: "
           "peek:" << upstreamPeekTime/1000 << ", "

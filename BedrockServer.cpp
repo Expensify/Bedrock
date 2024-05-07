@@ -380,7 +380,7 @@ void BedrockServer::sync()
 
             if (command->shouldPostProcess() && command->response.methodLine == "200 OK") {
                 // PostProcess if the command should run postProcess, and there have been no errors thrown thus far.
-                core.postProcessCommand(command);
+                core.postProcessCommand(command, false);
             }
 
             if (_syncNode->commitSucceeded()) {
@@ -478,7 +478,7 @@ void BedrockServer::sync()
                     // re-verify that any checks made in peek are still valid in process.
                     if (!command->httpsRequests.size()) {
                         if (command->shouldPrePeek() && !command->repeek) {
-                            core.prePeekCommand(command);
+                            core.prePeekCommand(command, false);
                         }
 
                         // This command finsihed in prePeek, which likely means it threw.
@@ -868,7 +868,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
             // If the command should run prePeek, do that now .
             if (!command->repeek && !command->httpsRequests.size() && command->shouldPrePeek()) {
-                core.prePeekCommand(command);
+                core.prePeekCommand(command, isBlocking);
 
                 if (command->complete) {
                     _reply(command);
@@ -1027,7 +1027,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             if (command->complete) {
                 if (command->shouldPostProcess() && command->response.methodLine == "200 OK") {
                     // PostProcess if the command should run postProcess, and there have been no errors thrown thus far.
-                    core.postProcessCommand(command);
+                    core.postProcessCommand(command, isBlocking);
                 }
                 _reply(command);
 

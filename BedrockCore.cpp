@@ -64,8 +64,8 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
     return false;
 }
 
-void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
-    AutoTimer timer(command, BedrockCommand::PREPEEK);
+void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool blockingCommitThread) {
+    AutoTimer timer(command, blockingCommitThread ? BedrockCommand::BLOCKING_PREPEEK : BedrockCommand::PREPEEK);
 
     // Convenience references to commonly used properties.
     const SData& request = command->request;
@@ -306,8 +306,8 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     return needsCommit ? RESULT::NEEDS_COMMIT : RESULT::NO_COMMIT_REQUIRED;
 }
 
-void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
-    AutoTimer timer(command, BedrockCommand::POSTPROCESS);
+void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool blockingCommitThread) {
+    AutoTimer timer(command, blockingCommitThread ? BedrockCommand::BLOCKING_POSTPROCESS : BedrockCommand::POSTPROCESS);
 
     // Convenience references to commonly used properties.
     const SData& request = command->request;
