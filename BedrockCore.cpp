@@ -64,8 +64,8 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
     return false;
 }
 
-void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
-    AutoTimer timer(command, BedrockCommand::PREPEEK);
+void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread) {
+    AutoTimer timer(command, isBlockingCommitThread ? BedrockCommand::BLOCKING_PREPEEK : BedrockCommand::PREPEEK);
 
     // Convenience references to commonly used properties.
     const SData& request = command->request;
@@ -77,10 +77,6 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
             SDEBUG("prePeeking at '" << request.methodLine << "' with priority: " << command->priority);
             command->prePeekCount++;
             _db.setTimeout(_getRemainingTime(command, false));
-
-            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("501 Failed to begin shared prePeek transaction");
-            }
 
             // Make sure no writes happen while in prePeek command
             _db.setQueryOnly(true);
@@ -115,9 +111,6 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command) {
         command->response.methodLine = "500 Unhandled Exception";
         command->complete = true;
     }
-
-    // Back out of the current transaction, it doesn't need to do anything.
-    _db.rollback();
     _db.clearTimeout();
 
     // Reset, we can write now.
@@ -313,8 +306,8 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     return needsCommit ? RESULT::NEEDS_COMMIT : RESULT::NO_COMMIT_REQUIRED;
 }
 
-void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
-    AutoTimer timer(command, BedrockCommand::POSTPROCESS);
+void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread) {
+    AutoTimer timer(command, isBlockingCommitThread ? BedrockCommand::BLOCKING_POSTPROCESS : BedrockCommand::POSTPROCESS);
 
     // Convenience references to commonly used properties.
     const SData& request = command->request;
@@ -327,10 +320,6 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
             SDEBUG("postProcessing at '" << request.methodLine << "' with priority: " << command->priority);
             command->postProcessCount++;
             _db.setTimeout(_getRemainingTime(command, false));
-
-            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
-                STHROW("501 Failed to begin shared postProcess transaction");
-            }
 
             // Make sure no writes happen while in postProcess command
             _db.setQueryOnly(true);
@@ -367,9 +356,6 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command) {
 
     // The command is complete.
     command->complete = true;
-
-    // Back out of the current transaction, it doesn't need to do anything.
-    _db.rollback();
     _db.clearTimeout();
 
     // Reset, we can write now.
