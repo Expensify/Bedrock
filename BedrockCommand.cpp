@@ -192,8 +192,8 @@ void BedrockCommand::finalizeTimingInfo() {
     uint64_t unaccountedTime = totalTime - (prePeekTotal + peekTotal + processTotal + postProcessTotal + commitWorkerTotal + commitSyncTotal +
                                             escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal + queuePageLockTotal);
 
-    uint64_t blockingCommitThreadTime = blockingPrePeekTotal + blockingPeekTotal + blockingProcessTotal + blockingPostProcessTotal + blockingCommitWorkerTotal;
     uint64_t exclusiveTransactionLockTime = blockingPeekTotal + blockingProcessTotal + blockingCommitWorkerTotal;
+    uint64_t blockingCommitThreadTime = exclusiveTransactionLockTime + blockingPrePeekTotal + blockingPostProcessTotal;
 
     // Build a map of the values we care about.
     map<string, uint64_t> valuePairs = {
