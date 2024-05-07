@@ -197,14 +197,12 @@ void BedrockCommand::finalizeTimingInfo() {
 
     // Build a map of the values we care about.
     map<string, uint64_t> valuePairs = {
-        {"prePeekTime",                  prePeekTotal},
-        {"peekTime",                     peekTotal},
-        {"processTime",                  processTotal},
-        {"postProcessTime",              postProcessTotal},
-        {"totalTime",                    totalTime},
-        {"unaccountedTime",              unaccountedTime},
-        {"blockingCommitThreadTime",     blockingCommitThreadTime},
-        {"exclusiveTransactionLockTime", exclusiveTransactionLockTime},
+        {"prePeekTime",     prePeekTotal},
+        {"peekTime",        peekTotal},
+        {"processTime",     processTotal},
+        {"postProcessTime", postProcessTotal},
+        {"totalTime",       totalTime},
+        {"unaccountedTime", unaccountedTime},
     };
 
     // We also want to know what leader did if we're on a follower.
