@@ -272,6 +272,7 @@ void BedrockCommand::finalizeTimingInfo() {
           "escalation:" << escalationTimeUS/1000 <<
           ". Blocking: "
           "prePeek:" << blockingPrePeekTotal/1000 << ", "
+          "peek:" << blockingPeekTotal/1000 << ", "
           "process:" << blockingProcessTotal/1000 << ", "
           "postProcess:" << blockingPostProcessTotal/1000 << ", "
           "commit:" << blockingCommitWorkerTotal/1000 <<
