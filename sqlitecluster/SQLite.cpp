@@ -1152,3 +1152,29 @@ map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::popCommittedT
     _committedTransactions.clear();
     return result;
 }
+
+SQLite::SharedData::~SharedData() {
+    if (cleanupHandle) {
+        finishCleanup = true;
+        cleanupThread.join();
+    }
+}
+
+void SQLite::SharedData::cleanup() {
+    SInitialize("cleanup");
+    while (!finishCleanup) {
+        SINFO("cleaning up old data.");
+        usleep(1000000);
+    }
+}
+
+void SQLite::SharedData::startCleanup(SQLite& handle) {
+    lock_guard<mutex> lock(cleanupMutex);
+    if (cleanupHandle) {
+        // Already started.
+        return;
+    }
+    cleanupHandle = &handle;
+    cleanupThread = thread(&SQLite::SharedData::cleanup, this);
+}
+
