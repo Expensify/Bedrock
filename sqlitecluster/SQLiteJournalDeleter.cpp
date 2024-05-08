@@ -43,7 +43,7 @@ void SQLiteJournalDeleter::deleteEntries() {
             }
 
             uint64_t max = commitCount - limit;
-            int success = SQuery(_db, "cleanup", "SELECT COUNT(*) FROM " + table + " WHERE id > " + SQ(max), results);
+            int success = SQuery(_db, "cleanup", "SELECT COUNT(*) FROM " + table + " WHERE id < " + SQ(max), results);
             if (success != SQLITE_OK) {
                 SWARN("Error checking rows to delete from table: " << table);
                 STHROW("Read error");
@@ -51,8 +51,7 @@ void SQLiteJournalDeleter::deleteEntries() {
 
             uint64_t toDelete = stoull(results[0][0]);
             if (toDelete) {
-                SINFO("Deleting " << toDelete << " rows from " << table);
-                success = SQuery(_db, "cleanup", "DELETE FROM " + table + " WHERE id > " + SQ(max), results);
+                success = SQuery(_db, "cleanup", "DELETE FROM " + table + " WHERE id < " + SQ(max), results);
                 if (success == SQLITE_BUSY_SNAPSHOT) {
                     SINFO("Conflict deleting from table " << table);
                 } else if (success != SQLITE_OK) {
