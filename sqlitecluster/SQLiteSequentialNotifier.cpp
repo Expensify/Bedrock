@@ -52,6 +52,7 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
             // cancellation) or if the log line is delayed by up to a second (indicating a problem).
             if (_globalResult == RESULT::CANCELED || state->result == RESULT::CANCELED) {
                 SWARN("Got timeout in wait_for but state has changed! Was waiting for " << value);
+                return RESULT::CANCELED;
             }
         }
     }
