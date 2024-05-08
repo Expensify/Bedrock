@@ -162,28 +162,6 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables) {
     return journalNames;
 }
 
-uint64_t SQLite::initializeJournalSize(sqlite3* db, const vector<string>& journalNames) {
-    // We keep track of the number of rows in the journal, so that we can delete old entries when we're over our size
-    // limit.
-    // We want the min of all journal tables.
-    string minQuery = _getJournalQuery(journalNames, {"SELECT MIN(id) AS id FROM"}, true);
-    minQuery = "SELECT MIN(id) AS id FROM (" + minQuery + ")";
-
-    // And the max.
-    string maxQuery = _getJournalQuery(journalNames, {"SELECT MAX(id) AS id FROM"}, true);
-    maxQuery = "SELECT MAX(id) AS id FROM (" + maxQuery + ")";
-
-    // Look up the min and max values in the database.
-    SQResult result;
-    SASSERT(!SQuery(db, "getting commit min", minQuery, result));
-    uint64_t min = SToUInt64(result[0][0]);
-    SASSERT(!SQuery(db, "getting commit max", maxQuery, result));
-    uint64_t max = SToUInt64(result[0][0]);
-
-    // And save the difference as the size of the journal.
-    return max - min;
-}
-
 void SQLite::commonConstructorInitialization(bool hctree) {
     // Perform sanity checks.
     SASSERT(!_filename.empty());
