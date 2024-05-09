@@ -28,6 +28,13 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
                 }
                 // If there's no result yet, log that we're waiting for it.
                 SINFO("Canceled after " << _cancelAfter << ", but waiting for " << value << " so not returning yet.");
+                // This is the weird case, We get `cancelAfter` but then the ones before that never complete.
+
+                // Ok so if we cancel after this commit, we're still going to wait around because we expect that we'll get this commit.
+                // This is based on the leader commit, which I think is the most recent commit we've gotten from leader?
+                //
+                // Yeah, ok leaderCommit should be some message we received from leader that indicates "we've received this commit from leader".
+                // It does `notifyThrough`, meaning anyone up through this number. What if one of the threads before that never finishes?
             } else {
                 // Canceled and we're not before the cancellation cutoff.
                 return RESULT::CANCELED;
@@ -51,8 +58,14 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
             // We should investigate any instances of thew below logline to see if they're same as for the success cases mentioned above (i.e., the timeout happens simultaneously as the
             // cancellation) or if the log line is delayed by up to a second (indicating a problem).
             if (_globalResult == RESULT::CANCELED || state->result == RESULT::CANCELED) {
-                SWARN("Got timeout in wait_for but state has changed! Was waiting for " << value);
-                return RESULT::CANCELED;
+                // It's possible that we hit the timeout here after `cancel()` has set the global value, but before we received the notification.
+                // This isn't a problem, and we can jump back to the top of the loop and check again.
+                SINFO("Got timeout in wait_for but state has changed! Was waiting for " << value);
+                continue;
+            } else {
+                // However, this case is weird.
+                // No, actually this is fine, this will just happen every second if it takes that long.
+                SWARN("Got timeout in wait_for without being canceled? Was waiting for " << value);
             }
         }
     }
@@ -98,6 +111,7 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
 }
 
 void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
+    SINFO("Canceling all pending transactions after " << cancelAfter);
     lock_guard<mutex> lock(_internalStateMutex);
 
     // It's important that _cancelAfter is set before _globalResult. This avoids a race condition where we check
@@ -126,6 +140,7 @@ void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
         // And remove these items entirely.
         valueThreadMap.erase(start, valueThreadMap.end());
     }
+    SINFO("Canceled all pending transactions after " << cancelAfter);
 }
 
 void SQLiteSequentialNotifier::reset() {

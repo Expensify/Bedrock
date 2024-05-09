@@ -184,6 +184,10 @@ SQLiteNode::~SQLiteNode() {
 void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp) {
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
+    
+    // Weirdly , we have logs that at some point only have even-numbered replicate threads?
+    // Never mind, half of them are for `BEGIN_TRANSACTION`
+    // No, those are all even as well?
 
     // Actual thread startup time.
     uint64_t threadStartTime = STimeNow();
