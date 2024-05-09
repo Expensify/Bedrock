@@ -17,6 +17,8 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
             _valueToPendingThreadMapNoCurrentTransaction.emplace(value, state);
         }
     }
+
+    size_t cancelAttempts = 0;
     while (true) {
         unique_lock<mutex> lock(state->waitingThreadMutex);
         if (_globalResult == RESULT::CANCELED) {
@@ -27,7 +29,12 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
                     return state->result;
                 }
                 // If there's no result yet, log that we're waiting for it.
-                SINFO("Canceled after " << _cancelAfter << ", but waiting for " << value << " so not returning yet.");
+                if (cancelAttempts > 10) {
+                    SWARN("Not waiting anymore for " << value << ", just canceling");
+                    return RESULT::CANCELED;
+                } else {
+                    SINFO("Canceled after " << _cancelAfter << ", but waiting for " << value << " so not returning yet.");
+                }
             } else {
                 // Canceled and we're not before the cancellation cutoff.
                 return RESULT::CANCELED;
@@ -52,12 +59,9 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
             // cancellation) or if the log line is delayed by up to a second (indicating a problem).
             if (_globalResult == RESULT::CANCELED || state->result == RESULT::CANCELED) {
                 // It's possible that we hit the timeout here after `cancel()` has set the global value, but before we received the notification.
-                // This isn't a problem, and we can jump back to the top of the loop and check again.
+                // This isn't a problem, and we can jump back to the top of the loop and check again. If there's some problem, we'll see it there.
+                cancelAttempts++;
                 continue;
-            } else {
-                // However, this case is weird.
-                // No, actually this is fine, this will just happen every second if it takes that long.
-                SWARN("Got timeout in wait_for without being canceled? Was waiting for " << value);
             }
         }
     }
