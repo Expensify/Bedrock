@@ -184,10 +184,6 @@ SQLiteNode::~SQLiteNode() {
 void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp) {
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
-    
-    // Weirdly , we have logs that at some point only have even-numbered replicate threads?
-    // Never mind, half of them are for `BEGIN_TRANSACTION`
-    // No, those are all even as well?
 
     // Actual thread startup time.
     uint64_t threadStartTime = STimeNow();
@@ -1934,8 +1930,15 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
             _replicationThreadsShouldExit = true;
             uint64_t cancelAfter = _leaderCommitNotifier.getValue();
             SINFO("Replication threads should exit, canceling commits after current leader commit " << cancelAfter);
+            /*
             _localCommitNotifier.cancel(cancelAfter);
             _leaderCommitNotifier.cancel(cancelAfter);
+            */
+
+            // Hack. Some bug means that occasionally something doesn't get notified, and we wait forever in a loop.
+            // This needs to be fixed, but this probably un-breaks it in exchange for potentially losing in-flight transactions.
+            _localCommitNotifier.cancel(_db.getCommitCount());
+            _leaderCommitNotifier.cancel(_db.getCommitCount());
 
             // Polling wait for threads to quit. This could use a notification model such as with a condition_variable,
             // which would probably be "better" but introduces yet more state variables for a state that we're rarely

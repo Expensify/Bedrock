@@ -28,13 +28,6 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
                 }
                 // If there's no result yet, log that we're waiting for it.
                 SINFO("Canceled after " << _cancelAfter << ", but waiting for " << value << " so not returning yet.");
-                // This is the weird case, We get `cancelAfter` but then the ones before that never complete.
-
-                // Ok so if we cancel after this commit, we're still going to wait around because we expect that we'll get this commit.
-                // This is based on the leader commit, which I think is the most recent commit we've gotten from leader?
-                //
-                // Yeah, ok leaderCommit should be some message we received from leader that indicates "we've received this commit from leader".
-                // It does `notifyThrough`, meaning anyone up through this number. What if one of the threads before that never finishes?
             } else {
                 // Canceled and we're not before the cancellation cutoff.
                 return RESULT::CANCELED;
@@ -60,7 +53,6 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
             if (_globalResult == RESULT::CANCELED || state->result == RESULT::CANCELED) {
                 // It's possible that we hit the timeout here after `cancel()` has set the global value, but before we received the notification.
                 // This isn't a problem, and we can jump back to the top of the loop and check again.
-                SINFO("Got timeout in wait_for but state has changed! Was waiting for " << value);
                 continue;
             } else {
                 // However, this case is weird.
