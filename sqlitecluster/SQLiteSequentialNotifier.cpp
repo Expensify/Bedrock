@@ -5,6 +5,7 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
     shared_ptr<WaitState> state(nullptr);
     {
         lock_guard<mutex> lock(_internalStateMutex);
+        SINFO("Waiting for " << value << ", in transaction? " << insideTransaction);
         if (value <= _value) {
             return RESULT::COMPLETED;
         }
@@ -17,6 +18,8 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
             _valueToPendingThreadMapNoCurrentTransaction.emplace(value, state);
         }
     }
+
+    size_t cancelAttempts = 0;
     while (true) {
         unique_lock<mutex> lock(state->waitingThreadMutex);
         if (_globalResult == RESULT::CANCELED) {
@@ -27,7 +30,12 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
                     return state->result;
                 }
                 // If there's no result yet, log that we're waiting for it.
-                SINFO("Canceled after " << _cancelAfter << ", but waiting for " << value << " so not returning yet.");
+                if (cancelAttempts > 10) {
+                    SWARN("Not waiting anymore for " << value << ", just canceling");
+                    return RESULT::CANCELED;
+                } else {
+                    SINFO("Canceled after " << _cancelAfter << ", but waiting for " << value << " so not returning yet.");
+                }
             } else {
                 // Canceled and we're not before the cancellation cutoff.
                 return RESULT::CANCELED;
@@ -51,7 +59,11 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
             // We should investigate any instances of thew below logline to see if they're same as for the success cases mentioned above (i.e., the timeout happens simultaneously as the
             // cancellation) or if the log line is delayed by up to a second (indicating a problem).
             if (_globalResult == RESULT::CANCELED || state->result == RESULT::CANCELED) {
-                SWARN("Got timeout in wait_for but state has changed! Was waiting for " << value);
+                // It's possible that we hit the timeout here after `cancel()` has set the global value, but before we received the notification.
+                // This isn't a problem, and we can jump back to the top of the loop and check again. If there's some problem, we'll see it there.
+                SINFO("Hit 1s timeout while global cancel " << (_globalResult == RESULT::CANCELED) << " or " << " specific cancel " << (state->result == RESULT::CANCELED));
+                cancelAttempts++;
+                continue;
             }
         }
     }
@@ -70,9 +82,11 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
     for (auto valueThreadMapPtr : {&_valueToPendingThreadMap, &_valueToPendingThreadMapNoCurrentTransaction}) {
         auto& valueThreadMap = *valueThreadMapPtr;
         auto lastToDelete = valueThreadMap.begin();
+        SINFO("Notifying " << valueThreadMap.size() << " waiting threads for value: " << value);
         for (auto it = valueThreadMap.begin(); it != valueThreadMap.end(); it++) {
             if (it->first > value)  {
                 // If we've passed our value, there's nothing else to erase, so we can stop.
+                SINFO("Breaking out of thread notifications because " <<  it->first << " > " << value);
                 break;
             }
 
@@ -82,6 +96,7 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
             // Make the changes to the state object - mark it complete and notify anyone waiting.
             lock_guard<mutex> lock(it->second->waitingThreadMutex);
             it->second->result = RESULT::COMPLETED;
+            SINFO("Notifying thread waiting on value: " << it->first);
             it->second->waitingThreadConditionVariable.notify_all();
         }
 
@@ -92,11 +107,13 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
         //
         // I think it's reasonable to assume this is the intention for multimap as well, and in my testing, that was the
         // case.
+        SINFO("Deleting from thread map through value: " << lastToDelete->first);
         valueThreadMap.erase(valueThreadMap.begin(), lastToDelete);
     }
 }
 
 void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
+    SINFO("Canceling all pending transactions after " << cancelAfter);
     lock_guard<mutex> lock(_internalStateMutex);
 
     // It's important that _cancelAfter is set before _globalResult. This avoids a race condition where we check
@@ -108,6 +125,7 @@ void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
         auto& valueThreadMap = *valueThreadMapPtr;
         // If cancelAfter is specified, start from that value. Otherwise, we start from the beginning.
         auto start = _cancelAfter ? valueThreadMap.upper_bound(_cancelAfter) : valueThreadMap.begin();
+        SINFO("Next value to cancel after " << cancelAfter << " is " << start->first);
         if (start == valueThreadMap.end()) {
             // There's nothing to remove.
             return;
@@ -116,15 +134,18 @@ void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
         // Now iterate across whatever's remaining and mark it canceled.
         auto current = start;
         while(current != valueThreadMap.end()) {
+            SINFO("Setting canceled for thread waiting on " << current->first);
             lock_guard<mutex> lock(current->second->waitingThreadMutex);
             current->second->result = RESULT::CANCELED;
             current->second->waitingThreadConditionVariable.notify_all();
             current++;
+            SINFO("Canceled for thread waiting on " << current->first);
         }
 
         // And remove these items entirely.
         valueThreadMap.erase(start, valueThreadMap.end());
     }
+    SINFO("Canceled all pending transactions after " << cancelAfter);
 }
 
 void SQLiteSequentialNotifier::reset() {
