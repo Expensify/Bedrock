@@ -207,7 +207,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
             // the DB was at when the transaction began on leader).
             bool quorum = !SStartsWith(command["ID"], "ASYNC");
             uint64_t waitForCount = SStartsWith(command["ID"], "ASYNC") ? command.calcU64("dbCountAtStart") : currentCount;
-            SDEBUG("Thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
+            SINFO("BEGIN_TRANSACTION replicate thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
             while (true) {
                 SQLiteSequentialNotifier::RESULT result = _localCommitNotifier.waitFor(waitForCount, false);
                 if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
@@ -223,6 +223,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                     SERROR("Got unhandled SQLiteSequentialNotifier::RESULT value, did someone update the enum without updating this block?");
                 }
             }
+            SINFO("Finished waiting for commit count " << waitForCount << ", beginning replicate write.");
 
             try {
                 int result = -1;
@@ -231,7 +232,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                     if (commitAttemptCount > 1) {
                         SINFO("Commit attempt number " << commitAttemptCount << " for concurrent replication.");
                     }
-                    SDEBUG("BEGIN for commit " << newCount);
+                    SINFO("BEGIN for commit " << newCount);
                     bool uniqueContraintsError = false;
                     try {
                         auto start = chrono::steady_clock::now();
@@ -267,7 +268,9 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                     // don't send LEADER the approval for this until inside of `prepare`. This potentially makes us
                     // wait while holding the commit lock for non-concurrent transactions, but I guess nobody else with
                     // a commit after us will be able to commit, either.
+                    SINFO("Waiting on leader to say it has committed transaction " << command.calcU64("NewCount"));
                     SQLiteSequentialNotifier::RESULT waitResult = _leaderCommitNotifier.waitFor(command.calcU64("NewCount"), true);
+                    SINFO("Leader reported committing transaction " << command.calcU64("NewCount") << ", committing.");
                     if (uniqueContraintsError) {
                         SINFO("Got unique constraints error in replication, restarting.");
                         --_concurrentReplicateTransactions;
@@ -300,6 +303,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
             --_concurrentReplicateTransactions;
             goSearchingOnExit = true;
         } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
+            SINFO("Notifying threads that leader has committed transaction " << command.calcU64("CommitCount"));
             _leaderCommitNotifier.notifyThrough(command.calcU64("CommitCount"));
         }
     }
@@ -1930,15 +1934,8 @@ void SQLiteNode::_changeState(SQLiteNodeState newState) {
             _replicationThreadsShouldExit = true;
             uint64_t cancelAfter = _leaderCommitNotifier.getValue();
             SINFO("Replication threads should exit, canceling commits after current leader commit " << cancelAfter);
-            /*
             _localCommitNotifier.cancel(cancelAfter);
             _leaderCommitNotifier.cancel(cancelAfter);
-            */
-
-            // Hack. Some bug means that occasionally something doesn't get notified, and we wait forever in a loop.
-            // This needs to be fixed, but this probably un-breaks it in exchange for potentially losing in-flight transactions.
-            _localCommitNotifier.cancel(_db.getCommitCount());
-            _leaderCommitNotifier.cancel(_db.getCommitCount());
 
             // Polling wait for threads to quit. This could use a notification model such as with a condition_variable,
             // which would probably be "better" but introduces yet more state variables for a state that we're rarely

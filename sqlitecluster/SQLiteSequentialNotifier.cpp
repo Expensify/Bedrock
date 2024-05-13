@@ -19,7 +19,6 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
         }
     }
 
-    size_t cancelAttempts = 0;
     while (true) {
         unique_lock<mutex> lock(state->waitingThreadMutex);
         if (_globalResult == RESULT::CANCELED) {
@@ -30,12 +29,7 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
                     return state->result;
                 }
                 // If there's no result yet, log that we're waiting for it.
-                if (cancelAttempts > 10) {
-                    SWARN("Not waiting anymore for " << value << ", just canceling");
-                    return RESULT::CANCELED;
-                } else {
-                    SINFO("Canceled after " << _cancelAfter << ", but waiting for " << value << " so not returning yet.");
-                }
+                SINFO("Canceled after " << _cancelAfter << ", but waiting for " << value << " so not returning yet.");
             } else {
                 // Canceled and we're not before the cancellation cutoff.
                 return RESULT::CANCELED;
@@ -62,7 +56,6 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
                 // It's possible that we hit the timeout here after `cancel()` has set the global value, but before we received the notification.
                 // This isn't a problem, and we can jump back to the top of the loop and check again. If there's some problem, we'll see it there.
                 SINFO("Hit 1s timeout while global cancel " << (_globalResult == RESULT::CANCELED) << " or " << " specific cancel " << (state->result == RESULT::CANCELED));
-                cancelAttempts++;
                 continue;
             }
         }
