@@ -75,7 +75,6 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
     for (auto valueThreadMapPtr : {&_valueToPendingThreadMap, &_valueToPendingThreadMapNoCurrentTransaction}) {
         auto& valueThreadMap = *valueThreadMapPtr;
         auto lastToDelete = valueThreadMap.begin();
-        SINFO("Notifying " << valueThreadMap.size() << " waiting threads for value: " << value);
         for (auto it = valueThreadMap.begin(); it != valueThreadMap.end(); it++) {
             if (it->first > value)  {
                 // If we've passed our value, there's nothing else to erase, so we can stop.
@@ -100,7 +99,6 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
         //
         // I think it's reasonable to assume this is the intention for multimap as well, and in my testing, that was the
         // case.
-        SINFO("Deleting from thread map through value: " << lastToDelete->first);
         valueThreadMap.erase(valueThreadMap.begin(), lastToDelete);
     }
 }
