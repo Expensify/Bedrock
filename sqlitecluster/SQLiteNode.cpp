@@ -2432,7 +2432,9 @@ int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uin
 
     // Let the commit handler notify any other waiting threads that our commit is complete before it starts a checkpoint.
     function<void()> notifyIfCommitted = [&]() {
-        _localCommitNotifier.notifyThrough(db.getCommitCount());
+        auto commitCount = db.getCommitCount();
+        SINFO("Notifying waiting threads that we've locally committed " << commitCount);
+        _localCommitNotifier.notifyThrough(commitCount);
     };
 
     int result = db.commit(stateName(_state), &notifyIfCommitted);
