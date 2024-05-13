@@ -89,7 +89,7 @@ void BedrockServer::sync()
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
 
     // We use fewer FDs on test machines that have other resource restrictions in place.
-    int fdLimit = args.isSet("-live") ? 25'000 : 250;
+    int fdLimit = args.isSet("-live") ? 100'000 : 250;
     SINFO("Setting dbPool size to: " << fdLimit);
     _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
     SQLite& db = _dbPool->getBase();
@@ -703,7 +703,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     }
 
     // If we're following, we will automatically escalate any command that's:
-    // 1. Not already complete (complete commands are likely already returned from leader with legacy escalation) 
+    // 1. Not already complete (complete commands are likely already returned from leader with legacy escalation)
     // and is marked as `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
     // for a previous commit to be delivered to this follower);
     // 2. Any commands if the current version of the code is not the same one as leader is executing.
@@ -1915,7 +1915,7 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
             _portPluginMap.clear();
             _shutdownState.store(START_SHUTDOWN);
         }
-        SQLiteNodeState currentState = SQLiteNodeState::UNKNOWN; 
+        SQLiteNodeState currentState = SQLiteNodeState::UNKNOWN;
         auto syncNodeCopy = atomic_load(&_syncNode);
         if (syncNodeCopy) {
             currentState = syncNodeCopy->getState();
