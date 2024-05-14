@@ -207,7 +207,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
             // the DB was at when the transaction began on leader).
             bool quorum = !SStartsWith(command["ID"], "ASYNC");
             uint64_t waitForCount = SStartsWith(command["ID"], "ASYNC") ? command.calcU64("dbCountAtStart") : currentCount;
-            SINFO("BEGIN_TRANSACTION replicate thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
+            SINFO("[performance] BEGIN_TRANSACTION replicate thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
             while (true) {
                 SQLiteSequentialNotifier::RESULT result = _localCommitNotifier.waitFor(waitForCount, false);
                 if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
@@ -223,7 +223,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                     SERROR("Got unhandled SQLiteSequentialNotifier::RESULT value, did someone update the enum without updating this block?");
                 }
             }
-            SINFO("Finished waiting for commit count " << waitForCount << ", beginning replicate write.");
+            SINFO("[performance] Finished waiting for commit count " << waitForCount << ", beginning replicate write.");
 
             try {
                 int result = -1;
@@ -232,7 +232,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                     if (commitAttemptCount > 1) {
                         SINFO("Commit attempt number " << commitAttemptCount << " for concurrent replication.");
                     }
-                    SINFO("BEGIN for commit " << newCount);
+                    SINFO("[performance] BEGIN for commit " << newCount);
                     bool uniqueContraintsError = false;
                     try {
                         auto start = chrono::steady_clock::now();
@@ -242,7 +242,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                         // skip this, we did it above) to enforce that commits are in the same order on followers as on
                         // leader.
                         if (!quorum) {
-                            SDEBUG("Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
+                            SDEBUG("[performance] Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
                             SQLiteSequentialNotifier::RESULT waitResult = _localCommitNotifier.waitFor(currentCount, true);
                             if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
                                 SINFO("Replication canceled mid-transaction, stopping.");
@@ -256,7 +256,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                         // Note:: calls _sendToPeer() which is a write operation.
                         _handlePrepareTransaction(db, peer, command, threadAttemptStartTimestamp, threadStartTime);
                         auto duration = chrono::steady_clock::now() - start;
-                        SINFO("Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us. " << _concurrentReplicateTransactions.load()
+                        SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us. " << _concurrentReplicateTransactions.load()
                               << " concurrent replicate transactions in " << _replicationThreadCount << " threads.");
                     } catch (const SQLite::constraint_error& e) {
                         // We could `continue` immediately upon catching this exception, but instead, we wait for the
@@ -268,9 +268,9 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                     // don't send LEADER the approval for this until inside of `prepare`. This potentially makes us
                     // wait while holding the commit lock for non-concurrent transactions, but I guess nobody else with
                     // a commit after us will be able to commit, either.
-                    SINFO("Waiting on leader to say it has committed transaction " << command.calcU64("NewCount"));
+                    SINFO("[performance] Waiting on leader to say it has committed transaction " << command.calcU64("NewCount"));
                     SQLiteSequentialNotifier::RESULT waitResult = _leaderCommitNotifier.waitFor(command.calcU64("NewCount"), true);
-                    SINFO("Leader reported committing transaction " << command.calcU64("NewCount") << ", committing.");
+                    SINFO("[performance] Leader reported committing transaction " << command.calcU64("NewCount") << ", committing.");
                     if (uniqueContraintsError) {
                         SINFO("Got unique constraints error in replication, restarting.");
                         --_concurrentReplicateTransactions;
@@ -303,7 +303,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
             --_concurrentReplicateTransactions;
             goSearchingOnExit = true;
         } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-            SINFO("Notifying threads that leader has committed transaction " << command.calcU64("CommitCount"));
+            SINFO("[performance] Notifying threads that leader has committed transaction " << command.calcU64("CommitCount"));
             _leaderCommitNotifier.notifyThrough(command.calcU64("CommitCount"));
         }
     }
@@ -2407,7 +2407,7 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
     float transitTimeMS = (float)transitTimeUS / 1000.0;
     float threadStartTimeMS = (float)threadStartTimeUS / 1000.0;
     float applyTimeMS = (float)applyTimeUS / 1000.0;
-    PINFO("Replicated transaction " << message.calcU64("NewCount") << ", sent by leader at " << leaderSentTimestamp
+    PINFO("[performance] Replicated transaction " << message.calcU64("NewCount") << ", sent by leader at " << leaderSentTimestamp
           << ", transit/dequeue time: " << transitTimeMS << "ms, thread start time: " << threadStartTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
 }
 
@@ -2433,7 +2433,7 @@ int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uin
     // Let the commit handler notify any other waiting threads that our commit is complete before it starts a checkpoint.
     function<void()> notifyIfCommitted = [&]() {
         auto commitCount = db.getCommitCount();
-        SINFO("Notifying waiting threads that we've locally committed " << commitCount);
+        SINFO("[performance] Notifying waiting threads that we've locally committed " << commitCount);
         _localCommitNotifier.notifyThrough(commitCount);
     };
 
@@ -2457,7 +2457,7 @@ int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uin
     uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
     uint64_t totalElapsed = db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed,
                                                          commitElapsed, rollbackElapsed);
-    SINFO("Committed follower transaction #" << to_string(commandCommitCount) << " (" << commandCommitHash << ") in "
+    SINFO("[performance] Committed follower transaction #" << to_string(commandCommitCount) << " (" << commandCommitHash << ") in "
           << totalElapsed / 1000 << " ms (" << beginElapsed / 1000 << "+"
           << readElapsed / 1000 << "+" << writeElapsed / 1000 << "+"
           << prepareElapsed / 1000 << "+" << commitElapsed / 1000 << "+"

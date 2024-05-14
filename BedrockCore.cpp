@@ -171,7 +171,6 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         response["commitCount"] = to_string(_db.getCommitCount());
 
         // Success. If a command has set "content", encode it in the response.
-        SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
         if (!content.empty()) {
             // Make sure we're not overwriting anything different.
             string newContent = SComposeJSONObject(content);
