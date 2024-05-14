@@ -19,7 +19,6 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
         }
     }
 
-    size_t cancelAttempts = 0;
     while (true) {
         unique_lock<mutex> lock(state->waitingThreadMutex);
         if (_globalResult == RESULT::CANCELED) {
@@ -30,12 +29,7 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
                     return state->result;
                 }
                 // If there's no result yet, log that we're waiting for it.
-                if (cancelAttempts > 10) {
-                    SWARN("Not waiting anymore for " << value << ", just canceling");
-                    return RESULT::CANCELED;
-                } else {
-                    SINFO("Canceled after " << _cancelAfter << ", but waiting for " << value << " so not returning yet.");
-                }
+                SINFO("Canceled after " << _cancelAfter << ", but waiting for " << value << " so not returning yet.");
             } else {
                 // Canceled and we're not before the cancellation cutoff.
                 return RESULT::CANCELED;
@@ -62,7 +56,6 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
                 // It's possible that we hit the timeout here after `cancel()` has set the global value, but before we received the notification.
                 // This isn't a problem, and we can jump back to the top of the loop and check again. If there's some problem, we'll see it there.
                 SINFO("Hit 1s timeout while global cancel " << (_globalResult == RESULT::CANCELED) << " or " << " specific cancel " << (state->result == RESULT::CANCELED));
-                cancelAttempts++;
                 continue;
             }
         }
@@ -82,7 +75,6 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
     for (auto valueThreadMapPtr : {&_valueToPendingThreadMap, &_valueToPendingThreadMapNoCurrentTransaction}) {
         auto& valueThreadMap = *valueThreadMapPtr;
         auto lastToDelete = valueThreadMap.begin();
-        SINFO("Notifying " << valueThreadMap.size() << " waiting threads for value: " << value);
         for (auto it = valueThreadMap.begin(); it != valueThreadMap.end(); it++) {
             if (it->first > value)  {
                 // If we've passed our value, there's nothing else to erase, so we can stop.
@@ -107,7 +99,6 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
         //
         // I think it's reasonable to assume this is the intention for multimap as well, and in my testing, that was the
         // case.
-        SINFO("Deleting from thread map through value: " << lastToDelete->first);
         valueThreadMap.erase(valueThreadMap.begin(), lastToDelete);
     }
 }
