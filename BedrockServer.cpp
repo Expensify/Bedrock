@@ -578,9 +578,7 @@ void BedrockServer::sync()
     // We just fell out of the loop where we were waiting for shutdown to complete. Update the state one last time when
     // the writing replication thread exits.
     if (getState() > SQLiteNodeState::WAITING) {
-        // This is because the graceful shutdown timer fired and syncNode.shutdownComplete() returned `true` above, but
-        // the server still thinks it's in some other state. We can only exit if we're in state <= SQLC_SEARCHING,
-        // (per BedrockServer::shutdownComplete()), so we force that state here to allow the shutdown to proceed.
+        // This should no longer be possible with fast shutdown.
         SWARN("Sync thread exiting in state " << SQLiteNode::stateName(getState()) << ".");
     }
 
@@ -606,6 +604,10 @@ void BedrockServer::sync()
         _blockingCommandQueue.clear();
     }
 
+    for (auto plugin : plugins) {
+        plugin.second->serverStopping();
+    }
+
     // We clear this before the _syncNode that it references.
     _clusterMessenger.reset();
 
@@ -613,10 +615,8 @@ void BedrockServer::sync()
     // until they return.
     atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
 
-    // Release the current DB pool, and zero out our pointer.
-    // Note: This is not an atomic operation but should not matter. Nothing should use this that can happen with no
-    // sync thread.
-    // If there are socket threads in existance, they can be looking at this through a syncThread copy.
+    // Release the current DB pool, and zero out our pointer. If any socket threads hold a handle to `_syncNode`, they will keep this in existence
+    // until they release it.
     _dbPool = nullptr;
 
     // We're really done, store our flag so main() can be aware.
