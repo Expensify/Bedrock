@@ -446,6 +446,7 @@ string SEncodeURIComponent(const string& value);
 // List management
 list<int64_t> SParseIntegerList(const string& value, char separator = ',');
 set<int64_t> SParseIntegerSet(const string& value, char separator = ',');
+vector<int64_t> SParseIntegerVector(const string& value, char separator = ',');
 bool SParseList(const char* value, list<string>& valueList, char separator = ',');
 bool SParseList(const string& value, list<string>& valueList, char separator = ',');
 set<string> SParseSet(const string& value, char separator = ',');

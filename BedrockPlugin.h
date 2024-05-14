@@ -75,6 +75,9 @@ class BedrockPlugin {
     // Called when a node changes state
     virtual void stateChanged(SQLite& db, SQLiteNodeState newState) {}
 
+    // Called when the sync thread is finishing, before destroying DB handles.
+    virtual void serverStopping() {}
+
     // Map of plugin names to functions that will return a new plugin of the given type.
     static map<string, function<BedrockPlugin*(BedrockServer&)>> g_registeredPluginList;
 

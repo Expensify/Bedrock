@@ -665,6 +665,16 @@ set<int64_t> SParseIntegerSet(const string& value, char separator) {
 }
 
 // --------------------------------------------------------------------------
+vector<int64_t> SParseIntegerVector(const string& value, char separator) {
+    vector<int64_t> valueVector;
+    list<string> strings = SParseList(value, separator);
+    for (const string& str : strings) {
+        valueVector.push_back(SToInt64(str));
+    }
+    return valueVector;
+}
+
+// --------------------------------------------------------------------------
 bool SParseList(const char* ptr, list<string>& valueList, char separator) {
     // Clear the input
     valueList.clear();
