@@ -16,6 +16,7 @@
 #include <libstuff/AutoTimer.h>
 #include <PageLockGuard.h>
 #include <sqlitecluster/SQLitePeer.h>
+#include <sqlitecluster/SQLiteJournalDeleter.h>
 
 set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
@@ -93,6 +94,7 @@ void BedrockServer::sync()
     SINFO("Setting dbPool size to: " << fdLimit);
     _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
     SQLite& db = _dbPool->getBase();
+    auto cleanupThread = make_unique<SQLiteJournalDeleter>(SQLiteJournalDeleter::TableLimits{make_pair(args.calc("-maxJournalSize"), db.getJournalNames())}, db);
 
     // Initialize the command processor.
     BedrockCore core(db, *this);
@@ -617,6 +619,8 @@ void BedrockServer::sync()
     // Note: This is not an atomic operation but should not matter. Nothing should use this that can happen with no
     // sync thread.
     // If there are socket threads in existance, they can be looking at this through a syncThread copy.
+
+    cleanupThread = nullptr;
     _dbPool = nullptr;
 
     // We're really done, store our flag so main() can be aware.
