@@ -2146,8 +2146,6 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
         command->id = args["-nodeName"] + "#" + to_string(_requestCount++);
     }
 
-    SINFO("Waiting for '" << command->request.methodLine << "' to complete.");
-
     // And we and keep track of the client that initiated this command, so we can respond later, except
     // if we received connection:forget in which case we don't respond later
     command->initiatingClientID = SIEquals(command->request["Connection"], "forget") ? -1 : socket.id;
@@ -2163,7 +2161,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
     // Initialize and get a unique thread ID.
     SInitialize("socket" + to_string(_socketThreadNumber++));
-    SINFO("Socket thread starting");
+    SINFO("[performance] Socket thread starting");
 
     // This outer loop just runs until the entire socket life cycle is done, meaning it deserializes a command,
     // waits for it to get processed, deserializes another, etc, until the socket gets closed.
@@ -2279,7 +2277,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             command->destructionCallback = &callback;
                         }
 
-                        SINFO("Running new '" << command->request.methodLine << "' command from local client, with " << _commandQueue.size() << " commands already queued.");
                         runCommand(move(command));
 
                         // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
@@ -2302,7 +2299,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
     // At this point out socket is closed and we can clean up.
     // Note that we never return early, we always want to hit this code and decrement our counter and clean up our socket.
     _outstandingSocketThreads--;
-    SINFO("Socket thread complete (" << _outstandingSocketThreads << " remaining).");
+    SINFO("[performance] Socket thread complete (" << _outstandingSocketThreads << " remaining).");
 
     // Check to see if we need to unblock creating new socket threads. We do this each time we cross having 50 active
     // threads. We are guaranteed to hit this as the thread count decrements to 0, as _shouldBlockNewSocketThreads is

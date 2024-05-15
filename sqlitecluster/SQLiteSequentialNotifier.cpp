@@ -5,7 +5,7 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
     shared_ptr<WaitState> state(nullptr);
     {
         lock_guard<mutex> lock(_internalStateMutex);
-        SINFO("Waiting for " << value << ", in transaction? " << insideTransaction);
+        SINFO("[performance] Waiting for " << value << ", in transaction? " << insideTransaction);
         if (value <= _value) {
             return RESULT::COMPLETED;
         }
@@ -78,7 +78,7 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
         for (auto it = valueThreadMap.begin(); it != valueThreadMap.end(); it++) {
             if (it->first > value)  {
                 // If we've passed our value, there's nothing else to erase, so we can stop.
-                SINFO("Breaking out of thread notifications because " <<  it->first << " > " << value);
+                SINFO("[performance] Breaking out of thread notifications because " <<  it->first << " > " << value);
                 break;
             }
 
@@ -88,7 +88,7 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
             // Make the changes to the state object - mark it complete and notify anyone waiting.
             lock_guard<mutex> lock(it->second->waitingThreadMutex);
             it->second->result = RESULT::COMPLETED;
-            SINFO("Notifying thread waiting on value: " << it->first);
+            SINFO("[performance] Notifying thread waiting on value: " << it->first);
             it->second->waitingThreadConditionVariable.notify_all();
         }
 
@@ -116,7 +116,7 @@ void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
         auto& valueThreadMap = *valueThreadMapPtr;
         // If cancelAfter is specified, start from that value. Otherwise, we start from the beginning.
         auto start = _cancelAfter ? valueThreadMap.upper_bound(_cancelAfter) : valueThreadMap.begin();
-        SINFO("Next value to cancel after " << cancelAfter << " is " << start->first);
+        SINFO("[performance] Next value to cancel after " << cancelAfter << " is " << start->first);
         if (start == valueThreadMap.end()) {
             // There's nothing to remove.
             return;
@@ -125,12 +125,12 @@ void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
         // Now iterate across whatever's remaining and mark it canceled.
         auto current = start;
         while(current != valueThreadMap.end()) {
-            SINFO("Setting canceled for thread waiting on " << current->first);
+            SINFO("[performance] Setting canceled for thread waiting on " << current->first);
             lock_guard<mutex> lock(current->second->waitingThreadMutex);
             current->second->result = RESULT::CANCELED;
             current->second->waitingThreadConditionVariable.notify_all();
             current++;
-            SINFO("Canceled for thread waiting on " << current->first);
+            SINFO("[performance] Canceled for thread waiting on " << current->first);
         }
 
         // And remove these items entirely.
