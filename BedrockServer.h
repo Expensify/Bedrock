@@ -470,4 +470,7 @@ class BedrockServer : public SQLiteServer {
     // This is just here to allow `poll` in main.cpp to get interrupted when the server shuts down.
     // to wait up to a full second for them.
     SSynchronizedQueue<bool> _notifyDone;
+
+    atomic<size_t> _maxSocketThreads{500};
+    atomic<size_t> _dbPoolSize{1'000};
 };
