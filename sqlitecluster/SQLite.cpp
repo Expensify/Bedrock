@@ -339,7 +339,7 @@ void SQLite::exclusiveLockDB() {
     }
     try {
         _sharedData.writeLock.lock(const system_error& e);
-    } catch() {
+    } catch(const system_error& e) {
         SWARN("Caught system_error calling _sharedData.writeLock, code: " << e.code() << ", message: " << e.what());
         throw;
     }
