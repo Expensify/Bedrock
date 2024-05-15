@@ -78,6 +78,7 @@ void BedrockServer::sync()
     workerThreads = workerThreads ? workerThreads : args.calc("-readThreads");
 
     // If still no value, use the number of cores on the machine, if available.
+    SINFO("Note: thread::hardware_concurrency() is: " << thread::hardware_concurrency());
     workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
 
     // A minimum of *2* worker threads are required. One for blocking writes, one for other commands.
@@ -89,9 +90,9 @@ void BedrockServer::sync()
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
 
     // We use fewer FDs on test machines that have other resource restrictions in place.
-    int fdLimit = args.isSet("-live") ? 100'000 : 250;
-    SINFO("Setting dbPool size to: " << fdLimit);
-    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
+
+    SINFO("Setting dbPool size to: " << _dbPoolSize);
+    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
@@ -1273,6 +1274,16 @@ BedrockServer::BedrockServer(const SData& args_)
     // Set the quorum checkpoint, or default if not specified.
     _quorumCheckpointSeconds = args.isSet("-quorumCheckpointSeconds") ? args.calc("-quorumCheckpointSeconds") : 60;
 
+    if (args.isSet("-dbPoolSize")){
+        _dbPoolSize = args.calcU64("-dbPoolSize");
+    } else {
+        _dbPoolSize = args.isSet("-live") ? 2'000 : 250;
+    }
+
+    if (args.isSet("-maxSocketThreads")){
+        _maxSocketThreads = args.calcU64("-maxSocketThreads");
+    }
+
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
     _syncThread = thread(&BedrockServer::syncWrapper, this);
@@ -1723,6 +1734,8 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "BlockWrites")            ||
         SIEquals(command->request.methodLine, "UnblockWrites")          ||
         SIEquals(command->request.methodLine, "SetMaxPeerFallBehind")   ||
+        SIEquals(command->request.methodLine, "SetMaxSocketThreads")    ||
+        SIEquals(command->request.methodLine, "SetMaxDBHandles")       ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
         ) {
         return true;
@@ -1857,6 +1870,28 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             __quiesceThread = nullptr;
             response.methodLine = "200 Unblocked";
         }
+    } else if (SIEquals(command->request.methodLine, "SetMaxSocketThreads")) {
+        size_t newMax = command->request.calcU64("socketThreadsCount");
+        if (newMax) {
+            SINFO("Setting _maxSocketThreads to " << newMax << " from " << _maxSocketThreads);
+            _maxSocketThreads = newMax;
+        } else {
+            response.methodLine = "401 Don't Use Zero";
+        }
+    } else if (SIEquals(command->request.methodLine, "SetMaxDBHandles")) {
+        shared_ptr<SQLitePool> dbPoolHandle = _dbPool;
+        if (dbPoolHandle) {
+            size_t newMax = command->request.calcU64("handlesCount");
+            if (newMax) {
+                SINFO("Setting _dbPoolSize to " << newMax << " from " << _dbPoolSize);
+            } else {
+                response.methodLine = "401 Don't Use Zero";
+            }
+            _dbPoolSize = newMax;
+            dbPoolHandle->setMaxDBs(_dbPoolSize);
+        } else {
+            response.methodLine = "404 No DB Pool";
+        }
     } else if (SIEquals(command->request.methodLine, "SetMaxPeerFallBehind")) {
         // Look up the existing value so we can report what it was.
         uint64_t existingValue = SQLiteNode::MAX_PEER_FALL_BEHIND;
@@ -1982,6 +2017,11 @@ void BedrockServer::_acceptSockets() {
     // Try block because we sometimes catch `std::system_error` from in here (likely from the thread code) and we're
     // trying to diagnose exactly what's happening.
     try {
+        if (_outstandingSocketThreads >= _maxSocketThreads) {
+            SINFO("Not accepting any new socket threads as we already have " << _outstandingSocketThreads << " of " << _maxSocketThreads);
+            return;
+        }
+
         // Make a list of ports to accept on.
         // We'll check the control port, command port, and any plugin ports for new connections.
         list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPortPublic, _commandPortPrivate, _controlPort};
