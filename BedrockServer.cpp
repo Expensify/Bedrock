@@ -1875,6 +1875,9 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
 }
 
 bool BedrockServer::_upgradeDB(SQLite& db) {
+    // SKIP. this is currently problematic.
+    return false;
+
     // These all get conglomerated into one big query.
     try {
         db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
