@@ -1876,12 +1876,17 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
 
 bool BedrockServer::_upgradeDB(SQLite& db) {
     // These all get conglomerated into one big query.
-    db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
-    for (auto plugin : plugins) {
-        plugin.second->upgradeDatabase(db);
-    }
-    if (db.getUncommittedQuery().empty()) {
-        db.rollback();
+    try {
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        for (auto plugin : plugins) {
+            plugin.second->upgradeDatabase(db);
+        }
+        if (db.getUncommittedQuery().empty()) {
+            db.rollback();
+        }
+    } catch (const system_error& e) {
+        SWARN("Caught system_error in _upgradeDB, code: " << e.code() << ", message: " << e.what());
+        throw;
     }
     SINFO("Finished running DB upgrade.");
     return !db.getUncommittedQuery().empty();
