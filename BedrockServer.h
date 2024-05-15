@@ -471,6 +471,6 @@ class BedrockServer : public SQLiteServer {
     // to wait up to a full second for them.
     SSynchronizedQueue<bool> _notifyDone;
 
-    atomic<size_t> _maxSocketThreads{500};
-    atomic<size_t> _dbPoolSize{1'000};
+    atomic<size_t> _maxSocketThreads{1'000};
+    atomic<size_t> _dbPoolSize{2'000};
 };
