@@ -1882,21 +1882,15 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         shared_ptr<SQLitePool> dbPoolHandle = _dbPool;
         if (dbPoolHandle) {
             size_t newMax = command->request.calcU64("handles");
-            SINFO("Setting _dbPoolSize to " << newMax << " from " << _dbPoolSize);
+            if (newMax) {
+                SINFO("Setting _dbPoolSize to " << newMax << " from " << _dbPoolSize);
+            } else {
+                response.methodLine = "401 Don't Use Zero";
+            }
             _dbPoolSize = newMax;
             dbPoolHandle->setMaxDBs(_dbPoolSize);
         } else {
             response.methodLine = "404 No DB Pool";
-        }
-
-
-
-        size_t newMax = command->request.calcU64("threads");
-        if (newMax) {
-            SINFO("Setting _maxSocketThreads to " << newMax << " from " << _maxSocketThreads);
-            _maxSocketThreads = newMax;
-        } else {
-            response.methodLine = "401 don't use zero";
         }
     } else if (SIEquals(command->request.methodLine, "SetMaxPeerFallBehind")) {
         // Look up the existing value so we can report what it was.
