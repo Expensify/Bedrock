@@ -78,6 +78,7 @@ void BedrockServer::sync()
     workerThreads = workerThreads ? workerThreads : args.calc("-readThreads");
 
     // If still no value, use the number of cores on the machine, if available.
+    SINFO("Note: thread::hardware_concurrency() is: " << thread::hardware_concurrency());
     workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
 
     // A minimum of *2* worker threads are required. One for blocking writes, one for other commands.
@@ -89,7 +90,10 @@ void BedrockServer::sync()
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
 
     // We use fewer FDs on test machines that have other resource restrictions in place.
-    int fdLimit = args.isSet("-live") ? 100'000 : 250;
+    int fdLimit = args.isSet("-live") ? 1'000 : 250;
+    if (args.isSet("-dbPoolSize")){
+        fdLimit = args.calc("-dbPoolSize");
+    }
     SINFO("Setting dbPool size to: " << fdLimit);
     _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
     SQLite& db = _dbPool->getBase();
@@ -1982,6 +1986,15 @@ void BedrockServer::_acceptSockets() {
     // Try block because we sometimes catch `std::system_error` from in here (likely from the thread code) and we're
     // trying to diagnose exactly what's happening.
     try {
+
+        size_t maxSocketThreads = args.calcU64("-maxSocketThreads");
+        if (!maxSocketThreads) {
+            maxSocketThreads = 500;
+        }
+        if (_outstandingSocketThreads >= maxSocketThreads) {
+            SINFO("Not accepting any new socket threads as we already have " << _outstandingSocketThreads << " of " << maxSocketThreads);
+        }
+
         // Make a list of ports to accept on.
         // We'll check the control port, command port, and any plugin ports for new connections.
         list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPortPublic, _commandPortPrivate, _controlPort};
