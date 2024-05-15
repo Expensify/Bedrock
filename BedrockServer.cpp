@@ -1735,7 +1735,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "UnblockWrites")          ||
         SIEquals(command->request.methodLine, "SetMaxPeerFallBehind")   ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads")    ||
-        SIEquals(command->request.methodLine, "SetMaxDBPoolSize")       ||
+        SIEquals(command->request.methodLine, "SetMaxDBHandles")       ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
         ) {
         return true;
@@ -1871,17 +1871,17 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             response.methodLine = "200 Unblocked";
         }
     } else if (SIEquals(command->request.methodLine, "SetMaxSocketThreads")) {
-        size_t newMax = command->request.calcU64("threads");
+        size_t newMax = command->request.calcU64("socketThreadsCount");
         if (newMax) {
             SINFO("Setting _maxSocketThreads to " << newMax << " from " << _maxSocketThreads);
             _maxSocketThreads = newMax;
         } else {
             response.methodLine = "401 Don't Use Zero";
         }
-    } else if (SIEquals(command->request.methodLine, "SetMaxDBPoolSize")) {
+    } else if (SIEquals(command->request.methodLine, "SetMaxDBHandles")) {
         shared_ptr<SQLitePool> dbPoolHandle = _dbPool;
         if (dbPoolHandle) {
-            size_t newMax = command->request.calcU64("handles");
+            size_t newMax = command->request.calcU64("handlesCount");
             if (newMax) {
                 SINFO("Setting _dbPoolSize to " << newMax << " from " << _dbPoolSize);
             } else {
