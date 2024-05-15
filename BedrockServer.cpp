@@ -1993,6 +1993,7 @@ void BedrockServer::_acceptSockets() {
         }
         if (_outstandingSocketThreads >= maxSocketThreads) {
             SINFO("Not accepting any new socket threads as we already have " << _outstandingSocketThreads << " of " << maxSocketThreads);
+            return;
         }
 
         // Make a list of ports to accept on.
