@@ -2018,16 +2018,9 @@ void BedrockServer::_acceptSockets() {
     // trying to diagnose exactly what's happening.
     static uint64_t lastLogged = 0;
     try {
-        uint64_t now = STimeNow();
-        if ((_outstandingSocketThreads >= _maxSocketThreads) && (lastLogged < now - 3'000'000)) {
-            SINFO("Not accepting any new socket threads as we already have " << _outstandingSocketThreads << " of " << _maxSocketThreads);
-            lastLogged = now;
-            return;
-        }
-
         // Make a list of ports to accept on.
         // We'll check the control port, command port, and any plugin ports for new connections.
-        list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPortPublic, _commandPortPrivate, _controlPort};
+        list<reference_wrapper<const unique_ptr<Port>>> portList = {_controlPort, _commandPortPrivate, _commandPortPublic};
 
         // Lock _portMutex so suppressing the port does not cause it to be null
         // in the middle of this function.
@@ -2048,6 +2041,15 @@ void BedrockServer::_acceptSockets() {
 
             // Accept as many sockets as we can.
             while (true) {
+                uint64_t now = STimeNow();
+                if ((port != _controlPort) && (_outstandingSocketThreads >= _maxSocketThreads)) {
+                    if ((lastLogged < now - 3'000'000)) {
+                        SINFO("Not accepting any new socket threads as we already have " << _outstandingSocketThreads << " of " << _maxSocketThreads);
+                        lastLogged = now;
+                    }
+                    return;
+                }
+
                 sockaddr_in addr;
                 int s = S_accept(port->s, addr, true); // Note that this sets the newly accepted socket to be blocking.
 
