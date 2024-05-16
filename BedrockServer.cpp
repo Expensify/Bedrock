@@ -2020,7 +2020,7 @@ void BedrockServer::_acceptSockets() {
     try {
         // Make a list of ports to accept on.
         // We'll check the control port, command port, and any plugin ports for new connections.
-        list<reference_wrapper<const unique_ptr<Port>>> portList = {_controlPort, _commandPortPublic, _commandPortPrivate};
+        list<reference_wrapper<const unique_ptr<Port>>> portList = {_controlPort, _commandPortPrivate, _commandPortPublic};
 
         // Lock _portMutex so suppressing the port does not cause it to be null
         // in the middle of this function.
