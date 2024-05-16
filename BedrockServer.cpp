@@ -78,6 +78,7 @@ void BedrockServer::sync()
     workerThreads = workerThreads ? workerThreads : args.calc("-readThreads");
 
     // If still no value, use the number of cores on the machine, if available.
+    SINFO("Note: thread::hardware_concurrency() is: " << thread::hardware_concurrency());
     workerThreads = workerThreads ? workerThreads : max(1u, thread::hardware_concurrency());
 
     // A minimum of *2* worker threads are required. One for blocking writes, one for other commands.
@@ -89,9 +90,9 @@ void BedrockServer::sync()
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
 
     // We use fewer FDs on test machines that have other resource restrictions in place.
-    int fdLimit = args.isSet("-live") ? 100'000 : 250;
-    SINFO("Setting dbPool size to: " << fdLimit);
-    _dbPool = make_shared<SQLitePool>(fdLimit, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
+
+    SINFO("Setting dbPool size to: " << _dbPoolSize);
+    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
@@ -1273,6 +1274,16 @@ BedrockServer::BedrockServer(const SData& args_)
     // Set the quorum checkpoint, or default if not specified.
     _quorumCheckpointSeconds = args.isSet("-quorumCheckpointSeconds") ? args.calc("-quorumCheckpointSeconds") : 60;
 
+    if (args.isSet("-dbPoolSize")){
+        _dbPoolSize = args.calcU64("-dbPoolSize");
+    } else {
+        _dbPoolSize = args.isSet("-live") ? 2'000 : 250;
+    }
+
+    if (args.isSet("-maxSocketThreads")){
+        _maxSocketThreads = args.calcU64("-maxSocketThreads");
+    }
+
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
     _syncThread = thread(&BedrockServer::syncWrapper, this);
@@ -1723,6 +1734,8 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "BlockWrites")            ||
         SIEquals(command->request.methodLine, "UnblockWrites")          ||
         SIEquals(command->request.methodLine, "SetMaxPeerFallBehind")   ||
+        SIEquals(command->request.methodLine, "SetMaxSocketThreads")    ||
+        SIEquals(command->request.methodLine, "SetMaxDBHandles")       ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
         ) {
         return true;
@@ -1857,6 +1870,28 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             __quiesceThread = nullptr;
             response.methodLine = "200 Unblocked";
         }
+    } else if (SIEquals(command->request.methodLine, "SetMaxSocketThreads")) {
+        size_t newMax = command->request.calcU64("socketThreadsCount");
+        if (newMax) {
+            SINFO("Setting _maxSocketThreads to " << newMax << " from " << _maxSocketThreads);
+            _maxSocketThreads = newMax;
+        } else {
+            response.methodLine = "401 Don't Use Zero";
+        }
+    } else if (SIEquals(command->request.methodLine, "SetMaxDBHandles")) {
+        shared_ptr<SQLitePool> dbPoolHandle = _dbPool;
+        if (dbPoolHandle) {
+            size_t newMax = command->request.calcU64("handlesCount");
+            if (newMax) {
+                SINFO("Setting _dbPoolSize to " << newMax << " from " << _dbPoolSize);
+            } else {
+                response.methodLine = "401 Don't Use Zero";
+            }
+            _dbPoolSize = newMax;
+            dbPoolHandle->setMaxDBs(_dbPoolSize);
+        } else {
+            response.methodLine = "404 No DB Pool";
+        }
     } else if (SIEquals(command->request.methodLine, "SetMaxPeerFallBehind")) {
         // Look up the existing value so we can report what it was.
         uint64_t existingValue = SQLiteNode::MAX_PEER_FALL_BEHIND;
@@ -1876,12 +1911,17 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
 
 bool BedrockServer::_upgradeDB(SQLite& db) {
     // These all get conglomerated into one big query.
-    db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
-    for (auto plugin : plugins) {
-        plugin.second->upgradeDatabase(db);
-    }
-    if (db.getUncommittedQuery().empty()) {
-        db.rollback();
+    try {
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        for (auto plugin : plugins) {
+            plugin.second->upgradeDatabase(db);
+        }
+        if (db.getUncommittedQuery().empty()) {
+            db.rollback();
+        }
+    } catch (const system_error& e) {
+        SWARN("Caught system_error in _upgradeDB, code: " << e.code() << ", message: " << e.what());
+        throw;
     }
     SINFO("Finished running DB upgrade.");
     return !db.getUncommittedQuery().empty();
@@ -1977,6 +2017,11 @@ void BedrockServer::_acceptSockets() {
     // Try block because we sometimes catch `std::system_error` from in here (likely from the thread code) and we're
     // trying to diagnose exactly what's happening.
     try {
+        if (_outstandingSocketThreads >= _maxSocketThreads) {
+            SINFO("Not accepting any new socket threads as we already have " << _outstandingSocketThreads << " of " << _maxSocketThreads);
+            return;
+        }
+
         // Make a list of ports to accept on.
         // We'll check the control port, command port, and any plugin ports for new connections.
         list<reference_wrapper<const unique_ptr<Port>>> portList = {_commandPortPublic, _commandPortPrivate, _controlPort};
@@ -2141,8 +2186,6 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
         command->id = args["-nodeName"] + "#" + to_string(_requestCount++);
     }
 
-    SINFO("Waiting for '" << command->request.methodLine << "' to complete.");
-
     // And we and keep track of the client that initiated this command, so we can respond later, except
     // if we received connection:forget in which case we don't respond later
     command->initiatingClientID = SIEquals(command->request["Connection"], "forget") ? -1 : socket.id;
@@ -2158,7 +2201,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
     // Initialize and get a unique thread ID.
     SInitialize("socket" + to_string(_socketThreadNumber++));
-    SINFO("Socket thread starting");
+    SINFO("[performance] Socket thread starting");
 
     // This outer loop just runs until the entire socket life cycle is done, meaning it deserializes a command,
     // waits for it to get processed, deserializes another, etc, until the socket gets closed.
@@ -2274,7 +2317,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             command->destructionCallback = &callback;
                         }
 
-                        SINFO("Running new '" << command->request.methodLine << "' command from local client, with " << _commandQueue.size() << " commands already queued.");
                         runCommand(move(command));
 
                         // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
@@ -2297,7 +2339,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
     // At this point out socket is closed and we can clean up.
     // Note that we never return early, we always want to hit this code and decrement our counter and clean up our socket.
     _outstandingSocketThreads--;
-    SINFO("Socket thread complete (" << _outstandingSocketThreads << " remaining).");
+    SINFO("[performance] Socket thread complete (" << _outstandingSocketThreads << " remaining).");
 
     // Check to see if we need to unblock creating new socket threads. We do this each time we cross having 50 active
     // threads. We are guaranteed to hit this as the thread count decrements to 0, as _shouldBlockNewSocketThreads is

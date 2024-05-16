@@ -331,8 +331,18 @@ void SQLite::exclusiveLockDB() {
     // of the transaction. So in these instances, we lock commitLock first, and then writeLock, but the critical difference is we hold the commitLock through the entire duration of all
     // writes in this case.
     // So when these are both locked by the same thread at the same time, `commitLock` is always locked first, and we do it the same way here to avoid deadlocks.
-    _sharedData.commitLock.lock();
-    _sharedData.writeLock.lock();
+    try {
+        _sharedData.commitLock.lock();
+    } catch (const system_error& e) {
+        SWARN("Caught system_error calling _sharedData.commitLock, code: " << e.code() << ", message: " << e.what());
+        throw;
+    }
+    try {
+        _sharedData.writeLock.lock();
+    } catch(const system_error& e) {
+        SWARN("Caught system_error calling _sharedData.writeLock, code: " << e.code() << ", message: " << e.what());
+        throw;
+    }
 }
 
 void SQLite::exclusiveUnlockDB() {
