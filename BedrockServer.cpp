@@ -2016,9 +2016,12 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
 void BedrockServer::_acceptSockets() {
     // Try block because we sometimes catch `std::system_error` from in here (likely from the thread code) and we're
     // trying to diagnose exactly what's happening.
+    static uint64_t lastLogged = 0;
     try {
-        if (_outstandingSocketThreads >= _maxSocketThreads) {
+        uint64_t now = STimeNow();
+        if ((_outstandingSocketThreads >= _maxSocketThreads) && (lastLogged < now - 3'000'000)) {
             SINFO("Not accepting any new socket threads as we already have " << _outstandingSocketThreads << " of " << _maxSocketThreads);
+            lastLogged = now;
             return;
         }
 
