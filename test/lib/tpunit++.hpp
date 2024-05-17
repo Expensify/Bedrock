@@ -347,7 +347,7 @@ namespace tpunit {
 
          static int tpunit_detail_do_run(const std::set<std::string>& include, const std::set<std::string>& exclude,
                                          const std::list<std::string>& before, const std::list<std::string>& after, int threads,
-                                         std::function<void()> threadInitFunction);
+                                         std::function<void()> threadInitFunction, const std::set<std::string>& includeMethods);
 
          /**
           * This method writes to a temporary buffer and formats the message nicely for debugging
@@ -385,13 +385,13 @@ namespace tpunit {
 
       private:
 
-         static void tpunit_run_test_class(TestFixture*);
+         static void tpunit_run_test_class(TestFixture*, const std::set<std::string>& includeMethods);
 
          static void tpunit_detail_do_method(method* m);
 
          static void tpunit_detail_do_methods(method* m);
 
-         static void tpunit_detail_do_tests(TestFixture* f);
+         static void tpunit_detail_do_tests(TestFixture* f, const std::set<std::string>& includeMethods);
 
          static stats& tpunit_detail_stats();
 
@@ -434,6 +434,6 @@ namespace tpunit {
        */
       static int run(const std::set<std::string>& include, const std::set<std::string>& exclude,
                      const std::list<std::string>& before, const std::list<std::string>& after, int threads = 1,
-                     std::function<void()> threadInitFunction = [](){});
+                     std::function<void()> threadInitFunction = [](){}, const std::set<string>& includeTestCase = {});
    };
 }

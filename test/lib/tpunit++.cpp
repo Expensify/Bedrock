@@ -98,12 +98,12 @@ tpunit::TestFixture::~TestFixture() {
 }
 
 int tpunit::TestFixture::tpunit_detail_do_run(int threads, std::function<void()> threadInitFunction) {
-    const std::set<std::string> include, exclude;
+    const std::set<std::string> include, exclude, includeMethods;
     const std::list<std::string> before, after;
-    return tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction);
+    return tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction, includeMethods);
 }
 
-void tpunit::TestFixture::tpunit_run_test_class(TestFixture* f) {
+void tpunit::TestFixture::tpunit_run_test_class(TestFixture* f, const std::set<std::string>& includeMethods) {
    f->_stats._assertions = 0;
    f->_stats._exceptions = 0;
    tpunit_detail_do_methods(f->_before_classes);
@@ -112,7 +112,7 @@ void tpunit::TestFixture::tpunit_run_test_class(TestFixture* f) {
       tpunit_detail_stats()._failureNames.emplace(f->_name + "::BEFORE_CLASS"s);
       cout << "\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C initializing " << f->_name << ". Skipping tests." << endl;
    } else {
-       tpunit_detail_do_tests(f);
+       tpunit_detail_do_tests(f, includeMethods);
    }
    f->_stats._assertions = 0;
    f->_stats._exceptions = 0;
@@ -126,7 +126,7 @@ void tpunit::TestFixture::tpunit_run_test_class(TestFixture* f) {
 
 int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const set<string>& exclude,
                                               const list<string>& before, const list<string>& after, int threads,
-                                              std::function<void()> threadInitFunction) {
+                                              std::function<void()> threadInitFunction, const set<string>& includeMethods) {
    threadInitFunction();
     /*
     * Run specific tests by name. If 'include' is empty, then every test is
@@ -162,7 +162,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
 
                // Run the test.
                printf("--------------\n");
-               tpunit_run_test_class(fixture);
+               tpunit_run_test_class(fixture, includeMethods);
 
                continue; // Don't bother checking the rest of the tests.
             }
@@ -262,7 +262,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                        }
                    }
 
-                   tpunit_run_test_class(f);
+                   tpunit_run_test_class(f, includeMethods);
                 }
             } catch (ShutdownException se) {
                 // This will have broken us out of our main loop, so we'll just exit. We also set the exit flag to let
@@ -296,7 +296,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
 
                // Run the test.
                printf("--------------\n");
-               tpunit_run_test_class(fixture);
+               tpunit_run_test_class(fixture, includeMethods);
 
                continue; // Don't bother checking the rest of the tests.
             }
@@ -440,13 +440,40 @@ void tpunit::TestFixture::tpunit_detail_do_methods(tpunit::TestFixture::method* 
     }
 }
 
-void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
+void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f, const set<string>& includeMethods) {
     method* t = f->_tests;
     list<thread> testThreads;
     while(t) {
-        testThreads.push_back(thread([t, f]() {
+        testThreads.push_back(thread([t, f, includeMethods]() {
             recursive_mutex& m = *(f->_mutex);
             currentTestName = f->_name;
+
+            string testMethod = t->_name;
+            size_t pos = testMethod.find("::");
+            if (pos != string::npos) {
+                testMethod = testMethod.substr(pos + 2);
+            }
+
+            if (includeMethods.size()) {
+                bool included = false;
+
+                // If there's no name, we can skip the tests.
+                for (const string& methodName : includeMethods) {
+                    try {
+                        if (regex_match(testMethod, regex("^" + methodName + "$"))) {
+                            included = true;
+                            break;
+                        }
+                    } catch (const regex_error& e) {
+                        cout << "Invalid pattern: " << methodName << ", skipping." << endl;
+                    }
+                }
+
+                if (!included) {
+                    return;
+                }
+            }
+
             currentTestPtr = f;
             f->_stats._assertions = 0;
             f->_stats._exceptions = 0;
@@ -523,6 +550,6 @@ int tpunit::Tests::run(int threads, std::function<void()> threadInitFunction) {
 }
 
 int tpunit::Tests::run(const set<string>& include, const set<string>& exclude,
-                       const list<string>& before, const list<string>& after, int threads, std::function<void()> threadInitFunction) {
-    return TestFixture::tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction);
+                       const list<string>& before, const list<string>& after, int threads, std::function<void()> threadInitFunction, const set<string>& includeMethods) {
+    return TestFixture::tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction, includeMethods);
 }
