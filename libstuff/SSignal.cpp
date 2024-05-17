@@ -11,6 +11,10 @@ void SSetSignalHandlerDieFunc(function<void()>&& func) {
     SSignalHandlerDieFunc = move(func);
 }
 
+// 64kb emergency stack location.
+constexpr auto sigStackSize{1024*64};
+char __SIGSTACK[sigStackSize];
+
 // The function to call in our thread that handles signals.
 void _SSignal_signalHandlerThreadFunc();
 
@@ -73,6 +77,9 @@ void SInitializeSignals() {
 
     // Clear the thread-local signal number.
     _SSignal_threadCaughtSignalNumber = 0;
+
+    stack_t stackInfo {&__SIGSTACK, 0, sigStackSize};
+    sigaltstack(&stackInfo, 0);
 
     // Make a set of all signals except certain exceptions. These exceptions will cause an `abort()` and attempt to log
     // a stack trace before exiting. All other signals will get passed to the signal handling thread.
