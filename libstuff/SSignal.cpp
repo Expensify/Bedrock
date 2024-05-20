@@ -1,5 +1,6 @@
 #include "libstuff.h"
 #include <sqlitecluster/SQLiteNode.h>
+#include <cxxabi.h>
 #include <execinfo.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -10,6 +11,10 @@ thread_local function<void()> SSignalHandlerDieFunc;
 void SSetSignalHandlerDieFunc(function<void()>&& func) {
     SSignalHandlerDieFunc = move(func);
 }
+
+// 64kb emergency stack location.
+constexpr auto sigStackSize{1024*64};
+char __SIGSTACK[sigStackSize];
 
 // The function to call in our thread that handles signals.
 void _SSignal_signalHandlerThreadFunc();
@@ -74,6 +79,9 @@ void SInitializeSignals() {
     // Clear the thread-local signal number.
     _SSignal_threadCaughtSignalNumber = 0;
 
+    stack_t stackInfo {&__SIGSTACK, 0, sigStackSize};
+    sigaltstack(&stackInfo, 0);
+
     // Make a set of all signals except certain exceptions. These exceptions will cause an `abort()` and attempt to log
     // a stack trace before exiting. All other signals will get passed to the signal handling thread.
     sigset_t signals;
@@ -92,6 +100,7 @@ void SInitializeSignals() {
 
     // The old style handler is explicitly null
     newAction.sa_handler = nullptr;
+    newAction.sa_flags = SA_ONSTACK;
 
     // The new style handler is _SSignal_StackTrace.
     newAction.sa_sigaction = &_SSignal_StackTrace;
@@ -173,30 +182,56 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
         if (!_SSignal_threadCaughtSignalNumber) {
             _SSignal_threadCaughtSignalNumber = signum;
 
+            SWARN("Signal " << strsignal(_SSignal_threadCaughtSignalNumber) << "(" << _SSignal_threadCaughtSignalNumber << ") caused crash, logging stack trace.");
+
             // What we'd like to do here is log a stack trace to syslog. Unfortunately, neither computing the stack
             // trace nor logging to to syslog are signal safe, so we try a couple things, doing as little as possible,
             // and hope that they work (they usually do, though it's not guaranteed).
 
             // Build the callstack. Not signal-safe, so hopefully it works.
-            void* callstack[100];
-            int depth = backtrace(callstack, 100);
-
-            // Log it to a file. Everything in this block should be signal-safe, if we managed to generate the
-            // backtrace in the first place.
-            int fd = creat("/tmp/bedrock_crash.log", 0666);
-            if (fd != -1) {
-                backtrace_symbols_fd(callstack, depth, fd);
-                close(fd);
+            void** callstack{0};
+            int max_depth = 10;
+            int depth{0};
+            while (true) {
+                if (callstack) {
+                    free(callstack);
+                }
+                callstack = (void**)malloc(sizeof(void*) * max_depth);
+                depth = backtrace(callstack, max_depth);
+                if (depth == max_depth) {
+                    max_depth *= 2;
+                } else {
+                    break;
+                }
             }
 
-            // Then try and log it to syslog. Neither backtrace_symbols() nor syslog() are signal-safe, either, so this
-            // also might not do what we hope.
-            SWARN("Signal " << strsignal(_SSignal_threadCaughtSignalNumber) << "(" << _SSignal_threadCaughtSignalNumber
-                  << ") caused crash, logging stack trace.");
-            vector<string> stack = SGetCallstack(depth, callstack);
-            for (const auto& frame : stack) {
-                SWARN(frame);
+            if (depth > 40) {
+                SWARN("Stack depth is " << depth << " only logging first and last 20 frames.");
             }
+
+            for (int i = 0; i < depth; i++) {
+                if (depth > 40 && i >= 20 && i < depth - 20) {
+                    // Skip frames in the middle of large stacks.
+                    continue;
+                }
+                char** frame{0};
+                frame = backtrace_symbols(&(callstack[i]), 1);
+                int status{0};
+                char* front = strchr(frame[0], '(') + 1;
+                char* end = strchr(front, '+');
+                char copy[end - front + 1]{0};
+                strncpy(copy, front, end - front);
+                char* demangled = abi::__cxa_demangle(copy, 0, 0, &status);
+                char* tolog = status ? copy : demangled;
+                if (tolog[0] == '\0') {
+                    tolog = frame[0];
+                }
+                SWARN("Frame #" << i << ": " << tolog);
+                free(frame);
+            }
+
+            // Done.
+            free(callstack);
 
             // Call our die function and then reset it.
             SWARN("Calling DIE function.");
