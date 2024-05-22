@@ -1277,7 +1277,7 @@ BedrockServer::BedrockServer(const SData& args_)
     if (args.isSet("-dbPoolSize")){
         _dbPoolSize = args.calcU64("-dbPoolSize");
     } else {
-        _dbPoolSize = args.isSet("-live") ? 10'000 : 250;
+        _dbPoolSize = args.isSet("-live") ? 25'000 : 250;
     }
 
     if (args.isSet("-maxSocketThreads")){

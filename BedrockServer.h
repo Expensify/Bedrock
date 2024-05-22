@@ -472,5 +472,5 @@ class BedrockServer : public SQLiteServer {
     SSynchronizedQueue<bool> _notifyDone;
 
     atomic<size_t> _maxSocketThreads{3'000};
-    atomic<size_t> _dbPoolSize{10'000};
+    atomic<size_t> _dbPoolSize{25'000};
 };
