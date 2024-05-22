@@ -320,12 +320,12 @@ void BedrockServer::sync()
         // until we're either leading or following.
         if (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING && getState() != SQLiteNodeState::STANDINGDOWN) {
             if (preUpdateState == SQLiteNodeState::LEADING || preUpdateState == SQLiteNodeState::FOLLOWING || preUpdateState == SQLiteNodeState::STANDINGDOWN) {
-                blockCommandPort("INVALID_SERVER_STATE", true);
+                blockCommandPort("INVALID_SERVER_STATE", false);
             }
             continue;
         } else {
             if (preUpdateState != SQLiteNodeState::LEADING && preUpdateState != SQLiteNodeState::FOLLOWING && preUpdateState != SQLiteNodeState::STANDINGDOWN) {
-                unblockCommandPort("INVALID_SERVER_STATE", true);
+                unblockCommandPort("INVALID_SERVER_STATE", false);
             }
         }
 
@@ -1543,6 +1543,8 @@ void BedrockServer::unblockCommandPort(const string& reason, bool repeatable) {
         if (repeatable) {
             // We don't warn in this case for unrepeatable blocks. This lets callers call block and then unblock multiple times in a row for these cases.
             SWARN("Tried to remove command port block because: " << reason << ", but it wasn't blocked for that reason!");
+        } else {
+            SINFO("Command port not blocked for : " << reason);
         }
     } else {
         _commandPortBlockReasons.erase(it);
