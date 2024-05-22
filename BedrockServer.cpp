@@ -324,7 +324,7 @@ void BedrockServer::sync()
             }
             continue;
         } else {
-            if (preUpdateState == SQLiteNodeState::LEADING || preUpdateState == SQLiteNodeState::FOLLOWING || preUpdateState == SQLiteNodeState::STANDINGDOWN) {
+            if (preUpdateState != SQLiteNodeState::LEADING && preUpdateState != SQLiteNodeState::FOLLOWING && preUpdateState != SQLiteNodeState::STANDINGDOWN) {
                 unblockCommandPort("INVALID_SERVER_STATE", true);
             }
         }
