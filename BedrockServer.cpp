@@ -316,17 +316,20 @@ void BedrockServer::sync()
             }
         }
 
+        if (getState() == SQLiteNodeState::SEARCHING || getState() == SQLiteNodeState::SYNCHRONIZING) {
+            if (preUpdateState != SQLiteNodeState::SEARCHING && preUpdateState != SQLiteNodeState::SYNCHRONIZING) {
+                blockCommandPort("INVALID_SERVER_STATE", false);
+            }
+        } else {
+            if (preUpdateState == SQLiteNodeState::SEARCHING || preUpdateState == SQLiteNodeState::SYNCHRONIZING) {
+                unblockCommandPort("INVALID_SERVER_STATE", false);
+            }
+        }
+
         // Now that we've cleared any state associated with switching away from leading, we can bail out and try again
         // until we're either leading or following.
         if (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING && getState() != SQLiteNodeState::STANDINGDOWN) {
-            if (preUpdateState == SQLiteNodeState::LEADING || preUpdateState == SQLiteNodeState::FOLLOWING || preUpdateState == SQLiteNodeState::STANDINGDOWN) {
-                blockCommandPort("INVALID_SERVER_STATE", false);
-            }
             continue;
-        } else {
-            if (preUpdateState != SQLiteNodeState::LEADING && preUpdateState != SQLiteNodeState::FOLLOWING && preUpdateState != SQLiteNodeState::STANDINGDOWN) {
-                unblockCommandPort("INVALID_SERVER_STATE", false);
-            }
         }
 
         // If we've just switched to the leading state, we want to upgrade the DB. We set a global `upgradeInProgress`
@@ -1524,6 +1527,7 @@ void BedrockServer::blockCommandPort(const string& reason,  bool repeatable) {
         auto it = _commandPortBlockReasons.find(reason);
         if (it != _commandPortBlockReasons.end()) {
             // Already blocked for this reason, can just return as it's not a repeatable reason.
+            SINFO("Port already blocked for non-repeatable reason " << reason);
             return;
         }
     }
