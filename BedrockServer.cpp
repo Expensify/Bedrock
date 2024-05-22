@@ -319,7 +319,7 @@ void BedrockServer::sync()
         if ((getState() == SQLiteNodeState::SEARCHING || getState() == SQLiteNodeState::SYNCHRONIZING) &&
             (preUpdateState != SQLiteNodeState::SEARCHING && preUpdateState != SQLiteNodeState::SYNCHRONIZING)) {
             if (_commandPortPublic) {
-                SINFO("Closing command port because "<< SQLiteNode::stateName(geState()));
+                SINFO("Closing command port because " << SQLiteNode::stateName(getState()));
                 _commandPortPublic = nullptr;
             }
         }
