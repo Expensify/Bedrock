@@ -319,7 +319,14 @@ void BedrockServer::sync()
         // Now that we've cleared any state associated with switching away from leading, we can bail out and try again
         // until we're either leading or following.
         if (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING && getState() != SQLiteNodeState::STANDINGDOWN) {
+            if (preUpdateState == SQLiteNodeState::LEADING || preUpdateState == SQLiteNodeState::FOLLOWING || preUpdateState == SQLiteNodeState::STANDINGDOWN) {
+                blockCommandPort("INVALID_SERVER_STATE", true);
+            }
             continue;
+        } else {
+            if (preUpdateState == SQLiteNodeState::LEADING || preUpdateState == SQLiteNodeState::FOLLOWING || preUpdateState == SQLiteNodeState::STANDINGDOWN) {
+                unblockCommandPort("INVALID_SERVER_STATE", true);
+            }
         }
 
         // If we've just switched to the leading state, we want to upgrade the DB. We set a global `upgradeInProgress`
@@ -1511,8 +1518,15 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
 }
 
 
-void BedrockServer::blockCommandPort(const string& reason) {
+void BedrockServer::blockCommandPort(const string& reason,  bool repeatable) {
     lock_guard<mutex> lock(_portMutex);
+    if (!repeatable) {
+        auto it = _commandPortBlockReasons.find(reason);
+        if (it != _commandPortBlockReasons.end()) {
+            // Already blocked for this reason, can just return as it's not a repeatable reason.
+            return;
+        }
+    }
     _commandPortBlockReasons.insert(reason);
     _isCommandPortLikelyBlocked = true;
     if (_commandPortBlockReasons.size() == 1) {
@@ -1522,25 +1536,20 @@ void BedrockServer::blockCommandPort(const string& reason) {
     SINFO("Blocking command port due to: " << reason << (_commandPortBlockReasons.size() > 1 ? " (already blocked)" : "") << ".");
 }
 
-void BedrockServer::unblockCommandPort(const string& reason) {
+void BedrockServer::unblockCommandPort(const string& reason, bool repeatable) {
     lock_guard<mutex> lock(_portMutex);
     auto it = _commandPortBlockReasons.find(reason);
     if (it == _commandPortBlockReasons.end()) {
-        SWARN("Tried to remove command port block because: " << reason << ", but it wasn't blocked for that reason!");
+        if (repeatable) {
+            // We don't warn in this case for unrepeatable blocks. This lets callers call block and then unblock multiple times in a row for these cases.
+            SWARN("Tried to remove command port block because: " << reason << ", but it wasn't blocked for that reason!");
+        }
     } else {
         _commandPortBlockReasons.erase(it);
         SINFO("Removing command port block due to: " <<  reason << (_commandPortBlockReasons.size() > 0 ? " (blocks remaining)" : "") << ".");
     }
     if (_commandPortBlockReasons.empty()) {
         _isCommandPortLikelyBlocked = false;
-    }
-}
-
-void BedrockServer::suppressCommandPort(const string& reason, bool suppress, bool manualOverride) {
-    if (suppress) {
-        blockCommandPort("LEGACY_" + reason);
-    } else {
-        unblockCommandPort("LEGACY_" + reason);
     }
 }
 
