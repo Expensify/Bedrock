@@ -182,8 +182,8 @@ class BedrockServer : public SQLiteServer {
     void onNodeLogin(SQLitePeer* peer) override;
 
     // You must block and unblock the command port with *identical strings*.
-    void blockCommandPort(const string& reason, bool repeatable = true);
-    void unblockCommandPort(const string& reason, bool repeatable = true);
+    void blockCommandPort(const string& reason);
+    void unblockCommandPort(const string& reason);
 
     // Reasons for each request to close the command port mapped to the instance of commandPortSuppressionCount that
     // created them.
