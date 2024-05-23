@@ -35,12 +35,6 @@ SQLite& SQLitePool::getBase() {
     return _baseDB;
 }
 
-void SQLitePool::setMaxDBs(size_t newMax) {
-    unique_lock<mutex> lock(_sync);
-    SINFO("Resetting max DB filehandles to " << newMax << " from " << _maxDBs);
-    _maxDBs = newMax;
-}
-
 size_t SQLitePool::getIndex(bool createHandle) {
     while (true) {
         unique_lock<mutex> lock(_sync);

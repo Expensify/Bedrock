@@ -25,8 +25,6 @@ class SQLitePool {
     // Takes an allocated index and creates the appropriate DB handle if required.
     SQLite& initializeIndex(size_t index);
 
-    void setMaxDBs(size_t newMax);
-
     // Return an object to the pool.
     void returnToPool(size_t index);
 
