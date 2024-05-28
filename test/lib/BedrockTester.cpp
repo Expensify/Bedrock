@@ -107,13 +107,13 @@ BedrockTester::BedrockTester(const map<string, string>& args,
     if (!SFileExists(_args["-db"])) {
         SFileSave(_args["-db"], "");
     }
-    
+
     // Run any supplied queries on the DB.
     // We don't use SQLite here, because we specifically want to avoid dealing with journal tables.
     if (queries.size()) {
         sqlite3* db;
         sqlite3_initialize();
-        string completeFilename = dbFileName;
+        string completeFilename = _args["-db"];
         if (ENABLE_HCTREE) {
             completeFilename = "file://" + completeFilename + "?hctree=1";
         }
@@ -378,7 +378,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         usleep(100'000);
                         continue;
                     }
-                    
+
                     // Socket is successfully created. We can exit this loop.
                     break;
                 }
