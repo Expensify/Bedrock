@@ -362,7 +362,7 @@ class SQLite {
     // Pointer to our SharedData object, which is shared between all SQLite DB objects for the same file.
     SharedData& _sharedData;
 
-    // The name of the journal table that this particular DB handle with write to.
+    // The name of the journal table that this particular DB handle will write to.
     string _journalName;
 
     // The current size of the journal, in rows. TODO: Why isn't this in SharedData?
