@@ -3076,7 +3076,7 @@ string STIMESTAMP(uint64_t when) {
 }
 
 string STIMESTAMP_MS(uint64_t when) {
-    uint64_t ms = (time % 1'000'000) / 1'000;
+    uint64_t ms = (when % 1'000'000) / 1'000;
     string timestamp = SUNQUOTED_TIMESTAMP(when);
     char msString[5] = {0};
     snprintf(msString, 5, "%03lu", ms);
