@@ -1,6 +1,5 @@
 #include "libstuff.h"
 
-#include <ctime>
 #include <sys/time.h>
 
 uint64_t STimeNow() {
