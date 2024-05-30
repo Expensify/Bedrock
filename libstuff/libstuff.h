@@ -165,6 +165,7 @@ int SDaysInMonth(int year, int month);
 string SComposeTime(const string& format, uint64_t when);
 timeval SToTimeval(uint64_t when);
 string SFirstOfMonth(const string& timeStamp, const int64_t& offset = 0);
+uint64_t STimestampToEpoch();
 
 // Helpful class for timing
 struct SStopwatch {
@@ -601,6 +602,7 @@ bool SQVerifyTableExists(sqlite3* db, const string& tableName);
 // --------------------------------------------------------------------------
 string SUNQUOTED_TIMESTAMP(uint64_t when);
 string STIMESTAMP(uint64_t when);
+string STIMESTAMP_MS(uint64_t when);
 string SUNQUOTED_CURRENT_TIMESTAMP();
 string SCURRENT_TIMESTAMP();
 string SCURRENT_TIMESTAMP_MS();

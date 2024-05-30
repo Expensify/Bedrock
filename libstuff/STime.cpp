@@ -1,6 +1,8 @@
 #include "libstuff.h"
 
+#include <ctime>
 #include <sys/time.h>
+
 
 uint64_t STimeNow() {
     // Get the time = microseconds since 00:00:00 UTC, January 1, 1970
@@ -51,12 +53,7 @@ timeval SToTimeval(uint64_t when) {
 }
 
 string SCURRENT_TIMESTAMP_MS() {
-    uint64_t time = STimeNow();
-    uint64_t ms = (time % 1'000'000) / 1'000;
-    string timestamp = SUNQUOTED_TIMESTAMP(time);
-    char msString[5] = {0};
-    snprintf(msString, 5, "%03lu", ms);
-    return timestamp + "." + msString;
+    return STIMESTAMP_MS(STimeNow());
 }
 
 string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
@@ -96,4 +93,12 @@ string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
     char buf[256] = {};
     size_t length = strftime(buf, sizeof(buf), "%Y-%m-%d", &t);
     return string(buf, length);
+}
+
+uint64_t STimestampToEpoch(const string& timestamp, const string& format)
+{
+    tm tm = {};
+    istringstream ss(timestamp);
+    ss >> get_time(&tm, format);
+    const int64_t epoch = static_cast<int64_t>(mktime(&tm));
 }
