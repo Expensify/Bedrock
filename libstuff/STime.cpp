@@ -93,11 +93,3 @@ string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
     size_t length = strftime(buf, sizeof(buf), "%Y-%m-%d", &t);
     return string(buf, length);
 }
-
-uint64_t STimestampToEpoch(const string& timestamp, const string& format)
-{
-    tm tm = {};
-    istringstream ss(timestamp);
-    ss >> get_time(&tm, format);
-    const int64_t epoch = static_cast<int64_t>(mktime(&tm));
-}
