@@ -115,9 +115,7 @@ typedef map<string, SString, STableComp> STable;
 // (for DEBUG) a stack trace at the same time. They can take, 1, 2, or all 3 of the components of an HTTP response as arguments.
 #define STHROW(...)                                           \
 do {                                                          \
-    if (_g_SLogMask & (1 << LOG_DEBUG)) {                     \
-        SLogStackTrace(LOG_DEBUG);                            \
-    }                                                         \
+    SLogStackTrace(LOG_DEBUG);                                \
     throw SException(__FILE__, __LINE__, false, __VA_ARGS__); \
 } while (false)
 
