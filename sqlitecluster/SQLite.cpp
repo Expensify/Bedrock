@@ -371,7 +371,7 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     // Reset before the query, as it's possible the query sets these.
     _autoRolledBack = false;
 
-    SINFO("[concurrent] Beginning transaction");
+    SDEBUG("[concurrent] Beginning transaction");
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
 
@@ -719,7 +719,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     result = SQuery(_db, "committing db transaction", "COMMIT");
     _lastConflictPage = _conflictPage;
     if (_lastConflictPage) {
-        SINFO("part of last conflict page: " << _lastConflictPage);
+        SINFO("part of last conflcit page: " << _lastConflictPage);
     }
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
@@ -772,7 +772,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         }
         SINFO(description << " COMMIT complete in " << time << ". Wrote " << (endPages - startPages)
               << " pages. WAL file size is " << sz << " bytes. " << _queryCount << " queries attempted, " << _cacheHits
-              << " served from cache. Used journal " << _journalName);
+              << " served from cache.");
         _queryCount = 0;
         _cacheHits = 0;
         _dbCountAtStart = 0;
