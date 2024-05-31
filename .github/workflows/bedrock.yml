@@ -1,4 +1,4 @@
-name: Auth Test Suite
+name: Bedrock Test Suite
 on:
   push:
     branches: # this ignores tag pushes, and only looks at branches.
@@ -12,9 +12,6 @@ env:
   CCACHE_BASEDIR: "/home/runner/.cache/ccache"
   # Use mirror.bastion1.sjc if running locally
   APT_MIRROR_URL: "apt-mirror.expensify.com:843"
-  TRAVIS_COMMIT: ${{ github.sha }}
-  TRAVIS_TAG: ${{ github.ref }}
-  TRAVIS_BRANCH: ${{ github.ref_name }}
   CXX: g++-13 CC=gcc-13
 jobs:
   Run_Bedrock_Tests:
@@ -74,13 +71,13 @@ jobs:
       with:
         limit-access-to-actor: true
 
-    # If tmate was run, we want to mark this step as failed so auth tests don't look like they're passing
+    # If tmate was run, we want to mark this step as failed so bedrock tests don't look like they're passing
     - name: Mark failure if debugging
       if: runner.debug == '1'
       run: exit 1
 
     - name: Run tests
-      run: "./travis.sh"
+      run: "./ci_tests.sh"
 
     - uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
       env:
