@@ -16,7 +16,7 @@ export CCACHE_COMPILERCHECK="mtime"
 # We have include_file_ctime and include_file_mtime since travis never modifies the header file during execution
 # and travis shouldn't care about ctime and mtime between new branches.
 export CCACHE_SLOPPINESS="pch_defines,time_macros,include_file_ctime,include_file_mtime"
-export CCACHE_MAXSIZE="5G"
+export CCACHE_MAXSIZE="1G"
 
 # ccache recommends a compression level of 5 or less for faster compilations.
 # Compression speeds up the tar and untar of the cache between travis runs.
