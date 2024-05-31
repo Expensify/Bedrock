@@ -17,13 +17,13 @@ env:
   TRAVIS_BRANCH: ${{ github.ref_name }}
   CXX: g++-13 CC=gcc-13
 jobs:
-  Create_Auth_Binary:
-    name: "Create Auth Binary"
+  Run_Bedrock_Tests:
+    name: "Create Bedrock and Test"
     runs-on: ubuntu-20.04-v64 # The biggest and best for my baby
     timeout-minutes: 30
     steps:
 
-    - name: Checkout Auth
+    - name: Checkout Bedrock
       uses: actions/checkout@v4.1.0
 
     - name: Get Date for cache
