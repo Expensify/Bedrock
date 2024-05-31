@@ -75,7 +75,7 @@ class SQLite {
 
     // Performs a read-only query (eg, SELECT). This can be done inside or outside a transaction. Returns true on
     // success, and fills the 'result' with the result of the query.
-    bool read(const string& query, SQResult& result) const;
+    bool read(const string& query, SQResult& result, bool skipQueryLog = false) const;
 
     // Performs a read-only query (eg, SELECT) that returns a single value.
     string read(const string& query) const;

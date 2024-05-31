@@ -2535,7 +2535,7 @@ void SQueryLogClose() {
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn) {
+int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn, bool skipQueryLog) {
 #define MAX_TRIES 3
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
@@ -2666,7 +2666,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     }
 
     uint64_t elapsed = STimeNow() - startTime;
-    if ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000) {
+    if (!skipQueryLog && ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000)) {
         // Avoid logging queries so long that we need dozens of lines to log them.
         string sqlToLog = sql.substr(0, 20000);
         SRedactSensitiveValues(sqlToLog);
