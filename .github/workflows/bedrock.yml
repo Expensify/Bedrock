@@ -4,7 +4,7 @@ on:
     branches: # this ignores tag pushes, and only looks at branches.
       - '**'
   release:
-    types: [prereleased]
+    types: [prereleased, published]
 concurrency:
   group: "${{ github.ref }}"
   cancel-in-progress: true

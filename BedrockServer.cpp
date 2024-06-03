@@ -86,13 +86,18 @@ void BedrockServer::sync()
         workerThreads = 2;
     }
 
+    size_t journalTables = workerThreads;
+    if (args.isSet("-journalTables")) {
+        journalTables = args.calcU64("-journalTables");
+    }
+
     // Initialize the DB.
     int64_t mmapSizeGB = args.isSet("-mmapSizeGB") ? stoll(args["-mmapSizeGB"]) : 0;
 
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
     SINFO("Setting dbPool size to: " << _dbPoolSize);
-    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), workerThreads, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
+    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
