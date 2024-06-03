@@ -1716,7 +1716,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     uint64_t threadAttemptStartTimestamp = STimeNow();
                     thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp).detach();
                 } catch (const system_error& e) {
-                    SWARN("Caught system_error starting _replicate thread with " << _replicationThreadCount.load() << " threads. e.what()=" << e.what());
+                    SALERT("Caught system_error starting _replicate thread with " << _replicationThreadCount.load() << " threads. e.what()=" << e.what());
                     STHROW("Error starting replicate thread so giving up and reconnecting.");
                 }
                 SDEBUG("Done spawning concurrent replicate thread: " << threadID);
