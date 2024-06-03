@@ -1,0 +1,16 @@
+name: Set up mirror certificates
+description: Set up mirror certificates
+
+runs:
+  using: composite
+  steps:
+    - name: Install 1Password CLI
+      uses: 1password/install-cli-action@v1
+      env:
+        OP_SERVICE_ACCOUNT_TOKEN: ${{ env.OP_SERVICE_ACCOUNT_TOKEN }}
+
+    - name: Update SSL Certificates from 1Password
+      run: |
+        op document get --output expensify.ca.crt expensify.ca.crt && sudo cp expensify.ca.crt /usr/local/share/ca-certificates/expensify.ca.crt
+        sudo update-ca-certificates
+      shell: bash

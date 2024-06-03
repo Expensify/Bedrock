@@ -1,0 +1,90 @@
+name: Bedrock Test Suite
+on:
+  push:
+    branches: # this ignores tag pushes, and only looks at branches.
+      - '**'
+  release:
+    types: [prereleased]
+concurrency:
+  group: "${{ github.ref }}"
+  cancel-in-progress: true
+env:
+  CCACHE_BASEDIR: "/home/runner/.cache/ccache"
+  # Use mirror.bastion1.sjc if running locally
+  APT_MIRROR_URL: "apt-mirror.expensify.com:843"
+jobs:
+  Run_Bedrock_Tests:
+    name: "Create Bedrock and Test"
+    runs-on: ubuntu-20.04-v64 # The biggest and best for my baby
+    timeout-minutes: 30
+    steps:
+
+    - name: Checkout Bedrock
+      uses: actions/checkout@v4.1.0
+
+    - name: Get Date for cache
+      id: get-date
+      run: |
+        echo "date=$(/bin/date -u "+%Y%m%d")" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: Set up cache
+      uses: actions/cache@v4.0.0
+      with:
+        path: |-
+          ${{ env.CCACHE_BASEDIR }}
+        key: "${{ runner.os }}-compilation-${{ github.ref_name }}-${{ github.sha }}"
+        restore-keys: |
+          ${{ runner.os }}-compilation-${{ github.ref_name }}-
+          ${{ runner.os }}-compilation-
+
+    - name: Setup Mirror Certificates
+      uses: ./.github/actions/composite/setup-certificate-1p
+      env:
+        OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+    - name: Install packages
+      run: |
+        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys BA9EF27F
+        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 4F4EA0AAE5267A6C
+        wget -qO - https://package.perforce.com/perforce.pubkey --no-check-certificate | sudo apt-key add -
+        echo "deb [arch=amd64] https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu focal main" | sudo tee -a /etc/apt/sources.list
+        sudo apt-get update -y
+        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake gcc-13 g++-13 libsodium-dev libgpgme11-dev libstdc++-13-dev
+        sudo locale-gen "en_US.UTF-8"
+        sudo service rsyslog start
+
+    - name: Use updated ccache
+      run: |
+        wget https://github.com/ccache/ccache/releases/download/v4.8.3/ccache-4.8.3-linux-x86_64.tar.xz
+        tar -xf ccache-4.8.3-linux-x86_64.tar.xz
+        sudo cp ccache-4.8.3-linux-x86_64/ccache /usr/local/bin/ccache
+        ccache -V
+        ln -s /usr/local/bin/ccache /usr/local/bin/gcc-13
+        ln -s /usr/local/bin/ccache /usr/local/bin/g++-13
+
+    - name: Setup tmate session
+      if: runner.debug == '1'
+      uses: mxschmitt/action-tmate@v3
+      timeout-minutes: 60
+      with:
+        limit-access-to-actor: true
+
+    # If tmate was run, we want to mark this step as failed so bedrock   tests don't look like they're passing
+    - name: Mark failure if debugging
+      if: runner.debug == '1'
+      run: exit 1
+
+    - name: Run tests
+      run: "./ci_tests.sh"
+
+    - name: Upload bedrock binary to release
+      if: "${{ startsWith(github.ref, 'refs/tags/') }}"
+      uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        GITHUB_REPOSITORY: "${{ github.repository }}"
+      with:
+        files: |-
+          ./bedrock
+
