@@ -2535,7 +2535,7 @@ void SQueryLogClose() {
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipWarn, bool skipQueryLog) {
+int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn) {
 #define MAX_TRIES 3
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
@@ -2666,7 +2666,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     }
 
     uint64_t elapsed = STimeNow() - startTime;
-    if (!skipQueryLog && ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000)) {
+    if (!skipInfoWarn && ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000)) {
         // Avoid logging queries so long that we need dozens of lines to log them.
         string sqlToLog = sql.substr(0, 20000);
         SRedactSensitiveValues(sqlToLog);
@@ -2703,7 +2703,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // Only OK and commit conflicts are allowed without warning because they're the only "successful" results that we expect here.
     // OK means it succeeds, conflicts will get retried further up the call stack.
-    if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && !skipWarn) {
+    if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && !skipInfoWarn) {
         string sqlToLog = sql.substr(0, 20000);
         SRedactSensitiveValues(sqlToLog);
 
@@ -3062,9 +3062,9 @@ string SQ(double val) {
     return SToStr(val);
 }
 
-int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipWarn) {
+int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipInfoWarn) {
     SQResult ignore;
-    return SQuery(db, e, sql, ignore, warnThreshold, skipWarn);
+    return SQuery(db, e, sql, ignore, warnThreshold, skipInfoWarn);
 }
 
 string SUNQUOTED_TIMESTAMP(uint64_t when) {
