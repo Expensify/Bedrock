@@ -1719,7 +1719,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     // If the server is strugling and falling behind on replication, we might have too many threads
                     // causing a resource exhaustion. If that happens, all the transations that are already threaded
                     // and waiting for the transaction that failed will be stuck in an infinite loop. To prevent that
-                    // we're cancelling all threads that would need to wait on the transaction that is failing.
+                    // we're cancelling all threads that would need to wait on the transaction failed to be threaded.
                     uint64_t cancelAfter = message.calcU64("NewCount") - 1;
                     _localCommitNotifier.cancel(cancelAfter);
                     _leaderCommitNotifier.cancel(cancelAfter);
