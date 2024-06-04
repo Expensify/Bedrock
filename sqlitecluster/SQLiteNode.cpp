@@ -1723,7 +1723,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     uint64_t cancelAfter = message.calcU64("NewCount") - 1;
                     _localCommitNotifier.cancel(cancelAfter);
                     _leaderCommitNotifier.cancel(cancelAfter);
-                    SWARN("Caught system_error starting _replicate thread with" << _replicationThreadCount.load() << " threads. cancelAfter=" << cancelAfter << " e.what()=" << e.what());
+                    _changeState(SQLiteNodeState::SEARCHING);
+                    SWARN("Caught system_error starting _replicate thread with" << _replicationThreadCount.load() << " threads. cancelAfter="<< cancelAfter << " e.what()=" << e.what());
                     STHROW("Error starting replicate thread so giving up and reconnecting.");
                 }
                 SDEBUG("Done spawning concurrent replicate thread: " << threadID);
