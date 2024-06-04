@@ -1721,9 +1721,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     // and waiting for the transaction that failed will be stuck in an infinite loop. To prevent that
                     // we're changing the state to SEARCHING and sending the cancelAfter property to drop all threads
                     // that depend on the transaction that failed to be threaded.
-                    uint64_t cancelAfter = message.calcU64("NewCount") - 1;
-                    _changeState(SQLiteNodeState::SEARCHING, cancelAfter);
-                    SWARN("Caught system_error starting _replicate thread with" << _replicationThreadCount.load() << " threads. cancelAfter="<< cancelAfter << " e.what()=" << e.what());
+                    _changeState(SQLiteNodeState::SEARCHING, message.calcU64("NewCount") - 1);
+                    SWARN("Caught system_error starting _replicate thread with " << _replicationThreadCount.load() << " threads. e.what()=" << e.what());
                     STHROW("Error starting replicate thread so giving up and reconnecting.");
                 }
                 SDEBUG("Done spawning concurrent replicate thread: " << threadID);
@@ -1939,7 +1938,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
         // If we were following, and now we're not, we give up an any replications.
         if (_state == SQLiteNodeState::FOLLOWING) {
             _replicationThreadsShouldExit = true;
-            uint64_t cancelAfter = commitIDToCancelAfter > 0 ? commitIDToCancelAfter : _leaderCommitNotifier.getValue();
+            uint64_t cancelAfter = commitIDToCancelAfter ? commitIDToCancelAfter : _leaderCommitNotifier.getValue();
             SINFO("Replication threads should exit, canceling commits after current leader commit " << cancelAfter);
             _localCommitNotifier.cancel(cancelAfter);
             _leaderCommitNotifier.cancel(cancelAfter);
