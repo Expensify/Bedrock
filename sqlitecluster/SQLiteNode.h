@@ -226,7 +226,7 @@ class SQLiteNode : public STCPManager {
     // Add required headers for messages being sent to peers.
     SData _addPeerHeaders(SData message);
 
-    void _changeState(SQLiteNodeState newState);
+    void _changeState(SQLiteNodeState newState, uint64_t commitIDToCancelAfter = 0);
 
     // Handlers for transaction messages.
     void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message, bool wasConflict);
