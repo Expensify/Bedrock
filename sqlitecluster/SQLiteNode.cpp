@@ -1717,7 +1717,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp).detach();
                 } catch (const system_error& e) {
                     // If the server is strugling and falling behind on replication, we might have too many threads
-                    // causing a resource exhaustion. If that happens, all the transations that are already threaded
+                    // causing a resource exhaustion. If that happens, all the transactions that are already threaded
                     // and waiting for the transaction that failed will be stuck in an infinite loop. To prevent that
                     // we're changing the state to SEARCHING and sending the cancelAfter property to drop all threads
                     // that depend on the transaction that failed to be threaded.
