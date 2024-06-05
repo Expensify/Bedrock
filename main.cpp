@@ -4,6 +4,7 @@
 ///
 #include <dlfcn.h>
 #include <iostream>
+#include <fstream>
 #include <signal.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -399,5 +400,14 @@ int main(int argc, char* argv[]) {
 
     // All done
     SINFO("Graceful process shutdown complete");
+
+    // Save that we're shutting down.
+    pid_t pid = getpid();
+    ofstream file("/var/log/bedrock_shutdown", std::ios::app);
+    if (file) {
+        file << "shutdown " << pid << " " << SComposeTime("%Y-%m-%dT%H:%M:%S", STimeNow()) << endl;
+        file.close();
+    }
+
     return 0;
 }
