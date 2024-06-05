@@ -402,10 +402,9 @@ int main(int argc, char* argv[]) {
     SINFO("Graceful process shutdown complete");
 
     // Save that we're shutting down.
-    pid_t pid = getpid();
     ofstream file("/var/log/bedrock_shutdown", std::ios::app);
     if (file) {
-        file << "shutdown " << pid << " " << SComposeTime("%Y-%m-%dT%H:%M:%S", STimeNow()) << endl;
+        file << "shutdown " << getpid() << " " << SComposeTime("%Y-%m-%dT%H:%M:%S", STimeNow()) << endl;
         file.close();
     }
 
