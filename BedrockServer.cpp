@@ -3,6 +3,7 @@
 
 #include <arpa/inet.h>
 #include <cstring>
+#include <fstream>
 #include <iomanip>
 #include <sys/resource.h>
 #include <sys/time.h>
@@ -620,6 +621,15 @@ void BedrockServer::sync()
     // Release our handle to this pointer. Any other functions that are still using it will keep the object alive
     // until they return.
     atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
+
+    // If we're not detaching, save that we're shutting down.
+    if (!_detach) {
+        ofstream file("/var/log/bedrock_shutdown", std::ios::app);
+        if (file) {
+            file << "shutdown " << getpid() << " " << SComposeTime("%Y-%m-%dT%H:%M:%S", STimeNow()) << endl;
+            file.close();
+        }
+    }
 
     // Release the current DB pool, and zero out our pointer. If any socket threads hold a handle to `_syncNode`, they will keep this in existence
     // until they release it.
