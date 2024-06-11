@@ -475,7 +475,7 @@ string SQLite::read(const string& query) const {
     return result[0][0];
 }
 
-bool SQLite::read(const string& query, SQResult& result) const {
+bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) const {
     uint64_t before = STimeNow();
     bool queryResult = false;
     _queryCount++;
@@ -486,7 +486,7 @@ bool SQLite::read(const string& query, SQResult& result) const {
         queryResult = true;
     } else {
         _isDeterministicQuery = true;
-        queryResult = !SQuery(_db, "read only query", query, result);
+        queryResult = !SQuery(_db, "read only query", query, result, 2000 * STIME_US_PER_MS, skipInfoWarn);
         if (_isDeterministicQuery && queryResult) {
             _queryCache.emplace(make_pair(query, result));
         }
