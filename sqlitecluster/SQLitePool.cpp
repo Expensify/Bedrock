@@ -60,7 +60,7 @@ size_t SQLitePool::getIndex(bool createHandle) {
             return index;
         } else {
             // Wait for a handle.
-            SINFO("Waiting for DB handle");
+            SWARN("Waiting for DB handle");
             _wait.wait(lock);
         }
     }
@@ -88,7 +88,7 @@ void SQLitePool::returnToPool(size_t index) {
 }
 
 SQLiteScopedHandle::SQLiteScopedHandle(SQLitePool& pool, size_t index) : _pool(pool), _index(index)
-{} 
+{}
 
 SQLiteScopedHandle::~SQLiteScopedHandle() {
     _pool.returnToPool(_index);

@@ -2045,7 +2045,7 @@ void BedrockServer::_acceptSockets() {
                 uint64_t now = STimeNow();
                 if ((port != _controlPort) && (_outstandingSocketThreads >= _maxSocketThreads)) {
                     if ((lastLogged < now - 3'000'000)) {
-                        SINFO("Not accepting any new socket threads as we already have " << _outstandingSocketThreads << " of " << _maxSocketThreads);
+                        SWARN("Not accepting any new socket threads as we already have " << _outstandingSocketThreads << " of " << _maxSocketThreads);
                         lastLogged = now;
                     }
                     return;
