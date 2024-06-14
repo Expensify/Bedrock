@@ -1605,7 +1605,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         // This is similar to the above check, and is used for letting HAProxy load-balance commands.
 
         if (_version != _leaderVersion.load()) {
-            response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version;
+            response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version + ", LeaderVersion=" + _leaderVersion.load();
         } else {
             string method = "HTTP/1.1 ";
 
