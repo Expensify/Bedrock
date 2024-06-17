@@ -725,7 +725,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // 2. Any commands if the current version of the code is not the same one as leader is executing.
     if (getState() == SQLiteNodeState::FOLLOWING && !command->complete && (command->escalateImmediately || _version != _leaderVersion.load())) {
         auto _clusterMessengerCopy = _clusterMessenger;
-        string escalatedTo = "";
         if (command->escalateImmediately && _clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
             // command->complete is now true for this command. It will get handled a few lines below.
             SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
@@ -735,6 +734,18 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             SINFO("Couldn't escalate command " << command->request.methodLine << " to " << (command->escalateImmediately ? "leader" : "follower peer") << ", queuing it again.");
             _commandQueue.push(move(command));
             return;
+        }
+    }
+
+    // If we happen to be synchronizing but the command port is open, which is an uncommon but possible scenario (i.e., we were momentarily disconnected from leader and need to catch back
+    // up), we will forward commands to any other follower similar to if we were running as a different version from leader.
+    if (getState() == SQLiteNodeState::SYNCHRONIZING) {
+        auto _clusterMessengerCopy = _clusterMessenger;
+        bool result = _clusterMessengerCopy->runOnPeer(*command, false);
+        if (result) {
+            SINFO("Synchronizing while accepting commands, so forwarded " << command->request.methodLine << " to peer successfully");
+        } else {
+            SWARN("Synchronizing while accepting commands, so forwarded " << command->request.methodLine << " to peer, but failed.");
         }
     }
 
