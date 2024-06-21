@@ -2083,8 +2083,6 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
     }
 }
 
-static int __ATTEMPTS = 0;
-
 void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll) {
     // We need this to check the state of the node, and we also need `name` to make the logging macros work in a static
     // function. However, if you pass a null pointer here, we can't set these, so we'll fail. We also can't log that,
@@ -2110,6 +2108,8 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
             // Instead of reconnecting, we tell the peer that we don't match. It's up to the peer to reconnect.
             response["hashMismatchValue"] = myHash;
             response["hashMismatchNumber"] = to_string(peerCommitCount);
+
+            return;
         }
         PINFO("Latest commit hash matches our records, beginning synchronization.");
     } else {
@@ -2139,12 +2139,7 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
             // We set this for all commits because this only gets all commits in response to SUBSCRIBE, which is done synchronously, and blocks the commit thread.
             // For asynchronous queries, there's nothing being blocked, so it doesn't much matter how long these take.
             // This is really not the correct encapsulation for this, but we can improve that later.
-            if (__ATTEMPTS) {
-                timeoutLimitUS = 10'000;
-            } else {
-                timeoutLimitUS = 100;
-            }
-            __ATTEMPTS++;
+            timeoutLimitUS = 10'000'000;
         } else {
             toIndex = min(toIndex, fromIndex + 100); // 100 transactions at a time
         }

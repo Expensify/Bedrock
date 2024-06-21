@@ -211,7 +211,7 @@ void SQLite::commonConstructorInitialization(bool hctree) {
 
     // I tested and found that we could set about 10,000,000 and the number of steps to run and get a callback once a
     // second. This is set to be a bit more granular than that, which is probably adequate.
-    sqlite3_progress_handler(_db, 100, _progressHandlerCallback, this);
+    sqlite3_progress_handler(_db, 1'000'000, _progressHandlerCallback, this);
 
     // Setting a wal hook prevents auto-checkpointing.
     sqlite3_wal_hook(_db, _walHookCallback, this);
