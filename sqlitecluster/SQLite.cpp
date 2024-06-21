@@ -211,7 +211,7 @@ void SQLite::commonConstructorInitialization(bool hctree) {
 
     // I tested and found that we could set about 10,000,000 and the number of steps to run and get a callback once a
     // second. This is set to be a bit more granular than that, which is probably adequate.
-    sqlite3_progress_handler(_db, 1'000'000, _progressHandlerCallback, this);
+    sqlite3_progress_handler(_db, 100, _progressHandlerCallback, this);
 
     // Setting a wal hook prevents auto-checkpointing.
     sqlite3_wal_hook(_db, _walHookCallback, this);
@@ -874,20 +874,19 @@ string SQLite::getCommittedHash() {
     return _sharedData.lastCommittedHash.load();
 }
 
-bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) {
+int SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS) {
     // Look up all the queries within that range
     SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
     string query = _getJournalQuery({"SELECT id, hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
                                     (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     query = "SELECT hash, query FROM (" + query  + ") ORDER BY id";
-
-    // Set timeout to 10 seconds.
-    _timeoutLimit = STimeNow() + 10'000'000;
+    if (timeoutLimitUS) {
+        _timeoutLimit = STimeNow() + timeoutLimitUS;
+    }
     int queryResult = SQuery(_db, "getting commits", query, result);
     _timeoutLimit = 0;
-
-    return !queryResult;
+    return queryResult;
 }
 
 int64_t SQLite::getLastInsertRowID() {

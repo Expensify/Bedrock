@@ -2132,13 +2132,24 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
         // Figure out how much to send it
         uint64_t fromIndex = peerCommitCount + 1;
         uint64_t toIndex = targetCommit;
+        uint64_t timeoutLimitUS = 0;
         if (sendAll) {
             SINFO("Sending all commits with synchronize message, from " << fromIndex << " to " << toIndex); 
+
+            // We set this for all commits because this only gets all commits in response to SUBSCRIBE, which is done synchronously, and blocks the commit thread.
+            // For asynchronous queries, there's nothing being blocked, so it doesn't much matter how long these take.
+            // This is really not the correct encapsulation for this, but we can improve that later.
+            timeoutLimitUS = 100;
         } else {
             toIndex = min(toIndex, fromIndex + 100); // 100 transactions at a time
         }
-        if (!db.getCommits(fromIndex, toIndex, result)) {
-            STHROW("error getting commits");
+        int resultCode = db.getCommits(fromIndex, toIndex, result, timeoutLimitUS);
+        if (resultCode) {
+            if (resultCode == SQLITE_INTERRUPT) {
+                SWARN("Timed out while running synchronization query.");
+            } else {
+                STHROW("error getting commits");
+            }
         }
         if ((uint64_t)result.size() != toIndex - fromIndex + 1) {
             STHROW("mismatched commit count");
