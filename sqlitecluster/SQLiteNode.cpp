@@ -2132,12 +2132,17 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
         // Figure out how much to send it
         uint64_t fromIndex = peerCommitCount + 1;
         uint64_t toIndex = targetCommit;
-        if (!sendAll)
+        if (sendAll) {
+            SINFO("Sending all commits with synchronize message, from " << fromIndex << " to " << toIndex); 
+        } else {
             toIndex = min(toIndex, fromIndex + 100); // 100 transactions at a time
-        if (!db.getCommits(fromIndex, toIndex, result))
+        }
+        if (!db.getCommits(fromIndex, toIndex, result)) {
             STHROW("error getting commits");
-        if ((uint64_t)result.size() != toIndex - fromIndex + 1)
+        }
+        if ((uint64_t)result.size() != toIndex - fromIndex + 1) {
             STHROW("mismatched commit count");
+        }
 
         // Wrap everything into one huge message
         PINFO("Synchronizing commits from " << peerCommitCount + 1 << "-" << targetCommit);

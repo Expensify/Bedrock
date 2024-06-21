@@ -881,7 +881,13 @@ bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) 
                                     (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     query = "SELECT hash, query FROM (" + query  + ") ORDER BY id";
-    return !SQuery(_db, "getting commits", query, result);
+
+    // Set timeout to 10 seconds.
+    _timeoutLimit = STimeNow() + 10'000'000;
+    int queryResult = SQuery(_db, "getting commits", query, result);
+    _timeoutLimit = 0;
+
+    return !queryResult;
 }
 
 int64_t SQLite::getLastInsertRowID() {
