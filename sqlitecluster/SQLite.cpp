@@ -882,10 +882,10 @@ int SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, u
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     query = "SELECT hash, query FROM (" + query  + ") ORDER BY id";
     if (timeoutLimitUS) {
-        _timeoutLimit = STimeNow() + timeoutLimitUS;
+        setTimeout(timeoutLimitUS);
     }
     int queryResult = SQuery(_db, "getting commits", query, result);
-    _timeoutLimit = 0;
+    clearTimeout();
     return queryResult;
 }
 
