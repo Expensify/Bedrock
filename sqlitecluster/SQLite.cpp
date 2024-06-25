@@ -874,14 +874,19 @@ string SQLite::getCommittedHash() {
     return _sharedData.lastCommittedHash.load();
 }
 
-bool SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result) {
+int SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS) {
     // Look up all the queries within that range
     SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
     string query = _getJournalQuery({"SELECT id, hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
                                     (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     query = "SELECT hash, query FROM (" + query  + ") ORDER BY id";
-    return !SQuery(_db, "getting commits", query, result);
+    if (timeoutLimitUS) {
+        setTimeout(timeoutLimitUS);
+    }
+    int queryResult = SQuery(_db, "getting commits", query, result);
+    clearTimeout();
+    return queryResult;
 }
 
 int64_t SQLite::getLastInsertRowID() {

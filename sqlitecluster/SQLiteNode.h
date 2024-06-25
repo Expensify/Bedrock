@@ -216,7 +216,7 @@ class SQLiteNode : public STCPManager {
     // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
     // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
     // thread with a different DB object) - which is why this is static.
-    static void _queueSynchronize(const SQLiteNode* const node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll);
+    static void _queueSynchronize(const SQLiteNode* const node, SQLitePeer* peer, SQLite& db, SData& response, bool sendAll, uint64_t timeoutAfterUS = 0);
 
     bool _isNothingBlockingShutdown() const;
     bool _majoritySubscribed() const;
