@@ -2806,11 +2806,11 @@ bool SIsValidSQLiteDateModifier(const string& modifier) {
 }
 
 bool SREMatch(const string& regExp, const string& s) {
-    return pcrecpp::RE(regExp).FullMatch(s);
+    return pcrecpp::RE(regExp, pcrecpp::RE_Options().set_match_limit_recursion(1000)).FullMatch(s);
 }
 
 bool SREMatch(const string& regExp, const string& s, string& match) {
-    return pcrecpp::RE(regExp).FullMatch(s, &match);
+    return pcrecpp::RE(regExp, pcrecpp::RE_Options().set_match_limit_recursion(1000)).FullMatch(s, &match);
 }
 
 void SRedactSensitiveValues(string& s) {

@@ -221,7 +221,7 @@ class SQLite {
     static bool getCommit(sqlite3* db, const vector<string> journalNames, uint64_t index, string& query, string& hash);
 
     // Looks up a range of commits.
-    bool getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result);
+    int getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS = 0);
 
     // Set a time limit for this transaction, in US from the current time.
     void setTimeout(uint64_t timeLimitUS);
