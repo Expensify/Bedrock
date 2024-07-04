@@ -10,6 +10,7 @@ class SQResultRow : public vector<string> {
   public:
     SQResultRow();
     SQResultRow(SQResult& result, size_t count = 0);
+    SQResultRow(SQResultRow const&) = default;
     void push_back(const string& s);
     string& operator[](const size_t& key);
     const string& operator[](const size_t& key) const;
@@ -26,6 +27,9 @@ class SQResult {
     // Attributes
     vector<string> headers;
     vector<SQResultRow> rows;
+
+    SQResult() = default;
+    SQResult(SQResult const&) = default;
 
     // Accessors
     bool empty() const;
