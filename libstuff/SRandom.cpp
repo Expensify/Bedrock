@@ -18,7 +18,7 @@ uint64_t SRandom::rand64() {
     return _distribution64(_generator);
 }
 
-string SRandom::randStr(uint length) {
+string SRandom::randStr(unsigned length) {
     string str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     string newstr;
     int pos;
