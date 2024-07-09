@@ -36,7 +36,7 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
             // Have we completed the handshake?
             SASSERT(socket.ssl);
             SSSLState* sslState = socket.ssl;
-            if (sslState->ssl.state == MBEDTLS_SSL_HANDSHAKE_OVER) {
+            if (sslState->ssl.private_state == MBEDTLS_SSL_HANDSHAKE_OVER) {
                 // Handshake done -- send if we have anything buffered
                 if (!socket.sendBufferEmpty()) {
                     SFDset(fdm, socket.s, SWRITEEVTS);
@@ -44,7 +44,7 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
             } else {
                 // Handshake isn't done -- send if SSL wants to
                 bool write;
-                switch (sslState->ssl.state) {
+                switch (sslState->ssl.private_state) {
                 case MBEDTLS_SSL_HELLO_REQUEST:
                 case MBEDTLS_SSL_CLIENT_HELLO:
                 case MBEDTLS_SSL_CLIENT_CERTIFICATE:

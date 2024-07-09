@@ -112,7 +112,7 @@ string SSSLGetState(SSSLState* ssl) {
 #define SSLSTATE(_STATE_)                                                                                              \
     case _STATE_:                                                                                                      \
         return #_STATE_
-    switch (ssl->ssl.state) {
+    switch (ssl->ssl.private_state) {
         SSLSTATE(MBEDTLS_SSL_HELLO_REQUEST);
         SSLSTATE(MBEDTLS_SSL_CLIENT_HELLO);
         SSLSTATE(MBEDTLS_SSL_SERVER_HELLO);
