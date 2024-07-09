@@ -48,5 +48,6 @@ void SX509Close(SX509* x509) {
     // Clean up
     mbedtls_x509_crt_free(&x509->srvcert);
     mbedtls_pk_free(&x509->pk);
+    mbedtls_ctr_drbg_free(&x509->ctr_drbg);
     delete x509;
 }
