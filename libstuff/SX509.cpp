@@ -14,7 +14,7 @@ SX509* SX509Open() {
 // --------------------------------------------------------------------------
 SX509* SX509Open(const string& pem, const string& srvCrt, const string& caCrt) {
     // Use either the supplied credentials, or defaults for testing
-    const char* pemPtr =  pem.c_str();
+    const char* pemPtr = pem.c_str();
     const char* srvCrtPtr = srvCrt.c_str();
     const char* caCrtPtr = caCrt.c_str();
 
@@ -23,6 +23,7 @@ SX509* SX509Open(const string& pem, const string& srvCrt, const string& caCrt) {
     mbedtls_x509_crt_init(&(x509->srvcert));
     mbedtls_pk_init(&(x509->pk));
     try {
+        // Load and initialize this key
         if (mbedtls_pk_parse_key(&x509->pk, (unsigned char*)pemPtr, (int)strlen(pemPtr) + 1, NULL, 0, mbedtls_ctr_drbg_random, NULL)) {
             STHROW("parsing key");
         }
