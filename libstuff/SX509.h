@@ -6,14 +6,8 @@
 
 using namespace std;
 
-// Wraps a X509 Cert
-struct SX509 {
-    // Attributes
-    mbedtls_x509_crt srvcert;
-    mbedtls_pk_context pk;
-    mbedtls_ctr_drbg_context ctr_drbg;
-};
-
+// These were all imported from certs.c from MbedTLS, now that they do not expose these publicly.
+// They should only be used for testing purposes ONLY.
 #define TEST_SRV_KEY_RSA_PEM                                                   \
     "-----BEGIN RSA PRIVATE KEY-----\r\n"                                      \
     "MIIEpAIBAAKCAQEAwU2j3efNHdEE10lyuJmsDnjkOjxKzzoTFtBa5M2jAIin7h5r\r\n"     \
@@ -86,6 +80,15 @@ struct SX509 {
     "yTVrkAnikMntJ9YI+hNNYt3inqq11A5cN0+rVTst8UKCxzQ4GpvroSwPKTFkbMw4\r\n"     \
     "/anT1dVxr/BtwJfiESoK3/4CeXR1\r\n"                                         \
     "-----END CERTIFICATE-----\r\n"
+
+// Wraps a X509 Cert
+struct SX509 {
+    // Attributes
+    mbedtls_x509_crt srvcert;
+    mbedtls_pk_context pk;
+    // This context is necessary when parsing a cert key.
+    mbedtls_ctr_drbg_context ctr_drbg;
+};
 
 const char test_srv_key_rsa[] = TEST_SRV_KEY_RSA_PEM;
 const char test_srv_crt_rsa_sha256[] = TEST_SRV_CRT_RSA_SHA256_PEM;
