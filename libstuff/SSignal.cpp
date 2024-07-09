@@ -219,7 +219,8 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 int status{0};
                 char* front = strchr(frame[0], '(') + 1;
                 char* end = strchr(front, '+');
-                char copy[end - front + 1]{0};
+                char* copy = (char*) malloc(end - front + 1);
+
                 strncpy(copy, front, end - front);
                 char* demangled = abi::__cxa_demangle(copy, 0, 0, &status);
                 char* tolog = status ? copy : demangled;
@@ -228,6 +229,7 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 }
                 SWARN("Frame #" << i << ": " << tolog);
                 free(frame);
+                free(copy);
             }
 
             // Done.

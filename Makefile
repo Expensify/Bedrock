@@ -3,10 +3,10 @@
 # to be set, but for the time being we need to override the defaults so that our existing dev environment works. This
 # can be removed when that is resolved.
 ifeq ($(CC),cc)
-CC = gcc-13
+CC = /usr/bin/clang
 endif
 ifeq ($(CXX),g++)
-CXX = g++-13
+CXX = /usr/bin/clang++
 endif
 
 # Set the optimization level from the environment, or default to -O2.
@@ -23,10 +23,10 @@ PROJECT = $(shell git rev-parse --show-toplevel)
 INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
 
 # Set our standard C++ compiler flags
-CXXFLAGS = -g -std=c++20 -fPIC -DSQLITE_ENABLE_NORMALIZE $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security  -Wno-error=deprecated-declarations $(INCLUDE)
+CXXFLAGS = -g -std=c++20 -fPIC -DSQLITE_ENABLE_NORMALIZE $(BEDROCK_OPTIM_COMPILE_FLAG) -Werror -Wformat-security  -Wno-error=deprecated-declarations $(INCLUDE) #-Wall -Werror
 
 # Amalgamation flags
-AMALGAMATION_FLAGS = -Wno-unused-but-set-variable -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -DSQLITE_MAX_PAGE_COUNT=4294967294 -DSQLITE_DISABLE_PAGECACHE_OVERFLOW_STATS
+AMALGAMATION_FLAGS = -Wno-unused-const-variable -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -DSQLITE_MAX_PAGE_COUNT=4294967294 -DSQLITE_DISABLE_PAGECACHE_OVERFLOW_STATS
 
 # All our intermediate, dependency, object, etc files get hidden in here.
 INTERMEDIATEDIR = .build
