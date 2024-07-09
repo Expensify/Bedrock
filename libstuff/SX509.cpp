@@ -1,7 +1,6 @@
 #include "SX509.h"
 
 #include <cstring>
-#include <mbedtls/certs.h>
 
 #include <libstuff/libstuff.h>
 

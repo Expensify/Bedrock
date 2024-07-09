@@ -1,7 +1,7 @@
 #include "SSSLState.h"
 
 #include <mbedtls/error.h>
-#include <mbedtls/net.h>
+#include <mbedtls/net_sockets.h>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
