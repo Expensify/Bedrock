@@ -657,6 +657,9 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
 
     // These are the values we're currently operating on, until we either commit or rollback.
     _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
+    if (_uncommittedQuery.empty()) {
+        SINFO("Will commmit blank query");
+    }
 
     int result = SQuery(_db, "updating journal", query);
     _prepareElapsed += STimeNow() - before;
