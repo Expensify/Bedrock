@@ -19,6 +19,9 @@ jobs:
     timeout-minutes: 30
     steps:
 
+    - name: Install the Mold Linker
+      uses: rui314/setup-mold@v1
+      
     - name: Checkout Bedrock
       uses: actions/checkout@v4.1.0
 
