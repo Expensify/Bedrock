@@ -19,6 +19,13 @@ string SComposeTime(const string& format, uint64_t when) {
     return string(buf, length);
 }
 
+uint64_t STimestampToEpoch(const string& format, const string& timestamp) {
+    struct tm time;
+    memset(&time, 0, sizeof(struct tm));
+    strptime(timestamp.c_str(), format.c_str(), &time);
+    return mktime(&time);
+}
+
 int SDaysInMonth(int year, int month) {
     // 30 days hath September...
     if (month == 4 || month == 6 || month == 9 || month == 11) {
