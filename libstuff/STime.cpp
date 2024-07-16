@@ -1,5 +1,6 @@
 #include "libstuff.h"
 
+#include <cstring>
 #include <sys/time.h>
 
 uint64_t STimeNow() {
@@ -17,6 +18,13 @@ string SComposeTime(const string& format, uint64_t when) {
     gmtime_r(&loWhen, &result);
     size_t length = strftime(buf, sizeof(buf), format.c_str(), &result);
     return string(buf, length);
+}
+
+uint64_t STimestampToEpoch(const string& format, const string& timestamp) {
+    struct tm time;
+    memset(&time, 0, sizeof(struct tm));
+    strptime(timestamp.c_str(), format.c_str(), &time);
+    return mktime(&time);
 }
 
 int SDaysInMonth(int year, int month) {

@@ -1769,7 +1769,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             // There was a problem.
             if (result || !resolved) {
                 freeaddrinfo(resolved);
-                STHROW("can't resolve host error no#" + result);
+                STHROW("can't resolve host error no#" + SToStr(result));
             }
             // Grab the resolved address.
             sockaddr_in* addr = (sockaddr_in*)resolved->ai_addr;
