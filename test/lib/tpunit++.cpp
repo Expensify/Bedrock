@@ -53,6 +53,10 @@ tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* 
                          method* m55, method* m56, method* m57, method* m58, method* m59,
                          method* m60, method* m61, method* m62, method* m63, method* m64,
                          method* m65, method* m66, method* m67, method* m68, method* m69,
+                         method* m70, method* m71, method* m72, method* m73, method* m74,
+                         method* m75, method* m76, method* m77, method* m78, method* m79,
+                         method* m80, method* m81, method* m82, method* m83, method* m84,
+                         method* m85, method* m86, method* m87, method* m88, method* m89,
                          const char* name, bool parallel)
   : _name(name),
     _parallel(parallel)
@@ -67,7 +71,9 @@ tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* 
                             m30, m31, m32, m33, m34, m35, m36, m37, m38, m39,
                             m40, m41, m42, m43, m44, m45, m46, m47, m48, m49,
                             m50, m51, m52, m53, m54, m55, m56, m57, m58, m59,
-                            m60, m61, m62, m63, m64, m65, m66, m67, m68, m69 };
+                            m60, m61, m62, m63, m64, m65, m66, m67, m68, m69,
+                           m70, m71, m72, m73, m74, m75, m76, m77, m78, m79,
+                           m80, m81, m82, m83, m84, m85, m86, m87, m88, m89 };
 
     for(int i = 0; i < 70; i++) {
        if(methods[i]) {
