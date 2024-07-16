@@ -16,12 +16,12 @@
  * Unfortunately these are very hard to do, and the expectation is that these cases work very similarly to the cases we DO have tests for.
  */
 struct FastStandDownTest : tpunit::TestFixture {
-    FastStandDownTest()
-        : tpunit::TestFixture("FastStandDown",
-                              BEFORE_CLASS(FastStandDownTest::setup),
+    FastStandDownTest() : tpunit::TestFixture("FastStandDown") {
+            registerTests(BEFORE_CLASS(FastStandDownTest::setup),
                               AFTER_CLASS(FastStandDownTest::teardown),
                               TEST(FastStandDownTest::testHTTPSRequests),
-                              TEST(FastStandDownTest::testFutureCommands)) { }
+                              TEST(FastStandDownTest::testFutureCommands));
+}
 
     BedrockClusterTester* tester;
 
@@ -109,7 +109,7 @@ struct FastStandDownTest : tpunit::TestFixture {
 
         // Verify the DB on the new leader contains the commit.
         SData lookupQuery("Query");
-        lookupQuery["Query"] = "SELECT COUNT(*) FROM test WHERE id = " + insertQuery["commandExecuteTime"] + " AND value = 'escalated_in_the_past';"; 
+        lookupQuery["Query"] = "SELECT COUNT(*) FROM test WHERE id = " + insertQuery["commandExecuteTime"] + " AND value = 'escalated_in_the_past';";
         httpsResult = tester->getTester(1).executeWaitMultipleData({lookupQuery}, 1);
         ASSERT_EQUAL(httpsResult[0].content, "COUNT(*)\n1\n");
     }

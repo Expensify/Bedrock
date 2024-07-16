@@ -3,17 +3,17 @@
 #include <test/lib/BedrockTester.h>
 
 struct CreateJobsTest : tpunit::TestFixture {
-    CreateJobsTest()
-        : tpunit::TestFixture("CreateJobs",
-                              BEFORE_CLASS(CreateJobsTest::setupClass),
-                              TEST(CreateJobsTest::create),
-                              TEST(CreateJobsTest::createWithHttp),
-                              TEST(CreateJobsTest::createWithInvalidJson),
-                              TEST(CreateJobsTest::createWithParentIDNotRunning),
-                              TEST(CreateJobsTest::createWithParentMocked),
-                              TEST(CreateJobsTest::createUniqueChildWithWrongParent),
-                              AFTER(CreateJobsTest::tearDown),
-                              AFTER_CLASS(CreateJobsTest::tearDownClass)) { }
+    CreateJobsTest() : tpunit::TestFixture("CreateJobs") {
+        registerTests(BEFORE_CLASS(CreateJobsTest::setupClass),
+                      TEST(CreateJobsTest::create),
+                      TEST(CreateJobsTest::createWithHttp),
+                      TEST(CreateJobsTest::createWithInvalidJson),
+                      TEST(CreateJobsTest::createWithParentIDNotRunning),
+                      TEST(CreateJobsTest::createWithParentMocked),
+                      TEST(CreateJobsTest::createUniqueChildWithWrongParent),
+                      AFTER(CreateJobsTest::tearDown),
+                      AFTER_CLASS(CreateJobsTest::tearDownClass));
+    }
 
     BedrockTester* tester;
 

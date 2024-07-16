@@ -4,10 +4,9 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct UpgradeTest : tpunit::TestFixture {
-    UpgradeTest()
-    : tpunit::TestFixture("Upgrade",
-                          TEST(UpgradeTest::mismatchedFollowerSendMultipleCommands)
-                         ) { }
+    UpgradeTest() : tpunit::TestFixture("Upgrade") {
+        registerTests(TEST(UpgradeTest::mismatchedFollowerSendMultipleCommands));
+    }
 
     void mismatchedFollowerSendMultipleCommands() {
         BedrockClusterTester tester;

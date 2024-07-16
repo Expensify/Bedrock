@@ -6,12 +6,11 @@
 #include <test/lib/BedrockTester.h>
 
 struct SSLTest : tpunit::TestFixture {
-    SSLTest()
-        : tpunit::TestFixture("SSL",
-                              BEFORE_CLASS(SSLTest::setup),
-                              TEST(SSLTest::test),
-                              AFTER_CLASS(SSLTest::teardown))
-    { }
+    SSLTest() : tpunit::TestFixture("SSL") {
+        registerTests(BEFORE_CLASS(SSLTest::setup),
+                      TEST(SSLTest::test),
+                      AFTER_CLASS(SSLTest::teardown));
+    }
 
     BedrockTester* tester;
 

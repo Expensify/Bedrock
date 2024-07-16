@@ -29,11 +29,15 @@ class TestServer : public SQLiteServer {
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {
-    SQLiteNodeTest() : tpunit::TestFixture("SQLiteNode",
-                                           BEFORE_CLASS(SQLiteNodeTest::setup),
-                                           AFTER_CLASS(SQLiteNodeTest::teardown),
-                                           TEST(SQLiteNodeTest::testFindSyncPeer),
-                                           TEST(SQLiteNodeTest::testGetPeerByName)) { }
+    SQLiteNodeTest() : tpunit::TestFixture("SQLiteNode")
+    {
+        registerTests(
+            BEFORE_CLASS(SQLiteNodeTest::setup),
+            AFTER_CLASS(SQLiteNodeTest::teardown),
+            TEST(SQLiteNodeTest::testFindSyncPeer),
+            TEST(SQLiteNodeTest::testGetPeerByName)
+        );
+    }
 
     // Filename for temp DB.
     char filenameTemplate[17] = "br_sync_dbXXXXXX";

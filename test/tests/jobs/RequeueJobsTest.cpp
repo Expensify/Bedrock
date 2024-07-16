@@ -6,17 +6,17 @@
 #include <unistd.h>
 
 struct RequeueJobsTest : tpunit::TestFixture {
-    RequeueJobsTest()
-        : tpunit::TestFixture("RequeueJobs",
-                              BEFORE_CLASS(RequeueJobsTest::setupClass),
-                              TEST(RequeueJobsTest::requeueRunningJob),
-                              TEST(RequeueJobsTest::requeueRunqueuedJob),
-                              TEST(RequeueJobsTest::autoRequeue),
-                              TEST(RequeueJobsTest::requeueMultipleJobs),
-                              TEST(RequeueJobsTest::changeMultipleJobNames),
-                              TEST(RequeueJobsTest::testNextRunTime),
-                              AFTER(RequeueJobsTest::tearDown),
-                              AFTER_CLASS(RequeueJobsTest::tearDownClass)) { }
+    RequeueJobsTest() : tpunit::TestFixture("RequeueJobs") {
+        registerTests(BEFORE_CLASS(RequeueJobsTest::setupClass),
+                      TEST(RequeueJobsTest::requeueRunningJob),
+                      TEST(RequeueJobsTest::requeueRunqueuedJob),
+                      TEST(RequeueJobsTest::autoRequeue),
+                      TEST(RequeueJobsTest::requeueMultipleJobs),
+                      TEST(RequeueJobsTest::changeMultipleJobNames),
+                      TEST(RequeueJobsTest::testNextRunTime),
+                      AFTER(RequeueJobsTest::tearDown),
+                      AFTER_CLASS(RequeueJobsTest::tearDownClass));
+    }
 
     BedrockTester* tester;
 
@@ -37,7 +37,7 @@ struct RequeueJobsTest : tpunit::TestFixture {
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
-        // Get the job, 
+        // Get the job,
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job";
@@ -66,7 +66,7 @@ struct RequeueJobsTest : tpunit::TestFixture {
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
-        // Get the job, 
+        // Get the job,
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job";
@@ -139,13 +139,13 @@ struct RequeueJobsTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
         string jobID3 = response["jobID"];
 
-        // Get the first job, 
+        // Get the first job,
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job1";
         tester->executeWaitVerifyContent(command);
 
-        // Get the second job, 
+        // Get the second job,
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job2";
@@ -194,13 +194,13 @@ struct RequeueJobsTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
         string jobID3 = response["jobID"];
 
-        // Get the first job, 
+        // Get the first job,
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job1";
         tester->executeWaitVerifyContent(command);
 
-        // Get the second job, 
+        // Get the second job,
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job2";

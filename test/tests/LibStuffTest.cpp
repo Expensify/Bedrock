@@ -8,33 +8,32 @@
 #include <test/lib/BedrockTester.h>
 
 struct LibStuff : tpunit::TestFixture {
-    LibStuff() : tpunit::TestFixture(true, "LibStuff",
-                                    TEST(LibStuff::testEncryptDecrpyt),
-                                    TEST(LibStuff::testSHMACSHA1),
-                                    TEST(LibStuff::testSHMACSHA256),
-                                    TEST(LibStuff::testJSONDecode),
-                                    TEST(LibStuff::testJSON),
-                                    TEST(LibStuff::testEscapeUnescape),
-                                    TEST(LibStuff::testTrim),
-                                    TEST(LibStuff::testCollapse),
-                                    TEST(LibStuff::testStrip),
-                                    TEST(LibStuff::testChunkedEncoding),
-                                    TEST(LibStuff::testDaysInMonth),
-                                    TEST(LibStuff::testGZip),
-                                    TEST(LibStuff::testConstantTimeEquals),
-                                    TEST(LibStuff::testParseIntegerList),
-                                    TEST(LibStuff::testSData),
-                                    TEST(LibStuff::testSTable),
-                                    TEST(LibStuff::testFileIO),
-                                    TEST(LibStuff::testSQList),
-                                    TEST(LibStuff::testRandom),
-                                    TEST(LibStuff::testHexConversion),
-                                    TEST(LibStuff::testBase32Conversion),
-                                    TEST(LibStuff::testContains),
-                                    TEST(LibStuff::testFirstOfMonth),
-                                    TEST(LibStuff::SQResultTest)
-                                    )
-    { }
+    LibStuff() : tpunit::TestFixture(true, "LibStuff") {
+        registerTests(TEST(LibStuff::testEncryptDecrpyt),
+                      TEST(LibStuff::testSHMACSHA1),
+                      TEST(LibStuff::testSHMACSHA256),
+                      TEST(LibStuff::testJSONDecode),
+                      TEST(LibStuff::testJSON),
+                      TEST(LibStuff::testEscapeUnescape),
+                      TEST(LibStuff::testTrim),
+                      TEST(LibStuff::testCollapse),
+                      TEST(LibStuff::testStrip),
+                      TEST(LibStuff::testChunkedEncoding),
+                      TEST(LibStuff::testDaysInMonth),
+                      TEST(LibStuff::testGZip),
+                      TEST(LibStuff::testConstantTimeEquals),
+                      TEST(LibStuff::testParseIntegerList),
+                      TEST(LibStuff::testSData),
+                      TEST(LibStuff::testSTable),
+                      TEST(LibStuff::testFileIO),
+                      TEST(LibStuff::testSQList),
+                      TEST(LibStuff::testRandom),
+                      TEST(LibStuff::testHexConversion),
+                      TEST(LibStuff::testBase32Conversion),
+                      TEST(LibStuff::testContains),
+                      TEST(LibStuff::testFirstOfMonth),
+                      TEST(LibStuff::SQResultTest));
+    }
 
     void testEncryptDecrpyt() {
         string iv = "58fae8d18b6fe8ed";

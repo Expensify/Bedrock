@@ -2,17 +2,17 @@
 #include <test/lib/BedrockTester.h>
 
 struct QueryTest : tpunit::TestFixture {
-    QueryTest()
-        : tpunit::TestFixture("Query",
-                              BEFORE_CLASS(QueryTest::setup),
-                              TEST(QueryTest::testMissing),
-                              TEST(QueryTest::testNoSemicolon),
-                              TEST(QueryTest::testBad),
-                              TEST(QueryTest::testOK),
-                              TEST(QueryTest::testWrite),
-                              TEST(QueryTest::testWriteInSecondStatement),
-                              TEST(QueryTest::testNoWhere),
-                              AFTER_CLASS(QueryTest::tearDown)) { }
+    QueryTest() : tpunit::TestFixture("Query") {
+        registerTests(BEFORE_CLASS(QueryTest::setup),
+                      TEST(QueryTest::testMissing),
+                      TEST(QueryTest::testNoSemicolon),
+                      TEST(QueryTest::testBad),
+                      TEST(QueryTest::testOK),
+                      TEST(QueryTest::testWrite),
+                      TEST(QueryTest::testWriteInSecondStatement),
+                      TEST(QueryTest::testNoWhere),
+                      AFTER_CLASS(QueryTest::tearDown));
+    }
 
     BedrockTester* tester;
 

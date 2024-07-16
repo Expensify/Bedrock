@@ -2,12 +2,11 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct JobIDTest : tpunit::TestFixture {
-    JobIDTest()
-        : tpunit::TestFixture("JobID",
-                              BEFORE_CLASS(JobIDTest::setup),
-                              AFTER_CLASS(JobIDTest::teardown),
-                              TEST(JobIDTest::test)
-                             ) { }
+    JobIDTest() : tpunit::TestFixture("JobID") {
+        registerTests(BEFORE_CLASS(JobIDTest::setup),
+                      AFTER_CLASS(JobIDTest::teardown),
+                      TEST(JobIDTest::test));
+    }
 
     BedrockClusterTester* tester;
 

@@ -4,12 +4,12 @@
 #include <test/tests/jobs/JobTestHelper.h>
 
 struct UpdateJobTest : tpunit::TestFixture {
-    UpdateJobTest()
-            : tpunit::TestFixture("UpdateJob",
-                                  BEFORE_CLASS(UpdateJobTest::setupClass),
-                                  TEST(UpdateJobTest::updateJob),
-                                  TEST(UpdateJobTest::updateMockedJob),
-                                  AFTER_CLASS(UpdateJobTest::tearDownClass)) { }
+    UpdateJobTest() : tpunit::TestFixture("UpdateJob") {
+        registerTests(BEFORE_CLASS(UpdateJobTest::setupClass),
+                      TEST(UpdateJobTest::updateJob),
+                      TEST(UpdateJobTest::updateMockedJob),
+                      AFTER_CLASS(UpdateJobTest::tearDownClass));
+    }
 
     BedrockTester* tester;
 

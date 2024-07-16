@@ -2,8 +2,9 @@
 #include <test/lib/BedrockTester.h>
 
 struct StatusTest : tpunit::TestFixture {
-    StatusTest()
-        : tpunit::TestFixture("Status", TEST(StatusTest::test)) { }
+    StatusTest() : tpunit::TestFixture("Status") {
+        registerTests(TEST(StatusTest::test));
+    }
 
     void test() {
         BedrockTester tester;

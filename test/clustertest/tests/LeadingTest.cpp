@@ -3,17 +3,16 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct LeadingTest : tpunit::TestFixture {
-    LeadingTest()
-        : tpunit::TestFixture("Leading",
-                              BEFORE_CLASS(LeadingTest::setup),
-                              AFTER_CLASS(LeadingTest::teardown),
-                              TEST(LeadingTest::clusterUp),
-                              TEST(LeadingTest::failover),
-                              // Disabled for speed. Enable to test stand down timeout.
-                              // TEST(LeadingTest::standDownTimeout),
-                              TEST(LeadingTest::restoreLeader),
-                              TEST(LeadingTest::synchronizing)
-                             ) { }
+    LeadingTest() : tpunit::TestFixture("Leading") {
+        registerTests(BEFORE_CLASS(LeadingTest::setup),
+                      AFTER_CLASS(LeadingTest::teardown),
+                      TEST(LeadingTest::clusterUp),
+                      TEST(LeadingTest::failover),
+                      // Disabled for speed. Enable to test stand down timeout.
+                      // TEST(LeadingTest::standDownTimeout),
+                      TEST(LeadingTest::restoreLeader),
+                      TEST(LeadingTest::synchronizing));
+    }
 
     BedrockClusterTester* tester;
 

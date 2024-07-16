@@ -3,17 +3,17 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct TimeoutTest : tpunit::TestFixture {
-    TimeoutTest()
-        : tpunit::TestFixture("Timeout",
-                              BEFORE_CLASS(TimeoutTest::setup),
-                              AFTER_CLASS(TimeoutTest::teardown),
-                              TEST(TimeoutTest::test),
-                              TEST(TimeoutTest::longerThanDefaultProcess),
-                              TEST(TimeoutTest::testprocess),
-                              TEST(TimeoutTest::testPostProcess),
-                              TEST(TimeoutTest::totalTimeout),
-                              TEST(TimeoutTest::quorumHTTPS),
-                              TEST(TimeoutTest::futureCommitTimeout)) { }
+    TimeoutTest() : tpunit::TestFixture("Timeout") {
+        registerTests(BEFORE_CLASS(TimeoutTest::setup),
+                      AFTER_CLASS(TimeoutTest::teardown),
+                      TEST(TimeoutTest::test),
+                      TEST(TimeoutTest::longerThanDefaultProcess),
+                      TEST(TimeoutTest::testprocess),
+                      TEST(TimeoutTest::testPostProcess),
+                      TEST(TimeoutTest::totalTimeout),
+                      TEST(TimeoutTest::quorumHTTPS),
+                      TEST(TimeoutTest::futureCommitTimeout));
+    }
 
     BedrockClusterTester* tester;
 

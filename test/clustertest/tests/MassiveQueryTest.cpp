@@ -3,7 +3,9 @@
 
 struct MassiveQueryTest : tpunit::TestFixture {
 
-    MassiveQueryTest() : tpunit::TestFixture("MassiveQuery", TEST(MassiveQueryTest::test)) { }
+    MassiveQueryTest() : tpunit::TestFixture("MassiveQuery") {
+        registerTests(TEST(MassiveQueryTest::test));
+    }
 
     void test()
     {

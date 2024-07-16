@@ -4,12 +4,12 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct FutureExecutionTest : tpunit::TestFixture {
-    FutureExecutionTest()
-        : tpunit::TestFixture("FutureExecution",
-                              BEFORE_CLASS(FutureExecutionTest::setup),
-                              AFTER_CLASS(FutureExecutionTest::teardown),
-                              TEST(FutureExecutionTest::FutureExecution),
-                              TEST(FutureExecutionTest::FutureExecutionTimeout)) { }
+    FutureExecutionTest() : tpunit::TestFixture("FutureExecution") {
+        registerTests(BEFORE_CLASS(FutureExecutionTest::setup),
+                      AFTER_CLASS(FutureExecutionTest::teardown),
+                      TEST(FutureExecutionTest::FutureExecution),
+                      TEST(FutureExecutionTest::FutureExecutionTimeout));
+    }
 
     BedrockClusterTester* tester;
 
@@ -31,7 +31,7 @@ struct FutureExecutionTest : tpunit::TestFixture {
         // Three seconds from now.
         query["commandExecuteTime"] = to_string(STimeNow() + 3000000);
         query["Query"] = "INSERT INTO test VALUES(" + SQ(50011) + ", " + SQ("sent_by_leader") + ");";
-        string result = brtester.executeWaitVerifyContent(query, "202"); 
+        string result = brtester.executeWaitVerifyContent(query, "202");
 
         // Ok, Now let's wait a second
         sleep(1);

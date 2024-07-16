@@ -2,8 +2,9 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct StatusHandlingCommandsTest : tpunit::TestFixture {
-    StatusHandlingCommandsTest()
-        : tpunit::TestFixture("StatusHandlingCommands", TEST(StatusHandlingCommandsTest::test)) { }
+    StatusHandlingCommandsTest() : tpunit::TestFixture("StatusHandlingCommands") {
+        registerTests(TEST(StatusHandlingCommandsTest::test));
+    }
 
     void test() {
         BedrockClusterTester tester;

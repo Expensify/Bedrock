@@ -13,16 +13,16 @@
  *
  * However, to actually verify that you saw a conflict during the test, you can look at the logs for something like:
  *
- * Feb 22 00:32:16 vagrant-ubuntu-trusty-64 bedrock: brcluster_node_0 (SQLiteNode.cpp:1298) update [sync] [warn] 
+ * Feb 22 00:32:16 vagrant-ubuntu-trusty-64 bedrock: brcluster_node_0 (SQLiteNode.cpp:1298) update [sync] [warn]
  *     {brcluster_node_0/LEADING} ROLLBACK, conflicted on sync: brcluster_node_0#109 : sendrequest
  */
 struct HTTPSTest : tpunit::TestFixture {
-    HTTPSTest()
-        : tpunit::TestFixture("HTTPS",
-                              BEFORE_CLASS(HTTPSTest::setup),
-                              AFTER_CLASS(HTTPSTest::teardown),
-                              TEST(HTTPSTest::testMultipleRequests),
-                              TEST(HTTPSTest::test)) { }
+    HTTPSTest() : tpunit::TestFixture("HTTPS") {
+        registerTests(BEFORE_CLASS(HTTPSTest::setup),
+                      AFTER_CLASS(HTTPSTest::teardown),
+                      TEST(HTTPSTest::testMultipleRequests),
+                      TEST(HTTPSTest::test));
+    }
 
     BedrockClusterTester* tester;
 

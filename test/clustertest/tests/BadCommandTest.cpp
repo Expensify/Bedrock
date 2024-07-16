@@ -2,8 +2,9 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct BadCommandTest : tpunit::TestFixture {
-    BadCommandTest()
-        : tpunit::TestFixture("BadCommand", TEST(BadCommandTest::test)) { }
+    BadCommandTest() : tpunit::TestFixture("BadCommand") {
+        registerTests(TEST(BadCommandTest::test));
+    }
 
     void test()
     {
@@ -46,7 +47,7 @@ struct BadCommandTest : tpunit::TestFixture {
                 // This tests cases where keeping leader alive isn't feasible.
                 bool testFailed = false;
                 for (auto commandName : {"generatesegfaultpeek", "generateassertpeek", "generatesegfaultprocess"}) {
-                    
+
                     // Create the command with the current userID.
                     userID++;
                     SData command(commandName);

@@ -5,12 +5,12 @@
 #include <test/lib/BedrockTester.h>
 
 struct FailedJobReplyTest : tpunit::TestFixture {
-    FailedJobReplyTest()
-        : tpunit::TestFixture("FailedJobReply",
-                              BEFORE_CLASS(FailedJobReplyTest::setupClass),
-                              TEST(FailedJobReplyTest::failSendingResponse),
-                              AFTER(FailedJobReplyTest::tearDown),
-                              AFTER_CLASS(FailedJobReplyTest::tearDownClass)) { }
+    FailedJobReplyTest() : tpunit::TestFixture("FailedJobReply") {
+        registerTests(BEFORE_CLASS(FailedJobReplyTest::setupClass),
+                      TEST(FailedJobReplyTest::failSendingResponse),
+                      AFTER(FailedJobReplyTest::tearDown),
+                      AFTER_CLASS(FailedJobReplyTest::tearDownClass));
+    }
 
     BedrockTester* tester;
 
