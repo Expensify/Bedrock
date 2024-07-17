@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-export CXX=/usr/bin/clang-18
-export CC=/usr/bin/clang++-18
+export CXX=/usr/bin/clang++-18
+export CC=/usr/bin/clang-18
 
 # Add the current working directory to $PATH so that tests can find bedrock.
 export PATH=$PATH:`pwd`
