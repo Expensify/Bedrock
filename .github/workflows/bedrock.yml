@@ -21,7 +21,7 @@ jobs:
 
     - name: Install the Mold Linker
       uses: rui314/setup-mold@v1
-      
+
     - name: Checkout Bedrock
       uses: actions/checkout@v4.1.0
 
@@ -45,6 +45,12 @@ jobs:
       uses: ./.github/actions/composite/setup-certificate-1p
       env:
         OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+    - name: Install LLVM
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 18 all
 
     - name: Install packages
       run: |
