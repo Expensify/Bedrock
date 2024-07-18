@@ -3,15 +3,15 @@
 #include <test/lib/BedrockTester.h>
 
 struct DeleteJobTest : tpunit::TestFixture {
-    DeleteJobTest()
-        : tpunit::TestFixture("DeleteJob",
-                              BEFORE_CLASS(DeleteJobTest::setupClass),
-                              TEST(DeleteJobTest::deleteNonExistentJob),
-                              TEST(DeleteJobTest::deleteJobWithChild),
-                              TEST(DeleteJobTest::deleteRunningJob),
-                              TEST(DeleteJobTest::deleteFinishedJob),
-                              AFTER(DeleteJobTest::tearDown),
-                              AFTER_CLASS(DeleteJobTest::tearDownClass)) { }
+    DeleteJobTest() : tpunit::TestFixture("DeleteJob") {
+        registerTests(BEFORE_CLASS(DeleteJobTest::setupClass),
+                      TEST(DeleteJobTest::deleteNonExistentJob),
+                      TEST(DeleteJobTest::deleteJobWithChild),
+                      TEST(DeleteJobTest::deleteRunningJob),
+                      TEST(DeleteJobTest::deleteFinishedJob),
+                      AFTER(DeleteJobTest::tearDown),
+                      AFTER_CLASS(DeleteJobTest::tearDownClass));
+    }
 
     BedrockTester* tester;
 

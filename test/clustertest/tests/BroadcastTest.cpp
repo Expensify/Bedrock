@@ -4,12 +4,11 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct BroadcastCommandTest : tpunit::TestFixture {
-    BroadcastCommandTest()
-        : tpunit::TestFixture("BroadcastCommand",
-                              BEFORE_CLASS(BroadcastCommandTest::setup),
+    BroadcastCommandTest() : tpunit::TestFixture("BroadcastCommand") {
+        registerTests(BEFORE_CLASS(BroadcastCommandTest::setup),
                               AFTER_CLASS(BroadcastCommandTest::teardown),
-                              TEST(BroadcastCommandTest::test)
-                             ) { }
+                              TEST(BroadcastCommandTest::test));
+    }
 
     BedrockClusterTester* tester;
 

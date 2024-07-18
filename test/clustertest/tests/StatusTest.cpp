@@ -2,11 +2,11 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct StatusTest : tpunit::TestFixture {
-    StatusTest()
-        : tpunit::TestFixture("Status",
-                              BEFORE_CLASS(StatusTest::setup),
-                              AFTER_CLASS(StatusTest::teardown),
-                              TEST(StatusTest::status)) { }
+    StatusTest() : tpunit::TestFixture("Status") {
+        registerTests(BEFORE_CLASS(StatusTest::setup),
+                      AFTER_CLASS(StatusTest::teardown),
+                      TEST(StatusTest::status));
+    }
 
     BedrockClusterTester* tester;
 

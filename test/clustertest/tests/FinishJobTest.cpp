@@ -4,26 +4,26 @@
 #include <test/tests/jobs/JobTestHelper.h>
 
 struct FinishJobTest : tpunit::TestFixture {
-    FinishJobTest()
-        : tpunit::TestFixture("FinishJob",
-                              BEFORE_CLASS(FinishJobTest::setupClass),
-                              TEST(FinishJobTest::nonExistentJob),
-                              TEST(FinishJobTest::notInRunningState),
-                              TEST(FinishJobTest::parentIsNotPaused),
-                              TEST(FinishJobTest::removeFinishedAndCancelledChildren),
-                              TEST(FinishJobTest::updateData),
-                              TEST(FinishJobTest::finishingParentUnPausesChildren),
-                              TEST(FinishJobTest::deleteFinishedJobWithNoChildren),
-                              TEST(FinishJobTest::hasRepeat),
-                              TEST(FinishJobTest::inRunqueuedState),
-                              TEST(FinishJobTest::hasRepeatWithDelay),
-                              TEST(FinishJobTest::hasDelay),
-                              TEST(FinishJobTest::hasRepeatWithNextRun),
-                              TEST(FinishJobTest::hasDataDelete),
-                              TEST(FinishJobTest::hasNextRun),
-                              TEST(FinishJobTest::simpleFinishJobWithHttp),
-                              AFTER(FinishJobTest::tearDown),
-                              AFTER_CLASS(FinishJobTest::tearDownClass)) { }
+    FinishJobTest() : tpunit::TestFixture("FinishJob") {
+        registerTests(BEFORE_CLASS(FinishJobTest::setupClass),
+                        TEST(FinishJobTest::nonExistentJob),
+                        TEST(FinishJobTest::notInRunningState),
+                        TEST(FinishJobTest::parentIsNotPaused),
+                        TEST(FinishJobTest::removeFinishedAndCancelledChildren),
+                        TEST(FinishJobTest::updateData),
+                        TEST(FinishJobTest::finishingParentUnPausesChildren),
+                        TEST(FinishJobTest::deleteFinishedJobWithNoChildren),
+                        TEST(FinishJobTest::hasRepeat),
+                        TEST(FinishJobTest::inRunqueuedState),
+                        TEST(FinishJobTest::hasRepeatWithDelay),
+                        TEST(FinishJobTest::hasDelay),
+                        TEST(FinishJobTest::hasRepeatWithNextRun),
+                        TEST(FinishJobTest::hasDataDelete),
+                        TEST(FinishJobTest::hasNextRun),
+                        TEST(FinishJobTest::simpleFinishJobWithHttp),
+                        AFTER(FinishJobTest::tearDown),
+                        AFTER_CLASS(FinishJobTest::tearDownClass));
+    }
 
     BedrockClusterTester* clusterTester;
     BedrockTester* tester;
@@ -267,7 +267,7 @@ struct FinishJobTest : tpunit::TestFixture {
                 ASSERT_EQUAL(row[1], "QUEUED");
             } else if (row[0] == cancelledChildID) {
                 ASSERT_EQUAL(row[1], "QUEUED");
-            } else { 
+            } else {
                 ASSERT_TRUE(false);
             }
         }

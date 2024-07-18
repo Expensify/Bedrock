@@ -2,12 +2,12 @@
 #include <test/lib/BedrockTester.h>
 
 struct QueryJobTest : tpunit::TestFixture {
-    QueryJobTest()
-        : tpunit::TestFixture("QueryJob",
-                              BEFORE_CLASS(QueryJobTest::setupClass),
-                              TEST(QueryJobTest::queryJob),
-                              AFTER(QueryJobTest::tearDown),
-                              AFTER_CLASS(QueryJobTest::tearDownClass)) { }
+    QueryJobTest() : tpunit::TestFixture("QueryJob") {
+        registerTests(BEFORE_CLASS(QueryJobTest::setupClass),
+                      TEST(QueryJobTest::queryJob),
+                      AFTER(QueryJobTest::tearDown),
+                      AFTER_CLASS(QueryJobTest::tearDownClass));
+    }
 
     BedrockTester* tester;
 

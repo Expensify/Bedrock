@@ -6,10 +6,9 @@
 #include <test/lib/BedrockTester.h>
 
 struct ChainedHTTPTest : tpunit::TestFixture {
-    ChainedHTTPTest()
-        : tpunit::TestFixture("ChainedHTTP",
-                              TEST(ChainedHTTPTest::test))
-    { }
+    ChainedHTTPTest() : tpunit::TestFixture("ChainedHTTP") {
+        registerTests(TEST(ChainedHTTPTest::test));
+    }
 
     void test() {
         // Load the clustertest testplugin that implements our chained command.

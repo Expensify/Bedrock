@@ -39,7 +39,9 @@
 #endif
 #endif
 
-#include <pcrecpp.h> // sudo apt-get install libpcre++-dev
+// #include <pcrecpp.h> // sudo apt-get install libpcre++-dev
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h> // sudo apt-get install libpcre2-dev
 
 // Common error definitions
 #define S_errno errno
@@ -2805,25 +2807,159 @@ bool SIsValidSQLiteDateModifier(const string& modifier) {
     return true;
 }
 
-bool SREMatch(const string& regExp, const string& s) {
-    return pcrecpp::RE(regExp, pcrecpp::RE_Options().set_match_limit_recursion(1000)).FullMatch(s);
+bool SREMatch(const string& regExp, const string& s, const bool caseSensitive) {
+    pcre2_code* re;
+    PCRE2_SPTR pattern = (PCRE2_SPTR)regExp.c_str();
+    PCRE2_SPTR subject = (PCRE2_SPTR)s.c_str();
+    int errornumber;
+    PCRE2_SIZE erroroffset;
+
+
+    // Compile the regular expression
+    re = pcre2_compile(
+        pattern,                             // the pattern
+        PCRE2_ZERO_TERMINATED,               // indicates pattern is zero-terminated
+        caseSensitive ? 0 : PCRE2_CASELESS,  // default options
+        &errornumber,                        // for error number
+        &erroroffset,                        // for error offset
+        NULL);                               // use default compile context
+
+    if (re == NULL) {
+        return false; // Compilation failed
+    }
+
+    // Match the subject string against the compiled pattern
+    pcre2_match_data* match_data = pcre2_match_data_create_from_pattern(re, NULL);
+    int rc = pcre2_match(
+        re,                    // the compiled pattern
+        subject,               // the subject string
+        PCRE2_ZERO_TERMINATED, // the length of the subject string
+        0,                     // start at offset 0 in the subject
+        0,                     // default options
+        match_data,            // block for storing the result
+        NULL);                 // use default match context
+
+    // Free the match data and the compiled pattern
+    pcre2_match_data_free(match_data);
+    pcre2_code_free(re);
+
+    return rc >= 0; // Return true if the match succeeded
 }
 
-bool SREMatch(const string& regExp, const string& s, string& match) {
-    return pcrecpp::RE(regExp, pcrecpp::RE_Options().set_match_limit_recursion(1000)).FullMatch(s, &match);
+bool SREMatch(const string& regExp, const string& s, string& match, const bool caseSensitive) {
+    pcre2_code* re;
+    PCRE2_SPTR pattern = (PCRE2_SPTR)regExp.c_str();
+    PCRE2_SPTR subject = (PCRE2_SPTR)s.c_str();
+    int errornumber;
+    PCRE2_SIZE erroroffset;
+
+    // Compile the regular expression
+    re = pcre2_compile(
+        pattern,                             // the pattern
+        PCRE2_ZERO_TERMINATED,               // indicates pattern is zero-terminated
+        caseSensitive ? 0 : PCRE2_CASELESS,  // default options
+        &errornumber,                        // for error number
+        &erroroffset,                        // for error offset
+        NULL);                               // use default compile context
+
+    if (re == NULL) {
+        return false; // Compilation failed
+    }
+
+    // Set match limit recursion
+    pcre2_match_context* match_context = pcre2_match_context_create(NULL);
+    pcre2_set_match_limit(match_context, 1000);
+
+    // Match the subject string against the compiled pattern
+    pcre2_match_data* match_data = pcre2_match_data_create_from_pattern(re, NULL);
+    int rc = pcre2_match(
+        re,                    // the compiled pattern
+        subject,               // the subject string
+        PCRE2_ZERO_TERMINATED, // the length of the subject string
+        0,                     // start at offset 0 in the subject
+        0,                     // default options
+        match_data,            // block for storing the result
+        match_context);        // match context with recursion limit
+
+    bool is_match = (rc >= 0);
+    if (is_match) {
+        PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(match_data);
+        match = std::string((char*)subject + ovector[0], ovector[1] - ovector[0]);
+    }
+
+    // Free the match data, match context, and the compiled pattern
+    pcre2_match_data_free(match_data);
+    pcre2_match_context_free(match_context);
+    pcre2_code_free(re);
+
+    return is_match;
 }
 
 void SRedactSensitiveValues(string& s) {
+    // Helper function to perform global replacement using PCRE2
+    auto globalReplace = [](const std::string& pattern, const std::string& replacement, std::string& subject) {
+        PCRE2_SPTR pattern_str = (PCRE2_SPTR)pattern.c_str();
+        PCRE2_SPTR subject_str = (PCRE2_SPTR)subject.c_str();
+        int errornumber;
+        PCRE2_SIZE erroroffset;
+
+        // Compile the regular expression
+        pcre2_code* re = pcre2_compile(
+            pattern_str,               // the pattern
+            PCRE2_ZERO_TERMINATED,     // indicates pattern is zero-terminated
+            0,                         // default options
+            &errornumber,              // for error number
+            &erroroffset,              // for error offset
+            NULL);                     // use default compile context
+
+        if (re == NULL) {
+            return; // Compilation failed
+        }
+
+        PCRE2_SIZE subject_length = subject.size();
+        pcre2_match_data* match_data = pcre2_match_data_create_from_pattern(re, NULL);
+
+        size_t offset = 0;
+        while (offset < subject_length) {
+            int rc = pcre2_match(
+                re,                    // the compiled pattern
+                (PCRE2_SPTR)subject.c_str(), // the subject string
+                subject_length,        // the length of the subject string
+                offset,                // start at the current offset
+                0,                     // default options
+                match_data,            // block for storing the result
+                NULL);                 // use default match context
+
+            if (rc < 0) {
+                break; // No more matches
+            }
+
+            PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(match_data);
+            PCRE2_SIZE start = ovector[0];
+            PCRE2_SIZE end = ovector[1];
+
+            // Replace the matched substring with the replacement string
+            subject.replace(start, end - start, replacement);
+
+            // Adjust the subject length and offset for the next match
+            subject_length = subject.size();
+            offset = start + replacement.size();
+        }
+
+        pcre2_match_data_free(match_data);
+        pcre2_code_free(re);
+    };
+
     // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
     // The message may be truncated midway through the authToken, so there may not be a closing quote (") at the end of
     // the authToken, so we need to optionally match the closing quote with a question mark (?).
-    pcrecpp::RE("\"authToken\":\".*\"?").GlobalReplace("\"authToken\":<REDACTED>", &s);
+    globalReplace("\"authToken\":\".*\"?", "\"authToken\":<REDACTED>", s);
 
     // Redact queries that contain encrypted fields since there's no value in logging them.
-    pcrecpp::RE("v[0-9]+:[0-9A-F]{10,}").GlobalReplace("<REDACTED>", &s);
+    globalReplace("v[0-9]+:[0-9A-F]{10,}", "<REDACTED>", s);
 
     // Remove anything inside "html" because we intentionally don't log chats.
-    pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &s);
+    globalReplace("\"html\":\".*\"", "\"html\":\"<REDACTED>\"", s);
 }
 
 SStopwatch::SStopwatch() {

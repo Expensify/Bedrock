@@ -1,7 +1,5 @@
 #include "MySQL.h"
 
-#include <pcrecpp.h>
-
 #include <bedrockVersion.h>
 #include <libstuff/SQResult.h>
 
@@ -112,7 +110,7 @@ string MySQLPacket::serializeHandshake() {
     SAppend(handshake.payload, &capability_flags_2, 2); // capability_flags_2 (high 2 bytes)
 
     // The first byte is the length of the auth_plugin_name string. Followed by 10 NULL
-    // characters for the "reserved" field. Since we don't support CLIENT_SECURE_CONNECTION 
+    // characters for the "reserved" field. Since we don't support CLIENT_SECURE_CONNECTION
     // in our capabilities we can skip auth-plugin-data-part-2
     // https://dev.mysql.com/doc/internals/en/client-wants-native-server-wants-old.html
     // (Initial Handshake Packet)
@@ -271,7 +269,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
             // See if it's asking for a global variable
             string varName;
             string regExp = "^(?:(?:SELECT\\s+)?@@(?:\\w+\\.)?|SHOW VARIABLES LIKE ')(\\w+).*$";
-            if (pcrecpp::RE(regExp, pcrecpp::RE_Options().set_caseless(true)).FullMatch(query, &varName)) {
+            if (SREMatch(regExp, query, varName, false)) {
                 // Loop across and look for it
                 SQResult result;
                 result.headers.push_back(varName);

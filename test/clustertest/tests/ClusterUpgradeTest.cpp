@@ -2,12 +2,11 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct ClusterUpgradeTest : tpunit::TestFixture {
-    ClusterUpgradeTest()
-        : tpunit::TestFixture("ClusterUpgrade",
-                              BEFORE_CLASS(ClusterUpgradeTest::setup),
-                              AFTER_CLASS(ClusterUpgradeTest::teardown),
-                              TEST(ClusterUpgradeTest::test)
-                             ) { }
+    ClusterUpgradeTest() : tpunit::TestFixture("ClusterUpgrade") {
+        registerTests(BEFORE_CLASS(ClusterUpgradeTest::setup),
+                      AFTER_CLASS(ClusterUpgradeTest::teardown),
+                      TEST(ClusterUpgradeTest::test));
+    }
 
     BedrockClusterTester* tester;
     string prodBedrockName;

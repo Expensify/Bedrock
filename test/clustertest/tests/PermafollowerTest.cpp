@@ -2,10 +2,9 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct PermafollowerTest : tpunit::TestFixture {
-    PermafollowerTest()
-        : tpunit::TestFixture("Permafollower",
-                              TEST(PermafollowerTest::test)
-                             ) { }
+    PermafollowerTest() : tpunit::TestFixture("Permafollower") {
+        registerTests(TEST(PermafollowerTest::test));
+    }
 
     void test() {
         // create a 6 node cluster
@@ -40,13 +39,13 @@ struct PermafollowerTest : tpunit::TestFixture {
         request["query"] = "INSERT OR REPLACE INTO test (id, value) VALUES(12345, 1 );";
         request["writeConsistency"] = "QUORUM";
         node4.executeWaitVerifyContent(request, "200");
-        
+
         // Shut down permafollower
         tester.stopNode(5);
 
         // Now 3 out of 6 nodes Do another full quorum commit
         node4.executeWaitVerifyContent(request, "200");
-        
+
     }
 
 } __PermafollowerTest;

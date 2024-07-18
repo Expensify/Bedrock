@@ -6,8 +6,9 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct ForkCheckTest : tpunit::TestFixture {
-    ForkCheckTest()
-        : tpunit::TestFixture("ForkCheck", TEST(ForkCheckTest::test)) {}
+    ForkCheckTest() : tpunit::TestFixture("ForkCheck") {
+        registerTests(TEST(ForkCheckTest::test));
+    }
 
     pair<uint64_t, string> getMaxJournalCommit(BedrockTester& tester, bool online = true) {
         SQResult journals;

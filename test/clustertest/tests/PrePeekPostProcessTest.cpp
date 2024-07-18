@@ -7,12 +7,14 @@ void checkWithoutThis() {
 }
 
 struct PrePeekPostProcessTest : tpunit::TestFixture {
-    PrePeekPostProcessTest() : tpunit::TestFixture("PrePeekPostProcess", BEFORE_CLASS(PrePeekPostProcessTest::setup),
-                                                                         AFTER_CLASS(PrePeekPostProcessTest::teardown),
-                                                                         TEST(PrePeekPostProcessTest::prePeek),
-                                                                         TEST(PrePeekPostProcessTest::prePeekThrow),
-                                                                         TEST(PrePeekPostProcessTest::postProcess),
-                                                                         TEST(PrePeekPostProcessTest::prePeekPostProcess)) { }
+    PrePeekPostProcessTest() : tpunit::TestFixture("PrePeekPostProcess") {
+        registerTests(BEFORE_CLASS(PrePeekPostProcessTest::setup),
+                      AFTER_CLASS(PrePeekPostProcessTest::teardown),
+                      TEST(PrePeekPostProcessTest::prePeek),
+                      TEST(PrePeekPostProcessTest::prePeekThrow),
+                      TEST(PrePeekPostProcessTest::postProcess),
+                      TEST(PrePeekPostProcessTest::prePeekPostProcess));
+    }
 
     BedrockClusterTester* tester;
 

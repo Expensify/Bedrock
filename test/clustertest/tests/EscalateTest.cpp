@@ -2,10 +2,12 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct EscalateTest : tpunit::TestFixture {
-    EscalateTest() : tpunit::TestFixture("Escalate", BEFORE_CLASS(EscalateTest::setup),
-                                                     AFTER_CLASS(EscalateTest::teardown),
-                                                     TEST(EscalateTest::test),
-                                                     TEST(EscalateTest::socketReuse)) { }
+    EscalateTest() : tpunit::TestFixture("Escalate") {
+        registerTests(BEFORE_CLASS(EscalateTest::setup),
+                      AFTER_CLASS(EscalateTest::teardown),
+                      TEST(EscalateTest::test),
+                      TEST(EscalateTest::socketReuse));
+    }
 
     BedrockClusterTester* tester = nullptr;
 

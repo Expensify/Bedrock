@@ -2,10 +2,9 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct MultipleLeaderSyncTest : tpunit::TestFixture {
-    MultipleLeaderSyncTest()
-        : tpunit::TestFixture("MultipleLeaderSync",
-                              TEST(MultipleLeaderSyncTest::test)
-                             ) { }
+    MultipleLeaderSyncTest() : tpunit::TestFixture("MultipleLeaderSync") {
+        registerTests(TEST(MultipleLeaderSyncTest::test));
+    }
 
     // Create a bunch of trivial write commands.
     void runTrivialWrites(int writeCount, BedrockTester& node) {

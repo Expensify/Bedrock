@@ -3,14 +3,14 @@
 #include <test/lib/BedrockTester.h>
 
 struct FastHTTPParsing : tpunit::TestFixture {
-    FastHTTPParsing() : tpunit::TestFixture(true, "FastHTTPParsing",
-                                    TEST(FastHTTPParsing::simpleSuccess),
-                                    TEST(FastHTTPParsing::simpleFail),
-                                    TEST(FastHTTPParsing::blank),
-                                    TEST(FastHTTPParsing::noHeaders),
-                                    TEST(FastHTTPParsing::splitSeparators),
-                                    TEST(FastHTTPParsing::reset))
-    { }
+    FastHTTPParsing() : tpunit::TestFixture(true, "FastHTTPParsing") {
+        registerTests(TEST(FastHTTPParsing::simpleSuccess),
+                      TEST(FastHTTPParsing::simpleFail),
+                      TEST(FastHTTPParsing::blank),
+                      TEST(FastHTTPParsing::noHeaders),
+                      TEST(FastHTTPParsing::splitSeparators),
+                      TEST(FastHTTPParsing::reset));
+    }
 
     // We test both supported line ends everywhere.
     list<string> lineEnds = {"\r\n", "\n"};
@@ -77,7 +77,7 @@ struct FastHTTPParsing : tpunit::TestFixture {
 
             SData request;
             int requestSize = request.deserialize(fb);
-            fb.consumeFront(requestSize); 
+            fb.consumeFront(requestSize);
 
             ASSERT_EQUAL(string(fb.c_str()), string("GET"));
             ASSERT_FALSE(fb.startsWithHTTPRequest());
@@ -89,7 +89,7 @@ struct FastHTTPParsing : tpunit::TestFixture {
             fb.append(restOf2ndRequest.c_str(), restOf2ndRequest.size());
             ASSERT_TRUE(fb.startsWithHTTPRequest());
             requestSize = request.deserialize(fb);
-            fb.consumeFront(requestSize); 
+            fb.consumeFront(requestSize);
             ASSERT_TRUE(fb.empty());
 
             ASSERT_EQUAL(request.content, "A");

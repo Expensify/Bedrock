@@ -3,19 +3,19 @@
 #include <test/lib/BedrockTester.h>
 
 struct CancelJobTest : tpunit::TestFixture {
-    CancelJobTest()
-        : tpunit::TestFixture("CancelJob",
-                              BEFORE_CLASS(CancelJobTest::setupClass),
-                              TEST(CancelJobTest::cancelNonExistentJob),
-                              TEST(CancelJobTest::cancelJobWithChild),
-                              TEST(CancelJobTest::cancelRunningJob),
-                              TEST(CancelJobTest::cancelFinishedJob),
-                              TEST(CancelJobTest::cancelPausedJob),
-                              TEST(CancelJobTest::cancelChildJob),
-                              TEST(CancelJobTest::cancelJobWithoutParent),
-                              TEST(CancelJobTest::cancelJobWithSiblings),
-                              AFTER(CancelJobTest::tearDown),
-                              AFTER_CLASS(CancelJobTest::tearDownClass)) { }
+    CancelJobTest() : tpunit::TestFixture("CancelJob") {
+        registerTests(BEFORE_CLASS(CancelJobTest::setupClass),
+                      TEST(CancelJobTest::cancelNonExistentJob),
+                      TEST(CancelJobTest::cancelJobWithChild),
+                      TEST(CancelJobTest::cancelRunningJob),
+                      TEST(CancelJobTest::cancelFinishedJob),
+                      TEST(CancelJobTest::cancelPausedJob),
+                      TEST(CancelJobTest::cancelChildJob),
+                      TEST(CancelJobTest::cancelJobWithoutParent),
+                      TEST(CancelJobTest::cancelJobWithSiblings),
+                      AFTER(CancelJobTest::tearDown),
+                      AFTER_CLASS(CancelJobTest::tearDownClass));
+    }
 
     BedrockTester* tester;
 
@@ -122,7 +122,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
-        
+
         // Get the child job
         command.clear();
         command.methodLine = "GetJob";
@@ -286,7 +286,7 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Assert job state is cancelled, but sibling is still running
-        SQResult result;        
+        SQResult result;
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
         ASSERT_EQUAL(result[0][0], "CANCELLED");
 

@@ -7,28 +7,28 @@
 #include <test/tests/jobs/JobTestHelper.h>
 
 struct CreateJobTest : tpunit::TestFixture {
-    CreateJobTest()
-        : tpunit::TestFixture("CreateJob",
-                              BEFORE_CLASS(CreateJobTest::setupClass),
-                              TEST(CreateJobTest::create),
-                              TEST(CreateJobTest::createWithHttp),
-                              TEST(CreateJobTest::createWithPriority),
-                              TEST(CreateJobTest::createWithData),
-                              TEST(CreateJobTest::createWithRepeat),
-                              TEST(CreateJobTest::uniqueJob),
-                              TEST(CreateJobTest::uniqueJobMergeData),
-                              TEST(CreateJobTest::createWithBadData),
-                              TEST(CreateJobTest::createWithBadRepeat),
-                              TEST(CreateJobTest::createChildWithQueuedParent),
-                              TEST(CreateJobTest::createChildWithRunningGrandparent),
-                              TEST(CreateJobTest::retryRecurringJobs),
-                              TEST(CreateJobTest::retryWithMalformedValue),
-                              TEST(CreateJobTest::retryUnique),
-                              TEST(CreateJobTest::retryLifecycle),
-                              TEST(CreateJobTest::retryWithChildren),
-                              TEST(CreateJobTest::getManualJobWithRetryAfter),
-                              AFTER(CreateJobTest::tearDown),
-                              AFTER_CLASS(CreateJobTest::tearDownClass)) { }
+    CreateJobTest() : tpunit::TestFixture("CreateJob") {
+        registerTests(BEFORE_CLASS(CreateJobTest::setupClass),
+                      TEST(CreateJobTest::create),
+                      TEST(CreateJobTest::createWithHttp),
+                      TEST(CreateJobTest::createWithPriority),
+                      TEST(CreateJobTest::createWithData),
+                      TEST(CreateJobTest::createWithRepeat),
+                      TEST(CreateJobTest::uniqueJob),
+                      TEST(CreateJobTest::uniqueJobMergeData),
+                      TEST(CreateJobTest::createWithBadData),
+                      TEST(CreateJobTest::createWithBadRepeat),
+                      TEST(CreateJobTest::createChildWithQueuedParent),
+                      TEST(CreateJobTest::createChildWithRunningGrandparent),
+                      TEST(CreateJobTest::retryRecurringJobs),
+                      TEST(CreateJobTest::retryWithMalformedValue),
+                      TEST(CreateJobTest::retryUnique),
+                      TEST(CreateJobTest::retryLifecycle),
+                      TEST(CreateJobTest::retryWithChildren),
+                      TEST(CreateJobTest::getManualJobWithRetryAfter),
+                      AFTER(CreateJobTest::tearDown),
+                      AFTER_CLASS(CreateJobTest::tearDownClass));
+    }
 
     BedrockTester* tester;
 

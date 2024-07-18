@@ -2,11 +2,11 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct UpgradeDBTest : tpunit::TestFixture {
-    UpgradeDBTest()
-        : tpunit::TestFixture("UpgradeDB",
-                              BEFORE_CLASS(UpgradeDBTest::setup),
-                              AFTER_CLASS(UpgradeDBTest::teardown),
-                              TEST(UpgradeDBTest::test)) { }
+    UpgradeDBTest() : tpunit::TestFixture("UpgradeDB") {
+        registerTests(BEFORE_CLASS(UpgradeDBTest::setup),
+                      AFTER_CLASS(UpgradeDBTest::teardown),
+                      TEST(UpgradeDBTest::test));
+    }
 
     BedrockClusterTester* tester;
 

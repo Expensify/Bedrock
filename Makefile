@@ -3,10 +3,10 @@
 # to be set, but for the time being we need to override the defaults so that our existing dev environment works. This
 # can be removed when that is resolved.
 ifeq ($(CC),cc)
-CC = gcc-13
+CC = ccache /usr/bin/clang-18
 endif
 ifeq ($(CXX),g++)
-CXX = g++-13
+CXX = ccache /usr/bin/clang++-18
 endif
 
 # Set the optimization level from the environment, or default to -O2.
@@ -23,17 +23,17 @@ PROJECT = $(shell git rev-parse --show-toplevel)
 INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
 
 # Set our standard C++ compiler flags
-CXXFLAGS = -g -std=c++20 -fPIC -DSQLITE_ENABLE_NORMALIZE $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security  -Wno-error=deprecated-declarations $(INCLUDE)
+CXXFLAGS = -g -std=c++20 -stdlib=libc++ -fPIC -DSQLITE_ENABLE_NORMALIZE $(BEDROCK_OPTIM_COMPILE_FLAG) -Wno-vla-cxx-extension -Wno-unqualified-std-cast-call -Werror -Wformat-security  -Wno-error=deprecated-declarations $(INCLUDE) #-Wall -Werror
 
 # Amalgamation flags
-AMALGAMATION_FLAGS = -Wno-unused-but-set-variable -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -DSQLITE_MAX_PAGE_COUNT=4294967294 -DSQLITE_DISABLE_PAGECACHE_OVERFLOW_STATS
+AMALGAMATION_FLAGS = -Wno-unused-const-variable -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -DSQLITE_MAX_PAGE_COUNT=4294967294 -DSQLITE_DISABLE_PAGECACHE_OVERFLOW_STATS
 
 # All our intermediate, dependency, object, etc files get hidden in here.
 INTERMEDIATEDIR = .build
 
 # We use the same library paths and required libraries for all binaries.
-LIBPATHS =-L$(PROJECT) -Lmbedtls/library
-LIBRARIES =-Wl,--start-group -lbedrock -lstuff -Wl,--end-group -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lm
+LIBPATHS =-L$(PROJECT) -Lmbedtls/library -L/usr/lib/llvm-18/lib
+LIBRARIES =-Wl,--start-group -lbedrock -lstuff -Wl,--end-group -ldl -lpcre2-8 -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lm -fuse-ld=lld
 
 # These targets aren't actual files.
 .PHONY: all test clustertest clean testplugin
@@ -111,11 +111,11 @@ BINPREREQS = libbedrock.a libstuff.a mbedtls/library/libmbedcrypto.a
 
 # All of our binaries build in the same way.
 bedrock: $(BEDROCKOBJ) $(BINPREREQS)
-	$(CXX) -o $@ $(BEDROCKOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+	$(CXX) -stdlib=libc++ -o $@ $(BEDROCKOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/test: $(TESTOBJ) $(BINPREREQS)
-	$(CXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+	$(CXX) -stdlib=libc++ -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
-	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+	$(CXX) -stdlib=libc++ -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 
 # The rule to build TestPlugin
 test/clustertest/testplugin/testplugin.so : $(TESTPLUGINOBJ) $(TESTPLUGINCPP) $(TESTPLUGINTDEP) $(BINPREREQS)

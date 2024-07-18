@@ -7,8 +7,9 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct ForkedNodeApprovalTest : tpunit::TestFixture {
-    ForkedNodeApprovalTest()
-        : tpunit::TestFixture("ForkedNodeApproval", TEST(ForkedNodeApprovalTest::test)) {}
+    ForkedNodeApprovalTest() : tpunit::TestFixture("ForkedNodeApproval") {
+        registerTests(TEST(ForkedNodeApprovalTest::test));
+    }
 
     pair<uint64_t, string> getMaxJournalCommit(BedrockTester& tester, bool online = true) {
         SQResult journals;

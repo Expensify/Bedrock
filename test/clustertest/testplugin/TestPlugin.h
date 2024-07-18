@@ -44,14 +44,14 @@ class TestPluginCommand : public BedrockCommand {
   public:
     TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_TestPlugin* plugin);
     ~TestPluginCommand();
-    virtual void prePeek(SQLite& db);
-    virtual bool peek(SQLite& db);
-    virtual void process(SQLite& db);
-    virtual void postProcess(SQLite& db);
-    virtual bool shouldPrePeek();
-    virtual bool shouldPostProcess();
+    virtual void prePeek(SQLite& db) override;
+    virtual bool peek(SQLite& db) override;
+    virtual void process(SQLite& db) override;
+    virtual void postProcess(SQLite& db) override;
+    virtual bool shouldPrePeek() override;
+    virtual bool shouldPostProcess() override;
     virtual void reset(BedrockCommand::STAGE stage) override;
-    bool shouldEnableOnPrepareNotification(const SQLite& db, void (**handler)(SQLite& _db, int64_t tableID));
+    bool shouldEnableOnPrepareNotification(const SQLite& db, void (**handler)(SQLite& _db, int64_t tableID)) override;
 
   private:
     BedrockPlugin_TestPlugin& plugin() { return static_cast<BedrockPlugin_TestPlugin&>(*_plugin); }

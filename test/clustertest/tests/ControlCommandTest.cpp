@@ -4,11 +4,12 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct ControlCommandTest : tpunit::TestFixture {
-    ControlCommandTest()
-        : tpunit::TestFixture("ControlCommand",
-                              BEFORE_CLASS(ControlCommandTest::setup),
-                              AFTER_CLASS(ControlCommandTest::teardown),
-                              TEST(ControlCommandTest::testPreventAttach)) { }
+    ControlCommandTest() : tpunit::TestFixture("ControlCommand") {
+        registerTests(BEFORE_CLASS(ControlCommandTest::setup),
+                      AFTER_CLASS(ControlCommandTest::teardown),
+                      TEST(ControlCommandTest::testPreventAttach));
+    }
+
 
     BedrockClusterTester* tester;
 

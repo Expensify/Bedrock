@@ -39,7 +39,13 @@ tpunit::TestFixture::perFixtureStats::perFixtureStats()
 {
 }
 
-tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* m3,  method* m4,
+tpunit::TestFixture::TestFixture(const char* name, bool parallel)
+  : _name(name),
+    _parallel(parallel)
+{
+}
+
+void tpunit::TestFixture::registerTests(method* m0,  method* m1,  method* m2,  method* m3,  method* m4,
                          method* m5,  method* m6,  method* m7,  method* m8,  method* m9,
                          method* m10, method* m11, method* m12, method* m13, method* m14,
                          method* m15, method* m16, method* m17, method* m18, method* m19,
@@ -52,11 +58,7 @@ tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* 
                          method* m50, method* m51, method* m52, method* m53, method* m54,
                          method* m55, method* m56, method* m57, method* m58, method* m59,
                          method* m60, method* m61, method* m62, method* m63, method* m64,
-                         method* m65, method* m66, method* m67, method* m68, method* m69,
-                         const char* name, bool parallel)
-  : _name(name),
-    _parallel(parallel)
-{
+                         method* m65, method* m66, method* m67, method* m68, method* m69) {
     tpunit_detail_fixture_list()->push_back(this);
 
     // DO NOT modify this over 70, you're holding it wrong if you do.

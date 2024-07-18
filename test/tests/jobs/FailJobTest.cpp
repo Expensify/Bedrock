@@ -4,15 +4,15 @@
 #include <test/tests/jobs/JobTestHelper.h>
 
 struct FailJobTest : tpunit::TestFixture {
-    FailJobTest()
-        : tpunit::TestFixture("FailJob",
-                              BEFORE_CLASS(FailJobTest::setupClass),
-                              TEST(FailJobTest::nonExistentJob),
-                              TEST(FailJobTest::notInRunningRunqueuedState),
-                              TEST(FailJobTest::failJobInRunningState),
-                              TEST(FailJobTest::failJobInRunqueuedState),
-                              AFTER(FailJobTest::tearDown),
-                              AFTER_CLASS(FailJobTest::tearDownClass)) { }
+    FailJobTest() : tpunit::TestFixture("FailJob") {
+        registerTests(BEFORE_CLASS(FailJobTest::setupClass),
+                      TEST(FailJobTest::nonExistentJob),
+                      TEST(FailJobTest::notInRunningRunqueuedState),
+                      TEST(FailJobTest::failJobInRunningState),
+                      TEST(FailJobTest::failJobInRunqueuedState),
+                      AFTER(FailJobTest::tearDown),
+                      AFTER_CLASS(FailJobTest::tearDownClass));
+    }
 
     BedrockTester* tester;
 

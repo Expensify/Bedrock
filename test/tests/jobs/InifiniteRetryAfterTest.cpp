@@ -5,12 +5,10 @@
 #include <test/lib/BedrockTester.h>
 
 struct InfiniteRetryAfterJobTest : tpunit::TestFixture {
-    InfiniteRetryAfterJobTest()
-        : tpunit::TestFixture("InfiniteRetryAfter",
-                              TEST(InfiniteRetryAfterJobTest::testInfiniteTries),
-                              TEST(InfiniteRetryAfterJobTest::testRepeatJobWithThreeTries)
-                              )
-    {}
+    InfiniteRetryAfterJobTest() : tpunit::TestFixture("InfiniteRetryAfter") {
+        registerTests(TEST(InfiniteRetryAfterJobTest::testInfiniteTries),
+                      TEST(InfiniteRetryAfterJobTest::testRepeatJobWithThreeTries));
+    }
 
     /**
      * This tests that a job with a retryAfter won't get requeued forever.

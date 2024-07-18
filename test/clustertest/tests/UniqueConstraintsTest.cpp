@@ -2,8 +2,9 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct UniqueConstraintsTest : tpunit::TestFixture {
-    UniqueConstraintsTest()
-        : tpunit::TestFixture("UniqueConstraints", TEST(UniqueConstraintsTest::test)) { }
+    UniqueConstraintsTest() : tpunit::TestFixture("UniqueConstraints") {
+        registerTests(TEST(UniqueConstraintsTest::test));
+    }
 
     void test()
     {

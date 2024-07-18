@@ -2,16 +2,16 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct VersionMismatchTest : tpunit::TestFixture {
-    VersionMismatchTest()
-        : tpunit::TestFixture("VersionMismatch", 
-            BEFORE_CLASS(VersionMismatchTest::setup),
-            TEST(VersionMismatchTest::testReadEscalation), 
-            TEST(VersionMismatchTest::testWriteEscalation),
-            AFTER_CLASS(VersionMismatchTest::teardown)) { }
+    VersionMismatchTest() : tpunit::TestFixture("VersionMismatch") {
+        registerTests(BEFORE_CLASS(VersionMismatchTest::setup),
+                      TEST(VersionMismatchTest::testReadEscalation),
+                      TEST(VersionMismatchTest::testWriteEscalation),
+                      AFTER_CLASS(VersionMismatchTest::teardown));
+    }
 
     BedrockClusterTester* tester = nullptr;
 
-    void setup() { 
+    void setup() {
         tester = new BedrockClusterTester(ClusterSize::FIVE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"});
         // Restart one of the followers on a new version.
         tester->getTester(2).stopServer();

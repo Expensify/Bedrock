@@ -2,24 +2,24 @@
 #include <test/lib/BedrockTester.h>
 
 struct WriteTest : tpunit::TestFixture {
-    WriteTest()
-        : tpunit::TestFixture("Write",
-                              BEFORE_CLASS(WriteTest::setup),
-                              TEST(WriteTest::insert),
-                              TEST(WriteTest::parallelInsert),
-                              TEST(WriteTest::failedDeleteNoWhere),
-                              TEST(WriteTest::deleteNoWhereFalse),
-                              TEST(WriteTest::deleteNoWhereTrue),
-                              TEST(WriteTest::deleteWithWhere),
-                              TEST(WriteTest::update),
-                              TEST(WriteTest::failedUpdateNoWhere),
-                              TEST(WriteTest::failedUpdateNoWhereTrue),
-                              TEST(WriteTest::failedUpdateNoWhereFalse),
-                              TEST(WriteTest::updateAndInsertWithHttp),
-                              TEST(WriteTest::shortHandSyntax),
-                              TEST(WriteTest::keywordsAsValue),
-                              TEST(WriteTest::blockTimeFunctions),
-                              AFTER_CLASS(WriteTest::tearDown)) { }
+    WriteTest() : tpunit::TestFixture("Write") {
+        registerTests(BEFORE_CLASS(WriteTest::setup),
+                      TEST(WriteTest::insert),
+                      TEST(WriteTest::parallelInsert),
+                      TEST(WriteTest::failedDeleteNoWhere),
+                      TEST(WriteTest::deleteNoWhereFalse),
+                      TEST(WriteTest::deleteNoWhereTrue),
+                      TEST(WriteTest::deleteWithWhere),
+                      TEST(WriteTest::update),
+                      TEST(WriteTest::failedUpdateNoWhere),
+                      TEST(WriteTest::failedUpdateNoWhereTrue),
+                      TEST(WriteTest::failedUpdateNoWhereFalse),
+                      TEST(WriteTest::updateAndInsertWithHttp),
+                      TEST(WriteTest::shortHandSyntax),
+                      TEST(WriteTest::keywordsAsValue),
+                      TEST(WriteTest::blockTimeFunctions),
+                      AFTER_CLASS(WriteTest::tearDown));
+    }
 
     BedrockTester* tester;
 

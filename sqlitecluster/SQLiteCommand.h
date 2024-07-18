@@ -67,7 +67,7 @@ class SQLiteCommand {
     SQLiteCommand(SQLiteCommand&& from);
 
     // Default move assignment operator.
-    SQLiteCommand& operator=(SQLiteCommand&& from) = default;
+    // SQLiteCommand& operator=(SQLiteCommand&& from) = default;
 
     // Destructor.
     virtual ~SQLiteCommand() {}

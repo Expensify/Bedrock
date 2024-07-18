@@ -28,9 +28,9 @@ SQResult getAllJobData(BedrockTester& tester) {
 }
 
 struct GetJobsTest : tpunit::TestFixture {
-    GetJobsTest()
-        : tpunit::TestFixture("GetJobs",
-                              TEST(GetJobsTest::getJobs)) { }
+    GetJobsTest() : tpunit::TestFixture("GetJobs") {
+        registerTests(TEST(GetJobsTest::getJobs));
+    }
 
     static constexpr auto jobName = "TestJobName";
     void getJobs() {

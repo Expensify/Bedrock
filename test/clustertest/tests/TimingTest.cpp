@@ -2,8 +2,9 @@
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct TimingTest : tpunit::TestFixture {
-    TimingTest()
-        : tpunit::TestFixture("Timing", TEST(TimingTest::test)) { }
+    TimingTest() : tpunit::TestFixture("Timing") {
+        registerTests(TEST(TimingTest::test));
+    }
 
     void test()
     {

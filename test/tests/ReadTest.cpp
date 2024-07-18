@@ -2,13 +2,13 @@
 #include <test/lib/BedrockTester.h>
 
 struct ReadTest : tpunit::TestFixture {
-    ReadTest()
-        : tpunit::TestFixture("Read",
-                              BEFORE_CLASS(ReadTest::setup),
-                              TEST(ReadTest::simpleRead),
-                              TEST(ReadTest::simpleReadWithHttp),
-                              TEST(ReadTest::readNoSemicolon),
-                              AFTER_CLASS(ReadTest::tearDown)) { }
+    ReadTest() : tpunit::TestFixture("Read") {
+        registerTests(BEFORE_CLASS(ReadTest::setup),
+                      TEST(ReadTest::simpleRead),
+                      TEST(ReadTest::simpleReadWithHttp),
+                      TEST(ReadTest::readNoSemicolon),
+                      AFTER_CLASS(ReadTest::tearDown));
+    }
 
     BedrockTester* tester;
 

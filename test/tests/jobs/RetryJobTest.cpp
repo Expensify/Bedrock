@@ -4,32 +4,32 @@
 #include <test/tests/jobs/JobTestHelper.h>
 
 struct RetryJobTest : tpunit::TestFixture {
-    RetryJobTest()
-        : tpunit::TestFixture("RetryJob",
-                              BEFORE_CLASS(RetryJobTest::setupClass),
-                              TEST(RetryJobTest::nonExistentJob),
-                              TEST(RetryJobTest::notInRunningState),
-                              TEST(RetryJobTest::parentIsNotPaused),
-                              TEST(RetryJobTest::removeFinishedAndCancelledChildren),
-                              TEST(RetryJobTest::updateData),
-                              TEST(RetryJobTest::negativeDelay),
-                              TEST(RetryJobTest::positiveDelay),
-                              TEST(RetryJobTest::delayError),
-                              TEST(RetryJobTest::hasRepeat),
-                              TEST(RetryJobTest::hasRepeatStartOfHour),
-                              TEST(RetryJobTest::hasRepeatStartOfHourNotLast),
-                              TEST(RetryJobTest::inRunqueuedState),
-                              TEST(RetryJobTest::simplyRetryWithNextRun),
-                              TEST(RetryJobTest::changeNameAndPriority),
-                              TEST(RetryJobTest::changeName),
-                              TEST(RetryJobTest::changePriority),
-                              TEST(RetryJobTest::hasRepeatWithNextRun),
-                              TEST(RetryJobTest::hasRepeatWithDelay),
-                              TEST(RetryJobTest::hasRepeatWithNextRunIgnoreRepeat),
-                              TEST(RetryJobTest::hasDelayAndNextRun),
-                              TEST(RetryJobTest::simpleRetryWithHttp),
-                              AFTER(RetryJobTest::tearDown),
-                              AFTER_CLASS(RetryJobTest::tearDownClass)) { }
+    RetryJobTest() : tpunit::TestFixture("RetryJob") {
+        registerTests(BEFORE_CLASS(RetryJobTest::setupClass),
+                      TEST(RetryJobTest::nonExistentJob),
+                      TEST(RetryJobTest::notInRunningState),
+                      TEST(RetryJobTest::parentIsNotPaused),
+                      TEST(RetryJobTest::removeFinishedAndCancelledChildren),
+                      TEST(RetryJobTest::updateData),
+                      TEST(RetryJobTest::negativeDelay),
+                      TEST(RetryJobTest::positiveDelay),
+                      TEST(RetryJobTest::delayError),
+                      TEST(RetryJobTest::hasRepeat),
+                      TEST(RetryJobTest::hasRepeatStartOfHour),
+                      TEST(RetryJobTest::hasRepeatStartOfHourNotLast),
+                      TEST(RetryJobTest::inRunqueuedState),
+                      TEST(RetryJobTest::simplyRetryWithNextRun),
+                      TEST(RetryJobTest::changeNameAndPriority),
+                      TEST(RetryJobTest::changeName),
+                      TEST(RetryJobTest::changePriority),
+                      TEST(RetryJobTest::hasRepeatWithNextRun),
+                      TEST(RetryJobTest::hasRepeatWithDelay),
+                      TEST(RetryJobTest::hasRepeatWithNextRunIgnoreRepeat),
+                      TEST(RetryJobTest::hasDelayAndNextRun),
+                      TEST(RetryJobTest::simpleRetryWithHttp),
+                      AFTER(RetryJobTest::tearDown),
+                      AFTER_CLASS(RetryJobTest::tearDownClass));
+    }
 
     BedrockTester* tester;
 

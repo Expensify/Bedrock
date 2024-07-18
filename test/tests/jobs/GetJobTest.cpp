@@ -26,24 +26,24 @@ bool isBetweenSecondsInclusive(uint64_t startTimestamp, uint64_t endTimestamp, s
 }
 
 struct GetJobTest : tpunit::TestFixture {
-    GetJobTest()
-        : tpunit::TestFixture("GetJob",
-                              BEFORE_CLASS(GetJobTest::setupClass),
-                              TEST(GetJobTest::getJob),
-                              TEST(GetJobTest::getJobWithHttp),
-                              TEST(GetJobTest::withNumResults),
-                              TEST(GetJobTest::noJobFound),
-                              TEST(GetJobTest::testPriorities),
-                              TEST(GetJobTest::testPrioritiesWithDifferentNextRunTimes),
-                              TEST(GetJobTest::testWithFinishedAndCancelledChildren),
-                              TEST(GetJobTest::testPrioritiesWithRunQueued),
-                              TEST(GetJobTest::testMultipleNames),
-                              TEST(GetJobTest::testPriorityParameter),
-                              TEST(GetJobTest::testInvalidJobPriority),
-                              TEST(GetJobTest::testRetryableParentJobs),
-                              TEST(GetJobTest::testInvalidNextRun),
-                              AFTER(GetJobTest::tearDown),
-                              AFTER_CLASS(GetJobTest::tearDownClass)) { }
+    GetJobTest() : tpunit::TestFixture("GetJob") {
+        registerTests(BEFORE_CLASS(GetJobTest::setupClass),
+                      TEST(GetJobTest::getJob),
+                      TEST(GetJobTest::getJobWithHttp),
+                      TEST(GetJobTest::withNumResults),
+                      TEST(GetJobTest::noJobFound),
+                      TEST(GetJobTest::testPriorities),
+                      TEST(GetJobTest::testPrioritiesWithDifferentNextRunTimes),
+                      TEST(GetJobTest::testWithFinishedAndCancelledChildren),
+                      TEST(GetJobTest::testPrioritiesWithRunQueued),
+                      TEST(GetJobTest::testMultipleNames),
+                      TEST(GetJobTest::testPriorityParameter),
+                      TEST(GetJobTest::testInvalidJobPriority),
+                      TEST(GetJobTest::testRetryableParentJobs),
+                      TEST(GetJobTest::testInvalidNextRun),
+                      AFTER(GetJobTest::tearDown),
+                      AFTER_CLASS(GetJobTest::tearDownClass));
+    }
 
     BedrockTester* tester;
 
@@ -397,13 +397,13 @@ struct GetJobTest : tpunit::TestFixture {
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
-        
+
         // Get a child
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "child_finished";
         response = tester->executeWaitVerifyContentTable(command);
-        
+
         // Cancel a child
         command.clear();
         command.methodLine = "CancelJob";
