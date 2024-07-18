@@ -59,7 +59,7 @@ jobs:
         wget -qO - https://package.perforce.com/perforce.pubkey --no-check-certificate | sudo apt-key add -
         echo "deb [arch=amd64] https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu focal main" | sudo tee -a /etc/apt/sources.list
         sudo apt-get update -y
-        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake libsodium-dev libgpgme11-dev
+        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake libsodium-dev libgpgme11-dev libpcre2-posix2 libpcre2-dev
         sudo locale-gen "en_US.UTF-8"
         sudo service rsyslog start
 
