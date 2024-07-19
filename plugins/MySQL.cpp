@@ -112,7 +112,7 @@ string MySQLPacket::serializeHandshake() {
     SAppend(handshake.payload, &capability_flags_2, 2); // capability_flags_2 (high 2 bytes)
 
     // The first byte is the length of the auth_plugin_name string. Followed by 10 NULL
-    // characters for the "reserved" field. Since we don't support CLIENT_SECURE_CONNECTION 
+    // characters for the "reserved" field. Since we don't support CLIENT_SECURE_CONNECTION
     // in our capabilities we can skip auth-plugin-data-part-2
     // https://dev.mysql.com/doc/internals/en/client-wants-native-server-wants-old.html
     // (Initial Handshake Packet)
@@ -254,6 +254,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
         switch (packet.payload[0]) {
         case 3: { // COM_QUERY
             // Decode the query
+            SDEBUG("Packet payload " + packet.payload);
             string query = STrim(packet.payload.substr(1, packet.payload.size() - 1));
             if (!SEndsWith(query, ";")) {
                 // We translate our query to one we can pass to `DB`, for which this is mandatory.
@@ -309,21 +310,32 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 result.rows.resize(1);
                 result.rows.back().push_back("main");
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW /*!50002 FULL*/ TABLES;")) {
+            } else if (SIEquals(SToUpper(query), "SHOW /*!50002 FULL*/ TABLES;") ||
+                       SIEquals(SToUpper(query), "SHOW FULL TABLES;")) {
                 // Return an empty list of tables
-                SINFO("Responding with fake table list");
-                SQResult result;
-                result.headers.push_back("Tables");
-                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                SINFO("Getting table list");
+
+                // Transform this into an internal request
+                request.methodLine = "Query";
+                request["format"] = "json";
+                request["sequenceID"] = SToStr(packet.sequenceID);
+                request["query"] =
+                    "SELECT name as Tables_in_main, CASE type WHEN 'table' THEN 'BASE TABLE' WHEN 'view' THEN 'VIEW' "
+                    "END as Table_type FROM sqlite_master WHERE type IN ('table', 'view');";
             } else if (SContains(query, "information_schema")) {
                 // Return an empty set
                 SINFO("Responding with empty routine list");
                 SQResult result;
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ")
-                       || SIEquals(query, "ROLLBACK;")) {
+            } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ") ||
+                       SIEquals(query, "ROLLBACK;")) {
                 // Ignore
                 SINFO("Responding OK to SET/USE/ROLLBACK query.");
+                s->send(MySQLPacket::serializeOK(packet.sequenceID));
+            } else if (SIEquals(SToUpper(query), "SELECT $$;")) {
+                // Some new clients send this through and expect an OK, non-empty string
+                // response or else the client will hang.
+                SINFO("Responding OK to $$ query.");
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
             } else {
                 // Transform this into an internal request
