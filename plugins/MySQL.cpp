@@ -87,7 +87,7 @@ string MySQLPacket::serializeHandshake() {
     // Just hard code the values for now
     MySQLPacket handshake;
     handshake.payload += lenEncInt(10);      // protocol version
-    handshake.payload += "5.0.0"s; // server version
+    handshake.payload += "8.0.0"s; // server version
     handshake.payload += lenEncInt(0);       // NULL
     uint32_t connectionID = 1;
     SAppend(handshake.payload, &connectionID, 4); // connection_id
@@ -249,12 +249,12 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
     MySQLPacket packet;
     while ((packetSize = packet.deserialize(s->recvBuffer.c_str(), s->recvBuffer.size()))) {
         // Got a packet, process it
-        SDEBUG("Received command #" << (int)packet.sequenceID << ": '" << SToHex(packet.serialize()) << "'");
+        SDEBUG("Received command #" << packet.payload[0] << ", sequenceID #" << (int)packet.sequenceID << " : '" << SToHex(packet.serialize()) << "'");
         s->recvBuffer.consumeFront(packetSize);
+        SDEBUG("Packet payload " + packet.payload);
         switch (packet.payload[0]) {
         case 3: { // COM_QUERY
             // Decode the query
-            SDEBUG("Packet payload " + packet.payload);
             string query = STrim(packet.payload.substr(1, packet.payload.size() - 1));
             if (!SEndsWith(query, ";")) {
                 // We translate our query to one we can pass to `DB`, for which this is mandatory.
@@ -302,7 +302,9 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     result.rows.back()[1] = g_MySQLVariables[c][1];
                 }
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW DATABASES;")) {
+            } else if (SIEquals(query, "SHOW DATABASES;") ||
+                       SIEquals(SToUpper(query), "SELECT DATABASE();") ||
+                       SIEquals(SToUpper(query), "select * from (select DATABASE() as DATABASE_NAME) a where a.DATABASE_NAME is not null;")) {
                 // Return a fake "main" database
                 SINFO("Responding with fake database list");
                 SQResult result;
@@ -337,6 +339,14 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 // response or else the client will hang.
                 SINFO("Responding OK to $$ query.");
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
+            } else if (SIEquals(SToUpper(query), "SELECT VERSION();")) {
+                // Return our fake version
+                SINFO("Responding with fake database list");
+                SQResult result;
+                result.headers.push_back("version()");
+                result.rows.resize(1);
+                result.rows.back().push_back("8.0.0");
+                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             } else {
                 // Transform this into an internal request
                 request.methodLine = "Query";
