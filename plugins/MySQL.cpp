@@ -87,7 +87,7 @@ string MySQLPacket::serializeHandshake() {
     // Just hard code the values for now
     MySQLPacket handshake;
     handshake.payload += lenEncInt(10);      // protocol version
-    handshake.payload += "8.0.0"s; // server version
+    handshake.payload += BedrockPlugin_MySQL::mysqlVersion; // server version
     handshake.payload += lenEncInt(0);       // NULL
     uint32_t connectionID = 1;
     SAppend(handshake.payload, &connectionID, 4); // connection_id
@@ -229,12 +229,17 @@ string MySQLPacket::serializeERR(int sequenceID, uint16_t code, const string& me
     return err.serialize();
 }
 
-BedrockPlugin_MySQL::BedrockPlugin_MySQL(BedrockServer& s) : BedrockPlugin_DB(s)
+BedrockPlugin_MySQL::BedrockPlugin_MySQL(BedrockServer& s) : BedrockPlugin(s)
 {
 }
 
 string BedrockPlugin_MySQL::getPort() {
     return server.args.isSet("-mysql.host") ? server.args["-mysql.host"] : "localhost:3306";
+}
+
+// This plugin supports no commands.
+unique_ptr<BedrockCommand> BedrockPlugin_MySQL::getCommand(SQLiteCommand&& baseCommand) {
+    return nullptr;
 }
 
 void BedrockPlugin_MySQL::onPortAccept(STCPManager::Socket* s) {
@@ -314,7 +319,6 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             } else if (SIEquals(SToUpper(query), "SHOW /*!50002 FULL*/ TABLES;") ||
                        SIEquals(SToUpper(query), "SHOW FULL TABLES;")) {
-                // Return an empty list of tables
                 SINFO("Getting table list");
 
                 // Transform this into an internal request
@@ -324,6 +328,21 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 request["query"] =
                     "SELECT name as Tables_in_main, CASE type WHEN 'table' THEN 'BASE TABLE' WHEN 'view' THEN 'VIEW' "
                     "END as Table_type FROM sqlite_master WHERE type IN ('table', 'view');";
+            } else if (SIEquals(SToUpper(query),
+                                "SELECT TABLE_NAME,TABLE_COMMENT,IF(TABLE_TYPE='BASE TABLE', 'TABLE', "
+                                "TABLE_TYPE),TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=DATABASE() "
+                                "AND ( TABLE_TYPE='BASE TABLE' OR TABLE_TYPE='VIEW' ) AND TABLE_NAME LIKE '%' ORDER BY "
+                                "TABLE_SCHEMA, TABLE_NAME;")) {
+                // This is the query Alteryx users to get Table information to display in the GUI, so let's support it.
+                SINFO("Getting table list");
+
+                // Transform this into an internal request
+                request.methodLine = "Query";
+                request["format"] = "json";
+                request["sequenceID"] = SToStr(packet.sequenceID);
+                request["query"] =
+                    "SELECT name as TABLE_NAME, '' as TABLE_COMMENT, UPPER(type) as TABLE_TYPE, 'main' as TABLE_SCHEMA "
+                    "FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY TABLE_SCHEMA, TABLE_NAME;";
             } else if (SContains(query, "information_schema")) {
                 // Return an empty set
                 SINFO("Responding with empty routine list");
@@ -341,12 +360,14 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
             } else if (SIEquals(SToUpper(query), "SELECT VERSION();")) {
                 // Return our fake version
-                SINFO("Responding with fake database list");
+                SINFO("Responding fake version string");
                 SQResult result;
                 result.headers.push_back("version()");
                 result.rows.resize(1);
-                result.rows.back().push_back("8.0.0");
+                result.rows.back().push_back(BedrockPlugin_MySQL::mysqlVersion);
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+            // Add SHOW KEYS() support
+
             } else {
                 // Transform this into an internal request
                 request.methodLine = "Query";
@@ -384,8 +405,9 @@ void BedrockPlugin_MySQL::onPortRequestComplete(const BedrockCommand& command, S
         }
     } else {
         // Failure -- pass along the message
-        s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), SToInt(command.response.methodLine),
-                                          command.response["error"]));
+        int64_t errorCode = SToInt64(SBefore(command.response.methodLine, " "));
+        string errorMessage = SAfter(command.response.methodLine, " ");
+        s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), errorCode, errorMessage));
     }
 }
 

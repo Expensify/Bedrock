@@ -11,7 +11,11 @@ extern const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2];
   */
 struct MySQLPacket {
     // Attributes
+    // MySQL sequenceID which is used by clients and servers to
+    // order packets and resets back to 0 when a new "command" starts.
     uint8_t sequenceID;
+
+    // The packet payload
     string payload;
 
     /**
@@ -30,14 +34,14 @@ struct MySQLPacket {
      * Parse a MySQL packet from the wire
      *
      * @param packet Binary data received from the MySQL client
-     * @param size length of packet
+     * @param size   length of packet
      * @return       Number of bytes deserialized, or 0 on failure
      */
     int deserialize(const char* packet, const size_t size);
 
     /**
      * Creates a MySQL length-encoded integer
-     * See: https://dev.mysql.com/doc/internals/en/integer.html#packet-Protocol::LengthEncodedInteger
+     * See: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_basic_dt_integers.html
      *
      * @param val Integer value to be length-encoded
      * @return    Lenght-encoded integer value
@@ -46,22 +50,22 @@ struct MySQLPacket {
 
     /**
      * Creates a MySQL length-encoded string
-     * See: https://dev.mysql.com/doc/internals/en/string.html#packet-Protocol::LengthEncodedString
+     * See: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_basic_dt_strings.htm
      *
      * @param str The string to be length-encoded
-     * @return    The length-encoded string
+     * @return    length-encoded string
      */
     static string lenEncStr(const string& str);
 
     /**
      * Creates the packet sent from the server to new connections
-     * See: https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeV10
+     * See: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_connection_phase_packets_protocol_handshake_v10.html
      */
     static string serializeHandshake();
 
     /**
      * Creates the packet used to respond to a COM_QUERY request
-     * See: https://dev.mysql.com/doc/internals/en/com-query-response.html#packet-Protocol::ColumnDefinition320
+     * See: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_query_response.html
      *
      * @param sequenceID The sequenceID of the request we are responding to
      * @param result     The results of the query we were asked to execte
@@ -71,7 +75,7 @@ struct MySQLPacket {
 
     /**
      * Creatse a standard OK packet
-     * See: https://dev.mysql.com/doc/internals/en/packet-OK_Packet.html
+     * See: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_basic_ok_packet.html
      *
      * @param sequenceID The sequenceID of the request we are responding to
      * @return           The OK packet to be sent to the client
@@ -80,7 +84,7 @@ struct MySQLPacket {
 
     /**
      * Sends ERR
-     * See: https://dev.mysql.com/doc/internals/en/packet-ERR_Packet.html#cs-packet-err-error-code
+     * See: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_basic_err_packet.html
      *
      * @param sequenceID The sequenceID of the request we are responding to
      * @param code       The error code to show the user
@@ -91,18 +95,42 @@ struct MySQLPacket {
 };
 
 /**
- * Declare the class we're going to implement below
+ * This plugin allows MySQL clients to connect to a bedrock instance. It requires the DB plugin
+ * or some other plugin that can process "Query" commandsin order to actually work, in other
+ * words this is essentially a network protocol wrapper aound the DB plugin.
  */
-class BedrockPlugin_MySQL : public BedrockPlugin_DB {
+class BedrockPlugin_MySQL : public BedrockPlugin {
   public:
     BedrockPlugin_MySQL(BedrockServer& s);
     virtual const string& getName() const;
+
+    virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
+
+    // This plugin listens on MySQL's port by default, but can be changed via CLI flag.
     virtual string getPort();
+
+    // This function is called when bedrock accepts a new connection on a port owned
+    // by a given plugin. We use it to send the MySQL handshake.
     virtual void onPortAccept(STCPManager::Socket* s);
+
+    // This function is called when bedrock receives data on a port owned by a given plugin.
+    // We do basically all query and processing in here.
     virtual void onPortRecv(STCPManager::Socket* s, SData& request);
+
+    // This function is called when a requests completes, we use it to send OK and ERR Packets
+    // as appropriate based on the results of onPortRecv().
     virtual void onPortRequestComplete(const BedrockCommand& command, STCPManager::Socket* s);
+
+    // Our fake mysql version. We don't necessarily
+    // conform to the same functionality or standards as this version, however
+    // some clients do version checking to see if they support connecting. We've
+    // set this to a major recent version so that modern clients can connect. In theory
+    // you can safely increment this to any valid future version unless there's breaking
+    // changes in the protocol.
+    static constexpr auto mysqlVersion = "8.0.35";
 
   private:
     // Attributes
     static const string name;
+    string commandName;
 };
