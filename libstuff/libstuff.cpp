@@ -39,8 +39,9 @@
 #endif
 #endif
 
-#define PCRE2_CODE_UNIT_WIDTH 8
-#include <pcre2.h> // sudo apt-get install libpcre2-dev
+//#define PCRE2_CODE_UNIT_WIDTH 8
+//#include <pcre2.h> // sudo apt-get install libpcre2-dev
+#include <pcrecpp.h> // sudo apt-get install libpcre++-dev
 
 // Common error definitions
 #define S_errno errno
@@ -2808,10 +2809,6 @@ bool SIsValidSQLiteDateModifier(const string& modifier) {
 
 bool SREMatch(const string& regExp, const string& s) {
     return pcrecpp::RE(regExp, pcrecpp::RE_Options().set_match_limit_recursion(1000)).FullMatch(s);
-}
-
-bool SREMatch(const string& regExp, const string& s, string& match) {
-    return pcrecpp::RE(regExp, pcrecpp::RE_Options().set_match_limit_recursion(1000)).FullMatch(s, &match);
 }
 
 void SRedactSensitiveValues(string& s) {
