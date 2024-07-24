@@ -39,8 +39,8 @@
 #endif
 #endif
 
-//#define PCRE2_CODE_UNIT_WIDTH 8
-//#include <pcre2.h> // sudo apt-get install libpcre2-dev
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h> // sudo apt-get install libpcre2-dev
 #include <pcrecpp.h> // sudo apt-get install libpcre++-dev
 
 // Common error definitions
@@ -2811,17 +2811,42 @@ bool SREMatch(const string& regExp, const string& s) {
     return pcrecpp::RE(regExp, pcrecpp::RE_Options().set_match_limit_recursion(1000)).FullMatch(s);
 }
 
+string SREReplace(const string& regExp, const string& s, const string& r) {
+    /*
+    Need to do this:
+
+    Use the flag PCRE2_SUBSTITUTE_OVERFLOW_LENGTH in your call. That will cause the scan to continue if it runs out of memory, without actually adding anything to the output buffer, in order to compute the actual length of the substitution, which is stored in the outlengthptr argument. The function still returns PCRE2_ERROR_NOMEMORY, so you can tell that more memory is required. If you get this error return, you use the value stored through outlengthptr to malloc() a sufficiently large output buffer, and do the call again.
+
+    It's legal (and not uncommon) to do the first call with a supplied output length of 0, and then unconditionally do the allocation and second call. That's the simplest code. Supplying a buffer which is probably large enough, and handling overflow as indicated above, is a way of avoiding the repeated call, thereby saving a bit of time. How effective that optimisation is depends on your ability to guess a reasonable initial buffer size. If you just use a fixed-length buffer, then the second call will be performed only on large substitutions, which is another way of saying that the optimisation will only be effective on short substitutions (where it is least important). YMMV.
+
+    See the pcre2_substitute section in man pcre2api for a slightly longer discussion of this mechanism.
+    */
+
+    string output;
+    output.reserve(1000);
+    size_t outSize = output.size();
+
+    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, 0, NULL, NULL, NULL);
+    int result = pcre2_substitute(re, (PCRE2_SPTR8)s.c_str(), s.size(), 0, PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED, 0, 0, (PCRE2_SPTR8)r.c_str(), r.size(), (PCRE2_UCHAR*)output.c_str(), &outSize);
+
+    if (result < 0) {
+        // Handle.
+    }
+
+    return output;
+}
+
 void SRedactSensitiveValues(string& s) {
     // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
     // The message may be truncated midway through the authToken, so there may not be a closing quote (") at the end of
     // the authToken, so we need to optionally match the closing quote with a question mark (?).
-    pcrecpp::RE("\"authToken\":\".*\"?").GlobalReplace("\"authToken\":<REDACTED>", &s);
+    s = SREReplace("\"authToken\":\".*\"?", s, "\"authToken\":<REDACTED>");
 
     // Redact queries that contain encrypted fields since there's no value in logging them.
-    pcrecpp::RE("v[0-9]+:[0-9A-F]{10,}").GlobalReplace("<REDACTED>", &s);
+    s = SREReplace("v[0-9]+:[0-9A-F]{10,}", s, "<REDACTED>");
 
     // Remove anything inside "html" because we intentionally don't log chats.
-    pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &s);
+    s = SREReplace("\"html\":\".*\"", s, "\"html\":\"<REDACTED>\"");
 }
 
 SStopwatch::SStopwatch() {
