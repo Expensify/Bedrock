@@ -2139,14 +2139,12 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
 
     bool fireAndForget = false;
     if (SIEquals(request["Connection"], "forget") || (uint64_t)request.calc64("commandExecuteTime") > STimeNow()) {
-        // Respond immediately to make it clear we successfully queued it, but don't return the socket to indicate we
-        // don't need to respond.
+        // Respond immediately to make it clear we successfully queued it. We won't store the socket on the command.
         SINFO("Firing and forgetting '" << request.methodLine << "'");
         SData response("202 Successfully queued");
-        if (_shutdownState.load() != RUNNING) {
-            response["Connection"] = "close";
-        }
+        response["Connection"] = "close";
         socket.send(response.serialize());
+        socket.shutdown(Socket::CLOSED);
         fireAndForget = true;
 
         // If we're shutting down, discard this command, we won't wait for the future.
