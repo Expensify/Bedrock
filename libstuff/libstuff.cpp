@@ -39,7 +39,8 @@
 #endif
 #endif
 
-#include <pcrecpp.h> // sudo apt-get install libpcre++-dev
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h> // sudo apt-get install libpcre2-dev
 
 // Common error definitions
 #define S_errno errno
