@@ -64,6 +64,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
 
     // If we got any errors while preparing, we're calling this a bad command.
     if (prepareResult != SQLITE_OK) {
+        response["error"] = db.getLastError();
         STHROW("402 Bad query");
     }
 
@@ -75,6 +76,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
     // Attempt the read-only query
     SQResult result;
     if (!db.read(query, result)) {
+        response["error"] = db.getLastError();
         STHROW("402 Bad query");
     }
 

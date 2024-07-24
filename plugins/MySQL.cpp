@@ -407,7 +407,8 @@ void BedrockPlugin_MySQL::onPortRequestComplete(const BedrockCommand& command, S
         // Failure -- pass along the message
         int64_t errorCode = SToInt64(SBefore(command.response.methodLine, " "));
         string errorMessage = SAfter(command.response.methodLine, " ");
-        s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), errorCode, errorMessage));
+        string sqliteError = command.response["error"];
+        s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), errorCode, errorMessage + " " + sqliteError));
     }
 }
 
