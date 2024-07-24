@@ -309,7 +309,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             } else if (SIEquals(query, "SHOW DATABASES;") ||
                        SIEquals(SToUpper(query), "SELECT DATABASE();") ||
-                       SIEquals(SToUpper(query), "SELECT * FROM (SELECT DATABASE() AS DATABASE_NAME) A WHERE A.DATABASE_NAME IS NOT NULL;")) {
+                       SIEquals(SToUpper(query), "select * from (select DATABASE() as DATABASE_NAME) a where a.DATABASE_NAME is not null;")) {
                 // Return a fake "main" database
                 SINFO("Responding with fake database list");
                 SQResult result;
@@ -709,7 +709,7 @@ const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2] = {
     {"tx_isolation", "REPEATABLE-READ"},
     {"unique_checks", "ON"},
     {"updatable_views_with_limit", "YES"},
-    {"version", BedrockPlugin_MySQL::mysqlVersion},
+    {"version", "5.1.73-log"},
     {"version_comment", VERSION},
     {"version_compile_machine", "x86_64"},
     {"version_compile_os", "unknown-linux-gnu"},
