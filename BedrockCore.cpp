@@ -140,6 +140,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
                 const int64_t newTimeout = STimeNow() + BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT;
                 if (newTimeout < oldTimeout) {
                     SINFO("Reducing blocking commit command timeout from " << STIMESTAMP(oldTimeout) << " to " << STIMESTAMP(newTimeout));
+                    command->setTimeout(newTimeout);
                     _db.setTimeout(newTimeout);
                 }
             }
