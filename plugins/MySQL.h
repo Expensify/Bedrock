@@ -1,7 +1,7 @@
 #pragma once
 #include <libstuff/libstuff.h>
-#include "DB.h"
 #include "BedrockServer.h"
+#include "BedrockPlugin.h"
 
 #define MYSQL_NUM_VARIABLES 292
 extern const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2];
@@ -102,24 +102,26 @@ struct MySQLPacket {
 class BedrockPlugin_MySQL : public BedrockPlugin {
   public:
     BedrockPlugin_MySQL(BedrockServer& s);
-    virtual const string& getName() const;
+    virtual const string& getName() const override;
 
-    virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
+    // This is an empty implementation but I'm including it here to make it clear
+    // that this plugin does not support any commands on purpose.
+    virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand) override;
 
     // This plugin listens on MySQL's port by default, but can be changed via CLI flag.
-    virtual string getPort();
+    virtual string getPort() override;
 
     // This function is called when bedrock accepts a new connection on a port owned
     // by a given plugin. We use it to send the MySQL handshake.
-    virtual void onPortAccept(STCPManager::Socket* s);
+    virtual void onPortAccept(STCPManager::Socket* s) override;
 
     // This function is called when bedrock receives data on a port owned by a given plugin.
     // We do basically all query and processing in here.
-    virtual void onPortRecv(STCPManager::Socket* s, SData& request);
+    virtual void onPortRecv(STCPManager::Socket* s, SData& request) override;
 
     // This function is called when a requests completes, we use it to send OK and ERR Packets
     // as appropriate based on the results of onPortRecv().
-    virtual void onPortRequestComplete(const BedrockCommand& command, STCPManager::Socket* s);
+    virtual void onPortRequestComplete(const BedrockCommand& command, STCPManager::Socket* s) override;
 
     // Our fake mysql version. We don't necessarily
     // conform to the same functionality or standards as this version, however

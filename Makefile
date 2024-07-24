@@ -36,13 +36,16 @@ LIBPATHS =-L$(PROJECT) -Lmbedtls/library
 LIBRARIES =-Wl,--start-group -lbedrock -lstuff -Wl,--end-group -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lm
 
 # These targets aren't actual files.
-.PHONY: all test clustertest clean testplugin
+.PHONY: all test clustertest clean testplugin deploy
 
 # This sets our default by being the first target, and also sets `all` in case someone types `make all`.
 all: bedrock test clustertest
 test: test/test
 clustertest: test/clustertest/clustertest testplugin
 testplugin: test/clustertest/testplugin/testplugin.so
+
+deploy:
+	scp -J cole@bastion1.sjc bedrock ubuntu@54.184.12.51:~/bedrock
 
 clean:
 	rm -rf $(INTERMEDIATEDIR)
