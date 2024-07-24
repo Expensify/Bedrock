@@ -135,6 +135,14 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
+            if (exclusive) {
+                const int64_t oldTimeout = command->timeout();
+                const int64_t newTimeout = STimeNow() + BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT;
+                if (newTimeout < oldTimeout) {
+                    SINFO("Reducing blocking commit command timeout from " << STIMESTAMP(oldTimeout) << " to " << STIMESTAMP(newTimeout));
+                    _db.setTimeout(newTimeout);
+                }
+            }
 
             // We start the timer here to avoid including the time spent acquiring the lock _sharedData.commitLock
             AutoTimer timer(command, exclusive ? BedrockCommand::BLOCKING_PEEK : BedrockCommand::PEEK);
