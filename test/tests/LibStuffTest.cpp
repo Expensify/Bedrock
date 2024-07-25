@@ -645,6 +645,14 @@ struct LibStuff : tpunit::TestFixture {
         string expected = "a dinosaur is not a dog it is a dinosaur";
         string result = SREReplace("cat", from, "dinosaur");
         ASSERT_EQUAL(result, expected);
+
+        // And test case sensitivity (disabled)
+        string result2 = SREReplace("CAT", from, "dinosaur");
+        ASSERT_EQUAL(result2, from);
+
+        // And test case sensitivity (enabled)
+        string result3 = SREReplace("CAT", from, "dinosaur", false);
+        ASSERT_EQUAL(result3, expected);
     }
 
     void SQResultTest() {

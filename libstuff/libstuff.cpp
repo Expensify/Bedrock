@@ -2809,15 +2809,15 @@ bool SREMatch(const string& regExp, const string& s) {
     return pcrecpp::RE(regExp, pcrecpp::RE_Options().set_match_limit_recursion(1000)).FullMatch(s);
 }
 
-string SREReplace(const string& regExp, const string& s, const string& r) {
+string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive) {
     char* output = nullptr;
     size_t outSize = 0;
     int errornumber = 0;
     PCRE2_SIZE erroroffset = 0;
     int flags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
-    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, 0, &errornumber, &erroroffset, 0);
+    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, caseSensitive ? 0 : PCRE2_CASELESS, &errornumber, &erroroffset, 0);
     for (int i = 0; i < 2; i++) {
-        int result = pcre2_substitute(re, (PCRE2_SPTR8)s.c_str(), s.size(), 0, flags, 0, 0, (PCRE2_SPTR8)r.c_str(), r.size(), (PCRE2_UCHAR*)output, &outSize);
+        int result = pcre2_substitute(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, flags, 0, 0, (PCRE2_SPTR8)replacement.c_str(), replacement.size(), (PCRE2_UCHAR*)output, &outSize);
         if (i == 0 && result == PCRE2_ERROR_NOMEMORY) {
             // This is the expected case on the first run, there's not enough space to store the result, so we allocate the space and do it again.
             output = (char*)malloc(outSize);
