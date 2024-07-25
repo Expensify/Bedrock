@@ -32,6 +32,7 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testBase32Conversion),
                                     TEST(LibStuff::testContains),
                                     TEST(LibStuff::testFirstOfMonth),
+                                    TEST(LibStuff::SREMatchTest),
                                     TEST(LibStuff::SREReplaceTest),
                                     TEST(LibStuff::SQResultTest)
                                     )
@@ -637,6 +638,26 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -7), "2019-12-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -13), "2019-06-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -25), "2018-06-01");
+    }
+
+    void SREMatchTest() {
+        // Basic case.
+        ASSERT_TRUE(SREMatch(".*cat.*", "this contains cat"));
+        ASSERT_FALSE(SREMatch(".*cat.*", "this does not"));
+
+        // Case sensitive but case doesn't match.
+        ASSERT_FALSE(SREMatch(".*CAT.*", "this contains cat"));
+        
+        // Case-insensitive.
+        ASSERT_TRUE(SREMatch(".*CAT.*", "this contains cat", false));
+        ASSERT_FALSE(SREMatch(".*CAT.*", "this does not", false));
+
+        // Capture groups don't break internal code.
+        ASSERT_TRUE(SREMatch(".*cat.*", "(this) (contains) (cat)"));
+        ASSERT_FALSE(SREMatch(".*cat.*", "(this) (does) (not)"));
+
+        // Partial matches aren't counted.
+        ASSERT_FALSE(SREMatch("cat", "this contains cat"));
     }
 
     void SREReplaceTest() {

@@ -2805,8 +2805,28 @@ bool SIsValidSQLiteDateModifier(const string& modifier) {
     return true;
 }
 
-bool SREMatch(const string& regExp, const string& s) {
-    return pcrecpp::RE(regExp, pcrecpp::RE_Options().set_match_limit_recursion(1000)).FullMatch(s);
+bool SREMatch(const string& regExp, const string& input, bool caseSensitive) {
+    int errornumber = 0;
+    PCRE2_SIZE erroroffset = 0;
+    uint32_t matchFlags = 0;
+
+    // These require full-string matches as that's the historical way this function works.
+    uint32_t compileFlags = PCRE2_ANCHORED | PCRE2_ENDANCHORED;
+    if (!caseSensitive) {
+        compileFlags |= PCRE2_CASELESS;
+    }
+    pcre2_match_context* matchContext = pcre2_match_context_create(0); 
+    pcre2_set_depth_limit(matchContext, 1000); 
+    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
+    pcre2_match_data* matchData = pcre2_match_data_create_from_pattern(re, 0);
+
+    int result = pcre2_match(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, matchFlags, matchData, matchContext); 
+
+    pcre2_code_free(re);
+    pcre2_match_context_free(matchContext);
+    pcre2_match_data_free(matchData);
+
+    return result > 0;
 }
 
 string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive) {
@@ -2814,12 +2834,13 @@ string SREReplace(const string& regExp, const string& input, const string& repla
     size_t outSize = 0;
     int errornumber = 0;
     PCRE2_SIZE erroroffset = 0;
-    int flags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+    uint32_t compileFlags = caseSensitive ? 0 : PCRE2_CASELESS;
+    uint32_t substituteFlags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
     pcre2_match_context* matchContext = pcre2_match_context_create(0); 
     pcre2_set_depth_limit(matchContext, 1000); 
-    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, caseSensitive ? 0 : PCRE2_CASELESS, &errornumber, &erroroffset, 0);
+    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
     for (int i = 0; i < 2; i++) {
-        int result = pcre2_substitute(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, flags, 0, matchContext, (PCRE2_SPTR8)replacement.c_str(), replacement.size(), (PCRE2_UCHAR*)output, &outSize);
+        int result = pcre2_substitute(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, substituteFlags, 0, matchContext, (PCRE2_SPTR8)replacement.c_str(), replacement.size(), (PCRE2_UCHAR*)output, &outSize);
         if (i == 0 && result == PCRE2_ERROR_NOMEMORY) {
             // This is the expected case on the first run, there's not enough space to store the result, so we allocate the space and do it again.
             output = (char*)malloc(outSize);
