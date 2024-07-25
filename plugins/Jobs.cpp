@@ -94,6 +94,14 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db) {
     SASSERT(db.verifyIndex("jobsName", "jobs", "( name )", false, !BedrockPlugin_Jobs::isLive));
     SASSERT(db.verifyIndex("jobsParentJobIDState", "jobs", "( parentJobID, state ) WHERE parentJobID != 0", false, !BedrockPlugin_Jobs::isLive));
     SASSERT(db.verifyIndex("jobsStatePriorityNextRunName", "jobs", "( state, priority, nextRun, name )", false, !BedrockPlugin_Jobs::isLive));
+    SASSERT(db.verifyIndex("jobsPriorityNextRunManualSmartScanMerchantAndCategory", "jobs", "(priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScanMerchantAndCategory*'", false, !BedrockPlugin_Jobs::isLive));
+    SASSERT(db.verifyIndex("jobsPriorityNextRunManualSmartScanAmountAndCurrency", "jobs", "(priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScanAmountAndCurrency*'", false, !BedrockPlugin_Jobs::isLive));
+    SASSERT(db.verifyIndex("jobsPriorityNextRunManualSmartScanCreated", "jobs", "(priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScanCreated*'", false, !BedrockPlugin_Jobs::isLive));
+    SASSERT(db.verifyIndex("jobsPriorityNextRunManualSmartScanIsCash", "jobs", "(priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScanIsCash*'", false, !BedrockPlugin_Jobs::isLive));
+    SASSERT(db.verifyIndex("jobsPriorityNextRunManualSmartScan", "jobs", "(priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'manual/SmartScan*'", false, !BedrockPlugin_Jobs::isLive));
+    SASSERT(db.verifyIndex("jobsManualSmartscanReceiptID", "jobs", "( JSON_EXTRACT(data, '$.receiptID') ) WHERE JSON_VALID(data) AND name GLOB 'manual/SmartScan*'", false, !BedrockPlugin_Jobs::isLive));
+    SASSERT(db.verifyIndex("jobsPriorityNextRunWWWProd", "jobs", "(priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'www-prod/*'", false, !BedrockPlugin_Jobs::isLive));
+    SASSERT(db.verifyIndex("jobsPriorityNextRunWWWStag", "jobs", "(priority, nextRun) WHERE state IN ('QUEUED', 'RUNQUEUED') AND name GLOB 'www-stag/*'", false, !BedrockPlugin_Jobs::isLive));
 }
 
 // ==========================================================================
