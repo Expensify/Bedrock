@@ -32,6 +32,7 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testBase32Conversion),
                                     TEST(LibStuff::testContains),
                                     TEST(LibStuff::testFirstOfMonth),
+                                    TEST(LibStuff::SREReplaceTest),
                                     TEST(LibStuff::SQResultTest)
                                     )
     { }
@@ -636,6 +637,15 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -7), "2019-12-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -13), "2019-06-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -25), "2018-06-01");
+    }
+
+    void SREReplaceTest() {
+        // This specifically tests multiple replacements and that the final string is longer than the starting string.
+        string from = "a cat is not a dog it is a cat";
+        string expected = "a elephant is not a dog it is a elephant";
+        string result = SREReplace("cat", from, "elephant");
+
+        ASSERT_EQUAL(result, expected);
     }
 
     void SQResultTest() {
