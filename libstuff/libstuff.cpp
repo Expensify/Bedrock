@@ -2815,9 +2815,11 @@ string SREReplace(const string& regExp, const string& input, const string& repla
     int errornumber = 0;
     PCRE2_SIZE erroroffset = 0;
     int flags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+    pcre2_match_context* matchContext = pcre2_match_context_create(0); 
+    pcre2_set_depth_limit(matchContext, 1000); 
     pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, caseSensitive ? 0 : PCRE2_CASELESS, &errornumber, &erroroffset, 0);
     for (int i = 0; i < 2; i++) {
-        int result = pcre2_substitute(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, flags, 0, 0, (PCRE2_SPTR8)replacement.c_str(), replacement.size(), (PCRE2_UCHAR*)output, &outSize);
+        int result = pcre2_substitute(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, flags, 0, matchContext, (PCRE2_SPTR8)replacement.c_str(), replacement.size(), (PCRE2_UCHAR*)output, &outSize);
         if (i == 0 && result == PCRE2_ERROR_NOMEMORY) {
             // This is the expected case on the first run, there's not enough space to store the result, so we allocate the space and do it again.
             output = (char*)malloc(outSize);
@@ -2826,10 +2828,11 @@ string SREReplace(const string& regExp, const string& input, const string& repla
             break;
         }
     }
-
     string outputString(output);
     pcre2_code_free(re);
+    pcre2_match_context_free(matchContext);
     free(output);
+
     return outputString;
 }
 
