@@ -41,7 +41,6 @@
 
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h> // sudo apt-get install libpcre2-dev
-#include <pcrecpp.h> // sudo apt-get install libpcre++-dev
 
 // Common error definitions
 #define S_errno errno
