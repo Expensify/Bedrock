@@ -2810,28 +2810,27 @@ bool SREMatch(const string& regExp, const string& s) {
 }
 
 string SREReplace(const string& regExp, const string& s, const string& r) {
-    /*
-    Need to do this:
-
-    Use the flag PCRE2_SUBSTITUTE_OVERFLOW_LENGTH in your call. That will cause the scan to continue if it runs out of memory, without actually adding anything to the output buffer, in order to compute the actual length of the substitution, which is stored in the outlengthptr argument. The function still returns PCRE2_ERROR_NOMEMORY, so you can tell that more memory is required. If you get this error return, you use the value stored through outlengthptr to malloc() a sufficiently large output buffer, and do the call again.
-
-    It's legal (and not uncommon) to do the first call with a supplied output length of 0, and then unconditionally do the allocation and second call. That's the simplest code. Supplying a buffer which is probably large enough, and handling overflow as indicated above, is a way of avoiding the repeated call, thereby saving a bit of time. How effective that optimisation is depends on your ability to guess a reasonable initial buffer size. If you just use a fixed-length buffer, then the second call will be performed only on large substitutions, which is another way of saying that the optimisation will only be effective on short substitutions (where it is least important). YMMV.
-
-    See the pcre2_substitute section in man pcre2api for a slightly longer discussion of this mechanism.
-    */
-
-    string output;
-    output.reserve(1000);
-    size_t outSize = output.size();
-
-    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, 0, NULL, NULL, NULL);
-    int result = pcre2_substitute(re, (PCRE2_SPTR8)s.c_str(), s.size(), 0, PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED, 0, 0, (PCRE2_SPTR8)r.c_str(), r.size(), (PCRE2_UCHAR*)output.c_str(), &outSize);
-
-    if (result < 0) {
-        // Handle.
+    char* output = nullptr;
+    size_t outSize = 0;
+    int errornumber = 0;
+    PCRE2_SIZE erroroffset = 0;
+    int flags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, 0, &errornumber, &erroroffset, 0);
+    for (int i = 0; i < 2; i++) {
+        int result = pcre2_substitute(re, (PCRE2_SPTR8)s.c_str(), s.size(), 0, flags, 0, 0, (PCRE2_SPTR8)r.c_str(), r.size(), (PCRE2_UCHAR*)output, &outSize);
+        if (i == 0 && result == PCRE2_ERROR_NOMEMORY) {
+            // This is the expected case on the first run, there's not enough space to store the result, so we allocate the space and do it again.
+            output = (char*)malloc(outSize);
+        } else if (result) {
+            SWARN("Regex replacement failed with result " << result << ", returning nothing.");
+            break;
+        }
     }
 
-    return output;
+    string outputString(output);
+    pcre2_code_free(re);
+    free(output);
+    return outputString;
 }
 
 void SRedactSensitiveValues(string& s) {

@@ -642,9 +642,8 @@ struct LibStuff : tpunit::TestFixture {
     void SREReplaceTest() {
         // This specifically tests multiple replacements and that the final string is longer than the starting string.
         string from = "a cat is not a dog it is a cat";
-        string expected = "a elephant is not a dog it is a elephant";
-        string result = SREReplace("cat", from, "elephant");
-
+        string expected = "a dinosaur is not a dog it is a dinosaur";
+        string result = SREReplace("cat", from, "dinosaur");
         ASSERT_EQUAL(result, expected);
     }
 

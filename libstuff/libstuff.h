@@ -303,11 +303,11 @@ namespace std {
         bool is_lock_free() const {
             return false;
         }
-        void store(string desired, std::memory_order) {
+        void store(string desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
             lock_guard<decltype(m)> l(m);
             _string = desired;
         };
-        string load(std::memory_order) const {
+        string load([[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) const {
             lock_guard<decltype(m)> l(m);
             return _string;
         }
@@ -315,7 +315,7 @@ namespace std {
             lock_guard<decltype(m)> l(m);
             return _string;
         }
-        string exchange(string desired, std::memory_order) {
+        string exchange(string desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
             lock_guard<decltype(m)> l(m);
             string existing = _string;
             _string = desired;
