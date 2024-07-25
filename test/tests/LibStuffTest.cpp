@@ -658,6 +658,9 @@ struct LibStuff : tpunit::TestFixture {
 
         // Partial matches aren't counted.
         ASSERT_FALSE(SREMatch("cat", "this contains cat"));
+
+        // Now try with partial specified, should work.
+        ASSERT_TRUE(SREMatch("cat", "this contains cat", true, true));
     }
 
     void SREReplaceTest() {

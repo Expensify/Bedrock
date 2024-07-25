@@ -2805,13 +2805,13 @@ bool SIsValidSQLiteDateModifier(const string& modifier) {
     return true;
 }
 
-bool SREMatch(const string& regExp, const string& input, bool caseSensitive) {
+bool SREMatch(const string& regExp, const string& input, bool caseSensitive, bool partialMatch) {
     int errornumber = 0;
     PCRE2_SIZE erroroffset = 0;
     uint32_t matchFlags = 0;
 
     // These require full-string matches as that's the historical way this function works.
-    uint32_t compileFlags = PCRE2_ANCHORED | PCRE2_ENDANCHORED;
+    uint32_t compileFlags = partialMatch ? 0 : PCRE2_ANCHORED | PCRE2_ENDANCHORED;
     if (!caseSensitive) {
         compileFlags |= PCRE2_CASELESS;
     }
