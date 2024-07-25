@@ -661,6 +661,17 @@ struct LibStuff : tpunit::TestFixture {
 
         // Now try with partial specified, should work.
         ASSERT_TRUE(SREMatch("cat", "this contains cat", true, true));
+
+        // Test returning matches.
+        vector<string> matches;
+        SREMatch(R"((\w+) (\w+) (\w+))", "this contains cat", false, false, &matches);
+
+        // The whole string, and the three groups.
+        ASSERT_EQUAL(matches.size(), 4);
+        ASSERT_EQUAL(matches[0], "this contains cat");
+        ASSERT_EQUAL(matches[1], "this");
+        ASSERT_EQUAL(matches[2], "contains");
+        ASSERT_EQUAL(matches[3], "cat");
     }
 
     void SREReplaceTest() {
