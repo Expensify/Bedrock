@@ -388,7 +388,7 @@ bool SConstantTimeEquals(const string& secret, const string& userInput);
 bool SConstantTimeIEquals(const string& secret, const string& userInput);
 
 // Unless `partialMatch` is specified, perform a full regex match (the '^' and '$' symbols are implicit).
-bool SREMatch(const string& regExp, const string& input, bool caseSensitive = true, bool partialMatch = false);
+bool SREMatch(const string& regExp, const string& input, bool caseSensitive = true, bool partialMatch = false, vector<string>* matches = nullptr);
 string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive = true);
 
 // Redact values that should not be logged.

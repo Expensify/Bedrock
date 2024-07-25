@@ -2805,7 +2805,7 @@ bool SIsValidSQLiteDateModifier(const string& modifier) {
     return true;
 }
 
-bool SREMatch(const string& regExp, const string& input, bool caseSensitive, bool partialMatch) {
+bool SREMatch(const string& regExp, const string& input, bool caseSensitive, bool partialMatch, vector<string>* matches) {
     int errornumber = 0;
     PCRE2_SIZE erroroffset = 0;
     uint32_t matchFlags = 0;
@@ -2821,6 +2821,20 @@ bool SREMatch(const string& regExp, const string& input, bool caseSensitive, boo
     pcre2_match_data* matchData = pcre2_match_data_create_from_pattern(re, 0);
 
     int result = pcre2_match(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, matchFlags, matchData, matchContext); 
+
+    // If the caller wanted to receive matches, figure them out.
+    if (matches) {
+        PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(matchData);
+        int count = pcre2_get_ovector_count(matchData);
+        for (int i = 0; i < count; ++i) {
+            PCRE2_SIZE start = ovector[2 * i];
+            PCRE2_SIZE end = ovector[2 * i + 1];
+            if (start == PCRE2_UNSET || end == PCRE2_UNSET) {
+                continue;
+            }
+            matches->push_back(input.substr(start, end - start));
+        }
+    }
 
     pcre2_code_free(re);
     pcre2_match_context_free(matchContext);
