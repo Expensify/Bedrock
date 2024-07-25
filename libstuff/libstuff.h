@@ -303,11 +303,11 @@ namespace std {
         bool is_lock_free() const {
             return false;
         }
-        void store(string desired, std::memory_order order = std::memory_order_seq_cst) {
+        void store(string desired, std::memory_order) {
             lock_guard<decltype(m)> l(m);
             _string = desired;
         };
-        string load(std::memory_order order = std::memory_order_seq_cst) const {
+        string load(std::memory_order) const {
             lock_guard<decltype(m)> l(m);
             return _string;
         }
@@ -315,7 +315,7 @@ namespace std {
             lock_guard<decltype(m)> l(m);
             return _string;
         }
-        string exchange(string desired, std::memory_order order = std::memory_order_seq_cst) {
+        string exchange(string desired, std::memory_order) {
             lock_guard<decltype(m)> l(m);
             string existing = _string;
             _string = desired;
@@ -549,9 +549,9 @@ string SHashSHA1(const string& buffer);
 string SHashSHA256(const string& buffer);
 
 // Various encoding/decoding functions
-string SEncodeBase64(const unsigned char* buffer, const int size);
+string SEncodeBase64(const unsigned char* buffer, const size_t size);
 string SEncodeBase64(const string& buffer);
-string SDecodeBase64(const unsigned char* buffer, const int size);
+string SDecodeBase64(const unsigned char* buffer, const size_t size);
 string SDecodeBase64(const string& buffer);
 
 // HMAC (for use with Amazon S3)

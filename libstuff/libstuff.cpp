@@ -513,7 +513,7 @@ string SUnescape(const char* lhs, char escaper) {
                 else if (utfValue <= 0x07ff) {
                     // UTF-8 2 byte header is 110.
                     // 1100.0000 | Top 5 bits of utfValue
-                    char byte = 0xc0 | (utfValue >> 6);
+                    char byte = (char)(0xc0 | (utfValue >> 6));
                     working += byte;
 
                     // Cancel out the bits we just used.
@@ -526,7 +526,7 @@ string SUnescape(const char* lhs, char escaper) {
                 else if (utfValue <= 0xffff) {
                     // UTF-8 3 byte header is 1110.
                     // 1110.0000 | Top 4 bits of utfValue.
-                    char byte = 0xe0 | (utfValue >> 12);
+                    char byte = (char)(0xe0 | (utfValue >> 12));
                     working += byte;
 
                     // Cancel out the bits we just used.
@@ -1705,7 +1705,7 @@ string SGUnzip (const string& content) {
         return "";
     }
 
-    strm.avail_in = content.size();
+    strm.avail_in = (decltype(strm.avail_in))content.size();
     strm.next_in = (unsigned char*)content.c_str();
 
     do {
@@ -2006,14 +2006,12 @@ bool S_recvappend(int s, SFastBuffer& recvBuffer) {
 
     // Keep trying to receive as long as we can
     char buffer[4096];
-    int totalRecv = 0;
     ssize_t numRecv = 0;
     sockaddr_in fromAddr;
     socklen_t fromAddrLen = sizeof(fromAddr);
     while ((numRecv = recvfrom(s, buffer, sizeof(buffer), 0, (sockaddr*)&fromAddr, &fromAddrLen)) > 0) {
         // Got some more data
         recvBuffer.append(buffer, numRecv);
-        totalRecv += numRecv;
 
         // If this is a blocking socket, don't try again, once is enough
         if (blocking) {
@@ -2110,7 +2108,7 @@ int S_poll(fd_map& fdm, uint64_t timeout) {
 
     // Timeout is specified in microseconds, but poll uses milliseconds, so we divide by 1000.
     int timeoutVal = int(timeout / 1000);
-    int returnValue = poll(&pollvec[0], fdm.size(), timeoutVal);
+    int returnValue = poll(&pollvec[0], (nfds_t)fdm.size(), timeoutVal);
 
     // And write our returned events back to our original structure.
     for (pollfd pfd : pollvec) {
@@ -2285,7 +2283,7 @@ bool SFileSave(const string& path, const string& buffer) {
 // --------------------------------------------------------------------------
 bool SFileCopy(const string& fromPath, const string& toPath) {
     // Figure out the size of the file we're copying.
-    uint64_t fromSize = SFileSize(fromPath);
+    size_t fromSize = SFileSize(fromPath);
     if (!fromSize) {
         SWARN("File " << fromPath << " is empty! Copying anyway.");
     }
@@ -2309,8 +2307,8 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
         // Read and write
         char buf[1024 * 64];
         size_t numRead = 0;
-        uint64_t completeBytes = 0;
-        int completePercent = 0;
+        size_t completeBytes = 0;
+        size_t completePercent = 0;
         bool readAny = false;
         bool writtenAny = false;
         while ((numRead = fread(buf, 1, sizeof(buf), from)) > 0) {
@@ -2327,7 +2325,7 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
                     SINFO("Wrote first " << numRead << " bytes to " << toPath << ".");
                 }
                 completeBytes += numRead;
-                int percent = fromSize ? ((completeBytes * 100) / fromSize) : 0;
+                size_t percent = fromSize ? ((completeBytes * 100) / fromSize) : 0;
                 if (percent > completePercent) {
                     SINFO("Copying " << fromPath << " to " << toPath << " is " << percent << "% complete.");
                     completePercent = percent;
@@ -2400,7 +2398,7 @@ string SHashSHA256(const string& buffer) {
 
 // --------------------------------------------------------------------------
 
-string SEncodeBase64(const unsigned char* buffer, int size) {
+string SEncodeBase64(const unsigned char* buffer, size_t size) {
     // First, get the required buffer size
     size_t olen = 0;
     mbedtls_base64_encode(0, 0, &olen, buffer, size);
@@ -2417,7 +2415,7 @@ string SEncodeBase64(const string& bufferString) {
 }
 
 // --------------------------------------------------------------------------
-string SDecodeBase64(const unsigned char* buffer, int size) {
+string SDecodeBase64(const unsigned char* buffer, size_t size) {
     // First, get the required buffer size
     size_t olen = 0;
     mbedtls_base64_decode(0, 0, &olen, buffer, size);
@@ -2578,7 +2576,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             // Calling strlen() or any function that iterates across the whole string here is a giant performance problem, and all the operations chosen here have
             // been picked specifically to avoid that.
             size_t maxLength = sql.size() - (statementRemainder - sql.c_str()) + 1;
-            error = sqlite3_prepare_v2(db, statementRemainder, maxLength, &preparedStatement, &statementRemainder);
+            error = sqlite3_prepare_v2(db, statementRemainder, (int)maxLength, &preparedStatement, &statementRemainder);
             if (isSyncThread) {
                 prepareTimeUS += STimeNow() - beforePrepare;
             }
