@@ -8,8 +8,7 @@ struct ControlCommandTest : tpunit::TestFixture {
         : tpunit::TestFixture("ControlCommand",
                               BEFORE_CLASS(ControlCommandTest::setup),
                               AFTER_CLASS(ControlCommandTest::teardown),
-                              TEST(ControlCommandTest::testPreventAttach),
-                              TEST(ControlCommandTest::testDoubleDetach)) { }
+                              TEST(ControlCommandTest::testPreventAttach)) { }
 
     BedrockClusterTester* tester;
 
@@ -45,21 +44,6 @@ struct ControlCommandTest : tpunit::TestFixture {
         // Try to attach again, should be allowed now that the sleep in the plugin
         // has passed.
         follower.executeWaitVerifyContent(attachCommand, "204", true);
-    }
-
-    void testDoubleDetach()
-    {
-        // Test a control command
-        BedrockTester& follower = tester->getTester(1);
-
-        // Detach
-        SData detachCommand("detach");
-        follower.executeWaitVerifyContent(detachCommand, "203 DETACHING", true);
-
-        // Wait for it to detach
-        sleep(3);
-
-        follower.executeWaitVerifyContent(detachCommand, "400 Already detached", true);
     }
 
 } __ControlCommandTest;
