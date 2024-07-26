@@ -39,6 +39,7 @@
 #endif
 #endif
 
+// Setting this default allows us to not have to worry about calling the specific unit size methods, see https://www.pcre.org/current/doc/html/pcre2.html
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h> // sudo apt-get install libpcre2-dev
 
