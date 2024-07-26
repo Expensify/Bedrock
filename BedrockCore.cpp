@@ -136,12 +136,12 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
             if (exclusive) {
-                const int64_t oldTimeout = command->timeout();
-                const int64_t newTimeout = STimeNow() + BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT * 1000;
-                if (newTimeout < oldTimeout) {
-                    SINFO("Reducing blocking commit command timeout from " << STIMESTAMP(oldTimeout) << " to " << STIMESTAMP(newTimeout));
-                    command->setTimeout(newTimeout);
-                    _db.setTimeout(newTimeout);
+                const uint64_t remainingTimeUS = _getRemainingTime(command, false);
+                if ((BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT * 1000ull) < remainingTimeUS) {
+                    command->setTimeout(BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT);
+                    const int64_t newRemainingTimeUS = _getRemainingTime(command, false);
+                    _db.setTimeout(newRemainingTimeUS);
+                    SINFO("Reduced timeout because of blocking commit lock from " << STIMESTAMP(STimeNow() + remainingTimeUS) << " to " << STIMESTAMP(STimeNow() + newRemainingTimeUS));
                 }
             }
 
