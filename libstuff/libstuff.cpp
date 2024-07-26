@@ -2854,9 +2854,12 @@ string SREReplace(const string& regExp, const string& input, const string& repla
     PCRE2_SIZE erroroffset = 0;
     uint32_t compileFlags = caseSensitive ? 0 : PCRE2_CASELESS;
     uint32_t substituteFlags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
+    if (!re) {
+        STHROW("Bad regex: " + regExp);
+    }
     pcre2_match_context* matchContext = pcre2_match_context_create(0); 
     pcre2_set_depth_limit(matchContext, 1000); 
-    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
     for (int i = 0; i < 2; i++) {
         int result = pcre2_substitute(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, substituteFlags, 0, matchContext, (PCRE2_SPTR8)replacement.c_str(), replacement.size(), (PCRE2_UCHAR*)output, &outSize);
         if (i == 0 && result == PCRE2_ERROR_NOMEMORY) {
