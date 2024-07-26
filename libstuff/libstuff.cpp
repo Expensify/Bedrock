@@ -2815,9 +2815,13 @@ bool SREMatch(const string& regExp, const string& input, bool caseSensitive, boo
     if (!caseSensitive) {
         compileFlags |= PCRE2_CASELESS;
     }
+    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
+    if (!re) {
+        STHROW("Bad regex: " + regExp);
+    }
+
     pcre2_match_context* matchContext = pcre2_match_context_create(0); 
     pcre2_set_depth_limit(matchContext, 1000); 
-    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
     pcre2_match_data* matchData = pcre2_match_data_create_from_pattern(re, 0);
 
     int result = pcre2_match(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, matchFlags, matchData, matchContext); 
