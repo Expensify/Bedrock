@@ -2867,6 +2867,8 @@ string SREReplace(const string& regExp, const string& input, const string& repla
             output = (char*)malloc(outSize);
         } else if (result < 0) {
             SWARN("Regex replacement failed with result " << result << ", returning nothing.");
+            output = (char*)malloc(1);
+            *output = 0;
             break;
         }
     }
