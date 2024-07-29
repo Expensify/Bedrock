@@ -303,11 +303,11 @@ namespace std {
         bool is_lock_free() const {
             return false;
         }
-        void store(string desired, std::memory_order order = std::memory_order_seq_cst) {
+        void store(string desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
             lock_guard<decltype(m)> l(m);
             _string = desired;
         };
-        string load(std::memory_order order = std::memory_order_seq_cst) const {
+        string load([[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) const {
             lock_guard<decltype(m)> l(m);
             return _string;
         }
@@ -315,7 +315,7 @@ namespace std {
             lock_guard<decltype(m)> l(m);
             return _string;
         }
-        string exchange(string desired, std::memory_order order = std::memory_order_seq_cst) {
+        string exchange(string desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
             lock_guard<decltype(m)> l(m);
             string existing = _string;
             _string = desired;
@@ -387,9 +387,9 @@ bool SEndsWith(const string& haystack, const string& needle);
 bool SConstantTimeEquals(const string& secret, const string& userInput);
 bool SConstantTimeIEquals(const string& secret, const string& userInput);
 
-// Perform a full regex match. The '^' and '$' symbols are implicit.
-bool SREMatch(const string& regExp, const string& s);
-bool SREMatch(const string& regExp, const string& s, string& match);
+// Unless `partialMatch` is specified, perform a full regex match (the '^' and '$' symbols are implicit).
+bool SREMatch(const string& regExp, const string& input, bool caseSensitive = true, bool partialMatch = false, vector<string>* matches = nullptr);
+string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive = true);
 
 // Redact values that should not be logged.
 void SRedactSensitiveValues(string& s);
@@ -549,9 +549,9 @@ string SHashSHA1(const string& buffer);
 string SHashSHA256(const string& buffer);
 
 // Various encoding/decoding functions
-string SEncodeBase64(const unsigned char* buffer, const int size);
+string SEncodeBase64(const unsigned char* buffer, const size_t size);
 string SEncodeBase64(const string& buffer);
-string SDecodeBase64(const unsigned char* buffer, const int size);
+string SDecodeBase64(const unsigned char* buffer, const size_t size);
 string SDecodeBase64(const string& buffer);
 
 // HMAC (for use with Amazon S3)

@@ -32,6 +32,8 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testBase32Conversion),
                                     TEST(LibStuff::testContains),
                                     TEST(LibStuff::testFirstOfMonth),
+                                    TEST(LibStuff::SREMatchTest),
+                                    TEST(LibStuff::SREReplaceTest),
                                     TEST(LibStuff::SQResultTest)
                                     )
     { }
@@ -636,6 +638,56 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -7), "2019-12-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -13), "2019-06-01");
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -25), "2018-06-01");
+    }
+
+    void SREMatchTest() {
+        // Basic case.
+        ASSERT_TRUE(SREMatch(".*cat.*", "this contains cat"));
+        ASSERT_FALSE(SREMatch(".*cat.*", "this does not"));
+
+        // Case sensitive but case doesn't match.
+        ASSERT_FALSE(SREMatch(".*CAT.*", "this contains cat"));
+        
+        // Case-insensitive.
+        ASSERT_TRUE(SREMatch(".*CAT.*", "this contains cat", false));
+        ASSERT_FALSE(SREMatch(".*CAT.*", "this does not", false));
+
+        // Capture groups don't break internal code.
+        ASSERT_TRUE(SREMatch(".*cat.*", "(this) (contains) (cat)"));
+        ASSERT_FALSE(SREMatch(".*cat.*", "(this) (does) (not)"));
+
+        // Partial matches aren't counted.
+        ASSERT_FALSE(SREMatch("cat", "this contains cat"));
+
+        // Now try with partial specified, should work.
+        ASSERT_TRUE(SREMatch("cat", "this contains cat", true, true));
+
+        // Test returning matches.
+        vector<string> matches;
+        SREMatch(R"((\w+) (\w+) (\w+))", "this contains cat", false, false, &matches);
+
+        // The whole string, and the three groups.
+        ASSERT_EQUAL(matches.size(), 4);
+        ASSERT_EQUAL(matches[0], "this contains cat");
+        ASSERT_EQUAL(matches[1], "this");
+        ASSERT_EQUAL(matches[2], "contains");
+        ASSERT_EQUAL(matches[3], "cat");
+    }
+
+    void SREReplaceTest() {
+        // This specifically tests multiple replacements and that the final string is longer than the starting string.
+        string from = "a cat is not a dog it is a cat";
+        string expected = "a dinosaur is not a dog it is a dinosaur";
+        string result = SREReplace("cat", from, "dinosaur");
+        ASSERT_EQUAL(result, expected);
+
+        // And test case sensitivity (disabled)
+        string result2 = SREReplace("CAT", from, "dinosaur");
+        ASSERT_EQUAL(result2, from);
+
+        // And test case sensitivity (enabled)
+        string result3 = SREReplace("CAT", from, "dinosaur", false);
+        ASSERT_EQUAL(result3, expected);
     }
 
     void SQResultTest() {
