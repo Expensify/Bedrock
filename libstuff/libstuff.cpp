@@ -2865,8 +2865,10 @@ string SREReplace(const string& regExp, const string& input, const string& repla
         if (i == 0 && result == PCRE2_ERROR_NOMEMORY) {
             // This is the expected case on the first run, there's not enough space to store the result, so we allocate the space and do it again.
             output = (char*)malloc(outSize);
-        } else if (result) {
+        } else if (result < 0) {
             SWARN("Regex replacement failed with result " << result << ", returning nothing.");
+            output = (char*)malloc(1);
+            *output = 0;
             break;
         }
     }

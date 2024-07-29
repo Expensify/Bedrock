@@ -688,6 +688,11 @@ struct LibStuff : tpunit::TestFixture {
         // And test case sensitivity (enabled)
         string result3 = SREReplace("CAT", from, "dinosaur", false);
         ASSERT_EQUAL(result3, expected);
+
+        // Test match groups.
+        string from2 = "a cat did something to a dog";
+        string result4 = SREReplace("cat(.*)dog", from2, "chicken$1horse");
+        ASSERT_EQUAL(result4, "a chicken did something to a horse");
     }
 
     void SQResultTest() {
