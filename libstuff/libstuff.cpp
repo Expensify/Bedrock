@@ -2828,7 +2828,7 @@ bool SREMatch(const string& regExp, const string& input, bool caseSensitive, boo
 
     // Clear out existing matches.
     if (matches) {
-        matches.clear();
+        matches->clear();
     }
 
     // If the caller wanted to receive matches, and we have them, figure them out.
