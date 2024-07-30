@@ -136,7 +136,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
             if (exclusive) {
-                reduceCommandTimeout(command, BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT);
+                decreaseCommandTimeout(command, BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT);
             }
 
             // We start the timer here to avoid including the time spent acquiring the lock _sharedData.commitLock
@@ -233,7 +233,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
             if (exclusive) {
-                reduceCommandTimeout(command, BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT);
+                decreaseCommandTimeout(command, BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT);
             }
         }
 
@@ -404,13 +404,13 @@ void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, c
     }
 }
 
-void BedrockCore::reduceCommandTimeout(unique_ptr<BedrockCommand>& command, uint64_t timeoutMS)
+void BedrockCore::decreaseCommandTimeout(unique_ptr<BedrockCommand>& command, uint64_t timeoutMS)
 {
     const uint64_t remainingTimeUS = _getRemainingTime(command, false);
     if ((timeoutMS * 1000ull) < remainingTimeUS) {
         command->setTimeout(timeoutMS);
         const int64_t newRemainingTimeUS = _getRemainingTime(command, false);
         _db.setTimeout(newRemainingTimeUS);
-        SINFO("Reduced timeout from " << STIMESTAMP(STimeNow() + remainingTimeUS) << " to " << STIMESTAMP(STimeNow() + newRemainingTimeUS));
+        SINFO("Decreased command timeout from " << STIMESTAMP(STimeNow() + remainingTimeUS) << " to " << STIMESTAMP(STimeNow() + newRemainingTimeUS));
     }
 }
