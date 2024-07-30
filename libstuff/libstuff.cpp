@@ -2805,7 +2805,7 @@ bool SIsValidSQLiteDateModifier(const string& modifier) {
     return true;
 }
 
-bool SREMatch(const string& regExp, const string& input, bool caseSensitive, bool partialMatch, vector<string>* matches) {
+bool SREMatch(const string& regExp, const string& input, bool caseSensitive, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset) {
     int errornumber = 0;
     PCRE2_SIZE erroroffset = 0;
     uint32_t matchFlags = 0;
@@ -2824,7 +2824,7 @@ bool SREMatch(const string& regExp, const string& input, bool caseSensitive, boo
     pcre2_set_depth_limit(matchContext, 1000); 
     pcre2_match_data* matchData = pcre2_match_data_create_from_pattern(re, 0);
 
-    int result = pcre2_match(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, matchFlags, matchData, matchContext); 
+    int result = pcre2_match(re, (PCRE2_SPTR8)input.c_str() + startOffset, input.size() - startOffset, 0, matchFlags, matchData, matchContext);
 
     // Clear out existing matches.
     if (matches) {
@@ -2841,7 +2841,10 @@ bool SREMatch(const string& regExp, const string& input, bool caseSensitive, boo
             if (start == PCRE2_UNSET || end == PCRE2_UNSET) {
                 continue;
             }
-            matches->push_back(input.substr(start, end - start));
+            matches->push_back(input.substr(startOffset + start, end - start));
+            if (i == 0 && matchOffset) {
+                *matchOffset = startOffset + start;
+            }
         }
     }
 
@@ -2850,6 +2853,19 @@ bool SREMatch(const string& regExp, const string& input, bool caseSensitive, boo
     pcre2_match_data_free(matchData);
 
     return result > 0;
+}
+
+vector<vector <string>> SREMatchAll(const string& regExp, const string& input, bool caseSensitive) {
+    vector<vector<string>> returnValue;
+    vector<string> matches;
+    size_t startOffset = 0;
+    size_t matchOffset = 0;
+    while(SREMatch(regExp, input, caseSensitive, true, &matches, startOffset, &matchOffset)) {
+        returnValue.push_back(matches);
+        startOffset = matchOffset + matches[0].size();
+    }
+
+    return returnValue;
 }
 
 string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive) {

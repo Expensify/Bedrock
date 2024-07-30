@@ -388,7 +388,21 @@ bool SConstantTimeEquals(const string& secret, const string& userInput);
 bool SConstantTimeIEquals(const string& secret, const string& userInput);
 
 // Unless `partialMatch` is specified, perform a full regex match (the '^' and '$' symbols are implicit).
-bool SREMatch(const string& regExp, const string& input, bool caseSensitive = true, bool partialMatch = false, vector<string>* matches = nullptr);
+//
+// If `matches` is supplied it will be cleared, and any matches to the expression will fill it. The first entry in matches will be the entire matched portion of the string,
+// and any following entries will be matched parenthesized subgroups.
+//
+// startOffset can be supplied to ignore the first part of the input string.
+//
+// If matchOffset is supplied, and a match is found, it will be set to the offset of the first character of the matched substring.
+// To find the end of the matched substring, you can do something like matchOffset + matches[0].size().
+bool SREMatch(const string& regExp, const string& input, bool caseSensitive = true, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
+
+// Matches every instance of regExp in the input string. Returns a vector of vectors or strings.
+// The outer vector has one entry for each match found. The inner vectors contain first the entire matched substring, and following that, each match group
+vector<vector <string>> SREMatchAll(const string& regExp, const string& input, bool caseSensitive = true);
+
+// Replaces all instances of the matched `regExp` with `replacement` in `input`.
 string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive = true);
 
 // Redact values that should not be logged.
