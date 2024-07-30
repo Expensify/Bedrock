@@ -2826,8 +2826,8 @@ bool SREMatch(const string& regExp, const string& input, bool caseSensitive, boo
 
     int result = pcre2_match(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, matchFlags, matchData, matchContext); 
 
-    // If the caller wanted to receive matches, figure them out.
-    if (matches) {
+    // If the caller wanted to receive matches, and we have them, figure them out.
+    if (result > 0 && matches) {
         PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(matchData);
         int count = pcre2_get_ovector_count(matchData);
         for (int i = 0; i < count; ++i) {
