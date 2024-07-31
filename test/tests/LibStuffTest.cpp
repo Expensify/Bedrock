@@ -672,6 +672,14 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(matches[1], "this");
         ASSERT_EQUAL(matches[2], "contains");
         ASSERT_EQUAL(matches[3], "cat");
+
+        // Let's do multiple matches.
+        string catNames = "kitty Whiskers, kitty Mittens, kitty Snowball";
+        auto matchList = SREMatchAll(R"(kitty\s+(\w+))", catNames);
+        ASSERT_EQUAL(matchList.size(), 3);
+        ASSERT_EQUAL(matchList[0][1], "Whiskers");
+        ASSERT_EQUAL(matchList[1][1], "Mittens");
+        ASSERT_EQUAL(matchList[2][1], "Snowball");
     }
 
     void SREReplaceTest() {
