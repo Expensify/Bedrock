@@ -15,7 +15,12 @@ thread_local int tpunit::TestFixture::perFixtureStats::_exceptions = 0;
 thread_local int tpunit::TestFixture::perFixtureStats::_traces = 0;
 
 tpunit::TestFixture::method::method(TestFixture* obj, void (TestFixture::*addr)(), const char* name, unsigned char type)
+// The following pragma lines disable a specific uninitialized variable warning specifically for clang. Ideally we remove this,
+// but it likely means changing the way we invoke every single test (not just in bedrock, but all other repos that use this test framework).
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wuninitialized"
     : _this(obj)
+#pragma clang diagnostic pop
     , _addr(addr)
     , _type(type)
     , _next(0) {
