@@ -1798,8 +1798,12 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
     } else if (SIEquals(command->request.methodLine, "ConflictReport")) {
         response.content = _conflictManager.generateReport();
     } else if (SIEquals(command->request.methodLine, "Detach")) {
-        response.methodLine = "203 DETACHING";
-        _beginShutdown("Detach", true);
+        if (isDetached()) {
+            response.methodLine = "400 Already detached";
+        } else {
+            response.methodLine = "203 DETACHING";
+            _beginShutdown("Detach", true);
+        }
     } else if (SIEquals(command->request.methodLine, "Attach")) {
         // Ensure none of our plugins are blocking attaching
         list<string> blockingPlugins;
