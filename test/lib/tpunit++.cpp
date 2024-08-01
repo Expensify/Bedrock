@@ -92,6 +92,9 @@ void tpunit::_TestFixture::registerTests(method* m0,  method* m1,  method* m2,  
     _mutex    = 0;
 }
 
+tpunit::TestFixture::~TestFixture() {
+}
+
 tpunit::_TestFixture::~_TestFixture() {
     delete _afters;
     delete _after_classes;
