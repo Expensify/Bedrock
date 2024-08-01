@@ -26,7 +26,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         for (size_t i = 0; i < allresults.size(); i++) {
             // Start a thread.
             BedrockClusterTester* localTester = tester;
-            threads.emplace_back([localTester, i, &mu, &done, &allresults, &counts, &commandID]() {
+            threads.emplace_back([localTester, i, &mu, &done, &counts, &commandID]() {
                 int currentNodeIndex = i % 3;
                 while(!done.load()) {
                     // Send some read or some write commands.
@@ -37,8 +37,8 @@ struct GracefulFailoverTest : tpunit::TestFixture {
                         // Every 10th client makes HTTPS requests (1/5th as many, cause they take forever).
                         // We ask for `756` responses to verify we don't accidentally get back something besides what
                         // we expect (some default value).
-                        int randNum = SRandom::rand64();
-                        int randNum2 = SRandom::rand64();
+                        auto randNum = SRandom::rand64();
+                        auto randNum2 = SRandom::rand64();
                         if (randNum % 10 == 0) {
                             if (randNum2 % 5 == 0) {
                                 SData query("sendrequest" + randCommand);
@@ -81,7 +81,6 @@ struct GracefulFailoverTest : tpunit::TestFixture {
                     // Ok, send them all!
                     BedrockTester& node = localTester->getTester(currentNodeIndex);
                     auto results = node.executeWaitMultipleData(requests, 1, false, true);
-                    size_t completed = 0;
                     for (auto& r : results) {
                         lock_guard<mutex> lock(mu);
                         if (r.methodLine != "002 Socket Failed") {
@@ -90,7 +89,6 @@ struct GracefulFailoverTest : tpunit::TestFixture {
                             } else {
                                 counts[r.methodLine] = 1;
                             }
-                            completed++;
                         } else {
                             // Got a disconnection. Try on the next node.
                             break;

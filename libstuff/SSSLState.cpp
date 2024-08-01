@@ -193,12 +193,10 @@ bool SSSLRecvAppend(SSSLState* ssl, SFastBuffer& recvBuffer) {
     // Keep trying to receive as long as we can
     SASSERT(ssl);
     char buffer[1024 * 16];
-    int totalRecv = 0;
     int numRecv = 0;
     while ((numRecv = SSSLRecv(ssl, buffer, sizeof(buffer))) > 0) {
         // Got some more data
         recvBuffer.append(buffer, numRecv);
-        totalRecv += numRecv;
     }
 
     // Return whether or not the socket is still alive

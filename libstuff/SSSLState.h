@@ -7,7 +7,7 @@
 
 using namespace std;
 
-class SX509;
+struct SX509;
 class SFastBuffer;
 
 struct SSSLState {

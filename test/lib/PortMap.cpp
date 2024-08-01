@@ -55,12 +55,10 @@ int PortMap::waitForPort(uint16_t port) {
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
     int result = 0;
-    int count = 0;
     uint64_t start = STimeNow();
     do {
         result = ::bind(sock, (sockaddr*)&addr, sizeof(addr));
         if (result) {
-            count++;
             usleep(100'000);
         } else {
             shutdown(sock, 2);

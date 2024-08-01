@@ -64,13 +64,11 @@ struct WriteTest : tpunit::TestFixture {
         auto results = tester->executeWaitMultipleData(requests);
 
         int success = 0;
-        int failure = 0;
 
         for (auto& row : results) {
             if (SToInt(row.methodLine) == 200) {
                 success++;
             } else {
-                failure++;
             }
         }
 

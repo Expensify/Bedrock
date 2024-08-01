@@ -136,12 +136,10 @@ struct LeadingTest : tpunit::TestFixture {
 
         // Create a bunch of commands.
         vector<SData> requests(5000);
-        int count = 0;
         for (auto& request : requests) {
             request.methodLine = "Query";
             request["writeConsistency"] = "ASYNC";
             request["query"] = "INSERT INTO test VALUES(" + SQ(SRandom::rand64() % 1'000'000) + ", '');";
-            count++;
         }
 
         // Send these all to leader.

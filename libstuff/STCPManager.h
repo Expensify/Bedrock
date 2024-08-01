@@ -9,8 +9,8 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
 
-class SSSLState;
-class SX509;
+struct SSSLState;
+struct SX509;
 
 using namespace std;
 
