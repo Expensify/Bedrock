@@ -96,7 +96,7 @@ void SInitializeSignals() {
     sigprocmask(SIG_BLOCK, &signals, 0);
 
     // This is the signal action structure we'll use to specify what to listen for.
-    struct sigaction newAction = {0};
+    struct sigaction newAction = {};
 
     // The old style handler is explicitly null
     newAction.sa_handler = nullptr;
@@ -219,8 +219,9 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 int status{0};
                 char* front = strchr(frame[0], '(') + 1;
                 char* end = strchr(front, '+');
-                char copy[end - front + 1]{0};
-                strncpy(copy, front, end - front);
+                char copy[1000];
+                memset(copy, 0, 1000);
+                strncpy(copy, front, min((size_t)999, (size_t)(end - front)));
                 char* demangled = abi::__cxa_demangle(copy, 0, 0, &status);
                 char* tolog = status ? copy : demangled;
                 if (tolog[0] == '\0') {
