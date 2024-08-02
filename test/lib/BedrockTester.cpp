@@ -216,7 +216,6 @@ string BedrockTester::startServer(bool wait) {
 #endif
 
         // Convert our c++ strings to old-school C strings for exec.
-        //char* cargs[args.size() + 1];
         char** cargs = (char**)malloc((args.size() + 1) * sizeof(char*));
         int count = 0;
         for(string arg : args) {
