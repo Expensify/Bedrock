@@ -68,7 +68,6 @@ struct WriteTest : tpunit::TestFixture {
         for (auto& row : results) {
             if (SToInt(row.methodLine) == 200) {
                 success++;
-            } else {
             }
         }
 
