@@ -46,6 +46,12 @@ jobs:
       env:
         OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
+    - name: Install LLVM
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 18 all
+
     - name: Install packages
       run: |
         sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys BA9EF27F

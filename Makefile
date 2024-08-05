@@ -3,10 +3,10 @@
 # to be set, but for the time being we need to override the defaults so that our existing dev environment works. This
 # can be removed when that is resolved.
 ifeq ($(CC),cc)
-CC = gcc-13
+CC = ccache /usr/bin/clang-18
 endif
 ifeq ($(CXX),g++)
-CXX = g++-13
+CXX = ccache /usr/bin/clang++-18
 endif
 
 # Set the optimization level from the environment, or default to -O2.
