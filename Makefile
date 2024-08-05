@@ -94,7 +94,7 @@ CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
 # And the same for the test plugin.
-TESTPLUGINCPP = test/clustertest/testplugin/TestPlugin.cpp
+TESTPLUGINCPP = test/clustertest/testplugin/TestPlugin.cpp test/clustertest/testplugin/ExternPointer.cpp
 TESTPLUGINOBJ = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 TESTPLUGINTDEP = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
