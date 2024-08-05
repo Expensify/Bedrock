@@ -275,9 +275,13 @@ bool TestPluginCommand::peek(SQLite& db) {
     } else if (SStartsWith(request.methodLine, "exceptioninpeek")) {
         throw 1;
     } else if (SStartsWith(request.methodLine, "generatesegfaultpeek")) {
-        int* i = 0;
-        *i = 42;
-        response["invalid"] = to_string(*i);
+        int whatever = 0;
+        int* whateverPtr = &whatever;
+        // Bitwise OR the next 10 million addresses on the stack after our whatever number. This will surely segfault, right?
+        for (int i = 0; i < 10'000'000;i++) {
+            whatever |= *(whateverPtr + i);
+        }
+        response["invalid"] = to_string(whatever);
     } else if (SStartsWith(request.methodLine, "generateassertpeek")) {
         SASSERT(0);
         response["invalid"] = "nope";

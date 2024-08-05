@@ -53,6 +53,7 @@ struct BadCommandTest : tpunit::TestFixture {
                     command.methodLine = commandName;
                     command["userID"] = to_string(userID);
                     int error = 0;
+                    cout << "Trying command: " << commandName << endl;
                     leader.executeWaitMultipleData({command}, 1, false, true, &error);
 
                     // Wait for the follower to become leader.
