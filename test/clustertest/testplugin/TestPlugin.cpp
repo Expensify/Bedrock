@@ -275,6 +275,7 @@ bool TestPluginCommand::peek(SQLite& db) {
     } else if (SStartsWith(request.methodLine, "exceptioninpeek")) {
         throw 1;
     } else if (SStartsWith(request.methodLine, "generatesegfaultpeek")) {
+        SINFO("TYLER SEGFAULT HERE");
         int whatever = 0;
         int* whateverPtr = &whatever;
         // Bitwise OR the next 10 million addresses on the stack after our whatever number. This will surely segfault, right?
@@ -282,6 +283,7 @@ bool TestPluginCommand::peek(SQLite& db) {
             whatever |= *(whateverPtr + i);
         }
         response["invalid"] = to_string(whatever);
+        SINFO("TYLER SEGFAULT HERE (FAILED)");
     } else if (SStartsWith(request.methodLine, "generateassertpeek")) {
         SASSERT(0);
         response["invalid"] = "nope";
