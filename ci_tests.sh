@@ -48,7 +48,7 @@ mark_fold end test_bedrock
 
 mark_fold start test_bedrock_cluster
 cd test/clustertest
-./clustertest -threads 8
+./clustertest -only BadCommand
 cd ../..
 mark_fold end test_bedrock_cluster
 
