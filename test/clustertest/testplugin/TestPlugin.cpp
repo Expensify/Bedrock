@@ -276,8 +276,8 @@ bool TestPluginCommand::peek(SQLite& db) {
         throw 1;
     } else if (SStartsWith(request.methodLine, "generatesegfaultpeek")) {
         int* i = 0;
-        int x = *i;
-        response["invalid"] = to_string(x);
+        *i = 42;
+        response["invalid"] = to_string(*i);
     } else if (SStartsWith(request.methodLine, "generateassertpeek")) {
         SASSERT(0);
         response["invalid"] = "nope";
@@ -482,8 +482,8 @@ void TestPluginCommand::process(SQLite& db) {
         throw 2;
     } else if (SStartsWith(request.methodLine, "generatesegfaultprocess")) {
         int* i = 0;
-        int x = *i;
-        response["invalid"] = to_string(x);
+        *i = 42;
+        response["invalid"] = to_string(*i);
     } else if (SStartsWith(request.methodLine, "ineffectiveUpdate")) {
         // This command does nothing on purpose so that we can run it in 10x mode and verify it replicates OK.
         return;
