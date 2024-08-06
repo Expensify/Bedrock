@@ -5,7 +5,6 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
     shared_ptr<WaitState> state(nullptr);
     {
         lock_guard<mutex> lock(_internalStateMutex);
-        SINFO("[performance] Waiting for " << value << ", in transaction? " << insideTransaction);
         if (value <= _value) {
             return RESULT::COMPLETED;
         }
@@ -88,7 +87,6 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
             // Make the changes to the state object - mark it complete and notify anyone waiting.
             lock_guard<mutex> lock(it->second->waitingThreadMutex);
             it->second->result = RESULT::COMPLETED;
-            SINFO("[performance] Notifying thread waiting on value: " << it->first);
             it->second->waitingThreadConditionVariable.notify_all();
         }
 

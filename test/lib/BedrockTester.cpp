@@ -20,7 +20,8 @@ const bool BedrockTester::ENABLE_HCTREE{false};
 
 string BedrockTester::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
-    char buffer[templateStr.size() + 1];
+    char buffer[100];
+    memset(buffer, 0, 100);
     strcpy(buffer, templateStr.c_str());
     int filedes = mkstemps(buffer, 3);
     close(filedes);
@@ -200,22 +201,22 @@ string BedrockTester::startServer(bool wait) {
     #define xstr(a) str(a)
     #define str(a) #a
 
-    list<string> valgrind = SParseList(xstr(VALGRIND), ' ');
-    if (valgrind.size()) {
-        serverName = valgrind.front();
-        cout << "Starting bedrock server in '" << serverName << "' with args: " << endl;
-        auto it = valgrind.rbegin();
-        while (it != valgrind.rend()) {
-            args.push_front(*it);
-            it++;
+        list<string> valgrind = SParseList(xstr(VALGRIND), ' ');
+        if (valgrind.size()) {
+            serverName = valgrind.front();
+            cout << "Starting bedrock server in '" << serverName << "' with args: " << endl;
+            auto it = valgrind.rbegin();
+            while (it != valgrind.rend()) {
+                args.push_front(*it);
+                it++;
+            }
+            cout << SComposeList(args, " ") << endl;
+            cout << "==========================" << endl;
         }
-        cout << SComposeList(args, " ") << endl;
-        cout << "==========================" << endl;
-    }
 #endif
 
         // Convert our c++ strings to old-school C strings for exec.
-        char* cargs[args.size() + 1];
+        char** cargs = (char**)malloc((args.size() + 1) * sizeof(char*));
         int count = 0;
         for(string arg : args) {
             char* newstr = (char*)malloc(arg.size() + 1);
@@ -340,7 +341,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
     // Spawn a thread for each connection.
     for (int i = 0; i < connections; i++) {
-        threads.emplace_back([&, i](){
+        threads.emplace_back([&](){
             int socket = 0;
 
             // This continues until there are no more requests to process.
@@ -432,7 +433,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                 SFastBuffer recvBuffer("");
                 string methodLine, content;
                 STable headers;
-                int count = 0;
                 uint64_t recvStart = STimeNow();
                 while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
                     // Poll the socket, so we get a timeout.
@@ -443,7 +443,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
                     // wait for a second...
                     poll(&readSock, 1, 1000);
-                    count++;
                     if (readSock.revents & POLLIN) {
                         bool result = S_recvappend(socket, recvBuffer);
                         if (!result) {

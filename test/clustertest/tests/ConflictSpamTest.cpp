@@ -76,7 +76,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         // Let's spin up three threads, each spamming commands at one of our nodes.
         list<thread> threads;
         for (int i : {0, 1, 2}) {
-            threads.emplace_back([this, i, &totalRequestFailures, &m](){
+            threads.emplace_back([this, i, &totalRequestFailures](){
                 BedrockTester& brtester = tester->getTester(i);
 
                 // Let's make ourselves 20 commands to spam at each node.
@@ -232,7 +232,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         allResults.clear();
         allResults.resize(3);
         for (int i : {0, 1, 2}) {
-            threads.emplace_back([this, i, &allResults, &tables, &m](){
+            threads.emplace_back([this, i, &allResults, &m](){
                 BedrockTester& brtester = tester->getTester(i);
 
                 SData cmd("Query");
@@ -256,7 +256,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         allResults.clear();
         allResults.resize(3);
         for (int i : {0, 1, 2}) {
-            threads.emplace_back([this, i, &allResults, &tables, &m](){
+            threads.emplace_back([this, i, &allResults, &m](){
                 BedrockTester& brtester = tester->getTester(i);
 
                 SData cmd("Query");

@@ -13,7 +13,7 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture {
 
         leader.stopServer();
 
-        thread healthCheckThread([this, &results, &follower](){
+        thread healthCheckThread([&results, &follower](){
             SData cmd("GET /status/handlingCommands HTTP/1.1");
             string result;
             bool foundLeader = false;

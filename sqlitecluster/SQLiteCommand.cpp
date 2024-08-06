@@ -28,7 +28,7 @@ SData SQLiteCommand::preprocessRequest(SData&& request) {
 }
 
 SQLiteCommand::SQLiteCommand(SData&& _request) :
-    privateRequest(move(preprocessRequest(move(_request)))),
+    privateRequest(preprocessRequest(move(_request))),
     request(privateRequest),
     initiatingClientID(0),
     writeConsistency(SQLiteNode::ASYNC),
@@ -69,6 +69,22 @@ SQLiteCommand::SQLiteCommand(SQLiteCommand&& from) :
     creationTime(from.creationTime),
     escalated(from.escalated)
 {
+}
+
+SQLiteCommand& SQLiteCommand::operator=(SQLiteCommand&& from) noexcept {
+    privateRequest = move(from.privateRequest);
+    const_cast<SData&>(request) = privateRequest;
+    initiatingClientID = from.initiatingClientID;
+    id = move(from.id);
+    jsonContent = move(from.jsonContent);
+    response = move(from.response);
+    writeConsistency = from.writeConsistency;
+    complete = from.complete;
+    escalationTimeUS = from.escalationTimeUS;
+    creationTime = from.creationTime;
+    escalated = from.escalated;
+
+    return *this;
 }
 
 SQLiteCommand::SQLiteCommand() :
