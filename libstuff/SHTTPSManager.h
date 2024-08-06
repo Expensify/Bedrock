@@ -62,6 +62,7 @@ class SHTTPSManager : public SStandaloneHTTPSManager {
 
     // TODO: Remove this once Auth no longer checks for it.
     class NotLeading : public exception {
+        using exception::what;
         const char* what() {
             return "Can't create SHTTPSManager::Transaction when not leading";
         }

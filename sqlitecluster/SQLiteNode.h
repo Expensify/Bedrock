@@ -55,7 +55,7 @@ enum class SQLiteNodeState {
 // Distributed, leader/follower, failover, transactional DB cluster
 class SQLiteNode : public STCPManager {
     // This exists to expose internal state to a test harness. It is not used otherwise.
-    friend class SQLiteNodeTest;
+    friend struct SQLiteNodeTest;
     friend class SQLiteNodeTester;
 
   public:

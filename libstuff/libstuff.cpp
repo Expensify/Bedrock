@@ -30,6 +30,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <dirent.h>
+#include <string.h>
 #ifdef __APPLE__
 // Apple specific tweaks
 #include <sys/types.h>
@@ -1686,7 +1687,7 @@ string SGZip(const string& content) {
 }
 
 string SGUnzip (const string& content) {
-    int CHUNK = 16384;
+    const int CHUNK = 16384;
     int status;
     unsigned have;
     z_stream strm;
@@ -2754,13 +2755,13 @@ string SGetCurrentExceptionName()
     // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
     // exception name.
     int status = 0;
-    size_t length = 1000;
+    const size_t length = 1000;
     char buffer[length];
     memset(buffer, 0, length);
 
     // Demangle the name of the current exception.
     // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
-    abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+    abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, nullptr, &status);
     string exceptionName = buffer;
 
     // If it failed, use the original name instead.

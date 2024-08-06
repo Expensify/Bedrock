@@ -24,7 +24,7 @@ struct pollfd;
 struct sqlite3;
 class SQResult;
 class SFastBuffer;
-class SData;
+struct SData;
 
 using namespace std;
 
