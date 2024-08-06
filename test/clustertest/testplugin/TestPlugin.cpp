@@ -7,6 +7,8 @@
 #include <libstuff/SQResult.h>
 #include <libstuff/SX509.h>
 
+extern int* __pointerToFakeIntArray;
+
 mutex BedrockPlugin_TestPlugin::dataLock;
 map<string, string> BedrockPlugin_TestPlugin::arbitraryData;
 
@@ -275,9 +277,11 @@ bool TestPluginCommand::peek(SQLite& db) {
     } else if (SStartsWith(request.methodLine, "exceptioninpeek")) {
         throw 1;
     } else if (SStartsWith(request.methodLine, "generatesegfaultpeek")) {
-        int* i = 0;
-        int x = *i;
-        response["invalid"] = to_string(x);
+        int total = 0;
+        for (int i = 0; i < 1000000; i++) {
+            total += __pointerToFakeIntArray[i];
+        }
+        response["invalid"] = to_string(total);
     } else if (SStartsWith(request.methodLine, "generateassertpeek")) {
         SASSERT(0);
         response["invalid"] = "nope";
@@ -481,9 +485,11 @@ void TestPluginCommand::process(SQLite& db) {
     } else if (SStartsWith(request.methodLine, "exceptioninprocess")) {
         throw 2;
     } else if (SStartsWith(request.methodLine, "generatesegfaultprocess")) {
-        int* i = 0;
-        int x = *i;
-        response["invalid"] = to_string(x);
+        int total = 0;
+        for (int i = 0; i < 1000000; i++) {
+            total += __pointerToFakeIntArray[i];
+        }
+        response["invalid"] = to_string(total);
     } else if (SStartsWith(request.methodLine, "ineffectiveUpdate")) {
         // This command does nothing on purpose so that we can run it in 10x mode and verify it replicates OK.
         return;
