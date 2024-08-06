@@ -236,9 +236,7 @@ void SQLitePeer::sendMessage(const SData& message) {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         size_t bytesSent = 0;
-        if (socket->send(message.serialize(), &bytesSent)) {
-            SINFO("No error sending " << message.methodLine << " to peer " << name << " (" << bytesSent << " bytes actually sent).");
-        } else {
+        if (!socket->send(message.serialize(), &bytesSent)) {
             SHMMM("Error sending " << message.methodLine << " to peer " << name << ".");
         }
     } else {
