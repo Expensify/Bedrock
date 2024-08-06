@@ -1,7 +1,7 @@
 #include "SSSLState.h"
 
 #include <mbedtls/error.h>
-#include <mbedtls/net.h>
+#include <mbedtls/net_sockets.h>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
@@ -30,11 +30,9 @@ SSSLState* SSSLOpen(int s, SX509* x509) {
 
     mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, 0, 0);
     mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, 0);
-
-    mbedtls_ssl_setup(&state->ssl, &state->conf);
-
     mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
+
     mbedtls_ssl_set_bio(&state->ssl, &state->s, mbedtls_net_send, mbedtls_net_recv, 0);
 
     if (x509) {
@@ -42,6 +40,10 @@ SSSLState* SSSLOpen(int s, SX509* x509) {
         mbedtls_ssl_conf_ca_chain(&state->conf, x509->srvcert.next, 0);
         SASSERT(mbedtls_ssl_conf_own_cert(&state->conf, &x509->srvcert, &x509->pk) == 0);
     }
+
+    // Do this at the end, since we don't want to modify the conf context after we've initialized it with our ssl context.
+    mbedtls_ssl_setup(&state->ssl, &state->conf);
+
     return state;
 }
 
@@ -49,6 +51,7 @@ SSSLState* SSSLOpen(int s, SX509* x509) {
 int SSSLSend(SSSLState* sslState, const char* buffer, int length) {
     // Send as much as possible and report what happened
     SASSERT(sslState && buffer);
+
     const int numSent = mbedtls_ssl_write(&sslState->ssl, (unsigned char*)buffer, length);
     if (numSent > 0) {
         return numSent;
@@ -112,7 +115,7 @@ string SSSLGetState(SSSLState* ssl) {
 #define SSLSTATE(_STATE_)                                                                                              \
     case _STATE_:                                                                                                      \
         return #_STATE_
-    switch (ssl->ssl.state) {
+    switch (ssl->ssl.private_state) {
         SSLSTATE(MBEDTLS_SSL_HELLO_REQUEST);
         SSLSTATE(MBEDTLS_SSL_CLIENT_HELLO);
         SSLSTATE(MBEDTLS_SSL_SERVER_HELLO);
