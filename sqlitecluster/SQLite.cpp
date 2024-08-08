@@ -1130,7 +1130,7 @@ int64_t SQLite::getLastConflictPage() const {
 SQLite::SharedData::SharedData() :
 nextJournalCount(0),
 _commitEnabled(true),
-_commitLockTimer("commit lock timer", {
+_commitLockTimer("commit lock timer", false, {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
     {"SHARED", chrono::steady_clock::duration::zero()},
 })

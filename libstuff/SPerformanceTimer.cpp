@@ -1,11 +1,12 @@
 #include <libstuff/libstuff.h>
 #include "SPerformanceTimer.h"
 
-SPerformanceTimer::SPerformanceTimer(string description, map<string, chrono::steady_clock::duration> defaults)
+SPerformanceTimer::SPerformanceTimer(string description, bool logImmediate, map<string, chrono::steady_clock::duration> defaults)
   : _description(description),
   _lastLogStart(chrono::steady_clock::now()),
   _defaults(defaults),
-  _totals(_defaults)
+  _totals(_defaults),
+  _logImmediate(logImmediate)
 {}
 
 void SPerformanceTimer::start(const string& type) {
@@ -17,6 +18,12 @@ void SPerformanceTimer::stop() {
     // Get the time, and the time since last start.
     auto now = chrono::steady_clock::now();
     auto duration = now - _lastStart;
+
+    if (_logImmediate) {
+        double durationMS = chrono::duration_cast<chrono::duration<double, std::milli>>(duration).count();
+        SINFO(_description << " " << _lastType << " in " << durationMS << " ms.");
+        return;
+    }
 
     // Record this time.
     auto it = _totals.find(_lastType);

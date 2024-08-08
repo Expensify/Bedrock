@@ -3,7 +3,7 @@
 
 class SPerformanceTimer {
   public:
-    SPerformanceTimer(string description, map<string, chrono::steady_clock::duration> defaults = {});
+    SPerformanceTimer(string description, bool logImmediate = true, map<string, chrono::steady_clock::duration> defaults = {});
     void start(const string& type);
     void stop();
     void log(chrono::steady_clock::duration elapsed);
@@ -15,4 +15,5 @@ class SPerformanceTimer {
     string _lastType;
     map <string, chrono::steady_clock::duration> _defaults;
     map <string, chrono::steady_clock::duration> _totals;
+    bool _logImmediate;
 };
