@@ -58,13 +58,16 @@ timeval SToTimeval(uint64_t when) {
     return {(time_t)(when / STIME_US_PER_S), (suseconds_t)(when % STIME_US_PER_S)};
 }
 
-string SCURRENT_TIMESTAMP_MS() {
-    uint64_t time = STimeNow();
+string STIMESTAMP_MS(uint64_t time) {
     uint64_t ms = (time % 1'000'000) / 1'000;
     string timestamp = SUNQUOTED_TIMESTAMP(time);
     char msString[5] = {0};
     snprintf(msString, 5, "%03lu", ms);
     return timestamp + "." + msString;
+}
+
+string SCURRENT_TIMESTAMP_MS() {
+    return STIMESTAMP_MS(STimeNow());
 }
 
 string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
