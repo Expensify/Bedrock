@@ -617,6 +617,7 @@ string STIMESTAMP(uint64_t when);
 string SUNQUOTED_CURRENT_TIMESTAMP();
 string SCURRENT_TIMESTAMP();
 string SCURRENT_TIMESTAMP_MS();
+string STIMESTAMP_MS(uint64_t time);
 
 // --------------------------------------------------------------------------
 // Miscellaneous stuff
