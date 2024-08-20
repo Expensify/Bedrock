@@ -15,7 +15,7 @@ env:
 jobs:
   Run_Bedrock_Tests:
     name: "Create Bedrock and Test"
-    runs-on: ubuntu-20.04-v64 # The biggest and best for my baby
+    runs-on: ubuntu-20.04-v64-2 # The biggest and best for my baby
     timeout-minutes: 30
     steps:
 
@@ -90,4 +90,3 @@ jobs:
       with:
         files: |-
           ./bedrock
-
