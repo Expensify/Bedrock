@@ -55,7 +55,7 @@ jobs:
 
         # For clang.
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        echo "deb https://travis:${{ env.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/apt.llvm.org/focal/ llvm-toolchain-focal-18 main" | sudo tee -a /etc/apt/sources.list
+        echo "deb https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/apt.llvm.org/focal/ llvm-toolchain-focal-18 main" | sudo tee -a /etc/apt/sources.list
 
         sudo apt-get update -y
         sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake libpcre2-dev libsodium-dev libgpgme11-dev libstdc++-13-dev
