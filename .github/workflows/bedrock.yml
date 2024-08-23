@@ -52,20 +52,8 @@ jobs:
         sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 4F4EA0AAE5267A6C
         wget -qO - https://package.perforce.com/perforce.pubkey --no-check-certificate | sudo apt-key add -
         echo "deb [arch=amd64] https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu focal main" | sudo tee -a /etc/apt/sources.list
-
-        # For clang.
-        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        echo "deb https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/apt.llvm.org/focal/ llvm-toolchain-focal-18 main" | sudo tee -a /etc/apt/sources.list
-
         sudo apt-get update -y
-        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake libpcre2-dev libsodium-dev libgpgme11-dev libstdc++-13-dev
-
-        # Install gcc. Can be removed after clang transition is complete.
-        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install gcc-13 g++-13
-
-        # Install clang.
-        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install clang-18 lldb-18 lld-18 clangd-18 clang-tidy-18 clang-format-18 clang-tools-18 llvm-18-dev lld-18 lldb-18 llvm-18-tools libomp-18-dev libc++-18-dev libc++abi-18-dev libclang-common-18-dev libclang-18-dev libclang-cpp18-dev libunwind-18-dev
-
+        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake gcc-13 g++-13 libpcre2-dev libsodium-dev libgpgme11-dev libstdc++-13-dev
         sudo locale-gen "en_US.UTF-8"
         sudo service rsyslog start
 
