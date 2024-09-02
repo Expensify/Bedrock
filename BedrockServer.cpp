@@ -4,10 +4,8 @@
 #include <arpa/inet.h>
 #include <cstring>
 #include <fstream>
-#include <iomanip>
 #include <sys/resource.h>
 #include <sys/time.h>
-#include <signal.h>
 
 #include <bedrockVersion.h>
 #include <BedrockCore.h>
