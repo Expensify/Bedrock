@@ -389,3 +389,7 @@ string BedrockCommand::serializeData() const {
 
 void BedrockCommand::deserializeData(const string& data) {
 }
+
+bool BedrockCommand::shouldGenerateCrashCommand() {
+    return true;
+}

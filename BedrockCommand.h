@@ -187,6 +187,8 @@ class BedrockCommand : public SQLiteCommand {
     };
     CrashMap crashIdentifyingValues;
 
+    virtual bool shouldGenerateCrashCommand();
+
     // Return the timestamp by which this command must finish executing.
     uint64_t timeout() const { return _timeout; }
 

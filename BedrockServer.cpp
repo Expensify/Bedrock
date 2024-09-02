@@ -470,6 +470,10 @@ void BedrockServer::sync()
                 // like a segfault. Note that it's possible we're in the middle of sending a message to peers when we call
                 // this, which would probably make this message malformed. This is the best we can do.
                 SSetSignalHandlerDieFunc([&](){
+                    if (!command->shouldGenerateCrashCommand()) {
+                        SINFO("Not generating CRASH_COMMAND");
+                        return;
+                    }
                     _clusterMessenger->runOnAll(_generateCrashMessage(command));
                 });
 
@@ -698,6 +702,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
     // signals, like SIGSEGV, this function will be called.
     SSetSignalHandlerDieFunc([&](){
+        if (!command->shouldGenerateCrashCommand()) {
+            SINFO("Not generating CRASH_COMMAND");
+            return;
+        }
         _clusterMessenger->runOnAll(_generateCrashMessage(command));
     });
 
