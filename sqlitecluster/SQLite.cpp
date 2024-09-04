@@ -567,6 +567,12 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     bool usedRewrittenQuery = false;
     int resultCode = 0;
     {
+        // So we deadlocked (or crashed avoiding a deadlock) while trying to lock `writeLock` after locking `commitLock`
+        // This implies someone else grabbed `writeLock` and was waiting on `commitLock`.
+        // Besides here, we only lock `writeLock` in `exclusiveLockDB`, which isreally straightforward.
+        //
+        // This block, however, is also pretty straightforward. I don't see where we could try and grab `commitLock` here.
+        // This happened while switching from leading to standingDown, if that offers any more insight.
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         if (_enableRewrite) {
             resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, true);
