@@ -1290,6 +1290,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 uint64_t myCommitCount = getCommitCount();
                 SWARN("[clustersync] Cluster is behind by over " << MAX_PEER_FALL_BEHIND << " commits. New commits blocked until the cluster catches up.");
                 uint64_t start = STimeNow();
+                // We locked here.
                 _db.exclusiveLockDB();
                 SINFO("[clustersync] Took " << (STimeNow() - start) << "us to block commits. Dumping cluster commit state. I have commit: " << myCommitCount);
                 for (const auto& p : _peerList) {
@@ -2063,12 +2064,15 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
         if ((_state == SQLiteNodeState::LEADING || _state == SQLiteNodeState::STANDINGDOWN) && newState != SQLiteNodeState::STANDINGDOWN) {
             if (_commitsBlocked) {
                 _commitsBlocked = false;
+                // Did we try and call this?
                 _db.exclusiveUnlockDB();
             }
         }
 
         // IMPORTANT: Don't return early or throw from this method after here.
         // Note: _stateMutex is already locked here (by update, _replicate, or postPoll).
+        // And also here, possibly.
+        // _stateMutex is possibly relevant.
         _db.exclusiveLockDB();
 
         // Send to everyone we're connected to, whether or not
