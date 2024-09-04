@@ -1286,6 +1286,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SINFO("[clustersync] Cluster is no longer behind by over " << MAX_PEER_FALL_BEHIND << " commits. Unblocking new commits.");
                 _db.exclusiveUnlockDB();
             } else if (!quorumUpToDate && !_commitsBlocked && !_db.insideTransaction()) {
+                // Is the race just here? I don't think any other thread can call this.
                 _commitsBlocked = true;
                 uint64_t myCommitCount = getCommitCount();
                 SWARN("[clustersync] Cluster is behind by over " << MAX_PEER_FALL_BEHIND << " commits. New commits blocked until the cluster catches up.");
@@ -2068,6 +2069,9 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
                 _db.exclusiveUnlockDB();
             }
         }
+
+        // There's nothing stopping onMessage from locking again here (Except that it's not called, I guess, it'd need to be
+        // called from the same thread to have a recursion issue here. What about the other direction?
 
         // IMPORTANT: Don't return early or throw from this method after here.
         // Note: _stateMutex is already locked here (by update, _replicate, or postPoll).
