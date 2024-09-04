@@ -2073,6 +2073,13 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
         // Note: _stateMutex is already locked here (by update, _replicate, or postPoll).
         // And also here, possibly.
         // _stateMutex is possibly relevant.
+
+        // What if the problem is with _stateMutex?
+        // We've already locked state mutex, and somebody else wants to lock it.
+        // It seems the only (double check that) place that we'd lock _stateMutex from antoher thread is in _replicate.
+        // If replicate locks writeLock, or calls _db.exclusiveLockDB before locking stateMutex, we could deadlock.
+        // I don't think that happens though.
+        // Nope, _replicate locks _stateMutex before calling `changeState`, just like the existing comment says.
         _db.exclusiveLockDB();
 
         // Send to everyone we're connected to, whether or not

@@ -338,6 +338,14 @@ void SQLite::exclusiveLockDB() {
         throw;
     }
     try {
+        // commitLock is recursive, but writeLock is not, so it's feasible this gets called recursively and we get this
+        // error here.
+        
+        // Ok, so if new commits are blocked, we call exclusiveLockDB. SQLiteNode.cpp:1293-ish
+        // If we're changing state, we call exclusiveLockDB.SQLiteNoe.cpp:2080-ish
+        // It seems feasible we can get from one of those to the other without checking for unlocking,
+        // and then we'd try and recursively lock.
+        // Let's see if we can demonstrate that case.
         _sharedData.writeLock.lock();
     } catch(const system_error& e) {
         SWARN("Caught system_error calling _sharedData.writeLock, code: " << e.code() << ", message: " << e.what());
