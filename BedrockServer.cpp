@@ -249,7 +249,6 @@ void BedrockServer::sync()
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
             _syncNode->postPoll(fdm, nextActivity);
-            // commits now blocked.
             _syncNodeQueuedCommands.postPoll(fdm);
             _notifyDone.postPoll(fdm);
         }
@@ -268,7 +267,6 @@ void BedrockServer::sync()
             _syncNode->onPrepareHandlerEnabled = false;
             _syncNode->onPrepareHandler = nullptr;
         }
-        // And we deadlock in here.
         while (_syncNode->update()) {}
         _leaderVersion.store(_syncNode->getLeaderVersion());
 

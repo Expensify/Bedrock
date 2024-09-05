@@ -2687,7 +2687,6 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     size_t messagesDeqeued = 0;
                     while (true) {
                         SData message = peer->popMessage();
-                        // _onMessage is called here in postPoll, which blocks commits.
                         _onMESSAGE(peer, message);
                         messagesDeqeued++;
                         if (messagesDeqeued >= 100) {
