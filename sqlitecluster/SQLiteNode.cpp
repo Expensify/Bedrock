@@ -2065,7 +2065,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
         // need to wait around with commits blocked until the cluster caught up, so that we could really start shutting down, which
         // stops processing new commands anyway. We might as well jsut run through whatever's waiting.
         // But also, there's another reason to do this even in the LEADING->STANDINGDOWN case, and that's because the locks acquired in
-        // exclusiveLockDB() are not recursive, so we need to release them before we call `exclusiveUnlockDB` again jsut after this `if` block.
+        // exclusiveLockDB() are not recursive, so we need to release them before we call `exclusiveUnlockDB` again just after this `if` block.
         if (_commitsBlocked) {
             _commitsBlocked = false;
             _db.exclusiveUnlockDB();
