@@ -1286,12 +1286,10 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SINFO("[clustersync] Cluster is no longer behind by over " << MAX_PEER_FALL_BEHIND << " commits. Unblocking new commits.");
                 _db.exclusiveUnlockDB();
             } else if (!quorumUpToDate && !_commitsBlocked && !_db.insideTransaction()) {
-                // Is the race just here? I don't think any other thread can call this.
                 _commitsBlocked = true;
                 uint64_t myCommitCount = getCommitCount();
                 SWARN("[clustersync] Cluster is behind by over " << MAX_PEER_FALL_BEHIND << " commits. New commits blocked until the cluster catches up.");
                 uint64_t start = STimeNow();
-                // We locked here.
                 _db.exclusiveLockDB();
                 SINFO("[clustersync] Took " << (STimeNow() - start) << "us to block commits. Dumping cluster commit state. I have commit: " << myCommitCount);
                 for (const auto& p : _peerList) {
@@ -2062,28 +2060,13 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
         }
 
         // If we're switching from LEADING or STANDINGDOWN to anything else (aside from the case where we switch from LEADING to STANDINGDOWN), we unblock commits.
-        if ((_state == SQLiteNodeState::LEADING || _state == SQLiteNodeState::STANDINGDOWN) && newState != SQLiteNodeState::STANDINGDOWN) {
-            if (_commitsBlocked) {
-                _commitsBlocked = false;
-                // Did we try and call this?
-                _db.exclusiveUnlockDB();
-            }
+        if (_commitsBlocked) {
+            _commitsBlocked = false;
+            _db.exclusiveUnlockDB();
         }
-
-        // There's nothing stopping onMessage from locking again here (Except that it's not called, I guess, it'd need to be
-        // called from the same thread to have a recursion issue here. What about the other direction?
 
         // IMPORTANT: Don't return early or throw from this method after here.
         // Note: _stateMutex is already locked here (by update, _replicate, or postPoll).
-        // And also here, possibly.
-        // _stateMutex is possibly relevant.
-
-        // What if the problem is with _stateMutex?
-        // We've already locked state mutex, and somebody else wants to lock it.
-        // It seems the only (double check that) place that we'd lock _stateMutex from antoher thread is in _replicate.
-        // If replicate locks writeLock, or calls _db.exclusiveLockDB before locking stateMutex, we could deadlock.
-        // I don't think that happens though.
-        // Nope, _replicate locks _stateMutex before calling `changeState`, just like the existing comment says.
         _db.exclusiveLockDB();
 
         // Send to everyone we're connected to, whether or not
@@ -2704,6 +2687,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     size_t messagesDeqeued = 0;
                     while (true) {
                         SData message = peer->popMessage();
+                        // _onMessage is called here in postPoll, which blocks commits.
                         _onMESSAGE(peer, message);
                         messagesDeqeued++;
                         if (messagesDeqeued >= 100) {

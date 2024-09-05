@@ -338,28 +338,6 @@ void SQLite::exclusiveLockDB() {
         throw;
     }
     try {
-        // commitLock is recursive, but writeLock is not, so it's feasible this gets called recursively and we get this
-        // error here.
-        
-        // Ok, so if new commits are blocked, we call exclusiveLockDB. SQLiteNode.cpp:1293-ish
-        // If we're changing state, we call exclusiveLockDB.SQLiteNoe.cpp:2080-ish
-        // It seems feasible we can get from one of those to the other without checking for unlocking,
-        // and then we'd try and recursively lock.
-        // Let's see if we can demonstrate that case.
-        
-        // Ok, I made a test file that calls a version of exclusiveLockDB from this main:
-        // int main () {
-        //     exclusiveLockDB();
-        //     exclusiveLockDB();
-        //     cout << "done." << endl;
-        // }
-        // It prints:
-        // vagrant@expensidev2004:/vagrant$ ./exp
-        // Caught system_error calling _sharedData.writeLock, code: generic:35, message: Resource deadlock avoided
-        // terminate called after throwing an instance of 'std::system_error'
-        // what():  Resource deadlock avoided
-        // Aborted (core dumped)
-        // I think this is what's happening. I need to figure out where.
         _sharedData.writeLock.lock();
     } catch(const system_error& e) {
         SWARN("Caught system_error calling _sharedData.writeLock, code: " << e.code() << ", message: " << e.what());
@@ -589,12 +567,6 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     bool usedRewrittenQuery = false;
     int resultCode = 0;
     {
-        // So we deadlocked (or crashed avoiding a deadlock) while trying to lock `writeLock` after locking `commitLock`
-        // This implies someone else grabbed `writeLock` and was waiting on `commitLock`.
-        // Besides here, we only lock `writeLock` in `exclusiveLockDB`, which isreally straightforward.
-        //
-        // This block, however, is also pretty straightforward. I don't see where we could try and grab `commitLock` here.
-        // This happened while switching from leading to standingDown, if that offers any more insight.
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         if (_enableRewrite) {
             resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, true);
