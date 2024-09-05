@@ -2059,7 +2059,13 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             }
         }
 
-        // If we're switching from LEADING or STANDINGDOWN to anything else (aside from the case where we switch from LEADING to STANDINGDOWN), we unblock commits.
+        // If we've blocked commits, unblock before switching states. This implies we *were* leading and now are not,
+        // so commits remaining blocked doesn't really make sense any more anyway, except in the case where we're switching
+        // from LEADING to STANDINGDOWN in which case we *could* keep this blocked, though that'd be weird, too. We'd
+        // need to wait around with commits blocked until the cluster caught up, so that we could really start shutting down, which
+        // stops processing new commands anyway. We might as well jsut run through whatever's waiting.
+        // But also, there's another reason to do this even in the LEADING->STANDINGDOWN case, and that's because the locks acquired in
+        // exclusiveLockDB() are not recursive, so we need to release them before we call `exclusiveUnlockDB` again jsut after this `if` block.
         if (_commitsBlocked) {
             _commitsBlocked = false;
             _db.exclusiveUnlockDB();
