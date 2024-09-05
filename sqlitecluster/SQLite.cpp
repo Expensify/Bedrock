@@ -346,6 +346,20 @@ void SQLite::exclusiveLockDB() {
         // It seems feasible we can get from one of those to the other without checking for unlocking,
         // and then we'd try and recursively lock.
         // Let's see if we can demonstrate that case.
+        
+        // Ok, I made a test file that calls a version of exclusiveLockDB from this main:
+        // int main () {
+        //     exclusiveLockDB();
+        //     exclusiveLockDB();
+        //     cout << "done." << endl;
+        // }
+        // It prints:
+        // vagrant@expensidev2004:/vagrant$ ./exp
+        // Caught system_error calling _sharedData.writeLock, code: generic:35, message: Resource deadlock avoided
+        // terminate called after throwing an instance of 'std::system_error'
+        // what():  Resource deadlock avoided
+        // Aborted (core dumped)
+        // I think this is what's happening. I need to figure out where.
         _sharedData.writeLock.lock();
     } catch(const system_error& e) {
         SWARN("Caught system_error calling _sharedData.writeLock, code: " << e.code() << ", message: " << e.what());
