@@ -69,7 +69,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
             ASSERT_FALSE(system(("cd " + brReleaseDir + " && cd Bedrock && git checkout " + bedrockTagName + "  > /dev/null").c_str()));
 
             // Build the release.
-            ASSERT_FALSE(system(("cd " + brReleaseDir + " && cd Bedrock && CXX=g++-13 CC=gcc-13 make -j8 > /dev/null").c_str()));
+            ASSERT_FALSE(system(("cd " + brReleaseDir + " && cd Bedrock && CXX=clang++-18 CC=clang-18 make -j8 > /dev/null").c_str()));
 
             // Save the final product.
             mkdir(prodBedrockDirName.c_str(), 0755);
