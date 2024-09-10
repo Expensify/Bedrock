@@ -40,7 +40,7 @@ You can build from scratch as follows:
     # Install some dependencies
     sudo add-apt-repository ppa:ubuntu-toolchain-r/test
     sudo apt-get update
-    sudo apt-get install build-essential gcc-13 g++-13 libpcre++-dev zlib1g-dev
+    sudo apt-get install build-essential libpcre++-dev zlib1g-dev
 
     # Build it
     cd Bedrock
