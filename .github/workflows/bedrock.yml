@@ -60,9 +60,6 @@ jobs:
         sudo apt-get update -y
         sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake libpcre2-dev libsodium-dev libgpgme11-dev libstdc++-13-dev
 
-        # Install gcc. Can be removed after clang transition is complete.
-        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install gcc-13 g++-13
-
         # Install clang.
         sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install clang-18 lldb-18 lld-18 clangd-18 clang-tidy-18 clang-format-18 clang-tools-18 llvm-18-dev lld-18 lldb-18 llvm-18-tools libomp-18-dev libc++-18-dev libc++abi-18-dev libclang-common-18-dev libclang-18-dev libclang-cpp18-dev libunwind-18-dev
 
@@ -75,8 +72,8 @@ jobs:
         tar -xf ccache-4.8.3-linux-x86_64.tar.xz
         sudo cp ccache-4.8.3-linux-x86_64/ccache /usr/local/bin/ccache
         ccache -V
-        ln -s /usr/local/bin/ccache /usr/local/bin/gcc-13
-        ln -s /usr/local/bin/ccache /usr/local/bin/g++-13
+        ln -s /usr/local/bin/ccache /usr/local/bin/clang-18
+        ln -s /usr/local/bin/ccache /usr/local/bin/clang++-18
 
     - name: Setup tmate session
       if: runner.debug == '1'
