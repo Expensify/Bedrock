@@ -364,9 +364,18 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
         _sharedData._commitLockTimer.start("EXCLUSIVE");
         _mutexLocked = true;
     }
-    SASSERT(!_insideTransaction);
-    SASSERT(_uncommittedHash.empty());
-    SASSERT(_uncommittedQuery.empty());
+
+    if (_insideTransaction || !_uncommittedHash.empty() || !_uncommittedQuery.empty()) {
+        // The most likely case for hitting this is that we forgot to roll back a transaction when we were finished with it
+        // during the last use of this DB handle. In that case, `_insideTransaction` is likely true, and possibly
+        // _uncommittedHash or _uncommittedQuery is set. Rollback should put this DB handle back into a usable state,
+        // but it breaks the current transaction on this handle. We throw and fail the one transaction and hopefully have
+        // fixed the handle for the next use.
+        rollback();
+        STHROW("Attempted to begin transaction while in invalid state. _insideTransaction="s +
+               (_insideTransaction ? "true" : "false") + ", _uncommittedHash='" + _uncommittedHash +
+               ", _uncommittedQuery empty? " + (_uncommittedQuery.empty() ? "true" : "false"));
+    }
 
     // Reset before the query, as it's possible the query sets these.
     _autoRolledBack = false;
