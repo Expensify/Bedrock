@@ -829,6 +829,7 @@ bool SQLiteNode::update() {
         size_t numFullPeers = 0;
         size_t numLoggedInFullPeers = 0;
         size_t approveCount = 0;
+        size_t abstainCount = 0;
         if (_isShuttingDown) {
             SINFO("Shutting down while standing up, setting state to SEARCHING");
             _changeState(SQLiteNodeState::SEARCHING);
@@ -850,6 +851,7 @@ bool SQLiteNode::update() {
                         break;
                     } else if (peer->standupResponse == SQLitePeer::Response::ABSTAIN) {
                         PHMMM("Peer abstained from participation in quorum");
+                        abstainCount++;
                     } else if (peer->standupResponse == SQLitePeer::Response::DENY) {
                         // It responeded, but didn't approve -- abort
                         PHMMM("Refused our STANDUP, cancel and RE-SEARCH");
@@ -860,6 +862,16 @@ bool SQLiteNode::update() {
                     }
                 }
             }
+        }
+
+        // If the majority of logged in full peers responds with abstain, then re-search.
+        bool majorityAbstained = abstainCount * 2 >= numLoggedInFullPeers;
+        if (allResponded && majorityAbstained) {
+            // Majority abstained, meaning we're probably forked,
+            // so we go back to searching so we can go back to synchronizing and see that we're forked.
+            SHMMM("Majority of logged in full peers abstained; re-SEARCHING.");
+            _changeState(SQLiteNodeState::SEARCHING);
+            return true; // Re-update
         }
 
         // If everyone's responded with approval and we form a majority, then finish standup.
@@ -2140,7 +2152,7 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
         uint64_t fromIndex = peerCommitCount + 1;
         uint64_t toIndex = targetCommit;
         if (sendAll) {
-            SINFO("Sending all commits with synchronize message, from " << fromIndex << " to " << toIndex); 
+            SINFO("Sending all commits with synchronize message, from " << fromIndex << " to " << toIndex);
         } else {
             toIndex = min(toIndex, fromIndex + 100); // 100 transactions at a time
         }
