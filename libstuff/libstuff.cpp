@@ -1808,6 +1808,9 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(enable)))
                 STHROW("couldn't set REUSEADDR");
 
+            if (setsockopt(s, SOL_SOCKET, SO_REUSEPORT, (char*)&enable, sizeof(enable)))
+                STHROW("couldn't set REUSEPORT");
+
             // Bind to the configured port
             sockaddr_in addr;
             memset(&addr, 0, sizeof(addr));
@@ -3197,4 +3200,3 @@ SString& SString::operator=(const bool from) {
     string::operator=(from ? "true" : "false");
     return *this;
 }
-
