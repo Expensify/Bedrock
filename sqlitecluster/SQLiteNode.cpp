@@ -864,12 +864,12 @@ bool SQLiteNode::update() {
             }
         }
 
-        // If the majority of logged in full peers responds with abstain, then re-search.
-        bool majorityAbstained = abstainCount * 2 >= numLoggedInFullPeers;
-        if (allResponded && majorityAbstained) {
+        // If the majority of full peers responds with abstain, then re-search.
+        const bool majorityAbstained = abstainCount * 2 >= numFullPeers;
+        if (majorityAbstained) {
             // Majority abstained, meaning we're probably forked,
-            // so we go back to searching so we can go back to synchronizing and see that we're forked.
-            SHMMM("Majority of logged in full peers abstained; re-SEARCHING.");
+            // so we go back to searching so we can go back to synchronizing and see if we're forked.
+            SHMMM("Majority of full peers abstained; re-SEARCHING.");
             _changeState(SQLiteNodeState::SEARCHING);
             return true; // Re-update
         }
