@@ -1803,11 +1803,13 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
 
         // If this is a port, bind
         if (isPort) {
-            // Enable port reuse (so we don't have TIME_WAIT binding issues) and
+            // Enable address reuse so that we can startup a new process while the old one is shutting down
+            // and to handle connections left in TCP TIME_WAIT state
             u_long enable = 1;
             if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*)&enable, sizeof(enable)))
                 STHROW("couldn't set REUSEADDR");
 
+            // Enable port reuse as well for the same reason as the above
             if (setsockopt(s, SOL_SOCKET, SO_REUSEPORT, (char*)&enable, sizeof(enable)))
                 STHROW("couldn't set REUSEPORT");
 
