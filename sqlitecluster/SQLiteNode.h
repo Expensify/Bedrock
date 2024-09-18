@@ -320,6 +320,10 @@ class SQLiteNode : public STCPManager {
     // Set to true to indicate we're attempting to shut down.
     atomic<bool> _isShuttingDown;
 
+    // When we spontaneously lose quorum (do to an unexpected node disconnection) we log the time. Later, if we detect we've forked,
+    // We show this time in a log line as a diagnostic message.
+    atomic<uint64_t> _lastLostQuorum = 0;
+
     // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
     // any new committed transactions to peers, and update this value.
     uint64_t _lastSentTransactionID;
