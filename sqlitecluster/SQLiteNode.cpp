@@ -606,8 +606,7 @@ bool SQLiteNode::update() {
             // Find the freshest non-broken peer (including permafollowers).
             if (peer->loggedIn) {
                 if (_forkedFrom.count(peer->name)) {
-                    // UPDATE LOG LINE.
-                    SWARN("Hash mismatch. Forked from peer " << peer->name << " so not considering it.");
+                    SWARN("Hash mismatch. Forked from peer " << peer->name << " so not considering it." << _getLostQuorumLogMessage());
                     continue;
                 }
 
@@ -2034,9 +2033,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
         // loop. It's entirely possible that we do this for valid reasons - it may be the peer that has the bad database and not us, and there are plenty of other reasons we could switch to
         // SEARCHING, but in those cases, we just wait an extra second before trying again.
         if (newState == SQLiteNodeState::SEARCHING && _forkedFrom.size()) {
-            
-            // UPDATE LOG LINE.
-            SWARN("Going searching while forked peers present, sleeping 1 second.");
+            SWARN("Going searching while forked peers present, sleeping 1 second." << _getLostQuorumLogMessage());
             sleep(1);
         }
 
