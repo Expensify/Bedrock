@@ -1593,14 +1593,16 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 _db.getCommits(commitNum, commitNum, result);
                 _forkedFrom.insert(peer->name);
                 
-                // UPDATE LOG LINE.
+                // Testing.
+                _lastLostQuorum = STimeNow() - 10'000'000;
+
                 SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << message["hashMismatchNumber"]
                        << ". I have forked from " << _forkedFrom.size() << " other nodes. I am " << stateName(_state)
-                       << " and have hash " << result[0][0] << " for that commit. Peer has hash " << message["hashMismatchValue"] << ".");
+                       << " and have hash " << result[0][0] << " for that commit. Peer has hash " << message["hashMismatchValue"] << "."
+                       << _getLostQuorumLogMessage());
 
                 if (_forkedFrom.size() > ((_peerList.size() + 1) / 2)) {
-                    // UPDATE LOG LINE.
-                    SERROR("Hash mismatch. I have forked from over half the cluster. This is unrecoverable.");
+                    SERROR("Hash mismatch. I have forked from over half the cluster. This is unrecoverable." << _getLostQuorumLogMessage());
                 }
 
                 STHROW("Hash mismatch");
@@ -2793,4 +2795,14 @@ void SQLiteNode::kill() {
         SWARN("Killing peer: " << peer->name);
         peer->reset();
     }
+}
+
+string SQLiteNode::_getLostQuorumLogMessage() const {
+    string lostQuormMessage;
+    if (_lastLostQuorum) {
+        lostQuormMessage = " Lost Quorum at: " + STIMESTAMP_MS(_lastLostQuorum) + " (" + 
+        to_string((double)(STimeNow() - _lastLostQuorum) / 1000000.0) + " seconds ago).";
+    }
+    
+    return lostQuormMessage;
 }

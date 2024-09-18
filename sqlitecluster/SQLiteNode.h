@@ -228,6 +228,8 @@ class SQLiteNode : public STCPManager {
 
     void _changeState(SQLiteNodeState newState, uint64_t commitIDToCancelAfter = 0);
 
+    string _getLostQuorumLogMessage() const;
+
     // Handlers for transaction messages.
     void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message, bool wasConflict);
     void _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime, uint64_t threadStartTime);
