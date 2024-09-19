@@ -592,6 +592,7 @@ bool SQLiteNode::update() {
         // How many peers have we logged in to?
         size_t numFullPeers = 0;
         size_t numLoggedInFullPeers = 0;
+        list<string> loggedInPeers;
         SQLitePeer* freshestPeer = nullptr;
         for (const auto& peer : _peerList) {
             // Count how many full peers (non-permafollowers) we have, and how many are logged in.
@@ -605,6 +606,7 @@ bool SQLiteNode::update() {
 
             // Find the freshest non-broken peer (including permafollowers).
             if (peer->loggedIn) {
+                loggedInPeers.push_back(peer->name);
                 if (_forkedFrom.count(peer->name)) {
                     SWARN("Hash mismatch. Forked from peer " << peer->name << " so not considering it.");
                     continue;
@@ -617,7 +619,7 @@ bool SQLiteNode::update() {
             }
         }
 
-        SINFO("Signed in to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (plus " << (_peerList.size() - numFullPeers) << " permafollowers).");
+        SINFO("Signed in to " << numLoggedInFullPeers << " of " << numFullPeers << " full peers (plus " << (_peerList.size() - numFullPeers) << " permafollowers): " << SQList(loggedInPeers));
 
         // We just keep searching until we are connected to at least half the full peers.
         // Note that `numLoggedInFullPeers == numFullPeers` is adequate to satisfy the cluster size, because we do not include ourselves in the cluster size.
