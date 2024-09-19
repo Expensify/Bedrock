@@ -865,7 +865,7 @@ bool SQLiteNode::update() {
         }
 
         // If the majority of full peers responds with abstain, then re-search.
-        const bool majorityAbstained = abstainCount * 2 >= numFullPeers;
+        const bool majorityAbstained = abstainCount * 2 > numFullPeers;
         if (majorityAbstained) {
             // Majority abstained, meaning we're probably forked,
             // so we go back to searching so we can go back to synchronizing and see if we're forked.
