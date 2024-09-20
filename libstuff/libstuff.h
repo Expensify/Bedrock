@@ -230,14 +230,18 @@ void SSyslogSocketDirect(int priority, const char* format, ...);
 // Atomic pointer to the syslog function that we'll actually use. Easy to change to `syslog` or `SSyslogSocketDirect`.
 extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
 
+//template <typename T>
+//string addLogParams(const string& message, const map<string, T> params);
+
+string addLogParams(const string& message, const map<string, string>& params);
+string addLogParams(const string& message);
+
 // **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
 #define SWHEREAMI SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
-#define SSYSLOG(_PRI_, _MSG_)                                                   \
+#define SSYSLOG(_PRI_, _MSG_, ...)                                              \
     do {                                                                        \
         if (_g_SLogMask & (1 << (_PRI_))) {                                     \
-            ostringstream __out;                                                \
-            __out << _MSG_ << endl;                                             \
-            const string s = __out.str();                                       \
+            const string s = addLogParams(_MSG_, ##__VA_ARGS__);                \
             const string prefix = SWHEREAMI;                                    \
             for (size_t i = 0; i < s.size(); i += 7168) {                       \
                 (*SSyslogFunc)(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
@@ -246,14 +250,42 @@ extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
     } while (false)
 
 #define SLOGPREFIX ""
-#define SDEBUG(_MSG_) SSYSLOG(LOG_DEBUG, "[dbug] " << SLOGPREFIX << _MSG_)
-#define SINFO(_MSG_) SSYSLOG(LOG_INFO, "[info] " << SLOGPREFIX << _MSG_)
-#define SHMMM(_MSG_) SSYSLOG(LOG_NOTICE, "[hmmm] " << SLOGPREFIX << _MSG_)
-#define SWARN(_MSG_) SSYSLOG(LOG_WARNING, "[warn] " << SLOGPREFIX << _MSG_)
-#define SALERT(_MSG_) SSYSLOG(LOG_ALERT, "[alrt] " << SLOGPREFIX << _MSG_)
+#define SDEBUG(_MSG_, ...)                          \
+    do {                                            \
+        stringstream ss;                            \
+        ss << "[dbug] " << SLOGPREFIX << _MSG_;     \
+        SSYSLOG(LOG_INFO, ss.str(), ##__VA_ARGS__); \
+    } while (false)
+#define SINFO(_MSG_, ...)                           \
+    do {                                            \
+        stringstream ss;                            \
+        ss << "[info] " << SLOGPREFIX << _MSG_;     \
+        SSYSLOG(LOG_INFO, ss.str(), ##__VA_ARGS__); \
+    } while (false)
+#define SHMMM(_MSG_, ...)                           \
+    do {                                            \
+        stringstream ss;                            \
+        ss << "[hmmm] " << SLOGPREFIX << _MSG_;     \
+        SSYSLOG(LOG_INFO, ss.str(), ##__VA_ARGS__); \
+    } while (false)
+#define SWARN(_MSG_, ...)                           \
+    do {                                            \
+        stringstream ss;                            \
+        ss << "[warn] " << SLOGPREFIX << _MSG_;     \
+        SSYSLOG(LOG_INFO, ss.str(), ##__VA_ARGS__); \
+    } while (false)
+#define SALERT(_MSG_, ...)                          \
+    do {                                            \
+        stringstream ss;                            \
+        ss << "[alrt] " << SLOGPREFIX << _MSG_;     \
+        SSYSLOG(LOG_INFO, ss.str(), ##__VA_ARGS__); \
+    } while (false)
+
 #define SERROR(_MSG_)                                       \
     do {                                                    \
-        SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_); \
+        stringstream ss;                                    \
+        ss << "[eror] " << SLOGPREFIX << _MSG_;             \
+        SSYSLOG(LOG_ERR, ss.str(), map<string, string>());  \
         SLogStackTrace();                                   \
         abort();                                            \
     } while (false)
