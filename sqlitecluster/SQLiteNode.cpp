@@ -1367,7 +1367,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             peer->state = stateFromName(message["State"]);
             const SQLiteNodeState to = peer->state;
             if (from == to) {
-                // This is what happens.
                 // No state change, just new commits?
                 PINFO("Peer received new commit in state '" << stateName(from) << "', commit #" << message["CommitCount"] << " ("
                       << message["Hash"] << ")");
@@ -1520,8 +1519,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 _db.getCommits(commitNum, commitNum, result);
                 _forkedFrom.insert(peer->name);
 
-                // Remove the forked peer as the sync peer.
-     
                 SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << message["hashMismatchNumber"]
                        << ". I have forked from " << _forkedFrom.size() << " other nodes. I am " << stateName(_state)
                        << " and have hash " << result[0][0] << " for that commit. Peer has hash " << message["hashMismatchValue"] << "."
@@ -1780,7 +1777,6 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
         PHMMM("Lost our synchronization peer, re-SEARCHING.");
         SASSERTWARN(_state == SQLiteNodeState::SYNCHRONIZING);
         _syncPeer = nullptr;
-        // This happens.
         _changeState(SQLiteNodeState::SEARCHING);
     }
 
@@ -1939,7 +1935,6 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
 
         if (newState >= SQLiteNodeState::STANDINGUP) {
             // Not forked from anyone. Note that this includes both LEADING and FOLLOWING.
-            // We clear this when standing up.
             _forkedFrom.clear();
         }
 
@@ -2231,8 +2226,6 @@ void SQLiteNode::_updateSyncPeer()
                 nonChosenPeers.push_back(peer->name + ":" + to_string(peer->latency/1000) + "ms");
             }
         }
-
-        // Don't includ forked peers.
         SINFO("Updating SYNCHRONIZING peer from " << from << " to " << to << ". Not chosen: " << SComposeList(nonChosenPeers));
 
         // And save the new sync peer internally.
