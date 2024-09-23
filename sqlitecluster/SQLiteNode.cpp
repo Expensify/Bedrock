@@ -1736,17 +1736,6 @@ void SQLiteNode::_onConnect(SQLitePeer* peer) {
     login["Version"] = _version;
     login["Permafollower"] = _originalPriority ? "false" : "true";
     _sendToPeer(peer, login);
-
-    // If we're STANDINGUP when a peer connects, send them a STATE message so they know they need to APPROVE or DENY the standup.
-    // Otherwise we will wait for their response that's not coming,and can eventually time out the standup.
-    // OH, If we're already standing up, both these messages have the same state. LOGIN sets the sate, and then it doesn't change here.
-    if (_state == SQLiteNodeState::STANDINGUP) {
-        SData state("STATE");
-        state["StateChangeCount"] = to_string(_stateChangeCount);
-        state["State"] = stateName(_state);
-        state["Priority"] = SToStr(_priority);
-        _sendToPeer(peer, state);
-    }
 }
 
 // --------------------------------------------------------------------------
