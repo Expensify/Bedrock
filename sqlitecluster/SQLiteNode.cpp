@@ -1341,6 +1341,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             peer->priority = message.calc("Priority");
             peer->loggedIn = true;
             peer->version = message["Version"];
+
+            // Set this to STANDINGUP
             peer->state = stateFromName(message["State"]);
 
             // Let the server know that a peer has logged in.
@@ -1362,6 +1364,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             peer->state = stateFromName(message["State"]);
             const SQLiteNodeState to = peer->state;
             if (from == to) {
+                // This is what happens.
                 // No state change, just new commits?
                 PINFO("Peer received new commit in state '" << stateName(from) << "', commit #" << message["CommitCount"] << " ("
                       << message["Hash"] << ")");
@@ -1603,6 +1606,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 uint64_t commitNum = SToUInt64(message["hashMismatchNumber"]);
                 _db.getCommits(commitNum, commitNum, result);
                 _forkedFrom.insert(peer->name);
+
+                // Remove the forked peer as the sync peer.
      
                 SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << message["hashMismatchNumber"]
                        << ". I have forked from " << _forkedFrom.size() << " other nodes. I am " << stateName(_state)
@@ -1821,6 +1826,7 @@ void SQLiteNode::_onConnect(SQLitePeer* peer) {
 
     // If we're STANDINGUP when a peer connects, send them a STATE message so they know they need to APPROVE or DENY the standup.
     // Otherwise we will wait for their response that's not coming,and can eventually time out the standup.
+    // OH, If we're already standing up, both these messages have the same state. LOGIN sets the sate, and then it doesn't change here.
     if (_state == SQLiteNodeState::STANDINGUP) {
         SData state("STATE");
         state["StateChangeCount"] = to_string(_stateChangeCount);
@@ -1872,6 +1878,7 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
         PHMMM("Lost our synchronization peer, re-SEARCHING.");
         SASSERTWARN(_state == SQLiteNodeState::SYNCHRONIZING);
         _syncPeer = nullptr;
+        // This happens.
         _changeState(SQLiteNodeState::SEARCHING);
     }
 
@@ -2030,6 +2037,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
 
         if (newState >= SQLiteNodeState::STANDINGUP) {
             // Not forked from anyone. Note that this includes both LEADING and FOLLOWING.
+            // We clear this when standing up.
             _forkedFrom.clear();
         }
 
@@ -2321,6 +2329,8 @@ void SQLiteNode::_updateSyncPeer()
                 nonChosenPeers.push_back(peer->name + ":" + to_string(peer->latency/1000) + "ms");
             }
         }
+
+        // Don't includ forked peers.
         SINFO("Updating SYNCHRONIZING peer from " << from << " to " << to << ". Not chosen: " << SComposeList(nonChosenPeers));
 
         // And save the new sync peer internally.
