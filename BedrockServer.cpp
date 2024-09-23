@@ -777,10 +777,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             (_blacklistedParallelCommands.find(command->request.methodLine) == _blacklistedParallelCommands.end());
     }
 
-    // More checks for parallel writing.
-    canWriteParallel = canWriteParallel && (getState() == SQLiteNodeState::LEADING);
-    canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
-
     int64_t lastConflictPage = 0;
     while (true) {
 
@@ -796,6 +792,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         if (waitCount) {
             SINFO("Waited for " << waitCount << " loops for node to be ready.");
         }
+
+        // More checks for parallel writing.
+        canWriteParallel = canWriteParallel && (getState() == SQLiteNodeState::LEADING);
+        canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
 
         // If there are outstanding HTTPS requests on this command (from a previous call to `peek`) we process them here.
         size_t networkLoopCount = 0;
