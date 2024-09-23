@@ -606,7 +606,7 @@ bool SQLiteNode::update() {
             // Find the freshest non-broken peer (including permafollowers).
             if (peer->loggedIn) {
                 if (_forkedFrom.count(peer->name)) {
-                    SWARN("Hash mismatch. Forked from peer " << peer->name << " so not considering it.");
+                    SWARN("Hash mismatch. Forked from peer " << peer->name << " so not considering it." << _getLostQuorumLogMessage());
                     continue;
                 }
 
@@ -1603,12 +1603,14 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 uint64_t commitNum = SToUInt64(message["hashMismatchNumber"]);
                 _db.getCommits(commitNum, commitNum, result);
                 _forkedFrom.insert(peer->name);
+     
                 SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << message["hashMismatchNumber"]
                        << ". I have forked from " << _forkedFrom.size() << " other nodes. I am " << stateName(_state)
-                       << " and have hash " << result[0][0] << " for that commit. Peer has hash " << message["hashMismatchValue"] << ".");
+                       << " and have hash " << result[0][0] << " for that commit. Peer has hash " << message["hashMismatchValue"] << "."
+                       << _getLostQuorumLogMessage());
 
                 if (_forkedFrom.size() > ((_peerList.size() + 1) / 2)) {
-                    SERROR("Hash mismatch. I have forked from over half the cluster. This is unrecoverable.");
+                    SERROR("Hash mismatch. I have forked from over half the cluster. This is unrecoverable." << _getLostQuorumLogMessage());
                 }
 
                 STHROW("Hash mismatch");
@@ -1903,6 +1905,9 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
             // It works for the sync thread as well, as there's handling in _changeState to rollback a commit when
             // dropping out of leading or standing down (and there can't be commits in progress in other states).
             SWARN("[clustersync] We were " << stateName(_state) << " but lost quorum (Disconnected from " << peer->name << "). Going to SEARCHING.");
+            
+            // Store the time at which this happened for diagnostic purposes.
+            _lastLostQuorum = STimeNow();
             for (const auto* p : _peerList) {
                 SWARN("[clustersync] Peer " << p->name << " logged in? " << (p->loggedIn ? "TRUE" : "FALSE") << (p->permaFollower ? " (permaFollower)" : ""));
             }
@@ -2037,7 +2042,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
         // loop. It's entirely possible that we do this for valid reasons - it may be the peer that has the bad database and not us, and there are plenty of other reasons we could switch to
         // SEARCHING, but in those cases, we just wait an extra second before trying again.
         if (newState == SQLiteNodeState::SEARCHING && _forkedFrom.size()) {
-            SWARN("Going searching while forked peers present, sleeping 1 second.");
+            SWARN("Going searching while forked peers present, sleeping 1 second." << _getLostQuorumLogMessage());
             sleep(1);
         }
 
@@ -2796,4 +2801,14 @@ void SQLiteNode::kill() {
         SWARN("Killing peer: " << peer->name);
         peer->reset();
     }
+}
+
+string SQLiteNode::_getLostQuorumLogMessage() const {
+    string lostQuorumMessage;
+    if (_lastLostQuorum) {
+        lostQuorumMessage = " Lost Quorum at: " + STIMESTAMP_MS(_lastLostQuorum) + " (" + 
+        to_string((double)(STimeNow() - _lastLostQuorum) / 1000000.0) + " seconds ago).";
+    }
+    
+    return lostQuorumMessage;
 }
