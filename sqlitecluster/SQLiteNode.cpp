@@ -1591,7 +1591,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 uint64_t commitNum = SToUInt64(message["hashMismatchNumber"]);
                 _db.getCommits(commitNum, commitNum, result);
                 _forkedFrom.insert(peer->name);
-                
+     
                 SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << message["hashMismatchNumber"]
                        << ". I have forked from " << _forkedFrom.size() << " other nodes. I am " << stateName(_state)
                        << " and have hash " << result[0][0] << " for that commit. Peer has hash " << message["hashMismatchValue"] << "."
@@ -2792,11 +2792,11 @@ void SQLiteNode::kill() {
 }
 
 string SQLiteNode::_getLostQuorumLogMessage() const {
-    string lostQuormMessage;
+    string lostQuorumMessage;
     if (_lastLostQuorum) {
-        lostQuormMessage = " Lost Quorum at: " + STIMESTAMP_MS(_lastLostQuorum) + " (" + 
+        lostQuorumMessage = " Lost Quorum at: " + STIMESTAMP_MS(_lastLostQuorum) + " (" + 
         to_string((double)(STimeNow() - _lastLostQuorum) / 1000000.0) + " seconds ago).";
     }
     
-    return lostQuormMessage;
+    return lostQuorumMessage;
 }
