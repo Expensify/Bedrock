@@ -1341,9 +1341,12 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             peer->priority = message.calc("Priority");
             peer->loggedIn = true;
             peer->version = message["Version"];
-
-            // Set this to STANDINGUP
             peer->state = stateFromName(message["State"]);
+
+            // If the peer is already standing up, go ahead and approve or deny immediately.
+            if (peer->state == SQLiteNodeState::STANDINGUP) {
+                _sendStandupResponse(peer, message);
+            }
 
             // Let the server know that a peer has logged in.
             _server.onNodeLogin(peer);
@@ -1421,97 +1424,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     peer->transactionResponse = SQLitePeer::Response::NONE;
                     peer->subscribed = false;
                 } else if (to == SQLiteNodeState::STANDINGUP) {
-                    // STANDINGUP: When a peer announces it intends to stand up, we immediately respond with approval or
-                    // denial. We determine this by checking to see if there is any  other peer who is already leader or
-                    // also trying to stand up.
-                    SData response("STANDUP_RESPONSE");
-
-                    // Parrot back the node's attempt count so that it can differentiate stale responses.
-                    response["StateChangeCount"] = message["StateChangeCount"];
-
-                    // Reason we would deny, if we do.
-                    if (peer->permaFollower) {
-                        // We think it's a permafollower, deny
-                        PHMMM("Permafollower trying to stand up, denying.");
-                        response["Response"] = "deny";
-                        response["Reason"] = "You're a permafollower";
-                        _sendToPeer(peer, response);
-                        return;
-                    }
-
-                    if (_forkedFrom.count(peer->name)) {
-                        PHMMM("Forked from peer, can't approve standup.");
-                        response["Response"] = "abstain";
-                        response["Reason"] = "We are forked";
-                        _sendToPeer(peer, response);
-                        return;
-                    }
-
-                    // What's our state
-                    if (SWITHIN(SQLiteNodeState::STANDINGUP, _state, SQLiteNodeState::STANDINGDOWN)) {
-                        // Oh crap, it's trying to stand up while we're leading. Who is higher priority?
-                        if (peer->priority > _priority) {
-                            // The other peer is a higher priority than us, so we should stand down (maybe it crashed, we
-                            // came up as leader, and now it's been brought back up). We'll want to stand down here, but we
-                            // do it gracefully so that we won't lose any transactions in progress.
-                            if (_state == SQLiteNodeState::STANDINGUP) {
-                                PWARN("Higher-priority peer is trying to stand up while we are STANDINGUP, SEARCHING.");
-                                _changeState(SQLiteNodeState::SEARCHING);
-                            } else if (_state == SQLiteNodeState::LEADING) {
-                                PINFO("Higher-priority peer is trying to stand up while we are LEADING, STANDINGDOWN.");
-                                _changeState(SQLiteNodeState::STANDINGDOWN);
-                            } else {
-                                PWARN("Higher-priority peer is trying to stand up while we are STANDINGDOWN, continuing.");
-                            }
-                        } else {
-                            // Deny because we're currently in the process of leading and we're higher priority.
-                            response["Response"] = "deny";
-                            response["Reason"] = "I am leading";
-
-                            // Hmm, why is a lower priority peer trying to stand up? Is it possible we're no longer in
-                            // control of the cluster? Let's see how many nodes are subscribed.
-                            if (_majoritySubscribed()) {
-                                // we have a majority of the cluster, so ignore this oddity.
-                                PHMMM("Lower-priority peer is trying to stand up while we are " << stateName(_state)
-                                      << " with a majority of the cluster; denying and ignoring.");
-                            } else {
-                                // We don't have a majority of the cluster -- maybe it knows something we don't?  For
-                                // example, it could be that the rest of the cluster has forked away from us. This can
-                                // happen if the leader hangs while processing a command: by the time it finishes, the
-                                // cluster might have elected a new leader, forked, and be a thousand commits in the future.
-                                // In this case, let's just reset everything anyway to be safe.
-                                PWARN("Lower-priority peer is trying to stand up while we are " << stateName(_state)
-                                      << ", but we don't have a majority of the cluster so reconnecting and SEARCHING.");
-                                _reconnectAll();
-                                // TODO: This puts us in an ambiguous state if we switch to SEARCHING from LEADING,
-                                // without going through the STANDDOWN process. We'll need to handle it better, but it's
-                                // unclear if this can ever happen at all. exit() may be a reasonable strategy here.
-                                _changeState(SQLiteNodeState::SEARCHING);
-                            }
-                        }
-                    } else {
-                        // Approve if nobody else is trying to stand up
-                        response["Response"] = "approve"; // Optimistic; will override
-                        for (auto otherPeer : _peerList) {
-                            if (otherPeer != peer) {
-                                // See if it's trying to be leader
-                                if (otherPeer->state == SQLiteNodeState::STANDINGUP || otherPeer->state == SQLiteNodeState::LEADING || otherPeer->state == SQLiteNodeState::STANDINGDOWN) {
-                                    // We need to contest this standup
-                                    response["Response"] = "deny";
-                                    response["Reason"] = "peer '" + otherPeer->name + "' is '" + stateName(otherPeer->state) + "'";
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    // Send the response
-                    if (SIEquals(response["Response"], "approve")) {
-                        PINFO("Approving standup request");
-                    } else {
-                        PHMMM("Not approving standup request because " << response["Reason"]);
-                    }
-                    _sendToPeer(peer, response);
+                    _sendStandupResponse(peer, message);
                 } else if (from == SQLiteNodeState::STANDINGDOWN) {
                     // STANDINGDOWN: When a peer stands down we double-check to make sure we don't have any outstanding
                     // transaction (and if we do, we warn and rollback).
@@ -2821,4 +2734,98 @@ string SQLiteNode::_getLostQuorumLogMessage() const {
     }
     
     return lostQuorumMessage;
+}
+
+void SQLiteNode::_sendStandupResponse(SQLitePeer* peer, const SData& message) {
+    // STANDINGUP: When a peer announces it intends to stand up, we immediately respond with approval or
+    // denial. We determine this by checking to see if there is any  other peer who is already leader or
+    // also trying to stand up.
+    SData response("STANDUP_RESPONSE");
+
+    // Parrot back the node's attempt count so that it can differentiate stale responses.
+    response["StateChangeCount"] = message["StateChangeCount"];
+
+    // Reason we would deny, if we do.
+    if (peer->permaFollower) {
+        // We think it's a permafollower, deny
+        PHMMM("Permafollower trying to stand up, denying.");
+        response["Response"] = "deny";
+        response["Reason"] = "You're a permafollower";
+        _sendToPeer(peer, response);
+        return;
+    }
+
+    if (_forkedFrom.count(peer->name)) {
+        PHMMM("Forked from peer, can't approve standup.");
+        response["Response"] = "abstain";
+        response["Reason"] = "We are forked";
+        _sendToPeer(peer, response);
+        return;
+    }
+
+    // What's our state
+    if (SWITHIN(SQLiteNodeState::STANDINGUP, _state, SQLiteNodeState::STANDINGDOWN)) {
+        // Oh crap, it's trying to stand up while we're leading. Who is higher priority?
+        if (peer->priority > _priority) {
+            // The other peer is a higher priority than us, so we should stand down (maybe it crashed, we
+            // came up as leader, and now it's been brought back up). We'll want to stand down here, but we
+            // do it gracefully so that we won't lose any transactions in progress.
+            if (_state == SQLiteNodeState::STANDINGUP) {
+                PWARN("Higher-priority peer is trying to stand up while we are STANDINGUP, SEARCHING.");
+                _changeState(SQLiteNodeState::SEARCHING);
+            } else if (_state == SQLiteNodeState::LEADING) {
+                PINFO("Higher-priority peer is trying to stand up while we are LEADING, STANDINGDOWN.");
+                _changeState(SQLiteNodeState::STANDINGDOWN);
+            } else {
+                PWARN("Higher-priority peer is trying to stand up while we are STANDINGDOWN, continuing.");
+            }
+        } else {
+            // Deny because we're currently in the process of leading and we're higher priority.
+            response["Response"] = "deny";
+            response["Reason"] = "I am leading";
+
+            // Hmm, why is a lower priority peer trying to stand up? Is it possible we're no longer in
+            // control of the cluster? Let's see how many nodes are subscribed.
+            if (_majoritySubscribed()) {
+                // we have a majority of the cluster, so ignore this oddity.
+                PHMMM("Lower-priority peer is trying to stand up while we are " << stateName(_state)
+                      << " with a majority of the cluster; denying and ignoring.");
+            } else {
+                // We don't have a majority of the cluster -- maybe it knows something we don't?  For
+                // example, it could be that the rest of the cluster has forked away from us. This can
+                // happen if the leader hangs while processing a command: by the time it finishes, the
+                // cluster might have elected a new leader, forked, and be a thousand commits in the future.
+                // In this case, let's just reset everything anyway to be safe.
+                PWARN("Lower-priority peer is trying to stand up while we are " << stateName(_state)
+                      << ", but we don't have a majority of the cluster so reconnecting and SEARCHING.");
+                _reconnectAll();
+                // TODO: This puts us in an ambiguous state if we switch to SEARCHING from LEADING,
+                // without going through the STANDDOWN process. We'll need to handle it better, but it's
+                // unclear if this can ever happen at all. exit() may be a reasonable strategy here.
+                _changeState(SQLiteNodeState::SEARCHING);
+            }
+        }
+    } else {
+        // Approve if nobody else is trying to stand up
+        response["Response"] = "approve"; // Optimistic; will override
+        for (auto otherPeer : _peerList) {
+            if (otherPeer != peer) {
+                // See if it's trying to be leader
+                if (otherPeer->state == SQLiteNodeState::STANDINGUP || otherPeer->state == SQLiteNodeState::LEADING || otherPeer->state == SQLiteNodeState::STANDINGDOWN) {
+                    // We need to contest this standup
+                    response["Response"] = "deny";
+                    response["Reason"] = "peer '" + otherPeer->name + "' is '" + stateName(otherPeer->state) + "'";
+                    break;
+                }
+            }
+        }
+    }
+
+    // Send the response
+    if (SIEquals(response["Response"], "approve")) {
+        PINFO("Approving standup request");
+    } else {
+        PHMMM("Not approving standup request because " << response["Reason"]);
+    }
+    _sendToPeer(peer, response);
 }
