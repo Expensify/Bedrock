@@ -2913,6 +2913,9 @@ void SRedactSensitiveValues(string& s) {
 
     // Remove anything inside "html" because we intentionally don't log chats.
     s = SREReplace("\"html\":\".*\"", s, "\"html\":\"<REDACTED>\"");
+
+    // Remove anything inside "edits" because these are also chats.
+    s = SREReplace("\"edits\":\".*\"", s, "\"edits\":\"<REDACTED>\"");
 }
 
 SStopwatch::SStopwatch() {
