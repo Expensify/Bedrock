@@ -2915,7 +2915,7 @@ void SRedactSensitiveValues(string& s) {
     s = SREReplace("\"html\":\".*\"", s, "\"html\":\"<REDACTED>\"");
 
     // Remove anything inside "edits" because these are also chats.
-    s = SREReplace("\"edits\":\\[\".*?\"\\]", s, "\"edits\":[\"REDACTED\"]");
+    s = SREReplace(R"(\"edits\":\[.*?\])", s, "\"edits\":[\"REDACTED\"]");
 }
 
 SStopwatch::SStopwatch() {
