@@ -39,12 +39,8 @@ void SLogStackTrace(int level) {
     }
 }
 
-string addLogParams(const string& message) {
-    return message;
-}
-
 string addLogParams(const string& message, const map<string, string>& params) {
-    std::string result = message;
+    string result = message;
 
     if (!params.empty()) {
         result += " ~~ ";
@@ -52,7 +48,7 @@ string addLogParams(const string& message, const map<string, string>& params) {
             if (i > 0) {
                 result += " ";
             }
-            const auto& param = *std::next(params.begin(), i);
+            const auto& param = *next(params.begin(), i);
             result += param.first + ": '" + param.second + "'";
         }
     }

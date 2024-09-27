@@ -233,8 +233,7 @@ extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
 //template <typename T>
 //string addLogParams(const string& message, const map<string, T> params);
 
-string addLogParams(const string& message, const map<string, string>& params);
-string addLogParams(const string& message);
+string addLogParams(const string& message, const map<string, string>& params = {});
 
 // **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
 #define SWHEREAMI SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
