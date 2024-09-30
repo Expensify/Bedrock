@@ -778,7 +778,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     }
 
     int64_t lastConflictPage = 0;
-    string lastConflictTable = "";
+    string lastConflictTable;
     while (true) {
 
         // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
