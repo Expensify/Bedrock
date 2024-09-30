@@ -398,6 +398,7 @@ class SQLite {
     bool _mutexLocked = false;
 
     atomic<int64_t> _lastConflictPage = 0;
+    atomic<string> _lastConflictTable;
     static thread_local int64_t _conflictPage;
     static thread_local string _conflictTable;
 
