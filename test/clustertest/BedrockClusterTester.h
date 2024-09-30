@@ -129,6 +129,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
             {"-peerList", peerString},
             {"-plugins", pluginsToLoad},
             {"-overrideProcessName", "bedrock" + to_string(nodePort)},
+            {"-enableConflictPageLocks", "true"},
         };
 
         // Now, if any args were supplied, we'll use those instead of these ones (note that this overwrites our
