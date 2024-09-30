@@ -16,3 +16,4 @@ libstuff/libstuff.h.gch
 .nfs*
 .cache
 compile_commands.json
+.vscode/*
