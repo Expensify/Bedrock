@@ -2,6 +2,7 @@
 
 #include <linux/limits.h>
 #include <string.h>
+#include <format>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SQResult.h>
@@ -742,13 +743,14 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &startPages, &dummy, 0);
 
     _conflictPage = 0;
+    _conflictTable = "";
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
     _lastConflictPage = _conflictPage;
     _lastConflictTable = _conflictTable;
     if (_lastConflictPage) {
-        SINFO(format("part of last conflict page: {}, conflict table: {}",  _lastConflictPage, _lastConflictTable));
+        SINFO(format("part of last conflict page: {}, conflict table: {}",  _conflictPage, _conflictTable));
     }
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
