@@ -778,6 +778,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     }
 
     int64_t lastConflictPage = 0;
+    string lastConflictTable = "";
     while (true) {
 
         // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
@@ -1021,7 +1022,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         } else {
                             SINFO("Conflict or state change committing " << command->request.methodLine << " on worker thread.");
                             if (_enableConflictPageLocks) {
-                                lastConflictPage = db.getLastConflictPage();
+                                lastConflictTable = db.getLastConflictTable();
+                                if (!SStartsWith(lastConflictTable, "journal")) {
+                                    lastConflictPage = db.getLastConflictPage();
+                                }
                             }
                         }
                     } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
