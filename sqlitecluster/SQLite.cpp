@@ -295,6 +295,9 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
             // Based on the SQLite log line, we should always have ';' after the table name,
             // so let's find it and use it to limit the size of the substring we need
             const char* semicolonOffset = strstr(tableOffset, ";");
+            
+            // Let's add this check in case the SQLite log changes and we don't notice it
+            // since this would generate a runtime error.
             if (semicolonOffset) {
                 _conflictTable = string(tableOffset, semicolonOffset - tableOffset);
             } else {
