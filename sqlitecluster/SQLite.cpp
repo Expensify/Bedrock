@@ -284,21 +284,18 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     // This is sort of hacky to parse this from the logging info. If it works we could ask sqlite for a better interface to get this info.
     if (SStartsWith(zMsg, "cannot commit")) {
         // 17 is the length of "conflict at page" and the following space.
-        const char* offset = strstr(zMsg, "conflict at page") + 17;
-        _conflictPage = atol(offset);
+        const char* pageOffset = strstr(zMsg, "conflict at page") + 17;
+        _conflictPage = atol(pageOffset);
 
         // 17 is the length of "part of db table" and the following space.
-        const char* tableOffset = strstr(zMsg, "part of db table") + 17;
+        const char* tableOffset = strstr(pageOffset, "part of db table") + 17;
 
         // Check if the tableOffset exists since not all conflicts are on tables
         if (tableOffset) {
             // Based on the SQLite log line, we should always have ';' after the table name,
-            // so let's use it to finish this loop.
-            int i = 0;
-            while (tableOffset[i] != ';') {
-                _conflictTable += tableOffset[i];
-                i++;
-            }
+            // so let's find it and use it to limit the size of the substring we need
+            const char* semicolonOffset = strstr(tableOffset, ";");
+            _conflictTable = string(tableOffset, semicolonOffset - tableOffset);
         }
     }
 }
