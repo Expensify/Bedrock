@@ -41,16 +41,17 @@ void SLogStackTrace(int level) {
 
 string addLogParams(const string& message, const map<string, string>& params) {
     string result = message;
+    if (params.empty()) {
+        return result;
+    }
 
-    if (!params.empty()) {
-        result += " ~~ ";
-        for (size_t i = 0; i < params.size(); ++i) {
-            if (i > 0) {
-                result += " ";
-            }
-            const auto& param = *next(params.begin(), i);
-            result += param.first + ": '" + param.second + "'";
+    result += " ~~ ";
+    for (size_t i = 0; i < params.size(); ++i) {
+        if (i > 0) {
+            result += " ";
         }
+        const auto& param = *next(params.begin(), i);
+        result += param.first + ": '" + param.second + "'";
     }
 
     return result;
