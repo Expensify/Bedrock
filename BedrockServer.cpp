@@ -1023,6 +1023,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             SINFO("Conflict or state change committing " << command->request.methodLine << " on worker thread.");
                             if (_enableConflictPageLocks) {
                                 lastConflictTable = db.getLastConflictTable();
+
+                                // Journals are always chosen at the time of commit. So in case there was a conflict on the previous commit,
+                                // the chances are very low (1/192) that we'll choose the same journal, thus, we don't need to lock
+                                // our next commit on this page conflict.
                                 if (!SStartsWith(lastConflictTable, "journal")) {
                                     lastConflictPage = db.getLastConflictPage();
                                 }
