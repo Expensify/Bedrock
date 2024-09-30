@@ -248,6 +248,8 @@ class SQLite {
 
     int64_t getLastConflictPage() const;
 
+    string getLastConflictTable() const;
+
     // This is the callback function we use to log SQLite's internal errors.
     static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
 

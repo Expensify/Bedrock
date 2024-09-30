@@ -402,6 +402,7 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     _commitElapsed = 0;
     _rollbackElapsed = 0;
     _lastConflictPage = 0;
+    _lastConflictTable = "";
     return _insideTransaction;
 }
 
@@ -731,8 +732,9 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     uint64_t beforeCommit = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
     _lastConflictPage = _conflictPage;
+    _lastConflictTable = _conflictTable;
     if (_lastConflictPage) {
-        SINFO("part of last conflict page: " << _lastConflictPage);
+        SINFO(format("part of last conflict page: {}, conflict table: {}",  _lastConflictPage, _lastConflictTable));
     }
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
@@ -790,6 +792,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _cacheHits = 0;
         _dbCountAtStart = 0;
         _lastConflictPage = 0;
+        _lastConflictTable = "";
     } else {
         SINFO("Commit failed, waiting for rollback.");
     }
@@ -1135,6 +1138,10 @@ void SQLite::setQueryOnly(bool enabled) {
 
 int64_t SQLite::getLastConflictPage() const {
     return _lastConflictPage;
+}
+
+string SQLite::getLastConflictTable() const {
+    return _lastConflictTable;
 }
 
 SQLite::SharedData::SharedData() :
