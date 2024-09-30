@@ -17,6 +17,7 @@ sqlite3* SQLite::getDBHandle() {
 
 thread_local string SQLite::_mostRecentSQLiteErrorLog;
 thread_local int64_t SQLite::_conflictPage;
+thread_local string SQLite::_conflictTable;
 
 const string SQLite::getMostRecentSQLiteErrorLog() const {
     return _mostRecentSQLiteErrorLog;
