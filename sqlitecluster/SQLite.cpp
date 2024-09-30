@@ -284,6 +284,7 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
         // 17 is the length of "conflict at page" and the following space.
         const char* offset = strstr(zMsg, "conflict at page") + 17;
         _conflictPage = atol(offset);
+        // Save _conflictTable
     }
 }
 
@@ -1132,6 +1133,7 @@ void SQLite::setQueryOnly(bool enabled) {
     SQuery(_db, "set query_only", query, result);
 }
 
+// implement getLastConflictTable()
 int64_t SQLite::getLastConflictPage() const {
     return _lastConflictPage;
 }

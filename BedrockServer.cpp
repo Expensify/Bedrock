@@ -907,6 +907,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 conflictLockStartTime = STimeNow();
             }
             {
+                // This way we don't lock here if we conflicted on a journal.
                 PageLockGuard pageLock(lastConflictPage);
                 if (lastConflictPage) {
                     SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on db page " << lastConflictPage << ".");
@@ -1021,6 +1022,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         } else {
                             SINFO("Conflict or state change committing " << command->request.methodLine << " on worker thread.");
                             if (_enableConflictPageLocks) {
+                                // lastConflictTable = db.getLastConflictTable();
+                                // skip if lastConflictTable start with "journal"
                                 lastConflictPage = db.getLastConflictPage();
                             }
                         }
