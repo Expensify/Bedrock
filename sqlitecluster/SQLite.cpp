@@ -287,15 +287,16 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
         const char* pageOffset = strstr(zMsg, "conflict at page") + 17;
         _conflictPage = atol(pageOffset);
 
-        // 17 is the length of "part of db table" and the following space.
-        const char* tableOffset = strstr(pageOffset, "part of db table") + 17;
-
         // Check if the tableOffset exists since not all conflicts are on tables
+        const char* tableOffset = strstr(pageOffset, "part of db table");
         if (tableOffset) {
+            // 17 is the length of "part of db table" and the following space.
+            tableOffset += 17;
+
             // Based on the SQLite log line, we should always have ';' after the table name,
             // so let's find it and use it to limit the size of the substring we need
             const char* semicolonOffset = strstr(tableOffset, ";");
-            
+
             // Let's add this check in case the SQLite log changes and we don't notice it
             // since this would generate a runtime error.
             if (semicolonOffset) {
