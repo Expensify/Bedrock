@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <execinfo.h>
 #include <sys/un.h>
 #include <cxxabi.h>
@@ -129,6 +130,10 @@ void SInitialize(string threadName, const char* processName) {
     SLogSetThreadName(threadName);
     SLogSetThreadPrefix("xxxxxx ");
     SInitializeSignals();
+
+    // Get the native OS thread process ID and log it
+    pid_t tid = syscall(SYS_gettid); 
+    SINFO("Initializing new thread with PID: " << tid);
 }
 
 // Thread-local log prefix
@@ -3200,4 +3205,3 @@ SString& SString::operator=(const bool from) {
     string::operator=(from ? "true" : "false");
     return *this;
 }
-
