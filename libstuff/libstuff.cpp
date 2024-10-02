@@ -4,6 +4,7 @@
 // C library
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <execinfo.h>
@@ -3204,4 +3205,11 @@ SString& SString::operator=(const unsigned char& from) {
 SString& SString::operator=(const bool from) {
     string::operator=(from ? "true" : "false");
     return *this;
+}
+
+double SGetCPUUserTime() {
+    struct rusage usage;
+    getrusage(RUSAGE_THREAD, &usage);
+    // Returns the current threads CPU user time in microseconds
+    return static_cast<double>(usage.ru_utime.tv_sec) * 1e6 + static_cast<double>(usage.ru_utime.tv_usec);
 }
