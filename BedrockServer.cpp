@@ -117,7 +117,7 @@ void BedrockServer::sync()
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while
     // it's running, and our workers will have to maintain awareness of that state anyway.
     SINFO("Starting " << workerThreads << " worker threads.");
-    list<thread> workerThreadList;
+    list<ResourceMonitorThread> workerThreadList;
     for (int threadId = 0; threadId < workerThreads; threadId++) {
         workerThreadList.emplace_back(&BedrockServer::worker, this, threadId);
     }
