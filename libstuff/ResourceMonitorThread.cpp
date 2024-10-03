@@ -1,13 +1,6 @@
 #include "ResourceMonitorThread.h"
 #include "libstuff/libstuff.h"
 #include "format"
-#include "thread"
-
-ResourceMonitorThread::ResourceMonitorThread(_Callable&& __f, _Args&&... __args) : thread(__f, __args)
-{
-    startTime = STimeNow();
-    cpuStartTime = SGetCPUUserTime();
-};
 
 ResourceMonitorThread::~ResourceMonitorThread(){
     const uint64_t threadEndTime = STimeNow() - startTime;

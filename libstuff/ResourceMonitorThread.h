@@ -1,3 +1,4 @@
+#include "libstuff/libstuff.h"
 #include <thread>
 
 using namespace std;
@@ -8,7 +9,10 @@ public:
     template<typename _Callable, typename... _Args,
 	     typename = _Require<__not_<is_same<__remove_cvref_t<_Callable>, thread>>>>
       explicit
-    ResourceMonitorThread(_Callable&& __f, _Args&&... __args);
+    ResourceMonitorThread(_Callable&& __f, _Args&&... __args): thread(move(__f), move(__args...)){
+        startTime = STimeNow();
+        cpuStartTime = SGetCPUUserTime();
+    };
 
     virtual ~ResourceMonitorThread();
 
