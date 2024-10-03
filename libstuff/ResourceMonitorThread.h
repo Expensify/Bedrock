@@ -9,7 +9,7 @@ public:
     template<typename F, typename... Args,
 	     typename = _Require<__not_<is_same<__remove_cvref_t<F>, thread>>>>
       explicit
-    ResourceMonitorThread(F&& f, Args&&... args): thread(wrapper<F, Args...>, forward<F>(f), forward<Args>(args)...){};
+    ResourceMonitorThread(F&& f, Args&&... args): thread(&wrapper<F, Args...>, forward<F>(f), forward<Args>(args)...){};
 
 private:
     static thread_local uint64_t startTime;
@@ -20,7 +20,7 @@ private:
     template<typename F, typename... Args>
     inline static function<void(F&& f, Args&&... args)> wrapper = [](F&& f, Args&&... args){
         before();
-        std::invoke(std::forward<F>(f), std::forward<Args>(args)...);
+        std::invoke(f, std::forward<Args>(args)...);
         after();
     };
 };
