@@ -1649,7 +1649,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
                 try {
                     uint64_t threadAttemptStartTimestamp = STimeNow();
-                    ResourceMonitorThread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp).detach();
+                    ResourceMonitorThread([=, this](){this->_replicate(peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp);}).detach();
                 } catch (const system_error& e) {
                     // If the server is strugling and falling behind on replication, we might have too many threads
                     // causing a resource exhaustion. If that happens, all the transactions that are already threaded

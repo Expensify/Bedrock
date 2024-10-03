@@ -119,7 +119,7 @@ void BedrockServer::sync()
     SINFO("Starting " << workerThreads << " worker threads.");
     list<ResourceMonitorThread> workerThreadList;
     for (int threadId = 0; threadId < workerThreads; threadId++) {
-        workerThreadList.emplace_back(&BedrockServer::worker, this, threadId);
+        workerThreadList.emplace_back([this, threadId](){this->worker(threadId);});
     }
 
     // Now we jump into our main command processing loop.

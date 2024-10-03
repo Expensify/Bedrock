@@ -2,6 +2,8 @@
 #include "libstuff/libstuff.h"
 #include "format"
 
+thread_local uint64_t ResourceMonitorThread::startTime;
+thread_local double ResourceMonitorThread::cpuStartTime;
 
 void ResourceMonitorThread::before(){
     startTime = STimeNow();
