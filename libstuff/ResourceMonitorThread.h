@@ -5,8 +5,6 @@ using namespace std;
 
 class ResourceMonitorThread: public thread
 {
-    ResourceMonitorThread(const ResourceMonitorThread&) = delete;
-    ResourceMonitorThread(ResourceMonitorThread&&) = delete;
 public:
     template<typename F, typename... Args>
     ResourceMonitorThread(F&& f, Args&&... args):
