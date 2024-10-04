@@ -14,6 +14,12 @@ void ResourceMonitorThread::before(){
 void ResourceMonitorThread::after(){
     const uint64_t threadEndTime = STimeNow() - startTime;
     const double CPUUserTime = SGetCPUUserTime() - cpuStartTime;
+
+    // This shouldn't happen since the time to start/finish a thread should take more than a microsecond, but to be 
+    // sure we're not dividing by 0 and causing crashes, let's add an if here and return if threadEndTime is 0.
+    if (threadEndTime == 0) {
+        return;
+    }
     const double cpuUserPercentage = round((CPUUserTime / static_cast<double>(threadEndTime)) * 100 * 1000) / 1000;
 
     // Any thread that takes more than 100ms and uses more than 50% CPU during it's lifetime will be logged. These parameters
