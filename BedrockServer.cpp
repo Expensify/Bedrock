@@ -953,6 +953,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     if (!canWriteParallel) {
                         // Roll back the transaction, it'll get re-run in the sync thread.
                         core.rollback();
+                        dbScope.release();
                         auto _clusterMessengerCopy = _clusterMessenger;
                         if (getState() == SQLiteNodeState::LEADING) {
                             // Limit the command timeout to 20s to avoid blocking the sync thread long enough to cause the cluster to give up and elect a new leader (causing a fork), which happens
