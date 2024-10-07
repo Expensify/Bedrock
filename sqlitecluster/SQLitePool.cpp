@@ -87,7 +87,7 @@ void SQLitePool::returnToPool(size_t index) {
     _wait.notify_one();
 }
 
-SQLiteScopedHandle::SQLiteScopedHandle(SQLitePool& pool, size_t index) : _pool(pool), _index(index), _released(true)
+SQLiteScopedHandle::SQLiteScopedHandle(SQLitePool& pool, size_t index) : _pool(pool), _index(index), _released(false)
 {}
 
 void SQLiteScopedHandle::release() {
