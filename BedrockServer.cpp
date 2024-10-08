@@ -13,6 +13,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 #include <libstuff/AutoTimer.h>
+#include <libstuff/ResourceMonitorThread.h>
 #include <PageLockGuard.h>
 #include <sqlitecluster/SQLitePeer.h>
 
@@ -116,9 +117,9 @@ void BedrockServer::sync()
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while
     // it's running, and our workers will have to maintain awareness of that state anyway.
     SINFO("Starting " << workerThreads << " worker threads.");
-    list<thread> workerThreadList;
+    list<ResourceMonitorThread> workerThreadList;
     for (int threadId = 0; threadId < workerThreads; threadId++) {
-        workerThreadList.emplace_back(&BedrockServer::worker, this, threadId);
+        workerThreadList.emplace_back([this, threadId](){this->worker(threadId);});
     }
 
     // Now we jump into our main command processing loop.
@@ -1319,7 +1320,7 @@ BedrockServer::BedrockServer(const SData& args_)
 
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
-    _syncThread = thread(&BedrockServer::syncWrapper, this);
+    _syncThread = ResourceMonitorThread(&BedrockServer::syncWrapper, this);
 }
 
 BedrockServer::~BedrockServer() {
@@ -1868,7 +1869,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         if (__quiesceThread) {
             response.methodLine = "400 Already Blocked";
         } else {
-            __quiesceThread = new thread([&]() {
+            __quiesceThread = new ResourceMonitorThread([&]() {
                 shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
                 if (dbPoolCopy) {
                     SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
@@ -2098,7 +2099,7 @@ void BedrockServer::_acceptSockets() {
                 bool threadStarted = false;
                 while (!threadStarted) {
                     try {
-                        t = thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
+                        t = ResourceMonitorThread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
                         threadStarted = true;
                     } catch (const system_error& e) {
                         // We don't care about this lock here from a performance perspective, it only happens when we
