@@ -53,8 +53,10 @@ class SQLiteScopedHandle {
     SQLiteScopedHandle(SQLitePool& pool, size_t index);
     ~SQLiteScopedHandle();
     SQLite& db();
+    void release();
 
   private:
     SQLitePool& _pool;
     size_t _index;
+    bool _released;
 };
