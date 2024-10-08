@@ -6,12 +6,12 @@
 uint64_t ResourceMonitorThread::threadStartTime;
 double ResourceMonitorThread::cpuStartTime;
 
-void ResourceMonitorThread::before() {
+void ResourceMonitorThread::beforeProcessStart() {
     threadStartTime = STimeNow();
     cpuStartTime = SGetCPUUserTime();
 }
 
-void ResourceMonitorThread::after() {
+void ResourceMonitorThread::afterProcessFinished() {
     const uint64_t threadUserTime = STimeNow() - threadStartTime;
     const double cpuUserTime = SGetCPUUserTime() - cpuStartTime;
 

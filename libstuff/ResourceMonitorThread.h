@@ -19,13 +19,13 @@ private:
     static uint64_t threadStartTime;
     static double cpuStartTime;
 
-    static void before();
-    static void after();
+    static void beforeProcessStart();
+    static void afterProcessFinished();
 
     template<typename F, typename... Args>
     static void wrapper(F&& f, Args&&... args) {
-        before();
+        beforeProcessStart();
         invoke(forward<F>(f), forward<Args>(args)...);
-        after();
+        afterProcessFinished();
     }
 };
