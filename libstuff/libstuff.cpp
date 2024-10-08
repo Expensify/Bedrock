@@ -3206,6 +3206,7 @@ SString& SString::operator=(const bool from) {
 double SGetCPUUserTime() {
     struct rusage usage;
     getrusage(RUSAGE_THREAD, &usage);
+
     // Returns the current threads CPU user time in microseconds
     return static_cast<double>(usage.ru_utime.tv_sec) * 1e6 + static_cast<double>(usage.ru_utime.tv_usec);
 }

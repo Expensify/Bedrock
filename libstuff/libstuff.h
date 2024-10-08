@@ -629,6 +629,7 @@ string SGUnzip(const string& content);
 // Command-line helpers
 STable SParseCommandLine(int argc, char* argv[]);
 
-// Returns the current CPU usage inside the current process
+// Returns the CPU usage inside the current thread
 double SGetCPUUserTime();
+
 #endif	// LIBSTUFF_H
