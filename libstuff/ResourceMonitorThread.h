@@ -16,8 +16,8 @@ public:
     ResourceMonitorThread(F&& f, Args&&... args):
       thread(ResourceMonitorThread::wrapper<F&&, Args&&...>, forward<F&&>(f), forward<Args&&>(args)...){};
 private:
-    static uint64_t threadStartTime;
-    static double cpuStartTime;
+    thread_local static uint64_t threadStartTime;
+    thread_local static double cpuStartTime;
 
     static void beforeProcessStart();
     static void afterProcessFinished();

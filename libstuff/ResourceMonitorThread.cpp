@@ -3,8 +3,8 @@
 #include <format>
 #include <cmath>
 
-uint64_t ResourceMonitorThread::threadStartTime;
-double ResourceMonitorThread::cpuStartTime;
+thread_local uint64_t ResourceMonitorThread::threadStartTime;
+thread_local double ResourceMonitorThread::cpuStartTime;
 
 void ResourceMonitorThread::beforeProcessStart() {
     threadStartTime = STimeNow();
