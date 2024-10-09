@@ -234,7 +234,7 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 string fullLogLine = format("Frame #{}: {}", i, tolog);
                 SWARN(fullLogLine);
                 if (fd != -1) {
-                    fullLogLine = format("{}{}",fullLogLine, "\n");
+                    fullLogLine = format("{}{}", fullLogLine, "\n");
                     write(fd, fullLogLine.c_str(), strlen(fullLogLine.c_str()));
                 }
                 free(frame);
