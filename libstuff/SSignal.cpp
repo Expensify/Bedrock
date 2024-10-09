@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
+#include <format>
 
 thread_local function<void()> SSignalHandlerDieFunc;
 void SSetSignalHandlerDieFunc(function<void()>&& func) {
@@ -209,6 +210,8 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 SWARN("Stack depth is " << depth << " only logging first and last 20 frames.");
             }
 
+            // Create a file to write the backtraceso we can write those logs in case we lose rsyslog due to a huge backlog.
+            int fd = creat(format("/tmp/bedrock_crash_{}.log", STimeNow()).c_str(), 0666);
             for (int i = 0; i < depth; i++) {
                 if (depth > 40 && i >= 20 && i < depth - 20) {
                     // Skip frames in the middle of large stacks.
@@ -227,8 +230,17 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 if (tolog[0] == '\0') {
                     tolog = frame[0];
                 }
-                SWARN("Frame #" << i << ": " << tolog);
+                string fullLogLine = format("Frame #{}: {}", i, tolog);
+                SWARN(fullLogLine);
+                if (fd != -1) {
+                    fullLogLine = format("{}{}",fullLogLine, "\n");
+                    write(fd, fullLogLine.c_str(), strlen(fullLogLine.c_str()));
+                }
                 free(frame);
+            }
+            // only try to close fd if it was successfully opened, otherwise we'll crash
+            if (fd != -1) {
+                close(fd);
             }
 
             // Done.
