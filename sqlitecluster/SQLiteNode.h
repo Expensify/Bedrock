@@ -228,6 +228,8 @@ class SQLiteNode : public STCPManager {
 
     void _changeState(SQLiteNodeState newState, uint64_t commitIDToCancelAfter = 0);
 
+    string _getLostQuorumLogMessage() const;
+
     // Handlers for transaction messages.
     void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message, bool wasConflict);
     void _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime, uint64_t threadStartTime);
@@ -265,6 +267,7 @@ class SQLiteNode : public STCPManager {
 
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
+    void _sendStandupResponse(SQLitePeer* peer, const SData& message);
     void _sendPING(SQLitePeer* peer);
     void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
     void _sendToPeer(SQLitePeer* peer, const SData& message);
@@ -319,6 +322,10 @@ class SQLiteNode : public STCPManager {
 
     // Set to true to indicate we're attempting to shut down.
     atomic<bool> _isShuttingDown;
+
+    // When we spontaneously lose quorum (due to an unexpected node disconnection) we log the time. Later, if we detect we've forked,
+    // We show this time in a log line as a diagnostic message.
+    atomic<uint64_t> _lastLostQuorum = 0;
 
     // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
     // any new committed transactions to peers, and update this value.

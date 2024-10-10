@@ -4,7 +4,9 @@
 // C library
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <execinfo.h>
 #include <sys/un.h>
 #include <cxxabi.h>
@@ -2913,6 +2915,9 @@ void SRedactSensitiveValues(string& s) {
 
     // Remove anything inside "html" because we intentionally don't log chats.
     s = SREReplace("\"html\":\".*\"", s, "\"html\":\"<REDACTED>\"");
+
+    // Remove anything inside "edits" because these are also chats.
+    s = SREReplace(R"(\"edits\":\[.*?\])", s, "\"edits\":[\"REDACTED\"]");
 }
 
 SStopwatch::SStopwatch() {
@@ -3196,4 +3201,12 @@ SString& SString::operator=(const unsigned char& from) {
 SString& SString::operator=(const bool from) {
     string::operator=(from ? "true" : "false");
     return *this;
+}
+
+double SGetCPUUserTime() {
+    struct rusage usage;
+    getrusage(RUSAGE_THREAD, &usage);
+
+    // Returns the current threads CPU user time in microseconds
+    return static_cast<double>(usage.ru_utime.tv_sec) * 1e6 + static_cast<double>(usage.ru_utime.tv_usec);
 }

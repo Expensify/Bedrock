@@ -34,7 +34,8 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testFirstOfMonth),
                                     TEST(LibStuff::SREMatchTest),
                                     TEST(LibStuff::SREReplaceTest),
-                                    TEST(LibStuff::SQResultTest)
+                                    TEST(LibStuff::SQResultTest),
+                                    TEST(LibStuff::SRedactSensitiveValuesTest)
                                     )
     { }
 
@@ -647,7 +648,7 @@ struct LibStuff : tpunit::TestFixture {
 
         // Case sensitive but case doesn't match.
         ASSERT_FALSE(SREMatch(".*CAT.*", "this contains cat"));
-        
+
         // Case-insensitive.
         ASSERT_TRUE(SREMatch(".*CAT.*", "this contains cat", false));
         ASSERT_FALSE(SREMatch(".*CAT.*", "this does not", false));
@@ -743,5 +744,19 @@ struct LibStuff : tpunit::TestFixture {
         db.read("SELECT name as coco, value FROM testTable ORDER BY id;", result);
         db.rollback();
         ASSERT_EQUAL(result[0]["coco"], "name1");
+    }
+
+    void SRedactSensitiveValuesTest() {
+        string logValue = R"({"edits":["test1", "test2", "test3"]})";
+        SRedactSensitiveValues(logValue);
+        ASSERT_EQUAL(R"({"edits":["REDACTED"]})", logValue);
+
+        logValue = R"({"authToken":"123IMANAUTHTOKEN321"})";
+        SRedactSensitiveValues(logValue);
+        ASSERT_EQUAL(R"({"authToken":<REDACTED>)", logValue);
+
+        logValue = R"({"html":"private conversation happens here"})";
+        SRedactSensitiveValues(logValue);
+        ASSERT_EQUAL(R"({"html":"<REDACTED>"})", logValue);
     }
 } __LibStuff;

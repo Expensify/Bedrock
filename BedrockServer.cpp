@@ -13,6 +13,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 #include <libstuff/AutoTimer.h>
+#include <libstuff/ResourceMonitorThread.h>
 #include <PageLockGuard.h>
 #include <sqlitecluster/SQLitePeer.h>
 
@@ -116,9 +117,9 @@ void BedrockServer::sync()
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while
     // it's running, and our workers will have to maintain awareness of that state anyway.
     SINFO("Starting " << workerThreads << " worker threads.");
-    list<thread> workerThreadList;
+    list<ResourceMonitorThread> workerThreadList;
     for (int threadId = 0; threadId < workerThreads; threadId++) {
-        workerThreadList.emplace_back(&BedrockServer::worker, this, threadId);
+        workerThreadList.emplace_back([this, threadId](){this->worker(threadId);});
     }
 
     // Now we jump into our main command processing loop.
@@ -777,11 +778,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             (_blacklistedParallelCommands.find(command->request.methodLine) == _blacklistedParallelCommands.end());
     }
 
-    // More checks for parallel writing.
-    canWriteParallel = canWriteParallel && (getState() == SQLiteNodeState::LEADING);
-    canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
-
     int64_t lastConflictPage = 0;
+    string lastConflictTable;
     while (true) {
 
         // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
@@ -796,6 +794,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         if (waitCount) {
             SINFO("Waited for " << waitCount << " loops for node to be ready.");
         }
+
+        // More checks for parallel writing.
+        canWriteParallel = canWriteParallel && (getState() == SQLiteNodeState::LEADING);
+        canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
 
         // If there are outstanding HTTPS requests on this command (from a previous call to `peek`) we process them here.
         size_t networkLoopCount = 0;
@@ -952,6 +954,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     if (!canWriteParallel) {
                         // Roll back the transaction, it'll get re-run in the sync thread.
                         core.rollback();
+                        dbScope.release();
                         auto _clusterMessengerCopy = _clusterMessenger;
                         if (getState() == SQLiteNodeState::LEADING) {
                             // Limit the command timeout to 20s to avoid blocking the sync thread long enough to cause the cluster to give up and elect a new leader (causing a fork), which happens
@@ -1021,7 +1024,14 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         } else {
                             SINFO("Conflict or state change committing " << command->request.methodLine << " on worker thread.");
                             if (_enableConflictPageLocks) {
-                                lastConflictPage = db.getLastConflictPage();
+                                lastConflictTable = db.getLastConflictTable();
+
+                                // Journals are always chosen at the time of commit. So in case there was a conflict on the journal in 
+                                // the previous commit, the chances are very low (1/192) that we'll choose the same journal, thus, we
+                                // don't need to lock our next commit on this page conflict.
+                                if (!SStartsWith(lastConflictTable, "journal")) {
+                                    lastConflictPage = db.getLastConflictPage();
+                                }
                             }
                         }
                     } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
@@ -1310,7 +1320,7 @@ BedrockServer::BedrockServer(const SData& args_)
 
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
-    _syncThread = thread(&BedrockServer::syncWrapper, this);
+    _syncThread = ResourceMonitorThread(&BedrockServer::syncWrapper, this);
 }
 
 BedrockServer::~BedrockServer() {
@@ -1859,7 +1869,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         if (__quiesceThread) {
             response.methodLine = "400 Already Blocked";
         } else {
-            __quiesceThread = new thread([&]() {
+            __quiesceThread = new ResourceMonitorThread([&]() {
                 shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
                 if (dbPoolCopy) {
                     SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
@@ -2089,7 +2099,7 @@ void BedrockServer::_acceptSockets() {
                 bool threadStarted = false;
                 while (!threadStarted) {
                     try {
-                        t = thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
+                        t = ResourceMonitorThread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
                         threadStarted = true;
                     } catch (const system_error& e) {
                         // We don't care about this lock here from a performance perspective, it only happens when we
