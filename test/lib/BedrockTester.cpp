@@ -282,8 +282,37 @@ string BedrockTester::startServer(bool wait) {
 void BedrockTester::stopServer(int signal) {
     if (_serverPID) {
         kill(_serverPID, signal);
+
         int status;
+        int waitTime = 60; // 60 seconds
+        time_t start = time(nullptr);
+
+        // Polling waitpid in a loop with 1-second intervals
+        while (time(nullptr) - start < waitTime) {
+            pid_t result = waitpid(_serverPID, &status, WNOHANG);
+            if (result == 0) {
+                // Process is still running, wait for 1 second
+                sleep(1);
+            } else if (result == _serverPID) {
+                // Process terminated normally
+                _serverPID = 0;
+                return;
+            } else {
+                // Error or process doesn't exist
+                _serverPID = 0;
+                return;
+            }
+        }
+
+        cout << "We reached the 60 seconds timeout in stopServer, sending SIGKILL" << endl;
+
+        // If we reach here, 60 seconds have passed and the process is still running
+        // Now we force kill the process
+        kill(_serverPID, SIGKILL);
+
+        // Wait again to reap the process after SIGKILL
         waitpid(_serverPID, &status, 0);
+
         _serverPID = 0;
     }
 }
