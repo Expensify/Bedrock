@@ -39,20 +39,19 @@ void SLogStackTrace(int level) {
     }
 }
 
-string addLogParams(const string& message, const map<string, string>& params) {
-    string result = message;
+string addLogParams(string&& message, const map<string, string>& params) {
     if (params.empty()) {
-        return result;
+        return message;
     }
 
-    result += " ~~ ";
+    message += " ~~ ";
     for (size_t i = 0; i < params.size(); ++i) {
         if (i > 0) {
-            result += " ";
+            message += " ";
         }
         const auto& param = *next(params.begin(), i);
-        result += param.first + ": '" + param.second + "'";
+        message += param.first + ": '" + param.second + "'";
     }
 
-    return result;
+    return message;
 }
