@@ -460,7 +460,7 @@ bool SQLite::verifyTable(const string& tableName, const string& sql, bool& creat
 }
 
 bool SQLite::verifyIndex(const string& indexName, const string& tableName, const string& indexSQLDefinition, bool isUnique, bool createIfNotExists) {
-    SINFO("Verifying index", {{"indexName", indexName}, {"isUnique?", to_string(isUnique)}});
+    SINFO("Verifying index", {{"indexName", indexName}, {"isUnique", to_string(isUnique)}});
     SQResult result;
     SASSERT(read("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=" + SQ(tableName) + " AND name=" + SQ(indexName) + ";", result));
 
