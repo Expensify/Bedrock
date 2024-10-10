@@ -39,6 +39,14 @@ void SLogStackTrace(int level) {
     }
 }
 
+// If the param name is not in this whitelist, we will log <REDACTED> in addLogParams.
+static const set<string> PARAMS_WHITELIST = {
+    "accountID",
+    "command",
+    "indexName",
+    "isUnique",
+};
+
 string addLogParams(string&& message, const map<string, string>& params) {
     if (params.empty()) {
         return message;
@@ -50,7 +58,11 @@ string addLogParams(string&& message, const map<string, string>& params) {
             message += " ";
         }
         const auto& param = *next(params.begin(), i);
-        message += param.first + ": '" + param.second + "'";
+        string value = param.second;
+        if (!SContains(PARAMS_WHITELIST, param.first )) {
+            value = "<REDACTED>";
+        }
+        message += param.first + ": '" + value + "'";
     }
 
     return message;
