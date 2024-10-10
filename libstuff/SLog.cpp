@@ -38,3 +38,20 @@ void SLogStackTrace(int level) {
         }
     }
 }
+
+string addLogParams(string&& message, const map<string, string>& params) {
+    if (params.empty()) {
+        return message;
+    }
+
+    message += " ~~ ";
+    for (size_t i = 0; i < params.size(); ++i) {
+        if (i > 0) {
+            message += " ";
+        }
+        const auto& param = *next(params.begin(), i);
+        message += param.first + ": '" + param.second + "'";
+    }
+
+    return message;
+}

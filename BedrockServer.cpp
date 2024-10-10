@@ -742,9 +742,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         auto _clusterMessengerCopy = _clusterMessenger;
         bool result = _clusterMessengerCopy->runOnPeer(*command, false);
         if (result) {
-            SINFO("Synchronizing while accepting commands, so forwarded " << command->request.methodLine << " to peer successfully");
+            SINFO("Synchronizing while accepting commands; successfully forwarded the command to peer", {{"command", command->request.methodLine}});
         } else {
-            SWARN("Synchronizing while accepting commands, so forwarded " << command->request.methodLine << " to peer, but failed.");
+            SWARN("Synchronizing while accepting commands, but failed to forward the command to peer.", {{"command", command->request.methodLine}});
         }
     }
 
