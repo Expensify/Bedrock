@@ -87,6 +87,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    SStopSignalThread();
+
     // Tester gets destroyed here. Everything's done.
     return retval;
 }
