@@ -2823,8 +2823,8 @@ bool SREMatch(const string& regExp, const string& input, bool caseSensitive, boo
         STHROW("Bad regex: " + regExp);
     }
 
-    pcre2_match_context* matchContext = pcre2_match_context_create(0); 
-    pcre2_set_depth_limit(matchContext, 1000); 
+    pcre2_match_context* matchContext = pcre2_match_context_create(0);
+    pcre2_set_depth_limit(matchContext, 1000);
     pcre2_match_data* matchData = pcre2_match_data_create_from_pattern(re, 0);
 
     int result = pcre2_match(re, (PCRE2_SPTR8)input.c_str() + startOffset, input.size() - startOffset, 0, matchFlags, matchData, matchContext);
@@ -2882,8 +2882,8 @@ string SREReplace(const string& regExp, const string& input, const string& repla
     if (!re) {
         STHROW("Bad regex: " + regExp);
     }
-    pcre2_match_context* matchContext = pcre2_match_context_create(0); 
-    pcre2_set_depth_limit(matchContext, 1000); 
+    pcre2_match_context* matchContext = pcre2_match_context_create(0);
+    pcre2_set_depth_limit(matchContext, 1000);
     for (int i = 0; i < 2; i++) {
         int result = pcre2_substitute(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, substituteFlags, 0, matchContext, (PCRE2_SPTR8)replacement.c_str(), replacement.size(), (PCRE2_UCHAR*)output, &outSize);
         if (i == 0 && result == PCRE2_ERROR_NOMEMORY) {
