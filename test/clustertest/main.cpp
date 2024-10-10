@@ -73,9 +73,6 @@ int main(int argc, char* argv[]) {
         threads = SToInt(args["-threads"]);
     }
 
-
-    cout << "Running tests" <<endl;
-
     int retval = 0;
     {
         for (int i = 0; i < repeatCount; i++) {
@@ -88,11 +85,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    cout << "DONE running tests" <<endl;
-
     SStopSignalThread();
-
-    cout << "DONE calling SStopSignalThread" <<endl;
 
     // Tester gets destroyed here. Everything's done.
     return retval;
