@@ -827,8 +827,6 @@ bool SQLiteNode::update() {
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
-        // Wait for everyone to respond
-        bool allResponded = true;
         size_t numFullPeers = 0;
         size_t numLoggedInFullPeers = 0;
         size_t approveCount = 0;
@@ -849,9 +847,7 @@ bool SQLiteNode::update() {
 
                     // Has it responded yet?
                     if (peer->standupResponse == SQLitePeer::Response::NONE) {
-                        // At least one logged in full peer hasn't responded
-                        allResponded = false;
-                        break;
+                        // This peer hasn't yet responded. We do nothing with it in this case, maybe it will have responded by the next check.
                     } else if (peer->standupResponse == SQLitePeer::Response::ABSTAIN) {
                         PHMMM("Peer abstained from participation in quorum");
                         abstainCount++;
@@ -880,9 +876,9 @@ bool SQLiteNode::update() {
         // If everyone's responded with approval and we form a majority, then finish standup.
         bool majorityConnected = numLoggedInFullPeers * 2 >= numFullPeers;
         bool quorumApproved = approveCount * 2 >= numFullPeers;
-        if (allResponded && majorityConnected && quorumApproved) {
+        if (majorityConnected && quorumApproved) {
             // Complete standup
-            SINFO("All peers responded, going LEADING.");
+            SINFO("Enough peers responded, going LEADING.");
             _changeState(SQLiteNodeState::LEADING);
             return true; // Re-update
         }
