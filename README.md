@@ -1,6 +1,5 @@
 # Expensify/Bedrock/
 
-
 This public repo contains the Bedrock database server.  For more
 information on what that is, please see http://bedrockdb.com.  The
 directories in this repo include:
