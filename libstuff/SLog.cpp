@@ -46,6 +46,14 @@ static const set<string> PARAMS_WHITELIST = {
     "command",
     "indexName",
     "isUnique",
+    "cardID",
+    "token",
+    "type",
+    "reportID",
+    "policyID",
+    "companyName",
+    "companyWebsite",
+    "invoice"
 };
 
 string addLogParams(string&& message, const map<string, string>& params) {
