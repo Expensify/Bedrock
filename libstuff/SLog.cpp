@@ -53,20 +53,17 @@ string addLogParams(string&& message, const map<string, string>& params) {
         return message;
     }
 
-    message += " ~~ ";
-    for (size_t i = 0; i < params.size(); ++i) {
-        if (i > 0) {
-            message += " ";
-        }
-        const auto& param = *next(params.begin(), i);
-        string value = param.second;
-        if (!SContains(PARAMS_WHITELIST, param.first )) {
+    message += " ~~";
+    for (const auto& [key, value] : params) {
+        message += " ";
+        string valueToLog = value;
+        if (!SContains(PARAMS_WHITELIST, key)) {
             if (!GLOBAL_IS_LIVE) {
                 STHROW("500 Log param not in the whitelist, either do not log that or add it to PARAMS_WHITELIST if it's not sensitive");
             }
-            value = "<REDACTED>";
+            valueToLog = "<REDACTED>";
         }
-        message += param.first + ": '" + value + "'";
+        message += key + ": '" + valueToLog + "'";
     }
 
     return message;
