@@ -46,7 +46,7 @@ struct BadCommandTest : tpunit::TestFixture {
                 // This tests cases where keeping leader alive isn't feasible.
                 bool testFailed = false;
                 for (auto commandName : {"generatesegfaultpeek", "generateassertpeek", "generatesegfaultprocess"}) {
-                    
+
                     // Create the command with the current userID.
                     userID++;
                     SData command(commandName);
@@ -67,7 +67,10 @@ struct BadCommandTest : tpunit::TestFixture {
                         }
                         usleep(100'00);
                     }
-                    ASSERT_TRUE(leading);
+                    if (!leading) {
+                        testFailed = true;
+                        break;
+                    }
 
                     // This error indicates we couldn't read a response after sending a command. We assume this means the
                     // server died. Even if it didn't and we just had a weird flaky network connection,  we'll still fail this
