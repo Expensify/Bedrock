@@ -3,6 +3,7 @@
 
 // Global logging state shared between all threads
 atomic<int> _g_SLogMask(LOG_INFO);
+atomic<bool> GLOBAL_IS_LIVE{true};
 
 void SLogStackTrace(int level) {
     // If the level isn't set in the log mask, nothing more to do
@@ -60,6 +61,9 @@ string addLogParams(string&& message, const map<string, string>& params) {
         const auto& param = *next(params.begin(), i);
         string value = param.second;
         if (!SContains(PARAMS_WHITELIST, param.first )) {
+            if (!GLOBAL_IS_LIVE) {
+                STHROW("500 Log param not in the whitelist, either do not log that or add it to PARAMS_WHITELIST if it's not sensitive");
+            }
             value = "<REDACTED>";
         }
         message += param.first + ": '" + value + "'";

@@ -149,6 +149,8 @@ int main(int argc, char* argv[]) {
         cout << "Protip: check syslog for details, or run 'bedrock -?' for help" << endl;
     }
 
+    GLOBAL_IS_LIVE = args.isSet("-live");
+
     // Initialize the sqlite library before any other code has a chance to do anything with it.
     // Set the logging callback for sqlite errors.
     SASSERT(sqlite3_config(SQLITE_CONFIG_LOG, SQLite::_sqliteLogCallback, 0) == SQLITE_OK);
