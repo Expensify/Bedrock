@@ -92,5 +92,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    SStopSignalThread();
     return retval;
 }

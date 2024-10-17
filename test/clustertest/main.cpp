@@ -73,8 +73,6 @@ int main(int argc, char* argv[]) {
         threads = SToInt(args["-threads"]);
     }
 
-
-
     int retval = 0;
     {
         for (int i = 0; i < repeatCount; i++) {
@@ -86,6 +84,8 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+
+    SStopSignalThread();
 
     // Tester gets destroyed here. Everything's done.
     return retval;
