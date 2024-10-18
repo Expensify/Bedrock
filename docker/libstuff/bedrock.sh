@@ -8,7 +8,7 @@ function bashVersionCheck()
   [ -z $BASH_VERSION ] && return 1
 
   # If it's set, check the version
-  case $BASH_VERSIO in
+  case $BASH_VERSION in
     5.*) return 0 ;;
     4.1) return 1 ;;
     4.0) return 1 ;;
