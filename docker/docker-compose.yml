@@ -1,0 +1,70 @@
+# You can remove version: '3.8' if you are using Docker Compose v2 or later
+# but it's not an issue if you're using v2
+version: '3.8'
+
+services:
+  bedrock-node0:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: bedrock-node0
+    ports:
+      - "8888:8888"
+      - "9000:9000"
+    networks:
+      bedrock-cluster:
+        aliases:
+          - node0
+    volumes:
+      - bedrock-db-node0:/var/db
+    environment:
+      - NODE_NAME=node0
+      - PRIORITY=100
+      - PEER_LIST=node1:9000,node2:9000
+
+  bedrock-node1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: bedrock-node1
+    ports:
+      - "8887:8888"
+      - "9001:9000"
+    networks:
+      bedrock-cluster:
+        aliases:
+          - node1
+    volumes:
+      - bedrock-db-node1:/var/db
+    environment:
+      - NODE_NAME=node1
+      - PRIORITY=101
+      - PEER_LIST=node0:9000,node2:9000
+
+  bedrock-node2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: bedrock-node2
+    ports:
+      - "8889:8888"
+      - "9002:9000"
+    networks:
+      bedrock-cluster:
+        aliases:
+          - node2
+    volumes:
+      - bedrock-db-node2:/var/db
+    environment:
+      - NODE_NAME=node2
+      - PRIORITY=102
+      - PEER_LIST=node0:9000,node1:9000
+
+networks:
+  bedrock-cluster:
+    driver: bridge
+
+volumes:
+  bedrock-db-node0:
+  bedrock-db-node1:
+  bedrock-db-node2:
