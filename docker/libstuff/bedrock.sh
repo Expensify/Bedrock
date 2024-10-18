@@ -43,10 +43,8 @@ PARAMS=""
 DB_PATH="/var/db/bedrock.db"
 PARAMS="$PARAMS -db $DB_PATH -nodeHost 0.0.0.0:9000 -serverHost 0.0.0.0:8888"
 
-for i in "${NO_ARG_PARAMS[@]}"
-do
-  :
-  if [ -v "$i" ]; then
+for i in "${NO_ARG_PARAMS[@]}" ; do
+  if [[ -v "$i" ]]; then
     export PARAMS="$PARAMS -$(toLowerCase ${i:0:1})"
   fi
 done
