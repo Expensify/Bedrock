@@ -3,6 +3,7 @@
 
 // Global logging state shared between all threads
 atomic<int> _g_SLogMask(LOG_INFO);
+atomic<bool> GLOBAL_IS_LIVE{true};
 
 void SLogStackTrace(int level) {
     // If the level isn't set in the log mask, nothing more to do
@@ -39,18 +40,38 @@ void SLogStackTrace(int level) {
     }
 }
 
+// If the param name is not in this whitelist, we will log <REDACTED> in addLogParams.
+static const set<string> PARAMS_WHITELIST = {
+    "accountID",
+    "command",
+    "indexName",
+    "isUnique",
+    "cardID",
+    "token",
+    "type",
+    "reportID",
+    "policyID",
+    "companyName",
+    "companyWebsite",
+    "invoice"
+};
+
 string addLogParams(string&& message, const map<string, string>& params) {
     if (params.empty()) {
         return message;
     }
 
-    message += " ~~ ";
-    for (size_t i = 0; i < params.size(); ++i) {
-        if (i > 0) {
-            message += " ";
+    message += " ~~";
+    for (const auto& [key, value] : params) {
+        message += " ";
+        string valueToLog = value;
+        if (!SContains(PARAMS_WHITELIST, key)) {
+            if (!GLOBAL_IS_LIVE) {
+                STHROW("500 Log param not in the whitelist, either do not log that or add it to PARAMS_WHITELIST if it's not sensitive");
+            }
+            valueToLog = "<REDACTED>";
         }
-        const auto& param = *next(params.begin(), i);
-        message += param.first + ": '" + param.second + "'";
+        message += key + ": '" + valueToLog + "'";
     }
 
     return message;

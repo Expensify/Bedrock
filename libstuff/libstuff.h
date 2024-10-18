@@ -28,6 +28,9 @@ struct SData;
 
 using namespace std;
 
+// Global indicating whether we're running the server on dev or production.
+extern atomic<bool> GLOBAL_IS_LIVE;
+
 // Initialize libstuff on every thread before calling any of its functions
 void SInitialize(string threadName = "", const char* processName = 0);
 
