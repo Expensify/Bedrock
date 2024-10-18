@@ -17,7 +17,7 @@ function bashVersionCheck()
   esac
 }
 
-if [ $(bashVersionCheck) ]; then
+if [[ $(bashVersionCheck) ]]; then
   echo "Requires bash 4.2 or greater"
   exit -1
 fi
