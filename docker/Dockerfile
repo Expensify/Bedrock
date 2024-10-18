@@ -44,7 +44,12 @@ COPY . /app/bedrock
 ENV CC="clang-18"
 ENV CXX="clang++-18"
 
-RUN make -j64
+# Build Bedrock
+RUN make clean
+RUN make -j$(nproc)
+
+# Add Bedrock to the PATH for the tests
+ENV PATH="/app/bedrock:$PATH"
 
 # Run tests
 WORKDIR /app/bedrock/test
