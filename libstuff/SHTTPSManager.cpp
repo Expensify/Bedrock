@@ -93,7 +93,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         // content. Why this is the what constitutes a valid response is lost to time. Any well-formed response should
         // be valid here, and this should get cleaned up. However, this requires testing anything that might rely on
         // the existing behavior, which is an exercise for later.
-        if (SContains(transaction.fullResponse.methodLine, " 200 ") || transaction.fullResponse.content.size()) {
+        if (SContains(transaction.fullResponse.methodLine, " 200") || transaction.fullResponse.content.size()) {
             // Pass the transaction down to the subclass.
             _onRecv(&transaction);
         } else {
