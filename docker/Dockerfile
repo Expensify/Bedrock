@@ -80,7 +80,7 @@ EXPOSE 8888
 EXPOSE 9000
 
 RUN mkdir -p /etc/service/bedrock/
-COPY docker/bedrock/bedrock.sh /etc/service/bedrock/run
+COPY docker/libstuff/bedrock.sh /etc/service/bedrock/run
 RUN chmod +x /etc/service/bedrock/run
 
 RUN adduser --disabled-password --gecos "" bedrock && \
