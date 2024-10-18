@@ -25,8 +25,7 @@ fi
 NO_ARG_PARAMS=("VERBOSE" "QUIET" "CLEAN")
 ONE_ARG_PARAMS=("SERVER_HOST" "NODE_NAME" "PEER_LIST" "PRIORITY" "PLUGINS" "CACHE_SIZE" "WORKER_THREADS" "QUERY_LOG" "MAX_JOURNAL_SIZE" "SYNCHRONOUS")
 
-function toLowerCase()
-{
+function toLowerCase() {
   echo "$1" | tr '[:upper:]' '[:lower:]'
 }
 
