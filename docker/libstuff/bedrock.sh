@@ -51,10 +51,8 @@ do
   fi
 done
 
-for i in "${ONE_ARG_PARAMS[@]}"
-do
-  :
-  if [ -v "$i" ]; then
+for i in "${ONE_ARG_PARAMS[@]}" ; do
+  if [[ -v "$i" ]]; then
     export PARAMS="$PARAMS -$(toSnakeCase ${i}) ${!i}"
   fi
 done
