@@ -5,7 +5,7 @@ set -e
 # Returns 1 if version doesn't match
 function bashVersionCheck()
 {
-  [ -z $BASH_VERSIO ] && return 1
+  [ -z $BASH_VERSION ] && return 1
 
   # If it's set, check the version
   case $BASH_VERSIO in
