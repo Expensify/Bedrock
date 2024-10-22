@@ -54,7 +54,8 @@ static const set<string> PARAMS_WHITELIST = {
     "companyName",
     "companyWebsite",
     "invoice",
-    "policyAccountID"
+    "policyAccountID",
+    "errorMessage"
 };
 
 string addLogParams(string&& message, const map<string, string>& params) {
