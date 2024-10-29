@@ -1204,6 +1204,7 @@ bool SQLiteNode::update() {
         // If graceful shutdown requested, stop following once there is
         // nothing blocking shutdown.  We stop listening for new commands
         // immediately upon TERM.)
+        SINFO("in update->FOLLOWING");
         if (_isShuttingDown && _isNothingBlockingShutdown()) {
             // Go searching so we stop following
             SINFO("Stopping FOLLOWING in order to gracefully shut down, SEARCHING.");
