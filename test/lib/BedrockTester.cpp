@@ -85,6 +85,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-escalateOverHTTP", "true"},
         {"-cacheSize", "1000"},
         {"-parallelReplication", "true"},
+        {"-hctree", "true"},
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?
         //{"-logDirectlyToSyslogSocket", ""},
         {"-testName", currentTestName},
