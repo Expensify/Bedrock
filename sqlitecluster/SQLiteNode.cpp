@@ -2534,7 +2534,7 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-    SINFO("State mutex locked");
+    SINFO("State mutex locked in postPoll");
 
     // Accept any new peers
     Socket* socket = nullptr;
