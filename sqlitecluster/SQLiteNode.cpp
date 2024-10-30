@@ -185,11 +185,18 @@ SQLiteNode::~SQLiteNode() {
 
 void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp) {
     
-    _replicateThreadStarted = true;
+    
+    SINFO("Thread for transaction " << command.calcU64("NewCount") << " started");
+ 
+    {
+        unique_lock<mutex> lock(_replicateStartMutex);
+        _replicateThreadStarted = true;
+    }
     _replicateStartCV.notify_all();
 
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
+    SINFO("Thread for transaction " << command.calcU64("NewCount") << " started notified waiters.");
 
     // Actual thread startup time.
     uint64_t threadStartTime = STimeNow();
@@ -1660,12 +1667,17 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     uint64_t threadAttemptStartTimestamp = STimeNow();
                     SINFO("Spawning thread for transaction " << message.calcU64("NewCount"));
                     _replicateThreadStarted = false;
-                    std::unique_lock<std::mutex> lock(_replicateStartMutex);
-                    ResourceMonitorThread([=, this](){this->_replicate(peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp);}).detach();
-                    while (!_replicateThreadStarted) {
-                        _replicateStartCV.wait(lock);
-                        if (!_replicateThreadStarted) {
-                            SINFO("condition variable finished waiting but replicate thread not started");
+                    ResourceMonitorThread rmt([=, this](){this->_replicate(peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp);});
+                    SINFO("Detaching thread for transaction " << message.calcU64("NewCount"));
+                    rmt.detach();
+                    SINFO("Detached thread for transaction " << message.calcU64("NewCount"));
+                    {
+                        unique_lock<mutex> lock(_replicateStartMutex);
+                        while (!_replicateThreadStarted) {
+                            _replicateStartCV.wait(lock);
+                            if (!_replicateThreadStarted) {
+                                SINFO("condition variable finished waiting but replicate thread not started");
+                            }
                         }
                     }
                     // I think we want to block here until the above thread has started. it just needs to notify us that it's doing *something*

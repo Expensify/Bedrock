@@ -250,6 +250,7 @@ void BedrockServer::sync()
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
             _syncNode->postPoll(fdm, nextActivity);
+            SINFO("Sync node postPoll complete.");
             _syncNodeQueuedCommands.postPoll(fdm);
             _notifyDone.postPoll(fdm);
         }
