@@ -47,7 +47,10 @@ static const set<string> PARAMS_WHITELIST = {
     "command",
     "companyName",
     "companyWebsite",
+    "domainAccountID",
+    "domainName",
     "errorMessage",
+    "feedCountry",
     "indexName",
     "invoice",
     "isUnique",
@@ -56,7 +59,9 @@ static const set<string> PARAMS_WHITELIST = {
     "reportID",
     "token",
     "transactionID",
-    "type"
+    "type",
+    "bankAccountID",
+    "step"
 };
 
 string addLogParams(string&& message, const map<string, string>& params) {
@@ -70,7 +75,7 @@ string addLogParams(string&& message, const map<string, string>& params) {
         string valueToLog = value;
         if (!SContains(PARAMS_WHITELIST, key)) {
             if (!GLOBAL_IS_LIVE) {
-                STHROW("500 Log param not in the whitelist, either do not log that or add it to PARAMS_WHITELIST if it's not sensitive");
+                STHROW("500 Log param " + key + " not in the whitelist, either do not log that or add it to PARAMS_WHITELIST if it's not sensitive");
             }
             valueToLog = "<REDACTED>";
         }
