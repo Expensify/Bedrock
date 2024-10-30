@@ -318,12 +318,14 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
         // the calling thread. This is also a really weird exception case that should never happen, so the performance
         // implications aren't significant so long as we don't break.
         unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+        SINFO("State mutex locked");
         _changeState(SQLiteNodeState::SEARCHING);
     }
 }
 
 void SQLiteNode::startCommit(ConsistencyLevel consistency) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+    SINFO("State mutex locked");
 
     // Verify we're not already committing something, and then record that we have begun. This doesn't actually *do*
     // anything, but `update()` will pick up the state in its next invocation and start the actual commit.
@@ -339,6 +341,7 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency) {
 
 void SQLiteNode::beginShutdown() {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+    SINFO("State mutex locked");
     // Ignore redundant
     if (!_isShuttingDown) {
         // Start graceful shutdown
@@ -405,6 +408,7 @@ int SQLiteNode::getPriority() const {
 void SQLiteNode::setShutdownPriority() {
     SINFO("Setting priority to 1, will stop leading if required.");
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+    SINFO("State mutex locked");
     _priority = 1;
 
     if (_state == SQLiteNodeState::LEADING) {
@@ -498,7 +502,9 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
 }
 
 list<STable> SQLiteNode::getPeerInfo() const {
+    SINFO("Locking peer info mutex.");
     shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
+    SINFO("Locked peer info mutex.");
     list<STable> peerData;
     for (SQLitePeer* peer : _peerList) {
         peerData.emplace_back(peer->getData());
@@ -560,6 +566,7 @@ string SQLiteNode::getEligibleFollowerForForwardingAddress() const {
 // Each state transitions according to the following events and operates as follows:
 bool SQLiteNode::update() {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+    SINFO("State mutex locked");
 
     // Process the database state machine
     switch (_state) {
@@ -2527,6 +2534,7 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+    SINFO("State mutex locked");
 
     // Accept any new peers
     Socket* socket = nullptr;

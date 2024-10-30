@@ -211,16 +211,17 @@ ClusterTester<T>::~ClusterTester()
 
     for (int i = _size - 1; i > 0; i--) {
         threads.emplace_back([&, i](){
-            cout << "Stopping node " << i << endl; 
+            cout << "starting stop node thread " << i << endl; 
             stopNode(i);
         });
     }
     for (auto& t: threads) {
-        cout << "Stopping leader " << endl;
+        cout << "joining stop node thread. " << endl;
         t.join();
     }
 
     // Then do leader last. This is to avoid getting in a state where nodes try to stand up as leader shuts down.
+    cout << "stopping leader. " << endl;
     stopNode(0);
 
     auto end = STimeNow();

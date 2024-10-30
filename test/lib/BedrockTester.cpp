@@ -281,7 +281,9 @@ string BedrockTester::startServer(bool wait) {
 }
 
 void BedrockTester::stopServer(int signal) {
+    cout << "Stopping server PID: " << _serverPID << endl;
     if (_serverPID) {
+        cout << "kill" << endl;
         kill(_serverPID, signal);
         int status;
         waitpid(_serverPID, &status, 0);
