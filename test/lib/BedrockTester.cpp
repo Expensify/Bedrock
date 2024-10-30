@@ -281,9 +281,7 @@ string BedrockTester::startServer(bool wait) {
 }
 
 void BedrockTester::stopServer(int signal) {
-    cout << "Stopping server PID: " << _serverPID << endl;
     if (_serverPID) {
-        cout << "kill" << endl;
         kill(_serverPID, signal);
         int status;
         waitpid(_serverPID, &status, 0);
@@ -601,15 +599,11 @@ bool BedrockTester::waitForStatusTerm(const string& term, const string& testValu
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            auto response = executeWaitVerifyContent(SData("Status"), "200", true);
-            string result = SParseJSONObject(response)[term];
+            string result = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", true))[term];
 
             // if the value matches, return, otherwise wait
             if (result == testValue) {
                 return true;
-            } else {
-                cout << "Result didn't match:" << endl;
-                cout << response << endl;
             }
         } catch (...) {
             // Doesn't do anything, we'll fall through to the sleep and try again.

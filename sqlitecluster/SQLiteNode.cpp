@@ -1,6 +1,5 @@
 #include "SQLiteNode.h"
 
-#include <condition_variable>
 #include <unistd.h>
 
 #include <libstuff/AutoScopeOnPrepare.h>
@@ -184,10 +183,7 @@ SQLiteNode::~SQLiteNode() {
 }
 
 void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp) {
-    
-    
-    SINFO("Thread for transaction " << command.calcU64("NewCount") << " started");
- 
+    // Notify the sync thread that this thread has begun.
     {
         unique_lock<mutex> lock(_replicateStartMutex);
         _replicateThreadStarted = true;
@@ -196,7 +192,6 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
 
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
-    SINFO("Thread for transaction " << command.calcU64("NewCount") << " started notified waiters.");
 
     // Actual thread startup time.
     uint64_t threadStartTime = STimeNow();
@@ -325,14 +320,12 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
         // the calling thread. This is also a really weird exception case that should never happen, so the performance
         // implications aren't significant so long as we don't break.
         unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-        SINFO("State mutex locked");
         _changeState(SQLiteNodeState::SEARCHING);
     }
 }
 
 void SQLiteNode::startCommit(ConsistencyLevel consistency) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-    SINFO("State mutex locked");
 
     // Verify we're not already committing something, and then record that we have begun. This doesn't actually *do*
     // anything, but `update()` will pick up the state in its next invocation and start the actual commit.
@@ -348,7 +341,6 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency) {
 
 void SQLiteNode::beginShutdown() {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-    SINFO("State mutex locked");
     // Ignore redundant
     if (!_isShuttingDown) {
         // Start graceful shutdown
@@ -415,7 +407,6 @@ int SQLiteNode::getPriority() const {
 void SQLiteNode::setShutdownPriority() {
     SINFO("Setting priority to 1, will stop leading if required.");
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-    SINFO("State mutex locked");
     _priority = 1;
 
     if (_state == SQLiteNodeState::LEADING) {
@@ -509,9 +500,7 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
 }
 
 list<STable> SQLiteNode::getPeerInfo() const {
-    SINFO("Locking peer info mutex.");
     shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
-    SINFO("Locked peer info mutex.");
     list<STable> peerData;
     for (SQLitePeer* peer : _peerList) {
         peerData.emplace_back(peer->getData());
@@ -573,7 +562,6 @@ string SQLiteNode::getEligibleFollowerForForwardingAddress() const {
 // Each state transitions according to the following events and operates as follows:
 bool SQLiteNode::update() {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-    SINFO("State mutex locked");
 
     // Process the database state machine
     switch (_state) {
@@ -1223,7 +1211,6 @@ bool SQLiteNode::update() {
         // If graceful shutdown requested, stop following once there is
         // nothing blocking shutdown.  We stop listening for new commands
         // immediately upon TERM.)
-        SINFO("in update->FOLLOWING");
         if (_isShuttingDown && _isNothingBlockingShutdown()) {
             // Go searching so we stop following
             SINFO("Stopping FOLLOWING in order to gracefully shut down, SEARCHING.");
@@ -1665,26 +1652,17 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
                 try {
                     uint64_t threadAttemptStartTimestamp = STimeNow();
-                    SINFO("Spawning thread for transaction " << message.calcU64("NewCount"));
                     _replicateThreadStarted = false;
-                    ResourceMonitorThread rmt([=, this](){this->_replicate(peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp);});
-                    SINFO("Detaching thread for transaction " << message.calcU64("NewCount"));
-                    rmt.detach();
-                    SINFO("Detached thread for transaction " << message.calcU64("NewCount"));
+                    thread([=, this](){this->_replicate(peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp);}).detach();
                     {
                         unique_lock<mutex> lock(_replicateStartMutex);
                         while (!_replicateThreadStarted) {
                             _replicateStartCV.wait(lock);
                             if (!_replicateThreadStarted) {
-                                SINFO("condition variable finished waiting but replicate thread not started");
+                                SINFO("condition variable finished waiting but replicate thread not started.");
                             }
                         }
                     }
-                    // I think we want to block here until the above thread has started. it just needs to notify us that it's doing *something*
-                    // It seems that with large numbers of threads, sometimes they just get "lost" here, as if they're never scheduled.
-                    // If we use a condition variable to notify that the thread has started, we can block here and not start hundreds or thousands of replication threads
-                    // While one is lost. This is likely a tiny bit slower, but not broken.
-                    // There's no guarantee that the condition variable gets notified, but this seems to happen when there are too many threads.
                 } catch (const system_error& e) {
                     // If the server is strugling and falling behind on replication, we might have too many threads
                     // causing a resource exhaustion. If that happens, all the transactions that are already threaded
@@ -2546,8 +2524,7 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-    SINFO("State mutex locked in postPoll");
-
+ 
     // Accept any new peers
     Socket* socket = nullptr;
     while ((socket = _acceptSocket())) {
