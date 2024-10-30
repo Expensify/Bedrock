@@ -1648,6 +1648,11 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     uint64_t threadAttemptStartTimestamp = STimeNow();
                     SINFO("Spawning thread for transaction " << message.calcU64("NewCount"));
                     ResourceMonitorThread([=, this](){this->_replicate(peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp);}).detach();
+                    // I think we want to block here until the above thread has started. it just needs to notify us that it's doing *something*
+                    // It seems that with large numbers of threads, sometimes they just get "lost" here, as if they're never scheduled.
+                    // If we use a condition variable to notify that the thread has started, we can block here and not start hundreds or thousands of replication threads
+                    // While one is lost. This is likely a tiny bit slower, but not broken.
+                    // There's no guarantee that the condition variable gets notified, but this seems to happen when there are too many threads.
                 } catch (const system_error& e) {
                     // If the server is strugling and falling behind on replication, we might have too many threads
                     // causing a resource exhaustion. If that happens, all the transactions that are already threaded
