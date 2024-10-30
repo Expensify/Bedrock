@@ -1653,7 +1653,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 try {
                     uint64_t threadAttemptStartTimestamp = STimeNow();
                     _replicateThreadStarted = false;
-                    thread([=, this](){this->_replicate(peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp);}).detach();
+                    thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp).detach();
                     {
                         unique_lock<mutex> lock(_replicateStartMutex);
                         while (!_replicateThreadStarted) {
@@ -2524,7 +2524,7 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
- 
+
     // Accept any new peers
     Socket* socket = nullptr;
     while ((socket = _acceptSocket())) {
