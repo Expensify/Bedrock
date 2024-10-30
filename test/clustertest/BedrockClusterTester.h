@@ -190,6 +190,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
 template <typename T>
 ClusterTester<T>::~ClusterTester()
 {
+    cout << "Deleting cluster tester." << endl;
     auto start = STimeNow();
 
     // Shut down everything but the leader first.
@@ -202,16 +203,20 @@ ClusterTester<T>::~ClusterTester()
         // In tests, this can happen with commands that generate other commands that don't expect a response.
         // We can skip this if the node is already stopped, though.
         if (getTester(i).getPID()) {
-            getTester(i).waitForStatusTerm("commandCount", "1");
+            cout << "Waiting for all commands to finish on node " << i << endl; 
+            getTester(i).waitForStatusTerm("commandCount", "1", 10'000'000);
+            cout << "Done waiting for all commands to finish on node " << i << endl; 
         }
     }
 
     for (int i = _size - 1; i > 0; i--) {
         threads.emplace_back([&, i](){
+            cout << "Stopping node " << i << endl; 
             stopNode(i);
         });
     }
     for (auto& t: threads) {
+        cout << "Stopping leader " << endl;
         t.join();
     }
 

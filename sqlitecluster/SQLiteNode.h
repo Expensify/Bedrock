@@ -394,4 +394,8 @@ class SQLiteNode : public STCPManager {
     // A pointer to a SQLite instance that is passed to plugin's stateChanged function. This prevents plugins from operating on the same handle that
     // the sync node is when they run queries in stateChanged.
     SQLite* pluginDB;
+    
+    mutex _replicateStartMutex;
+    condition_variable _replicateStartCV;
+    bool _replicateThreadStarted = false;
 };

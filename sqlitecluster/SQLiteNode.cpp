@@ -1,5 +1,6 @@
 #include "SQLiteNode.h"
 
+#include <condition_variable>
 #include <unistd.h>
 
 #include <libstuff/AutoScopeOnPrepare.h>
@@ -183,6 +184,10 @@ SQLiteNode::~SQLiteNode() {
 }
 
 void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp) {
+    
+    _replicateThreadStarted = true;
+    _replicateStartCV.notify_all();
+
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
 
@@ -1647,7 +1652,15 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 try {
                     uint64_t threadAttemptStartTimestamp = STimeNow();
                     SINFO("Spawning thread for transaction " << message.calcU64("NewCount"));
+                    _replicateThreadStarted = false;
+                    std::unique_lock<std::mutex> lock(_replicateStartMutex);
                     ResourceMonitorThread([=, this](){this->_replicate(peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp);}).detach();
+                    while (!_replicateThreadStarted) {
+                        _replicateStartCV.wait(lock);
+                        if (!_replicateThreadStarted) {
+                            SINFO("condition variable finished waiting but replicate thread not started");
+                        }
+                    }
                     // I think we want to block here until the above thread has started. it just needs to notify us that it's doing *something*
                     // It seems that with large numbers of threads, sometimes they just get "lost" here, as if they're never scheduled.
                     // If we use a condition variable to notify that the thread has started, we can block here and not start hundreds or thousands of replication threads

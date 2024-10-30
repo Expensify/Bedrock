@@ -133,6 +133,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
 }
 
 BedrockTester::~BedrockTester() {
+    cout << "Deleting bedrock tester." << endl;
     if (_db) {
         delete _db;
     }
@@ -598,11 +599,15 @@ bool BedrockTester::waitForStatusTerm(const string& term, const string& testValu
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            string result = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", true))[term];
+            auto response = executeWaitVerifyContent(SData("Status"), "200", true);
+            string result = SParseJSONObject(response)[term];
 
             // if the value matches, return, otherwise wait
             if (result == testValue) {
                 return true;
+            } else {
+                cout << "Result didn't match:" << endl;
+                cout << response << endl;
             }
         } catch (...) {
             // Doesn't do anything, we'll fall through to the sleep and try again.
