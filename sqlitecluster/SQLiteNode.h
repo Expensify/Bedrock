@@ -352,6 +352,11 @@ class SQLiteNode : public STCPManager {
     // Remove. See: https://github.com/Expensify/Expensify/issues/208449
     atomic<int> _priority;
 
+    // These three variables are used to coordinate the startup of replication threads to guarantee each thread starts before we attempt to start the next one.
+    mutex _replicateStartMutex;
+    condition_variable _replicateStartCV;
+    bool _replicateThreadStarted = false;
+
     // Counter of the total number of currently active replication threads. This is used to let us know when all
     // threads have finished.
     atomic<int64_t> _replicationThreadCount;
@@ -397,8 +402,4 @@ class SQLiteNode : public STCPManager {
     // A pointer to a SQLite instance that is passed to plugin's stateChanged function. This prevents plugins from operating on the same handle that
     // the sync node is when they run queries in stateChanged.
     SQLite* pluginDB;
-    
-    mutex _replicateStartMutex;
-    condition_variable _replicateStartCV;
-    bool _replicateThreadStarted = false;
 };

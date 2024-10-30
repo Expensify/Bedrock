@@ -133,7 +133,6 @@ BedrockTester::BedrockTester(const map<string, string>& args,
 }
 
 BedrockTester::~BedrockTester() {
-    cout << "Deleting bedrock tester." << endl;
     if (_db) {
         delete _db;
     }
