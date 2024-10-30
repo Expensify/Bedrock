@@ -111,6 +111,7 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool h
         // We only need to specify the full URL when creating new DBs. Existing DBs will be auto-detected as HC-Tree or not.
         completeFilename = "file://" + completeFilename + "?hctree=1";
     }
+    SINFO("Complete database filename: " << completeFilename);
     int result = sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL);
     if (result) {
         SERROR("sqlite3_open_v2 returned " << result << ", Extended error code: " << sqlite3_extended_errcode(db));
@@ -136,6 +137,7 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables) {
         } else {
             snprintf(tableName, 27, "journal%04i", currentJounalTable);
         }
+        SINFO("Verifying journal " << tableName);
         if (SQVerifyTable(db, tableName, "CREATE TABLE " + string(tableName) + " ( id INTEGER PRIMARY KEY, query TEXT, hash TEXT )")) {
             SHMMM("Created " << tableName << " table.");
         }

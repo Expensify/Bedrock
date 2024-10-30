@@ -2579,7 +2579,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             // Calling strlen() or any function that iterates across the whole string here is a giant performance problem, and all the operations chosen here have
             // been picked specifically to avoid that.
             size_t maxLength = sql.size() - (statementRemainder - sql.c_str()) + 1;
+            SINFO("preparing: " << statementRemainder);
             error = sqlite3_prepare_v2(db, statementRemainder, (int)maxLength, &preparedStatement, &statementRemainder);
+            SINFO("prepared");
             if (isSyncThread) {
                 prepareTimeUS += STimeNow() - beforePrepare;
             }
@@ -2603,7 +2605,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                     beforeStep = STimeNow();
                 }
                 numSteps++;
+                SINFO("step");
                 error = sqlite3_step(preparedStatement);
+                SINFO("stepped");
                 if (isSyncThread) {
                     size_t stepTime = STimeNow() - beforeStep;
                     if (stepTime > longestStepTimeUS) {
@@ -2646,7 +2650,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                     break;
                 }
             }
+            SINFO("finalize");
             sqlite3_finalize(preparedStatement);
+            SINFO("finalized");
         } while (*statementRemainder != 0 && error == SQLITE_OK);
 
         extErr = sqlite3_extended_errcode(db);
@@ -2733,7 +2739,14 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
     // First, see if it's there
     SQResult result;
-    SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
+    //SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
+    int error = SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result);
+    if (error) {
+        SINFO("failed to select journals with query: " << "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName));
+        SINFO("SQLite returned error: " << error);
+        SASSERT(false);
+    }
+
     if (result.empty()) {
         // Table doesn't already exist, create it
         SINFO("Creating '" << tableName << "'");

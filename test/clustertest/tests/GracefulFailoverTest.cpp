@@ -107,6 +107,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
     }
 
     void test() {
+        cout << "A" << endl;
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
 
         // Step 1: everything is already up and running. Let's start spamming.
@@ -116,6 +117,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         atomic<bool> done;
         done.store(false);
 
+        cout << "B" << endl;
         atomic<int> commandID(10000);
         mutex mu;
         startClientThreads(threads, done, counts, commandID, mu, allresults);
@@ -126,6 +128,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         // Now our clients are spamming all our nodes. Shut down leader.
         tester->stopNode(0);
 
+        cout << "C" << endl;
         // Wait for node 1 to be leader.
         ASSERT_TRUE(tester->getTester(1).waitForState("LEADING"));
 
@@ -137,6 +140,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
         sleep(15);
 
+        cout << "D" << endl;
         // Now let's  stop a follower and make sure everything keeps working.
         tester->stopNode(2);
 
@@ -162,6 +166,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         }
         ASSERT_TRUE(success);
 
+        cout << "E" << endl;
         // And bring it back up.
         tester->getTester(2).startServer();
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
@@ -177,6 +182,7 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         allresults.resize(60);
         done.store(false);
 
+        cout << "F" << endl;
         // Verify everything was either a 202 or a 756.
         for (auto& p : counts) {
             ASSERT_TRUE(p.first == "202" || p.first == "756");
@@ -192,23 +198,30 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         // Blow up leader.
         tester->getTester(0).stopServer(SIGKILL);
 
+        cout << "G" << endl;
         // Wait for node 1 to be leader.
         ASSERT_TRUE(tester->getTester(1).waitForState("LEADING"));
+        cout << "G.1" << endl;
 
         // Now bring leader back up.
         sleep(2);
         tester->getTester(0).startServer();
+        cout << "G.2" << endl;
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
+        cout << "G.3" << endl;
 
         // Blow up a follower.
         sleep(2);
         tester->getTester(2).stopServer(SIGKILL);
+        cout << "G.4" << endl;
 
+        cout << "H" << endl;
         // And bring it back up.
         sleep(2);
         tester->getTester(2).startServer();
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
+        cout << "I" << endl;
         // We're really done, let everything finish a last time.
         done.store(true);
         for (auto& t : threads) {

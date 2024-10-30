@@ -131,7 +131,7 @@ $(INTERMEDIATEDIR)/%.d $(INTERMEDIATEDIR)/%.o: %.cpp mbedtls/library/libmbedcryp
 # SQLITE_MAX_MMAP_SIZE is set to 16TB.
 $(INTERMEDIATEDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(BEDROCK_OPTIM_COMPILE_FLAG) -fPIC $(AMALGAMATION_FLAGS) -o $@ -c $<
+	$(CC) $(BEDROCK_OPTIM_COMPILE_FLAG) -fPIC $(AMALGAMATION_FLAGS) -g -o $@ -c $<
 
 # Bring in the dependency files. This will cause them to be created if necessary. This is skipped if we're cleaning, as
 # they'll just get deleted anyway.
