@@ -38,9 +38,7 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
         } else if (state->result != RESULT::UNKNOWN) {
             return state->result;
         }
-        SINFO("Waiting on " << value);
         cv_status result = state->waitingThreadConditionVariable.wait_for(lock, 1s);
-        SINFO("Done waiting on " << value);
         if (result == cv_status::timeout) {
             // We shouldn't need this 1s timeout at all, and should be able to wait indefinitely until this thread is woken up, because that should always happen eventually. But it seems
             // like there might be a bug *somewhere* that causes us to either miss a notification that we've canceled some outstanding transactions, or that we are failing to notify them
@@ -70,44 +68,9 @@ uint64_t SQLiteSequentialNotifier::getValue() {
 
 void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
     lock_guard<mutex> lock(_internalStateMutex);
-    SINFO("notify through called for value " << value);
     if (value > _value) {
         _value = value;
     }
-    
-    // This thread is waiting on commit 414 before it can start. It will commit transaction 425.
-    // 2024-10-29T23:27:51.752802+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:211) _replicate [replicate786] [info] {cluster_node_2/FOLLOWING} [performance] BEGIN_TRANSACTION replicate thread for commit 425 waiting on DB count 414 (ASYNC)
-    // This thread is waiting on commit 421 before it can start. It will commit transaction 427.
-    // 2024-10-29T23:27:51.752842+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:211) _replicate [replicate787] [info] {cluster_node_2/FOLLOWING} [performance] BEGIN_TRANSACTION replicate thread for commit 427 waiting on DB count 421 (ASYNC)
-    // The first thread is now waiting for thread 424 to complete.
-    // 2024-10-29T23:27:51.954400+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteSequentialNotifier.cpp:41) waitFor [replicate786] [info] Waiting on 424
-    // 
-    // 414 is the last notification we get, so seeing what happened with the thread handling 415 would be interesting.
-    // replicate836, replicate838 and replicate845 are waiting on 415.
-    // 
-    // There is no line like:
-    // BEGIN_TRANSACTION replicate thread for commit 415
-    // Either the message is dropped, or the thread never started. We should log the commit we would be starting a therad for in the parent thread.
-    // That could narrow down one of those conditions.
-    // 2024-10-29T23:27:51.775925+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:211) _replicate [replicate842] [info] {cluster_node_2/FOLLOWING} [performance] BEGIN_TRANSACTION replicate thread for commit 414 waiting on DB count 407 (ASYNC)
-    // 2024-10-29T23:27:51.773000+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:211) _replicate [replicate836] [info] {cluster_node_2/FOLLOWING} [performance] BEGIN_TRANSACTION replicate thread for commit 416 waiting on DB count 413 (ASYNC)
-    // You would expect this to happen roughly around the start of replicate threads 836-842
-    //
-    // On the next iteration, the last notifitcation we seem to get is:
-    // Notifying all threads waiting of value 397
-    // So let's see what happened to 398.
-    // 397 exists as expected:
-    // 2024-10-30T00:05:39.481704+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:211) _replicate [replicate774] [info] {cluster_node_2/FOLLOWING} [performance] BEGIN_TRANSACTION replicate thread for commit 397 waiting on DB count 389 (ASYNC)
-    // 
-    // The corresponding line for 398 is not found.
-    // 399 is found:
-    // 2024-10-30T00:05:39.489280+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:211) _replicate [replicate806] [info] {cluster_node_2/FOLLOWING} [performance] BEGIN_TRANSACTION replicate thread for commit 399 waiting on DB count 396 (ASYNC)
-    // 
-    // The parent thread attempts to start them all. Somehow they get lost.
-    // 2024-10-30T00:05:39.447668+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:1649) _onMESSAGE [sync] [info] {cluster_node_2/FOLLOWING} Spawning thread for transaction 397
-    // 2024-10-30T00:05:39.447767+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:1649) _onMESSAGE [sync] [info] {cluster_node_2/FOLLOWING} Spawning thread for transaction 398
-    // 2024-10-30T00:05:39.447882+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:1649) _onMESSAGE [sync] [info] {cluster_node_2/FOLLOWING} Spawning thread for transaction 399
-
     for (auto valueThreadMapPtr : {&_valueToPendingThreadMap, &_valueToPendingThreadMapNoCurrentTransaction}) {
         auto& valueThreadMap = *valueThreadMapPtr;
         auto lastToDelete = valueThreadMap.begin();
@@ -124,7 +87,6 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
             // Make the changes to the state object - mark it complete and notify anyone waiting.
             lock_guard<mutex> lock(it->second->waitingThreadMutex);
             it->second->result = RESULT::COMPLETED;
-            SINFO("Notifying all threads waiting of value " << it->first);
             it->second->waitingThreadConditionVariable.notify_all();
         }
 
@@ -141,34 +103,6 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
 
 void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
     SINFO("Canceling all pending transactions after " << cancelAfter);
-    
-    // OK, we cancel everything after 1027.
-    // This is because:
-    // 2024-10-29T23:27:51.987857+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteSequentialNotifier.cpp:73) notifyThrough [replicate1322] [info] notify through called for value 1027
-    // 2024-10-29T23:27:54.869544+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:1867) _changeState [sync] [info] {cluster_node_2/FOLLOWING} Replication threads should exit, canceling commits after current leader commit 1027
-    // 
-    // Everyone was notified about 1027, why do we have anyone waiting from before that? They could have started waiting after the
-    // notification happened, but those should get handled.
-    // 
-    // Starts just before the notification:
-    // 2024-10-29T23:27:51.867174+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteSequentialNotifier.cpp:41) waitFor [replicate1036] [info] Waiting on 676
-    // 2024-10-29T23:27:52.867740+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteSequentialNotifier.cpp:43) waitFor [replicate1036] [info] Done waiting on 676
-    // It's already done by the cancel.
-    // 
-    // Then it gets into a loop doing this:
-    // 2024-10-29T23:27:55.868816+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteSequentialNotifier.cpp:43) waitFor [replicate1036] [info] Done waiting on 676
-    // 2024-10-29T23:27:55.868824+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteSequentialNotifier.cpp:59) waitFor [replicate1036] [info] Hit 1s timeout while global cancel 1 or  specific cancel 0
-    // 2024-10-29T23:27:55.868831+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteSequentialNotifier.cpp:31) waitFor [replicate1036] [info] Canceled after 1027, but waiting for 676 so not returning yet.
-    // 2024-10-29T23:27:55.868838+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteSequentialNotifier.cpp:41) waitFor [replicate1036] [info] Waiting on 676
-    // 
-    // We don't get very many notifyThrough's.
-    // 2024-10-29T23:27:55.010547+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteSequentialNotifier.cpp:73) notifyThrough [replicate1324] [info] notify through called for value 730
-    // We de get the above, though, why doesn't that trigger this to stop waiting?
-    // 
-    // Also, why are we not getting tons of those?
-    // Perhaps all the threads are just on previous ones so can't finish.
-
-
     lock_guard<mutex> lock(_internalStateMutex);
 
     // It's important that _cancelAfter is set before _globalResult. This avoids a race condition where we check

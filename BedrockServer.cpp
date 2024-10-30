@@ -250,7 +250,6 @@ void BedrockServer::sync()
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
             _syncNode->postPoll(fdm, nextActivity);
-            SINFO("Sync node postPoll complete.");
             _syncNodeQueuedCommands.postPoll(fdm);
             _notifyDone.postPoll(fdm);
         }
@@ -1119,7 +1118,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 }
 
 bool BedrockServer::_handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& command) {
-    SINFO("Addtempting status or control command.");
     if (_isStatusCommand(command)) {
         _status(command);
         _reply(command);
@@ -1596,9 +1594,7 @@ list<STable> BedrockServer::getPeerInfo() {
     list<STable> peerData;
     auto _syncNodeCopy = atomic_load(&_syncNode);
     if (_syncNodeCopy) {
-        SINFO("Getting copy peer data");
         peerData =  _syncNodeCopy->getPeerInfo();
-        SINFO("Done Getting copy peer data");
     }
     return peerData;
 }
@@ -1620,7 +1616,6 @@ bool BedrockServer::isUpgradeComplete() {
 }
 
 void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
-    SINFO("Handling status");
     const SData& request  = command->request;
     SData& response = command->response;
 
@@ -1693,22 +1688,16 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         // Coalesce all of the peer data into one value to return or return
         // an error message if we timed out getting the peerList data.
         list<string> peerList;
-        SINFO("Getting peer data.");
         list<STable> peerData = getPeerInfo();
-        SINFO("Done Getting peer data.");
         for (const STable& peerTable : peerData) {
-            SINFO("Pushing peer data to list");
             peerList.push_back(SComposeJSONObject(peerTable));
         }
 
         {
-            SINFO("Getting command port block reasons.");
             lock_guard<mutex> lock(_portMutex);
             content["commandPortBlockReasons"] = SComposeJSONArray(_commandPortBlockReasons);
-            SINFO("Done Getting command port block reasons.");
         }
 
-        SINFO("Here");
         // We can use the `each` functionality to pass a lambda that will grab each method line in
         // `_syncNodeQueuedCommands`.
         list<string> syncNodeQueuedMethods;
@@ -1718,8 +1707,6 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         content["peerList"]                    = SComposeJSONArray(peerList);
         content["queuedCommandList"]           = SComposeJSONArray(_commandQueue.getRequestMethodLines());
         content["syncThreadQueuedCommandList"] = SComposeJSONArray(syncNodeQueuedMethods);
-        
-        SINFO("Here");
 
         auto _syncNodeCopy = atomic_load(&_syncNode);
         if (_syncNodeCopy) {
@@ -1732,11 +1719,9 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
             content["syncNodeAvailable"] = "false";
         }
 
-        SINFO("Here");
         // Done, compose the response.
         response.methodLine = "200 OK";
         response.content = SComposeJSONObject(content);
-        SINFO("Here");
     }
 
     else if (SIEquals(request.methodLine, STATUS_BLACKLIST)) {

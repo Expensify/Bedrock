@@ -15,10 +15,6 @@ public:
     template<typename F, typename... Args>
     ResourceMonitorThread(F&& f, Args&&... args):
       thread(ResourceMonitorThread::wrapper<F&&, Args&&...>, forward<F&&>(f), forward<Args&&>(args)...){};
-
-    ~ResourceMonitorThread() {
-        SINFO("Completing ResourceMonitorThread");
-    }
 private:
     thread_local static uint64_t threadStartTime;
     thread_local static double cpuStartTime;
@@ -28,11 +24,8 @@ private:
 
     template<typename F, typename... Args>
     static void wrapper(F&& f, Args&&... args) {
-        SINFO("resource wrapper called");
         beforeProcessStart();
-        SINFO("before invoke");
         invoke(forward<F>(f), forward<Args>(args)...);
-        SINFO("after invoke");
         afterProcessFinished();
     }
 };
