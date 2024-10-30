@@ -86,9 +86,27 @@ void SQLiteSequentialNotifier::notifyThrough(uint64_t value) {
     // replicate836, replicate838 and replicate845 are waiting on 415.
     // 
     // There is no line like:
-    // BEGIN_TRANSACTION replicate thread for commit 425 waiting on DB count 415
+    // BEGIN_TRANSACTION replicate thread for commit 415
     // Either the message is dropped, or the thread never started. We should log the commit we would be starting a therad for in the parent thread.
     // That could narrow down one of those conditions.
+    // 2024-10-29T23:27:51.775925+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:211) _replicate [replicate842] [info] {cluster_node_2/FOLLOWING} [performance] BEGIN_TRANSACTION replicate thread for commit 414 waiting on DB count 407 (ASYNC)
+    // 2024-10-29T23:27:51.773000+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:211) _replicate [replicate836] [info] {cluster_node_2/FOLLOWING} [performance] BEGIN_TRANSACTION replicate thread for commit 416 waiting on DB count 413 (ASYNC)
+    // You would expect this to happen roughly around the start of replicate threads 836-842
+    //
+    // On the next iteration, the last notifitcation we seem to get is:
+    // Notifying all threads waiting of value 397
+    // So let's see what happened to 398.
+    // 397 exists as expected:
+    // 2024-10-30T00:05:39.481704+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:211) _replicate [replicate774] [info] {cluster_node_2/FOLLOWING} [performance] BEGIN_TRANSACTION replicate thread for commit 397 waiting on DB count 389 (ASYNC)
+    // 
+    // The corresponding line for 398 is not found.
+    // 399 is found:
+    // 2024-10-30T00:05:39.489280+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:211) _replicate [replicate806] [info] {cluster_node_2/FOLLOWING} [performance] BEGIN_TRANSACTION replicate thread for commit 399 waiting on DB count 396 (ASYNC)
+    // 
+    // The parent thread attempts to start them all. Somehow they get lost.
+    // 2024-10-30T00:05:39.447668+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:1649) _onMESSAGE [sync] [info] {cluster_node_2/FOLLOWING} Spawning thread for transaction 397
+    // 2024-10-30T00:05:39.447767+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:1649) _onMESSAGE [sync] [info] {cluster_node_2/FOLLOWING} Spawning thread for transaction 398
+    // 2024-10-30T00:05:39.447882+00:00 expensidev2004 bedrock10007: xxxxxx (SQLiteNode.cpp:1649) _onMESSAGE [sync] [info] {cluster_node_2/FOLLOWING} Spawning thread for transaction 399
 
     for (auto valueThreadMapPtr : {&_valueToPendingThreadMap, &_valueToPendingThreadMapNoCurrentTransaction}) {
         auto& valueThreadMap = *valueThreadMapPtr;
