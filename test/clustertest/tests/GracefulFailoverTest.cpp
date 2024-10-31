@@ -205,7 +205,6 @@ struct GracefulFailoverTest : tpunit::TestFixture {
 
         // Now bring leader back up.
         sleep(2);
-        tester->getTester(0).updateArgs({{"-waitForDebugger", "1"}});
         tester->getTester(0).startServer();
         cout << "G.2" << endl;
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
