@@ -1653,8 +1653,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     // we're changing the state to SEARCHING and sending the cancelAfter property to drop all threads
                     // that depend on the transaction that failed to be threaded.
                     _replicationThreadCount.fetch_sub(1);
-                    _changeState(SQLiteNodeState::SEARCHING, message.calcU64("NewCount") - 1);
                     SWARN("Caught system_error starting _replicate thread with " << _replicationThreadCount.load() << " threads. e.what()=" << e.what());
+                    _changeState(SQLiteNodeState::SEARCHING, message.calcU64("NewCount") - 1);
                     STHROW("Error starting replicate thread so giving up and reconnecting.");
                 }
                 SDEBUG("Done spawning concurrent replicate thread: " << threadID);
