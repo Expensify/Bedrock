@@ -206,7 +206,7 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 }
             }
 
-            if (depth > 100) {
+            if (depth > 40) {
                 SWARN("Stack depth is " << depth << " only logging first and last 20 frames.");
             }
 
@@ -214,7 +214,7 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
             // For cases like those, we'll also save the stack trace for the crash in a file.
             int fd = creat(format("/tmp/bedrock_crash_{}.log", STimeNow()).c_str(), 0666);
             for (int i = 0; i < depth; i++) {
-                if (depth > 100 && i >= 20 && i < depth - 20) {
+                if (depth > 40 && i >= 20 && i < depth - 20) {
                     // Skip frames in the middle of large stacks.
                     continue;
                 }
