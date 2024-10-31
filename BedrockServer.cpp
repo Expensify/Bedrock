@@ -7,6 +7,8 @@
 #include <sys/resource.h>
 #include <sys/time.h>
 
+#include <iostream>
+
 #include <bedrockVersion.h>
 #include <BedrockCore.h>
 #include <BedrockPlugin.h>
@@ -1222,6 +1224,10 @@ BedrockServer::BedrockServer(const SData& args_)
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _upgradeCompleted(false)
 {
+    if (args.isSet("-waitForDebugger")) {
+        cout << "WAITING FOR DEBUGGER" << endl;
+        sleep(30);
+    }
     _version = VERSION;
 
     // Enable the requested plugins, and update our version string if required.
