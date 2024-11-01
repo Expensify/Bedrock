@@ -61,6 +61,7 @@ static const set<string> PARAMS_WHITELIST = {
     "transactionID",
     "type",
     "bankAccountID",
+    "status",
     "step",
     "cardData"
 };
