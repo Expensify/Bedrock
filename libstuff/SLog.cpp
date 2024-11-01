@@ -61,7 +61,8 @@ static const set<string> PARAMS_WHITELIST = {
     "transactionID",
     "type",
     "bankAccountID",
-    "step"
+    "step",
+    "cardData"
 };
 
 string addLogParams(string&& message, const map<string, string>& params) {
