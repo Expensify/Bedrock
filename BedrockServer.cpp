@@ -6,7 +6,6 @@
 #include <fstream>
 #include <sys/resource.h>
 #include <sys/time.h>
-#include <iostream> 
 
 #include <bedrockVersion.h>
 #include <BedrockCore.h>
@@ -1224,14 +1223,6 @@ BedrockServer::BedrockServer(const SData& args_)
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _upgradeCompleted(false)
 {
     _version = VERSION;
-    
-    if (args.isSet("-waitDebug")) {
-        cout << "BedrockServer pausing for debugger" << endl;
-        SINFO("BedrockServer pausing for debugger");
-        sleep(args.calc("-waitDebug"));
-        cout << "BedrockServer continuing startup" << endl;
-        SINFO("BedrockServer continuing startup");
-    }
 
     // Enable the requested plugins, and update our version string if required.
     list<string> pluginNameList = SParseList(args["-plugins"]);
