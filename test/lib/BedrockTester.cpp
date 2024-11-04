@@ -16,7 +16,7 @@
 PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
-const bool BedrockTester::ENABLE_HCTREE{false};
+const bool BedrockTester::ENABLE_HCTREE{true};
 
 string BedrockTester::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
