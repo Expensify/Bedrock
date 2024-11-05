@@ -57,6 +57,8 @@ static const set<string> PARAMS_WHITELIST = {
     "policyAccountID",
     "policyID",
     "reportID",
+    "shouldCompleteOnboarding",
+    "shouldDismissHybridAppOnboarding",
     "token",
     "transactionID",
     "type",
