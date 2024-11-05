@@ -183,6 +183,13 @@ SQLiteNode::~SQLiteNode() {
 }
 
 void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp) {
+    // Notify the sync thread that this thread has begun.
+    {
+        unique_lock<mutex> lock(_replicateStartMutex);
+        _replicateThreadStarted = true;
+    }
+    _replicateStartCV.notify_all();
+
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
 
@@ -1645,7 +1652,17 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
                 try {
                     uint64_t threadAttemptStartTimestamp = STimeNow();
-                    ResourceMonitorThread([=, this](){this->_replicate(peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp);}).detach();
+                    _replicateThreadStarted = false;
+                    thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp).detach();
+                    {
+                        unique_lock<mutex> lock(_replicateStartMutex);
+                        while (!_replicateThreadStarted) {
+                            _replicateStartCV.wait(lock);
+                            if (!_replicateThreadStarted) {
+                                SINFO("condition variable finished waiting but replicate thread not started.");
+                            }
+                        }
+                    }
                 } catch (const system_error& e) {
                     // If the server is strugling and falling behind on replication, we might have too many threads
                     // causing a resource exhaustion. If that happens, all the transactions that are already threaded
