@@ -576,7 +576,14 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online)
         SData command("Query");
         command["Query"] = fixedQuery;
         command["Format"] = "JSON";
-        auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
+        auto commandResult = executeWaitMultipleData({command});
+        auto row0 = SParseJSONObject(commandResult[0].content)["rows"];
+        auto headerString = SParseJSONObject(commandResult[0].content)["headers"];
+
+        list<string> headers = SParseJSONArray(headerString);
+        for (const auto& h : headers) {
+            result.headers.push_back(h);
+        }
 
         list<string> rows = SParseJSONArray(row0);
         for (const string& rowStr : rows) {
