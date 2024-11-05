@@ -64,7 +64,7 @@ static const set<string> PARAMS_WHITELIST = {
     "status",
     "step",
     "cardData",
-"field"
+    "field"
 };
 
 string addLogParams(string&& message, const map<string, string>& params) {
