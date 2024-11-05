@@ -1,4 +1,5 @@
 #include "BedrockTester.h"
+#include "libstuff/libstuff.h"
 
 #include <cstring>
 #include <iostream>
@@ -547,31 +548,33 @@ void BedrockTester::freeDB() {
 
 string BedrockTester::readDB(const string& query, bool online)
 {
-    if (ENABLE_HCTREE && online) {
-        SData command("Query");
-        command["Query"] = query;
-        command["Format"] = "JSON";
-        auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
-        if (row0 == "") {
-            return "";
-        }
-
-        return SParseJSONArray(SParseJSONArray(row0).front()).front();
-    } else {
-        SQLite& db = getSQLiteDB();
-        db.beginTransaction();
-        string result = db.read(query);
-        db.rollback();
-        return result;
+    SQResult result;
+    bool success = readDB(query, result, online);
+    if (!success) {
+        return "";
     }
+
+    if (result.empty()) {
+        return "";
+    }
+
+    if (result.rows[0].empty()) {
+        return "";
+    }
+
+    return result.rows[0][0];
 }
 
 bool BedrockTester::readDB(const string& query, SQResult& result, bool online)
 {
     if (ENABLE_HCTREE && online) {
+        string fixedQuery = query;
+        if (!SEndsWith(query, ";")) {
+            fixedQuery += ";";
+        }
         result.clear();
         SData command("Query");
-        command["Query"] = query;
+        command["Query"] = fixedQuery;
         command["Format"] = "JSON";
         auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
 
