@@ -119,7 +119,54 @@ class BedrockCommand : public SQLiteCommand {
     bool areHttpsRequestsComplete() const;
 
     // If the `peek` portion of this command needs to make an HTTPS request, this is where we store it.
-    list<SHTTPSManager::Transaction*> httpsRequests;
+    template <typename T>
+    class GrowOnlyList {
+    public:
+        auto front() const {
+            return _list.front();
+        }
+
+        auto back() const {
+            return _list.back();
+        }
+
+        auto size() const {
+            return _list.size();
+        }
+
+        auto begin() const {
+            return _list.begin();
+        }
+
+          auto rbegin() const {
+            return _list.rbegin();
+        }
+
+        auto end() const {
+            return _list.end();
+        }
+
+        auto rend() const {
+            return _list.rend();
+        }
+
+        auto empty() const {
+            return _list.empty();
+        }
+
+        auto push_back(const T& i)  {
+            return _list.push_back(i);
+        }
+
+        auto push_back(T&& i)  {
+            return _list.push_back(move(i));
+        }
+
+    private:
+        list<T> _list;
+    };
+
+    GrowOnlyList<SHTTPSManager::Transaction*> httpsRequests;
 
     // Each command is assigned a priority.
     Priority priority;
