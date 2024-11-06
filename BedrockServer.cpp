@@ -1671,11 +1671,14 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         {
             // Make it known if anything is known to cause crashes.
             shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
+            vector<string> crashCommandList;
             size_t totalCount = 0;
             for (const auto& s : _crashCommands) {
+                crashCommandList.push_back(s.first);
                 totalCount += s.second.size();
             }
             content["crashCommands"] = totalCount;
+            content["crashCommandList"] = SComposeList(crashCommandList);
         }
 
         // On leader, return the current multi-write blacklists.
