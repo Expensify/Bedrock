@@ -1671,22 +1671,19 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         {
             // Make it known if anything is known to cause crashes.
             shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
-            map<string, vector<string>> crashCommandData;
+            vector<string> crashCommandListArray;
 
             size_t totalCount = 0;
             for (const auto& s : _crashCommands) {
                 totalCount += s.second.size();
+                
+                vector<string> paramsArray;
                 for (const STable& params : s.second) {
-                    crashCommandData[s.first].push_back(SComposeJSONObject(params));
+                    paramsArray.push_back(SComposeJSONObject(params));
                 }
-            }
-
-            // Create a final JSON-like structure
-            STable crashCommandList;
-            vector<string> crashCommandListArray;
-            for (const auto& [command, data] : crashCommandData) {
+                
                 STable commandObject;
-                commandObject[command] = SComposeJSONArray(data);
+                commandObject[s.first] = SComposeJSONArray(paramsArray);
                 crashCommandListArray.push_back(SComposeJSONObject(commandObject));
             }
             content["crashCommands"] = totalCount;
