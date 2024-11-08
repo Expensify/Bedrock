@@ -1671,14 +1671,26 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         {
             // Make it known if anything is known to cause crashes.
             shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
-            vector<string> crashCommandList;
+            map<string, vector<string>> crashCommandData;
+
             size_t totalCount = 0;
             for (const auto& s : _crashCommands) {
-                crashCommandList.push_back(s.first);
                 totalCount += s.second.size();
+                for (const STable& params : s.second) {
+                    crashCommandData[s.first].push_back(SComposeJSONObject(params));
+                }
+            }
+
+            // Create a final JSON-like structure
+            STable crashCommandList;
+            vector<string> crashCommandListArray;
+            for (const auto& [command, data] : crashCommandData) {
+                STable commandObject;
+                commandObject[command] = SComposeJSONArray(data);
+                crashCommandListArray.push_back(SComposeJSONObject(commandObject));
             }
             content["crashCommands"] = totalCount;
-            content["crashCommandList"] = SComposeList(crashCommandList);
+            content["crashCommandList"] = SComposeJSONArray(crashCommandListArray);
         }
 
         // On leader, return the current multi-write blacklists.
