@@ -1679,7 +1679,9 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
                 
                 vector<string> paramsArray;
                 for (const STable& params : s.second) {
-                    paramsArray.push_back(SComposeJSONObject(params));
+                    if (!params.empty()) {
+                        paramsArray.push_back(SComposeJSONObject(params));
+                    }
                 }
                 
                 STable commandObject;
