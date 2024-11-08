@@ -406,11 +406,10 @@ int SQLiteNode::getPriority() const {
 
 void SQLiteNode::setShutdownPriority() {
     SINFO("Setting priority to 1, will stop leading if required.");
-    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     _priority = 1;
 
     if (_state == SQLiteNodeState::LEADING) {
-        _changeState(SQLiteNodeState::STANDINGDOWN);
+        beginShutdown();
     } else {
         SData state("STATE");
         state["StateChangeCount"] = to_string(_stateChangeCount);
