@@ -406,10 +406,11 @@ int SQLiteNode::getPriority() const {
 
 void SQLiteNode::setShutdownPriority() {
     SINFO("Setting priority to 1, will stop leading if required.");
+    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     _priority = 1;
 
     if (_state == SQLiteNodeState::LEADING) {
-        beginShutdown();
+        _startStandDown = true;
     } else {
         SData state("STATE");
         state["StateChangeCount"] = to_string(_stateChangeCount);
@@ -1123,7 +1124,9 @@ bool SQLiteNode::update() {
         // Check to see if we should stand down. We'll finish any outstanding commits before we actually do.
         if (_state == SQLiteNodeState::LEADING) {
             string standDownReason;
-            if (_isShuttingDown) {
+            if (_startStandDown) {
+                standDownReason = "Standing down";
+            } else if (_isShuttingDown) {
                 // Graceful shutdown. Set priority 1 and stand down so we'll re-connect to the new leader and finish
                 // up our commands.
                 standDownReason = "Shutting down, setting priority 1 and STANDINGDOWN.";
