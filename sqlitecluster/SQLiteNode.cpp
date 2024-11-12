@@ -410,7 +410,7 @@ void SQLiteNode::setShutdownPriority() {
     _priority = 1;
 
     if (_state == SQLiteNodeState::LEADING) {
-        SINFO("Will shop leading.");
+        SINFO("Will stop leading.");
     } else {
         SData state("STATE");
         state["StateChangeCount"] = to_string(_stateChangeCount);
