@@ -591,6 +591,7 @@ bool SQLiteNode::update() {
         // If no peers, we're the leader, unless we're shutting down.
         if (_peerList.empty()) {
             SHMMM("No peers configured, jumping to LEADING");
+            _priority = _originalPriority;
             _changeState(SQLiteNodeState::LEADING);
 
             // Run `update` again immediately.
