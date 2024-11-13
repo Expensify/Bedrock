@@ -10,7 +10,7 @@ This folder contains the necessary files to build and run Bedrock in a Docker co
 
 ## Dockerfile
 
-The Dockerfile sets up a container based on [`phusion/baseimage:noble-1.0.0`](https://github.com/phusion/baseimage-docker) 
+The Dockerfile sets up a container based on [`phusion/baseimage:noble-1.0.0`](https://github.com/phusion/baseimage-docker)
 and includes the following key steps:
 
 1. Installs necessary packages
@@ -90,7 +90,6 @@ The following environment variables can be used to configure Bedrock:
 - `WORKER_THREADS`: Number of worker threads
 - `QUERY_LOG`: Query log configuration
 - `MAX_JOURNAL_SIZE`: Maximum journal size
-- `SYNCHRONOUS`: Synchronous mode setting
 
 Additional flags can be set using the `VERBOSE`, `QUIET`, and `CLEAN` environment variables.
 

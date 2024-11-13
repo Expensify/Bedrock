@@ -97,7 +97,7 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
     SINFO("Setting dbPool size to: " << _dbPoolSize);
-    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
+    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-hctree"));
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
@@ -1026,7 +1026,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             if (_enableConflictPageLocks) {
                                 lastConflictTable = db.getLastConflictTable();
 
-                                // Journals are always chosen at the time of commit. So in case there was a conflict on the journal in 
+                                // Journals are always chosen at the time of commit. So in case there was a conflict on the journal in
                                 // the previous commit, the chances are very low (1/192) that we'll choose the same journal, thus, we
                                 // don't need to lock our next commit on this page conflict.
                                 if (!SStartsWith(lastConflictTable, "journal")) {
