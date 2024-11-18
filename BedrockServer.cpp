@@ -97,7 +97,7 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
     SINFO("Setting dbPool size to: " << _dbPoolSize);
-    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
+    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-hctree"));
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
@@ -1026,7 +1026,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             if (_enableConflictPageLocks) {
                                 lastConflictTable = db.getLastConflictTable();
 
-                                // Journals are always chosen at the time of commit. So in case there was a conflict on the journal in 
+                                // Journals are always chosen at the time of commit. So in case there was a conflict on the journal in
                                 // the previous commit, the chances are very low (1/192) that we'll choose the same journal, thus, we
                                 // don't need to lock our next commit on this page conflict.
                                 if (!SStartsWith(lastConflictTable, "journal")) {
@@ -1671,11 +1671,25 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         {
             // Make it known if anything is known to cause crashes.
             shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
+            vector<string> crashCommandListArray;
+
             size_t totalCount = 0;
             for (const auto& s : _crashCommands) {
                 totalCount += s.second.size();
+                
+                vector<string> paramsArray;
+                for (const STable& params : s.second) {
+                    if (!params.empty()) {
+                        paramsArray.push_back(SComposeJSONObject(params));
+                    }
+                }
+                
+                STable commandObject;
+                commandObject[s.first] = SComposeJSONArray(paramsArray);
+                crashCommandListArray.push_back(SComposeJSONObject(commandObject));
             }
             content["crashCommands"] = totalCount;
+            content["crashCommandList"] = SComposeJSONArray(crashCommandListArray);
         }
 
         // On leader, return the current multi-write blacklists.

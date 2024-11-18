@@ -56,12 +56,8 @@ class SQLite {
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-           const string& synchronous = "", int64_t mmapSizeGB = 0, bool hctree = false);
+           int64_t mmapSizeGB = 0, bool hctree = false);
 
-    // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
-    SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
-        SQLite(filename, cacheSize, maxJournalSize, minJournalTables, "") {}
-    
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
     // exist because we already have a SQLite object for this file.
@@ -154,7 +150,7 @@ class SQLite {
     void setRewriteHandler(bool (*handler)(int, const char*, string&));
 
     // Enables the on prepare handler.
-    // The on commit handler allows a plugin to be notified when a transaction is prepared but not yet committed. 
+    // The on commit handler allows a plugin to be notified when a transaction is prepared but not yet committed.
     // This allows the plugin to take arbitrary actions prior to committing to the database. Bedrock does not
     // pass up any information in this case, it simply notifies the plugin that a transaction was prepared.
     void enablePrepareNotifications(bool enable);
@@ -162,10 +158,10 @@ class SQLite {
     // Update the on prepare handler.
     // The on prepare handler accepts a reference to this SQLiteDB object and an int tableID. The tableID is the
     // same ID that is used for the journal number in the current running thread. This allows the handler to utilize
-    // SQLite.cpp's method for avoiding conflicts on tables written on every command. 
+    // SQLite.cpp's method for avoiding conflicts on tables written on every command.
     // IMPORTANT: The on prepare handler allows a plugin to run code inside the commit lock. This code should be time sensitive
     // as increases to the amount of time this lock is held increase conflict chances and decreases the parallelness
-    // of bedrock commands. 
+    // of bedrock commands.
     // IMPORTANT: there can be only one on-prepare handler for a given DB at once.
     void setOnPrepareHandler(void (*handler)(SQLite& _db, int64_t tableID));
 
@@ -505,7 +501,6 @@ class SQLite {
 
     // Copies of parameters used to initialize the DB that we store if we make child objects based on this one.
     int _cacheSize;
-    const string _synchronous;
     int64_t _mmapSizeGB;
 
     // This is a string (which may be empty) containing the most recent logged error by SQLite in this thread.
