@@ -4,7 +4,6 @@
 #include <arpa/inet.h>
 #include <csignal>
 #include <cstring>
-#include <iostream>
 #include <fstream>
 #include <sys/resource.h>
 #include <sys/time.h>
@@ -238,8 +237,7 @@ void BedrockServer::sync()
         {
             AutoTimerTime pollTime(pollTimer);
             S_poll(fdm, max(nextActivity, now) - now);
-            bool terminated = SCheckSignal(SIGTERM);
-            if (terminated) {
+            if (SCheckSignal(SIGTERM)) {
                 _notifyDone.push(true);
             }
         }

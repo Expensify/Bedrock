@@ -169,7 +169,6 @@ void _SSignal_signalHandlerThreadFunc() {
         }
 
         if (SSIGNAL_NOTIFY_INTERRUPT) {
-            cout << "Signal notification at:   " << SCURRENT_TIMESTAMP_MS() << endl;
             static_cast<SSynchronizedQueue<bool>*>(SSIGNAL_NOTIFY_INTERRUPT)->push(true);
         }
     }

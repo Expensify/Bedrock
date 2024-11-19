@@ -367,10 +367,6 @@ int main(int argc, char* argv[]) {
             const uint64_t now = STimeNow();
             auto timeBeforePoll = chrono::steady_clock::now();
             S_poll(fdm, max(nextActivity, now) - now);
-            bool terminated = SCheckSignal(SIGTERM);
-            if (terminated) {
-                cout << "main thread poll interrupted at " << SCURRENT_TIMESTAMP_MS() << " with SIGTERM set." << endl;
-            }
             nextActivity = STimeNow() + STIME_US_PER_S; // 1s max period
             auto timeAfterPoll = chrono::steady_clock::now();
             server.postPoll(fdm, nextActivity);
