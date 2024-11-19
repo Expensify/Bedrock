@@ -1224,6 +1224,9 @@ BedrockServer::BedrockServer(const SData& args_)
 {
     _version = VERSION;
 
+    // This allows the signal thread to notify us when a signal is received to interrupt the current poll loop.
+    SSIGNAL_NOTIFY_INTERRUPT = &_notifyDone;
+
     // Enable the requested plugins, and update our version string if required.
     list<string> pluginNameList = SParseList(args["-plugins"]);
     SINFO("Loading plugins: " << args["-plugins"]);

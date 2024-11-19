@@ -1,5 +1,6 @@
 #pragma once
 
+#include <libstuff/libstuff.h>
 #include <unistd.h>
 #include <fcntl.h>
 
