@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <format>
 
+#include <iostream>
 thread_local function<void()> SSignalHandlerDieFunc;
 void SSetSignalHandlerDieFunc(function<void()>&& func) {
     SSignalHandlerDieFunc = move(func);
@@ -156,10 +157,6 @@ void _SSignal_signalHandlerThreadFunc() {
         }
         int signum = siginfo.si_signo;
 
-        if (SSIGNAL_NOTIFY_INTERRUPT) {
-            static_cast<SSynchronizedQueue<bool>*>(SSIGNAL_NOTIFY_INTERRUPT)->push(true);
-        }
-
         if (result > 0) {
             // Do the same handling for these functions here as any other thread.
             if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
@@ -169,6 +166,11 @@ void _SSignal_signalHandlerThreadFunc() {
                 SINFO("Got Signal: " << strsignal(signum) << "(" << signum << ").");
                 _SSignal_pendingSignalBitMask.fetch_or(1 << signum);
             }
+        }
+
+        if (SSIGNAL_NOTIFY_INTERRUPT) {
+            cout << "Signal notification at:   " << SCURRENT_TIMESTAMP_MS() << endl;
+            static_cast<SSynchronizedQueue<bool>*>(SSIGNAL_NOTIFY_INTERRUPT)->push(true);
         }
     }
 }

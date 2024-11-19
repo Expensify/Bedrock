@@ -467,9 +467,9 @@ class BedrockServer : public SQLiteServer {
     // We call this method whenever a node changes state
     void notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState) override;
 
-    // This is just here to allow `poll` in main.cpp to get interrupted when the server shuts down.
-    // to wait up to a full second for them.
+    // These are just here to allow `poll` in main.cpp to get interrupted when the server shuts down.
     SSynchronizedQueue<bool> _notifyDone;
+    SSynchronizedQueue<bool> _notifyDoneSync;
 
     atomic<size_t> _maxSocketThreads{3'000};
     atomic<size_t> _dbPoolSize{25'000};

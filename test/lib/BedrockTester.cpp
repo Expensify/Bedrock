@@ -238,6 +238,7 @@ string BedrockTester::startServer(bool wait) {
         cout << endl;
         exit(1);
     } else {
+        cout << "Begin startup at: " << SCURRENT_TIMESTAMP_MS() << endl;
         // We'll kill this later.
         _serverPID = childPID;
 
@@ -270,10 +271,11 @@ string BedrockTester::startServer(bool wait) {
             SData status("Status");
             auto result = executeWaitMultipleData({status}, 1, !wait);
             if (result[0].methodLine == "200 OK") {
+                cout << "End startup at:   " << SCURRENT_TIMESTAMP_MS() << endl;
                 return result[0].content;
             }
             // This will happen if the server's not up yet. We'll just try again.
-            usleep(100000); // 0.1 seconds.
+            usleep(50'000); // 0.05 seconds.
             continue;
         }
     }
@@ -282,9 +284,11 @@ string BedrockTester::startServer(bool wait) {
 
 void BedrockTester::stopServer(int signal) {
     if (_serverPID) {
+        cout << "Begin shutdown at: " << SCURRENT_TIMESTAMP_MS() << endl;
         kill(_serverPID, signal);
         int status;
         waitpid(_serverPID, &status, 0);
+        cout << "End shutdown at:   " << SCURRENT_TIMESTAMP_MS() << endl;
         _serverPID = 0;
     }
 }

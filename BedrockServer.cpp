@@ -2,7 +2,9 @@
 #include "BedrockServer.h"
 
 #include <arpa/inet.h>
+#include <csignal>
 #include <cstring>
+#include <iostream>
 #include <fstream>
 #include <sys/resource.h>
 #include <sys/time.h>
@@ -217,7 +219,7 @@ void BedrockServer::sync()
             _syncNode->beginShutdown();
 
             // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
-            _notifyDone.push(true);
+            _notifyDoneSync.push(true);
         }
 
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
@@ -225,7 +227,7 @@ void BedrockServer::sync()
         fd_map fdm;
 
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
-        _notifyDone.prePoll(fdm);
+        _notifyDoneSync.prePoll(fdm);
         _syncNode->prePoll(fdm);
 
         // Add our command queues to our fd_map.
@@ -236,6 +238,12 @@ void BedrockServer::sync()
         {
             AutoTimerTime pollTime(pollTimer);
             S_poll(fdm, max(nextActivity, now) - now);
+
+            bool terminated = SCheckSignal(SIGTERM);
+            if (terminated) {
+                cout << "sync thread poll interrupted at " << SCURRENT_TIMESTAMP_MS() << " with SIGTERM set." << endl;
+                _notifyDone.push(true);
+            }
         }
 
         // And set our next timeout for 1 second from now.
@@ -251,7 +259,7 @@ void BedrockServer::sync()
             AutoTimerTime postPollTime(postPollTimer);
             _syncNode->postPoll(fdm, nextActivity);
             _syncNodeQueuedCommands.postPoll(fdm);
-            _notifyDone.postPoll(fdm);
+            _notifyDoneSync.postPoll(fdm);
         }
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
@@ -350,6 +358,9 @@ void BedrockServer::sync()
                 committingCommand = true;
                 _syncNode->startCommit(SQLiteNode::QUORUM);
                 _lastQuorumCommandTime = STimeNow();
+                
+                // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
+                _notifyDoneSync.push(true);
                 SDEBUG("Finished sending distributed transaction for db upgrade.");
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
@@ -1225,7 +1236,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _version = VERSION;
 
     // This allows the signal thread to notify us when a signal is received to interrupt the current poll loop.
-    SSIGNAL_NOTIFY_INTERRUPT = &_notifyDone;
+    SSIGNAL_NOTIFY_INTERRUPT = &_notifyDoneSync;
 
     // Enable the requested plugins, and update our version string if required.
     list<string> pluginNameList = SParseList(args["-plugins"]);
@@ -1955,6 +1966,7 @@ bool BedrockServer::_upgradeDB(SQLite& db) {
 
 void BedrockServer::_beginShutdown(const string& reason, bool detach) {
     if (_shutdownState.load() == RUNNING) {
+        cout << "Beginning shutdown due to signal at:   " << SCURRENT_TIMESTAMP_MS() << endl;
         _detach = detach;
         // Begin a graceful shutdown; close our port
         SINFO("Beginning graceful shutdown due to '" << reason << "', closing command port on '" << args["-serverHost"] << "'.");
