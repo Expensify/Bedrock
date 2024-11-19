@@ -23,6 +23,8 @@ set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
 thread_local atomic<SQLiteNodeState> BedrockServer::_nodeStateSnapshot = SQLiteNodeState::UNKNOWN;
 
+bool __NOTIFY = false;
+
 void BedrockServer::syncWrapper()
 {
     // Initialize the thread.
@@ -237,7 +239,14 @@ void BedrockServer::sync()
         const uint64_t now = STimeNow();
         {
             AutoTimerTime pollTime(pollTimer);
+            if (__NOTIFY) {
+                cout << "Starting poll at: " << SCURRENT_TIMESTAMP_MS() << endl;
+            }
             S_poll(fdm, max(nextActivity, now) - now);
+            if (__NOTIFY) {
+                cout << "Stopping poll at: " << SCURRENT_TIMESTAMP_MS() << endl;
+                __NOTIFY = false;
+            }
 
             bool terminated = SCheckSignal(SIGTERM);
             if (terminated) {
@@ -361,6 +370,8 @@ void BedrockServer::sync()
                 
                 // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
                 _notifyDoneSync.push(true);
+                cout << "Interrupting next sync loop at startup at: " << SCURRENT_TIMESTAMP_MS() << endl;
+                __NOTIFY = true;
                 SDEBUG("Finished sending distributed transaction for db upgrade.");
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
@@ -389,6 +400,8 @@ void BedrockServer::sync()
                     _upgradeInProgress = false;
                     _upgradeCompleted = true;
                     SINFO("UpgradeDB succeeded, done.");
+                    cout << "Upgrade complete at " << SCURRENT_TIMESTAMP_MS() << endl;
+                    _notifyDone.push(true);
                 } else {
                     SINFO("UpgradeDB failed, trying again.");
                 }
