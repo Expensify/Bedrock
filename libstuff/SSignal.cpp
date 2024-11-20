@@ -9,7 +9,6 @@
 #include <unistd.h>
 #include <format>
 
-#include <iostream>
 thread_local function<void()> SSignalHandlerDieFunc;
 void SSetSignalHandlerDieFunc(function<void()>&& func) {
     SSignalHandlerDieFunc = move(func);
