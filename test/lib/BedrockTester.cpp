@@ -293,7 +293,7 @@ string BedrockTester::executeWaitVerifyContent(SData request, const string& expe
     uint64_t start = STimeNow();
     vector<SData> results;
     do {
-        results = executeWaitMultipleData({request}, 1, control);
+        results = BedrockTester::executeWaitMultipleData({request}, 1, control);
 
         if (results.size() > 0 && SStartsWith(results[0].methodLine, expectedResult)) {
             // good, got the result we wanted
@@ -608,7 +608,7 @@ bool BedrockTester::waitForStatusTerm(const string& term, const string& testValu
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            string result = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", true))[term];
+            string result = SParseJSONObject(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))[term];
 
             // if the value matches, return, otherwise wait
             if (result == testValue) {
