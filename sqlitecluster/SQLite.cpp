@@ -218,16 +218,12 @@ void SQLite::commonConstructorInitialization(bool hctree) {
     // Setting a wal hook prevents auto-checkpointing.
     sqlite3_wal_hook(_db, _walHookCallback, this);
 
-    // Check if synchronous has been set and run query to use a custom synchronous setting
-    if (!_synchronous.empty()) {
-        SASSERT(!SQuery(_db, "setting custom synchronous commits", "PRAGMA synchronous = " + SQ(_synchronous)  + ";"));
-    } else {
-        DBINFO("Using SQLite default PRAGMA synchronous");
-    }
+    // Always set synchronous commits to off for best commit performance in WAL mode.
+    SASSERT(!SQuery(_db, "setting synchronous commits to off", "PRAGMA synchronous = OFF;"));
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool hctree) :
+               int minJournalTables, int64_t mmapSizeGB, bool hctree) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB, hctree)),
@@ -235,7 +231,6 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _sharedData(initializeSharedData(_db, _filename, _journalNames, hctree)),
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _cacheSize(cacheSize),
-    _synchronous(synchronous),
     _mmapSizeGB(mmapSizeGB)
 {
     commonConstructorInitialization(hctree);
@@ -249,7 +244,6 @@ SQLite::SQLite(const SQLite& from) :
     _sharedData(from._sharedData),
     _journalSize(from._journalSize),
     _cacheSize(from._cacheSize),
-    _synchronous(from._synchronous),
     _mmapSizeGB(from._mmapSizeGB)
 {
     // This can always pass "true" because the copy constructor does not need to set the DB to WAL2 mode, it would have been set in the object being copied.

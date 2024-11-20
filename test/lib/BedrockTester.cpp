@@ -536,7 +536,7 @@ SQLite& BedrockTester::getSQLiteDB()
 {
     if (!_db) {
         // Assumes wal2 mode.
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, "", 0, ENABLE_HCTREE);
+        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
     }
     return *_db;
 }
