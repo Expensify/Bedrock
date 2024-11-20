@@ -146,9 +146,9 @@ extern "C" {
 ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
 ** [sqlite_version()] and [sqlite_source_id()].
 */
-#define SQLITE_VERSION        "3.48.0"
-#define SQLITE_VERSION_NUMBER 3048000
-#define SQLITE_SOURCE_ID      "2024-11-15 19:25:39 ed829bf2b069a48c644ae5706399dad7486e5abb87dc1225764038ac258ea4dc"
+#define SQLITE_VERSION        "3.47.0"
+#define SQLITE_VERSION_NUMBER 3047000
+#define SQLITE_SOURCE_ID      "2024-11-13 14:42:32 35aa893d4537d0b3605084a1f2f5529794e82af59b8893053815d3fcb4719a27"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -652,13 +652,6 @@ SQLITE_API int sqlite3_exec(
 ** filesystem supports doing multiple write operations atomically when those
 ** write operations are bracketed by [SQLITE_FCNTL_BEGIN_ATOMIC_WRITE] and
 ** [SQLITE_FCNTL_COMMIT_ATOMIC_WRITE].
-**
-** The SQLITE_IOCAP_SUBPAGE_READ property means that it is ok to read
-** from the database file in amounts that are not a multiple of the
-** page size and that do not begin at a page boundary.  Without this
-** property, SQLite is careful to only do full-page reads and write
-** on aligned pages, with the one exception that it will do a sub-page
-** read of the first page to access the database header.
 */
 #define SQLITE_IOCAP_ATOMIC                 0x00000001
 #define SQLITE_IOCAP_ATOMIC512              0x00000002
@@ -675,7 +668,6 @@ SQLITE_API int sqlite3_exec(
 #define SQLITE_IOCAP_POWERSAFE_OVERWRITE    0x00001000
 #define SQLITE_IOCAP_IMMUTABLE              0x00002000
 #define SQLITE_IOCAP_BATCH_ATOMIC           0x00004000
-#define SQLITE_IOCAP_SUBPAGE_READ           0x00008000
 
 /*
 ** CAPI3REF: File Locking Levels
@@ -822,7 +814,6 @@ struct sqlite3_file {
 ** <li> [SQLITE_IOCAP_POWERSAFE_OVERWRITE]
 ** <li> [SQLITE_IOCAP_IMMUTABLE]
 ** <li> [SQLITE_IOCAP_BATCH_ATOMIC]
-** <li> [SQLITE_IOCAP_SUBPAGE_READ]
 ** </ul>
 **
 ** The SQLITE_IOCAP_ATOMIC property means that all writes of
@@ -1100,11 +1091,6 @@ struct sqlite3_io_methods {
 ** pointed to by the pArg argument.  This capability is used during testing
 ** and only needs to be supported when SQLITE_TEST is defined.
 **
-** <li>[[SQLITE_FCNTL_NULL_IO]]
-** The [SQLITE_FCNTL_NULL_IO] opcode sets the low-level file descriptor
-** or file handle for the [sqlite3_file] object such that it will no longer
-** read or write to the database file.
-**
 ** <li>[[SQLITE_FCNTL_WAL_BLOCK]]
 ** The [SQLITE_FCNTL_WAL_BLOCK] is a signal to the VFS layer that it might
 ** be advantageous to block on the next WAL lock if the lock is not immediately
@@ -1258,7 +1244,6 @@ struct sqlite3_io_methods {
 #define SQLITE_FCNTL_EXTERNAL_READER        40
 #define SQLITE_FCNTL_CKSM_FILE              41
 #define SQLITE_FCNTL_RESET_CACHE            42
-#define SQLITE_FCNTL_NULL_IO                43
 
 /* deprecated names */
 #define SQLITE_GET_LOCKPROXYFILE      SQLITE_FCNTL_GET_LOCKPROXYFILE
@@ -2637,14 +2622,10 @@ SQLITE_API void sqlite3_set_last_insert_rowid(sqlite3*,sqlite3_int64);
 ** deleted by the most recently completed INSERT, UPDATE or DELETE
 ** statement on the database connection specified by the only parameter.
 ** The two functions are identical except for the type of the return value
-** and that if the number of rows modified by the most recent INSERT, UPDATE,
+** and that if the number of rows modified by the most recent INSERT, UPDATE
 ** or DELETE is greater than the maximum value supported by type "int", then
 ** the return value of sqlite3_changes() is undefined. ^Executing any other
 ** type of SQL statement does not modify the value returned by these functions.
-** For the purposes of this interface, a CREATE TABLE AS SELECT statement
-** does not count as an INSERT, UPDATE or DELETE statement and hence the rows
-** added to the new table by the CREATE TABLE AS SELECT statement are not
-** counted.
 **
 ** ^Only changes made directly by the INSERT, UPDATE or DELETE statement are
 ** considered - auxiliary changes caused by [CREATE TRIGGER | triggers],
@@ -4241,17 +4222,13 @@ SQLITE_API int sqlite3_limit(sqlite3*, int id, int newVal);
 ** and sqlite3_prepare16_v3() use UTF-16.
 **
 ** ^If the nByte argument is negative, then zSql is read up to the
-** first zero terminator. ^If nByte is positive, then it is the maximum
-** number of bytes read from zSql.  When nByte is positive, zSql is read
-** up to the first zero terminator or until the nByte bytes have been read,
-** whichever comes first.  ^If nByte is zero, then no prepared
+** first zero terminator. ^If nByte is positive, then it is the
+** number of bytes read from zSql.  ^If nByte is zero, then no prepared
 ** statement is generated.
 ** If the caller knows that the supplied string is nul-terminated, then
 ** there is a small performance advantage to passing an nByte parameter that
 ** is the number of bytes in the input string <i>including</i>
 ** the nul-terminator.
-** Note that nByte measure the length of the input in bytes, not
-** characters, even for the UTF-16 interfaces.
 **
 ** ^If pzTail is not NULL then *pzTail is made to point to the first byte
 ** past the end of the first SQL statement in zSql.  These routines only
@@ -5622,7 +5599,7 @@ SQLITE_API int sqlite3_create_window_function(
 ** This flag instructs SQLite to omit some corner-case optimizations that
 ** might disrupt the operation of the [sqlite3_value_subtype()] function,
 ** causing it to return zero rather than the correct subtype().
-** All SQL functions that invoke [sqlite3_value_subtype()] should have this
+** SQL functions that invokes [sqlite3_value_subtype()] should have this
 ** property.  If the SQLITE_SUBTYPE property is omitted, then the return
 ** value from [sqlite3_value_subtype()] might sometimes be zero even though
 ** a non-zero subtype was specified by the function argument expression.
@@ -8387,9 +8364,8 @@ SQLITE_API int sqlite3_test_control(int op, ...);
 #define SQLITE_TESTCTRL_TRACEFLAGS              31
 #define SQLITE_TESTCTRL_TUNE                    32
 #define SQLITE_TESTCTRL_LOGEST                  33
-#define SQLITE_TESTCTRL_USELONGDOUBLE           34  /* NOT USED */
-#define SQLITE_TESTCTRL_HCT_MTCOMMIT            35
-#define SQLITE_TESTCTRL_LAST                    35  /* Largest TESTCTRL */
+#define SQLITE_TESTCTRL_USELONGDOUBLE           34
+#define SQLITE_TESTCTRL_LAST                    34  /* Largest TESTCTRL */
 
 /*
 ** CAPI3REF: SQL Keyword Checking
@@ -9364,16 +9340,6 @@ typedef struct sqlite3_backup sqlite3_backup;
 ** APIs are not strictly speaking threadsafe. If they are invoked at the
 ** same time as another thread is invoking sqlite3_backup_step() it is
 ** possible that they return invalid values.
-**
-** <b>Alternatives To Using The Backup API</b>
-**
-** Other techniques for safely creating a consistent backup of an SQLite
-** database include:
-**
-** <ul>
-** <li> The [VACUUM INTO] command.
-** <li> The [sqlite3_rsync] utility program.
-** </ul>
 */
 SQLITE_API sqlite3_backup *sqlite3_backup_init(
   sqlite3 *pDest,                        /* Destination database handle */
@@ -10573,14 +10539,6 @@ typedef struct sqlite3_snapshot {
 ** If there is not already a read-transaction open on schema S when
 ** this function is called, one is opened automatically.
 **
-** If a read-transaction is opened by this function, then it is guaranteed
-** that the returned snapshot object may not be invalidated by a database
-** writer or checkpointer until after the read-transaction is closed. This
-** is not guaranteed if a read-transaction is already open when this
-** function is called. In that case, any subsequent write or checkpoint
-** operation on the database may invalidate the returned snapshot handle,
-** even while the read-transaction remains open.
-**
 ** The following must be true for this function to succeed. If any of
 ** the following statements are false when sqlite3_snapshot_get() is
 ** called, SQLITE_ERROR is returned. The final value of *P is undefined
@@ -11003,9 +10961,6 @@ SQLITE_API int sqlite3_commit_status(
 # undef double
 #endif
 
-SQLITE_API void sqlite3_hct_cas_failure(int nCASFailCnt, int nCASFailReset);
-SQLITE_API void sqlite3_hct_proc_failure(int nProcFailCnt);
-
 #if defined(__wasi__)
 # undef SQLITE_WASI
 # define SQLITE_WASI 1
@@ -11020,7 +10975,7 @@ SQLITE_API void sqlite3_hct_proc_failure(int nProcFailCnt);
 #ifdef __cplusplus
 }  /* End of the 'extern "C"' block */
 #endif
-/* #endif for SQLITE3_H will be added by mksqlite3.tcl */
+#endif /* SQLITE3_H */
 
 /******** Begin file sqlite3rtree.h *********/
 /*
@@ -13399,6 +13354,7 @@ struct Fts5ExtensionApi {
 ** Applications may also register custom tokenizer types. A tokenizer
 ** is registered by providing fts5 with a populated instance of the
 ** following structure. All structure methods must be defined, setting
+**
 ** any member of the fts5_tokenizer struct to NULL leads to undefined
 ** behaviour. The structure methods are expected to function as follows:
 **
@@ -13742,4 +13698,3 @@ struct fts5_api {
 #endif /* _FTS5_H */
 
 /******** End of fts5.h *********/
-#endif /* SQLITE3_H */
