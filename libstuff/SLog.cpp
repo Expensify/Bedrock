@@ -53,6 +53,7 @@ static const set<string> PARAMS_WHITELIST = {
     "currentTime",
     "domainAccountID",
     "domainName",
+    "email",
     "errorMessage",
     "feed",
     "feedCountry",
