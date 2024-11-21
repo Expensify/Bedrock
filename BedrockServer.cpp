@@ -710,7 +710,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // Check if this command would be likely to cause a crash
     if (_wouldCrash(command)) {
         // If so, make a lot of noise, and respond 500 without processing it.
-        SALERT("CRASH-INDUCING COMMAND FOUND: " << command->request.methodLine);
+        map<string,string> parameters({{"command", command->request.methodLine}});
+
+        SALERT("REJECTING CRASH-INDUCING COMMAND", parameters);
         command->response.methodLine = "500 Refused";
         command->complete = true;
         _reply(command);
