@@ -36,7 +36,7 @@ class BedrockTester {
                   atomic<uint64_t>* alternateCounter = nullptr);
 
     // Destructor.
-    ~BedrockTester();
+    virtual ~BedrockTester();
 
     // Start the server. If `wait` is specified, wait until the server is fully up with the command port open and
     // accepting requests. Otherwise, returns as soon as the control port is open and can return `Status`.
@@ -65,17 +65,17 @@ class BedrockTester {
     // Takes a list of requests, and returns a corresponding list of responses.
     // Uses `connections` parallel connections to the server to send the requests.
     // If `control` is set, sends the message to the control port.
-    vector<SData> executeWaitMultipleData(vector<SData> requests, int connections = 10, bool control = false, bool returnOnDisconnect = false, int* errorCode = nullptr);
+    virtual vector<SData> executeWaitMultipleData(vector<SData> requests, int connections = 10, bool control = false, bool returnOnDisconnect = false, int* errorCode = nullptr);
 
     // Sends a single request, returning the response content.
     // If the response method line doesn't begin with the expected result, throws.
     // Convenience wrapper around executeWaitMultipleData.
-    string executeWaitVerifyContent(SData request, const string& expectedResult = "200 OK", bool control = false, uint64_t retryTimeoutUS = 0);
+    virtual string executeWaitVerifyContent(SData request, const string& expectedResult = "200 OK", bool control = false, uint64_t retryTimeoutUS = 0);
 
     // Sends a single request, returning the response content as a STable.
     // If the response method line doesn't begin with the expected result, throws.
     // Convenience wrapper around executeWaitMultipleData.
-    STable executeWaitVerifyContentTable(SData request, const string& expectedResult = "200 OK");
+    virtual STable executeWaitVerifyContentTable(SData request, const string& expectedResult = "200 OK");
 
     // Read from the DB file, without going through the bedrock server. Two interfaces are provided to maintain
     // compatibility with the `SQLite` class.

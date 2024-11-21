@@ -160,8 +160,9 @@ class SQLiteNode : public STCPManager {
     // Can block.
     bool shutdownComplete() const;
 
-    // Call this if you want to shut down the node.
-    void beginShutdown();
+    // Call this if you want to shut down the node. Returns true if shutdown was initiated,
+    // false if shutdown was already happening.
+    bool beginShutdown();
 
     // kill all peer connections on this node.
     void kill();

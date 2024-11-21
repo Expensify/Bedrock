@@ -273,7 +273,7 @@ string BedrockTester::startServer(bool wait) {
                 return result[0].content;
             }
             // This will happen if the server's not up yet. We'll just try again.
-            usleep(100000); // 0.1 seconds.
+            usleep(50'000); // 0.05 seconds.
             continue;
         }
     }
@@ -293,7 +293,7 @@ string BedrockTester::executeWaitVerifyContent(SData request, const string& expe
     uint64_t start = STimeNow();
     vector<SData> results;
     do {
-        results = executeWaitMultipleData({request}, 1, control);
+        results = BedrockTester::executeWaitMultipleData({request}, 1, control);
 
         if (results.size() > 0 && SStartsWith(results[0].methodLine, expectedResult)) {
             // good, got the result we wanted
@@ -536,7 +536,7 @@ SQLite& BedrockTester::getSQLiteDB()
 {
     if (!_db) {
         // Assumes wal2 mode.
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, "", 0, ENABLE_HCTREE);
+        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
     }
     return *_db;
 }
@@ -608,7 +608,7 @@ bool BedrockTester::waitForStatusTerm(const string& term, const string& testValu
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            string result = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", true))[term];
+            string result = SParseJSONObject(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))[term];
 
             // if the value matches, return, otherwise wait
             if (result == testValue) {

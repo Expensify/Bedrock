@@ -339,14 +339,17 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency) {
     }
 }
 
-void SQLiteNode::beginShutdown() {
+bool SQLiteNode::beginShutdown() {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     // Ignore redundant
     if (!_isShuttingDown) {
         // Start graceful shutdown
         SINFO("Beginning graceful shutdown.");
         _isShuttingDown = true;
+        return true;
     }
+
+    return false;
 }
 
 bool SQLiteNode::_isNothingBlockingShutdown() const {
@@ -361,6 +364,13 @@ bool SQLiteNode::_isNothingBlockingShutdown() const {
 
     if (_pendingSynchronizeResponses) {
         return false;
+    }
+
+    for (const auto& peer : _peerList) {
+        if (peer->remainingDataToSend()) {
+            SINFO("Peer " << peer->name << " has data left to send.");
+            return false;
+        }
     }
 
     return true;
@@ -405,12 +415,12 @@ int SQLiteNode::getPriority() const {
 }
 
 void SQLiteNode::setShutdownPriority() {
-    SINFO("Setting priority to 1, will stop leading if required.");
+    SINFO("Setting priority to 1.");
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     _priority = 1;
 
     if (_state == SQLiteNodeState::LEADING) {
-        _changeState(SQLiteNodeState::STANDINGDOWN);
+        SINFO("Will stop leading.");
     } else {
         SData state("STATE");
         state["StateChangeCount"] = to_string(_stateChangeCount);
@@ -591,6 +601,7 @@ bool SQLiteNode::update() {
         // If no peers, we're the leader, unless we're shutting down.
         if (_peerList.empty()) {
             SHMMM("No peers configured, jumping to LEADING");
+            _priority = _originalPriority;
             _changeState(SQLiteNodeState::LEADING);
 
             // Run `update` again immediately.
@@ -1124,7 +1135,9 @@ bool SQLiteNode::update() {
         // Check to see if we should stand down. We'll finish any outstanding commits before we actually do.
         if (_state == SQLiteNodeState::LEADING) {
             string standDownReason;
-            if (_isShuttingDown) {
+            if (_priority == 1) {
+                standDownReason = "Priority changed to 1, standing down.";
+            } else if (_isShuttingDown) {
                 // Graceful shutdown. Set priority 1 and stand down so we'll re-connect to the new leader and finish
                 // up our commands.
                 standDownReason = "Shutting down, setting priority 1 and STANDINGDOWN.";
@@ -1171,6 +1184,11 @@ bool SQLiteNode::update() {
             }
             // Standdown complete
             SINFO("STANDDOWN complete, SEARCHING");
+            if (_isShuttingDown) {
+                for (const auto& peer : _peerList) {
+                    peer->shutdownSocket();
+                }
+            }
             _changeState(SQLiteNodeState::SEARCHING);
 
             // We're no longer waiting on responses from peers, we can re-update immediately and start becoming a
