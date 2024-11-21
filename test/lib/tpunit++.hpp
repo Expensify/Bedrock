@@ -449,8 +449,6 @@ public:
        *
        * @return Number of failed assertions or zero if all tests pass.
        */
-      
-
       static int run(int threads = 1, std::function<void()> threadInitFunction = [](){}, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter);
 
       /**
