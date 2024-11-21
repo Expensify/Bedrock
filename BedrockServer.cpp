@@ -471,7 +471,7 @@ void BedrockServer::sync()
                 // like a segfault. Note that it's possible we're in the middle of sending a message to peers when we call
                 // this, which would probably make this message malformed. This is the best we can do.
                 SSetSignalHandlerDieFunc([&](){
-                    SHMMM("CRASHING from BedrockServer::sync", command->getLogParams());
+                    SALERT("CRASHING from BedrockServer::sync", command->getCommandLogParams());
                     _clusterMessenger->runOnAll(_generateCrashMessage(command));
                 });
 
@@ -700,7 +700,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
     // signals, like SIGSEGV, this function will be called.
     SSetSignalHandlerDieFunc([&](){
-        SHMMM("CRASHING from BedrockServer::runCommand", command->getLogParams());
+        SALERT("CRASHING from BedrockServer::runCommand", command->getCommandLogParams());
         _clusterMessenger->runOnAll(_generateCrashMessage(command));
     });
 
@@ -712,7 +712,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // Check if this command would be likely to cause a crash
     if (_wouldCrash(command)) {
         // If so, make a lot of noise, and respond 500 without processing it.
-        SALERT("REJECTING CRASH-INDUCING COMMAND", command->getLogParams());
+        SALERT("REJECTING CRASH-INDUCING COMMAND", command->getCommandLogParams());
         command->response.methodLine = "500 Refused";
         command->complete = true;
         _reply(command);

@@ -119,7 +119,7 @@ class BedrockCommand : public SQLiteCommand {
     bool areHttpsRequestsComplete() const;
 
     // Returns a map with all the parameters that can be used to log information about the command being run.
-    virtual map<string,string> getLogParams();
+    virtual map<string,string> getCommandLogParams();
 
     // If the `peek` portion of this command needs to make an HTTPS request, this is where we store it.
     template <typename T>
