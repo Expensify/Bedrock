@@ -63,6 +63,9 @@ class SQLitePeer {
     SQLitePeer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
     ~SQLitePeer();
 
+    // Returns true if it seems there's more data to send on this peer connection.
+    bool remainingDataToSend() const;
+
     // This is const because it's public, and we don't want it to be changed outside of this class, as it needs to
     // be synchronized with `hash`. However, it's often useful just as it is, so we expose it like this and update
     // it with `const_cast`. `hash` is only used in few places, so is private, and can only be accessed with

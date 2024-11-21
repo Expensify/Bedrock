@@ -2,6 +2,7 @@
 #include "BedrockServer.h"
 
 #include <arpa/inet.h>
+#include <csignal>
 #include <cstring>
 #include <fstream>
 #include <sys/resource.h>
@@ -214,10 +215,10 @@ void BedrockServer::sync()
         // commands, and we'll shortly run through the existing queue.
         if (_shutdownState.load() == COMMANDS_FINISHED) {
             SINFO("All clients responded to, " << BedrockCommand::getCommandCount() << " commands remaining. Shutting down sync node.");
-            _syncNode->beginShutdown();
-
-            // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
-            _notifyDone.push(true);
+            if (_syncNode->beginShutdown()) {
+                // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
+                _notifyDoneSync.push(true);
+            }
         }
 
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
@@ -225,7 +226,7 @@ void BedrockServer::sync()
         fd_map fdm;
 
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
-        _notifyDone.prePoll(fdm);
+        _notifyDoneSync.prePoll(fdm);
         _syncNode->prePoll(fdm);
 
         // Add our command queues to our fd_map.
@@ -236,6 +237,9 @@ void BedrockServer::sync()
         {
             AutoTimerTime pollTime(pollTimer);
             S_poll(fdm, max(nextActivity, now) - now);
+            if (SCheckSignal(SIGTERM)) {
+                _notifyDone.push(true);
+            }
         }
 
         // And set our next timeout for 1 second from now.
@@ -251,7 +255,7 @@ void BedrockServer::sync()
             AutoTimerTime postPollTime(postPollTimer);
             _syncNode->postPoll(fdm, nextActivity);
             _syncNodeQueuedCommands.postPoll(fdm);
-            _notifyDone.postPoll(fdm);
+            _notifyDoneSync.postPoll(fdm);
         }
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
@@ -314,7 +318,11 @@ void BedrockServer::sync()
                     }
                 }
             } catch (const out_of_range& e) {
-                SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+                if (dropped) {
+                    SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+                } else {
+                    SINFO("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+                }
 
                 // command will be null here, we should be able to restart the loop.
                 continue;
@@ -350,6 +358,9 @@ void BedrockServer::sync()
                 committingCommand = true;
                 _syncNode->startCommit(SQLiteNode::QUORUM);
                 _lastQuorumCommandTime = STimeNow();
+                
+                // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
+                _notifyDoneSync.push(true);
                 SDEBUG("Finished sending distributed transaction for db upgrade.");
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
@@ -378,6 +389,7 @@ void BedrockServer::sync()
                     _upgradeInProgress = false;
                     _upgradeCompleted = true;
                     SINFO("UpgradeDB succeeded, done.");
+                    _notifyDone.push(true);
                 } else {
                     SINFO("UpgradeDB failed, trying again.");
                 }
@@ -1223,6 +1235,9 @@ BedrockServer::BedrockServer(const SData& args_)
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _upgradeCompleted(false)
 {
     _version = VERSION;
+
+    // This allows the signal thread to notify us when a signal is received to interrupt the current poll loop.
+    SSIGNAL_NOTIFY_INTERRUPT = &_notifyDoneSync;
 
     // Enable the requested plugins, and update our version string if required.
     list<string> pluginNameList = SParseList(args["-plugins"]);
