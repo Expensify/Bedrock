@@ -13,6 +13,7 @@ libstuff/libstuff.d
 libstuff/libstuff.h.gch
 .idea
 .clangd
+.clang-tidy
 .nfs*
 .cache
 compile_commands.json
