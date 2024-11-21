@@ -6,6 +6,8 @@
 #include <libstuff/SSSLState.h>
 #include <libstuff/SX509.h>
 
+#include <sys/ioctl.h>
+
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
 void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
@@ -237,6 +239,20 @@ STCPManager::Socket::Socket(Socket&& from)
 
 STCPManager::Socket::~Socket() {
     if (s != -1) {
+        struct linger linger_option;
+        linger_option.l_onoff = 1;  // Enable SO_LINGER
+        linger_option.l_linger = 5; // Timeout of 5 seconds
+        setsockopt(s, SOL_SOCKET, SO_LINGER, &linger_option, sizeof(linger_option));
+        ::shutdown(s, SHUT_WR);
+
+        // Check for unsent data
+        int unsent_data = 0;
+        if (ioctl(s, TIOCOUTQ, &unsent_data) == 0) {
+            SINFO("Unsent buffer of size " << unsent_data << " on socket destruction.");
+        } else {
+            SWARN("Couldn't check socket buffer size.");
+        }
+
         ::close(s);
     }
     if (ssl) {

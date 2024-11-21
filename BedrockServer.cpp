@@ -215,10 +215,10 @@ void BedrockServer::sync()
         // commands, and we'll shortly run through the existing queue.
         if (_shutdownState.load() == COMMANDS_FINISHED) {
             SINFO("All clients responded to, " << BedrockCommand::getCommandCount() << " commands remaining. Shutting down sync node.");
-            _syncNode->beginShutdown();
-
-            // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
-            _notifyDoneSync.push(true);
+            if (_syncNode->beginShutdown()) {
+                // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
+                _notifyDoneSync.push(true);
+            }
         }
 
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
@@ -318,7 +318,11 @@ void BedrockServer::sync()
                     }
                 }
             } catch (const out_of_range& e) {
-                SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+                if (dropped) {
+                    SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+                } else {
+                    SINFO("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+                }
 
                 // command will be null here, we should be able to restart the loop.
                 continue;
