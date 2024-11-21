@@ -127,7 +127,7 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
     return {
         {"command", request.methodLine},
         {"requestID", request.isSet("requestID") ? request["requestID"] : "xxxxxx"},
-        };
+    };
  }
 
 void BedrockCommand::reset(BedrockCommand::STAGE stage) {
