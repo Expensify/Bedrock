@@ -712,6 +712,15 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         // If so, make a lot of noise, and respond 500 without processing it.
         map<string,string> parameters({{"command", command->request.methodLine}});
 
+        // WIP: I wonder if we should really add this here. I think the best path would be to have a function
+        // in the plugin that would fill these properties for the logs. Leaving it here for now until I organize
+        // everything.
+        if (command->request.calc64("accountID")) {
+            parameters["accountID"] = command->request["accountID"];
+        }
+        if (!command->request["authEmail"].empty()) {
+            parameters["email"] = command->request["authEmail"];
+        }
         SALERT("REJECTING CRASH-INDUCING COMMAND", parameters);
         command->response.methodLine = "500 Refused";
         command->complete = true;
