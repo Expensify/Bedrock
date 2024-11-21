@@ -1182,18 +1182,10 @@ bool SQLiteNode::update() {
             if (_standDownTimeout.ringing()) {
                 SWARN("Timeout STANDINGDOWN, giving up on server and continuing.");
             }
-
-            // Are our sendbuffers empty?
-
-            for (const auto& peer : _peerList) {
-                string s = peer->getSendBufferCopy();
-                SINFO("Peer " <<  peer->name << " has sendbuffer size: " << s.size() << " and contents: " << s);
-            }
             // Standdown complete
             SINFO("STANDDOWN complete, SEARCHING");
             if (_isShuttingDown) {
                 for (const auto& peer : _peerList) {
-                    SINFO("Shutting down socket for peer: " << peer->name);
                     peer->shutdownSocket();
                 }
             }
@@ -1299,7 +1291,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
         if (!message.isSet("CommitCount")) {
             STHROW("missing CommitCount");
         }
-        SINFO("Recieved message " << message.methodLine << " with commit count: " << message["CommitCount"]);
         if (!message.isSet("Hash")) {
             STHROW("missing Hash");
         }
@@ -1795,7 +1786,7 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
     if (peer == _leadPeer) {
         // We've lost our leader: make sure we aren't waiting for
         // transaction response and re-SEARCH
-        PWARN("Lost our LEADER, re-SEARCHING. Buffer was: " << peer->getRecvBufferCopy());
+        PWARN("Lost our LEADER, re-SEARCHING.");
         SASSERTWARN(_state == SQLiteNodeState::SUBSCRIBING || _state == SQLiteNodeState::FOLLOWING);
         {
             _leadPeer = nullptr;

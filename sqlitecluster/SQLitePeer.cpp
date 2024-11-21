@@ -30,7 +30,6 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
 { }
 
 SQLitePeer::~SQLitePeer() {
-    SINFO("Deleting peer socket for " << name);
     delete socket;
 }
 

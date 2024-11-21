@@ -63,20 +63,7 @@ class SQLitePeer {
     SQLitePeer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
     ~SQLitePeer();
 
-    string getSendBufferCopy() {
-    if (socket) {
-    return socket->sendBufferCopy();
-    }
-    return "";
-    }
-
-    string getRecvBufferCopy() {
-        if (socket) {
-          return socket->recvBuffer.c_str();
-        }
-        return "";
-    }
-
+    // Returns true if it seems there's more data to send on this peer connection.
     bool remainingDataToSend() const;
 
     // This is const because it's public, and we don't want it to be changed outside of this class, as it needs to
