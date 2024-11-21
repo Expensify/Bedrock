@@ -699,6 +699,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
     // signals, like SIGSEGV, this function will be called.
     SSetSignalHandlerDieFunc([&](){
+        SHMMM("Sending CRASH_COMMAND from BedrockServer::runCommand", {{"command", command->request.methodLine}});
         _clusterMessenger->runOnAll(_generateCrashMessage(command));
     });
 
