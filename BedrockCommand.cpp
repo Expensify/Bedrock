@@ -123,6 +123,10 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
     return true;
 }
 
+ map<string,string> BedrockCommand::getLogParams() {
+    return {{"command", request.methodLine}};
+ }
+
 void BedrockCommand::reset(BedrockCommand::STAGE stage) {
     if (stage == STAGE::PEEK && !shouldPrePeek()) {
         jsonContent.clear();
