@@ -76,6 +76,7 @@ static const set<string> PARAMS_WHITELIST = {
     "token",
     "transactionID",
     "type",
+    "secondaryLogin"
 };
 
 string addLogParams(string&& message, const map<string, string>& params) {
