@@ -103,10 +103,10 @@ tpunit::_TestFixture::~_TestFixture() {
     delete _tests;
 }
 
-int tpunit::_TestFixture::tpunit_detail_do_run(int threads, std::function<void()> threadInitFunction) {
+int tpunit::_TestFixture::tpunit_detail_do_run(int threads, std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction) {
     const std::set<std::string> include, exclude;
     const std::list<std::string> before, after;
-    return tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction);
+    return tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction, sortFunction);
 }
 
 void tpunit::_TestFixture::tpunit_run_test_class(_TestFixture* f) {
@@ -129,10 +129,16 @@ void tpunit::_TestFixture::tpunit_run_test_class(_TestFixture* f) {
       cout << "\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C cleaning up " << f->_name << "." << endl;
    }
 }
+bool tpunit::_TestFixture::sorter(_TestFixture* a, _TestFixture* b) {
+   if (a->_name && b->_name) {
+      return strcmp(a->_name, b->_name) < 0;
+   }
+   return false;
+}
 
 int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const set<string>& exclude,
                                               const list<string>& before, const list<string>& after, int threads,
-                                              std::function<void()> threadInitFunction) {
+                                              std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction) {
    threadInitFunction();
     /*
     * Run specific tests by name. If 'include' is empty, then every test is
@@ -140,12 +146,7 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
     * then only tests in 'include' are run, and 'exclude' is ignored.
     */
     std::list<_TestFixture*> testFixtureList = *tpunit_detail_fixture_list();
-    testFixtureList.sort([&](_TestFixture* a, _TestFixture* b) {
-        if (a->_name && b->_name) {
-            return strcmp(a->_name, b->_name) < 0;
-        }
-        return false;
-    });
+    testFixtureList.sort(sortFunction);
 
     // Make local, mutable copies of the include and exclude lists.
     set<string> _include = include;
@@ -524,11 +525,11 @@ list<tpunit::_TestFixture*>* tpunit::_TestFixture::tpunit_detail_fixture_list() 
     return _fixtureList;
 }
 
-int tpunit::Tests::run(int threads, std::function<void()> threadInitFunction) {
-    return _TestFixture::tpunit_detail_do_run(threads, threadInitFunction);
+int tpunit::Tests::run(int threads, std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction) {
+    return _TestFixture::tpunit_detail_do_run(threads, threadInitFunction, sortFunction);
 }
 
 int tpunit::Tests::run(const set<string>& include, const set<string>& exclude,
-                       const list<string>& before, const list<string>& after, int threads, std::function<void()> threadInitFunction) {
-    return _TestFixture::tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction);
+                       const list<string>& before, const list<string>& after, int threads, std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction) {
+    return _TestFixture::tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction, sortFunction);
 }
