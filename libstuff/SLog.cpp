@@ -64,6 +64,7 @@ static const set<string> PARAMS_WHITELIST = {
     "invoice",
     "isUnique",
     "key",
+    "logParam",
     "nvpName",
     "policyAccountID",
     "policyID",

@@ -127,6 +127,7 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
     return {
         {"command", request.methodLine},
         {"requestID", request.isSet("requestID") ? request["requestID"] : "xxxxxx"},
+        {"logParam", request.isSet("logParam") ? request["logParam"] : ""},
     };
  }
 

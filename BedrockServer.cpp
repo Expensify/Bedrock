@@ -2011,6 +2011,7 @@ bool BedrockServer::shouldBackup() {
 }
 
 SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& command) {
+    SHMMM("Generating CRASH_COMMAND command for " << command->request.methodLine);
     SData message("CRASH_COMMAND");
     SData subMessage(command->request.methodLine);
     for (auto& pair : command->crashIdentifyingValues) {
