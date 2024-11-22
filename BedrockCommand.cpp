@@ -124,11 +124,11 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
 }
 
  map<string,string> BedrockCommand::getCommandLogParams() {
-    return {
-        {"command", request.methodLine},
-        {"requestID", request.isSet("requestID") ? request["requestID"] : "xxxxxx"},
-        {"logParam", request.isSet("logParam") ? request["logParam"] : ""},
-    };
+    map<string,string> parameters({{"command", request.methodLine}});
+    for(auto& pair : request.nameValueMap) {
+        parameters[pair.first] = pair.second;
+    }
+    return parameters;
  }
 
 void BedrockCommand::reset(BedrockCommand::STAGE stage) {
