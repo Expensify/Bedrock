@@ -471,8 +471,10 @@ void BedrockServer::sync()
                 // like a segfault. Note that it's possible we're in the middle of sending a message to peers when we call
                 // this, which would probably make this message malformed. This is the best we can do.
                 SSetSignalHandlerDieFunc([&](){
-                    SALERT("CRASHING from BedrockServer::sync", command->getCommandLogParams());
+                    const string logMessage = addLogParams("CRASHING from BedrockServer::sync", command->getCommandLogParams());
+                    SALERT(logMessage);
                     _clusterMessenger->runOnAll(_generateCrashMessage(command));
+                    return logMessage;
                 });
 
                 // And now we'll decide how to handle it.
@@ -568,7 +570,11 @@ void BedrockServer::sync()
         }
     } while (!_syncNode->shutdownComplete() || BedrockCommand::getCommandCount());
 
-    SSetSignalHandlerDieFunc([](){SWARN("Dying in shutdown");});
+    SSetSignalHandlerDieFunc([](){
+        const string logMessage = "Dying in shutdown";
+        SWARN(logMessage);
+        return logMessage;
+    });
 
     // If we forced a shutdown mid-transaction (this can happen, if, for instance, we hit our graceful timeout between
     // getting a `BEGIN_TRANSACTION` and `COMMIT_TRANSACTION`) then we need to roll back the existing transaction and
@@ -656,7 +662,9 @@ void BedrockServer::worker(int threadId)
         try {
             // Set a signal handler function that we can call even if we die early with no command.
             SSetSignalHandlerDieFunc([&](){
-                SWARN("Die function called early with no command, probably died in `commandQueue.get`.");
+                const string logMessage = "Die function called early with no command, probably died in `commandQueue.get`.";
+                SWARN(logMessage);
+                return logMessage;
             });
 
             // Get the next one.
@@ -700,8 +708,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
     // signals, like SIGSEGV, this function will be called.
     SSetSignalHandlerDieFunc([&](){
-        SALERT("CRASHING from BedrockServer::runCommand", command->getCommandLogParams());
+        const string logMessage = addLogParams("CRASHING from BedrockServer::runCommand", command->getCommandLogParams());
+        SALERT(logMessage);
         _clusterMessenger->runOnAll(_generateCrashMessage(command));
+        return logMessage;
     });
 
     // If we dequeue a status or control command, handle it immediately.
