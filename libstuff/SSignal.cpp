@@ -1,4 +1,5 @@
 #include "libstuff.h"
+#include "SSynchronizedQueue.h"
 #include <sqlitecluster/SQLiteNode.h>
 #include <cxxabi.h>
 #include <execinfo.h>
@@ -16,6 +17,8 @@ void SSetSignalHandlerDieFunc(function<string()>&& func) {
 // 64kb emergency stack location.
 constexpr auto sigStackSize{1024*64};
 char __SIGSTACK[sigStackSize];
+
+void* SSIGNAL_NOTIFY_INTERRUPT;
 
 // The function to call in our thread that handles signals.
 void _SSignal_signalHandlerThreadFunc();
@@ -162,6 +165,10 @@ void _SSignal_signalHandlerThreadFunc() {
                 SINFO("Got Signal: " << strsignal(signum) << "(" << signum << ").");
                 _SSignal_pendingSignalBitMask.fetch_or(1 << signum);
             }
+        }
+
+        if (SSIGNAL_NOTIFY_INTERRUPT) {
+            static_cast<SSynchronizedQueue<bool>*>(SSIGNAL_NOTIFY_INTERRUPT)->push(true);
         }
     }
 }

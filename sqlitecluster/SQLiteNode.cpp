@@ -339,14 +339,17 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency) {
     }
 }
 
-void SQLiteNode::beginShutdown() {
+bool SQLiteNode::beginShutdown() {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
     // Ignore redundant
     if (!_isShuttingDown) {
         // Start graceful shutdown
         SINFO("Beginning graceful shutdown.");
         _isShuttingDown = true;
+        return true;
     }
+
+    return false;
 }
 
 bool SQLiteNode::_isNothingBlockingShutdown() const {
@@ -361,6 +364,13 @@ bool SQLiteNode::_isNothingBlockingShutdown() const {
 
     if (_pendingSynchronizeResponses) {
         return false;
+    }
+
+    for (const auto& peer : _peerList) {
+        if (peer->remainingDataToSend()) {
+            SINFO("Peer " << peer->name << " has data left to send.");
+            return false;
+        }
     }
 
     return true;
@@ -1174,6 +1184,11 @@ bool SQLiteNode::update() {
             }
             // Standdown complete
             SINFO("STANDDOWN complete, SEARCHING");
+            if (_isShuttingDown) {
+                for (const auto& peer : _peerList) {
+                    peer->shutdownSocket();
+                }
+            }
             _changeState(SQLiteNodeState::SEARCHING);
 
             // We're no longer waiting on responses from peers, we can re-update immediately and start becoming a
