@@ -52,6 +52,8 @@ static const set<string> PARAMS_WHITELIST = {
     "command",
     "companyName",
     "companyWebsite",
+    "Connection",
+    "Content-Length",
     "currentTime",
     "domainAccountID",
     "domainName",
@@ -82,6 +84,7 @@ static const set<string> PARAMS_WHITELIST = {
     "token",
     "transactionID",
     "type",
+    "userID",
     "secondaryLogin"
 };
 
