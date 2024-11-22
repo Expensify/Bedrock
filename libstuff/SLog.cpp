@@ -43,10 +43,12 @@ void SLogStackTrace(int level) {
 // If the param name is not in this whitelist, we will log <REDACTED> in addLogParams.
 static const set<string> PARAMS_WHITELIST = {
     "accountID",
+    "authEmail",
     "attendees",
     "bankAccountID",
     "cardData",
     "cardID",
+    "clientUpdateID",
     "command",
     "companyName",
     "companyWebsite",
@@ -64,6 +66,7 @@ static const set<string> PARAMS_WHITELIST = {
     "invoice",
     "isUnique",
     "key",
+    "lastIP",
     "logParam",
     "nvpName",
     "policyAccountID",

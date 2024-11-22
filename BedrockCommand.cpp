@@ -123,7 +123,7 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
     return true;
 }
 
- map<string,string> BedrockCommand::getCommandLogParams() {
+map<string,string> BedrockCommand::getCommandLogParams() {
     map<string,string> parameters({{"command", request.methodLine}});
     for(auto& pair : request.nameValueMap) {
         parameters[pair.first] = pair.second;
