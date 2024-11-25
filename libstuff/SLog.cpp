@@ -43,6 +43,7 @@ void SLogStackTrace(int level) {
 // If the param name is not in this whitelist, we will log <REDACTED> in addLogParams.
 static const set<string> PARAMS_WHITELIST = {
     "accountID",
+    "accountIDs",
     "attendees",
     "bankAccountID",
     "cardData",
@@ -68,6 +69,7 @@ static const set<string> PARAMS_WHITELIST = {
     "policyID",
     "reportID",
     "requestTimestamp",
+    "secondaryLogin"
     "shouldCompleteOnboarding",
     "shouldDismissHybridAppOnboarding",
     "status",
@@ -76,7 +78,6 @@ static const set<string> PARAMS_WHITELIST = {
     "token",
     "transactionID",
     "type",
-    "secondaryLogin"
 };
 
 string addLogParams(string&& message, const map<string, string>& params) {
