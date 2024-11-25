@@ -60,6 +60,7 @@ static const set<string> PARAMS_WHITELIST = {
     "feedID",
     "feedName",
     "field",
+    "index",
     "indexName",
     "invoice",
     "isUnique",
