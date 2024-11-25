@@ -69,7 +69,7 @@ static const set<string> PARAMS_WHITELIST = {
     "policyID",
     "reportID",
     "requestTimestamp",
-    "secondaryLogin"
+    "secondaryLogin",
     "shouldCompleteOnboarding",
     "shouldDismissHybridAppOnboarding",
     "status",
