@@ -77,7 +77,7 @@ static const set<string> PARAMS_WHITELIST = {
     "timeDiff",
     "token",
     "transactionID",
-    "type",
+    "type"
 };
 
 string addLogParams(string&& message, const map<string, string>& params) {
