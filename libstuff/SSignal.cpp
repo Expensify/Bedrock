@@ -257,7 +257,7 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
             
             // Finish writing the crash file with the request details if it exists
             if (fd != -1 && !logMessage.empty()) {
-                logMessage = format("{}{}", logMessage, "\n");
+                logMessage += "\n";
                 write(fd, logMessage.c_str(), strlen(logMessage.c_str()));
             }
             close(fd);

@@ -36,6 +36,10 @@ extern void* SSIGNAL_NOTIFY_INTERRUPT;
 // Initialize libstuff on every thread before calling any of its functions
 void SInitialize(string threadName = "", const char* processName = 0);
 
+// This function sets a lambda that will be executed while the process is being killed for any reason
+// (e.g. it crashed). Since we usually add logs in the lambda function, we'll also need to return the log as a
+// string so we can write that log in the crash file. We do that to guaurantee we'll have the log message
+// instantly available in the crash file instead of depending on rsyslog, which can be late.
 void SSetSignalHandlerDieFunc(function<string()>&& func);
 
 // --------------------------------------------------------------------------
