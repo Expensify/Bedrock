@@ -44,6 +44,7 @@ void SLogStackTrace(int level) {
 static const set<string> PARAMS_WHITELIST = {
     "accountID",
     "authEmail",
+    "accountIDs",
     "attendees",
     "bankAccountID",
     "cardData",
@@ -64,6 +65,7 @@ static const set<string> PARAMS_WHITELIST = {
     "feedID",
     "feedName",
     "field",
+    "index",
     "indexName",
     "invoice",
     "isUnique",
@@ -76,6 +78,7 @@ static const set<string> PARAMS_WHITELIST = {
     "reportID",
     "requestID",
     "requestTimestamp",
+    "secondaryLogin",
     "shouldCompleteOnboarding",
     "shouldDismissHybridAppOnboarding",
     "status",
