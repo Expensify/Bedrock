@@ -37,4 +37,3 @@ struct CommandPortTest : tpunit::TestFixture {
     }
 
 } __CommandPortTest;
-
