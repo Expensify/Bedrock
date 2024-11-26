@@ -484,6 +484,7 @@ void BedrockServer::sync()
                 // this, which would probably make this message malformed. This is the best we can do.
                 SSetSignalHandlerDieFunc([&](){
                     _clusterMessenger->runOnAll(_generateCrashMessage(command));
+                    return addLogParams("CRASHING from BedrockServer::sync, command:" +  command->request.methodLine, command->request.nameValueMap);
                 });
 
                 // And now we'll decide how to handle it.
@@ -579,7 +580,9 @@ void BedrockServer::sync()
         }
     } while (!_syncNode->shutdownComplete() || BedrockCommand::getCommandCount());
 
-    SSetSignalHandlerDieFunc([](){SWARN("Dying in shutdown");});
+    SSetSignalHandlerDieFunc([](){
+        return "Dying in shutdown";
+    });
 
     // If we forced a shutdown mid-transaction (this can happen, if, for instance, we hit our graceful timeout between
     // getting a `BEGIN_TRANSACTION` and `COMMIT_TRANSACTION`) then we need to roll back the existing transaction and
@@ -667,7 +670,7 @@ void BedrockServer::worker(int threadId)
         try {
             // Set a signal handler function that we can call even if we die early with no command.
             SSetSignalHandlerDieFunc([&](){
-                SWARN("Die function called early with no command, probably died in `commandQueue.get`.");
+                return "Die function called early with no command, probably died in `commandQueue.get`.";
             });
 
             // Get the next one.
@@ -712,6 +715,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // signals, like SIGSEGV, this function will be called.
     SSetSignalHandlerDieFunc([&](){
         _clusterMessenger->runOnAll(_generateCrashMessage(command));
+        return addLogParams("CRASHING from BedrockServer::runCommand, command:" +  command->request.methodLine, command->request.nameValueMap);
     });
 
     // If we dequeue a status or control command, handle it immediately.
@@ -722,7 +726,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // Check if this command would be likely to cause a crash
     if (_wouldCrash(command)) {
         // If so, make a lot of noise, and respond 500 without processing it.
-        SALERT("CRASH-INDUCING COMMAND FOUND: " << command->request.methodLine);
+        SALERT("REJECTING CRASH-INDUCING COMMAND, command:" +  command->request.methodLine, command->request.nameValueMap);
         command->response.methodLine = "500 Refused";
         command->complete = true;
         _reply(command);
