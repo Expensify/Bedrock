@@ -1,3 +1,4 @@
+#include "libstuff/libstuff.h"
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -5,6 +6,7 @@ struct EscalateTest : tpunit::TestFixture {
     EscalateTest() : tpunit::TestFixture("Escalate", BEFORE_CLASS(EscalateTest::setup),
                                                      AFTER_CLASS(EscalateTest::teardown),
                                                      TEST(EscalateTest::test),
+                                                     TEST(EscalateTest::testSerializedData),
                                                      TEST(EscalateTest::socketReuse)) { }
 
     BedrockClusterTester* tester = nullptr;
@@ -44,6 +46,26 @@ struct EscalateTest : tpunit::TestFixture {
         ASSERT_EQUAL(results.size(), 1);
         ASSERT_EQUAL(results[0].methodLine, "200 OK");
         SFileDelete(cmd["tempFile"]);
+    }
+
+    void testSerializedData()
+    {
+        // We're going to escalate from follower 1.
+        BedrockTester& brtester = tester->getTester(1);
+        SData cmd("EscalateSerializedData");
+        SData result = brtester.executeWaitMultipleData({cmd})[0];
+
+        // Parse the results, which shoould contain the node name we escalated from,
+        // the node name we escalated to, and the test name.
+        auto resultComponenets = SParseList(result.content, ':');
+
+        // Validate the results.
+        ASSERT_EQUAL("cluster_node_0", resultComponenets.front());
+        resultComponenets.pop_front();
+        ASSERT_EQUAL("cluster_node_1", resultComponenets.front());
+        resultComponenets.pop_front();
+        ASSERT_EQUAL("Escalate", resultComponenets.front());
+        resultComponenets.pop_front();
     }
 
     // Note: see this PR: https://github.com/Expensify/Bedrock/pull/1308 for the reasoning behind this test.
