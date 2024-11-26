@@ -51,6 +51,7 @@ static const set<string> PARAMS_WHITELIST = {
     "command",
     "companyName",
     "companyWebsite",
+    "count",
     "currentTime",
     "domainAccountID",
     "domainName",
