@@ -1821,14 +1821,21 @@ thread* __quiesceThread = nullptr;
 
 void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
     SData& response = command->response;
+    string reason = "MANUAL";
     response.methodLine = "200 OK";
     if (SIEquals(command->request.methodLine, "BeginBackup")) {
         _shouldBackup = true;
         _beginShutdown("Detach", true);
     } else if (SIEquals(command->request.methodLine, "SuppressCommandPort")) {
-        blockCommandPort("MANUAL");
+        if (command->request.isSet("reason") && command->request["reason"].size()) {
+            reason = command->request["reason"];
+        }
+        blockCommandPort(reason);
     } else if (SIEquals(command->request.methodLine, "ClearCommandPort")) {
-        unblockCommandPort("MANUAL");
+        if (command->request.isSet("reason") && command->request["reason"].size()) {
+            reason = command->request["reason"];
+        }
+        unblockCommandPort(reason);
     } else if (SIEquals(command->request.methodLine, "ClearCrashCommands")) {
         unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
         _crashCommands.clear();
