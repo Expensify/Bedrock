@@ -252,6 +252,9 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
             // Call our die function and then reset it.
             SWARN("Calling DIE function.");
             string logMessage = SSignalHandlerDieFunc();
+            if (!logMessage.empty()) {
+                SALERT(logMessage);
+            }
             SSignalHandlerDieFunc = [](){ return ""; };
             SWARN("DIE function returned.");
             

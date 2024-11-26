@@ -118,9 +118,6 @@ class BedrockCommand : public SQLiteCommand {
     // Returns true if all of the httpsRequests for this command are complete (or if it has none).
     bool areHttpsRequestsComplete() const;
 
-    // Returns a map with all the parameters that can be used to log information about the command being run.
-    map<string,string> getCommandLogParams();
-
     // If the `peek` portion of this command needs to make an HTTPS request, this is where we store it.
     template <typename T>
     class GrowOnlyList {

@@ -91,7 +91,7 @@ static const set<string> PARAMS_WHITELIST = {
     "secondaryLogin"
 };
 
-string addLogParams(string&& message, const map<string, string>& params) {
+string addLogParams(string&& message, const STable& params) {
     if (params.empty()) {
         return message;
     }
