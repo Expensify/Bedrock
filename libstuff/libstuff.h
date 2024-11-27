@@ -36,7 +36,11 @@ extern void* SSIGNAL_NOTIFY_INTERRUPT;
 // Initialize libstuff on every thread before calling any of its functions
 void SInitialize(string threadName = "", const char* processName = 0);
 
-void SSetSignalHandlerDieFunc(function<void()>&& func);
+// This function sets a lambda that will be executed while the process is being killed for any reason
+// (e.g. it crashed). Since we usually add logs in the lambda function, we'll also need to return the log as a
+// string so we can write that log in the crash file. We do that to guaurantee we'll have the log message
+// instantly available in the crash file instead of depending on rsyslog, which can be late.
+void SSetSignalHandlerDieFunc(function<string()>&& func);
 
 // --------------------------------------------------------------------------
 // Assertion stuff
@@ -235,7 +239,7 @@ void SSyslogSocketDirect(int priority, const char* format, ...);
 // Atomic pointer to the syslog function that we'll actually use. Easy to change to `syslog` or `SSyslogSocketDirect`.
 extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
 
-string addLogParams(string&& message, const map<string, string>& params = {});
+string addLogParams(string&& message, const STable& params = {});
 
 // **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
 #define SWHEREAMI SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "

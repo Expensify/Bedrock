@@ -9,8 +9,8 @@
 #include <unistd.h>
 #include <format>
 
-thread_local function<void()> SSignalHandlerDieFunc;
-void SSetSignalHandlerDieFunc(function<void()>&& func) {
+thread_local function<string()> SSignalHandlerDieFunc;
+void SSetSignalHandlerDieFunc(function<string()>&& func) {
     SSignalHandlerDieFunc = move(func);
 }
 
@@ -78,7 +78,7 @@ void SClearSignals() {
 
 void SInitializeSignals() {
     // Our default die function does nothing.
-    SSignalHandlerDieFunc = [](){};
+    SSignalHandlerDieFunc = [](){ return ""; };
 
     // Clear the thread-local signal number.
     _SSignal_threadCaughtSignalNumber = 0;
@@ -246,16 +246,25 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 }
                 free(frame);
             }
-            close(fd);
-
             // Done.
             free(callstack);
 
             // Call our die function and then reset it.
             SWARN("Calling DIE function.");
-            SSignalHandlerDieFunc();
-            SSignalHandlerDieFunc = [](){};
+            string logMessage = SSignalHandlerDieFunc();
+            if (!logMessage.empty()) {
+                SALERT(logMessage);
+            }
+            SSignalHandlerDieFunc = [](){ return ""; };
             SWARN("DIE function returned.");
+            
+            // Finish writing the crash file with the request details if it exists
+            if (fd != -1 && !logMessage.empty()) {
+                logMessage += "\n";
+                write(fd, logMessage.c_str(), strlen(logMessage.c_str()));
+            }
+            close(fd);
+
             if (SQLiteNode::KILLABLE_SQLITE_NODE) {
                 SWARN("Killing peer connections.");
                 SQLiteNode::KILLABLE_SQLITE_NODE->kill();
