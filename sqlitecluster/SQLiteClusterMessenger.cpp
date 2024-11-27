@@ -130,10 +130,10 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
     // that needs serialization, and if so, we serialize that as well.
     if (command.httpsRequests.size()) {
         request["httpsRequests"] = command.serializeHTTPSRequests();
-        string serializedData = command.serializeData();
-        if (serializedData.size()) {
-            request["serializedData"] = move(serializedData);
-        }
+    }
+    string serializedData = command.serializeData();
+    if (serializedData.size()) {
+        request["serializedData"] = move(serializedData);
     }
 
     request.nameValueMap["ID"] = command.id;
