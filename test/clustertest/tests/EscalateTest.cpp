@@ -55,7 +55,7 @@ struct EscalateTest : tpunit::TestFixture {
         SData cmd("EscalateSerializedData");
         SData result = brtester.executeWaitMultipleData({cmd})[0];
 
-        // Parse the results, which shoould contain the node name we escalated from,
+        // Parse the results, which should contain the node name we escalated from,
         // the node name we escalated to, and the test name.
         auto resultComponenets = SParseList(result.content, ':');
 
