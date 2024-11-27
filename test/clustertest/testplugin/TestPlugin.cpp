@@ -215,7 +215,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         }
         response.content = "this is a test response";
         return true;
-    } else if (SStartsWith(request.methodLine,"EscalateSerializedData")) {
+    } else if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
         // Only set this if it's blank. The intention is that it will be blank on a follower, but already set by
         // serialize/deserialize on the leader.
         if (serializedDataString.empty()) {
