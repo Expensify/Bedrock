@@ -53,10 +53,14 @@ class TestPluginCommand : public BedrockCommand {
     virtual void reset(BedrockCommand::STAGE stage) override;
     bool shouldEnableOnPrepareNotification(const SQLite& db, void (**handler)(SQLite& _db, int64_t tableID)) override;
 
+  virtual string serializeData() const override;
+  virtual void deserializeData(const string& data) override;
+
   private:
     BedrockPlugin_TestPlugin& plugin() { return static_cast<BedrockPlugin_TestPlugin&>(*_plugin); }
 
     bool pendingResult;
     string chainedHTTPResponseContent;
     string urls;
+    string serializedDataString;
 };
