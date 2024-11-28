@@ -76,6 +76,7 @@ static const set<string> PARAMS_WHITELIST = {
     "nvpName",
     "policyAccountID",
     "policyID",
+    "reimbursementEntryID",
     "reportID",
     "requestID",
     "requestTimestamp",
@@ -89,7 +90,8 @@ static const set<string> PARAMS_WHITELIST = {
     "transactionID",
     "type",
     "userID",
-    "secondaryLogin"
+    "secondaryLogin",
+    "walletBankAccountID"
 };
 
 string addLogParams(string&& message, const STable& params) {
