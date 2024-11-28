@@ -2,6 +2,7 @@
 #include "BedrockServer.h"
 
 #include <arpa/inet.h>
+#include <csignal>
 #include <cstring>
 #include <fstream>
 #include <sys/resource.h>
@@ -97,7 +98,7 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
     SINFO("Setting dbPool size to: " << _dbPoolSize);
-    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, args["-synchronous"], mmapSizeGB, args.isSet("-hctree"));
+    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-hctree"));
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
@@ -214,10 +215,10 @@ void BedrockServer::sync()
         // commands, and we'll shortly run through the existing queue.
         if (_shutdownState.load() == COMMANDS_FINISHED) {
             SINFO("All clients responded to, " << BedrockCommand::getCommandCount() << " commands remaining. Shutting down sync node.");
-            _syncNode->beginShutdown();
-
-            // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
-            _notifyDone.push(true);
+            if (_syncNode->beginShutdown()) {
+                // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
+                _notifyDoneSync.push(true);
+            }
         }
 
         // The fd_map contains a list of all file descriptors (eg, sockets, Unix pipes) that poll will wait on for
@@ -225,7 +226,7 @@ void BedrockServer::sync()
         fd_map fdm;
 
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
-        _notifyDone.prePoll(fdm);
+        _notifyDoneSync.prePoll(fdm);
         _syncNode->prePoll(fdm);
 
         // Add our command queues to our fd_map.
@@ -236,6 +237,9 @@ void BedrockServer::sync()
         {
             AutoTimerTime pollTime(pollTimer);
             S_poll(fdm, max(nextActivity, now) - now);
+            if (SCheckSignal(SIGTERM)) {
+                _notifyDone.push(true);
+            }
         }
 
         // And set our next timeout for 1 second from now.
@@ -251,7 +255,7 @@ void BedrockServer::sync()
             AutoTimerTime postPollTime(postPollTimer);
             _syncNode->postPoll(fdm, nextActivity);
             _syncNodeQueuedCommands.postPoll(fdm);
-            _notifyDone.postPoll(fdm);
+            _notifyDoneSync.postPoll(fdm);
         }
 
         // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
@@ -314,7 +318,11 @@ void BedrockServer::sync()
                     }
                 }
             } catch (const out_of_range& e) {
-                SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+                if (dropped) {
+                    SWARN("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+                } else {
+                    SINFO("Abruptly stopped LEADING. Re-queued " << requeued << " commands, Dropped " << dropped << " commands.");
+                }
 
                 // command will be null here, we should be able to restart the loop.
                 continue;
@@ -350,6 +358,9 @@ void BedrockServer::sync()
                 committingCommand = true;
                 _syncNode->startCommit(SQLiteNode::QUORUM);
                 _lastQuorumCommandTime = STimeNow();
+                
+                // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
+                _notifyDoneSync.push(true);
                 SDEBUG("Finished sending distributed transaction for db upgrade.");
 
                 // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
@@ -378,6 +389,7 @@ void BedrockServer::sync()
                     _upgradeInProgress = false;
                     _upgradeCompleted = true;
                     SINFO("UpgradeDB succeeded, done.");
+                    _notifyDone.push(true);
                 } else {
                     SINFO("UpgradeDB failed, trying again.");
                 }
@@ -472,6 +484,7 @@ void BedrockServer::sync()
                 // this, which would probably make this message malformed. This is the best we can do.
                 SSetSignalHandlerDieFunc([&](){
                     _clusterMessenger->runOnAll(_generateCrashMessage(command));
+                    return addLogParams("CRASHING from BedrockServer::sync, command:" +  command->request.methodLine, command->request.nameValueMap);
                 });
 
                 // And now we'll decide how to handle it.
@@ -567,7 +580,9 @@ void BedrockServer::sync()
         }
     } while (!_syncNode->shutdownComplete() || BedrockCommand::getCommandCount());
 
-    SSetSignalHandlerDieFunc([](){SWARN("Dying in shutdown");});
+    SSetSignalHandlerDieFunc([](){
+        return "Dying in shutdown";
+    });
 
     // If we forced a shutdown mid-transaction (this can happen, if, for instance, we hit our graceful timeout between
     // getting a `BEGIN_TRANSACTION` and `COMMIT_TRANSACTION`) then we need to roll back the existing transaction and
@@ -655,7 +670,7 @@ void BedrockServer::worker(int threadId)
         try {
             // Set a signal handler function that we can call even if we die early with no command.
             SSetSignalHandlerDieFunc([&](){
-                SWARN("Die function called early with no command, probably died in `commandQueue.get`.");
+                return "Die function called early with no command, probably died in `commandQueue.get`.";
             });
 
             // Get the next one.
@@ -700,6 +715,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // signals, like SIGSEGV, this function will be called.
     SSetSignalHandlerDieFunc([&](){
         _clusterMessenger->runOnAll(_generateCrashMessage(command));
+        return addLogParams("CRASHING from BedrockServer::runCommand, command:" +  command->request.methodLine, command->request.nameValueMap);
     });
 
     // If we dequeue a status or control command, handle it immediately.
@@ -710,7 +726,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // Check if this command would be likely to cause a crash
     if (_wouldCrash(command)) {
         // If so, make a lot of noise, and respond 500 without processing it.
-        SALERT("CRASH-INDUCING COMMAND FOUND: " << command->request.methodLine);
+        SALERT("REJECTING CRASH-INDUCING COMMAND, command:" +  command->request.methodLine, command->request.nameValueMap);
         command->response.methodLine = "500 Refused";
         command->complete = true;
         _reply(command);
@@ -1026,7 +1042,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             if (_enableConflictPageLocks) {
                                 lastConflictTable = db.getLastConflictTable();
 
-                                // Journals are always chosen at the time of commit. So in case there was a conflict on the journal in 
+                                // Journals are always chosen at the time of commit. So in case there was a conflict on the journal in
                                 // the previous commit, the chances are very low (1/192) that we'll choose the same journal, thus, we
                                 // don't need to lock our next commit on this page conflict.
                                 if (!SStartsWith(lastConflictTable, "journal")) {
@@ -1223,6 +1239,9 @@ BedrockServer::BedrockServer(const SData& args_)
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _upgradeCompleted(false)
 {
     _version = VERSION;
+
+    // This allows the signal thread to notify us when a signal is received to interrupt the current poll loop.
+    SSIGNAL_NOTIFY_INTERRUPT = &_notifyDoneSync;
 
     // Enable the requested plugins, and update our version string if required.
     list<string> pluginNameList = SParseList(args["-plugins"]);
@@ -1671,11 +1690,25 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         {
             // Make it known if anything is known to cause crashes.
             shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
+            vector<string> crashCommandListArray;
+
             size_t totalCount = 0;
             for (const auto& s : _crashCommands) {
                 totalCount += s.second.size();
+                
+                vector<string> paramsArray;
+                for (const STable& params : s.second) {
+                    if (!params.empty()) {
+                        paramsArray.push_back(SComposeJSONObject(params));
+                    }
+                }
+                
+                STable commandObject;
+                commandObject[s.first] = SComposeJSONArray(paramsArray);
+                crashCommandListArray.push_back(SComposeJSONObject(commandObject));
             }
             content["crashCommands"] = totalCount;
+            content["crashCommandList"] = SComposeJSONArray(crashCommandListArray);
         }
 
         // On leader, return the current multi-write blacklists.
@@ -1792,14 +1825,21 @@ thread* __quiesceThread = nullptr;
 
 void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
     SData& response = command->response;
+    string reason = "MANUAL";
     response.methodLine = "200 OK";
     if (SIEquals(command->request.methodLine, "BeginBackup")) {
         _shouldBackup = true;
         _beginShutdown("Detach", true);
     } else if (SIEquals(command->request.methodLine, "SuppressCommandPort")) {
-        blockCommandPort("MANUAL");
+        if (command->request.isSet("reason") && command->request["reason"].size()) {
+            reason = command->request["reason"];
+        }
+        blockCommandPort(reason);
     } else if (SIEquals(command->request.methodLine, "ClearCommandPort")) {
-        unblockCommandPort("MANUAL");
+        if (command->request.isSet("reason") && command->request["reason"].size()) {
+            reason = command->request["reason"];
+        }
+        unblockCommandPort(reason);
     } else if (SIEquals(command->request.methodLine, "ClearCrashCommands")) {
         unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
         _crashCommands.clear();

@@ -218,16 +218,12 @@ void SQLite::commonConstructorInitialization(bool hctree) {
     // Setting a wal hook prevents auto-checkpointing.
     sqlite3_wal_hook(_db, _walHookCallback, this);
 
-    // Check if synchronous has been set and run query to use a custom synchronous setting
-    if (!_synchronous.empty()) {
-        SASSERT(!SQuery(_db, "setting custom synchronous commits", "PRAGMA synchronous = " + SQ(_synchronous)  + ";"));
-    } else {
-        DBINFO("Using SQLite default PRAGMA synchronous");
-    }
+    // Always set synchronous commits to off for best commit performance in WAL mode.
+    SASSERT(!SQuery(_db, "setting synchronous commits to off", "PRAGMA synchronous = OFF;"));
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool hctree) :
+               int minJournalTables, int64_t mmapSizeGB, bool hctree) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB, hctree)),
@@ -235,7 +231,6 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _sharedData(initializeSharedData(_db, _filename, _journalNames, hctree)),
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _cacheSize(cacheSize),
-    _synchronous(synchronous),
     _mmapSizeGB(mmapSizeGB)
 {
     commonConstructorInitialization(hctree);
@@ -249,7 +244,6 @@ SQLite::SQLite(const SQLite& from) :
     _sharedData(from._sharedData),
     _journalSize(from._journalSize),
     _cacheSize(from._cacheSize),
-    _synchronous(from._synchronous),
     _mmapSizeGB(from._mmapSizeGB)
 {
     // This can always pass "true" because the copy constructor does not need to set the DB to WAL2 mode, it would have been set in the object being copied.
@@ -386,16 +380,22 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
         _mutexLocked = true;
     }
 
-    if (_insideTransaction || !_uncommittedHash.empty() || !_uncommittedQuery.empty()) {
-        // The most likely case for hitting this is that we forgot to roll back a transaction when we were finished with it
-        // during the last use of this DB handle. In that case, `_insideTransaction` is likely true, and possibly
-        // _uncommittedHash or _uncommittedQuery is set. Rollback should put this DB handle back into a usable state,
-        // but it breaks the current transaction on this handle. We throw and fail the one transaction and hopefully have
-        // fixed the handle for the next use.
+    // The most likely case for hitting this is that we forgot to roll back a transaction when we were finished with it
+    // during the last use of this DB handle. In that case, `_insideTransaction` is likely true, and possibly
+    // _uncommittedHash or _uncommittedQuery is set. Rollback should put this DB handle back into a usable state,
+    // but it breaks the current transaction on this handle. We throw and fail the one transaction and hopefully have
+    // fixed the handle for the next use
+    if (_insideTransaction) {
         rollback();
-        STHROW("Attempted to begin transaction while in invalid state. _insideTransaction="s +
-               (_insideTransaction ? "true" : "false") + ", _uncommittedHash='" + _uncommittedHash +
-               ", _uncommittedQuery empty? " + (_uncommittedQuery.empty() ? "true" : "false"));
+        STHROW("Attempted to begin transaction while in invalid state: already inside transaction");
+    }
+    if (!_uncommittedHash.empty()) {
+        rollback();
+        STHROW("Attempted to begin transaction while in invalid state: _uncommittedHash not empty");
+    }
+    if (!_uncommittedQuery.empty()) {
+        rollback();
+        STHROW("Attempted to begin transaction while in invalid state: _uncommittedQuery not empty");
     }
 
     // Reset before the query, as it's possible the query sets these.

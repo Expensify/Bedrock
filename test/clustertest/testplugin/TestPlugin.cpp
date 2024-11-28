@@ -1,5 +1,6 @@
 #include "TestPlugin.h"
 
+#include <dlfcn.h>
 #include <iostream>
 #include <sys/file.h>
 #include <string.h>
@@ -102,7 +103,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "prepeekpostprocesscommand",
         "preparehandler",
         "testquery",
-        "testPostProcessTimeout"
+        "testPostProcessTimeout",
+        "EscalateSerializedData"
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -117,6 +119,19 @@ TestPluginCommand::TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_
   pendingResult(false),
   urls(request["urls"])
 {
+}
+
+string TestPluginCommand::serializeData() const {
+    if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
+        return serializedDataString;
+    }
+    return "";
+}
+
+void TestPluginCommand::deserializeData(const string& data) {
+    if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
+        serializedDataString = data;
+    }
 }
 
 TestPluginCommand::~TestPluginCommand()
@@ -200,6 +215,15 @@ bool TestPluginCommand::peek(SQLite& db) {
         }
         response.content = "this is a test response";
         return true;
+    } else if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
+        // Only set this if it's blank. The intention is that it will be blank on a follower, but already set by
+        // serialize/deserialize on the leader.
+        if (serializedDataString.empty()) {
+            serializedDataString = _plugin->server.args["-nodeName"] + ":" + _plugin->server.args["-testName"];
+        }
+        // On followers, this immediately escalates to leader.
+        // On leader, it immediately skips to `process`.
+        return false;
     } else if (SStartsWith(request.methodLine, "broadcastwithtimeouts")) {
         // First, send a `broadcastwithtimeouts` which will generate a new command and broadcast that to peers.
         SData subCommand("storeboradcasttimeouts");
@@ -391,6 +415,10 @@ void TestPluginCommand::process(SQLite& db) {
             querySize += nq.size();
         }
         response["QuerySize"] = to_string(querySize);
+    } else if (SStartsWith(request.methodLine,"EscalateSerializedData")) {
+        // We want to return the data that was serialized and escalated, and also our own nodename, to verify it does not match
+        // the node that serialized the data.
+        response.content = _plugin->server.args["-nodeName"] + ":" + serializedDataString;
     } else if (SStartsWith(request.methodLine, "sendrequest")) {
         // This flag makes us pass through the response we got from the server, rather than returning 200 if every
         // response we got from the server was < 400. I.e., if the server returns 202, or 304, or anything less than

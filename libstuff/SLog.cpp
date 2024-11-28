@@ -43,21 +43,56 @@ void SLogStackTrace(int level) {
 // If the param name is not in this whitelist, we will log <REDACTED> in addLogParams.
 static const set<string> PARAMS_WHITELIST = {
     "accountID",
-    "command",
-    "indexName",
-    "isUnique",
+    "authEmail",
+    "accountIDs",
+    "attendees",
+    "bankAccountID",
+    "cardData",
     "cardID",
-    "token",
-    "type",
-    "reportID",
-    "policyID",
+    "clientUpdateID",
+    "command",
     "companyName",
     "companyWebsite",
+    "Connection",
+    "Content-Length",
+    "count",
+    "currentTime",
+    "domainAccountID",
+    "domainName",
+    "email",
+    "errorMessage",
+    "feed",
+    "feedCountry",
+    "feedID",
+    "feedName",
+    "field",
+    "index",
+    "indexName",
     "invoice",
-    "policyAccountID"
+    "isUnique",
+    "key",
+    "lastIP",
+    "logParam",
+    "nvpName",
+    "policyAccountID",
+    "policyID",
+    "reportID",
+    "requestID",
+    "requestTimestamp",
+    "secondaryLogin",
+    "shouldCompleteOnboarding",
+    "shouldDismissHybridAppOnboarding",
+    "status",
+    "step",
+    "timeDiff",
+    "token",
+    "transactionID",
+    "type",
+    "userID",
+    "secondaryLogin"
 };
 
-string addLogParams(string&& message, const map<string, string>& params) {
+string addLogParams(string&& message, const STable& params) {
     if (params.empty()) {
         return message;
     }
@@ -68,7 +103,7 @@ string addLogParams(string&& message, const map<string, string>& params) {
         string valueToLog = value;
         if (!SContains(PARAMS_WHITELIST, key)) {
             if (!GLOBAL_IS_LIVE) {
-                STHROW("500 Log param not in the whitelist, either do not log that or add it to PARAMS_WHITELIST if it's not sensitive");
+                STHROW("500 Log param " + key + " not in the whitelist, either do not log that or add it to PARAMS_WHITELIST if it's not sensitive");
             }
             valueToLog = "<REDACTED>";
         }

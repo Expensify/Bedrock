@@ -216,6 +216,8 @@ namespace tpunit {
          recursive_mutex* _mutex;
          int _threadID;
 
+         static bool sorter(_TestFixture* a, _TestFixture* b);
+
       protected:
          // Test buffer for printing to stdout if a test were to fail.
          string testOutputBuffer;
@@ -285,11 +287,11 @@ namespace tpunit {
             return new method(this, static_cast<void (_TestFixture::*)()>(_method), _name, _type);
          }
 
-         static int tpunit_detail_do_run(int threads = 1, std::function<void()> threadInitFunction = [](){});
+         static int tpunit_detail_do_run(int threads = 1, std::function<void()> threadInitFunction = [](){}, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter);
 
          static int tpunit_detail_do_run(const std::set<std::string>& include, const std::set<std::string>& exclude,
                                          const std::list<std::string>& before, const std::list<std::string>& after, int threads,
-                                         std::function<void()> threadInitFunction);
+                                         std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter);
 
          /**
           * This method writes to a temporary buffer and formats the message nicely for debugging
@@ -302,6 +304,10 @@ namespace tpunit {
          static void tpunit_detail_exception(_TestFixture* f, method* _method, const char* _message);
 
          static void tpunit_detail_trace(_TestFixture* f, const char* _file, int _line, const char* _message);
+
+         const char* name() {
+            return _name;
+         }
 
       protected:
 
@@ -443,7 +449,7 @@ public:
        *
        * @return Number of failed assertions or zero if all tests pass.
        */
-      static int run(int threads = 1, std::function<void()> threadInitFunction = [](){});
+      static int run(int threads = 1, std::function<void()> threadInitFunction = [](){}, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter);
 
       /**
        * Run specific tests by name. If 'include' is empty, then every test is
@@ -454,6 +460,6 @@ public:
        */
       static int run(const std::set<std::string>& include, const std::set<std::string>& exclude,
                      const std::list<std::string>& before, const std::list<std::string>& after, int threads = 1,
-                     std::function<void()> threadInitFunction = [](){});
+                     std::function<void()> threadInitFunction = [](){}, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction = &_TestFixture::sorter);
    };
 }

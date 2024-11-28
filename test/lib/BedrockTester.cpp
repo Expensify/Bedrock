@@ -1,4 +1,5 @@
 #include "BedrockTester.h"
+#include "libstuff/libstuff.h"
 
 #include <cstring>
 #include <iostream>
@@ -272,7 +273,7 @@ string BedrockTester::startServer(bool wait) {
                 return result[0].content;
             }
             // This will happen if the server's not up yet. We'll just try again.
-            usleep(100000); // 0.1 seconds.
+            usleep(50'000); // 0.05 seconds.
             continue;
         }
     }
@@ -292,7 +293,7 @@ string BedrockTester::executeWaitVerifyContent(SData request, const string& expe
     uint64_t start = STimeNow();
     vector<SData> results;
     do {
-        results = executeWaitMultipleData({request}, 1, control);
+        results = BedrockTester::executeWaitMultipleData({request}, 1, control);
 
         if (results.size() > 0 && SStartsWith(results[0].methodLine, expectedResult)) {
             // good, got the result we wanted
@@ -535,7 +536,7 @@ SQLite& BedrockTester::getSQLiteDB()
 {
     if (!_db) {
         // Assumes wal2 mode.
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, "", 0, ENABLE_HCTREE);
+        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
     }
     return *_db;
 }
@@ -547,33 +548,42 @@ void BedrockTester::freeDB() {
 
 string BedrockTester::readDB(const string& query, bool online)
 {
-    if (ENABLE_HCTREE && online) {
-        SData command("Query");
-        command["Query"] = query;
-        command["Format"] = "JSON";
-        auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
-        if (row0 == "") {
-            return "";
-        }
-
-        return SParseJSONArray(SParseJSONArray(row0).front()).front();
-    } else {
-        SQLite& db = getSQLiteDB();
-        db.beginTransaction();
-        string result = db.read(query);
-        db.rollback();
-        return result;
+    SQResult result;
+    bool success = readDB(query, result, online);
+    if (!success) {
+        return "";
     }
+
+    if (result.empty()) {
+        return "";
+    }
+
+    if (result.rows[0].empty()) {
+        return "";
+    }
+
+    return result.rows[0][0];
 }
 
 bool BedrockTester::readDB(const string& query, SQResult& result, bool online)
 {
     if (ENABLE_HCTREE && online) {
+        string fixedQuery = query;
+        if (!SEndsWith(query, ";")) {
+            fixedQuery += ";";
+        }
         result.clear();
         SData command("Query");
-        command["Query"] = query;
+        command["Query"] = fixedQuery;
         command["Format"] = "JSON";
-        auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
+        auto commandResult = executeWaitMultipleData({command});
+        auto row0 = SParseJSONObject(commandResult[0].content)["rows"];
+        auto headerString = SParseJSONObject(commandResult[0].content)["headers"];
+
+        list<string> headers = SParseJSONArray(headerString);
+        for (const auto& h : headers) {
+            result.headers.push_back(h);
+        }
 
         list<string> rows = SParseJSONArray(row0);
         for (const string& rowStr : rows) {
@@ -598,7 +608,7 @@ bool BedrockTester::waitForStatusTerm(const string& term, const string& testValu
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            string result = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", true))[term];
+            string result = SParseJSONObject(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))[term];
 
             // if the value matches, return, otherwise wait
             if (result == testValue) {

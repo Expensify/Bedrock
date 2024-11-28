@@ -6,6 +6,9 @@
 #include <sqlitecluster/SQLitePool.h>
 #include <sqlitecluster/SQLiteSequentialNotifier.h>
 
+#include <mutex>
+#include <condition_variable>
+
 // This file is long and complex. For each nested sub-structure (I.e., classes inside classes) we have attempted to
 // arrange things as such:
 // For each public/private block:
@@ -157,8 +160,9 @@ class SQLiteNode : public STCPManager {
     // Can block.
     bool shutdownComplete() const;
 
-    // Call this if you want to shut down the node.
-    void beginShutdown();
+    // Call this if you want to shut down the node. Returns true if shutdown was initiated,
+    // false if shutdown was already happening.
+    bool beginShutdown();
 
     // kill all peer connections on this node.
     void kill();
@@ -348,6 +352,11 @@ class SQLiteNode : public STCPManager {
     // or when we're standingdown.
     // Remove. See: https://github.com/Expensify/Expensify/issues/208449
     atomic<int> _priority;
+
+    // These three variables are used to coordinate the startup of replication threads to guarantee each thread starts before we attempt to start the next one.
+    mutex _replicateStartMutex;
+    condition_variable _replicateStartCV;
+    bool _replicateThreadStarted = false;
 
     // Counter of the total number of currently active replication threads. This is used to let us know when all
     // threads have finished.
