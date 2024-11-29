@@ -73,3 +73,7 @@ string addLogParams(string&& message, const STable& params) {
 
     return message;
 }
+
+void SAddLogParamWhitelist(string param) {
+    PARAMS_WHITELIST.insert(param);
+}
