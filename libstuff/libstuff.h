@@ -233,7 +233,7 @@ void SLogLevel(int level);
 // Stack trace logging
 void SLogStackTrace(int level = LOG_WARNING);
 
-void SAddLogParamWhitelist(string param);
+void SWhitelistLogParams(set<string> params);
 
 // This is a drop-in replacement for syslog that directly logs to `/run/systemd/journal/syslog` bypassing journald.
 void SSyslogSocketDirect(int priority, const char* format, ...);

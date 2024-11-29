@@ -74,6 +74,6 @@ string addLogParams(string&& message, const STable& params) {
     return message;
 }
 
-void SAddLogParamWhitelist(string param) {
-    PARAMS_WHITELIST.insert(param);
+void SWhitelistLogParams(set<string> params) {
+    PARAMS_WHITELIST.insert(params.begin(), params.end());
 }
