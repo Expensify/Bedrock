@@ -49,6 +49,7 @@ static set<string> PARAMS_WHITELIST = {
     "indexName",
     "isUnique",
     "logParam",
+    "requestID",
     "status",
     "userID",
 };
