@@ -152,5 +152,10 @@ struct ForkedNodeApprovalTest : tpunit::TestFixture {
         // Ok, now we can start the second follower back up and secondary leader should be able to lead.
         tester.getTester(2).startServer(false);
         ASSERT_TRUE(tester.getTester(1).waitForState("LEADING"));
+
+        // We call stopServer on the forked leader because it crashed, but the cluster tester doesn't realize, so shutting down
+        // normally will time out after a minute. Calling `stopServer` explicitly will clear the server PID, and we won't need
+        // to wait for this timeout.
+        tester.getTester(0).stopServer();
     }
 } __ForkedNodeApprovalTest;
