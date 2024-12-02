@@ -566,18 +566,25 @@ bool SQLite::write(const string& query) {
     }
 
     // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
-    return _writeIdempotent(query);
+    SQResult ignore;
+    return _writeIdempotent(query, ignore);
 }
 
 bool SQLite::writeIdempotent(const string& query) {
-    return _writeIdempotent(query);
+    SQResult ignore;
+    return _writeIdempotent(query, ignore);
+}
+
+bool SQLite::writeIdempotent(const string& query, SQResult& result) {
+    return _writeIdempotent(query, result);
 }
 
 bool SQLite::writeUnmodified(const string& query) {
-    return _writeIdempotent(query, true);
+    SQResult ignore;
+    return _writeIdempotent(query, ignore, true);
 }
 
-bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
+bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries) {
     SASSERT(_insideTransaction);
     _queryCache.clear();
     _queryCount++;
@@ -600,7 +607,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     {
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         if (_enableRewrite) {
-            resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, true);
+            resultCode = SQuery(_db, "read/write transaction", query, result, 2'000'000, true);
             if (resultCode == SQLITE_AUTH) {
                 // Run re-written query.
                 _currentlyRunningRewritten = true;
