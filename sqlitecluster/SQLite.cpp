@@ -806,7 +806,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
             }
             _sharedData.checkpointInProgress.clear();
         }
-        SINFO(description << " COMMIT complete in " << time << ". Wrote " << (endPages - startPages)
+        SINFO(description << " COMMIT " << SToStr(_sharedData.commitCount) << " complete in " << time << ". Wrote " << (endPages - startPages)
               << " pages. WAL file size is " << sz << " bytes. " << _queryCount << " queries attempted, " << _cacheHits
               << " served from cache. Used journal " << _journalName);
         _queryCount = 0;
