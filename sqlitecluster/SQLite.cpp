@@ -617,7 +617,7 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
                 _currentlyRunningRewritten = false;
             }
         } else {
-            resultCode = SQuery(_db, "read/write transaction", query);
+            resultCode = SQuery(_db, "read/write transaction", query, result);
         }
     }
 
