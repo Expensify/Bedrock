@@ -109,6 +109,9 @@ class SQLite {
     // It's intended to be used for `mockRequest` enabled commands, such that we only run a version of them that's
     // known to be repeatable. What counts as repeatable is up to the individual command.
     bool writeIdempotent(const string& query);
+
+    // Executes a write query and retrieves the result.
+    // Designed for use with queries that include a RETURNING clause
     bool writeIdempotent(const string& query, SQResult& result);
 
     // This runs a query completely unchanged, always adding it to the uncommitted query, such that it will be recorded
