@@ -1522,7 +1522,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                         // This is the same handling as at the bottom of _onMESSAGE.
                         SWARN("Error processing message, reconnecting", {
                             {"peer", peer ? peer->name : "unknown"},
-                              {"errorMessage", !message.empty()? message.methodLine : ""},
+                              {"message", !message.empty()? message.methodLine : ""},
                               {"reason", e.what()}
                         });
                         SData reconnect("RECONNECT");
@@ -1754,8 +1754,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
     } catch (const SException& e) {
         SWARN("Error processing message, reconnecting", {
             {"peer", peer ? peer->name : "unknown"},
-              {"errorMessage", !message.empty() ? message.methodLine : ""},
-              {"reason", e.what()}
+            {"message", !message.empty() ? message.methodLine : ""},
+            {"reason", e.what()}
         });
         SData reconnect("RECONNECT");
         reconnect["Reason"] = e.what();
