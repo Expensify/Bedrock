@@ -4,7 +4,6 @@
 
 #include <libstuff/AutoScopeOnPrepare.h>
 #include <libstuff/libstuff.h>
-#include <libstuff/ResourceMonitorThread.h>
 #include <libstuff/SRandom.h>
 #include <libstuff/SQResult.h>
 #include <sqlitecluster/SQLiteCommand.h>
@@ -1507,7 +1506,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             } else {
                 _pendingSynchronizeResponses++;
                 static atomic<size_t> synchronizeCount(0);
-                ResourceMonitorThread([message, peer, currentSynchronizeCount = synchronizeCount++, this] () {
+                thread([message, peer, currentSynchronizeCount = synchronizeCount++, this] () {
                     SInitialize("synchronize" + to_string(currentSynchronizeCount));
                     SData response("SYNCHRONIZE_RESPONSE");
                     SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());

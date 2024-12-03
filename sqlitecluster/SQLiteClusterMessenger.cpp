@@ -2,7 +2,6 @@
 #include <sqlitecluster/SQLiteClusterMessenger.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLitePeer.h>
-#include <libstuff/ResourceMonitorThread.h>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -70,7 +69,7 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
 }
 
 vector<SData> SQLiteClusterMessenger::runOnAll(const SData& cmd) {
-    list<ResourceMonitorThread> threads;
+    list<thread> threads;
     const list<STable> peerInfo = _node->getPeerInfo();
     vector<SData> results(peerInfo.size());
     atomic<size_t> index = 0;
