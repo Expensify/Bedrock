@@ -56,6 +56,20 @@
 // dbCountAtStart:   The highest committed transaction in the DB at the start of this transaction on leader, for
 //                   optimizing replication.
 
+// On LOGIN vs NODE_LOGIN.
+// _onConnect sends a LOGIN message.
+// _onConnect is called in exctly two places:
+// 1. In response to a NODE_LOGIN message received on a newly connected socket on the sync port. It's expected when
+//    establishing a connection, a node sends this NODE_LOGIN as its first message.
+// 2. Immediately following establishing a TCP connection to another node and sending a NODE_LOGIN message. In the case that
+//    we are the initiating node, we immediately queue three messages:
+//    1. NODE_LOGIN
+//    2. PING
+//    3. LOGIN
+//
+// When we receive a NODE_LOGIN, we immediately respond with a PING followed by a LOGIN (by calling _onConnect).
+// We can cobine all of these into a single login message.
+
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
 
@@ -1284,6 +1298,9 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             peer->latency = max(STimeNow() - message.calc64("Timestamp"), 1ul);
             SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/1000 << "ms latency)");
             return;
+        } else if (SIEquals(message.methodLine, "NODE_LOGIN")) {
+            // Do nothing, this keeps this code from warning until NODE_LOGIN is deprecated.
+            return;
         }
 
         // Every other message broadcasts the current state of the node
@@ -1356,6 +1373,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             if (!peer->permaFollower && (message["Permafollower"] == "true" || message.calc("Priority") == 0)) {
                 STHROW("you're *not* supposed to be a 0-priority permafollower");
             }
+
+            // Validate hash here, mark node as forked if found.
 
             // It's an error to have to peers configured with the same priority, except 0 and -1
             SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
@@ -1745,7 +1764,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 }
             }
         } else {
-            STHROW("unrecognized message");
+            STHROW("unrecognized message: " + message.methodLine);
         }
     } catch (const SException& e) {
         PWARN("Error processing message '" << message.methodLine << "' (" << e.what() << "), reconnecting.");
@@ -1759,13 +1778,15 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
 void SQLiteNode::_onConnect(SQLitePeer* peer) {
     SASSERT(peer);
     SASSERTWARN(!peer->loggedIn);
-    // Send the LOGIN
-    PINFO("Sending LOGIN");
     SData login("LOGIN");
+    login["Name"] = _name;
     login["Priority"] = to_string(_priority);
     login["State"] = stateName(_state);
     login["Version"] = _version;
     login["Permafollower"] = _originalPriority ? "false" : "true";
+    PINFO("Sending " << login.serialize());
+
+    // NOTE: the following call adds CommitCount, Hash, and commandAddress fields.
     _sendToPeer(peer, login);
 }
 
@@ -2565,12 +2586,14 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             int messageSize = message.deserialize(socket->recvBuffer);
             if (messageSize) {
                 socket->recvBuffer.consumeFront(messageSize);
-                if (SIEquals(message.methodLine, "NODE_LOGIN")) {
+                // Allow either LOGIN or NODE_LOGIN until we deprecate NODE_LOGIN.
+                if (SIEquals(message.methodLine, "NODE_LOGIN") || SIEquals(message.methodLine, "LOGIN")) {
                     SQLitePeer* peer = getPeerByName(message["Name"]);
                     if (peer) {
                         if (peer->setSocket(socket)) {
-                            _sendPING(peer);
                             _onConnect(peer);
+                            _sendPING(peer);
+                            _onMESSAGE(peer, message);
 
                             // Connected OK, don't need in _unauthenticatedIncomingSockets anymore.
                             socketsToRemove.push_back(socket);
@@ -2589,7 +2612,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         STHROW("Unauthenticated node '" + message["Name"] + "' attempted to connected, rejecting.");
                     }
                 } else {
-                    STHROW("expecting NODE_LOGIN");
+                    STHROW("expecting LOGIN or NODE_LOGIN");
                 }
             } else if (STimeNow() > socket->lastRecvTime + 5'000'000) {
                 STHROW("Incoming socket didn't send a message for over 5s, closing.");
@@ -2612,11 +2635,12 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         switch (result) {
             case SQLitePeer::PeerPostPollStatus::JUST_CONNECTED:
             {
+                // When NODE_LOGIN is deprecated, we can remove the next 3 lines.
                 SData login("NODE_LOGIN");
                 login["Name"] = _name;
                 peer->sendMessage(login.serialize());
-                _sendPING(peer);
                 _onConnect(peer);
+                _sendPING(peer);
             }
             break;
             case SQLitePeer::PeerPostPollStatus::SOCKET_ERROR:
