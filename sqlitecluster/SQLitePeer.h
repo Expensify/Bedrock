@@ -91,6 +91,9 @@ class SQLitePeer {
     atomic<string> version;
     atomic<uint64_t> lastPingTime;
 
+    // Set to true when this peer is known to be unusable, I.e., when it has a database that is forked from us.
+    atomic<bool> knownBad;
+
   private:
     // For initializing the permafollower value from the params list.
     static bool isPermafollower(const STable& params);

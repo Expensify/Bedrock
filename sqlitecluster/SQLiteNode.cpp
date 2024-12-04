@@ -1303,6 +1303,12 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             return;
         }
 
+        // We allow PING and PONG even for bad peers just to avoid them getting caught in reconnect cycles.
+        if (peer->knownBad) {
+            PINFO("Received message " << message.methodLine << " from known bad peer, ignoring.");
+            return;
+        }
+
         // Every other message broadcasts the current state of the node
         if (!message.isSet("CommitCount")) {
             STHROW("missing CommitCount");
@@ -1374,16 +1380,21 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 STHROW("you're *not* supposed to be a 0-priority permafollower");
             }
 
-            // Validate hash here, mark node as forked if found.
-
             // It's an error to have to peers configured with the same priority, except 0 and -1
             SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
-            PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
-                  << message["CommitCount"] << " (" << message["Hash"] << ")");
             peer->priority = message.calc("Priority");
-            peer->loggedIn = true;
             peer->version = message["Version"];
             peer->state = stateFromName(message["State"]);
+
+            // Validate hash here, mark node as forked if found.
+            if (false) {
+                PINFO("Peer is forked, marking as bad, will ignore.");
+                peer->knownBad = true;
+            } else {
+                PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
+                    << message["CommitCount"] << " (" << message["Hash"] << ")");
+                peer->loggedIn = true;
+            }
 
             // If the peer is already standing up, go ahead and approve or deny immediately.
             if (peer->state == SQLiteNodeState::STANDINGUP) {
