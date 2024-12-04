@@ -52,6 +52,10 @@ static set<string> PARAMS_WHITELIST = {
     "requestID",
     "status",
     "userID",
+    "policyID",
+    "employeeEmail",
+    "approver",
+    "approvers",
 };
 
 string addLogParams(string&& message, const STable& params) {
