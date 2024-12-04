@@ -1386,14 +1386,23 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             peer->version = message["Version"];
             peer->state = stateFromName(message["State"]);
 
-            // Validate hash here, mark node as forked if found.
-            if (false) {
-                PINFO("Peer is forked, marking as bad, will ignore.");
-                peer->knownBad = true;
-            } else {
+            uint64_t peerCommitCount;
+            string peerCommitHash;
+            bool hashesMatch = true;
+            peer->getCommit(peerCommitCount, peerCommitHash);
+            if (!peerCommitHash.empty() && peerCommitCount <= getCommitCount()) {
+                string query, hash;
+                _db.getCommit(peerCommitCount, query, hash);
+                hashesMatch = (peerCommitHash == hash);
+            }
+
+            if (hashesMatch) {
                 PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
                     << message["CommitCount"] << " (" << message["Hash"] << ")");
                 peer->loggedIn = true;
+            } else {
+                PINFO("Peer is forked, marking as bad, will ignore.");
+                peer->knownBad = true;
             }
 
             // If the peer is already standing up, go ahead and approve or deny immediately.
@@ -1775,7 +1784,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 }
             }
         } else {
-            STHROW("unrecognized message: " + message.methodLine);
+            SINFO("unrecognized message: " + message.methodLine);
         }
     } catch (const SException& e) {
         PWARN("Error processing message '" << message.methodLine << "' (" << e.what() << "), reconnecting.");
@@ -1902,6 +1911,9 @@ void SQLiteNode::_sendToPeer(SQLitePeer* peer, const SData& message) {
     // We can treat this whole function as atomic and thread-safe as it sends data to a peer with it's own atomic
     // `sendMessage` and the peer itself (assuming it's something from _peerList, which, if not, don't do that) is
     // const and will exist without changing until destruction.
+    if (peer->knownBad) {
+        PINFO("Skipping message " << message.methodLine << " to known bad peer.");
+    }
     peer->sendMessage(_addPeerHeaders(message).serialize());
 }
 
@@ -1910,6 +1922,9 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
 
     // Loop across all connected peers and send the message. _peerList is const so this is thread-safe.
     for (auto peer : _peerList) {
+        if (peer->knownBad) {
+            PINFO("Skipping message " << message.methodLine << " to known bad peer.");
+        }
         // This check is strictly thread-safe, as SQLitePeer::subscribed is atomic, but there's still a race condition
         // around checking subscribed and then sending, as subscribed could technically change.
         if (!subscribedOnly || peer->subscribed) {
