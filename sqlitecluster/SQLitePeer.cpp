@@ -26,7 +26,7 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     transactionResponse(Response::NONE),
     version(),
     lastPingTime(0),
-    knownBad(false),
+    forked(false),
     hash()
 { }
 
@@ -80,7 +80,7 @@ void SQLitePeer::reset() {
     version = "";
     lastPingTime = 0,
     setCommit(0, "");
-    knownBad = false;
+    forked = false;
 }
 
 void SQLitePeer::shutdownSocket() {
