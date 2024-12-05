@@ -90,9 +90,6 @@ class SQLiteNode : public STCPManager {
     // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th BEGIN_TRANSACTION message.
     static const size_t MIN_APPROVE_FREQUENCY;
 
-    // The maximum number of commits behind we'll allow a quorum number of peers to be before we block commits on leader.
-    static atomic<uint64_t> MAX_PEER_FALL_BEHIND;
-
     // Get and SQLiteNode State from it's name.
     static SQLiteNodeState stateFromName(const string& name);
 
@@ -215,7 +212,6 @@ class SQLiteNode : public STCPManager {
     static atomic<int64_t> currentReplicateThreadID;
 
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
-    static size_t _initQuorumSize(const vector<SQLitePeer*>& _peerList, const int priority);
 
     // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
     // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
@@ -289,11 +285,6 @@ class SQLiteNode : public STCPManager {
     // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
     const int _originalPriority;
-
-    // If we're leading and we're too far ahead of the rest of the cluster, we block new commits. This prevents us from forking too far ahead of everyone else.
-    const size_t _quorumSize;
-    bool _commitsBlocked{false};
-    set<SQLitePeer*> _upToDatePeers;
 
     // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command port".
     const unique_ptr<Port> _port;
