@@ -280,6 +280,8 @@ class SQLiteNode : public STCPManager {
     // commitCount that we do, this will return null.
     void _updateSyncPeer();
 
+    void _dieIfForkedFromCluster();
+
     const string _commandAddress;
     const string _name;
     const vector<SQLitePeer*> _peerList;

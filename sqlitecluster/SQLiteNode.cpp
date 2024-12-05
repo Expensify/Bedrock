@@ -1409,6 +1409,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
 
                 // And mark it dead until it reconnects.
                 peer->forked = true;
+                _dieIfForkedFromCluster();
             }
 
             // If the peer is already standing up, go ahead and approve or deny immediately.
@@ -1587,22 +1588,11 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 _db.getCommits(commitNum, commitNum, result);
                 peer->forked = true;
 
-                size_t forkedCount = 0;
-                for (const auto& p : _peerList) {
-                    if (p->forked) {
-                        forkedCount++;
-                    }
-                }
-
                 SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << message["hashMismatchNumber"]
-                       << ". I have forked from " << forkedCount << " other nodes. I am " << stateName(_state)
-                       << " and have hash " << result[0][0] << " for that commit. Peer has hash " << message["hashMismatchValue"] << "."
-                       << _getLostQuorumLogMessage());
+                       << ". I am " << stateName(_state) << " and have hash " << result[0][0] << " for that commit. Peer has hash "
+                       << message["hashMismatchValue"] << "." << _getLostQuorumLogMessage());
 
-                if (forkedCount > ((_peerList.size() + 1) / 2)) {
-                    SERROR("Hash mismatch. I have forked from over half the cluster. This is unrecoverable." << _getLostQuorumLogMessage());
-                }
-
+                _dieIfForkedFromCluster();
                 STHROW("Hash mismatch");
             }
             if (!_syncPeer) {
@@ -1799,6 +1789,23 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
         } else if (SIEquals(message.methodLine, "FORKED")) {
             peer->forked = true;
             PINFO("Peer said we're forked, beleiving them.");
+            _dieIfForkedFromCluster();
+
+            // If leader said we're forked from it, we need a new leader.
+            if (peer == _leadPeer) {
+                _leadPeer = nullptr;
+                _changeState(SQLiteNodeState::SEARCHING);
+            }
+
+            // If our sync peer said we're forked from it, and we're currently synchronizing, we need a new sync peer.
+            // However, if we're not currently syncing, then we don't need to change states, this peer could have been chosen
+            // hours or days ago.
+            if (peer == _syncPeer) {
+                _syncPeer = nullptr;
+                if (_state == SQLiteNodeState::SYNCHRONIZING) {
+                    _changeState(SQLiteNodeState::SEARCHING);
+                }
+            }
         } else {
             PINFO("unrecognized message: " + message.methodLine);
         }
@@ -2907,4 +2914,17 @@ void SQLiteNode::_sendStandupResponse(SQLitePeer* peer, const SData& message) {
         PHMMM("Not approving standup request because " << response["Reason"]);
     }
     _sendToPeer(peer, response);
+}
+
+void SQLiteNode::_dieIfForkedFromCluster() {
+    size_t forkedCount = 0;
+    for (const auto& p : _peerList) {
+        if (p->forked) {
+            forkedCount++;
+        }
+    }
+
+    if (forkedCount > ((_peerList.size() + 1) / 2)) {
+        SERROR("I have forked from over half the cluster (" << forkedCount << " nodes). This is unrecoverable." << _getLostQuorumLogMessage());
+    }
 }

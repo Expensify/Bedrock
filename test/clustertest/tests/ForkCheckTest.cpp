@@ -119,5 +119,10 @@ struct ForkCheckTest : tpunit::TestFixture {
 
         // And that signal should have been ABORT.
         ASSERT_EQUAL(SIGABRT, WTERMSIG(status));
+
+        // We call stopServer on the forked leader because it crashed, but the cluster tester doesn't realize, so shutting down
+        // normally will time out after a minute. Calling `stopServer` explicitly will clear the server PID, and we won't need
+        // to wait for this timeout.
+        tester.getTester(0).stopServer();
     }
 } __ForkCheckTest;
