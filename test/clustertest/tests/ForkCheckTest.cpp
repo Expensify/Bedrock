@@ -4,13 +4,13 @@
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <sqlitecluster/SQLite.h>
+#include <sqlitecluster/SQLiteNode.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct ForkCheckTest : tpunit::TestFixture {
     ForkCheckTest()
         : tpunit::TestFixture("ForkCheck",
-          TEST(ForkCheckTest::forkAtShutDown),
-          TEST(ForkCheckTest::forkAtCrash)) {}
+          TEST(ForkCheckTest::forkAtShutDown)) {}
 
     pair<uint64_t, string> getMaxJournalCommit(BedrockTester& tester, bool online = true) {
         SQResult journals;
@@ -66,7 +66,7 @@ struct ForkCheckTest : tpunit::TestFixture {
         // We want to not spam a stopped leader.
         atomic<bool> leaderIsUp(true);
 
-        // Now create 15 threads spamming 100 commands at a time, each. 15 cause we have five nodes.
+        // Now create 15 threads spamming 100 commands at a time, each. 15 because we have five nodes.
         vector<thread> threads = createThreads(15, tester, stop, leaderIsUp);
 
         // Let them spam for a second.
@@ -129,9 +129,5 @@ struct ForkCheckTest : tpunit::TestFixture {
         // normally will time out after a minute. Calling `stopServer` explicitly will clear the server PID, and we won't need
         // to wait for this timeout.
         tester.getTester(0).stopServer();
-    }
-
-    void forkAtCrash() {
-
     }
 } __ForkCheckTest;
