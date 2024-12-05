@@ -56,6 +56,7 @@
 // dbCountAtStart:   The highest committed transaction in the DB at the start of this transaction on leader, for
 //                   optimizing replication.
 
+// NOTE: This comment as well as NODE_LOGIN should be removed after https://github.com/Expensify/Bedrock/pull/1999 is deployed.
 // On LOGIN vs NODE_LOGIN.
 // _onConnect sends a LOGIN message.
 // _onConnect is called in exctly two places:
@@ -68,7 +69,6 @@
 //    3. LOGIN
 //
 // When we receive a NODE_LOGIN, we immediately respond with a PING followed by a LOGIN (by calling _onConnect).
-// We can cobine all of these into a single login message.
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
