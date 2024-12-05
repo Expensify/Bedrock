@@ -1930,6 +1930,7 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
     for (auto peer : _peerList) {
         if (peer->forked) {
             PINFO("Skipping message " << message.methodLine << " to forked peer.");
+            continue;
         }
         // This check is strictly thread-safe, as SQLitePeer::subscribed is atomic, but there's still a race condition
         // around checking subscribed and then sending, as subscribed could technically change.
