@@ -1799,7 +1799,6 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "EnableSQLTracing")       ||
         SIEquals(command->request.methodLine, "BlockWrites")            ||
         SIEquals(command->request.methodLine, "UnblockWrites")          ||
-        SIEquals(command->request.methodLine, "SetMaxPeerFallBehind")   ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads")    ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
         ) {
@@ -1953,20 +1952,6 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             _maxSocketThreads = newMax;
         } else {
             response.methodLine = "401 Don't Use Zero";
-        }
-    } else if (SIEquals(command->request.methodLine, "SetMaxPeerFallBehind")) {
-        // Look up the existing value so we can report what it was.
-        uint64_t existingValue = SQLiteNode::MAX_PEER_FALL_BEHIND;
-        response["previousValue"] = to_string(existingValue);
-
-        uint64_t newValue = command->request.calcU64("value");
-        if (newValue < SQLiteNode::MIN_APPROVE_FREQUENCY) {
-            // We won't break everything on purpose. This can be used to check the existing value without changing anything by passing `0`.
-            response.methodLine = "400 Refusing to set peer fall behind below " + to_string(SQLiteNode::MIN_APPROVE_FREQUENCY);
-        } else {
-            // Set the new value and return 200 OK.
-            SQLiteNode::MAX_PEER_FALL_BEHIND = newValue;
-            response["previousValue"] = to_string(existingValue);
         }
     }
 }
