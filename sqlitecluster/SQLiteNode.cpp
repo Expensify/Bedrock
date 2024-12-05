@@ -1277,7 +1277,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             SINFO("Received PING from peer '" << peer->name << "'. Sending PONG.");
             SData pong("PONG");
             pong["Timestamp"] = message["Timestamp"];
-            peer->sendMessage(pong.serialize());
+            peer->sendMessage(pong);
             return;
         } else if (SIEquals(message.methodLine, "PONG")) {
             // Latency must be > 0 because we treat 0 as "not connected".
@@ -1531,7 +1531,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SINFO("Asked to help SYNCHRONIZE but shutting down.");
                 SData response("SYNCHRONIZE_RESPONSE");
                 response["ShuttingDown"] = "true";
-                peer->sendMessage(response);
+                _sendToPeer(peer, response);
             } else {
                 _pendingSynchronizeResponses++;
                 static atomic<size_t> synchronizeCount(0);
@@ -1546,13 +1546,13 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                         // The following two lines are copied from `_sendToPeer`.
                         response["CommitCount"] = to_string(db.getCommitCount());
                         response["Hash"] = db.getCommittedHash();
-                        peer->sendMessage(response);
+                        _sendToPeer(peer, response);
                     } catch (const SException& e) {
                         // This is the same handling as at the bottom of _onMESSAGE.
                         PWARN("Error processing message '" << message.methodLine << "' (" << e.what() << "), reconnecting.");
                         SData reconnect("RECONNECT");
                         reconnect["Reason"] = e.what();
-                        peer->sendMessage(reconnect.serialize());
+                        _sendToPeer(peer, reconnect);
                         peer->shutdownSocket();
                     }
 
@@ -1796,7 +1796,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
         PWARN("Error processing message '" << message.methodLine << "' (" << e.what() << "), reconnecting.");
         SData reconnect("RECONNECT");
         reconnect["Reason"] = e.what();
-        peer->sendMessage(reconnect.serialize());
+        _sendToPeer(peer, reconnect);
         peer->shutdownSocket();
     }
 }
@@ -1920,11 +1920,11 @@ void SQLiteNode::_sendToPeer(SQLitePeer* peer, const SData& message) {
     if (peer->forked) {
         PINFO("Skipping message " << message.methodLine << " to forked peer.");
     }
-    peer->sendMessage(_addPeerHeaders(message).serialize());
+    peer->sendMessage(_addPeerHeaders(message));
 }
 
 void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
-    const string serializedMessage = _addPeerHeaders(message).serialize();
+    const SData messageWithHeaders = _addPeerHeaders(message);
 
     // Loop across all connected peers and send the message. _peerList is const so this is thread-safe.
     for (auto peer : _peerList) {
@@ -1934,7 +1934,7 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
         // This check is strictly thread-safe, as SQLitePeer::subscribed is atomic, but there's still a race condition
         // around checking subscribed and then sending, as subscribed could technically change.
         if (!subscribedOnly || peer->subscribed) {
-            peer->sendMessage(serializedMessage);
+            peer->sendMessage(messageWithHeaders);
         }
     }
 }
@@ -2667,7 +2667,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 // When NODE_LOGIN is deprecated, we can remove the next 3 lines.
                 SData login("NODE_LOGIN");
                 login["Name"] = _name;
-                peer->sendMessage(login.serialize());
+                _sendToPeer(peer, login);
                 _onConnect(peer);
                 _sendPING(peer);
             }
@@ -2676,7 +2676,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             {
                 SData reconnect("RECONNECT");
                 reconnect["Reason"] = "socket error";
-                peer->sendMessage(reconnect.serialize());
+                _sendToPeer(peer, reconnect);
                 peer->shutdownSocket();
             }
             break;
@@ -2734,7 +2734,7 @@ void SQLiteNode::_sendPING(SQLitePeer* peer) {
     SASSERT(peer);
     SData ping("PING");
     ping["Timestamp"] = SToStr(STimeNow());
-    peer->sendMessage(ping.serialize());
+    peer->sendMessage(ping);
 }
 
 SQLitePeer* SQLiteNode::getPeerByName(const string& name) const {
