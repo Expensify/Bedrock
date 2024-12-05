@@ -8,8 +8,7 @@ class SQLitePeer {
     enum class Response {
         NONE,
         APPROVE,
-        DENY,
-        ABSTAIN
+        DENY
     };
 
     enum class PeerPostPollStatus {

@@ -207,9 +207,6 @@ string SQLitePeer::responseName(Response response) {
         case Response::DENY:
             return "DENY";
             break;
-        case Response::ABSTAIN:
-            return "ABSTAIN";
-            break;
         default:
             return "";
     }
