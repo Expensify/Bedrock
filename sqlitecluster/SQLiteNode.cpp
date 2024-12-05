@@ -1919,6 +1919,7 @@ void SQLiteNode::_sendToPeer(SQLitePeer* peer, const SData& message) {
     // const and will exist without changing until destruction.
     if (peer->forked) {
         PINFO("Skipping message " << message.methodLine << " to forked peer.");
+        return;
     }
     peer->sendMessage(_addPeerHeaders(message));
 }
