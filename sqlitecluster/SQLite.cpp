@@ -614,6 +614,12 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
         }
     }
 
+    bool wasIneffectiveDelete = false;
+    if (_currentlyDeleting && !sqlite3_changes64(_db)) {
+        SINFO("TYLER ineffective UPDATE/DELETE: " << (usedRewrittenQuery ? _rewrittenQuery : query));
+        wasIneffectiveDelete = true;
+    }
+
     // If we got a constraints error, throw that.
     if (resultCode == SQLITE_CONSTRAINT) {
         _currentlyWriting = false;
@@ -636,6 +642,12 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     // If something changed, or we're always keeping queries, then save this.
     if (alwaysKeepQueries || (schemaAfter > schemaBefore) || (changesAfter > changesBefore)) {
         _uncommittedQuery += usedRewrittenQuery ? _rewrittenQuery : query;
+    } else {
+        if (!wasIneffectiveDelete) {
+            //SINFO("TYLER ineffective UPDATE/DELETE: " << (usedRewrittenQuery ? _rewrittenQuery : query));
+        } else {
+            SWARN("TYLER wierd write: " << (usedRewrittenQuery ? _rewrittenQuery : query));
+        }
     }
 
     _currentlyWriting = false;
@@ -967,6 +979,11 @@ int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const cha
 }
 
 int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4) {
+    if (actionCode == SQLITE_DELETE || actionCode == SQLITE_UPDATE) {
+        _currentlyDeleting = true;
+    } else {
+        _currentlyDeleting = false;
+    }
     // If we've enabled re-writing, see if we need to re-write this query.
     if (_enableRewrite && !_currentlyRunningRewritten && (*_rewriteHandler)(actionCode, detail1, _rewrittenQuery)) {
         // Deny the original query, we'll re-run on the re-written version.

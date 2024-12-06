@@ -508,4 +508,6 @@ class SQLite {
 
     // Set to true inside of a write query.
     bool _currentlyWriting{false};
+
+    bool _currentlyDeleting{false};
 };
