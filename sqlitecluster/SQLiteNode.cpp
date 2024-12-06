@@ -2844,7 +2844,7 @@ void SQLiteNode::_dieIfForkedFromCluster() {
         }
     }
 
-    // Am *I* a permaFollower?
+    // Increase quorumNodeCount if *I* am not a permafollower
     if (_originalPriority != 0) {
         quorumNodeCount++;
     }
