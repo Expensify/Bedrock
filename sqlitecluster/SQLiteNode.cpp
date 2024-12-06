@@ -2837,7 +2837,7 @@ void SQLiteNode::_dieIfForkedFromCluster() {
     size_t forkedFullPeerCount = 0;
     for (const auto& p : _peerList) {
         if (!p->permaFollower) {
-            forkedFullPeerCount++;
+            quorumNodeCount++;
             if (p->forked) {
                 forkedFullPeerCount++;
             }
