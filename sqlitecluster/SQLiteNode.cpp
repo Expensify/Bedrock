@@ -1720,7 +1720,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             }
         } else if (SIEquals(message.methodLine, "FORKED")) {
             peer->forked = true;
-            PINFO("Peer said we're forked, beleiving them.");
+            PINFO("Peer said we're forked, believing them.");
             _dieIfForkedFromCluster();
 
             // If leader said we're forked from it, we need a new leader.
@@ -2825,14 +2825,23 @@ void SQLiteNode::_sendStandupResponse(SQLitePeer* peer, const SData& message) {
 }
 
 void SQLiteNode::_dieIfForkedFromCluster() {
-    size_t forkedCount = 0;
+    size_t quorumNodeCount = 0;
+    size_t forkedFullPeerCount = 0;
     for (const auto& p : _peerList) {
-        if (p->forked) {
-            forkedCount++;
+        if (!p->permaFollower) {
+            forkedFullPeerCount++;
+            if (p->forked) {
+                forkedFullPeerCount++;
+            }
         }
     }
 
-    if (forkedCount > ((_peerList.size() + 1) / 2)) {
-        SERROR("I have forked from over half the cluster (" << forkedCount << " nodes). This is unrecoverable." << _getLostQuorumLogMessage());
+    // Am *I* a permaFollower?
+    if (_originalPriority != 0) {
+        quorumNodeCount++;
+    }
+
+    if (forkedFullPeerCount >= (quorumNodeCount + 1) / 2) {
+        SERROR("I have forked from over half the cluster (" << forkedFullPeerCount << " nodes). This is unrecoverable." << _getLostQuorumLogMessage());
     }
 }
