@@ -615,8 +615,9 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     }
 
     bool wasIneffectiveDelete = false;
-    if (_currentlyDeleting && !sqlite3_changes64(_db)) {
-        SINFO("TYLER ineffective UPDATE/DELETE: " << (usedRewrittenQuery ? _rewrittenQuery : query));
+    size_t changesMade = sqlite3_changes64(_db);
+    if (_currentlyDeleting && !changesMade) {
+        //SINFO("TYLER ineffective UPDATE/DELETE: " << (usedRewrittenQuery ? _rewrittenQuery : query));
         wasIneffectiveDelete = true;
     }
 
@@ -643,10 +644,10 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     if (alwaysKeepQueries || (schemaAfter > schemaBefore) || (changesAfter > changesBefore)) {
         _uncommittedQuery += usedRewrittenQuery ? _rewrittenQuery : query;
     } else {
-        if (!wasIneffectiveDelete) {
+        if (wasIneffectiveDelete) {
             //SINFO("TYLER ineffective UPDATE/DELETE: " << (usedRewrittenQuery ? _rewrittenQuery : query));
         } else {
-            SWARN("TYLER wierd write: " << (usedRewrittenQuery ? _rewrittenQuery : query));
+            SWARN("TYLER weird write (changes made: " << changesMade << "): " << (usedRewrittenQuery ? _rewrittenQuery : query));
         }
     }
 
@@ -979,8 +980,12 @@ int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const cha
 }
 
 int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4) {
+    SINFO("Query action code: " << actionCode);
     if (actionCode == SQLITE_DELETE || actionCode == SQLITE_UPDATE) {
         _currentlyDeleting = true;
+    } else if (actionCode == SQLITE_FUNCTION || actionCode == SQLITE_READ) {
+        // For function, we want to leave this alone, because we don't want to clear `_currentlyDeleting` for DELETE
+        // statments that use functions.
     } else {
         _currentlyDeleting = false;
     }
