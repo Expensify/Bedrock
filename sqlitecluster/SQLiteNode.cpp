@@ -1273,7 +1273,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             return;
         }
 
-        // We allow PING and PONG even for bad peers just to avoid them getting caught in reconnect cycles.
+        // We ignore everything except PING and PONG from forked nodes, so we can return here in that case.
         if (peer->forked) {
             PINFO("Received message " << message.methodLine << " from forked peer, ignoring.");
             return;
