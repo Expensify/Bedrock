@@ -1,13 +1,16 @@
+#include "test/lib/BedrockTester.h"
 #include <sys/wait.h>
 
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <sqlitecluster/SQLite.h>
+#include <sqlitecluster/SQLiteNode.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
 struct ForkCheckTest : tpunit::TestFixture {
     ForkCheckTest()
-        : tpunit::TestFixture("ForkCheck", TEST(ForkCheckTest::test)) {}
+        : tpunit::TestFixture("ForkCheck",
+          TEST(ForkCheckTest::forkAtShutDown)) {}
 
     pair<uint64_t, string> getMaxJournalCommit(BedrockTester& tester, bool online = true) {
         SQResult journals;
@@ -30,7 +33,30 @@ struct ForkCheckTest : tpunit::TestFixture {
         return make_pair(maxJournalCommit, maxJournalTable);
     }
 
-    void test() {
+    vector<thread> createThreads(size_t num, BedrockClusterTester& tester, atomic<bool>& stop, atomic<bool>& leaderIsUp) {
+        // Just use a bunch of copies of the same command.
+        vector<thread> threads;
+        for (size_t num = 0; num < 9; num++) {
+            threads.emplace_back([&tester, num, &stop, &leaderIsUp](){
+                const vector<SData> commands(100, SData("idcollision"));
+                while (!stop) {
+                    // Pick a tester, send, don't care about the result.
+                    size_t testerNum = num % 5;
+                    if (testerNum == 0 && !leaderIsUp) {
+                        // If leader's off, don't use it.
+                        testerNum = 1;
+                    }
+                    tester.getTester(testerNum).executeWaitMultipleData(commands);
+                }
+            });
+        }
+
+        return threads;
+    }
+
+    // This primary test here checks that a node that is forked will not be able to rejoin the cluster when reconnecting.
+    // This is a reasonable test for a fork that happens at shutdown.
+    void forkAtShutDown() {
         // Create a cluster, wait for it to come up.
         BedrockClusterTester tester(ClusterSize::FIVE_NODE_CLUSTER);
 
@@ -40,29 +66,8 @@ struct ForkCheckTest : tpunit::TestFixture {
         // We want to not spam a stopped leader.
         atomic<bool> leaderIsUp(true);
 
-        // Just use a bunch of copies of the same command.
-        SData spamCommand("idcollision");
-
-        // In a vector.
-        const vector<SData> commands(100, spamCommand);
-
-        // Now create 9 threads spamming 100 commands at a time, each. 9 cause we have three nodes.
-        vector<thread> threads;
-        for (size_t i = 0; i < 9; i++) {
-            threads.emplace_back([&tester, i, &commands, &stop, &leaderIsUp](){
-                while (!stop) {
-                    // Pick a tester, send, don't care about the result.
-                    size_t testerNum = i % 3;
-                    if (testerNum == 0 && !leaderIsUp) {
-                        // If we're looking for leader and it's down, wait a second to avoid pegging the CPU.
-                        sleep(1);
-                    } else {
-                        // If we're not leader or leader is up, spam away!
-                        tester.getTester(testerNum).executeWaitMultipleData(commands);
-                    }
-                }
-            });
-        }
+        // Now create 15 threads spamming 100 commands at a time, each. 15 because we have five nodes.
+        vector<thread> threads = createThreads(15, tester, stop, leaderIsUp);
 
         // Let them spam for a second.
         sleep(1);
@@ -71,7 +76,7 @@ struct ForkCheckTest : tpunit::TestFixture {
         leaderIsUp = false;
         tester.getTester(0).stopServer();
 
-        // Spam a few more commands and then we can stop.
+        // Spam a few more commands so thar the follower is ahead of the stopped leader, and then we can stop.
         sleep(1);
         stop = true;
         for (auto& t : threads) {
@@ -119,5 +124,10 @@ struct ForkCheckTest : tpunit::TestFixture {
 
         // And that signal should have been ABORT.
         ASSERT_EQUAL(SIGABRT, WTERMSIG(status));
+
+        // We call stopServer on the forked leader because it crashed, but the cluster tester doesn't realize, so shutting down
+        // normally will time out after a minute. Calling `stopServer` explicitly will clear the server PID, and we won't need
+        // to wait for this timeout.
+        tester.getTester(0).stopServer();
     }
 } __ForkCheckTest;
