@@ -56,6 +56,20 @@
 // dbCountAtStart:   The highest committed transaction in the DB at the start of this transaction on leader, for
 //                   optimizing replication.
 
+// NOTE: This comment as well as NODE_LOGIN should be removed after https://github.com/Expensify/Bedrock/pull/1999 is deployed.
+// On LOGIN vs NODE_LOGIN.
+// _onConnect sends a LOGIN message.
+// _onConnect is called in exctly two places:
+// 1. In response to a NODE_LOGIN message received on a newly connected socket on the sync port. It's expected when
+//    establishing a connection, a node sends this NODE_LOGIN as its first message.
+// 2. Immediately following establishing a TCP connection to another node and sending a NODE_LOGIN message. In the case that
+//    we are the initiating node, we immediately queue three messages:
+//    1. NODE_LOGIN
+//    2. PING
+//    3. LOGIN
+//
+// When we receive a NODE_LOGIN, we immediately respond with a PING followed by a LOGIN (by calling _onConnect).
+
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
 
@@ -609,7 +623,7 @@ bool SQLiteNode::update() {
             // Find the freshest non-broken peer (including permafollowers).
             if (peer->loggedIn) {
                 loggedInPeers.push_back(peer->name);
-                if (_forkedFrom.count(peer->name)) {
+                if (peer->forked) {
                     SWARN("Hash mismatch. Forked from peer " << peer->name << " so not considering it." << _getLostQuorumLogMessage());
                     continue;
                 }
@@ -727,7 +741,7 @@ bool SQLiteNode::update() {
                 continue;
             }
 
-            if (_forkedFrom.count(peer->name)) {
+            if (peer->forked) {
                 // Forked nodes are treated as ineligible for leader, etc.
                 SHMMM("Not counting forked peer " << peer->name << " for freshest, highestPriority, or currentLeader.");
                 continue;
@@ -831,7 +845,6 @@ bool SQLiteNode::update() {
         size_t numFullPeers = 0;
         size_t numLoggedInFullPeers = 0;
         size_t approveCount = 0;
-        size_t abstainCount = 0;
         if (_isShuttingDown) {
             SINFO("Shutting down while standing up, setting state to SEARCHING");
             _changeState(SQLiteNodeState::SEARCHING);
@@ -849,9 +862,6 @@ bool SQLiteNode::update() {
                     // Has it responded yet?
                     if (peer->standupResponse == SQLitePeer::Response::NONE) {
                         // This peer hasn't yet responded. We do nothing with it in this case, maybe it will have responded by the next check.
-                    } else if (peer->standupResponse == SQLitePeer::Response::ABSTAIN) {
-                        PHMMM("Peer abstained from participation in quorum");
-                        abstainCount++;
                     } else if (peer->standupResponse == SQLitePeer::Response::DENY) {
                         // It responeded, but didn't approve -- abort
                         PHMMM("Refused our STANDUP, cancel and RE-SEARCH");
@@ -862,16 +872,6 @@ bool SQLiteNode::update() {
                     }
                 }
             }
-        }
-
-        // If the majority of full peers responds with abstain, then re-search.
-        const bool majorityAbstained = abstainCount * 2 > numFullPeers;
-        if (majorityAbstained) {
-            // Majority abstained, meaning we're probably forked,
-            // so we go back to searching so we can go back to synchronizing and see if we're forked.
-            SHMMM("Majority of full peers abstained; re-SEARCHING.");
-            _changeState(SQLiteNodeState::SEARCHING);
-            return true; // Re-update
         }
 
         // If everyone's responded with approval and we form a majority, then finish standup.
@@ -1261,12 +1261,21 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             SINFO("Received PING from peer '" << peer->name << "'. Sending PONG.");
             SData pong("PONG");
             pong["Timestamp"] = message["Timestamp"];
-            peer->sendMessage(pong.serialize());
+            peer->sendMessage(pong);
             return;
         } else if (SIEquals(message.methodLine, "PONG")) {
             // Latency must be > 0 because we treat 0 as "not connected".
             peer->latency = max(STimeNow() - message.calc64("Timestamp"), 1ul);
             SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/1000 << "ms latency)");
+            return;
+        } else if (SIEquals(message.methodLine, "NODE_LOGIN")) {
+            // Do nothing, this keeps this code from warning until NODE_LOGIN is deprecated.
+            return;
+        }
+
+        // We ignore everything except PING and PONG from forked nodes, so we can return here in that case.
+        if (peer->forked) {
+            PINFO("Received message " << message.methodLine << " from forked peer, ignoring.");
             return;
         }
 
@@ -1308,12 +1317,35 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
 
             // It's an error to have to peers configured with the same priority, except 0 and -1
             SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
-            PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
-                  << message["CommitCount"] << " (" << message["Hash"] << ")");
             peer->priority = message.calc("Priority");
-            peer->loggedIn = true;
             peer->version = message["Version"];
             peer->state = stateFromName(message["State"]);
+
+            uint64_t peerCommitCount;
+            string peerCommitHash;
+            bool hashesMatch = true;
+            peer->getCommit(peerCommitCount, peerCommitHash);
+            if (!peerCommitHash.empty() && peerCommitCount <= getCommitCount()) {
+                string query, hash;
+                _db.getCommit(peerCommitCount, query, hash);
+                hashesMatch = (peerCommitHash == hash);
+            }
+
+            if (hashesMatch) {
+                PINFO("Peer logged in at '" << message["State"] << "', priority #" << message["Priority"] << " commit #"
+                    << message["CommitCount"] << " (" << message["Hash"] << ")");
+                peer->loggedIn = true;
+            } else {
+                PINFO("Peer is forked, marking as bad, will ignore.");
+
+                // Send it a message before we mark it as forked, as we'll refuse afterward.
+                SData forked("FORKED");
+                _sendToPeer(peer, forked);
+
+                // And mark it dead until it reconnects.
+                peer->forked = true;
+                _dieIfForkedFromCluster();
+            }
 
             // If the peer is already standing up, go ahead and approve or deny immediately.
             if (peer->state == SQLiteNodeState::STANDINGUP) {
@@ -1434,9 +1466,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 if (SIEquals(message["Response"], "approve")) {
                     PINFO("Received standup approval");
                     peer->standupResponse = SQLitePeer::Response::APPROVE;
-                } else if (SIEquals(message["Response"], "abstain")) {
-                    PINFO("Received standup abstain");
-                    peer->standupResponse = SQLitePeer::Response::ABSTAIN;
                 } else {
                     PHMMM("Received standup denial: reason='" << message["Reason"] << "'");
                     peer->standupResponse = SQLitePeer::Response::DENY;
@@ -1451,7 +1480,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SINFO("Asked to help SYNCHRONIZE but shutting down.");
                 SData response("SYNCHRONIZE_RESPONSE");
                 response["ShuttingDown"] = "true";
-                peer->sendMessage(response);
+                _sendToPeer(peer, response);
             } else {
                 _pendingSynchronizeResponses++;
                 static atomic<size_t> synchronizeCount(0);
@@ -1466,7 +1495,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                         // The following two lines are copied from `_sendToPeer`.
                         response["CommitCount"] = to_string(db.getCommitCount());
                         response["Hash"] = db.getCommittedHash();
-                        peer->sendMessage(response);
+                        _sendToPeer(peer, response);
                     } catch (const SException& e) {
                         // This is the same handling as at the bottom of _onMESSAGE.
                         SWARN("Error processing message, reconnecting", {
@@ -1476,7 +1505,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                         });
                         SData reconnect("RECONNECT");
                         reconnect["Reason"] = e.what();
-                        peer->sendMessage(reconnect.serialize());
+                        _sendToPeer(peer, reconnect);
                         peer->shutdownSocket();
                     }
 
@@ -1493,17 +1522,13 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SQResult result;
                 uint64_t commitNum = SToUInt64(message["hashMismatchNumber"]);
                 _db.getCommits(commitNum, commitNum, result);
-                _forkedFrom.insert(peer->name);
+                peer->forked = true;
 
                 SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << message["hashMismatchNumber"]
-                       << ". I have forked from " << _forkedFrom.size() << " other nodes. I am " << stateName(_state)
-                       << " and have hash " << result[0][0] << " for that commit. Peer has hash " << message["hashMismatchValue"] << "."
-                       << _getLostQuorumLogMessage());
+                       << ". I am " << stateName(_state) << " and have hash " << result[0][0] << " for that commit. Peer has hash "
+                       << message["hashMismatchValue"] << "." << _getLostQuorumLogMessage());
 
-                if (_forkedFrom.size() > ((_peerList.size() + 1) / 2)) {
-                    SERROR("Hash mismatch. I have forked from over half the cluster. This is unrecoverable." << _getLostQuorumLogMessage());
-                }
-
+                _dieIfForkedFromCluster();
                 STHROW("Hash mismatch");
             }
             if (!_syncPeer) {
@@ -1697,8 +1722,28 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                           << e.what() << "', ignoring.");
                 }
             }
+        } else if (SIEquals(message.methodLine, "FORKED")) {
+            peer->forked = true;
+            PINFO("Peer said we're forked, believing them.");
+            _dieIfForkedFromCluster();
+
+            // If leader said we're forked from it, we need a new leader.
+            if (peer == _leadPeer) {
+                _leadPeer = nullptr;
+                _changeState(SQLiteNodeState::SEARCHING);
+            }
+
+            // If our sync peer said we're forked from it, and we're currently synchronizing, we need a new sync peer.
+            // However, if we're not currently syncing, then we don't need to change states, this peer could have been chosen
+            // hours or days ago.
+            if (peer == _syncPeer) {
+                _syncPeer = nullptr;
+                if (_state == SQLiteNodeState::SYNCHRONIZING) {
+                    _changeState(SQLiteNodeState::SEARCHING);
+                }
+            }
         } else {
-            STHROW("unrecognized message");
+            PINFO("unrecognized message: " + message.methodLine);
         }
     } catch (const SException& e) {
         SWARN("Error processing message, reconnecting", {
@@ -1708,7 +1753,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
         });
         SData reconnect("RECONNECT");
         reconnect["Reason"] = e.what();
-        peer->sendMessage(reconnect.serialize());
+        _sendToPeer(peer, reconnect);
         peer->shutdownSocket();
     }
 }
@@ -1716,13 +1761,15 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
 void SQLiteNode::_onConnect(SQLitePeer* peer) {
     SASSERT(peer);
     SASSERTWARN(!peer->loggedIn);
-    // Send the LOGIN
-    PINFO("Sending LOGIN");
     SData login("LOGIN");
+    login["Name"] = _name;
     login["Priority"] = to_string(_priority);
     login["State"] = stateName(_state);
     login["Version"] = _version;
     login["Permafollower"] = _originalPriority ? "false" : "true";
+    PINFO("Sending " << login.serialize());
+
+    // NOTE: the following call adds CommitCount, Hash, and commandAddress fields.
     _sendToPeer(peer, login);
 }
 
@@ -1827,18 +1874,26 @@ void SQLiteNode::_sendToPeer(SQLitePeer* peer, const SData& message) {
     // We can treat this whole function as atomic and thread-safe as it sends data to a peer with it's own atomic
     // `sendMessage` and the peer itself (assuming it's something from _peerList, which, if not, don't do that) is
     // const and will exist without changing until destruction.
-    peer->sendMessage(_addPeerHeaders(message).serialize());
+    if (peer->forked) {
+        PINFO("Skipping message " << message.methodLine << " to forked peer.");
+        return;
+    }
+    peer->sendMessage(_addPeerHeaders(message));
 }
 
 void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
-    const string serializedMessage = _addPeerHeaders(message).serialize();
+    const SData messageWithHeaders = _addPeerHeaders(message);
 
     // Loop across all connected peers and send the message. _peerList is const so this is thread-safe.
     for (auto peer : _peerList) {
+        if (peer->forked) {
+            PINFO("Skipping message " << message.methodLine << " to forked peer.");
+            continue;
+        }
         // This check is strictly thread-safe, as SQLitePeer::subscribed is atomic, but there's still a race condition
         // around checking subscribed and then sending, as subscribed could technically change.
         if (!subscribedOnly || peer->subscribed) {
-            peer->sendMessage(serializedMessage);
+            peer->sendMessage(messageWithHeaders);
         }
     }
 }
@@ -1924,11 +1979,6 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             _leadPeer = nullptr;
         }
 
-        if (newState >= SQLiteNodeState::STANDINGUP) {
-            // Not forked from anyone. Note that this includes both LEADING and FOLLOWING.
-            _forkedFrom.clear();
-        }
-
         // Re-enable commits if they were disabled during a previous stand-down.
         if (newState != SQLiteNodeState::SEARCHING) {
             _db.setCommitEnabled(true);
@@ -1937,7 +1987,11 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
         // If we're going searching and have forked from at least 1 peer, sleep for a second. This is intended to prevent thousands of lines of log spam when this happens in an infinite
         // loop. It's entirely possible that we do this for valid reasons - it may be the peer that has the bad database and not us, and there are plenty of other reasons we could switch to
         // SEARCHING, but in those cases, we just wait an extra second before trying again.
-        if (newState == SQLiteNodeState::SEARCHING && _forkedFrom.size()) {
+        bool forkedPeers = false;
+        for (const auto p : _peerList) {
+            forkedPeers = forkedPeers || p->forked;
+        }
+        if (newState == SQLiteNodeState::SEARCHING && forkedPeers) {
             SWARN("Going searching while forked peers present, sleeping 1 second." << _getLostQuorumLogMessage());
             sleep(1);
         }
@@ -2140,7 +2194,7 @@ void SQLiteNode::_updateSyncPeer()
             continue;
         }
 
-        if (_forkedFrom.count(peer->name)) {
+        if (peer->forked) {
             SWARN("Hash mismatch. Can't choose peer " << peer->name << " due to previous hash mismatch.");
             continue;
         }
@@ -2502,12 +2556,14 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             int messageSize = message.deserialize(socket->recvBuffer);
             if (messageSize) {
                 socket->recvBuffer.consumeFront(messageSize);
-                if (SIEquals(message.methodLine, "NODE_LOGIN")) {
+                // Allow either LOGIN or NODE_LOGIN until we deprecate NODE_LOGIN.
+                if (SIEquals(message.methodLine, "NODE_LOGIN") || SIEquals(message.methodLine, "LOGIN")) {
                     SQLitePeer* peer = getPeerByName(message["Name"]);
                     if (peer) {
                         if (peer->setSocket(socket)) {
-                            _sendPING(peer);
                             _onConnect(peer);
+                            _sendPING(peer);
+                            _onMESSAGE(peer, message);
 
                             // Connected OK, don't need in _unauthenticatedIncomingSockets anymore.
                             socketsToRemove.push_back(socket);
@@ -2526,7 +2582,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         STHROW("Unauthenticated node '" + message["Name"] + "' attempted to connected, rejecting.");
                     }
                 } else {
-                    STHROW("expecting NODE_LOGIN");
+                    STHROW("expecting LOGIN or NODE_LOGIN");
                 }
             } else if (STimeNow() > socket->lastRecvTime + 5'000'000) {
                 STHROW("Incoming socket didn't send a message for over 5s, closing.");
@@ -2549,18 +2605,19 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         switch (result) {
             case SQLitePeer::PeerPostPollStatus::JUST_CONNECTED:
             {
+                // When NODE_LOGIN is deprecated, we can remove the next 3 lines.
                 SData login("NODE_LOGIN");
                 login["Name"] = _name;
-                peer->sendMessage(login.serialize());
-                _sendPING(peer);
+                _sendToPeer(peer, login);
                 _onConnect(peer);
+                _sendPING(peer);
             }
             break;
             case SQLitePeer::PeerPostPollStatus::SOCKET_ERROR:
             {
                 SData reconnect("RECONNECT");
                 reconnect["Reason"] = "socket error";
-                peer->sendMessage(reconnect.serialize());
+                _sendToPeer(peer, reconnect);
                 peer->shutdownSocket();
             }
             break;
@@ -2618,7 +2675,7 @@ void SQLiteNode::_sendPING(SQLitePeer* peer) {
     SASSERT(peer);
     SData ping("PING");
     ping["Timestamp"] = SToStr(STimeNow());
-    peer->sendMessage(ping.serialize());
+    peer->sendMessage(ping);
 }
 
 SQLitePeer* SQLiteNode::getPeerByName(const string& name) const {
@@ -2708,14 +2765,6 @@ void SQLiteNode::_sendStandupResponse(SQLitePeer* peer, const SData& message) {
         return;
     }
 
-    if (_forkedFrom.count(peer->name)) {
-        PHMMM("Forked from peer, can't approve standup.");
-        response["Response"] = "abstain";
-        response["Reason"] = "We are forked";
-        _sendToPeer(peer, response);
-        return;
-    }
-
     // What's our state
     if (SWITHIN(SQLiteNodeState::STANDINGUP, _state, SQLiteNodeState::STANDINGDOWN)) {
         // Oh crap, it's trying to stand up while we're leading. Who is higher priority?
@@ -2781,4 +2830,26 @@ void SQLiteNode::_sendStandupResponse(SQLitePeer* peer, const SData& message) {
         PHMMM("Not approving standup request because " << response["Reason"]);
     }
     _sendToPeer(peer, response);
+}
+
+void SQLiteNode::_dieIfForkedFromCluster() {
+    size_t quorumNodeCount = 0;
+    size_t forkedFullPeerCount = 0;
+    for (const auto& p : _peerList) {
+        if (!p->permaFollower) {
+            quorumNodeCount++;
+            if (p->forked) {
+                forkedFullPeerCount++;
+            }
+        }
+    }
+
+    // Increase quorumNodeCount if *I* am not a permafollower
+    if (_originalPriority != 0) {
+        quorumNodeCount++;
+    }
+
+    if (forkedFullPeerCount >= (quorumNodeCount + 1) / 2) {
+        SERROR("I have forked from over half the cluster (" << forkedFullPeerCount << " nodes). This is unrecoverable." << _getLostQuorumLogMessage());
+    }
 }
