@@ -797,7 +797,9 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
             if (_sharedData.outstandingFramesToCheckpoint) {
                 auto start = STimeNow();
                 int framesCheckpointed = 0;
-                sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, NULL, &framesCheckpointed);
+                sqlite3_busy_timeout(_db, 120'000); // 2 minutes
+                sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_FULL, NULL, &framesCheckpointed);
+                sqlite3_busy_timeout(_db, 0);
                 auto end = STimeNow();
                 SINFO("Checkpointed " << framesCheckpointed << " (total) frames of " << _sharedData.outstandingFramesToCheckpoint << " in " << (end - start) << "us.");
 
