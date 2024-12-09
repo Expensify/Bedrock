@@ -570,6 +570,16 @@ bool SQLite::write(const string& query) {
     return _writeIdempotent(query, ignore);
 }
 
+bool SQLite::write(const string& query, SQResult& result) {
+    if (_noopUpdateMode) {
+        SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
+        return true;
+    }
+
+    // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
+    return _writeIdempotent(query, result);
+}
+
 bool SQLite::writeIdempotent(const string& query) {
     SQResult ignore;
     return _writeIdempotent(query, ignore);

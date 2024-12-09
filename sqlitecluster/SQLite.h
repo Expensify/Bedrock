@@ -101,9 +101,13 @@ class SQLite {
     bool addColumn(const string& tableName, const string& column, const string& columnType);
 
     // Performs a read/write query (eg, INSERT, UPDATE, DELETE). This is added to the current transaction's query list.
-    // Returns true  on success.
+    // Returns true on success.
     // If we're in noop-update mode, this call alerts and performs no write, but returns as if it had completed.
     bool write(const string& query);
+
+    // Performs a read/write query
+    // Designed for use with queries that include a RETURNING clause
+    bool write(const string& query, SQResult& result);
 
     // This is the same as `write` except it runs successfully without any warnings or errors in noop-update mode.
     // It's intended to be used for `mockRequest` enabled commands, such that we only run a version of them that's
