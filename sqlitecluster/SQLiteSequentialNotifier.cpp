@@ -31,6 +31,8 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
                 SINFO("Canceled after " << _cancelAfter << ", but waiting for " << value << " so not returning yet.");
             } else {
                 // Canceled and we're not before the cancellation cutoff.
+                // I don't see how we don't return here. Maybe we never acquire `waitingThreadMutex`?
+                SINFO("Returning canceled because _cancelAfter=" << _cancelAfter << " and value=" << value);
                 return RESULT::CANCELED;
             }
         } else if (_globalResult != RESULT::UNKNOWN) {
@@ -52,6 +54,8 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
             // We should investigate any instances of thew below logline to see if they're same as for the success cases mentioned above (i.e., the timeout happens simultaneously as the
             // cancellation) or if the log line is delayed by up to a second (indicating a problem).
             if (_globalResult == RESULT::CANCELED || state->result == RESULT::CANCELED) {
+                // I bet removing a 1 second delay means we don't hit this. we get to calling `reset` on this sooner, possibly while there are threads waiting here.
+
                 // It's possible that we hit the timeout here after `cancel()` has set the global value, but before we received the notification.
                 // This isn't a problem, and we can jump back to the top of the loop and check again. If there's some problem, we'll see it there.
                 SINFO("Hit 1s timeout while global cancel " << (_globalResult == RESULT::CANCELED) << " or " << " specific cancel " << (state->result == RESULT::CANCELED));
@@ -114,10 +118,12 @@ void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
         auto& valueThreadMap = *valueThreadMapPtr;
         // If cancelAfter is specified, start from that value. Otherwise, we start from the beginning.
         auto start = _cancelAfter ? valueThreadMap.upper_bound(_cancelAfter) : valueThreadMap.begin();
-        SINFO("[performance] Next value to cancel after " << cancelAfter << " is " << start->first);
         if (start == valueThreadMap.end()) {
             // There's nothing to remove.
+            SINFO("[performance] Next value to cancel after " << cancelAfter << " is N/A");
             return;
+        } else {
+            SINFO("[performance] Next value to cancel after " << cancelAfter << " is " << start->first);
         }
 
         // Now iterate across whatever's remaining and mark it canceled.

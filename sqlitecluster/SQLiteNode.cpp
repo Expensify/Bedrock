@@ -187,6 +187,10 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
     }
     _replicateStartCV.notify_all();
 
+    if (_replicationThreadsShouldExit) {
+        SINFO("Late replicate start, just exiting.");
+    }
+
     // Initialize each new thread with a new number.
     SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
 
@@ -214,12 +218,18 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
             uint64_t waitForCount = SStartsWith(command["ID"], "ASYNC") ? command.calcU64("dbCountAtStart") : currentCount;
             SINFO("[performance] BEGIN_TRANSACTION replicate thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
             while (true) {
+                // Ok, why doesn't this get counted?
+                // It's waiting on: commit 26056807239 waiting on DB count 26056807238
+                // It seems like this should return immediately.
+                // Ok, is it possible we got past here and waited somewhere else? We were either stuck here, or...
                 SQLiteSequentialNotifier::RESULT result = _localCommitNotifier.waitFor(waitForCount, false);
+                // My current inclination is that maybe we reset the commit notifier before the thread really starts.
                 if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
                     // This should be impossible.
                     SERROR("Got UNKNOWN result from waitFor, which shouldn't happen");
                 } else if (result == SQLiteSequentialNotifier::RESULT::COMPLETED) {
                     // Success case.
+                    // If we didn't get stuck above, we must have hit here, because otherwise we would have logged.
                     break;
                 } else if (result == SQLiteSequentialNotifier::RESULT::CANCELED) {
                     SINFO("_localCommitNotifier.waitFor canceled early, returning.");
@@ -237,6 +247,7 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                     if (commitAttemptCount > 1) {
                         SINFO("Commit attempt number " << commitAttemptCount << " for concurrent replication.");
                     }
+                    // We never log this line, so we can't have gotten to here.
                     SINFO("[performance] BEGIN for commit " << newCount);
                     bool uniqueContraintsError = false;
                     try {
@@ -1640,14 +1651,20 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 throw e;
             }
         } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
+            // Race condition here. What if _replicationThreadsShouldExit changes after this check?
             if (_replicationThreadsShouldExit) {
                 SINFO("Discarding replication message, stopping FOLLOWING");
             } else {
+                // Ok, so the race condition could be here, right?
+                // Right this instance, the thread count is 0, so we can move past the check that
+                // Waits for it to be 0.
+                // But then this thread starts. Can that happen?
                 auto threadID = _replicationThreadCount.fetch_add(1);
                 SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
                 try {
                     uint64_t threadAttemptStartTimestamp = STimeNow();
                     _replicateThreadStarted = false;
+                    // Either here.
                     thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp).detach();
                     {
                         unique_lock<mutex> lock(_replicateStartMutex);
@@ -1917,12 +1934,8 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             // Polling wait for threads to quit. This could use a notification model such as with a condition_variable,
             // which would probably be "better" but introduces yet more state variables for a state that we're rarely
             // in, and so I've left it out for the time being.
-            size_t infoCount = 1;
             while (_replicationThreadCount) {
-                if (infoCount % 100 == 0) {
-                    SINFO("Waiting for " << _replicationThreadCount << " remaining replication threads.");
-                }
-                infoCount++;
+                SINFO("Waiting for " << _replicationThreadCount << " remaining replication threads.");
                 usleep(10'000);
             }
 
@@ -1930,8 +1943,11 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             _replicationThreadsShouldExit = false;
 
             // Guaranteed to be done right now.
+            // I bet this is wrong when these get reset. If we no threads, these get reset before they check?
+            // That doesn't make sense to me for when we should increment _replicationThreadCount
             _localCommitNotifier.reset();
             _leaderCommitNotifier.reset();
+            // If the above completed, we should immediately see `Switching from... ` logged.
 
             // We have no leader anymore.
             _leadPeer = nullptr;
