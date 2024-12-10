@@ -401,9 +401,12 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     // Reset before the query, as it's possible the query sets these.
     _autoRolledBack = false;
 
-    SINFO("[concurrent] Beginning transaction");
+    SINFO("[concurrent] Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount + 1));
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
+
+    _sharedData.incrementOpenTransactions();
+    SINFO("Open transaction count: " << _sharedData.openTransactionCount);
 
     // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
     // where we're actually able to start such that we know we shouldn't get a conflict if this commits successfully on
@@ -788,6 +791,8 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _mutexLocked = false;
         _queryCache.clear();
 
+        _sharedData.decrementOpenTransactions();
+
         if (preCheckpointCallback != nullptr) {
             (*preCheckpointCallback)();
         }
@@ -842,6 +847,8 @@ void SQLite::rollback() {
             SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
             _rollbackElapsed += STimeNow() - before;
         }
+
+        _sharedData.decrementOpenTransactions();
 
         // Finally done with this.
         _insideTransaction = false;
@@ -1168,6 +1175,7 @@ string SQLite::getLastConflictTable() const {
 SQLite::SharedData::SharedData() :
 nextJournalCount(0),
 _commitEnabled(true),
+openTransactionCount(0),
 _commitLockTimer("commit lock timer", {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
     {"SHARED", chrono::steady_clock::duration::zero()},
@@ -1199,6 +1207,16 @@ void SQLite::SharedData::prepareTransactionInfo(uint64_t commitID, const string&
 void SQLite::SharedData::commitTransactionInfo(uint64_t commitID) {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     _committedTransactions.insert(_preparedTransactions.extract(commitID));
+}
+
+void SQLite::SharedData::incrementOpenTransactions() {
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    openTransactionCount++;
+}
+
+void SQLite::SharedData::decrementOpenTransactions() {
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    openTransactionCount--;
 }
 
 map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::popCommittedTransactions() {
