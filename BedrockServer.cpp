@@ -213,8 +213,9 @@ void BedrockServer::sync()
         // we're leading, then the next update() loop will set us to standing down, and then we won't accept any new
         // commands, and we'll shortly run through the existing queue.
         if (_shutdownState.load() == COMMANDS_FINISHED) {
-            SINFO("All clients responded to, " << BedrockCommand::getCommandCount() << " commands remaining. Shutting down sync node.");
+            SINFO("All clients responded to, " << BedrockCommand::getCommandCount() << " commands remaining.");
             if (_syncNode->beginShutdown()) {
+                SINFO("Beginning shuttdown of sync node.");
                 // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
                 _notifyDoneSync.push(true);
             }

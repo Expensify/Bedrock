@@ -198,7 +198,8 @@ class SQLiteNode : public STCPManager {
       public:
         ScopedDecrement(CounterType& counter) : _counter(counter) {}
         ~ScopedDecrement() {
-            --_counter;
+            auto decrementedTo = --_counter;
+            SINFO("TYLER _counter decremented to : " << decrementedTo);
         }
       private:
         CounterType& _counter;
