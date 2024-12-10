@@ -1640,6 +1640,15 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 throw e;
             }
         } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
+            if (_state != SQLiteNodeState::FOLLOWING) {
+                // These messages are only valid while following, but we do not throw if we receive them in other states, as
+                // it's not neccesarily an error. Specifically, as we switch away from FOLLOWING, there may still be a stream
+                // of transactions being broadcast. We do not attempt to handle these, as we keep careful count of which
+                // replication threads are currently running, and reset the replication state tracking when we're not following.
+                // Attempting to handle replication messages in some other state will break that tracking.
+                SINFO("Ignoring " << message.methodLine << " in state " << stateName(_state));
+                return;
+            }
             if (_replicationThreadsShouldExit) {
                 SINFO("Discarding replication message, stopping FOLLOWING");
             } else {
