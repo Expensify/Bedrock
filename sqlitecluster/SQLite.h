@@ -314,9 +314,7 @@ class SQLite {
         // If set to false, this prevents any thread from being able to commit to the DB.
         atomic<bool> _commitEnabled;
 
-        // These blocks are to monitor the number of open transactions on the whole server.
-        void incrementOpenTransactions();
-        void decrementOpenTransactions();
+        // This variable is used to monitor the number of open transactions on the whole server.
         atomic<int64_t> openTransactionCount;
 
         SPerformanceTimer _commitLockTimer;
