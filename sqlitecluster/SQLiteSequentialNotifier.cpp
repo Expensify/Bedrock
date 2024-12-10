@@ -54,8 +54,7 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
             if (_globalResult == RESULT::CANCELED || state->result == RESULT::CANCELED) {
                 // It's possible that we hit the timeout here after `cancel()` has set the global value, but before we received the notification.
                 // This isn't a problem, and we can jump back to the top of the loop and check again. If there's some problem, we'll see it there.
-                // Does this still happen?? Might be fixed.
-                SINFO("Hit 1s timeout while global cancel " << (_globalResult == RESULT::CANCELED) << " or " << " specific cancel " << (state->result == RESULT::CANCELED));
+                SINFO("Hit 1s timeout while global cancel " << (_globalResult == RESULT::CANCELED) << " or specific cancel " << (state->result == RESULT::CANCELED));
                 continue;
             }
         }
