@@ -199,6 +199,19 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
 
     // Allow the DB handle to be returned regardless of how this function exits.
     SQLiteScopedHandle dbScope(*_dbPool, sqlitePoolIndex);
+    // In dev, we sometimes crash on the destructor for the above after `detach` which implies to me that the DB Pool could have been deleted before we exited.
+    // This is a different manifestation of what could be the same issue.
+    // IN dev, we get:
+    // 2024-12-09T21:12:45.030255+00:00 expensidev2004 bedrock10013: xxxxxx (SQLiteNode.cpp:215) _replicate [replicate2065] [info] {cluster_node_4/SEARCHING} [performance] BEGIN_TRANSACTION replicate thread for commit 15003 waiting on DB count 15001 (ASYNC)
+    // 2024-12-09T21:12:49.023666+00:00 expensidev2004 bedrock10013: xxxxxx (SQLiteNode.cpp:1913) _changeState [sync] [info] {cluster_node_4/FOLLOWING} Replication threads should exit, canceling commits after current leader commit 0
+    // 2024-12-09T21:12:49.030957+00:00 expensidev2004 bedrock10013: xxxxxx (SQLiteSequentialNotifier.cpp:57) waitFor [replicate2065] [info] Hit 1s timeout while global cancel 1 or  specific cancel 0
+    // 2024-12-09T21:12:49.030963+00:00 expensidev2004 bedrock10013: xxxxxx (SQLiteNode.cpp:225) _replicate [replicate2065] [info] {cluster_node_4/FOLLOWING} _localCommitNotifier.waitFor canceled early, returning.
+    // 2024-12-09T21:12:49.030977+00:00 expensidev2004 bedrock10013: xxxxxx (SSignal.cpp:193) _SSignal_StackTrace [replicate2065] [warn] Signal Segmentation fault(11) caused crash, logging stack trace.
+    // Why doesn't this get cancelled as well?
+    // I'm not sure why dev thinks leader has commit 0.
+    // 2024-12-09T21:12:49.023613+00:00 expensidev2004 bedrock10013: xxxxxx (SQLiteNode.cpp:1902) _changeState [sync] [info] {cluster_node_4/FOLLOWING} [NOTIFY] setting commit count to: 17001
+    // 2024-12-09T21:12:49.023674+00:00 expensidev2004 bedrock10013: xxxxxx (SQLiteSequentialNotifier.cpp:105) cancel [sync] [info] Canceling all pending transactions after 0
+
     SQLite& db = dbScope.db();
 
     bool goSearchingOnExit = false;
@@ -224,6 +237,10 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
                 // Ok, is it possible we got past here and waited somewhere else? We were either stuck here, or...
                 SQLiteSequentialNotifier::RESULT result = _localCommitNotifier.waitFor(waitForCount, false);
                 // My current inclination is that maybe we reset the commit notifier before the thread really starts.
+
+                // I think we get stuck in `waitFor` because it's been reset to 0 and we're waiting for every commit from the
+                // Beginning of time. I'm not acutally sure why it ever returns, though.
+
                 if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
                     // This should be impossible.
                     SERROR("Got UNKNOWN result from waitFor, which shouldn't happen");
@@ -1653,12 +1670,17 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
         } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
             // Race condition here. What if _replicationThreadsShouldExit changes after this check?
             if (_replicationThreadsShouldExit) {
+                // Interestingly, this doesn't happen.
+                // I think load is light when this issue occurs.
                 SINFO("Discarding replication message, stopping FOLLOWING");
             } else {
                 // Ok, so the race condition could be here, right?
                 // Right this instance, the thread count is 0, so we can move past the check that
                 // Waits for it to be 0.
                 // But then this thread starts. Can that happen?
+                // So the sync thread does the state switch.
+                // Who is running this though, it should also be the sync thread?
+                // I don't see how anyone else would be able to do this.
                 auto threadID = _replicationThreadCount.fetch_add(1);
                 SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
                 try {
@@ -1938,6 +1960,9 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
                 SINFO("Waiting for " << _replicationThreadCount << " remaining replication threads.");
                 usleep(10'000);
             }
+            // How can the above fail????
+            // We only increment _replicationThreadCount in the sync thread and we are reading it here in the sync thread.
+            // It is feasible to call `_changeState` from another thread but that's not what's happening in the issue we're seeing.
 
             // Done exiting. Reset so that we can resume FOLLOWING in the future.
             _replicationThreadsShouldExit = false;
