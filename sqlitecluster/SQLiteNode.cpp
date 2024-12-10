@@ -145,7 +145,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _stateTimeout(STimeNow() + firstTimeout),
       _syncPeer(nullptr)
 {
-    SINFO("TYLER _replicationThreadCount reset to : " << _replicationThreadCount);
     KILLABLE_SQLITE_NODE = this;
     SASSERT(_originalPriority >= 0);
     onPrepareHandlerEnabled = false;
@@ -1669,11 +1668,15 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 throw e;
             }
         } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
-            // Race condition here. What if _replicationThreadsShouldExit changes after this check?
-            if (_replicationThreadsShouldExit || _state == SQLiteNodeState::SEARCHING) {
-                // So this fix probably works, but maybe we don't even want to call _onMESSAGE when we're detaching?
-                // Interestingly, this doesn't happen.
-                // I think load is light when this issue occurs.
+            if (_state != SQLiteNodeState::FOLLOWING) {
+                // These messages are only valid while following, but we do not throw if we receive them in other states, as
+                // it's not neccesarily an error. Specifically, as we switch away from FOLLOWING, there may still be a stream
+                // of transactions being broadcast. We do not attempt to handle these, as we keep careful count of which
+                // replication threads are currently running, and reset the replication state tracking when we're not following.
+                // Attempting to handle replication messages in some other state will break that tracking.
+                return;
+            }
+            if (_replicationThreadsShouldExit) {
                 SINFO("Discarding replication message, stopping FOLLOWING");
             } else {
                 // Ok, so the race condition could be here, right?
@@ -1684,7 +1687,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 // Who is running this though, it should also be the sync thread?
                 // I don't see how anyone else would be able to do this.
                 auto threadID = _replicationThreadCount.fetch_add(1);
-                SINFO("TYLER _replicationThreadCount incremented to : " << threadID + 1);
                 SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
                 try {
                     uint64_t threadAttemptStartTimestamp = STimeNow();
@@ -1706,8 +1708,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     // and waiting for the transaction that failed will be stuck in an infinite loop. To prevent that
                     // we're changing the state to SEARCHING and sending the cancelAfter property to drop all threads
                     // that depend on the transaction that failed to be threaded.
-                    auto was = _replicationThreadCount.fetch_sub(1);
-                    SINFO("TYLER _replicationThreadCount decremented to : " << was - 1);
                     SWARN("Caught system_error starting _replicate thread with " << _replicationThreadCount.load() << " threads. e.what()=" << e.what());
                     _changeState(SQLiteNodeState::SEARCHING, message.calcU64("NewCount") - 1);
                     STHROW("Error starting replicate thread so giving up and reconnecting.");
@@ -1960,12 +1960,10 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             // Polling wait for threads to quit. This could use a notification model such as with a condition_variable,
             // which would probably be "better" but introduces yet more state variables for a state that we're rarely
             // in, and so I've left it out for the time being.
-            SINFO("TYLER _replicationThreadCount before state change: " << _replicationThreadCount);
-            while (_replicationThreadCount.load()) {
+            while (_replicationThreadCount) {
                 SINFO("Waiting for " << _replicationThreadCount << " remaining replication threads.");
                 usleep(10'000);
             }
-            SINFO("TYLER _replicationThreadCount after state change: " << _replicationThreadCount);
             // How can the above fail????
             // We only increment _replicationThreadCount in the sync thread and we are reading it here in the sync thread.
             // It is feasible to call `_changeState` from another thread but that's not what's happening in the issue we're seeing.
