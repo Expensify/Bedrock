@@ -1930,8 +1930,8 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
                 if (infoCount % 100 == 0) {
                     SINFO("Waiting for " << _replicationThreadCount << " remaining replication threads.");
                 }
-                usleep(10'000);
                 infoCount++;
+                usleep(10'000);
             }
 
             // Done exiting. Reset so that we can resume FOLLOWING in the future.

@@ -117,8 +117,10 @@ void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
         auto start = _cancelAfter ? valueThreadMap.upper_bound(_cancelAfter) : valueThreadMap.begin();
         if (start == valueThreadMap.end()) {
             // There's nothing to remove.
+            SINFO("[performance] No available values to cancel after " << cancelAfter);
             return;
         }
+        SINFO("[performance] Next value to cancel after " << cancelAfter << " is " << start->first);
 
         // Now iterate across whatever's remaining and mark it canceled.
         auto current = start;
