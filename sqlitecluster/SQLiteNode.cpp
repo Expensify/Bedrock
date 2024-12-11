@@ -56,20 +56,6 @@
 // dbCountAtStart:   The highest committed transaction in the DB at the start of this transaction on leader, for
 //                   optimizing replication.
 
-// NOTE: This comment as well as NODE_LOGIN should be removed after https://github.com/Expensify/Bedrock/pull/1999 is deployed.
-// On LOGIN vs NODE_LOGIN.
-// _onConnect sends a LOGIN message.
-// _onConnect is called in exctly two places:
-// 1. In response to a NODE_LOGIN message received on a newly connected socket on the sync port. It's expected when
-//    establishing a connection, a node sends this NODE_LOGIN as its first message.
-// 2. Immediately following establishing a TCP connection to another node and sending a NODE_LOGIN message. In the case that
-//    we are the initiating node, we immediately queue three messages:
-//    1. NODE_LOGIN
-//    2. PING
-//    3. LOGIN
-//
-// When we receive a NODE_LOGIN, we immediately respond with a PING followed by a LOGIN (by calling _onConnect).
-
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
 
@@ -1267,9 +1253,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             // Latency must be > 0 because we treat 0 as "not connected".
             peer->latency = max(STimeNow() - message.calc64("Timestamp"), 1ul);
             SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/1000 << "ms latency)");
-            return;
-        } else if (SIEquals(message.methodLine, "NODE_LOGIN")) {
-            // Do nothing, this keeps this code from warning until NODE_LOGIN is deprecated.
             return;
         }
 
@@ -2553,7 +2536,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // with peers, so we store any that we can remove in this list.
     list<Socket*> socketsToRemove;
 
-    // Check each new connection for a NODE_LOGIN message.
+    // Check each new connection for a LOGIN message.
     for (auto socket : _unauthenticatedIncomingSockets) {
         STCPManager::postPoll(fdm, *socket);
         try {
@@ -2565,8 +2548,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             int messageSize = message.deserialize(socket->recvBuffer);
             if (messageSize) {
                 socket->recvBuffer.consumeFront(messageSize);
-                // Allow either LOGIN or NODE_LOGIN until we deprecate NODE_LOGIN.
-                if (SIEquals(message.methodLine, "NODE_LOGIN") || SIEquals(message.methodLine, "LOGIN")) {
+                if (SIEquals(message.methodLine, "LOGIN")) {
                     SQLitePeer* peer = getPeerByName(message["Name"]);
                     if (peer) {
                         if (peer->setSocket(socket)) {
@@ -2591,7 +2573,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         STHROW("Unauthenticated node '" + message["Name"] + "' attempted to connected, rejecting.");
                     }
                 } else {
-                    STHROW("expecting LOGIN or NODE_LOGIN");
+                    STHROW("expecting LOGIN");
                 }
             } else if (STimeNow() > socket->lastRecvTime + 5'000'000) {
                 STHROW("Incoming socket didn't send a message for over 5s, closing.");
@@ -2614,10 +2596,6 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         switch (result) {
             case SQLitePeer::PeerPostPollStatus::JUST_CONNECTED:
             {
-                // When NODE_LOGIN is deprecated, we can remove the next 3 lines.
-                SData login("NODE_LOGIN");
-                login["Name"] = _name;
-                _sendToPeer(peer, login);
                 _onConnect(peer);
                 _sendPING(peer);
             }
