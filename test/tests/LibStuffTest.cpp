@@ -35,6 +35,7 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::SREMatchTest),
                                     TEST(LibStuff::SREReplaceTest),
                                     TEST(LibStuff::SQResultTest),
+                                    TEST(LibStuff::testReturningClause),
                                     TEST(LibStuff::SRedactSensitiveValuesTest)
                                     )
     { }
@@ -744,6 +745,37 @@ struct LibStuff : tpunit::TestFixture {
         db.read("SELECT name as coco, value FROM testTable ORDER BY id;", result);
         db.rollback();
         ASSERT_EQUAL(result[0]["coco"], "name1");
+    }
+
+    void testReturningClause() {
+        // Given a sqlite DB with a table and pre inserted values
+        SQLite db(":memory:", 1000, 1000, 1);
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        db.write("CREATE TABLE testReturning(id INTEGER PRIMARY KEY, name STRING, value STRING, created DATE);");
+        db.write("INSERT INTO testReturning VALUES(11, 'name1', 'value1', '2024-12-02');");
+        db.write("INSERT INTO testReturning VALUES(21, 'name2', 'value2', '2024-12-03');");
+        db.prepare();
+        db.commit();
+
+        // When trying to delete a row by returning the deleted items
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
+        SQResult result;
+        db.writeIdempotent("DELETE FROM testReturning WHERE id = 21 AND name = 'name2' RETURNING id, name;", result);
+        db.prepare();
+        db.commit();
+
+        // Verify that deleted items were returned as expected
+        ASSERT_EQUAL("21", result[0][0]);
+        ASSERT_EQUAL("name2", result[0][1]);
+
+        // Verify that the row was successfully deleted and now the table has only one row
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
+        db.read("SELECT name, value FROM testReturning ORDER BY id;", result);
+        db.rollback();
+
+        ASSERT_EQUAL(1, result.size());
+        ASSERT_EQUAL(result[0]["name"], "name1");
+        ASSERT_EQUAL(result[0]["value"], "value1");
     }
 
     void SRedactSensitiveValuesTest() {

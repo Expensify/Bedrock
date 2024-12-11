@@ -1,5 +1,6 @@
 #pragma once
 #include <libstuff/sqlite3.h>
+#include <libstuff/SQResult.h>
 #include <libstuff/SPerformanceTimer.h>
 
 class SQLite {
@@ -100,14 +101,22 @@ class SQLite {
     bool addColumn(const string& tableName, const string& column, const string& columnType);
 
     // Performs a read/write query (eg, INSERT, UPDATE, DELETE). This is added to the current transaction's query list.
-    // Returns true  on success.
+    // Returns true on success.
     // If we're in noop-update mode, this call alerts and performs no write, but returns as if it had completed.
     bool write(const string& query);
+
+    // Performs a read/write query
+    // Designed for use with queries that include a RETURNING clause
+    bool write(const string& query, SQResult& result);
 
     // This is the same as `write` except it runs successfully without any warnings or errors in noop-update mode.
     // It's intended to be used for `mockRequest` enabled commands, such that we only run a version of them that's
     // known to be repeatable. What counts as repeatable is up to the individual command.
     bool writeIdempotent(const string& query);
+
+    // Executes a write query and retrieves the result.
+    // Designed for use with queries that include a RETURNING clause
+    bool writeIdempotent(const string& query, SQResult& result);
 
     // This runs a query completely unchanged, always adding it to the uncommitted query, such that it will be recorded
     // in the journal even if it had no effect on the database. This lets replicated or synchronized queries be added
@@ -400,7 +409,7 @@ class SQLite {
     static thread_local int64_t _conflictPage;
     static thread_local string _conflictTable;
 
-    bool _writeIdempotent(const string& query, bool alwaysKeepQueries = false);
+    bool _writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries = false);
 
     // Constructs a UNION query from a list of 'query parts' over each of our journal tables.
     // Fore each table, queryParts will be joined with that table's name as a separator. I.e., if you have a tables
