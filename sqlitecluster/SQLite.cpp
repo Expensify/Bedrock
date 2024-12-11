@@ -401,12 +401,12 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     // Reset before the query, as it's possible the query sets these.
     _autoRolledBack = false;
 
-    SINFO("[concurrent] Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount + 1));
-    uint64_t before = STimeNow();
-    _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
-
     // We actively track transaction counts incrementing and decrementing to log the number of active open transactions at any given moment.
     _sharedData.openTransactionCount++;
+
+    SINFO("[concurrent] Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
+    uint64_t before = STimeNow();
+    _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
 
     // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
     // where we're actually able to start such that we know we shouldn't get a conflict if this commits successfully on
