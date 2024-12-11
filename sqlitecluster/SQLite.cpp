@@ -401,7 +401,10 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     // Reset before the query, as it's possible the query sets these.
     _autoRolledBack = false;
 
-    SINFO("[concurrent] Beginning transaction");
+    // We actively track transaction counts incrementing and decrementing to log the number of active open transactions at any given moment.
+    _sharedData.openTransactionCount++;
+
+    SINFO("[concurrent] Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
 
@@ -805,6 +808,8 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _mutexLocked = false;
         _queryCache.clear();
 
+        _sharedData.openTransactionCount--;
+
         if (preCheckpointCallback != nullptr) {
             (*preCheckpointCallback)();
         }
@@ -859,6 +864,8 @@ void SQLite::rollback() {
             SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
             _rollbackElapsed += STimeNow() - before;
         }
+
+        _sharedData.openTransactionCount--;
 
         // Finally done with this.
         _insideTransaction = false;
@@ -1185,6 +1192,7 @@ string SQLite::getLastConflictTable() const {
 SQLite::SharedData::SharedData() :
 nextJournalCount(0),
 _commitEnabled(true),
+openTransactionCount(0),
 _commitLockTimer("commit lock timer", {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
     {"SHARED", chrono::steady_clock::duration::zero()},
