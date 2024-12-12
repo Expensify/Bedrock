@@ -18,7 +18,7 @@ struct WriteTest : tpunit::TestFixture {
                               TEST(WriteTest::updateAndInsertWithHttp),
                               TEST(WriteTest::shortHandSyntax),
                               TEST(WriteTest::keywordsAsValue),
-                              TEST(WriteTest::blockTimeFunctions),
+                              TEST(WriteTest::blockNonDeterministicFunctions),
                               AFTER_CLASS(WriteTest::tearDown)) { }
 
     BedrockTester* tester;
@@ -181,7 +181,7 @@ struct WriteTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(query3);
     }
 
-    void blockTimeFunctions() {
+    void blockNonDeterministicFunctions() {
         // Verify writing the string 'CURRENT_TIMESTAMP' is fine.
         SData query("query: INSERT INTO stuff VALUES ( NULL, 11, 'CURRENT_TIMESTAMP' );");
         tester->executeWaitVerifyContent(query);
@@ -192,6 +192,18 @@ struct WriteTest : tpunit::TestFixture {
 
         // But allow the function to run in reads.
         query.methodLine = "query: SELECT CURRENT_TIMESTAMP;";
+        tester->executeWaitVerifyContent(query);
+
+        // Verify writing the string 'RANDOM' is fine.
+        query.methodLine = "query: INSERT INTO stuff VALUES ( NULL, 11, 'RANDOM' );";
+        tester->executeWaitVerifyContent(query);
+
+        // But verify calling the function RANDOM is blocked when writing.
+        query.methodLine = "query: INSERT INTO stuff VALUES ( NULL, 11, RANDOM() );";
+        tester->executeWaitVerifyContent(query, "502 Query failed");
+
+        // But allow the function to run in reads.
+        query.methodLine = "query: SELECT random();";
         tester->executeWaitVerifyContent(query);
     }
 
