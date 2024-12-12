@@ -13,6 +13,12 @@ SQLitePool::SQLitePool(size_t maxDBs,
   _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, mmapSizeGB, hctree),
   _objects(_maxDBs, nullptr)
 {
+    SINFO("Allocating SQLitePool handles.");
+    for (size_t i = 0; i < _maxDBs; i++) {
+        initializeIndex(i);
+        _availableHandles.insert(i);
+    }
+    SINFO("Allocated " << _maxDBs << " handles for SQLitePool.");
 }
 
 SQLitePool::~SQLitePool() {
