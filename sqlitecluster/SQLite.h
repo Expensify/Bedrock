@@ -480,6 +480,15 @@ class SQLite {
     void _checkInterruptErrors(const string& error) const;
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
+    //
+    // PRO-TIP: you can play with the authorizer using the `sqlite3` CLI tool, by running `.auth ON` then running
+    // your query. The columns displayed are the same as what is passed to this function.
+    //
+    // The information passed to this function is different based on the first parameter, actionCode.
+    // You can see what information is passed for each action code here https://www.sqlite.org/c3ref/c_alter_table.html.
+    // Note that as of writing this comment, the page seems slightly out of date and the parameter numbers are all off
+    // by one. That is, the first paramter passed to the callback funciton is actually the integer action code, not the
+    // second.
     int _authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4);
 
     // It's possible for certain transactions (namely, timing out a write operation, see here:

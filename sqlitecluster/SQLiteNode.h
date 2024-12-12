@@ -181,7 +181,7 @@ class SQLiteNode : public STCPManager {
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
 
-    // Look up the correct peer by the name it supplies in a NODE_LOGIN
+    // Look up the correct peer by the name it supplies in a LOGIN
     // message. Does not lock, but this method is const and all it does is
     // access _peerList and peer->name, both of which are const. So it is safe
     // to call from other public functions.
@@ -293,7 +293,7 @@ class SQLiteNode : public STCPManager {
     const string _version;
 
     // These are sockets that have been accepted on the node port but have not yet been associated with a peer (because
-    // they need to send a NODE_LOGIN message with their name first).
+    // they need to send a LOGIN message with their name first).
     set<Socket*> _unauthenticatedIncomingSockets;
 
     // The write consistency requested for the current in-progress commit.
