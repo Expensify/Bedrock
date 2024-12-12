@@ -1,4 +1,5 @@
 #include <libstuff/SData.h>
+#include <libstuff/SRandom.h>
 #include <test/lib/BedrockTester.h>
 
 struct WriteTest : tpunit::TestFixture {
@@ -38,7 +39,8 @@ struct WriteTest : tpunit::TestFixture {
         for (int i = 0; i < 50; i++) {
             SData query("Query");
             query["writeConsistency"] = "ASYNC";
-            query["query"] = "INSERT INTO foo VALUES ( RANDOM() );";
+            uint64_t rand = SRandom::rand64();
+            query["query"] = "INSERT INTO foo VALUES (" + to_string(rand) + ");";
             tester->executeWaitVerifyContent(query);
         }
 
