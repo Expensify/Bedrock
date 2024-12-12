@@ -1012,14 +1012,21 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
             !strcmp(detail2, "strftime") ||
             !strcmp(detail2, "changes") ||
             !strcmp(detail2, "last_insert_rowid") ||
-            !strcmp(detail2, "sqlite3_version")
+            !strcmp(detail2, "sqlite_version")
         ) {
             _isDeterministicQuery = false;
         }
 
-        if (!strcmp(detail2, "current_timestamp")) {
+        // Prevent using certain non-deterministic functions in writes which could cause synchronization with followers to
+        // result in inconsistent data. Some are not included here because they can be used in a deterministic way that is valid.
+        // i.e. you can do UPDATE x = DATE('2024-01-01') and its deterministic whereas UPDATE x = DATE('now') is not. It's up to
+        // callers to prevent using these functions inappropriately.
+        if (!strcmp(detail2, "current_timestamp") ||
+            !strcmp(detail2, "random") ||
+            !strcmp(detail2, "last_insert_rowid") ||
+            !strcmp(detail2, "changes") ||
+            !strcmp(detail2, "sqlite_version")) {
             if (_currentlyWriting) {
-                // Prevent using `current_timestamp` in writes which could cause synchronization with followers to result in inconsistent data.
                 return SQLITE_DENY;
             }
         }
