@@ -113,6 +113,9 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
 
         // Get the versions from the cluster.
         auto versions = getVersions();
+        for (auto s : versions) {
+            cout << s << endl;
+        }
 
         // Save the production version for later comparison.
         string prodVersion = versions[0];
@@ -127,6 +130,12 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         tester->getTester(2).updateArgs({{"-plugins", newTestPlugin}});
         tester->getTester(2).startServer();
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
+
+        cout << "Server 2 is upgraded." << endl;
+        versions = getVersions();
+        for (auto s : versions) {
+            cout << s << endl;
+        }
 
         // Verify the server has been upgraded and the version is different.
         versions = getVersions();
@@ -152,14 +161,32 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
 
         // We should get the expected cluster state.
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
+        cout << "Leader has been upgraded. It should receive NODE_LOGIN from old nodes." << endl;
         ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
+
 
         // Now 0 and 2 are the new version, and 1 is the old version.
         versions = getVersions();
         ASSERT_EQUAL(versions[0], devVersion);
         ASSERT_EQUAL(versions[1], prodVersion);
         ASSERT_EQUAL(versions[2], devVersion);
+
+        // Cycle the old version. We want it to come up and make an outgoing connection to a new version. It should send node_login.
+        for (int i =0; i < 10; i++) {
+            cout << "Cyling old server." << endl;
+            tester->getTester(1).stopServer();
+            tester->getTester(1).startServer();
+            tester->getTester(1).waitForState("FOLLOWING");
+        }
+
+        // Cycle the new version. We want it to come up and make an outgoing connection to a new version. It should send node_login.
+        for (int i =0; i < 10; i++) {
+            cout << "Cyling new server." << endl;
+            tester->getTester(2).stopServer();
+            tester->getTester(2).startServer();
+            tester->getTester(2).waitForState("FOLLOWING");
+        }
 
         // Now we need to send a command to node 1 to verify we can escalate old->new.
         cmdResult = tester->getTester(1).executeWaitMultipleData({cmd});

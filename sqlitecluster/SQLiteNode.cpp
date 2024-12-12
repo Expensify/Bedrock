@@ -1254,6 +1254,12 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             peer->latency = max(STimeNow() - message.calc64("Timestamp"), 1ul);
             SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/1000 << "ms latency)");
             return;
+        } else if (SIEquals(message.methodLine, "NODE_LOGIN")) {
+            // We need to return early here to ignore this deprecated message and avoid throwing:
+            // STHROW("not logged in");
+            // Below. We can remove this check after one more deploy cycle.
+            // https://github.com/Expensify/Expensify/issues/450953
+            return;
         }
 
         // We ignore everything except PING and PONG from forked nodes, so we can return here in that case.
@@ -2548,7 +2554,10 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             int messageSize = message.deserialize(socket->recvBuffer);
             if (messageSize) {
                 socket->recvBuffer.consumeFront(messageSize);
-                if (SIEquals(message.methodLine, "LOGIN")) {
+                // Old nodes, for one more upgrade cycle, will still send `NODE_LOGIN`. We can remove this check after this
+                // code is deployed.
+                // See: https://github.com/Expensify/Expensify/issues/450953
+                if (SIEquals(message.methodLine, "NODE_LOGIN") || SIEquals(message.methodLine, "LOGIN")) {
                     SQLitePeer* peer = getPeerByName(message["Name"]);
                     if (peer) {
                         if (peer->setSocket(socket)) {
