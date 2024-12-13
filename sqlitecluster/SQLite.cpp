@@ -650,9 +650,14 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     if (_uncommittedQuery.size()) {
         // Look up the oldest commit in our chosen journal, and compute the oldest commit we intend to keep.
         SQResult result;
-        SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) AS id FROM " + _journalName, result));
-        uint64_t minJournalEntry = SToUInt64(result[0][0]);
-        uint64_t oldestCommitToKeep = _sharedData.commitCount - _maxJournalSize;
+        SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) FROM " + _journalName, result));
+        uint64_t minJournalEntry = result.size() ? SToUInt64(result[0][0]) : 0;
+        uint64_t commitCount = _sharedData.commitCount;
+
+        // If the commitCount is less than the max journal size, keep everything. Otherwise, keep everything from
+        // commitCount - _maxJournalSize forward. We can't just do the last subtraction part because it overflows our unsigned
+        // int.
+        uint64_t oldestCommitToKeep = commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize;
 
         // We limit deletions to a relatively small number to avoid making this extremenly slow for some transactions in the case
         // where this journal in particular has accumulated a large backlog.
@@ -661,7 +666,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
             string query = "DELETE FROM " + _journalName + " WHERE id < " + SQ(oldestCommitToKeep) + " LIMIT " + SQ(deleteLimit);
             SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
             size_t deletedCount = sqlite3_changes(_db);
-            SINFO("Removed " << deletedCount << " rows from journal " << _journalName);
+            SINFO("Removed " << deletedCount << " rows from journal " << _journalName << ", oldestToKeep: " << oldestCommitToKeep << ", count:" << commitCount << ", limit: " << _maxJournalSize);
         }
     }
 
