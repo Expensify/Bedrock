@@ -531,4 +531,5 @@ class SQLite {
     bool _currentlyWriting{false};
 
     bool _inUpdateOrDelete{false};
+    bool _inSchemaChange{false};
 };

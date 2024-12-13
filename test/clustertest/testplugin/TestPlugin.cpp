@@ -362,6 +362,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         jsonContent["peekInfo"] = "this was returned in peekInfo";
         SQResult result;
         db.read("SELECT COUNT(*) FROM test WHERE id = 999999999", result);
+        SINFO("A");
         jsonContent["peekCount"] = result[0][0];
         if (request.methodLine == "prepeekcommand") {
             return true;
@@ -553,10 +554,12 @@ void TestPluginCommand::postProcess(SQLite& db) {
         jsonContent["postProcessInfo"] = "this was returned in postProcessInfo";
         SQResult result;
         db.read("SELECT COUNT(*) FROM test WHERE id = 999999999", result);
+        SINFO("B");
         jsonContent["postProcessCount"] = result[0][0];
     } else if (request.methodLine == "preparehandler") {
         SQResult result;
         db.read("SELECT id FROM test WHERE value = 'this is written in onPrepareHandler'", result);
+        SINFO("C");
         jsonContent["tableID"] = result[0][0];
     } else if (request.methodLine == "testPostProcessTimeout") {
         // It'll timeout eventually.
@@ -605,6 +608,7 @@ void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState
 
         SQResult result;
         db.read("SELECT count(*) FROM dbupgrade", result);
+        SINFO("D");
         _maxID = SToInt64(result[0][0]);
         SINFO("Server completed upgrade, _maxID " << _maxID);
     }).detach();
