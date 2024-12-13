@@ -1,5 +1,6 @@
 #pragma once
 #include <libstuff/sqlite3.h>
+#include <libstuff/SQResult.h>
 #include <libstuff/SPerformanceTimer.h>
 
 class SQLite {
@@ -100,14 +101,22 @@ class SQLite {
     bool addColumn(const string& tableName, const string& column, const string& columnType);
 
     // Performs a read/write query (eg, INSERT, UPDATE, DELETE). This is added to the current transaction's query list.
-    // Returns true  on success.
+    // Returns true on success.
     // If we're in noop-update mode, this call alerts and performs no write, but returns as if it had completed.
     bool write(const string& query);
+
+    // Performs a read/write query
+    // Designed for use with queries that include a RETURNING clause
+    bool write(const string& query, SQResult& result);
 
     // This is the same as `write` except it runs successfully without any warnings or errors in noop-update mode.
     // It's intended to be used for `mockRequest` enabled commands, such that we only run a version of them that's
     // known to be repeatable. What counts as repeatable is up to the individual command.
     bool writeIdempotent(const string& query);
+
+    // Executes a write query and retrieves the result.
+    // Designed for use with queries that include a RETURNING clause
+    bool writeIdempotent(const string& query, SQResult& result);
 
     // This runs a query completely unchanged, always adding it to the uncommitted query, such that it will be recorded
     // in the journal even if it had no effect on the database. This lets replicated or synchronized queries be added
@@ -314,6 +323,9 @@ class SQLite {
         // If set to false, this prevents any thread from being able to commit to the DB.
         atomic<bool> _commitEnabled;
 
+        // This variable is used to monitor the number of open transactions on the whole server.
+        atomic<int64_t> openTransactionCount;
+
         SPerformanceTimer _commitLockTimer;
 
         // We use this flag to prevent to threads running checkpoints t the same time.
@@ -400,7 +412,7 @@ class SQLite {
     static thread_local int64_t _conflictPage;
     static thread_local string _conflictTable;
 
-    bool _writeIdempotent(const string& query, bool alwaysKeepQueries = false);
+    bool _writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries = false);
 
     // Constructs a UNION query from a list of 'query parts' over each of our journal tables.
     // Fore each table, queryParts will be joined with that table's name as a separator. I.e., if you have a tables
@@ -468,6 +480,15 @@ class SQLite {
     void _checkInterruptErrors(const string& error) const;
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
+    //
+    // PRO-TIP: you can play with the authorizer using the `sqlite3` CLI tool, by running `.auth ON` then running
+    // your query. The columns displayed are the same as what is passed to this function.
+    //
+    // The information passed to this function is different based on the first parameter, actionCode.
+    // You can see what information is passed for each action code here https://www.sqlite.org/c3ref/c_alter_table.html.
+    // Note that as of writing this comment, the page seems slightly out of date and the parameter numbers are all off
+    // by one. That is, the first paramter passed to the callback funciton is actually the integer action code, not the
+    // second.
     int _authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4);
 
     // It's possible for certain transactions (namely, timing out a write operation, see here:

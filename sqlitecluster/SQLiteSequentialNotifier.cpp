@@ -54,7 +54,7 @@ SQLiteSequentialNotifier::RESULT SQLiteSequentialNotifier::waitFor(uint64_t valu
             if (_globalResult == RESULT::CANCELED || state->result == RESULT::CANCELED) {
                 // It's possible that we hit the timeout here after `cancel()` has set the global value, but before we received the notification.
                 // This isn't a problem, and we can jump back to the top of the loop and check again. If there's some problem, we'll see it there.
-                SINFO("Hit 1s timeout while global cancel " << (_globalResult == RESULT::CANCELED) << " or " << " specific cancel " << (state->result == RESULT::CANCELED));
+                SINFO("Hit 1s timeout while global cancel " << (_globalResult == RESULT::CANCELED) << " or specific cancel " << (state->result == RESULT::CANCELED));
                 continue;
             }
         }
@@ -114,11 +114,12 @@ void SQLiteSequentialNotifier::cancel(uint64_t cancelAfter) {
         auto& valueThreadMap = *valueThreadMapPtr;
         // If cancelAfter is specified, start from that value. Otherwise, we start from the beginning.
         auto start = _cancelAfter ? valueThreadMap.upper_bound(_cancelAfter) : valueThreadMap.begin();
-        SINFO("[performance] Next value to cancel after " << cancelAfter << " is " << start->first);
         if (start == valueThreadMap.end()) {
             // There's nothing to remove.
+            SINFO("[performance] No available values to cancel after " << cancelAfter);
             return;
         }
+        SINFO("[performance] Next value to cancel after " << cancelAfter << " is " << start->first);
 
         // Now iterate across whatever's remaining and mark it canceled.
         auto current = start;

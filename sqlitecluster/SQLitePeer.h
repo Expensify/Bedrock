@@ -8,8 +8,7 @@ class SQLitePeer {
     enum class Response {
         NONE,
         APPROVE,
-        DENY,
-        ABSTAIN
+        DENY
     };
 
     enum class PeerPostPollStatus {
@@ -90,6 +89,9 @@ class SQLitePeer {
     atomic<Response> transactionResponse;
     atomic<string> version;
     atomic<uint64_t> lastPingTime;
+
+    // Set to true when this peer is known to be unusable, I.e., when it has a database that is forked from us.
+    atomic<bool> forked;
 
   private:
     // For initializing the permafollower value from the params list.

@@ -401,7 +401,10 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     // Reset before the query, as it's possible the query sets these.
     _autoRolledBack = false;
 
-    SINFO("[concurrent] Beginning transaction");
+    // We actively track transaction counts incrementing and decrementing to log the number of active open transactions at any given moment.
+    _sharedData.openTransactionCount++;
+
+    SINFO("[concurrent] Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
 
@@ -566,18 +569,35 @@ bool SQLite::write(const string& query) {
     }
 
     // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
-    return _writeIdempotent(query);
+    SQResult ignore;
+    return _writeIdempotent(query, ignore);
+}
+
+bool SQLite::write(const string& query, SQResult& result) {
+    if (_noopUpdateMode) {
+        SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
+        return true;
+    }
+
+    // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
+    return _writeIdempotent(query, result);
 }
 
 bool SQLite::writeIdempotent(const string& query) {
-    return _writeIdempotent(query);
+    SQResult ignore;
+    return _writeIdempotent(query, ignore);
+}
+
+bool SQLite::writeIdempotent(const string& query, SQResult& result) {
+    return _writeIdempotent(query, result);
 }
 
 bool SQLite::writeUnmodified(const string& query) {
-    return _writeIdempotent(query, true);
+    SQResult ignore;
+    return _writeIdempotent(query, ignore, true);
 }
 
-bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
+bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries) {
     SASSERT(_insideTransaction);
     _queryCache.clear();
     _queryCount++;
@@ -600,7 +620,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     {
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         if (_enableRewrite) {
-            resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, true);
+            resultCode = SQuery(_db, "read/write transaction", query, result, 2'000'000, true);
             if (resultCode == SQLITE_AUTH) {
                 // Run re-written query.
                 _currentlyRunningRewritten = true;
@@ -610,7 +630,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
                 _currentlyRunningRewritten = false;
             }
         } else {
-            resultCode = SQuery(_db, "read/write transaction", query);
+            resultCode = SQuery(_db, "read/write transaction", query, result);
         }
     }
 
@@ -801,6 +821,8 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _mutexLocked = false;
         _queryCache.clear();
 
+        _sharedData.openTransactionCount--;
+
         if (preCheckpointCallback != nullptr) {
             (*preCheckpointCallback)();
         }
@@ -855,6 +877,8 @@ void SQLite::rollback() {
             SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
             _rollbackElapsed += STimeNow() - before;
         }
+
+        _sharedData.openTransactionCount--;
 
         // Finally done with this.
         _insideTransaction = false;
@@ -1010,14 +1034,21 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
             !strcmp(detail2, "strftime") ||
             !strcmp(detail2, "changes") ||
             !strcmp(detail2, "last_insert_rowid") ||
-            !strcmp(detail2, "sqlite3_version")
+            !strcmp(detail2, "sqlite_version")
         ) {
             _isDeterministicQuery = false;
         }
 
-        if (!strcmp(detail2, "current_timestamp")) {
+        // Prevent using certain non-deterministic functions in writes which could cause synchronization with followers to
+        // result in inconsistent data. Some are not included here because they can be used in a deterministic way that is valid.
+        // i.e. you can do UPDATE x = DATE('2024-01-01') and its deterministic whereas UPDATE x = DATE('now') is not. It's up to
+        // callers to prevent using these functions inappropriately.
+        if (!strcmp(detail2, "current_timestamp") ||
+            !strcmp(detail2, "random") ||
+            !strcmp(detail2, "last_insert_rowid") ||
+            !strcmp(detail2, "changes") ||
+            !strcmp(detail2, "sqlite_version")) {
             if (_currentlyWriting) {
-                // Prevent using `current_timestamp` in writes which could cause synchronization with followers to result in inconsistent data.
                 return SQLITE_DENY;
             }
         }
@@ -1190,6 +1221,7 @@ string SQLite::getLastConflictTable() const {
 SQLite::SharedData::SharedData() :
 nextJournalCount(0),
 _commitEnabled(true),
+openTransactionCount(0),
 _commitLockTimer("commit lock timer", {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
     {"SHARED", chrono::steady_clock::duration::zero()},

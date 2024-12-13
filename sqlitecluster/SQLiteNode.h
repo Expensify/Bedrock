@@ -181,7 +181,7 @@ class SQLiteNode : public STCPManager {
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
 
-    // Look up the correct peer by the name it supplies in a NODE_LOGIN
+    // Look up the correct peer by the name it supplies in a LOGIN
     // message. Does not lock, but this method is const and all it does is
     // access _peerList and peer->name, both of which are const. So it is safe
     // to call from other public functions.
@@ -276,6 +276,8 @@ class SQLiteNode : public STCPManager {
     // commitCount that we do, this will return null.
     void _updateSyncPeer();
 
+    void _dieIfForkedFromCluster();
+
     const string _commandAddress;
     const string _name;
     const vector<SQLitePeer*> _peerList;
@@ -291,7 +293,7 @@ class SQLiteNode : public STCPManager {
     const string _version;
 
     // These are sockets that have been accepted on the node port but have not yet been associated with a peer (because
-    // they need to send a NODE_LOGIN message with their name first).
+    // they need to send a LOGIN message with their name first).
     set<Socket*> _unauthenticatedIncomingSockets;
 
     // The write consistency requested for the current in-progress commit.
@@ -383,13 +385,6 @@ class SQLiteNode : public STCPManager {
     // Debugging info. Log the current number of transactions we're actually performing in replicate threads.
     // This can be removed once we've figured out why replication falls behind. See this issue: https://github.com/Expensify/Expensify/issues/210528
     atomic<size_t> _concurrentReplicateTransactions = 0;
-
-    // We keep a set of strings that are the names of nodes we've forked from, in the case we ever receive a hash mismatch while trying to synchronize.
-    // Whenever we become LEADING or FOLLOWING this is cleared. This resets the case where one node has forked, we attempt to synchronize from it, and fail,
-    // but later synchronize from someone else. Once we've come up completely, we no longer "hold a grudge" against this node, which will likely get fixed
-    // while we're online.
-    // In the event that this list becomes longer than half the cluster size, the node kills itself and logs that it's in an unrecoverable state.
-    set<string> _forkedFrom;
 
     // A pointer to a SQLite instance that is passed to plugin's stateChanged function. This prevents plugins from operating on the same handle that
     // the sync node is when they run queries in stateChanged.
