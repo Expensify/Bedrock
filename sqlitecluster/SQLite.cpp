@@ -995,7 +995,7 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
     // UDPATE or DELETE, we want to treat the qhole query as UPDATE or DELETE.
     // It's up to the caller to clear this.
     if (actionCode == SQLITE_DELETE || actionCode == SQLITE_UPDATE) {
-        _inUpdateOrDelete = _inUpdateOrDelete || true;
+        _inUpdateOrDelete = true;
     }
 
     // If we've enabled re-writing, see if we need to re-write this query.

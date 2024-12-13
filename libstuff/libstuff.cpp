@@ -2662,7 +2662,6 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         if ((tries + 1) < MAX_TRIES) {
             sleep(1);
         }
-        SDEBUG("finished: " << sql.substr(0, 20000));
     }
 
     if (error == SQLITE_CORRUPT) {
