@@ -646,7 +646,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     _journalName = _journalNames[journalID % _journalNames.size()];
 
     // It's possible to attempt to commit a transaction with no writes. We'll skip truncating the journal in this case to avoid
-    // Turning a no=op into a write.
+    // Turning a no-op into a write.
     if (_uncommittedQuery.size()) {
         // Look up the oldest commit in our chosen journal, and compute the oldest commit we intend to keep.
         SQResult result;
