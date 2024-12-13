@@ -605,13 +605,6 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
     // Must finish everything with semicolon.
     SASSERT(query.empty() || SEndsWith(query, ";"));
 
-    // First, check our current state
-    SQResult results;
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
-    SASSERT(!results.empty() && !results[0].empty());
-    uint64_t schemaBefore = SToUInt64(results[0][0]);
-    uint64_t changesBefore = sqlite3_total_changes(_db);
-
     _currentlyWriting = true;
     // Try to execute the query
     uint64_t before = STimeNow();
@@ -620,25 +613,31 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
     {
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         if (_enableRewrite) {
+            _inUpdateOrDelete = false;
             resultCode = SQuery(_db, "read/write transaction", query, result, 2'000'000, true);
             if (resultCode == SQLITE_AUTH) {
                 // Run re-written query.
                 _currentlyRunningRewritten = true;
                 SASSERT(SEndsWith(_rewrittenQuery, ";"));
+                _inUpdateOrDelete = false;
                 resultCode = SQuery(_db, "read/write transaction", _rewrittenQuery);
                 usedRewrittenQuery = true;
                 _currentlyRunningRewritten = false;
             }
         } else {
+            _inUpdateOrDelete = false;
             resultCode = SQuery(_db, "read/write transaction", query, result);
         }
     }
 
-    bool wasIneffectiveDelete = false;
-    size_t changesMade = sqlite3_changes64(_db);
-    if (_currentlyDeleting && !changesMade) {
-        //SINFO("TYLER ineffective UPDATE/DELETE: " << (usedRewrittenQuery ? _rewrittenQuery : query));
-        wasIneffectiveDelete = true;
+    // Check if this was an UDPATE or DELETE operation that didn't actually make any changes.
+    // This is an optimization to avoid replicating useless queries.
+    bool writeMadeChanges = true;
+    if (_inUpdateOrDelete) {
+        writeMadeChanges = sqlite3_changes64(_db);
+        
+        // Clear this for the next user (shouldn't matter, as it is used here, and would be cleared above).
+        _inUpdateOrDelete = false;
     }
 
     // If we got a constraints error, throw that.
@@ -654,21 +653,9 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
         return false;
     }
 
-    // See if the query changed anything
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
-    SASSERT(!results.empty() && !results[0].empty());
-    uint64_t schemaAfter = SToUInt64(results[0][0]);
-    uint64_t changesAfter = sqlite3_total_changes(_db);
-
     // If something changed, or we're always keeping queries, then save this.
-    if (alwaysKeepQueries || (schemaAfter > schemaBefore) || (changesAfter > changesBefore)) {
+    if (alwaysKeepQueries || writeMadeChanges) {
         _uncommittedQuery += usedRewrittenQuery ? _rewrittenQuery : query;
-    } else {
-        if (wasIneffectiveDelete) {
-            //SINFO("TYLER ineffective UPDATE/DELETE: " << (usedRewrittenQuery ? _rewrittenQuery : query));
-        } else {
-            SWARN("TYLER weird write (changes made: " << changesMade << "): " << (usedRewrittenQuery ? _rewrittenQuery : query));
-        }
     }
 
     _currentlyWriting = false;
@@ -1004,15 +991,13 @@ int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const cha
 }
 
 int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4) {
-    SINFO("Query action code: " << actionCode);
+    // We record if we're in an UPDATE or DELETE query. Because multiple action codes happen per query, if any of them are
+    // UDPATE or DELETE, we want to treat the qhole query as UPDATE or DELETE.
+    // It's up to the caller to clear this.
     if (actionCode == SQLITE_DELETE || actionCode == SQLITE_UPDATE) {
-        _currentlyDeleting = true;
-    } else if (actionCode == SQLITE_FUNCTION || actionCode == SQLITE_READ) {
-        // For function, we want to leave this alone, because we don't want to clear `_currentlyDeleting` for DELETE
-        // statments that use functions.
-    } else {
-        _currentlyDeleting = false;
+        _inUpdateOrDelete = _inUpdateOrDelete || true;
     }
+
     // If we've enabled re-writing, see if we need to re-write this query.
     if (_enableRewrite && !_currentlyRunningRewritten && (*_rewriteHandler)(actionCode, detail1, _rewrittenQuery)) {
         // Deny the original query, we'll re-run on the re-written version.
