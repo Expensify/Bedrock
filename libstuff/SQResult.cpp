@@ -151,7 +151,7 @@ SQResultRow& SQResult::operator[](size_t rowNum) {
     try {
         return rows.at(rowNum);
     } catch (const out_of_range& e) {
-        STHROW("Out of range: " + to_string(rowNum));
+        STHROW("Out of range");
     }
 }
 

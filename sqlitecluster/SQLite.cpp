@@ -611,10 +611,6 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
     bool usedRewrittenQuery = false;
     int resultCode = 0;
     {
-        // If I don't do this, we fail to find the table in reads.
-        SQResult discard;
-        SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", discard));
-
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         if (_enableRewrite) {
             _inUpdateOrDelete = false;
