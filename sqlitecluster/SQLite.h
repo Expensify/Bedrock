@@ -509,7 +509,9 @@ class SQLite {
     set<string> _tablesUsed;
 
     // Number of queries that have been attempted in this transaction (for metrics only).
-    mutable int64_t _queryCount = 0;
+    mutable int64_t _readQueryCount = 0;
+
+    mutable int64_t _writeQueryCount = 0;
 
     // Number of queries found in cache in this transaction (for metrics only).
     mutable int64_t _cacheHits = 0;
