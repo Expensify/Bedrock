@@ -645,29 +645,30 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     const int64_t journalID = _sharedData.nextJournalCount++;
     _journalName = _journalNames[journalID % _journalNames.size()];
 
-    // It's possible to attempt to commit a transaction with no writes. We'll skip truncating the journal in this case to avoid
-    // Turning a no-op into a write.
-    if (_uncommittedQuery.size()) {
-        // Look up the oldest commit in our chosen journal, and compute the oldest commit we intend to keep.
-        SQResult result;
-        SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) FROM " + _journalName, result));
-        uint64_t minJournalEntry = result.size() ? SToUInt64(result[0][0]) : 0;
-        uint64_t commitCount = _sharedData.commitCount;
+    // Look up the oldest commit in our chosen journal, and compute the oldest commit we intend to keep.
+    SQResult journalLookupResult;
+    SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) FROM " + _journalName, journalLookupResult));
+    uint64_t minJournalEntry = journalLookupResult.size() ? SToUInt64(journalLookupResult[0][0]) : 0;
+    
+    // Note that this can change before we hold the lock on _sharedData.commitLock, but it doesn't matter yet, as we're only
+    // using it to truncate the journal. We'll reset this value once we acquire that lock.
+    uint64_t commitCount = _sharedData.commitCount;
 
-        // If the commitCount is less than the max journal size, keep everything. Otherwise, keep everything from
-        // commitCount - _maxJournalSize forward. We can't just do the last subtraction part because it overflows our unsigned
-        // int.
-        uint64_t oldestCommitToKeep = commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize;
+    // If the commitCount is less than the max journal size, keep everything. Otherwise, keep everything from
+    // commitCount - _maxJournalSize forward. We can't just do the last subtraction part because it overflows our unsigned
+    // int.
+    uint64_t oldestCommitToKeep = commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize;
 
-        // We limit deletions to a relatively small number to avoid making this extremenly slow for some transactions in the case
-        // where this journal in particular has accumulated a large backlog.
-        static const size_t deleteLimit = 10;
-        if (minJournalEntry < oldestCommitToKeep) {
-            string query = "DELETE FROM " + _journalName + " WHERE id < " + SQ(oldestCommitToKeep) + " LIMIT " + SQ(deleteLimit);
-            SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
-            size_t deletedCount = sqlite3_changes(_db);
-            SINFO("Removed " << deletedCount << " rows from journal " << _journalName << ", oldestToKeep: " << oldestCommitToKeep << ", count:" << commitCount << ", limit: " << _maxJournalSize);
-        }
+    // We limit deletions to a relatively small number to avoid making this extremely slow for some transactions in the case
+    // where this journal in particular has accumulated a large backlog.
+    static const size_t deleteLimit = 10;
+    if (minJournalEntry < oldestCommitToKeep) {
+        auto startUS = STimeNow();
+        string query = "DELETE FROM " + _journalName + " WHERE id < " + SQ(oldestCommitToKeep) + " LIMIT " + SQ(deleteLimit);
+        SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
+        size_t deletedCount = sqlite3_changes(_db);
+        SINFO("Removed " << deletedCount << " rows from journal " << _journalName << ", oldestToKeep: " << oldestCommitToKeep << ", count:"
+               << commitCount << ", limit: " << _maxJournalSize << ", in " << (STimeNow() - startUS) << "us.");
     }
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
@@ -691,7 +692,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
 
     // Now that we've locked anybody else from committing, look up the state of the database. We don't need to lock the
     // SharedData object to get these values as we know it can't currently change.
-    uint64_t commitCount = _sharedData.commitCount;
+    commitCount = _sharedData.commitCount;
 
     // Queue up the journal entry
     string lastCommittedHash = getCommittedHash(); // This is why we need the lock.
