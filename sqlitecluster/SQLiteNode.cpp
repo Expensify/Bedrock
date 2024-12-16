@@ -1850,7 +1850,7 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
             // Store the time at which this happened for diagnostic purposes.
             _lastLostQuorum = STimeNow();
             for (const auto* p : _peerList) {
-                SWARN("[clustersync] Peer " << p->name << " logged in? " << (p->loggedIn ? "TRUE" : "FALSE") << (p->permaFollower ? " (permaFollower)" : ""));
+                SINFO("[clustersync] Peer " << p->name << " logged in? " << (p->loggedIn ? "TRUE" : "FALSE") << (p->permaFollower ? " (permaFollower)" : ""));
             }
             _changeState(SQLiteNodeState::SEARCHING);
         }
