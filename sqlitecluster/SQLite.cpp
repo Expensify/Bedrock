@@ -416,7 +416,8 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     _dbCountAtStart = getCommitCount();
     _queryCache.clear();
     _tablesUsed.clear();
-    _queryCount = 0;
+    _readQueryCount = 0;
+    _writeQueryCount = 0;
     _cacheHits = 0;
     _beginElapsed = STimeNow() - before;
     _readElapsed = 0;
@@ -512,7 +513,7 @@ string SQLite::read(const string& query) const {
 bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) const {
     uint64_t before = STimeNow();
     bool queryResult = false;
-    _queryCount++;
+    _readQueryCount++;
     auto foundQuery = _queryCache.find(query);
     if (foundQuery != _queryCache.end()) {
         result = foundQuery->second;
@@ -600,7 +601,7 @@ bool SQLite::writeUnmodified(const string& query) {
 bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries) {
     SASSERT(_insideTransaction);
     _queryCache.clear();
-    _queryCount++;
+    _writeQueryCount++;
 
     // Must finish everything with semicolon.
     SASSERT(query.empty() || SEndsWith(query, ";"));
@@ -829,9 +830,10 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
             _sharedData.checkpointInProgress.clear();
         }
         SINFO(description << " COMMIT " << SToStr(_sharedData.commitCount) << " complete in " << time << ". Wrote " << (endPages - startPages)
-              << " pages. WAL file size is " << sz << " bytes. " << _queryCount << " queries attempted, " << _cacheHits
+              << " pages. WAL file size is " << sz << " bytes. " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits
               << " served from cache. Used journal " << _journalName);
-        _queryCount = 0;
+        _readQueryCount = 0;
+        _writeQueryCount = 0;
         _cacheHits = 0;
         _dbCountAtStart = 0;
         _lastConflictPage = 0;
@@ -886,8 +888,9 @@ void SQLite::rollback() {
         SINFO("Rolling back but not inside transaction, ignoring.");
     }
     _queryCache.clear();
-    SDEBUG("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
-    _queryCount = 0;
+    SINFO("[performance] Transaction rollback with " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits << " served from cache.");
+    _readQueryCount = 0;
+    _writeQueryCount = 0;
     _cacheHits = 0;
     _dbCountAtStart = 0;
 }
