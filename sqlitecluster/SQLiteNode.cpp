@@ -56,20 +56,6 @@
 // dbCountAtStart:   The highest committed transaction in the DB at the start of this transaction on leader, for
 //                   optimizing replication.
 
-// NOTE: This comment as well as NODE_LOGIN should be removed after https://github.com/Expensify/Bedrock/pull/1999 is deployed.
-// On LOGIN vs NODE_LOGIN.
-// _onConnect sends a LOGIN message.
-// _onConnect is called in exctly two places:
-// 1. In response to a NODE_LOGIN message received on a newly connected socket on the sync port. It's expected when
-//    establishing a connection, a node sends this NODE_LOGIN as its first message.
-// 2. Immediately following establishing a TCP connection to another node and sending a NODE_LOGIN message. In the case that
-//    we are the initiating node, we immediately queue three messages:
-//    1. NODE_LOGIN
-//    2. PING
-//    3. LOGIN
-//
-// When we receive a NODE_LOGIN, we immediately respond with a PING followed by a LOGIN (by calling _onConnect).
-
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
 
@@ -1269,7 +1255,10 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency/1000 << "ms latency)");
             return;
         } else if (SIEquals(message.methodLine, "NODE_LOGIN")) {
-            // Do nothing, this keeps this code from warning until NODE_LOGIN is deprecated.
+            // We need to return early here to ignore this deprecated message and avoid throwing:
+            // STHROW("not logged in");
+            // Below. We can remove this check after one more deploy cycle.
+            // https://github.com/Expensify/Expensify/issues/450953
             return;
         }
 
@@ -1640,6 +1629,15 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 throw e;
             }
         } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
+            if (_state != SQLiteNodeState::FOLLOWING) {
+                // These messages are only valid while following, but we do not throw if we receive them in other states, as
+                // it's not neccesarily an error. Specifically, as we switch away from FOLLOWING, there may still be a stream
+                // of transactions being broadcast. We do not attempt to handle these, as we keep careful count of which
+                // replication threads are currently running, and reset the replication state tracking when we're not following.
+                // Attempting to handle replication messages in some other state will break that tracking.
+                SINFO("Ignoring " << message.methodLine << " in state " << stateName(_state));
+                return;
+            }
             if (_replicationThreadsShouldExit) {
                 SINFO("Discarding replication message, stopping FOLLOWING");
             } else {
@@ -1852,7 +1850,7 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
             // Store the time at which this happened for diagnostic purposes.
             _lastLostQuorum = STimeNow();
             for (const auto* p : _peerList) {
-                SWARN("[clustersync] Peer " << p->name << " logged in? " << (p->loggedIn ? "TRUE" : "FALSE") << (p->permaFollower ? " (permaFollower)" : ""));
+                SINFO("[clustersync] Peer " << p->name << " logged in? " << (p->loggedIn ? "TRUE" : "FALSE") << (p->permaFollower ? " (permaFollower)" : ""));
             }
             _changeState(SQLiteNodeState::SEARCHING);
         }
@@ -2544,7 +2542,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // with peers, so we store any that we can remove in this list.
     list<Socket*> socketsToRemove;
 
-    // Check each new connection for a NODE_LOGIN message.
+    // Check each new connection for a LOGIN message.
     for (auto socket : _unauthenticatedIncomingSockets) {
         STCPManager::postPoll(fdm, *socket);
         try {
@@ -2556,7 +2554,9 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             int messageSize = message.deserialize(socket->recvBuffer);
             if (messageSize) {
                 socket->recvBuffer.consumeFront(messageSize);
-                // Allow either LOGIN or NODE_LOGIN until we deprecate NODE_LOGIN.
+                // Old nodes, for one more upgrade cycle, will still send `NODE_LOGIN`. We can remove this check after this
+                // code is deployed.
+                // See: https://github.com/Expensify/Expensify/issues/450953
                 if (SIEquals(message.methodLine, "NODE_LOGIN") || SIEquals(message.methodLine, "LOGIN")) {
                     SQLitePeer* peer = getPeerByName(message["Name"]);
                     if (peer) {
@@ -2582,7 +2582,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         STHROW("Unauthenticated node '" + message["Name"] + "' attempted to connected, rejecting.");
                     }
                 } else {
-                    STHROW("expecting LOGIN or NODE_LOGIN");
+                    STHROW("expecting LOGIN");
                 }
             } else if (STimeNow() > socket->lastRecvTime + 5'000'000) {
                 STHROW("Incoming socket didn't send a message for over 5s, closing.");
@@ -2605,10 +2605,6 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         switch (result) {
             case SQLitePeer::PeerPostPollStatus::JUST_CONNECTED:
             {
-                // When NODE_LOGIN is deprecated, we can remove the next 3 lines.
-                SData login("NODE_LOGIN");
-                login["Name"] = _name;
-                _sendToPeer(peer, login);
                 _onConnect(peer);
                 _sendPING(peer);
             }
