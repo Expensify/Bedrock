@@ -356,6 +356,7 @@ class SQLite {
     static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
     static uint64_t initializeJournalSize(sqlite3* db, const vector<string>& journalNames);
     void commonConstructorInitialization(bool hctree = false);
+    static int getCheckpointModeFromString(const string& checkpointModeString);
 
     // The filename of this DB, canonicalized to its full path on disk.
     const string _filename;
@@ -530,6 +531,6 @@ class SQLite {
     // Set to true inside of a write query.
     bool _currentlyWriting{false};
 
-    // One of PASSIVE|FULL|RESTART|TRUNCATE, translated to corresponding values to be passed to sqlite3_wal_checkpoint_v2.
-    string _checkpointMode;
+    // One of 0|1|2|3 (a.k.a. PASSIVE|FULL|RESTART|TRUNCATE), which is the value to be passed to sqlite3_wal_checkpoint_v2.
+    int _checkpointMode;
 };

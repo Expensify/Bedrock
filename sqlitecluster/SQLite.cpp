@@ -232,7 +232,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _cacheSize(cacheSize),
     _mmapSizeGB(mmapSizeGB),
-    _checkpointMode(checkpointMode)
+    _checkpointMode(getCheckpointModeFromString(checkpointMode))
 {
     commonConstructorInitialization(hctree);
 }
@@ -822,24 +822,12 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
                 auto start = STimeNow();
                 int framesCheckpointed = 0;
 
-                // We default to PASSIVE checkpoint everywhere as that has been the value proven to work fine for many years.
-                if (_checkpointMode != "PASSIVE") {
-                    int checkpointMode = SQLITE_CHECKPOINT_PASSIVE;
-                    if (_checkpointMode == "FULL") {
-                        checkpointMode = SQLITE_CHECKPOINT_FULL;
-                    } else if (_checkpointMode == "RESTART") {
-                        checkpointMode = SQLITE_CHECKPOINT_RESTART;
-                    } else if (_checkpointMode == "TRUNCATE") {
-                        checkpointMode = SQLITE_CHECKPOINT_TRUNCATE;
-                    }
-                    // For non-passive checkpoints, we must set a busy timeout in order to wait on any readers.
-                    // We set it to 2 minutes as the majority of transactions should take less than that.
+                // For non-passive checkpoints, we must set a busy timeout in order to wait on any readers.
+                // We set it to 2 minutes as the majority of transactions should take less than that.
+                if (_checkpointMode != SQLITE_CHECKPOINT_PASSIVE) {
                     sqlite3_busy_timeout(_db, 120'000);
-                    sqlite3_wal_checkpoint_v2(_db, 0, checkpointMode, NULL, &framesCheckpointed);
-                    sqlite3_busy_timeout(_db, 0);
-                } else {
-                    sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, NULL, &framesCheckpointed);
                 }
+                sqlite3_wal_checkpoint_v2(_db, 0, _checkpointMode, NULL, &framesCheckpointed);
                 auto end = STimeNow();
                 SINFO(_checkpointMode << " checkpoint complete with " << framesCheckpointed << " frames checkpointed of " << _sharedData.outstandingFramesToCheckpoint << " frames outstanding in " << (end - start) << "us.");
 
@@ -863,6 +851,22 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
     // calling rollback().
     return result;
+}
+
+int SQLite::getCheckpointModeFromString(const string& checkpointModeString) {
+    if (checkpointModeString == "PASSIVE") {
+        return SQLITE_CHECKPOINT_PASSIVE;
+    }
+    if (checkpointModeString == "FULL") {
+        return SQLITE_CHECKPOINT_FULL;
+    }
+    if (checkpointModeString == "RESTART") {
+        return SQLITE_CHECKPOINT_RESTART;
+    }
+    if (checkpointModeString == "TRUNCATE") {
+        return SQLITE_CHECKPOINT_TRUNCATE;
+    }
+    SERROR("Invalid checkpoint type: " << checkpointModeString);
 }
 
 map<uint64_t, tuple<string, string, uint64_t>> SQLite::popCommittedTransactions() {

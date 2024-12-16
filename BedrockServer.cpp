@@ -1267,11 +1267,6 @@ BedrockServer::BedrockServer(const SData& args_)
     sort(versions.begin(), versions.end());
     _version = SComposeList(versions, ":");
 
-    const set<string> validCheckpointModes = {"PASSIVE", "FULL", "RESTART", "TRUNCATE"};
-    if (validCheckpointModes.find(args["-checkpointMode"]) == validCheckpointModes.end()) {
-        SERROR("Invalid checkpoint mode " << args["-checkpointMode"]);
-    }
-
     list<string> pluginString;
     for (auto& p : plugins) {
         pluginString.emplace_back(p.first);
