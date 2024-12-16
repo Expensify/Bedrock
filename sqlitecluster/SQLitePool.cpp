@@ -8,9 +8,10 @@ SQLitePool::SQLitePool(size_t maxDBs,
                        int maxJournalSize,
                        int minJournalTables,
                        int64_t mmapSizeGB,
-                       bool hctree)
+                       bool hctree,
+                       const string& checkpointMode)
 : _maxDBs(max(maxDBs, 1ul)),
-  _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, mmapSizeGB, hctree),
+  _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, mmapSizeGB, hctree, checkpointMode),
   _objects(_maxDBs, nullptr)
 {
 }

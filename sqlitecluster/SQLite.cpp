@@ -223,7 +223,7 @@ void SQLite::commonConstructorInitialization(bool hctree) {
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, int64_t mmapSizeGB, bool hctree) :
+               int minJournalTables, int64_t mmapSizeGB, bool hctree, const string& checkpointMode) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB, hctree)),
@@ -231,7 +231,8 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _sharedData(initializeSharedData(_db, _filename, _journalNames, hctree)),
     _journalSize(initializeJournalSize(_db, _journalNames)),
     _cacheSize(cacheSize),
-    _mmapSizeGB(mmapSizeGB)
+    _mmapSizeGB(mmapSizeGB),
+    _checkpointMode(checkpointMode)
 {
     commonConstructorInitialization(hctree);
 }
@@ -244,7 +245,8 @@ SQLite::SQLite(const SQLite& from) :
     _sharedData(from._sharedData),
     _journalSize(from._journalSize),
     _cacheSize(from._cacheSize),
-    _mmapSizeGB(from._mmapSizeGB)
+    _mmapSizeGB(from._mmapSizeGB),
+    _checkpointMode(from._checkpointMode)
 {
     // This can always pass "true" because the copy constructor does not need to set the DB to WAL2 mode, it would have been set in the object being copied.
     commonConstructorInitialization(true);
@@ -819,11 +821,27 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
             if (_sharedData.outstandingFramesToCheckpoint) {
                 auto start = STimeNow();
                 int framesCheckpointed = 0;
-                sqlite3_busy_timeout(_db, 120'000); // 2 minutes
-                sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_FULL, NULL, &framesCheckpointed);
-                sqlite3_busy_timeout(_db, 0);
+
+                // We default to PASSIVE checkpoint everywhere as that has been the value proven to work fine for many years.
+                if (_checkpointMode != "PASSIVE") {
+                    int checkpointMode = SQLITE_CHECKPOINT_PASSIVE;
+                    if (_checkpointMode == "FULL") {
+                        checkpointMode = SQLITE_CHECKPOINT_FULL;
+                    } else if (_checkpointMode == "RESTART") {
+                        checkpointMode = SQLITE_CHECKPOINT_RESTART;
+                    } else if (_checkpointMode == "TRUNCATE") {
+                        checkpointMode = SQLITE_CHECKPOINT_TRUNCATE;
+                    }
+                    // For non-passive checkpoints, we must set a busy timeout in order to wait on any readers.
+                    // We set it to 2 minutes as the majority of transactions should take less than that.
+                    sqlite3_busy_timeout(_db, 120'000);
+                    sqlite3_wal_checkpoint_v2(_db, 0, checkpointMode, NULL, &framesCheckpointed);
+                    sqlite3_busy_timeout(_db, 0);
+                } else {
+                    sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, NULL, &framesCheckpointed);
+                }
                 auto end = STimeNow();
-                SINFO("Checkpointed " << framesCheckpointed << " (total) frames of " << _sharedData.outstandingFramesToCheckpoint << " in " << (end - start) << "us.");
+                SINFO(_checkpointMode << " checkpoint complete with " << framesCheckpointed << " frames checkpointed of " << _sharedData.outstandingFramesToCheckpoint << " frames outstanding in " << (end - start) << "us.");
 
                 // It might not actually be 0, but we'll just let sqlite tell us what it is next time _walHookCallback runs.
                 _sharedData.outstandingFramesToCheckpoint = 0;
