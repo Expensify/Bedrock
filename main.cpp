@@ -236,6 +236,7 @@ int main(int argc, char* argv[]) {
              << endl;
         cout << "-maxJournalSize <#commits>  Number of commits to retain in the historical journal (default 1000000)"
              << endl;
+        cout << "-checkpointMode <mode>      Accepts PASSIVE|FULL|RESTART|TRUNCATE, which is the value passed to https://www.sqlite.org/c3ref/wal_checkpoint_v2.html" << endl;
         cout << endl;
         cout << "Quick Start Tips:" << endl;
         cout << "-----------------" << endl;
@@ -299,6 +300,9 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
     SETDEFAULT("-enableMultiWrite", "true");
+
+    // We default to PASSIVE checkpoint everywhere as that has been the value proven to work fine for many years.
+    SETDEFAULT("-checkpointMode", "PASSIVE");
 
     args["-plugins"] = SComposeList(loadPlugins(args));
 
