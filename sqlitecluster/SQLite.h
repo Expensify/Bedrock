@@ -57,7 +57,7 @@ class SQLite {
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-           int64_t mmapSizeGB = 0, bool hctree = false);
+           int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE");
 
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
@@ -355,6 +355,7 @@ class SQLite {
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree);
     static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
     void commonConstructorInitialization(bool hctree = false);
+    static int getCheckpointModeFromString(const string& checkpointModeString);
 
     // The filename of this DB, canonicalized to its full path on disk.
     const string _filename;
@@ -527,4 +528,7 @@ class SQLite {
 
     // Set to true inside of a write query.
     bool _currentlyWriting{false};
+
+    // One of 0|1|2|3 (a.k.a. PASSIVE|FULL|RESTART|TRUNCATE), which is the value to be passed to sqlite3_wal_checkpoint_v2.
+    int _checkpointMode;
 };
