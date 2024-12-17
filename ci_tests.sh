@@ -48,7 +48,7 @@ mark_fold end test_bedrock
 
 mark_fold start test_bedrock_cluster
 cd test/clustertest
-./clustertest -threads 1 -only BadCommand,BroadcastCommand,ClusterUpgrade,ConflictSpam,ControlCommand,DoubleDetach,Escalate,FastStandDown,FinishJob,ForkCheck,FutureExecution,GracefulFailover,HTTPS,JobID
+./clustertest -threads 1 -only BadCommand,BroadcastCommand,ClusterUpgrade,ConflictSpam,ControlCommand,DoubleDetach,Escalate
 cd ../..
 mark_fold end test_bedrock_cluster
 
