@@ -48,8 +48,7 @@ mark_fold end test_bedrock
 
 mark_fold start test_bedrock_cluster
 cd test/clustertest
-./clustertest -threads 1 -only DoubleDetach
-# ControlCommand,DoubleDetach,Escalate
+./clustertest -threads 8
 cd ../..
 mark_fold end test_bedrock_cluster
 
