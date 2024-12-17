@@ -28,7 +28,7 @@ struct DoubleDetachTest : tpunit::TestFixture {
 
         // Detach
         cout << "B" << endl;
-        SData detachCommand("detach");
+        SData detachCommand("Detach");
         cout << "C" << endl;
         follower.executeWaitVerifyContent(detachCommand, "203 DETACHING", true);
 
@@ -39,6 +39,11 @@ struct DoubleDetachTest : tpunit::TestFixture {
         cout << "E" << endl;
         follower.executeWaitVerifyContent(detachCommand, "400 Already detached", true);
         cout << "F" << endl;
+
+        // Re-attach to make shutdown clean.
+        SData attachCommand("Attach");
+        follower.executeWaitVerifyContent(attachCommand, "204 ATTACHING", true);
+        cout << "G" << endl;
     }
 
 } __DoubleDetachTest;
