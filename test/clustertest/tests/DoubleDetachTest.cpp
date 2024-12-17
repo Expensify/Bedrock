@@ -26,13 +26,17 @@ struct DoubleDetachTest : tpunit::TestFixture {
         BedrockTester& follower = tester->getTester(1);
 
         // Detach
-        SData detachCommand("detach");
+        SData detachCommand("Detach");
         follower.executeWaitVerifyContent(detachCommand, "203 DETACHING", true);
 
         // Wait for it to detach
         sleep(3);
 
         follower.executeWaitVerifyContent(detachCommand, "400 Already detached", true);
+
+        // Re-attach to make shutdown clean.
+        SData attachCommand("Attach");
+        follower.executeWaitVerifyContent(attachCommand, "204 ATTACHING", true);
     }
 
 } __DoubleDetachTest;

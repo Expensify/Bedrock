@@ -354,7 +354,6 @@ class SQLite {
     static SharedData& initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool hctree);
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree);
     static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
-    static uint64_t initializeJournalSize(sqlite3* db, const vector<string>& journalNames);
     void commonConstructorInitialization(bool hctree = false);
 
     // The filename of this DB, canonicalized to its full path on disk.
@@ -374,9 +373,6 @@ class SQLite {
 
     // The name of the journal table that this particular DB handle with write to.
     string _journalName;
-
-    // The current size of the journal, in rows. TODO: Why isn't this in SharedData?
-    uint64_t _journalSize;
 
     // True when we have a transaction in progress.
     bool _insideTransaction = false;
