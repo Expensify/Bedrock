@@ -220,6 +220,12 @@ void SQLite::commonConstructorInitialization(bool hctree) {
 
     // Always set synchronous commits to off for best commit performance in WAL mode.
     SASSERT(!SQuery(_db, "setting synchronous commits to off", "PRAGMA synchronous = OFF;"));
+
+    // For non-passive checkpoints, we must set a busy timeout in order to wait on any readers.
+    // We set it to 2 minutes as the majority of transactions should take less than that.
+    if (_checkpointMode != SQLITE_CHECKPOINT_PASSIVE) {
+        sqlite3_busy_timeout(_db, 120'000);
+    }
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
@@ -821,15 +827,9 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
             if (_sharedData.outstandingFramesToCheckpoint) {
                 auto start = STimeNow();
                 int framesCheckpointed = 0;
-
-                // For non-passive checkpoints, we must set a busy timeout in order to wait on any readers.
-                // We set it to 2 minutes as the majority of transactions should take less than that.
-                if (_checkpointMode != SQLITE_CHECKPOINT_PASSIVE) {
-                    sqlite3_busy_timeout(_db, 120'000);
-                }
                 sqlite3_wal_checkpoint_v2(_db, 0, _checkpointMode, NULL, &framesCheckpointed);
                 auto end = STimeNow();
-                SINFO(_checkpointMode << " checkpoint complete with " << framesCheckpointed << " frames checkpointed of " << _sharedData.outstandingFramesToCheckpoint << " frames outstanding in " << (end - start) << "us.");
+                SINFO("Checkpoint with type=" << _checkpointMode << " complete with " << framesCheckpointed << " frames checkpointed of " << _sharedData.outstandingFramesToCheckpoint << " frames outstanding in " << (end - start) << "us.");
 
                 // It might not actually be 0, but we'll just let sqlite tell us what it is next time _walHookCallback runs.
                 _sharedData.outstandingFramesToCheckpoint = 0;
