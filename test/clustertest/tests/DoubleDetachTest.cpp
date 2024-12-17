@@ -23,16 +23,22 @@ struct DoubleDetachTest : tpunit::TestFixture {
     void testDoubleDetach()
     {
         // Test a control command
+        cout << "A" << endl;
         BedrockTester& follower = tester->getTester(1);
 
         // Detach
+        cout << "B" << endl;
         SData detachCommand("detach");
+        cout << "C" << endl;
         follower.executeWaitVerifyContent(detachCommand, "203 DETACHING", true);
 
         // Wait for it to detach
+        cout << "D" << endl;
         sleep(3);
 
+        cout << "E" << endl;
         follower.executeWaitVerifyContent(detachCommand, "400 Already detached", true);
+        cout << "F" << endl;
     }
 
 } __DoubleDetachTest;
