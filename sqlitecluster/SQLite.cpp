@@ -331,13 +331,17 @@ void SQLite::exclusiveLockDB() {
     // writes in this case.
     // So when these are both locked by the same thread at the same time, `commitLock` is always locked first, and we do it the same way here to avoid deadlocks.
     try {
+        SINFO("Locking commitLock");
         _sharedData.commitLock.lock();
+        SINFO("commitLock Locked");
     } catch (const system_error& e) {
         SWARN("Caught system_error calling _sharedData.commitLock, code: " << e.code() << ", message: " << e.what());
         throw;
     }
     try {
+        SINFO("Locking writeLock");
         _sharedData.writeLock.lock();
+        SINFO("writeLock Locked");
     } catch(const system_error& e) {
         SWARN("Caught system_error calling _sharedData.writeLock, code: " << e.code() << ", message: " << e.what());
         throw;
@@ -673,6 +677,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     static const size_t deleteLimit = 10;
     if (minJournalEntry < oldestCommitToKeep) {
         auto startUS = STimeNow();
+        shared_lock<shared_mutex> lock(_sharedData.writeLock);
         string query = "DELETE FROM " + _journalName + " WHERE id < " + SQ(oldestCommitToKeep) + " LIMIT " + SQ(deleteLimit);
         SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
         size_t deletedCount = sqlite3_changes(_db);
