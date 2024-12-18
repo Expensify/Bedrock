@@ -685,12 +685,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
                << commitCount << ", limit: " << _maxJournalSize << ", in " << (STimeNow() - startUS) << "us.");
     }
 
-    // So let's say that a replicate thread is running the above. Neither the write or commit lock is held.
-
-    // Let's say another thread calls `exclusiveLockDB`. It grabs the commit lock.
-    // We grab the write lock above. Other thread waits. We release writeLock, it acquires it. Writes are now blocked.
-    // We attempot to grab commitLock below. We block.
-
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     if (!_mutexLocked) {
         auto start = STimeNow();

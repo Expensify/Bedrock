@@ -1721,7 +1721,6 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         // Coalesce all of the peer data into one value to return or return
         // an error message if we timed out getting the peerList data.
         list<string> peerList;
-        // This blocks during state change
         list<STable> peerData = getPeerInfo();
         for (const STable& peerTable : peerData) {
             peerList.push_back(SComposeJSONObject(peerTable));

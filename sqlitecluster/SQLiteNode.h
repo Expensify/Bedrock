@@ -34,7 +34,7 @@
  * Any public methods must not call other public methods.
  *
  * `_replicate` is a special exception because it runs in multiple threads internally. It needs to handle locking if it
- * changes any internal state (and it calls `changeState`, which it does).
+ * changes any internal state (and it calls `changeState`, which does).
  *
  */
 
