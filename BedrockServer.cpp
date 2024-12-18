@@ -97,7 +97,7 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
     SINFO("Setting dbPool size to: " << _dbPoolSize);
-    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-hctree"));
+    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-hctree"), args["-checkpointMode"]);
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
@@ -358,7 +358,7 @@ void BedrockServer::sync()
                 committingCommand = true;
                 _syncNode->startCommit(SQLiteNode::QUORUM);
                 _lastQuorumCommandTime = STimeNow();
-                
+
                 // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
                 _notifyDoneSync.push(true);
                 SDEBUG("Finished sending distributed transaction for db upgrade.");
@@ -1695,14 +1695,14 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
             size_t totalCount = 0;
             for (const auto& s : _crashCommands) {
                 totalCount += s.second.size();
-                
+
                 vector<string> paramsArray;
                 for (const STable& params : s.second) {
                     if (!params.empty()) {
                         paramsArray.push_back(SComposeJSONObject(params));
                     }
                 }
-                
+
                 STable commandObject;
                 commandObject[s.first] = SComposeJSONArray(paramsArray);
                 crashCommandListArray.push_back(SComposeJSONObject(commandObject));
@@ -1823,6 +1823,7 @@ atomic<bool> __quiesceShouldUnlock(false);
 thread* __quiesceThread = nullptr;
 
 void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
+    SINFO("Received control command: " << command->request.methodLine);
     SData& response = command->response;
     string reason = "MANUAL";
     response.methodLine = "200 OK";
@@ -1913,7 +1914,9 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
                 if (dbPoolCopy) {
                     SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
                     SQLite& db = dbScope.db();
+                    SINFO("[quiesce] Exclusive locking DB");
                     db.exclusiveLockDB();
+                    SINFO("[quiesce] Exclusive locked DB");
                     locked = true;
                     while (true) {
                         if (__quiesceShouldUnlock) {
@@ -1936,12 +1939,16 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             response.methodLine = "200 Blocked";
         }
     } else if (SIEquals(command->request.methodLine, "UnblockWrites")) {
+        SINFO("[quiesce] Locking __quiesceLock");
         lock_guard lock(__quiesceLock);
+        SINFO("[quiesce] __quiesceLock locked");
         if (!__quiesceThread) {
             response.methodLine = "200 Not Blocked";
         } else {
             __quiesceShouldUnlock = true;
+            SINFO("[quiesce] Joining __quiesceThread");
             __quiesceThread->join();
+            SINFO("[quiesce] __quiesceThread joined");
             delete __quiesceThread;
             __quiesceThread = nullptr;
             response.methodLine = "200 Unblocked";

@@ -57,7 +57,7 @@ class SQLite {
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-           int64_t mmapSizeGB = 0, bool hctree = false);
+           int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE");
 
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
@@ -354,8 +354,8 @@ class SQLite {
     static SharedData& initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool hctree);
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree);
     static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
-    static uint64_t initializeJournalSize(sqlite3* db, const vector<string>& journalNames);
     void commonConstructorInitialization(bool hctree = false);
+    static int getCheckpointModeFromString(const string& checkpointModeString);
 
     // The filename of this DB, canonicalized to its full path on disk.
     const string _filename;
@@ -374,9 +374,6 @@ class SQLite {
 
     // The name of the journal table that this particular DB handle with write to.
     string _journalName;
-
-    // The current size of the journal, in rows. TODO: Why isn't this in SharedData?
-    uint64_t _journalSize;
 
     // True when we have a transaction in progress.
     bool _insideTransaction = false;
@@ -509,7 +506,9 @@ class SQLite {
     set<string> _tablesUsed;
 
     // Number of queries that have been attempted in this transaction (for metrics only).
-    mutable int64_t _queryCount = 0;
+    mutable int64_t _readQueryCount = 0;
+
+    mutable int64_t _writeQueryCount = 0;
 
     // Number of queries found in cache in this transaction (for metrics only).
     mutable int64_t _cacheHits = 0;
@@ -529,6 +528,9 @@ class SQLite {
 
     // Set to true inside of a write query.
     bool _currentlyWriting{false};
+
+    // One of 0|1|2|3 (a.k.a. PASSIVE|FULL|RESTART|TRUNCATE), which is the value to be passed to sqlite3_wal_checkpoint_v2.
+    int _checkpointMode;
 
     bool _inUpdateOrDelete{false};
     bool _inSchemaChange{false};
