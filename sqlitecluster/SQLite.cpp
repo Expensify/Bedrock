@@ -669,12 +669,19 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     static const size_t deleteLimit = 10;
     if (minJournalEntry < oldestCommitToKeep) {
         auto startUS = STimeNow();
+        shared_lock<shared_mutex> lock(_sharedData.writeLock);
         string query = "DELETE FROM " + _journalName + " WHERE id < " + SQ(oldestCommitToKeep) + " LIMIT " + SQ(deleteLimit);
         SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
         size_t deletedCount = sqlite3_changes(_db);
         SINFO("Removed " << deletedCount << " rows from journal " << _journalName << ", oldestToKeep: " << oldestCommitToKeep << ", count:"
                << commitCount << ", limit: " << _maxJournalSize << ", in " << (STimeNow() - startUS) << "us.");
     }
+
+    // So let's say that a replicate thread is running the above. Neither the write or commit lock is held.
+
+    // Let's say another thread calls `exclusiveLockDB`. It grabs the commit lock.
+    // We grab the write lock above. Other thread waits. We release writeLock, it acquires it. Writes are now blocked.
+    // We attempot to grab commitLock below. We block.
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     if (!_mutexLocked) {
