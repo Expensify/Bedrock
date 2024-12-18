@@ -97,7 +97,7 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
     SINFO("Setting dbPool size to: " << _dbPoolSize);
-    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-hctree"));
+    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-hctree"), args["-checkpointMode"]);
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
@@ -358,7 +358,7 @@ void BedrockServer::sync()
                 committingCommand = true;
                 _syncNode->startCommit(SQLiteNode::QUORUM);
                 _lastQuorumCommandTime = STimeNow();
-                
+
                 // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
                 _notifyDoneSync.push(true);
                 SDEBUG("Finished sending distributed transaction for db upgrade.");
@@ -1695,14 +1695,14 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
             size_t totalCount = 0;
             for (const auto& s : _crashCommands) {
                 totalCount += s.second.size();
-                
+
                 vector<string> paramsArray;
                 for (const STable& params : s.second) {
                     if (!params.empty()) {
                         paramsArray.push_back(SComposeJSONObject(params));
                     }
                 }
-                
+
                 STable commandObject;
                 commandObject[s.first] = SComposeJSONArray(paramsArray);
                 crashCommandListArray.push_back(SComposeJSONObject(commandObject));
