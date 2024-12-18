@@ -493,7 +493,12 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
 }
 
 list<STable> SQLiteNode::getPeerInfo() const {
-    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
+    // This does not lock _stateMutex. It follows the rule in `SQLiteNode.h` that says:
+    //  * Alternatively, a public `const` method that is a simple getter for an atomic property can skip the lock.
+    // peer->getData is atomic internally, so we can treat `peer->getData()` as a simple getter for an atomic property.
+    // _peerList is also `const` and so we can iterate this list safely regardless of the lock.
+    // This makes this function a slightly more complex getter for an atomic property, but it's still safe to skip
+    // The state lock here.
     list<STable> peerData;
     for (SQLitePeer* peer : _peerList) {
         peerData.emplace_back(peer->getData());

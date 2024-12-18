@@ -225,6 +225,7 @@ void SQLitePeer::getCommit(uint64_t& count, string& hashString) const {
 }
 
 STable SQLitePeer::getData() const {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
     // Add all of our standard stuff.
     STable result({
         {"name", name},
