@@ -167,7 +167,6 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables) {
 void SQLite::commonConstructorInitialization(bool hctree) {
     // Perform sanity checks.
     SASSERT(!_filename.empty());
-    SASSERT(_cacheSize > 0);
     SASSERT(_maxJournalSize > 0);
 
     // WAL is what allows simultaneous read/writing.
