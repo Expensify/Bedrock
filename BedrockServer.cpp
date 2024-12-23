@@ -1594,7 +1594,7 @@ void BedrockServer::unblockCommandPort(const string& reason) {
     }
 }
 
-virtual void isCommandPortClosed(const string& reason) {
+virtual bool isCommandPortClosed(const string& reason) {
     if (!strlen(reason)) {
         return _isCommandPortLikelyBlocked;
     }
