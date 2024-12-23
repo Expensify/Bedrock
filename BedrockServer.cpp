@@ -253,7 +253,24 @@ void BedrockServer::sync()
 
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
-            _syncNode->postPoll(fdm, nextActivity);
+            _syncNode->postPoll(fdm, nextActivity, [&](const int64_t currentCommitCountDiff){
+                // If the command port is already closed, we don't need to check anything and can early return.
+                if (_isCommandPortLikelyBlocked) {
+                    return;
+                }
+                const string blockReason = "COMMITS_LAGGING_BEHIND";
+                // If 
+                if (currentCommitCountDiff > 50'000) {
+                    SINFO("Node is lagging behind, blocking command port so it can catch up.");
+                    blockCommandPort(blockReason);
+                } else if (currentCommitCountDiff < 10'000 && _commandPortBlockReasons.find(blockReason) == _commandPortBlockReasons.end()) {
+                    // We verify if we have the block reason we expected before unblocking so we don't call unblock every time, which will 
+                    // generate a warning if we don't have the block reason.
+                    SINFO("Node is caught up enough, unblocking command port.");
+                    unblockCommandPort(blockReason);
+                }
+
+            });
             _syncNodeQueuedCommands.postPoll(fdm);
             _notifyDoneSync.postPoll(fdm);
         }
