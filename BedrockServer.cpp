@@ -258,17 +258,6 @@ void BedrockServer::sync()
                 if (_isCommandPortLikelyBlocked) {
                     return;
                 }
-                const string blockReason = "COMMITS_LAGGING_BEHIND";
-                // If 
-                if (!_isCommandPortLikelyBlocked && currentCommitCountDiff > 50'000) {
-                    SINFO("Node is lagging behind, blocking command port so it can catch up.");
-                    blockCommandPort(blockReason);
-                } else if (_isCommandPortLikelyBlocked && currentCommitCountDiff < 10'000 && _commandPortBlockReasons.find(blockReason) == _commandPortBlockReasons.end()) {
-                    // We verify if we have the block reason we expected before calling unblock. Unblock would generate a warning, and we don't
-                    // want to do that if don't really need to.
-                    SINFO("Node is caught up enough, unblocking command port.");
-                    unblockCommandPort(blockReason);
-                }
             });
             _syncNodeQueuedCommands.postPoll(fdm);
             _notifyDoneSync.postPoll(fdm);
@@ -1603,6 +1592,13 @@ void BedrockServer::unblockCommandPort(const string& reason) {
     if (_commandPortBlockReasons.empty()) {
         _isCommandPortLikelyBlocked = false;
     }
+}
+
+virtual void isCommandPortClosed(const string& reason) {
+    if (!strlen(reason)) {
+        return _isCommandPortLikelyBlocked;
+    }
+    return _commandPortBlockReasons.find(reason) != _commandPortBlockReasons.end();
 }
 
 void BedrockServer::suppressCommandPort(const string& reason, bool suppress, bool manualOverride) {
