@@ -15,7 +15,7 @@ class SQLiteServer : public STCPManager {
     virtual void notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState) = 0;
 
     // You must block and unblock the command port with *identical strings*.
-    virtual void blockCommandPort(const string& reason);
-    virtual void unblockCommandPort(const string& reason);
-    virtual bool isCommandPortClosed(const string& reason);
+    virtual void blockCommandPort(const string& reason) = 0;
+    virtual void unblockCommandPort(const string& reason) = 0;
+    virtual bool isCommandPortClosed(const string& reason) = 0;
 };
