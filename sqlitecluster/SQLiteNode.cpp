@@ -1287,9 +1287,11 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
         if (peer == _leadPeer && currentCommitDifference >= 12'500 && !_blockedCommandPort) {
             SINFO("Node is lagging behind, closing command port so it can catch up.");
             _server.blockCommandPort(blockReason);
+            _blockedCommandPort = true;
         } else if (currentCommitDifference < 1'000 && _blockedCommandPort) {
             SINFO("Node is caught up enough, unblocking command port.");
             _server.unblockCommandPort(blockReason);
+            _blockedCommandPort = false;
         }
         // Classify and process the message
         if (SIEquals(message.methodLine, "LOGIN")) {
