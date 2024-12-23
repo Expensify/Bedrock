@@ -1278,7 +1278,19 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             peer->commandAddress = message["commandAddress"];
         }
         peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
-
+        
+        // We check the commit difference with 12,500 commits behind because that 
+        // represents ~30s of commits. If we're behind, let's close the command port
+        // so we can catch up with the cluster before processing new commands.
+        const int64_t currentCommitDifference = message.calcU64("NewCount") - getCommitCount();
+        const string blockReason = "COMMITS_LAGGING_BEHIND";
+        if (currentCommitDifference > 12'500 && !_blockedCommandPort) {
+            SINFO("Node is lagging behind, closing command port so it can catch up.");
+            _server.blockCommandPort(blockReason);
+        } else if (currentCommitDifference < 10'000 && _blockedCommandPort) {
+            SINFO("Node is caught up enough, unblocking command port.");
+            _server.unblockCommandPort(blockReason);
+        }
         // Classify and process the message
         if (SIEquals(message.methodLine, "LOGIN")) {
             // LOGIN: This is the first message sent to and received from a new peer. It communicates the current state of
