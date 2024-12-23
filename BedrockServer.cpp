@@ -1598,6 +1598,8 @@ virtual void isCommandPortClosed(const string& reason) {
     if (!strlen(reason)) {
         return _isCommandPortLikelyBlocked;
     }
+    // Get the shared mutex so we don't execute read operations while changing the set
+    shared_mutex<mutex> lock(_portMutex);
     return _commandPortBlockReasons.find(reason) != _commandPortBlockReasons.end();
 }
 

@@ -1657,13 +1657,10 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     }
                     const int64_t currentCommitDifference = message.calcU64("NewCount") - getCommitCount();
                     const string blockReason = "COMMITS_LAGGING_BEHIND";
-                    // If 
-                    if (!_isCommandPortLikelyBlocked && currentCommitCountDiff > 50'000) {
-                        SINFO("Node is lagging behind, blocking command port so it can catch up.");
+                    if (currentCommitCountDiff > 50'000 && !isCommandPortClosed(blockReason)) {
+                        SINFO("Node is lagging behind, closing command port so it can catch up.");
                         blockCommandPort(blockReason);
-                    } else if (_isCommandPortLikelyBlocked && currentCommitCountDiff < 10'000 && _commandPortBlockReasons.find(blockReason) == _commandPortBlockReasons.end()) {
-                        // We verify if we have the block reason we expected before calling unblock. Unblock would generate a warning, and we don't
-                        // want to do that if don't really need to.
+                    } else if (isCommandPortClosed(blockReason) && currentCommitCountDiff < 10'000) {
                         SINFO("Node is caught up enough, unblocking command port.");
                         unblockCommandPort(blockReason);
                     }
