@@ -184,6 +184,7 @@ class BedrockServer : public SQLiteServer {
     // You must block and unblock the command port with *identical strings*.
     void blockCommandPort(const string& reason) override;
     void unblockCommandPort(const string& reason) override;
+    bool isCommandPortClosed(const string& reason) override;
 
     // Legacy version of above.
     void suppressCommandPort(const string& reason, bool suppress, bool manualOverride = false);
@@ -377,7 +378,7 @@ class BedrockServer : public SQLiteServer {
     atomic<bool> _detach;
 
     // Pointers to the ports on which we accept commands.
-    mutex _portMutex;
+    shared_mutex _portMutex;
 
     // The "control port" is intended to be open to privileged clients (i.e., localhost and other nodes in the Bedrock
     // cluster) it can be used to run any command including commands meant for cluster operations, changing server

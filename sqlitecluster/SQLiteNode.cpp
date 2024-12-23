@@ -1657,12 +1657,12 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                     }
                     const int64_t currentCommitDifference = message.calcU64("NewCount") - getCommitCount();
                     const string blockReason = "COMMITS_LAGGING_BEHIND";
-                    if (currentCommitCountDiff > 50'000 && !isCommandPortClosed(blockReason)) {
+                    if (currentCommitDifference > 50'000 && !_server.isCommandPortClosed(blockReason)) {
                         SINFO("Node is lagging behind, closing command port so it can catch up.");
-                        blockCommandPort(blockReason);
-                    } else if (isCommandPortClosed(blockReason) && currentCommitCountDiff < 10'000) {
+                        _server.blockCommandPort(blockReason);
+                    } else if (currentCommitDifference < 10'000 && _server.isCommandPortClosed(blockReason)) {
                         SINFO("Node is caught up enough, unblocking command port.");
-                        unblockCommandPort(blockReason);
+                        _server.unblockCommandPort(blockReason);
                     }
                 } catch (const system_error& e) {
                     // If the server is strugling and falling behind on replication, we might have too many threads
@@ -2644,7 +2644,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     size_t messagesDeqeued = 0;
                     while (true) {
                         SData message = peer->popMessage();
-                        _onMESSAGE(peer, messagem);
+                        _onMESSAGE(peer, message);
                         messagesDeqeued++;
                         if (messagesDeqeued >= 100) {
                             // We should run again immediately, we have more to do.

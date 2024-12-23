@@ -253,12 +253,7 @@ void BedrockServer::sync()
 
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
-            _syncNode->postPoll(fdm, nextActivity, [&](const int64_t currentCommitCountDiff){
-                // If the command port is already closed, we don't need to check anything and can early return.
-                if (_isCommandPortLikelyBlocked) {
-                    return;
-                }
-            });
+            _syncNode->postPoll(fdm, nextActivity);
             _syncNodeQueuedCommands.postPoll(fdm);
             _notifyDoneSync.postPoll(fdm);
         }
@@ -1206,7 +1201,7 @@ bool BedrockServer::_wouldCrash(const unique_ptr<BedrockCommand>& command) {
 }
 
 void BedrockServer::_resetServer() {
-    lock_guard<mutex> lock(_portMutex);
+    lock_guard<decltype(_portMutex)> lock(_portMutex);
 
     _requestCount = 0;
     _upgradeInProgress = false;
@@ -1319,7 +1314,7 @@ BedrockServer::BedrockServer(const SData& args_)
     // Allow sending control commands when the server's not LEADING/FOLLOWING.
     SINFO("Opening control port on '" << args["-controlPort"] << "'");
     {
-        lock_guard<mutex> lock(_portMutex);
+        lock_guard<decltype(_portMutex)> lock(_portMutex);
         _controlPort = openPort(args["-controlPort"]);
     }
 
@@ -1375,7 +1370,7 @@ bool BedrockServer::shutdownComplete() {
 }
 
 void BedrockServer::prePoll(fd_map& fdm) {
-    lock_guard<mutex> lock(_portMutex);
+    lock_guard<decltype(_portMutex)> lock(_portMutex);
 
     // This will interrupt poll when we shut down.
     _notifyDone.prePoll(fdm);
@@ -1401,7 +1396,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // NOTE: There are no sockets managed here, just ports.
     // Open the port the first time we enter a command-processing state
     {
-        lock_guard<mutex> lock(_portMutex);
+        lock_guard<decltype(_portMutex)> lock(_portMutex);
         if (_commandPortBlockReasons.empty() && (getState() == SQLiteNodeState::LEADING || getState() == SQLiteNodeState::FOLLOWING) && _shutdownState.load() == RUNNING) {
 
             // Open the port
@@ -1570,7 +1565,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
 
 
 void BedrockServer::blockCommandPort(const string& reason) {
-    lock_guard<mutex> lock(_portMutex);
+    lock_guard<decltype(_portMutex)> lock(_portMutex);
     _commandPortBlockReasons.insert(reason);
     _isCommandPortLikelyBlocked = true;
     if (_commandPortBlockReasons.size() == 1) {
@@ -1581,7 +1576,7 @@ void BedrockServer::blockCommandPort(const string& reason) {
 }
 
 void BedrockServer::unblockCommandPort(const string& reason) {
-    lock_guard<mutex> lock(_portMutex);
+    lock_guard<decltype(_portMutex)> lock(_portMutex);
     auto it = _commandPortBlockReasons.find(reason);
     if (it == _commandPortBlockReasons.end()) {
         SWARN("Tried to remove command port block because: " << reason << ", but it wasn't blocked for that reason!");
@@ -1594,12 +1589,12 @@ void BedrockServer::unblockCommandPort(const string& reason) {
     }
 }
 
-virtual bool isCommandPortClosed(const string& reason) {
-    if (!strlen(reason)) {
+bool BedrockServer::isCommandPortClosed(const string& reason) {
+    if (reason.empty()) {
         return _isCommandPortLikelyBlocked;
     }
     // Get the shared mutex so we don't execute read operations while changing the set
-    shared_mutex<mutex> lock(_portMutex);
+    shared_lock<decltype(_portMutex)> lock(_portMutex);
     return _commandPortBlockReasons.find(reason) != _commandPortBlockReasons.end();
 }
 
@@ -1741,7 +1736,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         }
 
         {
-            lock_guard<mutex> lock(_portMutex);
+            lock_guard<decltype(_portMutex)> lock(_portMutex);
             content["commandPortBlockReasons"] = SComposeJSONArray(_commandPortBlockReasons);
         }
 
@@ -2015,7 +2010,7 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         // down, so otherwise there's a race condition where that happens just after we close them but before we
         // change the state.
         {
-            lock_guard<mutex> lock(_portMutex);
+            lock_guard<decltype(_portMutex)> lock(_portMutex);
             _commandPortPublic = nullptr;
             _commandPortPrivate = nullptr;
             if (!_detach) {
@@ -2094,7 +2089,7 @@ void BedrockServer::_acceptSockets() {
 
         // Lock _portMutex so suppressing the port does not cause it to be null
         // in the middle of this function.
-        lock_guard<mutex> lock(_portMutex);
+        lock_guard<decltype(_portMutex)> lock(_portMutex);
 
         for (auto& p : _portPluginMap) {
             portList.push_back(reference_wrapper<const unique_ptr<Port>>(p.first));
