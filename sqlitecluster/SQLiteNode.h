@@ -165,7 +165,7 @@ class SQLiteNode : public STCPManager {
     void kill();
 
     // Handle any read/write events that occurred.
-    void postPoll(fd_map& fdm, uint64_t& nextActivity, function<void(int64_t)> commandPortCallback = nullptr);
+    void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,
@@ -243,7 +243,7 @@ class SQLiteNode : public STCPManager {
     void _onDisconnect(SQLitePeer* peer);
 
     // Called when the peer sends us a message; throw an SException to reconnect.
-    void _onMESSAGE(SQLitePeer* peer, const SData& message, function<void(int64_t)> commandPortCallback = nullptr);
+    void _onMESSAGE(SQLitePeer* peer, const SData& message);
     void _reconnectAll();
     void _reconnectPeer(SQLitePeer* peer);
     void _recvSynchronize(SQLitePeer* peer, const SData& message);

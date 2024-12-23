@@ -1240,7 +1240,7 @@ bool SQLiteNode::update() {
 
 // Messages
 // Here are the messages that can be received, and how a cluster node will respond to each based on its state:
-void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message, function<void(int64_t)> commandPortCallback) {
+void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
     try {
         SASSERT(peer);
         SASSERTWARN(!message.empty());
@@ -1655,13 +1655,17 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message, function<voi
                             }
                         }
                     }
-                    // This will notify the BedrockServer's callback to block or unblock the command port based on
-                    // how many commits we are behind.
-                    if (commandPortCallback) {
-                        SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex(false));
-                        SQLite& db = dbScope.db();
-                        const int64_t currentCommitDifference = message.calcU64("NewCount") - db.getCommitCount();
-                        commandPortCallback(currentCommitDifference);
+                    const int64_t currentCommitDifference = message.calcU64("NewCount") - getCommitCount();
+                    const string blockReason = "COMMITS_LAGGING_BEHIND";
+                    // If 
+                    if (!_isCommandPortLikelyBlocked && currentCommitCountDiff > 50'000) {
+                        SINFO("Node is lagging behind, blocking command port so it can catch up.");
+                        blockCommandPort(blockReason);
+                    } else if (_isCommandPortLikelyBlocked && currentCommitCountDiff < 10'000 && _commandPortBlockReasons.find(blockReason) == _commandPortBlockReasons.end()) {
+                        // We verify if we have the block reason we expected before calling unblock. Unblock would generate a warning, and we don't
+                        // want to do that if don't really need to.
+                        SINFO("Node is caught up enough, unblocking command port.");
+                        unblockCommandPort(blockReason);
                     }
                 } catch (const system_error& e) {
                     // If the server is strugling and falling behind on replication, we might have too many threads
@@ -2536,7 +2540,7 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
     return socket;
 }
 
-void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity, function<void(int64_t)> commandPortCallback) {
+void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
 
     // Accept any new peers
@@ -2643,7 +2647,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity, function<void(int
                     size_t messagesDeqeued = 0;
                     while (true) {
                         SData message = peer->popMessage();
-                        _onMESSAGE(peer, messagem, commandPortCallback);
+                        _onMESSAGE(peer, messagem);
                         messagesDeqeued++;
                         if (messagesDeqeued >= 100) {
                             // We should run again immediately, we have more to do.
