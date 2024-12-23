@@ -165,7 +165,7 @@ class SQLiteNode : public STCPManager {
     void kill();
 
     // Handle any read/write events that occurred.
-    void postPoll(fd_map& fdm, uint64_t& nextActivity);
+    void postPoll(fd_map& fdm, uint64_t& nextActivity, function<void(int64_t)> commandPortCallback = nullptr);
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,

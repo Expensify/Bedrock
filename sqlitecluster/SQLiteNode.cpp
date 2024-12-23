@@ -1657,7 +1657,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message, function<voi
                     }
                     // This will notify the BedrockServer's callback to block or unblock the command port based on
                     // how many commits we are behind.
-                    {
+                    if (commandPortCallback) {
                         SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex(false));
                         SQLite& db = dbScope.db();
                         const int64_t currentCommitDifference = message.calcU64("NewCount") - db.getCommitCount();
@@ -2536,7 +2536,7 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
     return socket;
 }
 
-void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity, function<void(int64_t)> commandPortCallback) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
 
     // Accept any new peers
@@ -2643,7 +2643,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     size_t messagesDeqeued = 0;
                     while (true) {
                         SData message = peer->popMessage();
-                        _onMESSAGE(peer, message);
+                        _onMESSAGE(peer, messagem, commandPortCallback);
                         messagesDeqeued++;
                         if (messagesDeqeued >= 100) {
                             // We should run again immediately, we have more to do.
