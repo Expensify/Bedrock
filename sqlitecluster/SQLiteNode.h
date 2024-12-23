@@ -243,7 +243,7 @@ class SQLiteNode : public STCPManager {
     void _onDisconnect(SQLitePeer* peer);
 
     // Called when the peer sends us a message; throw an SException to reconnect.
-    void _onMESSAGE(SQLitePeer* peer, const SData& message);
+    void _onMESSAGE(SQLitePeer* peer, const SData& message, function<void(int64_t)> commandPortCallback = nullptr);
     void _reconnectAll();
     void _reconnectPeer(SQLitePeer* peer);
     void _recvSynchronize(SQLitePeer* peer, const SData& message);

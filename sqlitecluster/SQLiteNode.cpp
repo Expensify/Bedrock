@@ -1240,7 +1240,7 @@ bool SQLiteNode::update() {
 
 // Messages
 // Here are the messages that can be received, and how a cluster node will respond to each based on its state:
-void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
+void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message, function<void(int64_t)> commandPortCallback) {
     try {
         SASSERT(peer);
         SASSERTWARN(!message.empty());
@@ -1654,6 +1654,14 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                                 SINFO("condition variable finished waiting but replicate thread not started.");
                             }
                         }
+                    }
+                    // This will notify the BedrockServer's callback to block or unblock the command port based on
+                    // how many commits we are behind.
+                    {
+                        SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex(false));
+                        SQLite& db = dbScope.db();
+                        const int64_t currentCommitDifference = message.calcU64("NewCount") - db.getCommitCount();
+                        commandPortCallback(currentCommitDifference);
                     }
                 } catch (const system_error& e) {
                     // If the server is strugling and falling behind on replication, we might have too many threads
