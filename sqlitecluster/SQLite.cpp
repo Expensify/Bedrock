@@ -167,7 +167,6 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables) {
 void SQLite::commonConstructorInitialization(bool hctree) {
     // Perform sanity checks.
     SASSERT(!_filename.empty());
-    SASSERT(_cacheSize > 0);
     SASSERT(_maxJournalSize > 0);
 
     // WAL is what allows simultaneous read/writing.
@@ -183,8 +182,10 @@ void SQLite::commonConstructorInitialization(bool hctree) {
     sqlite3_trace_v2(_db, SQLITE_TRACE_STMT, _sqliteTraceCallback, this);
 
     // Update the cache. -size means KB; +size means pages
-    SINFO("Setting cache_size to " << _cacheSize << "KB");
-    SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(_cacheSize) + ";");
+    if (_cacheSize) {
+        SINFO("Setting cache_size to " << _cacheSize << "KB");
+        SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(_cacheSize) + ";");
+    }
 
     // Register the authorizer callback which allows callers to whitelist particular data in the DB.
     sqlite3_set_authorizer(_db, _sqliteAuthorizerCallback, this);

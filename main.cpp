@@ -294,7 +294,7 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-commandPortPrivate", "localhost:8890");
     SETDEFAULT("-controlPort", "localhost:9999");
     SETDEFAULT("-nodeName", SGetHostName());
-    SETDEFAULT("-cacheSize", SToStr(1024 * 1024)); // 1024 * 1024KB = 1GB.
+    SETDEFAULT("-cacheSize", SToStr(0));
     SETDEFAULT("-plugins", "db,jobs,cache,mysql");
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");
