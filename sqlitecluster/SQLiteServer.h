@@ -17,5 +17,4 @@ class SQLiteServer : public STCPManager {
     // You must block and unblock the command port with *identical strings*.
     virtual void blockCommandPort(const string& reason) = 0;
     virtual void unblockCommandPort(const string& reason) = 0;
-    virtual bool isCommandPortClosed(const string& reason) = 0;
 };

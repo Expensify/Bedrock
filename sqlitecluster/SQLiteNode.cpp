@@ -1655,15 +1655,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                             }
                         }
                     }
-                    const int64_t currentCommitDifference = message.calcU64("NewCount") - getCommitCount();
-                    const string blockReason = "COMMITS_LAGGING_BEHIND";
-                    if (currentCommitDifference > 50'000 && !_server.isCommandPortClosed(blockReason)) {
-                        SINFO("Node is lagging behind, closing command port so it can catch up.");
-                        _server.blockCommandPort(blockReason);
-                    } else if (currentCommitDifference < 10'000 && _server.isCommandPortClosed(blockReason)) {
-                        SINFO("Node is caught up enough, unblocking command port.");
-                        _server.unblockCommandPort(blockReason);
-                    }
                 } catch (const system_error& e) {
                     // If the server is strugling and falling behind on replication, we might have too many threads
                     // causing a resource exhaustion. If that happens, all the transactions that are already threaded

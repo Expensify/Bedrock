@@ -364,9 +364,10 @@ class SQLiteNode : public STCPManager {
     // Stopwatch to track if we're giving up on the server preventing a standdown.
     SStopwatch _standDownTimeout;
 
-   // Our current State.
+    // Our current State.
     atomic<SQLiteNodeState> _state;
 
+    atomic<bool> _blockedCommandPort{false};
     // This is an integer that increments every time we change states. This is useful for responses to state changes
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
     // and not stale responses to old changes.

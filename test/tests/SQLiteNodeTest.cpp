@@ -28,7 +28,6 @@ class TestServer : public SQLiteServer {
     virtual void notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState) {}
     virtual void blockCommandPort(const string& reason) { };
     virtual void unblockCommandPort(const string& reason) { };
-    virtual bool isCommandPortClosed(const string& reason) { return false; };
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {
