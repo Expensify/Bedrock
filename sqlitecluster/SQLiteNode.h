@@ -368,7 +368,7 @@ class SQLiteNode : public STCPManager {
     atomic<SQLiteNodeState> _state;
 
     // Keeps track if we have closed the command port for commits fallen behind.
-    bool _blockedCommandPort{false};
+    bool _blockedCommandPortForBeingBehind{false};
 
     // This is an integer that increments every time we change states. This is useful for responses to state changes
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
