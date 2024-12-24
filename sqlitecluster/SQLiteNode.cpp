@@ -1285,7 +1285,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
         const string blockReason = "COMMITS_LAGGING_BEHIND";
         const int64_t currentCommitDifference =  peer->commitCount - getCommitCount();
         if (peer == _leadPeer && currentCommitDifference >= 12'500 && !_blockedCommandPort) {
-            SINFO("Node is lagging behind, closing command port so it can catch up.");
+            SINFO("Node is behind by " + SToStr(currentCommitDifference) + " commits, closing command port so it can catch up.");
             _server.blockCommandPort(blockReason);
             _blockedCommandPort = true;
         } else if (currentCommitDifference < 1'000 && _blockedCommandPort) {
