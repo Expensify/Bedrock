@@ -1284,16 +1284,16 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
         // so we can catch up with the cluster before processing new commands.
         const string blockReason = "COMMITS_LAGGING_BEHIND";
         const int64_t currentCommitDifference =  peer->commitCount - getCommitCount();
-        if (peer == _leadPeer && currentCommitDifference >= 12'500 && !_blockedCommandPort) {
+        if (peer == _leadPeer && currentCommitDifference >= 12'500 && !_blockedCommandPortForBeingBehind) {
             SINFO("Node is behind by " + SToStr(currentCommitDifference) + " commits, closing command port so it can catch up.");
             _server.blockCommandPort(blockReason);
-            _blockedCommandPort = true;
-        } else if (currentCommitDifference < 1'000 && _blockedCommandPort) {
+            _blockedCommandPortForBeingBehind = true;
+        } else if (currentCommitDifference < 1'000 && _blockedCommandPortForBeingBehind) {
             // We'll open the command port again if we're 1k commits behind, which
             // translates to ~2s of commits.
             SINFO("Node is caught up enough (behind by " + SToStr(currentCommitDifference) + " commits), re-opening command port.");
             _server.unblockCommandPort(blockReason);
-            _blockedCommandPort = false;
+            _blockedCommandPortForBeingBehind = false;
         }
         // Classify and process the message
         if (SIEquals(message.methodLine, "LOGIN")) {
