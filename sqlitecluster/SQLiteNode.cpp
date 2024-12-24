@@ -1289,7 +1289,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             _server.blockCommandPort(blockReason);
             _blockedCommandPort = true;
         } else if (currentCommitDifference < 1'000 && _blockedCommandPort) {
-            SINFO("Node is caught up enough, unblocking command port.");
+            SINFO("Node is caught up enough (behind by " + SToStr(currentCommitDifference) + " commits), re-opening command port.");
             _server.unblockCommandPort(blockReason);
             _blockedCommandPort = false;
         }
