@@ -13,4 +13,8 @@ class SQLiteServer : public STCPManager {
 
     // We call this method whenever a node changes state
     virtual void notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState) = 0;
+
+    // You must block and unblock the command port with *identical strings*.
+    virtual void blockCommandPort(const string& reason) = 0;
+    virtual void unblockCommandPort(const string& reason) = 0;
 };
