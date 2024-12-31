@@ -2212,6 +2212,12 @@ void SQLiteNode::_updateSyncPeer()
             continue;
         }
 
+        // We want to sync, if possible, from a peer that is not the leader. So at this point, skip choosing it
+        // as the newSyncPeer.
+        if (peer == _leadPeer) {
+            continue;
+        }
+
         // Any peer that makes it to here is a usable peer, so it's by default better than nothing.
         if (!newSyncPeer) {
             newSyncPeer = peer;
@@ -2232,6 +2238,12 @@ void SQLiteNode::_updateSyncPeer()
         else if (peer->latency != 0 && peer->latency < newSyncPeer->latency) {
             newSyncPeer = peer;
         }
+    }
+
+    // If we reached this point, it means that there are no other available peers to sync from, but leader
+    // was a valid choice. In this case, let's use it as the newSyncPeer.
+    if (!newSyncPeer && _leadPeer) {
+        newSyncPeer = _leadPeer;
     }
 
     // Log that we've changed peers.
