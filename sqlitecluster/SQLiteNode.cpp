@@ -2201,7 +2201,6 @@ void SQLiteNode::_updateSyncPeer()
 {
     SQLitePeer* newSyncPeer = nullptr;
     uint64_t commitCount = _db.getCommitCount();
-    bool isLeaderValidPeer = false;
     for (auto peer : _peerList) {
         // If either of these conditions are true, then we can't use this peer.
         if (!peer->loggedIn || peer->commitCount <= commitCount) {
@@ -2216,7 +2215,6 @@ void SQLiteNode::_updateSyncPeer()
         // We want to sync, if possible, from a peer that is not the leader. So at this point, skip choosing it
         // as the newSyncPeer.
         if (peer == _leadPeer) {
-            isLeaderValidPeer = true;
             continue;
         }
 
@@ -2244,7 +2242,7 @@ void SQLiteNode::_updateSyncPeer()
 
     // If we reached this point, it means that there are no other available peers to sync from, but leader
     // was a valid choice. In this case, let's use it as the newSyncPeer.
-    if (!newSyncPeer && isLeaderValidPeer) {
+    if (!newSyncPeer && _leadPeer) {
         newSyncPeer = _leadPeer;
     }
 
