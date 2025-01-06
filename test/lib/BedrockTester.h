@@ -43,7 +43,7 @@ class BedrockTester {
     string startServer(bool wait = true);
 
     // Stop a server by sending it a signal.
-    void stopServer(int signal = SIGTERM);
+    virtual void stopServer(int signal = SIGTERM);
 
     // Shuts down all bedrock servers associated with any existing testers.
     static void stopAll();

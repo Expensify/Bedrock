@@ -195,7 +195,7 @@ ClusterTester<T>::~ClusterTester()
     // Shut down everything but the leader first.
     list<thread> threads;
 
-    for (int i = 0; i< _size; i++) {
+    for (int i = 0; i < _size; i++) {
         // Wait for all the commands to be done before stopping.
         // If we don't do this, then if the leader loses quorum, because the other nodes have all shut down,
         // it won't run remaining commands, and it will get stuck forever.
@@ -216,7 +216,9 @@ ClusterTester<T>::~ClusterTester()
     }
 
     // Then do leader last. This is to avoid getting in a state where nodes try to stand up as leader shuts down.
+    cout << "Stopping leader." << endl;
     stopNode(0);
+    cout << "Stopped leader." << endl;
 
     auto end = STimeNow();
 

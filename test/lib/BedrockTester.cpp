@@ -17,7 +17,7 @@
 PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
-const bool BedrockTester::ENABLE_HCTREE{false};
+const bool BedrockTester::ENABLE_HCTREE{true};
 
 string BedrockTester::getTempFileName(string prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
@@ -576,7 +576,7 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online)
         SData command("Query");
         command["Query"] = fixedQuery;
         command["Format"] = "JSON";
-        auto commandResult = executeWaitMultipleData({command});
+        auto commandResult = executeWaitMultipleData({command}, 1);
         auto row0 = SParseJSONObject(commandResult[0].content)["rows"];
         auto headerString = SParseJSONObject(commandResult[0].content)["headers"];
 
