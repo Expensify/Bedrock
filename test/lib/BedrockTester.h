@@ -89,6 +89,9 @@ class BedrockTester {
     // true if a match was found, or times out otherwose.
     bool waitForStatusTerm(const string& term, const string& testValue, uint64_t timeoutUS = 60'000'000);
 
+    // Waits for the status to be either LEADING or FOLLOWING
+    bool waitForLeadingFollowing(uint64_t timeoutUS = 60'000'000);
+
     // This is just a convenience wrapper around `waitForStatusTerm` looking for the state of the node.
     bool waitForState(const string& state, uint64_t timeoutUS = 60'000'000);
 

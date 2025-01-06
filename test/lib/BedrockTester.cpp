@@ -622,6 +622,24 @@ bool BedrockTester::waitForStatusTerm(const string& term, const string& testValu
     return false;
 }
 
+bool BedrockTester::waitForLeadingFollowing(uint64_t timeoutUS) {
+    uint64_t start = STimeNow();
+    while (STimeNow() < start + timeoutUS) {
+        try {
+            string result = SParseJSONObject(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))["state"];
+
+            // if the value matches, return, otherwise wait
+            if (result == "LEADING" || result == "FOLLOWING") {
+                return true;
+            }
+        } catch (...) {
+            // Doesn't do anything, we'll fall through to the sleep and try again.
+        }
+        usleep(100'000);
+    }
+    return false;
+}
+
 bool BedrockTester::waitForState(const string& state, uint64_t timeoutUS)
 {
     return waitForStatusTerm("state", state, timeoutUS);
