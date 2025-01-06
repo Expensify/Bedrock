@@ -216,9 +216,7 @@ ClusterTester<T>::~ClusterTester()
     }
 
     // Then do leader last. This is to avoid getting in a state where nodes try to stand up as leader shuts down.
-    cout << "Stopping leader." << endl;
     stopNode(0);
-    cout << "Stopped leader." << endl;
 
     auto end = STimeNow();
 
