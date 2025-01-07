@@ -195,7 +195,7 @@ ClusterTester<T>::~ClusterTester()
     // Shut down everything but the leader first.
     list<thread> threads;
 
-    for (int i = 0; i< _size; i++) {
+    for (int i = 0; i < _size; i++) {
         // Wait for all the commands to be done before stopping.
         // If we don't do this, then if the leader loses quorum, because the other nodes have all shut down,
         // it won't run remaining commands, and it will get stuck forever.

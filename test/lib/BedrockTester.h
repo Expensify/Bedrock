@@ -43,7 +43,7 @@ class BedrockTester {
     string startServer(bool wait = true);
 
     // Stop a server by sending it a signal.
-    void stopServer(int signal = SIGTERM);
+    virtual void stopServer(int signal = SIGTERM);
 
     // Shuts down all bedrock servers associated with any existing testers.
     static void stopAll();
@@ -88,6 +88,9 @@ class BedrockTester {
     // Wait for a particular key in a `Status` message to equal a particular value, for up to `timeoutUS` us. Returns
     // true if a match was found, or times out otherwose.
     bool waitForStatusTerm(const string& term, const string& testValue, uint64_t timeoutUS = 60'000'000);
+
+    // Waits for the status to be either LEADING or FOLLOWING
+    bool waitForLeadingFollowing(uint64_t timeoutUS = 60'000'000);
 
     // This is just a convenience wrapper around `waitForStatusTerm` looking for the state of the node.
     bool waitForState(const string& state, uint64_t timeoutUS = 60'000'000);
