@@ -1654,11 +1654,11 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SINFO("Discarding replication message, stopping FOLLOWING");
             } else {
                 if (SIEquals(message.methodLine, "COMMIT_TRANSACTION")) {
-                        // For COMMIT_TRANSACTION messages, we do not start a new thread. This aoids a race condition where we could spin up the
+                        // For COMMIT_TRANSACTION messages, we do not start a new thread. This avoids a race condition where we could spin up the
                         // COMMIT thread, but not yet have called `_leaderCommitNotifier.notifyThrough` for the current transaction number while
-                        // the sync thread changes states. Particularly, if the sync thread drops out of FOLLOWING before this happens,
-                        // It may mean that we drop commits that leader had sent us, because we haven't recorded that we received them.
-                        // When leader is standing down this can ultimately lead to a fork.
+                        // the sync thread changes states. Particularly, if the sync thread dropped out of FOLLOWING before this happened,
+                        // We could have dropped commits that leader had sent us, because we hadn't recorded that we received them.
+                        // When leader is standing down this could have ultimately led to a fork because no other node saved those commits.
                         SINFO("[performance] Notifying threads that leader has committed transaction " << message.calcU64("CommitCount"));
                         _leaderCommitNotifier.notifyThrough(message.calcU64("CommitCount"));
                 } else {
