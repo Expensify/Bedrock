@@ -166,27 +166,27 @@ SQLiteNode::~SQLiteNode() {
 }
 
 void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp) {
+    // Notify the sync thread that this thread has begun.
+    {
+        unique_lock<mutex> lock(_replicateStartMutex);
+        _replicateThreadStarted = true;
+    }
+    _replicateStartCV.notify_all();
+
+    // Initialize each new thread with a new number.
+    SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
+
+    // Actual thread startup time.
+    uint64_t threadStartTime = STimeNow();
+
+    // Allow the DB handle to be returned regardless of how this function exits.
+    SQLiteScopedHandle dbScope(*_dbPool, sqlitePoolIndex);
+    SQLite& db = dbScope.db();
+
     bool goSearchingOnExit = false;
     {
         // Make sure when this thread exits we decrement our thread counter.
         ScopedDecrement<decltype(_replicationThreadCount)> decrementer(_replicationThreadCount);
-
-        // Notify the sync thread that this thread has begun.
-        {
-            unique_lock<mutex> lock(_replicateStartMutex);
-            _replicateThreadStarted = true;
-        }
-        _replicateStartCV.notify_all();
-
-        // Initialize each new thread with a new number.
-        SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
-
-        // Actual thread startup time.
-        uint64_t threadStartTime = STimeNow();
-
-        // Allow the DB handle to be returned regardless of how this function exits.
-        SQLiteScopedHandle dbScope(*_dbPool, sqlitePoolIndex);
-        SQLite& db = dbScope.db();
 
         SDEBUG("Replicate thread started: " << command.methodLine);
         if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
