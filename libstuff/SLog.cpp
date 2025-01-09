@@ -60,8 +60,6 @@ static set<string> PARAMS_WHITELIST = {
     "approver",
     "approvers",
     "employees",
-    "mergeFromEmail",
-    "mergeToEmail",
 };
 
 string addLogParams(string&& message, const STable& params) {
