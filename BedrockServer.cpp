@@ -1045,7 +1045,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 // Journals and Onyx tables are always chosen at the time of commit. So in case there was a conflict on these tables in
                                 // the previous commit, the chances are very low that we'll choose the same table, thus, we
                                 // don't need to lock our next commit on this page conflict.
-                                if (!SStartsWith(lastConflictTable, "journal") && !SStartsWith(lastConflictTable, "onyx")) {
+                                if (!SStartsWith(lastConflictTable, "journal") && !SStartsWith(lastConflictTable, "onyxUpdates_")) {
                                     lastConflictPage = db.getLastConflictPage();
                                 }
                             }
