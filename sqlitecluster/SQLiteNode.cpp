@@ -293,9 +293,6 @@ void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIn
             _handleRollbackTransaction(db, peer, command);
             --_concurrentReplicateTransactions;
             goSearchingOnExit = true;
-        } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-            SINFO("[performance] Notifying threads that leader has committed transaction " << command.calcU64("CommitCount"));
-            _leaderCommitNotifier.notifyThrough(command.calcU64("CommitCount"));
         }
     }
     if (goSearchingOnExit) {
@@ -1656,33 +1653,43 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             if (_replicationThreadsShouldExit) {
                 SINFO("Discarding replication message, stopping FOLLOWING");
             } else {
-                auto threadID = _replicationThreadCount.fetch_add(1);
-                SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
-                try {
-                    uint64_t threadAttemptStartTimestamp = STimeNow();
-                    _replicateThreadStarted = false;
-                    thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp).detach();
-                    {
-                        unique_lock<mutex> lock(_replicateStartMutex);
-                        while (!_replicateThreadStarted) {
-                            _replicateStartCV.wait(lock);
-                            if (!_replicateThreadStarted) {
-                                SINFO("condition variable finished waiting but replicate thread not started.");
+                if (SIEquals(message.methodLine, "COMMIT_TRANSACTION")) {
+                        // For COMMIT_TRANSACTION messages, we do not start a new thread. This avoids a race condition where we could spin up the
+                        // COMMIT thread, but not yet have called `_leaderCommitNotifier.notifyThrough` for the current transaction number while
+                        // the sync thread changes states. Particularly, if the sync thread dropped out of FOLLOWING before this happened,
+                        // We could have dropped commits that leader had sent us, because we hadn't recorded that we received them.
+                        // When leader is standing down this could have ultimately led to a fork because no other node saved those commits.
+                        SINFO("[performance] Notifying threads that leader has committed transaction " << message.calcU64("CommitCount"));
+                        _leaderCommitNotifier.notifyThrough(message.calcU64("CommitCount"));
+                } else {
+                    try {
+                        auto threadID = _replicationThreadCount.fetch_add(1);
+                        SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
+                        uint64_t threadAttemptStartTimestamp = STimeNow();
+                        _replicateThreadStarted = false;
+                        thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp).detach();
+                        {
+                            unique_lock<mutex> lock(_replicateStartMutex);
+                            while (!_replicateThreadStarted) {
+                                _replicateStartCV.wait(lock);
+                                if (!_replicateThreadStarted) {
+                                    SINFO("condition variable finished waiting but replicate thread not started.");
+                                }
                             }
                         }
+                        SDEBUG("Done spawning concurrent replicate thread: " << threadID);
+                    } catch (const system_error& e) {
+                        // If the server is strugling and falling behind on replication, we might have too many threads
+                        // causing a resource exhaustion. If that happens, all the transactions that are already threaded
+                        // and waiting for the transaction that failed will be stuck in an infinite loop. To prevent that
+                        // we're changing the state to SEARCHING and sending the cancelAfter property to drop all threads
+                        // that depend on the transaction that failed to be threaded.
+                        _replicationThreadCount.fetch_sub(1);
+                        SWARN("Caught system_error starting _replicate thread with " << _replicationThreadCount.load() << " threads. e.what()=" << e.what());
+                        _changeState(SQLiteNodeState::SEARCHING, message.calcU64("NewCount") - 1);
+                        STHROW("Error starting replicate thread so giving up and reconnecting.");
                     }
-                } catch (const system_error& e) {
-                    // If the server is strugling and falling behind on replication, we might have too many threads
-                    // causing a resource exhaustion. If that happens, all the transactions that are already threaded
-                    // and waiting for the transaction that failed will be stuck in an infinite loop. To prevent that
-                    // we're changing the state to SEARCHING and sending the cancelAfter property to drop all threads
-                    // that depend on the transaction that failed to be threaded.
-                    _replicationThreadCount.fetch_sub(1);
-                    SWARN("Caught system_error starting _replicate thread with " << _replicationThreadCount.load() << " threads. e.what()=" << e.what());
-                    _changeState(SQLiteNodeState::SEARCHING, message.calcU64("NewCount") - 1);
-                    STHROW("Error starting replicate thread so giving up and reconnecting.");
                 }
-                SDEBUG("Done spawning concurrent replicate thread: " << threadID);
             }
         } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
             // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
