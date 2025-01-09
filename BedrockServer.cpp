@@ -1042,10 +1042,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             if (_enableConflictPageLocks) {
                                 lastConflictTable = db.getLastConflictTable();
 
-                                // Journals are always chosen at the time of commit. So in case there was a conflict on the journal in
-                                // the previous commit, the chances are very low (1/192) that we'll choose the same journal, thus, we
+                                // Journals and Onyx tables are always chosen at the time of commit. So in case there was a conflict on these tables in
+                                // the previous commit, the chances are very low that we'll choose the same table, thus, we
                                 // don't need to lock our next commit on this page conflict.
-                                if (!SStartsWith(lastConflictTable, "journal")) {
+                                if (!SStartsWith(lastConflictTable, "journal") && !SStartsWith(lastConflictTable, "onyx")) {
                                     lastConflictPage = db.getLastConflictPage();
                                 }
                             }
