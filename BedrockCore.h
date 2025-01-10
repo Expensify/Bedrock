@@ -34,7 +34,7 @@ class BedrockCore : public SQLiteCore {
     // Checks if a command has already timed out. Like `peekCommand` without doing any work. Returns `true` and sets
     // the same command state as `peekCommand` would if the command has timed out. Returns `false` and does nothing if
     // the command hasn't timed out.
-    bool isTimedOut(unique_ptr<BedrockCommand>& command);
+    static bool isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db = nullptr, const BedrockServer* server = nullptr);
 
     void prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread);
 
@@ -71,8 +71,8 @@ class BedrockCore : public SQLiteCore {
     // Gets the amount of time remaining until this command times out. This is the difference between the command's
     // 'timeout' value (or the default timeout, if not set) and the time the command was initially scheduled to run. If
     // this time is already expired, this throws `555 Timeout`
-    uint64_t _getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing);
+    static uint64_t _getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing);
 
-    void _handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e);
+    static void _handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db = nullptr, const BedrockServer* server = nullptr);
     const BedrockServer& _server;
 };

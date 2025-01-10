@@ -546,10 +546,10 @@ void BedrockTester::freeDB() {
     _db = nullptr;
 }
 
-string BedrockTester::readDB(const string& query, bool online)
+string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS)
 {
     SQResult result;
-    bool success = readDB(query, result, online);
+    bool success = readDB(query, result, online, timeoutMS);
     if (!success) {
         return "";
     }
@@ -565,7 +565,7 @@ string BedrockTester::readDB(const string& query, bool online)
     return result.rows[0][0];
 }
 
-bool BedrockTester::readDB(const string& query, SQResult& result, bool online)
+bool BedrockTester::readDB(const string& query, SQResult& result, bool online, int64_t timeoutMS)
 {
     if (ENABLE_HCTREE && online) {
         string fixedQuery = query;
@@ -576,6 +576,9 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online)
         SData command("Query");
         command["Query"] = fixedQuery;
         command["Format"] = "JSON";
+        if (timeoutMS) {
+            command["timeout"] = to_string(timeoutMS);
+        }
         auto commandResult = executeWaitMultipleData({command}, 1);
         auto row0 = SParseJSONObject(commandResult[0].content)["rows"];
         auto headerString = SParseJSONObject(commandResult[0].content)["headers"];
