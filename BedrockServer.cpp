@@ -801,6 +801,14 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
         size_t waitCount = 0;
         while (_upgradeInProgress || (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING)) {
+
+            // It's feasible that our command times out in this loop. In this case, we do not have a DB object to pass.
+            // The only implication of this is the response does not get the commitCount attached to it.
+            if (BedrockCore::isTimedOut(command, nullptr, this)) {
+                _reply(command);
+                return;
+            }
+
             // This sleep call is pretty ugly, but it should almost never happen. We're accepting the potential
             // looping sleep call for the general case where we just check some bools and continue, instead of
             // avoiding the sleep call but having every thread lock a mutex here on every loop.
@@ -880,7 +888,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             // to be returned to the main queue, where they would have timed out in `peek`, but it was never called
             // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
             // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
-            if (core.isTimedOut(command)) {
+            if (core.isTimedOut(command, &db, this)) {
                 _reply(command);
                 return;
             }
