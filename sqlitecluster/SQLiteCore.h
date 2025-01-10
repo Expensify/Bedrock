@@ -2,6 +2,11 @@
 class SQLite;
 class SQLiteNode;
 
+#include <cstdint>
+#include <string>
+
+using namespace std;
+
 class SQLiteCore {
   public:
     // Constructor that stores the database object we'll be working on.
