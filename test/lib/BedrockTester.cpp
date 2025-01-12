@@ -546,10 +546,10 @@ void BedrockTester::freeDB() {
     _db = nullptr;
 }
 
-string BedrockTester::readDB(const string& query, bool online)
+string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS)
 {
     SQResult result;
-    bool success = readDB(query, result, online);
+    bool success = readDB(query, result, online, timeoutMS);
     if (!success) {
         return "";
     }
@@ -565,7 +565,7 @@ string BedrockTester::readDB(const string& query, bool online)
     return result.rows[0][0];
 }
 
-bool BedrockTester::readDB(const string& query, SQResult& result, bool online)
+bool BedrockTester::readDB(const string& query, SQResult& result, bool online, int64_t timeoutMS)
 {
     if (ENABLE_HCTREE && online) {
         string fixedQuery = query;
@@ -576,7 +576,10 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online)
         SData command("Query");
         command["Query"] = fixedQuery;
         command["Format"] = "JSON";
-        auto commandResult = executeWaitMultipleData({command});
+        if (timeoutMS) {
+            command["timeout"] = to_string(timeoutMS);
+        }
+        auto commandResult = executeWaitMultipleData({command}, 1);
         auto row0 = SParseJSONObject(commandResult[0].content)["rows"];
         auto headerString = SParseJSONObject(commandResult[0].content)["headers"];
 
@@ -612,6 +615,24 @@ bool BedrockTester::waitForStatusTerm(const string& term, const string& testValu
 
             // if the value matches, return, otherwise wait
             if (result == testValue) {
+                return true;
+            }
+        } catch (...) {
+            // Doesn't do anything, we'll fall through to the sleep and try again.
+        }
+        usleep(100'000);
+    }
+    return false;
+}
+
+bool BedrockTester::waitForLeadingFollowing(uint64_t timeoutUS) {
+    uint64_t start = STimeNow();
+    while (STimeNow() < start + timeoutUS) {
+        try {
+            string result = SParseJSONObject(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))["state"];
+
+            // if the value matches, return, otherwise wait
+            if (result == "LEADING" || result == "FOLLOWING") {
                 return true;
             }
         } catch (...) {

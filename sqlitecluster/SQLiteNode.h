@@ -25,12 +25,12 @@
  * Rules for maintaining SQLiteNode methods so that atomicity works as intended.
  *
  * No non-const members should be publicly exposed.
- * Any public method that is `const` must shared_lock<>(nodeMutex).
+ * Any public method that is `const` must shared_lock<>(_stateMutex).
  * Alternatively, a public `const` method that is a simple getter for an atomic property can skip the lock.
- * Any public method that is non-const must unique_lock<>(nodeMutex) before changing any internal state, and must hold
+ * Any public method that is non-const must unique_lock<>(_stateMutex) before changing any internal state, and must hold
  * this lock until it is done changing state to make this method's changes atomic.
  * Any private methods must not call public methods.
- * Any private methods must not lock nodeMutex (for recursion reasons).
+ * Any private methods must not lock _stateMutex (for recursion reasons).
  * Any public methods must not call other public methods.
  *
  * `_replicate` is a special exception because it runs in multiple threads internally. It needs to handle locking if it
@@ -89,9 +89,6 @@ class SQLiteNode : public STCPManager {
     // The minimum frequency of APPROVE_TRANSACTION messages we'll send when following, back to leader, to indicate our own current synchronization state.
     // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th BEGIN_TRANSACTION message.
     static const size_t MIN_APPROVE_FREQUENCY;
-
-    // The maximum number of commits behind we'll allow a quorum number of peers to be before we block commits on leader.
-    static atomic<uint64_t> MAX_PEER_FALL_BEHIND;
 
     // Get and SQLiteNode State from it's name.
     static SQLiteNodeState stateFromName(const string& name);
@@ -184,7 +181,7 @@ class SQLiteNode : public STCPManager {
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
 
-    // Look up the correct peer by the name it supplies in a NODE_LOGIN
+    // Look up the correct peer by the name it supplies in a LOGIN
     // message. Does not lock, but this method is const and all it does is
     // access _peerList and peer->name, both of which are const. So it is safe
     // to call from other public functions.
@@ -215,7 +212,6 @@ class SQLiteNode : public STCPManager {
     static atomic<int64_t> currentReplicateThreadID;
 
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
-    static size_t _initQuorumSize(const vector<SQLitePeer*>& _peerList, const int priority);
 
     // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
     // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
@@ -280,6 +276,8 @@ class SQLiteNode : public STCPManager {
     // commitCount that we do, this will return null.
     void _updateSyncPeer();
 
+    void _dieIfForkedFromCluster();
+
     const string _commandAddress;
     const string _name;
     const vector<SQLitePeer*> _peerList;
@@ -288,11 +286,6 @@ class SQLiteNode : public STCPManager {
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
     const int _originalPriority;
 
-    // If we're leading and we're too far ahead of the rest of the cluster, we block new commits. This prevents us from forking too far ahead of everyone else.
-    const size_t _quorumSize;
-    bool _commitsBlocked{false};
-    set<SQLitePeer*> _upToDatePeers;
-
     // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command port".
     const unique_ptr<Port> _port;
 
@@ -300,7 +293,7 @@ class SQLiteNode : public STCPManager {
     const string _version;
 
     // These are sockets that have been accepted on the node port but have not yet been associated with a peer (because
-    // they need to send a NODE_LOGIN message with their name first).
+    // they need to send a LOGIN message with their name first).
     set<Socket*> _unauthenticatedIncomingSockets;
 
     // The write consistency requested for the current in-progress commit.
@@ -371,8 +364,11 @@ class SQLiteNode : public STCPManager {
     // Stopwatch to track if we're giving up on the server preventing a standdown.
     SStopwatch _standDownTimeout;
 
-   // Our current State.
+    // Our current State.
     atomic<SQLiteNodeState> _state;
+
+    // Keeps track if we have closed the command port for commits fallen behind.
+    bool _blockedCommandPortForBeingBehind{false};
 
     // This is an integer that increments every time we change states. This is useful for responses to state changes
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
@@ -392,13 +388,6 @@ class SQLiteNode : public STCPManager {
     // Debugging info. Log the current number of transactions we're actually performing in replicate threads.
     // This can be removed once we've figured out why replication falls behind. See this issue: https://github.com/Expensify/Expensify/issues/210528
     atomic<size_t> _concurrentReplicateTransactions = 0;
-
-    // We keep a set of strings that are the names of nodes we've forked from, in the case we ever receive a hash mismatch while trying to synchronize.
-    // Whenever we become LEADING or FOLLOWING this is cleared. This resets the case where one node has forked, we attempt to synchronize from it, and fail,
-    // but later synchronize from someone else. Once we've come up completely, we no longer "hold a grudge" against this node, which will likely get fixed
-    // while we're online.
-    // In the event that this list becomes longer than half the cluster size, the node kills itself and logs that it's in an unrecoverable state.
-    set<string> _forkedFrom;
 
     // A pointer to a SQLite instance that is passed to plugin's stateChanged function. This prevents plugins from operating on the same handle that
     // the sync node is when they run queries in stateChanged.

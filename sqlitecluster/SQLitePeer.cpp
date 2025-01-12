@@ -26,6 +26,7 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     transactionResponse(Response::NONE),
     version(),
     lastPingTime(0),
+    forked(false),
     hash()
 { }
 
@@ -79,6 +80,7 @@ void SQLitePeer::reset() {
     version = "";
     lastPingTime = 0,
     setCommit(0, "");
+    forked = false;
 }
 
 void SQLitePeer::shutdownSocket() {
@@ -205,9 +207,6 @@ string SQLitePeer::responseName(Response response) {
         case Response::DENY:
             return "DENY";
             break;
-        case Response::ABSTAIN:
-            return "ABSTAIN";
-            break;
         default:
             return "";
     }
@@ -226,6 +225,7 @@ void SQLitePeer::getCommit(uint64_t& count, string& hashString) const {
 }
 
 STable SQLitePeer::getData() const {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
     // Add all of our standard stuff.
     STable result({
         {"name", name},

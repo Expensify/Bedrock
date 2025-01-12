@@ -49,9 +49,17 @@ static set<string> PARAMS_WHITELIST = {
     "indexName",
     "isUnique",
     "logParam",
+    "message",
+    "peer",
+    "reason",
     "requestID",
     "status",
     "userID",
+    "policyID",
+    "employeeEmail",
+    "approver",
+    "approvers",
+    "employees",
 };
 
 string addLogParams(string&& message, const STable& params) {

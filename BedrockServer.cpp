@@ -97,7 +97,7 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
     SINFO("Setting dbPool size to: " << _dbPoolSize);
-    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-hctree"));
+    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-hctree"), args["-checkpointMode"]);
     SQLite& db = _dbPool->getBase();
 
     // Initialize the command processor.
@@ -213,8 +213,9 @@ void BedrockServer::sync()
         // we're leading, then the next update() loop will set us to standing down, and then we won't accept any new
         // commands, and we'll shortly run through the existing queue.
         if (_shutdownState.load() == COMMANDS_FINISHED) {
-            SINFO("All clients responded to, " << BedrockCommand::getCommandCount() << " commands remaining. Shutting down sync node.");
+            SINFO("All clients responded to, " << BedrockCommand::getCommandCount() << " commands remaining.");
             if (_syncNode->beginShutdown()) {
+                SINFO("Beginning shuttdown of sync node.");
                 // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
                 _notifyDoneSync.push(true);
             }
@@ -357,7 +358,7 @@ void BedrockServer::sync()
                 committingCommand = true;
                 _syncNode->startCommit(SQLiteNode::QUORUM);
                 _lastQuorumCommandTime = STimeNow();
-                
+
                 // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
                 _notifyDoneSync.push(true);
                 SDEBUG("Finished sending distributed transaction for db upgrade.");
@@ -800,6 +801,14 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
         size_t waitCount = 0;
         while (_upgradeInProgress || (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING)) {
+
+            // It's feasible that our command times out in this loop. In this case, we do not have a DB object to pass.
+            // The only implication of this is the response does not get the commitCount attached to it.
+            if (BedrockCore::isTimedOut(command, nullptr, this)) {
+                _reply(command);
+                return;
+            }
+
             // This sleep call is pretty ugly, but it should almost never happen. We're accepting the potential
             // looping sleep call for the general case where we just check some bools and continue, instead of
             // avoiding the sleep call but having every thread lock a mutex here on every loop.
@@ -879,7 +888,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             // to be returned to the main queue, where they would have timed out in `peek`, but it was never called
             // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
             // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
-            if (core.isTimedOut(command)) {
+            if (core.isTimedOut(command, &db, this)) {
                 _reply(command);
                 return;
             }
@@ -1700,14 +1709,14 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
             size_t totalCount = 0;
             for (const auto& s : _crashCommands) {
                 totalCount += s.second.size();
-                
+
                 vector<string> paramsArray;
                 for (const STable& params : s.second) {
                     if (!params.empty()) {
                         paramsArray.push_back(SComposeJSONObject(params));
                     }
                 }
-                
+
                 STable commandObject;
                 commandObject[s.first] = SComposeJSONArray(paramsArray);
                 crashCommandListArray.push_back(SComposeJSONObject(commandObject));
@@ -1805,7 +1814,6 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "EnableSQLTracing")       ||
         SIEquals(command->request.methodLine, "BlockWrites")            ||
         SIEquals(command->request.methodLine, "UnblockWrites")          ||
-        SIEquals(command->request.methodLine, "SetMaxPeerFallBehind")   ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads")    ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
         ) {
@@ -1829,6 +1837,7 @@ atomic<bool> __quiesceShouldUnlock(false);
 thread* __quiesceThread = nullptr;
 
 void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
+    SINFO("Received control command: " << command->request.methodLine);
     SData& response = command->response;
     string reason = "MANUAL";
     response.methodLine = "200 OK";
@@ -1919,7 +1928,9 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
                 if (dbPoolCopy) {
                     SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
                     SQLite& db = dbScope.db();
+                    SINFO("[quiesce] Exclusive locking DB");
                     db.exclusiveLockDB();
+                    SINFO("[quiesce] Exclusive locked DB");
                     locked = true;
                     while (true) {
                         if (__quiesceShouldUnlock) {
@@ -1942,12 +1953,16 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             response.methodLine = "200 Blocked";
         }
     } else if (SIEquals(command->request.methodLine, "UnblockWrites")) {
+        SINFO("[quiesce] Locking __quiesceLock");
         lock_guard lock(__quiesceLock);
+        SINFO("[quiesce] __quiesceLock locked");
         if (!__quiesceThread) {
             response.methodLine = "200 Not Blocked";
         } else {
             __quiesceShouldUnlock = true;
+            SINFO("[quiesce] Joining __quiesceThread");
             __quiesceThread->join();
+            SINFO("[quiesce] __quiesceThread joined");
             delete __quiesceThread;
             __quiesceThread = nullptr;
             response.methodLine = "200 Unblocked";
@@ -1959,20 +1974,6 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             _maxSocketThreads = newMax;
         } else {
             response.methodLine = "401 Don't Use Zero";
-        }
-    } else if (SIEquals(command->request.methodLine, "SetMaxPeerFallBehind")) {
-        // Look up the existing value so we can report what it was.
-        uint64_t existingValue = SQLiteNode::MAX_PEER_FALL_BEHIND;
-        response["previousValue"] = to_string(existingValue);
-
-        uint64_t newValue = command->request.calcU64("value");
-        if (newValue < SQLiteNode::MIN_APPROVE_FREQUENCY) {
-            // We won't break everything on purpose. This can be used to check the existing value without changing anything by passing `0`.
-            response.methodLine = "400 Refusing to set peer fall behind below " + to_string(SQLiteNode::MIN_APPROVE_FREQUENCY);
-        } else {
-            // Set the new value and return 200 OK.
-            SQLiteNode::MAX_PEER_FALL_BEHIND = newValue;
-            response["previousValue"] = to_string(existingValue);
         }
     }
 }
