@@ -104,6 +104,7 @@ class SQLitePeer {
     mutable recursive_mutex peerMutex;
 
     // Not named with an underscore because it's only sort-of private (see friend class declaration above).
+  public:
     STCPManager::Socket* socket = nullptr;
 };
 
