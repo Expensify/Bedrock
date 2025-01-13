@@ -1172,6 +1172,12 @@ bool BedrockServer::_wouldCrash(const unique_ptr<BedrockCommand>& command) {
         return false;
     }
 
+    // If this command crashed with more than one set of identifying values, it means
+    // we've already crashed more than one node. Let's fully block this command in that case.
+    if (commandIt->second.size() > 1) {
+        return true;
+    }
+
     // Look at each crash-inducing command that has the same methodLine.
     for (const STable& values : commandIt->second) {
 
