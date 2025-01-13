@@ -79,8 +79,9 @@ class BedrockTester {
 
     // Read from the DB file, without going through the bedrock server. Two interfaces are provided to maintain
     // compatibility with the `SQLite` class.
-    string readDB(const string& query, bool online = true);
-    bool readDB(const string& query, SQResult& result, bool online = true);
+    // Note that timeoutMS only applies in HC-Tree mode. It is ignored in WAL2 mode.
+    string readDB(const string& query, bool online = true, int64_t timeoutMS = 0);
+    bool readDB(const string& query, SQResult& result, bool online = true, int64_t timeoutMS = 0);
 
     // Closes and releases any existing DB file.
     void freeDB();
