@@ -2566,22 +2566,9 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 void SQLiteNode::_processPeerMessages(uint64_t& nextActivity, SQLitePeer* peer, bool unlimited) {
     try {
         size_t messagesDeqeued = 0;
-        if (unlimited) {
-            if (peer->socket) {
-                string recvBuffer = peer->socket->recvBuffer.c_str();
-                if (recvBuffer.size()) {
-                    SINFO("TYLER: peer recv buffer " << peer->socket->recvBuffer);
-                }
-            } else {
-                SINFO("TYLER: no socket");
-            }
-        }
         while (true) {
             SData message = peer->popMessage();
             _onMESSAGE(peer, message);
-            if (unlimited) {
-                SINFO("TYLER: processed message with unlimited set " << message.methodLine);
-            }
             messagesDeqeued++;
             if (messagesDeqeued >= 100 && !unlimited) {
                 // We should run again immediately, we have more to do.
@@ -2664,7 +2651,6 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     // Now check established peer connections.
     for (SQLitePeer* peer : _peerList) {
         auto result = peer->postPoll(fdm, nextActivity);
-
         switch (result) {
             case SQLitePeer::PeerPostPollStatus::JUST_CONNECTED:
             {
