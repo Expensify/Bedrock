@@ -21,7 +21,7 @@ jobs:
 
     - name: Install the Mold Linker
       uses: rui314/setup-mold@v1
-      
+
     - name: Checkout Bedrock
       uses: actions/checkout@v4.1.0
 
@@ -32,7 +32,7 @@ jobs:
       shell: bash
 
     - name: Set up cache
-      uses: actions/cache@v4.0.0
+      uses: actions/cache@v4.2.0
       with:
         path: |-
           ${{ env.CCACHE_BASEDIR }}
