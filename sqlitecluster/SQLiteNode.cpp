@@ -2184,7 +2184,9 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
         STHROW("already in a transaction");
     }
 
-    if (!db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE)) {
+    // Shared with single-threaded replication because this is the only thread writing, and thus we can't get conflicts,
+    // and using SHARED prevents us from blocking or being blocked by readers.
+    if (!db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
         STHROW("failed to begin transaction");
     }
 
