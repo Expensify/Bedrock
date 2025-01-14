@@ -4,7 +4,6 @@
 #include <libstuff/STCPManager.h>
 #include <sqlitecluster/SQLite.h>
 #include <sqlitecluster/SQLitePool.h>
-#include <sqlitecluster/SQLiteSequentialNotifier.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -229,7 +228,7 @@ class SQLiteNode : public STCPManager {
     string _getLostQuorumLogMessage() const;
 
     // Handlers for transaction messages.
-    void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message, bool wasConflict);
+    void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
     void _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime);
     int _handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
     void _handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
