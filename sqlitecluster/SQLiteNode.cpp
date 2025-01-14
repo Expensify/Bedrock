@@ -187,38 +187,41 @@ void SQLiteNode::_replicate() {
         _replicateQueue.pop();
         uint64_t dequeueTime = STimeNow();
 
-        bool goSearchingOnExit = false;
+        bool shouldGoSearchingAndExit = false;
         {
-            if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-                auto start = chrono::steady_clock::now();
-                _handleBeginTransaction(db, peer, command);
-                _handlePrepareTransaction(db, peer, command, dequeueTime);
-                auto duration = chrono::steady_clock::now() - start;
-                SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
-            } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-                try {
-                    int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
-                    if (result != SQLITE_OK) {
-                        STHROW("commit failed");
-                    }
-                } catch (const SException& e) {
-                    SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
-                    goSearchingOnExit = true;
-                    db.rollback();
+            try {
+                if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
+                    auto start = chrono::steady_clock::now();
+                    _handleBeginTransaction(db, peer, command);
+                    _handlePrepareTransaction(db, peer, command, dequeueTime);
+                    auto duration = chrono::steady_clock::now() - start;
+                    SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
+                } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
+                        int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
+                        if (result != SQLITE_OK) {
+                            STHROW("commit failed");
+                        }
+                } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
+                    // `decrementer` needs to be destroyed to decrement our thread count before we can change state out of
+                    // FOLLOWING.
+                    _handleRollbackTransaction(db, peer, command);
+                    shouldGoSearchingAndExit = true;
                 }
-            } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-                // `decrementer` needs to be destroyed to decrement our thread count before we can change state out of
-                // FOLLOWING.
-                _handleRollbackTransaction(db, peer, command);
-                goSearchingOnExit = true;
+            } catch (const SException& e) {
+                SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
+                shouldGoSearchingAndExit = true;
+                db.rollback();
             }
         }
-        if (goSearchingOnExit) {
+        if (shouldGoSearchingAndExit) {
             // We can lock here for this state change because we're in our own thread, and this won't be recursive with
             // the calling thread. This is also a really weird exception case that should never happen, so the performance
             // implications aren't significant so long as we don't break.
             unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
             _changeState(SQLiteNodeState::SEARCHING);
+
+            // Currently, _changeState above causes this thread to wait for itself to join.
+            return;
         }
     }
 }
@@ -2295,7 +2298,6 @@ int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uin
     }
 
     SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
-
 
     int result = db.commit(stateName(_state));
     if (result == SQLITE_BUSY_SNAPSHOT) {
