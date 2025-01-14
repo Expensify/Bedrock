@@ -166,9 +166,6 @@ void SQLiteNode::_replicate() {
     SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex(false));
     SQLite& db = dbScope.db();
 
-    bool skipNext = false;
-    uint64_t commitNumber = 0;
-
     while (true) {
         unique_lock<mutex> lock(_replicateMutex);
         while (!_replicateThreadShouldExit && _replicateQueue.empty()) {
@@ -190,21 +187,7 @@ void SQLiteNode::_replicate() {
         _replicateQueue.pop();
         uint64_t dequeueTime = STimeNow();
 
-        if (skipNext) {
-            skipNext = false;
-            continue;
-        }
-
-        if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-            uint64_t messageCommitCount = command.calcU64("newCount");
-            uint64_t myCommitCount = db.getCommitCount();
-            if (myCommitCount >= messageCommitCount) {
-                SALERT("Got BEGIN_TRANSACTION for commit " << messageCommitCount << " but have commit " << myCommitCount);
-                skipNext = true;
-                continue;
-            }
-        }
-
+        bool shouldGoSearchingAndExit = false;
         try {
             if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
                 auto start = chrono::steady_clock::now();
@@ -212,22 +195,7 @@ void SQLiteNode::_replicate() {
                 _handlePrepareTransaction(db, peer, command, dequeueTime);
                 auto duration = chrono::steady_clock::now() - start;
                 SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
-            }
-            commitNumber = command.calcU64("newCount");
-        } catch (const SQLite::constraint_error& e) {
-            // A contraints error can happen in a situation where we're forked because we can try and insert the same row
-            // twice, violating the uniqueness of the key. This happens *before* we compute the hash of the entire trandsaction,
-            // so we see the constraint_error first.
-            SALERT("constraint_error in begin/prepare. CommitCount:" << db.getCommitCount() << ", message: " << command.serialize());
-            db.rollback();
-        }
-
-        bool shouldGoSearchingAndExit = false;
-        try {
-            if (commitNumber != command.calcU64("newCount")) {
-                SALERT("Instructed to commit transaction: " << command.calcU64("newCount") << " but expected " << commitNumber);
-            }
-            if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
+            } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
                     int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
                     if (result != SQLITE_OK) {
                         STHROW("commit failed");
@@ -236,7 +204,6 @@ void SQLiteNode::_replicate() {
                 _handleRollbackTransaction(db, peer, command);
                 shouldGoSearchingAndExit = true;
             }
-
         } catch (const SException& e) {
             SALERT("Caught SException in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
             shouldGoSearchingAndExit = true;
@@ -1855,7 +1822,6 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
                 delete _replicateThread;
                 _replicateThread = nullptr;
                 while (_replicateQueue.size()) {
-                    SALERT("Discarding: " << _replicateQueue.front().second.methodLine);
                     _replicateQueue.pop();
                 }
                 _replicateThreadShouldExit = false;
