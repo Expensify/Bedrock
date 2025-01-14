@@ -1817,12 +1817,14 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
 
         // If we were following, and now we're not, we give up an any replications.
         if (_state == SQLiteNodeState::FOLLOWING) {
-            _replicateThreadShouldExit = true;
-            _replicateCV.notify_one();
-            _replicateThread->join();
-            delete _replicateThread;
-            _replicateThread = nullptr;
-            _replicateThreadShouldExit = false;
+            if (_replicateThread) {
+                _replicateThreadShouldExit = true;
+                _replicateCV.notify_one();
+                _replicateThread->join();
+                delete _replicateThread;
+                _replicateThread = nullptr;
+                _replicateThreadShouldExit = false;
+            }
 
             // We have no leader anymore.
             _leadPeer = nullptr;
