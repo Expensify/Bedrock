@@ -677,11 +677,9 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     // where this journal in particular has accumulated a large backlog.
     static const size_t deleteLimit = 10;
     if (minJournalEntry < oldestCommitToKeep) {
-        auto startUS = STimeNow();
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         string query = "DELETE FROM " + _journalName + " WHERE id < " + SQ(oldestCommitToKeep) + " LIMIT " + SQ(deleteLimit);
         SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
-        size_t deletedCount = sqlite3_changes(_db);
     }
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
