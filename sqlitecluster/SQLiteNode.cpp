@@ -2563,6 +2563,24 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
     return socket;
 }
 
+void SQLiteNode::_processPeerMessages(uint64_t& nextActivity, SQLitePeer* peer, bool unlimited) {
+    try {
+        size_t messagesDeqeued = 0;
+        while (true) {
+            SData message = peer->popMessage();
+            _onMESSAGE(peer, message);
+            messagesDeqeued++;
+            if (messagesDeqeued >= 100 && !unlimited) {
+                // We should run again immediately, we have more to do.
+                nextActivity = STimeNow();
+                break;
+            }
+        }
+    } catch (const out_of_range& e) {
+        // Ok, just no messages.
+    }
+}
+
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
 
@@ -2638,10 +2656,12 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             {
                 _onConnect(peer);
                 _sendPING(peer);
+                _processPeerMessages(nextActivity, peer);
             }
             break;
             case SQLitePeer::PeerPostPollStatus::SOCKET_ERROR:
             {
+                _processPeerMessages(nextActivity, peer, true);
                 SData reconnect("RECONNECT");
                 reconnect["Reason"] = "socket error";
                 _sendToPeer(peer, reconnect);
@@ -2650,6 +2670,8 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case SQLitePeer::PeerPostPollStatus::SOCKET_CLOSED:
             {
+                _processPeerMessages(nextActivity, peer, true);
+                peer->reset();
                 _onDisconnect(peer);
             }
             break;
@@ -2666,21 +2688,8 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         _sendPING(peer);
                     }
                 }
-                try {
-                    size_t messagesDeqeued = 0;
-                    while (true) {
-                        SData message = peer->popMessage();
-                        _onMESSAGE(peer, message);
-                        messagesDeqeued++;
-                        if (messagesDeqeued >= 100) {
-                            // We should run again immediately, we have more to do.
-                            nextActivity = STimeNow();
-                            break;
-                        }
-                    }
-                } catch (const out_of_range& e) {
-                    // Ok, just no messages.
-                }
+
+                _processPeerMessages(nextActivity, peer);
             }
             break;
         }

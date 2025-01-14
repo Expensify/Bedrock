@@ -278,6 +278,8 @@ class SQLiteNode : public STCPManager {
 
     void _dieIfForkedFromCluster();
 
+    void _processPeerMessages(uint64_t& nextActivity, SQLitePeer* peer, bool unlimited = false);
+
     const string _commandAddress;
     const string _name;
     const vector<SQLitePeer*> _peerList;
