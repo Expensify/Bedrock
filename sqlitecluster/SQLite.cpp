@@ -663,7 +663,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     SQResult journalLookupResult;
     SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) FROM " + _journalName, journalLookupResult));
     uint64_t minJournalEntry = journalLookupResult.size() ? SToUInt64(journalLookupResult[0][0]) : 0;
-    
+
     // Note that this can change before we hold the lock on _sharedData.commitLock, but it doesn't matter yet, as we're only
     // using it to truncate the journal. We'll reset this value once we acquire that lock.
     uint64_t commitCount = _sharedData.commitCount;
@@ -682,8 +682,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
         string query = "DELETE FROM " + _journalName + " WHERE id < " + SQ(oldestCommitToKeep) + " LIMIT " + SQ(deleteLimit);
         SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
         size_t deletedCount = sqlite3_changes(_db);
-        SINFO("Removed " << deletedCount << " rows from journal " << _journalName << ", oldestToKeep: " << oldestCommitToKeep << ", count:"
-               << commitCount << ", limit: " << _maxJournalSize << ", in " << (STimeNow() - startUS) << "us.");
     }
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
@@ -771,9 +769,6 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     result = SQuery(_db, "committing db transaction", "COMMIT");
     _lastConflictPage = _conflictPage;
     _lastConflictTable = _conflictTable;
-    if (_lastConflictPage) {
-        SINFO(format("part of last conflict page: {}, conflict table: {}",  _conflictPage, _conflictTable));
-    }
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
@@ -834,7 +829,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _lastConflictPage = 0;
         _lastConflictTable = "";
     } else {
-        SINFO("Commit failed, waiting for rollback.");
+        // The commit failed, we will rollback.
     }
 
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
@@ -883,9 +878,6 @@ void SQLite::rollback() {
         // Finally done with this.
         _insideTransaction = false;
         _uncommittedHash.clear();
-        if (_uncommittedQuery.size()) {
-            SINFO("Rollback successful.");
-        }
         _uncommittedQuery.clear();
 
         // Only unlock the mutex if we've previously locked it. We can call `rollback` to cancel a transaction without

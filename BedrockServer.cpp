@@ -1030,8 +1030,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             // loop and send it to followers. NOTE: we don't check for null here, that should be
                             // impossible inside a worker thread.
                             _syncNode->notifyCommit();
-                            SINFO("Committed leader transaction #" << transactionID << "(" << transactionHash << "). Command: '" << command->request.methodLine << "', blocking: "
-                                  << (isBlocking ? "true" : "false"));
                             _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
                             // So we must still be leading, and at this point our commit has succeeded, let's
                             // mark it as complete. We add the currentCommit count here as well.
