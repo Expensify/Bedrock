@@ -69,3 +69,7 @@ bool BedrockPlugin::preventAttach() {
 void BedrockPlugin::timerFired(SStopwatch* timer) {}
 
 void BedrockPlugin::upgradeDatabase(SQLite& db) {}
+
+bool BedrockPlugin::shouldLockCommitPageOnTableConflict(const string& tableName) const {
+    return true;
+}
