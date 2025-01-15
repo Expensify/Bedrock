@@ -2722,7 +2722,6 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
     if (extErr == SQLITE_BUSY_SNAPSHOT) {
-        SHMMM("[concurrent] commit conflict.");
         return extErr;
     }
     return error;
