@@ -219,6 +219,8 @@ void SQLiteNode::_replicate() {
             }
         } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
             _handleRollbackTransaction(db, peer, command);
+        } else {
+            SWARN("Invalid command passed to _replicate: " << command.methodLine);
         }
     }
 }
