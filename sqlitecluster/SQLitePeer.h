@@ -45,6 +45,8 @@ class SQLitePeer {
     // If there are no messages, throws `std::out_of_range`.
     SData popMessage();
 
+    // NOTE: If this returns PeerPostPollStatus::SOCKET_CLOSED then the caller must call `reset` on this peer.
+    // This is not done internally becuase we need to expose the outstanding data on the socket before deleting it.
     PeerPostPollStatus postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Send a message to this peer. Thread-safe.
