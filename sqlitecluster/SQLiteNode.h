@@ -376,5 +376,5 @@ class SQLiteNode : public STCPManager {
     mutex _replicateMutex;
     condition_variable _replicateCV;
     queue<pair<SQLitePeer*, SData>> _replicateQueue;
-    atomic<bool> _replicateThreadShouldExit;
+    atomic<bool> _shouldReplicateThreadExit;
 };
