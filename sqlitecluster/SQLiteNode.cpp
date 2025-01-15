@@ -126,7 +126,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
       _stateChangeCount(0),
       _stateTimeout(STimeNow() + firstTimeout),
       _syncPeer(nullptr),
-      _replicateThreadShouldExit(false)
+      _shouldReplicateThreadExit(false)
 {
     KILLABLE_SQLITE_NODE = this;
     SASSERT(_originalPriority >= 0);
@@ -169,18 +169,18 @@ void SQLiteNode::_replicate() {
     SQLitePeer* peer = nullptr;
     SData command;
     while (true) {
-        bool exitWhenQueueEmpty = false;
-        bool queueEmpty = false;
+        bool shouldExitWhenQueueEmpty = false;
+        bool isQueueEmpty = false;
         uint64_t dequeueTime = 0;
         {
             unique_lock<mutex> lock(_replicateMutex);
-            while (!_replicateThreadShouldExit && _replicateQueue.empty()) {
+            while (!_shouldReplicateThreadExit && _replicateQueue.empty()) {
                 _replicateCV.wait(lock);
             }
             
-            exitWhenQueueEmpty = _replicateThreadShouldExit;
-            queueEmpty = _replicateQueue.empty();
-            if (!queueEmpty) {
+            shouldExitWhenQueueEmpty = _shouldReplicateThreadExit;
+            isQueueEmpty = _replicateQueue.empty();
+            if (!isQueueEmpty) {
                 peer = _replicateQueue.front().first;
                 command = move(_replicateQueue.front().second);
                 _replicateQueue.pop();
@@ -189,9 +189,9 @@ void SQLiteNode::_replicate() {
         }
 
         // If there was no work, we either wait again, or we can exit.
-        if (queueEmpty) {
+        if (isQueueEmpty) {
             // There are no commands to process.
-            if (exitWhenQueueEmpty) {
+            if (shouldExitWhenQueueEmpty) {
                 if (db.insideTransaction()) {
                     SINFO("Finished replication mid-transaction, missing COMMIT_TRANSACTION, rolling back.");
                     db.rollback();
@@ -213,12 +213,14 @@ void SQLiteNode::_replicate() {
             auto duration = chrono::steady_clock::now() - start;
             SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
         } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-                int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
-                if (result != SQLITE_OK) {
-                    STHROW("commit failed");
-                }
+            int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
+            if (result != SQLITE_OK) {
+                STHROW("commit failed");
+            }
         } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
             _handleRollbackTransaction(db, peer, command);
+        } else {
+            SWARN("Invalid command passed to _replicate: " << command.methodLine);
         }
     }
 }
@@ -1573,7 +1575,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             bool replicationRunning = false;
             {
                 lock_guard<mutex> lock(_replicateMutex);
-                if (!_replicateThreadShouldExit) {
+                if (!_shouldReplicateThreadExit) {
                     _replicateQueue.push(make_pair(peer, message));
                     replicationRunning = true;
                 }
@@ -1822,7 +1824,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
         if (_state == SQLiteNodeState::FOLLOWING) {
             {
                 lock_guard<mutex> lock(_replicateMutex);
-                _replicateThreadShouldExit = true;
+                _shouldReplicateThreadExit = true;
             }
             if (_replicateThread) {
                 _replicateCV.notify_one();
@@ -1835,7 +1837,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             }
             {
                 lock_guard<mutex> lock(_replicateMutex);
-                _replicateThreadShouldExit = false;
+                _shouldReplicateThreadExit = false;
             }
 
             // We have no leader anymore.
