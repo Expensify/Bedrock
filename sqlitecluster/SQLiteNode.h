@@ -4,10 +4,10 @@
 #include <libstuff/STCPManager.h>
 #include <sqlitecluster/SQLite.h>
 #include <sqlitecluster/SQLitePool.h>
-#include <sqlitecluster/SQLiteSequentialNotifier.h>
 
 #include <mutex>
 #include <condition_variable>
+#include <queue>
 
 // This file is long and complex. For each nested sub-structure (I.e., classes inside classes) we have attempted to
 // arrange things as such:
@@ -168,7 +168,7 @@ class SQLiteNode : public STCPManager {
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Constructor/Destructor
-    SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,
+    SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPool, const string& name, const string& host,
                const string& peerList, int priority, uint64_t firstTimeout, const string& version,
                const string& commandPort = "localhost:8890");
     ~SQLiteNode();
@@ -208,9 +208,6 @@ class SQLiteNode : public STCPManager {
     // for logging.
     static const string CONSISTENCY_LEVEL_NAMES[NUM_CONSISTENCY_LEVELS];
 
-    // Monotonically increasing thread counter, used for thread IDs for logging purposes.
-    static atomic<int64_t> currentReplicateThreadID;
-
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
 
     // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
@@ -231,8 +228,8 @@ class SQLiteNode : public STCPManager {
     string _getLostQuorumLogMessage() const;
 
     // Handlers for transaction messages.
-    void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message, bool wasConflict);
-    void _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime, uint64_t threadStartTime);
+    void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
+    void _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime);
     int _handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
     void _handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
 
@@ -263,7 +260,7 @@ class SQLiteNode : public STCPManager {
     //
     // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
     // which happens when a node stops FOLLOWING.
-    void _replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp);
+    void _replicate();
 
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
@@ -333,10 +330,6 @@ class SQLiteNode : public STCPManager {
     // Pointer to the peer that is the leader. Null if we're the leader, or if we don't have a leader yet.
     atomic<SQLitePeer*> _leadPeer;
 
-    // These are used in _replicate, _changeState, and _recvSynchronize to coordinate the replication threads.
-    SQLiteSequentialNotifier _leaderCommitNotifier;
-    SQLiteSequentialNotifier _localCommitNotifier;
-
     // We can spin up threads to handle responding to `SYNCHRONIZE` messages out-of-band. We want to make sure we don't
     // shut down in the middle of running these, so we keep a count of them.
     atomic<size_t> _pendingSynchronizeResponses = 0;
@@ -347,18 +340,6 @@ class SQLiteNode : public STCPManager {
     // or when we're standingdown.
     // Remove. See: https://github.com/Expensify/Expensify/issues/208449
     atomic<int> _priority;
-
-    // These three variables are used to coordinate the startup of replication threads to guarantee each thread starts before we attempt to start the next one.
-    mutex _replicateStartMutex;
-    condition_variable _replicateStartCV;
-    bool _replicateThreadStarted = false;
-
-    // Counter of the total number of currently active replication threads. This is used to let us know when all
-    // threads have finished.
-    atomic<int64_t> _replicationThreadCount;
-
-    // State variable that indicates when the above threads should quit.
-    atomic<bool> _replicationThreadsShouldExit;
 
     // Server that implements `SQLiteServer` interface.
     SQLiteServer& _server;
@@ -387,11 +368,13 @@ class SQLiteNode : public STCPManager {
     // Remove. See: https://github.com/Expensify/Expensify/issues/208439
     SQLitePeer* _syncPeer;
 
-    // Debugging info. Log the current number of transactions we're actually performing in replicate threads.
-    // This can be removed once we've figured out why replication falls behind. See this issue: https://github.com/Expensify/Expensify/issues/210528
-    atomic<size_t> _concurrentReplicateTransactions = 0;
-
     // A pointer to a SQLite instance that is passed to plugin's stateChanged function. This prevents plugins from operating on the same handle that
     // the sync node is when they run queries in stateChanged.
     SQLite* pluginDB;
+
+    thread* _replicateThread = nullptr;
+    mutex _replicateMutex;
+    condition_variable _replicateCV;
+    queue<pair<SQLitePeer*, SData>> _replicateQueue;
+    atomic<bool> _shouldReplicateThreadExit;
 };
