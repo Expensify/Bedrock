@@ -1572,15 +1572,15 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 return;
             }
 
-            bool replicationRunning = false;
+            bool isReplicationRunning = false;
             {
                 lock_guard<mutex> lock(_replicateMutex);
                 if (!_shouldReplicateThreadExit) {
                     _replicateQueue.push(make_pair(peer, message));
-                    replicationRunning = true;
+                    isReplicationRunning = true;
                 }
             }
-            if (replicationRunning) {
+            if (isReplicationRunning) {
                 if (!_replicateThread) {
                     _replicateThread = new thread(&SQLiteNode::_replicate, this);
                 }
