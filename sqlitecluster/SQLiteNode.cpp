@@ -68,8 +68,6 @@ const string SQLiteNode::CONSISTENCY_LEVEL_NAMES[] = {"ASYNC",
                                                     "ONE",
                                                     "QUORUM"};
 
-atomic<int64_t> SQLiteNode::currentReplicateThreadID(0);
-
 const size_t SQLiteNode::MIN_APPROVE_FREQUENCY{10};
 
 const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString) {
@@ -106,7 +104,7 @@ const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString) {
     return peerList;
 }
 
-SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name,
+SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPool, const string& name,
                        const string& host, const string& peerList, int priority, uint64_t firstTimeout,
                        const string& version, const string& commandPort)
     : STCPManager(),
@@ -123,13 +121,12 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
       _lastSentTransactionID(0),
       _leadPeer(nullptr),
       _priority(-1),
-      _replicationThreadCount(0),
-      _replicationThreadsShouldExit(false),
       _server(server),
       _state(SQLiteNodeState::UNKNOWN),
       _stateChangeCount(0),
       _stateTimeout(STimeNow() + firstTimeout),
-      _syncPeer(nullptr)
+      _syncPeer(nullptr),
+      _shouldReplicateThreadExit(false)
 {
     KILLABLE_SQLITE_NODE = this;
     SASSERT(_originalPriority >= 0);
@@ -139,8 +136,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, cons
     // its own handle to operate on. This avoids conflicts where the sync thread and the plugin are trying to both run
     // queries at the same time. This also avoids the need to create any share locking between the two.
     pluginDB = new SQLite(_db);
-    SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
-    _localCommitNotifier.notifyThrough(_db.getCommitCount());
 
     // Get this party started
     _changeState(SQLiteNodeState::SEARCHING);
@@ -165,145 +160,68 @@ SQLiteNode::~SQLiteNode() {
     }
 }
 
-void SQLiteNode::_replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp) {
-    // Notify the sync thread that this thread has begun.
-    {
-        unique_lock<mutex> lock(_replicateStartMutex);
-        _replicateThreadStarted = true;
-    }
-    _replicateStartCV.notify_all();
-
-    // Initialize each new thread with a new number.
-    SInitialize("replicate" + to_string(currentReplicateThreadID.fetch_add(1)));
-
-    // Actual thread startup time.
-    uint64_t threadStartTime = STimeNow();
-
+void SQLiteNode::_replicate() {
+    SInitialize("replication");
     // Allow the DB handle to be returned regardless of how this function exits.
-    SQLiteScopedHandle dbScope(*_dbPool, sqlitePoolIndex);
+    SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex(false));
     SQLite& db = dbScope.db();
 
-    bool goSearchingOnExit = false;
-    {
-        // Make sure when this thread exits we decrement our thread counter.
-        ScopedDecrement<decltype(_replicationThreadCount)> decrementer(_replicationThreadCount);
-
-        SDEBUG("Replicate thread started: " << command.methodLine);
-        if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-            uint64_t newCount = command.calcU64("NewCount");
-            uint64_t currentCount = newCount - 1;
-
-            // Transactions are either ASYNC or QUORUM. QUORUM transactions can only start when the DB is completely
-            // up-to-date. ASYNC transactions can start as soon as the DB is at `dbCountAtStart` (the same value that
-            // the DB was at when the transaction began on leader).
-            bool quorum = !SStartsWith(command["ID"], "ASYNC");
-            uint64_t waitForCount = SStartsWith(command["ID"], "ASYNC") ? command.calcU64("dbCountAtStart") : currentCount;
-            SINFO("[performance] BEGIN_TRANSACTION replicate thread for commit " << newCount << " waiting on DB count " << waitForCount << " (" << (quorum ? "QUORUM" : "ASYNC") << ")");
-            while (true) {
-                SQLiteSequentialNotifier::RESULT result = _localCommitNotifier.waitFor(waitForCount, false);
-                if (result == SQLiteSequentialNotifier::RESULT::UNKNOWN) {
-                    // This should be impossible.
-                    SERROR("Got UNKNOWN result from waitFor, which shouldn't happen");
-                } else if (result == SQLiteSequentialNotifier::RESULT::COMPLETED) {
-                    // Success case.
-                    break;
-                } else if (result == SQLiteSequentialNotifier::RESULT::CANCELED) {
-                    SINFO("_localCommitNotifier.waitFor canceled early, returning.");
-                    return;
-                } else {
-                    SERROR("Got unhandled SQLiteSequentialNotifier::RESULT value, did someone update the enum without updating this block?");
-                }
+    SQLitePeer* peer = nullptr;
+    SData command;
+    while (true) {
+        bool shouldExitWhenQueueEmpty = false;
+        bool isQueueEmpty = false;
+        uint64_t dequeueTime = 0;
+        {
+            unique_lock<mutex> lock(_replicateMutex);
+            while (!_shouldReplicateThreadExit && _replicateQueue.empty()) {
+                _replicateCV.wait(lock);
             }
-            SINFO("[performance] Finished waiting for commit count " << waitForCount << ", beginning replicate write.");
+            
+            shouldExitWhenQueueEmpty = _shouldReplicateThreadExit;
+            isQueueEmpty = _replicateQueue.empty();
+            if (!isQueueEmpty) {
+                peer = _replicateQueue.front().first;
+                command = move(_replicateQueue.front().second);
+                _replicateQueue.pop();
+                dequeueTime = STimeNow();
+            }
+        }
 
-            try {
-                int result = -1;
-                int commitAttemptCount = 1;
-                while (result != SQLITE_OK) {
-                    if (commitAttemptCount > 1) {
-                        SINFO("Commit attempt number " << commitAttemptCount << " for concurrent replication.");
-                    }
-                    SINFO("[performance] BEGIN for commit " << newCount);
-                    bool uniqueContraintsError = false;
-                    try {
-                        auto start = chrono::steady_clock::now();
-                        _handleBeginTransaction(db, peer, command, commitAttemptCount > 1);
-
-                        // Now we need to wait for the DB to be up-to-date (if the transaction is QUORUM, we can
-                        // skip this, we did it above) to enforce that commits are in the same order on followers as on
-                        // leader.
-                        if (!quorum) {
-                            SDEBUG("[performance] Waiting at commit " << db.getCommitCount() << " for commit " << currentCount);
-                            SQLiteSequentialNotifier::RESULT waitResult = _localCommitNotifier.waitFor(currentCount, true);
-                            if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
-                                SINFO("Replication canceled mid-transaction, stopping.");
-                                --_concurrentReplicateTransactions;
-                                db.rollback();
-                                break;
-                            }
-                        }
-
-                        // Ok, almost ready.
-                        // Note:: calls _sendToPeer() which is a write operation.
-                        _handlePrepareTransaction(db, peer, command, threadAttemptStartTimestamp, threadStartTime);
-                        auto duration = chrono::steady_clock::now() - start;
-                        SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us. " << _concurrentReplicateTransactions.load()
-                              << " concurrent replicate transactions in " << _replicationThreadCount << " threads.");
-                    } catch (const SQLite::constraint_error& e) {
-                        // We could `continue` immediately upon catching this exception, but instead, we wait for the
-                        // leader commit notifier to be ready. This prevents us from spinning in an endless loop on the
-                        // same error over and over until whatever thread we're waiting for finishes.
-                        uniqueContraintsError = true;
-                    }
-                    // Now see if we can commit. We wait until *after* prepare because for QUORUM transactions, we
-                    // don't send LEADER the approval for this until inside of `prepare`. This potentially makes us
-                    // wait while holding the commit lock for non-concurrent transactions, but I guess nobody else with
-                    // a commit after us will be able to commit, either.
-                    SINFO("[performance] Waiting on leader to say it has committed transaction " << command.calcU64("NewCount"));
-                    SQLiteSequentialNotifier::RESULT waitResult = _leaderCommitNotifier.waitFor(command.calcU64("NewCount"), true);
-                    SINFO("[performance] Leader reported committing transaction " << command.calcU64("NewCount") << ", committing.");
-                    if (uniqueContraintsError) {
-                        SINFO("Got unique constraints error in replication, restarting.");
-                        --_concurrentReplicateTransactions;
-                        db.rollback();
-                        continue;
-                    } else if (waitResult == SQLiteSequentialNotifier::RESULT::CANCELED) {
-                        SINFO("Replication canceled mid-transaction, stopping.");
-                        --_concurrentReplicateTransactions;
-                        db.rollback();
-                        break;
-                    }
-
-                    // Leader says it has committed this transaction, so we can too.
-                    ++commitAttemptCount;
-                    result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
-                    if (result != SQLITE_OK) {
-                        db.rollback();
-                    }
+        // If there was no work, we either wait again, or we can exit.
+        if (isQueueEmpty) {
+            // There are no commands to process.
+            if (shouldExitWhenQueueEmpty) {
+                if (db.insideTransaction()) {
+                    SINFO("Finished replication mid-transaction, missing COMMIT_TRANSACTION, rolling back.");
+                    db.rollback();
                 }
-            } catch (const SException& e) {
-                SALERT("Caught exception in replication thread. Assuming this means we want to stop following. Exception: " << e.what());
-                goSearchingOnExit = true;
-                --_concurrentReplicateTransactions;
-                db.rollback();
+                
+                // Done with replication.
+                return;
+            } else {
+                // The queue is empty but we're not exiting so go back to the top and wait.
+                continue;
+            }
+        }
+
+        // At this point, we're guaranteed to have a message. Process it and then run again.
+        if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
+            auto start = chrono::steady_clock::now();
+            _handleBeginTransaction(db, peer, command);
+            _handlePrepareTransaction(db, peer, command, dequeueTime);
+            auto duration = chrono::steady_clock::now() - start;
+            SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
+        } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
+            int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
+            if (result != SQLITE_OK) {
+                STHROW("commit failed");
             }
         } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-            // `decrementer` needs to be destroyed to decrement our thread count before we can change state out of
-            // FOLLOWING.
             _handleRollbackTransaction(db, peer, command);
-            --_concurrentReplicateTransactions;
-            goSearchingOnExit = true;
-        } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-            SINFO("[performance] Notifying threads that leader has committed transaction " << command.calcU64("CommitCount"));
-            _leaderCommitNotifier.notifyThrough(command.calcU64("CommitCount"));
+        } else {
+            SWARN("Invalid command passed to _replicate: " << command.methodLine);
         }
-    }
-    if (goSearchingOnExit) {
-        // We can lock here for this state change because we're in our own thread, and this won't be recursive with
-        // the calling thread. This is also a really weird exception case that should never happen, so the performance
-        // implications aren't significant so long as we don't break.
-        unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-        _changeState(SQLiteNodeState::SEARCHING);
     }
 }
 
@@ -1653,36 +1571,22 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 SINFO("Ignoring " << message.methodLine << " in state " << stateName(_state));
                 return;
             }
-            if (_replicationThreadsShouldExit) {
-                SINFO("Discarding replication message, stopping FOLLOWING");
-            } else {
-                auto threadID = _replicationThreadCount.fetch_add(1);
-                SDEBUG("Spawning concurrent replicate thread (blocks until DB handle available): " << threadID);
-                try {
-                    uint64_t threadAttemptStartTimestamp = STimeNow();
-                    _replicateThreadStarted = false;
-                    thread(&SQLiteNode::_replicate, this, peer, message, _dbPool->getIndex(false), threadAttemptStartTimestamp).detach();
-                    {
-                        unique_lock<mutex> lock(_replicateStartMutex);
-                        while (!_replicateThreadStarted) {
-                            _replicateStartCV.wait(lock);
-                            if (!_replicateThreadStarted) {
-                                SINFO("condition variable finished waiting but replicate thread not started.");
-                            }
-                        }
-                    }
-                } catch (const system_error& e) {
-                    // If the server is strugling and falling behind on replication, we might have too many threads
-                    // causing a resource exhaustion. If that happens, all the transactions that are already threaded
-                    // and waiting for the transaction that failed will be stuck in an infinite loop. To prevent that
-                    // we're changing the state to SEARCHING and sending the cancelAfter property to drop all threads
-                    // that depend on the transaction that failed to be threaded.
-                    _replicationThreadCount.fetch_sub(1);
-                    SWARN("Caught system_error starting _replicate thread with " << _replicationThreadCount.load() << " threads. e.what()=" << e.what());
-                    _changeState(SQLiteNodeState::SEARCHING, message.calcU64("NewCount") - 1);
-                    STHROW("Error starting replicate thread so giving up and reconnecting.");
+
+            bool isReplicationRunning = false;
+            {
+                lock_guard<mutex> lock(_replicateMutex);
+                if (!_shouldReplicateThreadExit) {
+                    _replicateQueue.push(make_pair(peer, message));
+                    isReplicationRunning = true;
                 }
-                SDEBUG("Done spawning concurrent replicate thread: " << threadID);
+            }
+            if (isReplicationRunning) {
+                if (!_replicateThread) {
+                    _replicateThread = new thread(&SQLiteNode::_replicate, this);
+                }
+                _replicateCV.notify_one();
+            } else {
+                SINFO("Discarding replication message, stopping FOLLOWING");
             }
         } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
             // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
@@ -1912,39 +1816,29 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly) {
 }
 
 void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCancelAfter) {
-    SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
-    _localCommitNotifier.notifyThrough(_db.getCommitCount());
-
     if (newState != _state) {
         // First, we notify all plugins about the state change
         _server.notifyStateChangeToPlugins(*pluginDB, newState);
 
         // If we were following, and now we're not, we give up an any replications.
         if (_state == SQLiteNodeState::FOLLOWING) {
-            _replicationThreadsShouldExit = true;
-            uint64_t cancelAfter = commitIDToCancelAfter ? commitIDToCancelAfter : _leaderCommitNotifier.getValue();
-            SINFO("Replication threads should exit, canceling commits after current leader commit " << cancelAfter);
-            _localCommitNotifier.cancel(cancelAfter);
-            _leaderCommitNotifier.cancel(cancelAfter);
-
-            // Polling wait for threads to quit. This could use a notification model such as with a condition_variable,
-            // which would probably be "better" but introduces yet more state variables for a state that we're rarely
-            // in, and so I've left it out for the time being.
-            size_t infoCount = 1;
-            while (_replicationThreadCount) {
-                if (infoCount % 100 == 0) {
-                    SINFO("Waiting for " << _replicationThreadCount << " remaining replication threads.");
-                }
-                infoCount++;
-                usleep(10'000);
+            {
+                lock_guard<mutex> lock(_replicateMutex);
+                _shouldReplicateThreadExit = true;
             }
-
-            // Done exiting. Reset so that we can resume FOLLOWING in the future.
-            _replicationThreadsShouldExit = false;
-
-            // Guaranteed to be done right now.
-            _localCommitNotifier.reset();
-            _leaderCommitNotifier.reset();
+            if (_replicateThread) {
+                _replicateCV.notify_one();
+                _replicateThread->join();
+                delete _replicateThread;
+                _replicateThread = nullptr;
+            }
+            if (_replicateQueue.size()) {
+                SWARN("Replicate queue contains " << _replicateQueue.size() << " messages at thread shutdown.");
+            }
+            {
+                lock_guard<mutex> lock(_replicateMutex);
+                _shouldReplicateThreadExit = false;
+            }
 
             // We have no leader anymore.
             _leadPeer = nullptr;
@@ -2183,10 +2077,6 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message) {
         SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
         _db.commit(stateName(_state));
 
-        // Should work here.
-        SINFO("[NOTIFY] setting commit count to: " << _db.getCommitCount());
-        _localCommitNotifier.notifyThrough(_db.getCommitCount());
-
         if (_db.getCommittedHash() != commit["Hash"])
             STHROW("potential hash mismatch");
         --commitsRemaining;
@@ -2313,7 +2203,7 @@ bool SQLiteNode::_majoritySubscribed() const {
     return (numFullFollowers * 2 >= numFullPeers);
 }
 
-void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message, bool wasConflict) {
+void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message) {
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
     // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
     // the transaction for any reason, it is broken somehow -- disconnect from the leader.
@@ -2326,12 +2216,9 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
         STHROW("already in a transaction");
     }
 
-    // If we are running this after a conflict, we'll grab an exclusive lock here. This makes no practical
-    // difference in replication, as transactions must commit in order, thus if we've failed one commit, nobody
-    // else can attempt to commit anyway, but this logs our time spent in the commit mutex in EXCLUSIVE rather
-    // than SHARED mode.
-    ++_concurrentReplicateTransactions;
-    if (!db.beginTransaction(wasConflict ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
+    // Shared with single-threaded replication because this is the only thread writing, and thus we can't get conflicts,
+    // and using SHARED prevents us from blocking or being blocked by readers.
+    if (!db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
         STHROW("failed to begin transaction");
     }
 
@@ -2341,7 +2228,8 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
     }
 }
 
-void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime, uint64_t threadStartTime) {
+void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime) {
+    uint64_t prepareStartTime = STimeNow();
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
     // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
     // the transaction for any reason, it is broken somehow -- disconnect from the leader.
@@ -2398,13 +2286,11 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
     }
     uint64_t leaderSentTimestamp = message.calcU64("leaderSendTime");
     uint64_t transitTimeUS = dequeueTime - leaderSentTimestamp;
-    uint64_t threadStartTimeUS = threadStartTime - dequeueTime;
-    uint64_t applyTimeUS = STimeNow() - threadStartTime;
+    uint64_t applyTimeUS = STimeNow() - prepareStartTime;
     float transitTimeMS = (float)transitTimeUS / 1000.0;
-    float threadStartTimeMS = (float)threadStartTimeUS / 1000.0;
     float applyTimeMS = (float)applyTimeUS / 1000.0;
     PINFO("[performance] Replicated transaction " << message.calcU64("NewCount") << ", sent by leader at " << leaderSentTimestamp
-          << ", transit/dequeue time: " << transitTimeMS << "ms, thread start time: " << threadStartTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
+          << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
 }
 
 int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash) {
@@ -2426,15 +2312,7 @@ int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uin
 
     SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
 
-    // Let the commit handler notify any other waiting threads that our commit is complete before it starts a checkpoint.
-    function<void()> notifyIfCommitted = [&]() {
-        auto commitCount = db.getCommitCount();
-        SINFO("[performance] Notifying waiting threads that we've locally committed " << commitCount);
-        _localCommitNotifier.notifyThrough(commitCount);
-    };
-
-    int result = db.commit(stateName(_state), &notifyIfCommitted);
-    --_concurrentReplicateTransactions;
+    int result = db.commit(stateName(_state));
     if (result == SQLITE_BUSY_SNAPSHOT) {
         // conflict, bail out early.
         return result;
@@ -2556,6 +2434,24 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
     return socket;
 }
 
+void SQLiteNode::_processPeerMessages(uint64_t& nextActivity, SQLitePeer* peer, bool unlimited) {
+    try {
+        size_t messagesDeqeued = 0;
+        while (true) {
+            SData message = peer->popMessage();
+            _onMESSAGE(peer, message);
+            messagesDeqeued++;
+            if (messagesDeqeued >= 100 && !unlimited) {
+                // We should run again immediately, we have more to do.
+                nextActivity = STimeNow();
+                break;
+            }
+        }
+    } catch (const out_of_range& e) {
+        // Ok, just no messages.
+    }
+}
+
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
 
@@ -2631,10 +2527,12 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             {
                 _onConnect(peer);
                 _sendPING(peer);
+                _processPeerMessages(nextActivity, peer);
             }
             break;
             case SQLitePeer::PeerPostPollStatus::SOCKET_ERROR:
             {
+                _processPeerMessages(nextActivity, peer, true);
                 SData reconnect("RECONNECT");
                 reconnect["Reason"] = "socket error";
                 _sendToPeer(peer, reconnect);
@@ -2643,6 +2541,8 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
             break;
             case SQLitePeer::PeerPostPollStatus::SOCKET_CLOSED:
             {
+                _processPeerMessages(nextActivity, peer, true);
+                peer->reset();
                 _onDisconnect(peer);
             }
             break;
@@ -2659,21 +2559,8 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         _sendPING(peer);
                     }
                 }
-                try {
-                    size_t messagesDeqeued = 0;
-                    while (true) {
-                        SData message = peer->popMessage();
-                        _onMESSAGE(peer, message);
-                        messagesDeqeued++;
-                        if (messagesDeqeued >= 100) {
-                            // We should run again immediately, we have more to do.
-                            nextActivity = STimeNow();
-                            break;
-                        }
-                    }
-                } catch (const out_of_range& e) {
-                    // Ok, just no messages.
-                }
+
+                _processPeerMessages(nextActivity, peer);
             }
             break;
         }

@@ -801,6 +801,14 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
         size_t waitCount = 0;
         while (_upgradeInProgress || (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING)) {
+
+            // It's feasible that our command times out in this loop. In this case, we do not have a DB object to pass.
+            // The only implication of this is the response does not get the commitCount attached to it.
+            if (BedrockCore::isTimedOut(command, nullptr, this)) {
+                _reply(command);
+                return;
+            }
+
             // This sleep call is pretty ugly, but it should almost never happen. We're accepting the potential
             // looping sleep call for the general case where we just check some bools and continue, instead of
             // avoiding the sleep call but having every thread lock a mutex here on every loop.
@@ -880,7 +888,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             // to be returned to the main queue, where they would have timed out in `peek`, but it was never called
             // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
             // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
-            if (core.isTimedOut(command)) {
+            if (core.isTimedOut(command, &db, this)) {
                 _reply(command);
                 return;
             }
@@ -1030,8 +1038,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             // loop and send it to followers. NOTE: we don't check for null here, that should be
                             // impossible inside a worker thread.
                             _syncNode->notifyCommit();
-                            SINFO("Committed leader transaction #" << transactionID << "(" << transactionHash << "). Command: '" << command->request.methodLine << "', blocking: "
-                                  << (isBlocking ? "true" : "false"));
                             _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
                             // So we must still be leading, and at this point our commit has succeeded, let's
                             // mark it as complete. We add the currentCommit count here as well.
@@ -1043,9 +1049,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 lastConflictTable = db.getLastConflictTable();
 
                                 // Journals are always chosen at the time of commit. So in case there was a conflict on the journal in
-                                // the previous commit, the chances are very low (1/192) that we'll choose the same journal, thus, we
+                                // the previous commit, the chances are very low that we'll choose the same journal, thus, we
                                 // don't need to lock our next commit on this page conflict.
-                                if (!SStartsWith(lastConflictTable, "journal")) {
+                                // Plugins may define other tables on which we should not lock our next commit.
+                                if (!SStartsWith(lastConflictTable, "journal") && (command->getPlugin() == nullptr || command->getPlugin()->shouldLockCommitPageOnTableConflict(lastConflictTable))) {
                                     lastConflictPage = db.getLastConflictPage();
                                 }
                             }
@@ -1162,6 +1169,12 @@ bool BedrockServer::_wouldCrash(const unique_ptr<BedrockCommand>& command) {
     auto commandIt = _crashCommands.find(command->request.methodLine);
     if (commandIt == _crashCommands.end()) {
         return false;
+    }
+
+    // If this command crashed with more than one set of identifying values, it means
+    // we've already crashed more than one node. Let's fully block this command in that case.
+    if (commandIt->second.size() > 1) {
+        return true;
     }
 
     // Look at each crash-inducing command that has the same methodLine.
