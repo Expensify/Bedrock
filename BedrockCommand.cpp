@@ -57,6 +57,10 @@ const string& BedrockCommand::getName() const {
     return defaultPluginName;
 }
 
+const BedrockPlugin* BedrockCommand::getPlugin() const {
+    return _plugin;
+}
+
 int64_t BedrockCommand::_getTimeout(const SData& request, const uint64_t scheduledTime) {
     // Timeout is the default, unless explicitly supplied, or if Connection: forget is set.
     int64_t timeout =  DEFAULT_TIMEOUT;
