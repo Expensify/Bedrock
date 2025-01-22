@@ -216,7 +216,7 @@ class SQLite {
     const string getMostRecentSQLiteErrorLog() const;
 
     // Returns true if we're inside an uncommitted transaction.
-    bool insideTransaction() { return _insideTransaction; }
+    bool insideTransaction() const { return _insideTransaction; }
 
     // Looks up the exact SQL of a paricular commit to the database, as well as gets the SHA1 hash of the database
     // immediately following tha commit.
