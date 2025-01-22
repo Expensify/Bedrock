@@ -1049,9 +1049,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 lastConflictTable = db.getLastConflictTable();
 
                                 // Journals are always chosen at the time of commit. So in case there was a conflict on the journal in
-                                // the previous commit, the chances are very low (1/192) that we'll choose the same journal, thus, we
+                                // the previous commit, the chances are very low that we'll choose the same journal, thus, we
                                 // don't need to lock our next commit on this page conflict.
-                                if (!SStartsWith(lastConflictTable, "journal")) {
+                                // Plugins may define other tables on which we should not lock our next commit.
+                                if (!SStartsWith(lastConflictTable, "journal") && (command->getPlugin() == nullptr || command->getPlugin()->shouldLockCommitPageOnTableConflict(lastConflictTable))) {
                                     lastConflictPage = db.getLastConflictPage();
                                 }
                             }

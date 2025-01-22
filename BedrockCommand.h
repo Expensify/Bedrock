@@ -85,6 +85,8 @@ class BedrockCommand : public SQLiteCommand {
     // Return the name of the plugin for this command.
     const string& getName() const;
 
+    const BedrockPlugin* getPlugin() const;
+
     // Take all of the HTTPS requests attached to this object, and serialize them to a string.
     string serializeHTTPSRequests();
 
@@ -99,7 +101,7 @@ class BedrockCommand : public SQLiteCommand {
     }
 
     // Bedrock will call this before writing to the database after it has prepared a transaction for each plugin to allow it to
-    // enable a handler function for prepare If a plugin would like to perform operations after prepare but before commit, this should 
+    // enable a handler function for prepare If a plugin would like to perform operations after prepare but before commit, this should
     // return true, and it should set the prepareHandler it would like to use.
     virtual bool shouldEnableOnPrepareNotification(const SQLite& db, void (**onPrepareHandler)(SQLite& _db, int64_t tableID)) {
         return false;
