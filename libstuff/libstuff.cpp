@@ -11,6 +11,7 @@
 #include <sys/un.h>
 #include <cxxabi.h>
 #include <sys/ioctl.h>
+#include <iostream>
 
 #include "libstuff.h"
 #include <sys/stat.h>
@@ -99,8 +100,18 @@ atomic<size_t> SLogSocketCurrentOffset(0);
 struct sockaddr_un SLogSocketAddr;
 atomic_flag SLogSocketsInitialized = ATOMIC_FLAG_INIT;
 
+bool g_isSyslog = false;
+
 // Set to `syslog` or `SSyslogSocketDirect`.
 atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc = &syslog;
+
+void bclog(int priority, const char *fmt, const char* msg ) {
+    cout << msg;
+}
+
+void SLogSetType(bool isSyslog) {
+    g_isSyslog = isSyslog;
+}
 
 void SInitialize(string threadName, const char* processName) {
     isSyncThread = false;
