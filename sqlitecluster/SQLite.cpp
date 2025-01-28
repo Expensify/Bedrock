@@ -197,9 +197,6 @@ void SQLite::commonConstructorInitialization(bool hctree) {
     // Setting a wal hook prevents auto-checkpointing.
     sqlite3_wal_hook(_db, _walHookCallback, this);
 
-    // Always set synchronous commits to off for best commit performance in WAL mode.
-    SASSERT(!SQuery(_db, "setting synchronous commits to off", "PRAGMA synchronous = OFF;"));
-
     // For non-passive checkpoints, we must set a busy timeout in order to wait on any readers.
     // We set it to 2 minutes as the majority of transactions should take less than that.
     if (_checkpointMode != SQLITE_CHECKPOINT_PASSIVE) {
