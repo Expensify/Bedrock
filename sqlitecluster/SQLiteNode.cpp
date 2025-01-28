@@ -631,7 +631,7 @@ bool SQLiteNode::update() {
         SASSERTWARN(_db.getUncommittedHash().empty());
 
         if (_isShuttingDown) {
-            SWARN("Shutting down in WAITING, how did we here here?");
+            SWARN("Shutting down in WAITING, how did we get here?");
 
             // Return false to allow the poll loop to run again. This is here for legacy reasons form before the above warning was added.
             // Probably this whole block can be removed if that warning never fires.
