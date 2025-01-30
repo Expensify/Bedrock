@@ -361,6 +361,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
 
     // The command is complete.
     command->complete = true;
+    _db.rollback();
     _db.clearTimeout();
 
     // Reset, we can write now.
