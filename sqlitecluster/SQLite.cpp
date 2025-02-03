@@ -508,7 +508,7 @@ bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) cons
     } else {
         _isDeterministicQuery = true;
         queryResult = !SQuery(_db, "read only query", query, result, 2000 * STIME_US_PER_MS, skipInfoWarn);
-        if (_isDeterministicQuery && queryResult) {
+        if (_isDeterministicQuery && queryResult && insideTransaction()) {
             _queryCache.emplace(make_pair(query, result));
         }
     }

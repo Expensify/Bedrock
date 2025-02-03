@@ -1,4 +1,5 @@
 #include "SQLiteNode.h"
+#include "sqlitecluster/SQLite.h"
 
 #include <unistd.h>
 
@@ -593,6 +594,11 @@ bool SQLiteNode::update() {
     ///     period and go SEARCHING.
     ///
     case SQLiteNodeState::SYNCHRONIZING: {
+        if (_isShuttingDown) {
+            _changeState(SQLiteNodeState::SEARCHING);
+            return false;
+        }
+
         SASSERTWARN(_syncPeer);
         SASSERTWARN(!_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
@@ -631,10 +637,15 @@ bool SQLiteNode::update() {
         SASSERTWARN(_db.getUncommittedHash().empty());
 
         if (_isShuttingDown) {
-            SWARN("Shutting down in WAITING, how did we get here?");
+            // This can happen because of fast stand down.
+            // If there are commands in `peek` when we start stand down, we will need to escalate those after stand down to the new leader.
+            // So the sync node starts the process of going through:
+            // LEADING -> STANDINGDOWN -> SEARCHING -> SYNCHRONIZING -> WAITING -> FOLLLOWING -> SEARCHING
+            // However, if we complete the first part of this and get through STANDINGDOWN and there are *no* commands
+            // left to handle, the node could be in any of SEARCHING, SYNCHRONIZING, WAITING, or FOLLOWING.
+            // We switch to SEARCHING just for consistency, and exit.
+            _changeState(SQLiteNodeState::SEARCHING);
 
-            // Return false to allow the poll loop to run again. This is here for legacy reasons form before the above warning was added.
-            // Probably this whole block can be removed if that warning never fires.
             return false;
         }
 
@@ -1095,6 +1106,10 @@ bool SQLiteNode::update() {
     ///     timeout, go SEARCHING.
     ///
     case SQLiteNodeState::SUBSCRIBING:
+        if (_isShuttingDown) {
+            _changeState(SQLiteNodeState::SEARCHING);
+            return false;
+        }
         SASSERTWARN(!_syncPeer);
         SASSERTWARN(_leadPeer);
         SASSERTWARN(_db.getUncommittedHash().empty());
