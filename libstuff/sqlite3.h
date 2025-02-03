@@ -148,7 +148,7 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.48.0"
 #define SQLITE_VERSION_NUMBER 3048000
-#define SQLITE_SOURCE_ID      "2024-11-15 19:25:39 ed829bf2b069a48c644ae5706399dad7486e5abb87dc1225764038ac258ea4dc"
+#define SQLITE_SOURCE_ID      "2025-01-16 11:27:36 1a5181b53d9f1ee1d8d57b4d57214b0d5b11e8879a48b0b0f34e9b2a439332ef"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -4204,11 +4204,22 @@ SQLITE_API int sqlite3_limit(sqlite3*, int id, int newVal);
 ** <dd>The SQLITE_PREPARE_NO_VTAB flag causes the SQL compiler
 ** to return an error (error code SQLITE_ERROR) if the statement uses
 ** any virtual tables.
+**
+** [[SQLITE_PREPARE_DONT_LOG]] <dt>SQLITE_PREPARE_DONT_LOG</dt>
+** <dd>The SQLITE_PREPARE_DONT_LOG flag prevents SQL compiler
+** errors from being sent to the error log defined by
+** [SQLITE_CONFIG_LOG].  This can be used, for example, to do test
+** compiles to see if some SQL syntax is well-formed, without generating
+** messages on the global error log when it is not.  If the test compile
+** fails, the sqlite3_prepare_v3() call returns the same error indications
+** with or without this flag; it just omits the call to [sqlite3_log()] that
+** logs the error.
 ** </dl>
 */
 #define SQLITE_PREPARE_PERSISTENT              0x01
 #define SQLITE_PREPARE_NORMALIZE               0x02
 #define SQLITE_PREPARE_NO_VTAB                 0x04
+#define SQLITE_PREPARE_DONT_LOG                0x10
 
 /*
 ** CAPI3REF: Compiling An SQL Statement
@@ -13301,13 +13312,28 @@ struct Fts5PhraseIter {
 **   value returned by xInstCount(), SQLITE_RANGE is returned.  Otherwise,
 **   output variable (*ppToken) is set to point to a buffer containing the
 **   matching document token, and (*pnToken) to the size of that buffer in
-**   bytes. This API is not available if the specified token matches a
-**   prefix query term. In that case both output variables are always set
-**   to 0.
+**   bytes.
 **
 **   The output text is not a copy of the document text that was tokenized.
 **   It is the output of the tokenizer module. For tokendata=1 tables, this
 **   includes any embedded 0x00 and trailing data.
+**
+**   This API may be slow in some cases if the token identified by parameters
+**   iIdx and iToken matched a prefix token in the query. In most cases, the
+**   first call to this API for each prefix token in the query is forced
+**   to scan the portion of the full-text index that matches the prefix
+**   token to collect the extra data required by this API. If the prefix
+**   token matches a large number of token instances in the document set,
+**   this may be a performance problem.
+**
+**   If the user knows in advance that a query may use this API for a
+**   prefix token, FTS5 may be configured to collect all required data as part
+**   of the initial querying of the full-text index, avoiding the second scan
+**   entirely. This also causes prefix queries that do not use this API to
+**   run more slowly and use more memory. FTS5 may be configured in this way
+**   either on a per-table basis using the [FTS5 insttoken | 'insttoken']
+**   option, or on a per-query basis using the
+**   [fts5_insttoken | fts5_insttoken()] user function.
 **
 **   This API can be quite slow if used with an FTS5 table created with the
 **   "detail=none" or "detail=column" option.
