@@ -1980,13 +1980,17 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         // Calling it with fewer than that should eventually work but may have big performance impacts if this number
         // is very close to the maximum allowed.
         // Whether or not this creates a bunch of handles or recycles existing handles is indeterminate.
-        const size_t numberOfHandles = command->request.calcU64("NumberOfHandles");
+        size_t numberOfHandles = command->request.calcU64("NumberOfHandles");
+        size_t maxThreads = 16;
+        if (command->request.isSet("maxThreads")) {
+            maxThreads = command->request.calcU64("maxThreads");
+        }
 
-        // Open them in threads?
-        const size_t maxThreads = 16;
+        if (numberOfHandles < 0 || maxThreads < 1 || maxThreads > 1000) {
+            response.methodLine = "405 Pick saner values."
+        }
+
         auto dbPoolCopy = atomic_load(&_dbPool);
-
-
         if (dbPoolCopy && numberOfHandles) {
             SINFO("Reserving " << numberOfHandles << " DB handles.");
             vector<size_t> indicies(numberOfHandles);
