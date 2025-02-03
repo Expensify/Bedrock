@@ -1987,13 +1987,14 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
         }
 
         if (numberOfHandles < 0 || maxThreads < 1 || maxThreads > 1000) {
-            response.methodLine = "405 Pick saner values."
+            response.methodLine = "405 Pick saner values.";
         }
 
         auto dbPoolCopy = atomic_load(&_dbPool);
         if (dbPoolCopy && numberOfHandles) {
             SINFO("Reserving " << numberOfHandles << " DB handles.");
             vector<size_t> indicies(numberOfHandles);
+            vector<size_t> timings(numberOfHandles);
             list<thread> threads;
 
             // Grab the indices of the handles we'll load.
@@ -2010,9 +2011,18 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
                         if (current_index >= numberOfHandles) {
                             return;
                         }
+                        uint64_t startTime = STimeNow();
                         dbPoolCopy->initializeIndex(current_index);
+                        uint64_t endTime = STimeNow();
+
+                        timings[current_index] = endTime - startTime;
                     }
                 });
+            }
+
+            // Wait for them all to initialize.
+            for(thread& t : threads) {
+                t.join();
             }
 
             SINFO("Initialized " << numberOfHandles << " DB handles, cleaning up.");
@@ -2020,6 +2030,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
                 dbPoolCopy->returnToPool(indicies[i]);
             }
             SINFO("Returned " << numberOfHandles << " DB handles.");
+            command->response.content = SComposeList(timings, "\n");
         }
     }
 }
