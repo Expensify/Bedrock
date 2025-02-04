@@ -190,6 +190,7 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
         // next thread in the loop.
         thread t = thread([&, threadID]{
            auto start = chrono::steady_clock::now();
+           auto end = start;
 
            threadInitFunction();
             try {
@@ -270,6 +271,9 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                    }
 
                    tpunit_run_test_class(f);
+
+                   // Do this to capture the longest test classes, not longest thread.
+                   end = chrono::steady_clock::now();
                 }
             } catch (ShutdownException se) {
                 // This will have broken us out of our main loop, so we'll just exit. We also set the exit flag to let
@@ -278,7 +282,7 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                 exitFlag = true;
                 printf("Thread %d caught shutdown exception, exiting.\n", threadID);
             }
-            auto end = chrono::steady_clock::now();
+
             if (currentTestName.size()) {
                 lock_guard<mutex> lock(testTimeLock);
                 testTimes.emplace(make_pair(chrono::duration_cast<std::chrono::milliseconds>(end - start), currentTestName));
