@@ -328,6 +328,7 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
         cout << endl;
         cout << "Slowest Test Classes: " << endl;
 
+        // Combine total thread time so its not obscured by multi-threaded tests.
         long long totalTestTime = 0;
         for (auto testTime : testTimes) {
             totalTestTime += testTime.first.count();
@@ -338,7 +339,7 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
             if (it == testTimes.rend()) {
                 break;
             }
-            cout << it->first << ": " << it->second << " " << (static_cast<double>(it->first.count()) / totalTestTime) * 100.0 << "% of total test time" << endl;
+            cout << it->first << ": " << it->second << " : " << (static_cast<double>(it->first.count()) / totalTestTime) * 100.0 << "% of total test time" << endl;
             it++;
         }
 
