@@ -310,7 +310,7 @@ string BedrockTester::executeWaitVerifyContent(SData request, const string& expe
     if (!SStartsWith(results[0].methodLine, expectedResult)) {
         STable temp;
         temp["originalMethod"] = results[0].methodLine;
-        STHROW("Expected " + expectedResult + ", but got '" + results[0].methodLine + "'. " + results[0]["exceptionSource"], temp);
+        STHROW("From command " + request.methodLine + ", expected " + expectedResult + ", but got '" + results[0].methodLine + "'. " + results[0]["exceptionSource"], temp);
     }
 
     return results[0].content;
