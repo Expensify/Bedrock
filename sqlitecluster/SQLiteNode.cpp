@@ -2523,7 +2523,7 @@ void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                 STHROW("Incoming socket didn't send a message for over 5s, closing.");
             }
         } catch (const SException& e) {
-            SWARN("Incoming connection failed from '" << socket->addr << "' (" << e.what() << ")");
+            SHMMM("Incoming connection failed from '" << socket->addr << "' (" << e.what() << ")");
             socketsToRemove.push_back(socket);
             delete socket;
         }
