@@ -189,7 +189,8 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
         // Capture everything by reference except threadID, because we don't want it to be incremented for the
         // next thread in the loop.
         thread t = thread([&, threadID]{
-           auto start = chrono::steady_clock::now();
+           chrono::steady_clock::time_point start = chrono::steady_clock::now();
+           chrono::steady_clock::time_point end = start;
 
            threadInitFunction();
             try {
@@ -254,22 +255,32 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                         continue;
                     }
 
-                   // At this point, we know this test should run.
-                   if (!f->_multiThreaded) {
-                       printf("--------------\n");
-                   }
-                   {
-                       lock_guard<mutex> lock(currentTestNameMutex);
-                       currentTestPtr = f;
-                       if (f->_name) {
-                           currentTestName = f->_name;
-                       } else {
-                           cout << "test has no name???" << endl;
-                           currentTestName = "UNSPECIFIED";
-                       }
-                   }
+                    // At this point, we know this test should run.
+                    if (!f->_multiThreaded) {
+                        printf("--------------\n");
+                    }
+                    {
+                        lock_guard<mutex> lock(currentTestNameMutex);
+                        currentTestPtr = f;
+                        if (f->_name) {
+                            currentTestName = f->_name;
+                        } else {
+                            cout << "test has no name???" << endl;
+                            currentTestName = "UNSPECIFIED";
+                        }
+                    }
 
-                   tpunit_run_test_class(f);
+                    start = chrono::steady_clock::now();
+
+                    tpunit_run_test_class(f);
+
+                    // Do this to capture the longest test classes, not longest thread.
+                    end = chrono::steady_clock::now();
+
+                   if (currentTestName.size() && currentTestName != "UNSPECIFIED") {
+                        lock_guard<mutex> lock(testTimeLock);
+                        testTimes.emplace(make_pair(chrono::duration_cast<std::chrono::milliseconds>(end - start), currentTestName));
+                    }
                 }
             } catch (ShutdownException se) {
                 // This will have broken us out of our main loop, so we'll just exit. We also set the exit flag to let
@@ -277,11 +288,6 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                 lock_guard<recursive_mutex> lock(m);
                 exitFlag = true;
                 printf("Thread %d caught shutdown exception, exiting.\n", threadID);
-            }
-            auto end = chrono::steady_clock::now();
-            if (currentTestName.size()) {
-                lock_guard<mutex> lock(testTimeLock);
-                testTimes.emplace(make_pair(chrono::duration_cast<std::chrono::milliseconds>(end - start), currentTestName));
             }
         });
         threadList.push_back(move(t));
@@ -321,14 +327,23 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
 
         cout << endl;
         cout << "Slowest Test Classes: " << endl;
+
+        // Combine total thread time so its not obscured by multi-threaded tests.
+        long long totalTestTime = 0;
+        for (auto testTime : testTimes) {
+            totalTestTime += testTime.first.count();
+        }
+
         auto it = testTimes.rbegin();
         for (size_t i = 0; i < 10; i++) {
             if (it == testTimes.rend()) {
                 break;
             }
-            cout << it->first << ": " << it->second << endl;
+            cout << it->first << ": " << it->second << " : " << (static_cast<double>(it->first.count()) / totalTestTime) * 100.0 << "% of total test time" << endl;
             it++;
         }
+
+        cout << "Total test time across threads: " << totalTestTime << "ms" << endl;
 
         return tpunit_detail_stats()._failures;
     }
