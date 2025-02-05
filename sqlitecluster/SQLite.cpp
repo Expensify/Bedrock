@@ -503,6 +503,7 @@ bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) cons
     auto foundQuery = _queryCache.find(query);
     if (foundQuery != _queryCache.end()) {
         result = foundQuery->second;
+        SINFO("Query found in cache: " << query << " first result row: (" << (result.rows.size() ? SComposeList(result.rows[0]) : "NONE") << ")");
         _cacheHits++;
         queryResult = true;
     } else {
@@ -510,6 +511,7 @@ bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) cons
         queryResult = !SQuery(_db, "read only query", query, result, 2000 * STIME_US_PER_MS, skipInfoWarn);
         if (_isDeterministicQuery && queryResult && insideTransaction()) {
             _queryCache.emplace(make_pair(query, result));
+            SINFO("Query added to cache: " << query << " first result row: (" << (result.rows.size() ? SComposeList(result.rows[0]) : "NONE") << ")");
         }
     }
     _checkInterruptErrors("SQLite::read"s);
