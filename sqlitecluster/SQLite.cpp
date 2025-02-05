@@ -585,7 +585,10 @@ bool SQLite::writeUnmodified(const string& query) {
 }
 
 bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries) {
-    SASSERT(_insideTransaction);
+    if (!_insideTransaction) {
+        STHROW("Attempted to write outside of transaction");
+    }
+
     _queryCache.clear();
     _writeQueryCount++;
 
