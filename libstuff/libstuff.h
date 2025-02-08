@@ -230,6 +230,9 @@ void STerminateHandler(void);
 extern atomic<int> _g_SLogMask;
 void SLogLevel(int level);
 
+void bclog(int priority, const char *fmt, const char* msg );
+void SLogSetType(bool isSyslog);
+
 // Stack trace logging
 void SLogStackTrace(int level = LOG_WARNING);
 
@@ -241,6 +244,7 @@ void SSyslogSocketDirect(int priority, const char* format, ...);
 
 // Atomic pointer to the syslog function that we'll actually use. Easy to change to `syslog` or `SSyslogSocketDirect`.
 extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
+extern bool g_isSyslog;
 
 string addLogParams(string&& message, const STable& params = {});
 
@@ -254,7 +258,10 @@ string addLogParams(string&& message, const STable& params = {});
             const string s = addLogParams(__out.str(), ##__VA_ARGS__);          \
             const string prefix = SWHEREAMI;                                    \
             for (size_t i = 0; i < s.size(); i += 7168) {                       \
-                (*SSyslogFunc)(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
+                if (g_isSyslog)                                                 \
+                    SSyslogFunc(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
+                else                                                            \
+                    bclog(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str());    \
             }                                                                   \
         }                                                                       \
     } while (false)
