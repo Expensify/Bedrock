@@ -3,6 +3,8 @@
 #include <libstuff/SQResult.h>
 #include <libstuff/SPerformanceTimer.h>
 
+#include <shared_mutex>
+
 class SQLite {
   public:
 
