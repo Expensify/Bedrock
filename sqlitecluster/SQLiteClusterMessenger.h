@@ -18,7 +18,7 @@ class SQLiteClusterMessenger {
         POLL_ERROR,
     };
 
-    SQLiteClusterMessenger(const shared_ptr<const SQLiteNode> node);
+    SQLiteClusterMessenger(const shared_ptr<const SQLiteNode>& node);
 
     // Attempts to make a TCP connection to a peer, that could be the leader or not, and run the given command there,
     //  setting the appropriate response from the peer in the command, and marking it as complete if possible.
@@ -64,7 +64,7 @@ class SQLiteClusterMessenger {
     // Parses the address to confirm it is valid, then requests a socket from
     // the socket pool. Returns either a pointer to the socket or nullptr if
     // there is an error.
-    unique_ptr<SHTTPSManager::Socket> _getSocketForAddress(string address);
+    unique_ptr<SHTTPSManager::Socket> _getSocketForAddress(const string& address);
 
     const shared_ptr<const SQLiteNode> _node;
 
