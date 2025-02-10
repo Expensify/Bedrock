@@ -64,7 +64,7 @@ struct STCPManager {
 
     class Port {
       public:
-        Port(int _s, string _host);
+        Port(int _s, const string& _host);
         ~Port();
 
         // Attributes
