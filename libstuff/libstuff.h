@@ -12,10 +12,8 @@
 #include <map>
 #include <mutex>
 #include <set>
-#include <shared_mutex>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <vector>
 
 // Forward declarations of types only used by reference.
@@ -309,7 +307,7 @@ struct SAutoThreadPrefix {
 namespace std {
     template<>
     struct atomic<string> {
-        string operator=(string desired) {
+        string operator=(const string& desired) {
             lock_guard<decltype(m)> l(m);
             _string = desired;
             return _string;
@@ -317,7 +315,7 @@ namespace std {
         bool is_lock_free() const {
             return false;
         }
-        void store(string desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
+        void store(const string& desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
             lock_guard<decltype(m)> l(m);
             _string = desired;
         };
@@ -329,7 +327,7 @@ namespace std {
             lock_guard<decltype(m)> l(m);
             return _string;
         }
-        string exchange(string desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
+        string exchange(const string& desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
             lock_guard<decltype(m)> l(m);
             string existing = _string;
             _string = desired;
