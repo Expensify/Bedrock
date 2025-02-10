@@ -32,7 +32,7 @@ extern atomic<bool> GLOBAL_IS_LIVE;
 extern void* SSIGNAL_NOTIFY_INTERRUPT;
 
 // Initialize libstuff on every thread before calling any of its functions
-void SInitialize(string threadName = "", const char* processName = 0);
+void SInitialize(const string& threadName = "", const char* processName = 0);
 
 // This function sets a lambda that will be executed while the process is being killed for any reason
 // (e.g. it crashed). Since we usually add logs in the lambda function, we'll also need to return the log as a
