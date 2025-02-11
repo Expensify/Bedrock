@@ -83,6 +83,6 @@ string addLogParams(string&& message, const STable& params) {
     return message;
 }
 
-void SWhitelistLogParams(set<string> params) {
+void SWhitelistLogParams(const set<string>& params) {
     PARAMS_WHITELIST.insert(params.begin(), params.end());
 }

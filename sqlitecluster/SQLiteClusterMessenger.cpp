@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-SQLiteClusterMessenger::SQLiteClusterMessenger(const shared_ptr<const SQLiteNode> node)
+SQLiteClusterMessenger::SQLiteClusterMessenger(const shared_ptr<const SQLiteNode>& node)
  : _node(node), _socketPool()
 { }
 
@@ -220,7 +220,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
     return true;
 }
 
-unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(string address) {
+unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(const string& address) {
     unique_ptr<SHTTPSManager::Socket> s;
 
     // SParseURI expects a typical http or https scheme.
