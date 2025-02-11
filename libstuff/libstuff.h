@@ -12,10 +12,8 @@
 #include <map>
 #include <mutex>
 #include <set>
-#include <shared_mutex>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <vector>
 
 // Forward declarations of types only used by reference.
@@ -34,7 +32,7 @@ extern atomic<bool> GLOBAL_IS_LIVE;
 extern void* SSIGNAL_NOTIFY_INTERRUPT;
 
 // Initialize libstuff on every thread before calling any of its functions
-void SInitialize(string threadName = "", const char* processName = 0);
+void SInitialize(const string& threadName = "", const char* processName = 0);
 
 // This function sets a lambda that will be executed while the process is being killed for any reason
 // (e.g. it crashed). Since we usually add logs in the lambda function, we'll also need to return the log as a
@@ -234,7 +232,7 @@ void SLogLevel(int level);
 void SLogStackTrace(int level = LOG_WARNING);
 
 // This method will allow plugins to whitelist log params they need to log.
-void SWhitelistLogParams(set<string> params);
+void SWhitelistLogParams(const set<string>& params);
 
 // This is a drop-in replacement for syslog that directly logs to `/run/systemd/journal/syslog` bypassing journald.
 void SSyslogSocketDirect(int priority, const char* format, ...);
@@ -309,7 +307,7 @@ struct SAutoThreadPrefix {
 namespace std {
     template<>
     struct atomic<string> {
-        string operator=(string desired) {
+        string operator=(const string& desired) {
             lock_guard<decltype(m)> l(m);
             _string = desired;
             return _string;
@@ -317,7 +315,7 @@ namespace std {
         bool is_lock_free() const {
             return false;
         }
-        void store(string desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
+        void store(const string& desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
             lock_guard<decltype(m)> l(m);
             _string = desired;
         };
@@ -329,7 +327,7 @@ namespace std {
             lock_guard<decltype(m)> l(m);
             return _string;
         }
-        string exchange(string desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
+        string exchange(const string& desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
             lock_guard<decltype(m)> l(m);
             string existing = _string;
             _string = desired;

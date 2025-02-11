@@ -3,6 +3,8 @@
 #include <libstuff/SQResult.h>
 #include <libstuff/SPerformanceTimer.h>
 
+#include <shared_mutex>
+
 class SQLite {
   public:
 
@@ -223,7 +225,7 @@ class SQLite {
     bool getCommit(uint64_t index, string& query, string& hash);
 
     // A static version of the above that can be used in initializers.
-    static bool getCommit(sqlite3* db, const vector<string> journalNames, uint64_t index, string& query, string& hash);
+    static bool getCommit(sqlite3* db, const vector<string>& journalNames, uint64_t index, string& query, string& hash);
 
     // Looks up a range of commits.
     int getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS = 0);

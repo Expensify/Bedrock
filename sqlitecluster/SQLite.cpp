@@ -2,7 +2,6 @@
 
 #include <linux/limits.h>
 #include <string.h>
-#include <format>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SQResult.h>
@@ -912,7 +911,7 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
     return getCommit(_db, _journalNames, id, query, hash);
 }
 
-bool SQLite::getCommit(sqlite3* db, const vector<string> journalNames, uint64_t id, string& query, string& hash) {
+bool SQLite::getCommit(sqlite3* db, const vector<string>& journalNames, uint64_t id, string& query, string& hash) {
     // TODO: This can fail if called after `BEGIN TRANSACTION`, if the id we want to look up was committed by another
     // thread. We may or may never need to handle this case.
     // Look up the query and hash for the given commit

@@ -1,7 +1,7 @@
 #include <libstuff/libstuff.h>
 #include "SPerformanceTimer.h"
 
-SPerformanceTimer::SPerformanceTimer(string description, map<string, chrono::steady_clock::duration> defaults)
+SPerformanceTimer::SPerformanceTimer(const string& description, const map<string, chrono::steady_clock::duration>& defaults)
   : _description(description),
   _lastLogStart(chrono::steady_clock::now()),
   _defaults(defaults),

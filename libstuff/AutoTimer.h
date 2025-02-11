@@ -6,7 +6,7 @@ using namespace std;
 // There is a *different* AutoTimer in BedrockCore, which is annoying.
 class AutoTimer {
   public:
-    AutoTimer(string name);
+    AutoTimer(const string& name);
     void start();
     void stop();
 

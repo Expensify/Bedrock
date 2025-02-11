@@ -4,7 +4,7 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{} "
 
-AutoTimer::AutoTimer(string name) : _name(name), _intervalStart(chrono::steady_clock::now()), _countedTime(0) {
+AutoTimer::AutoTimer(const string& name) : _name(name), _intervalStart(chrono::steady_clock::now()), _countedTime(0) {
 }
 
 void AutoTimer::start() {

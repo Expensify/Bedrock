@@ -12,6 +12,8 @@
 #include <cxxabi.h>
 #include <sys/ioctl.h>
 
+#include <thread>
+
 #include "libstuff.h"
 #include <sys/stat.h>
 #include <zlib.h>
@@ -102,7 +104,7 @@ atomic_flag SLogSocketsInitialized = ATOMIC_FLAG_INIT;
 // Set to `syslog` or `SSyslogSocketDirect`.
 atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc = &syslog;
 
-void SInitialize(string threadName, const char* processName) {
+void SInitialize(const string& threadName, const char* processName) {
     isSyncThread = false;
     // This is not really thread safe. It's guaranteed to run only once, because of the atomic flag, but it's not
     // guaranteed that a second caller to `SInitialize` will wait until this block has completed before attempting to
