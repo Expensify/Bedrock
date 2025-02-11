@@ -19,7 +19,7 @@ mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
 const bool BedrockTester::ENABLE_HCTREE{false};
 
-string BedrockTester::getTempFileName(string prefix) {
+string BedrockTester::getTempFileName(const string& prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
     char buffer[100];
     memset(buffer, 0, 100);
@@ -154,7 +154,7 @@ BedrockTester::~BedrockTester() {
     _testers.erase(this);
 }
 
-void BedrockTester::updateArgs(const map<string, string> args) {
+void BedrockTester::updateArgs(const map<string, string>& args) {
     for (auto& row : args) {
         _args[row.first] = row.second;
     }
@@ -289,7 +289,7 @@ void BedrockTester::stopServer(int signal) {
     }
 }
 
-string BedrockTester::executeWaitVerifyContent(SData request, const string& expectedResult, bool control, uint64_t retryTimeoutUS) {
+string BedrockTester::executeWaitVerifyContent(const SData& request, const string& expectedResult, bool control, uint64_t retryTimeoutUS) {
     uint64_t start = STimeNow();
     vector<SData> results;
     do {
@@ -316,7 +316,7 @@ string BedrockTester::executeWaitVerifyContent(SData request, const string& expe
     return results[0].content;
 }
 
-STable BedrockTester::executeWaitVerifyContentTable(SData request, const string& expectedResult) {
+STable BedrockTester::executeWaitVerifyContentTable(const SData& request, const string& expectedResult) {
     string result = executeWaitVerifyContent(request, expectedResult);
     return SParseJSONObject(result);
 }

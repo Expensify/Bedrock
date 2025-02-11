@@ -54,11 +54,11 @@ class BedrockTester {
 
     // Generate a temporary filename with an optional prefix. Used particularly to create new DB files for each server,
     // but can generally be used for any temporary file required.
-    static string getTempFileName(string prefix = "");
+    static string getTempFileName(const string& prefix = "");
 
     // Change the arguments for a server. Only takes effect when the server next starts. This can change or add args,
     // but not remove args. Any args specified here are added or replaced into the existing set.
-    void updateArgs(const map<string, string> args);
+    void updateArgs(const map<string, string>& args);
 
     string getArg(const string& arg) const;
 
@@ -70,12 +70,12 @@ class BedrockTester {
     // Sends a single request, returning the response content.
     // If the response method line doesn't begin with the expected result, throws.
     // Convenience wrapper around executeWaitMultipleData.
-    virtual string executeWaitVerifyContent(SData request, const string& expectedResult = "200 OK", bool control = false, uint64_t retryTimeoutUS = 0);
+    virtual string executeWaitVerifyContent(const SData& request, const string& expectedResult = "200 OK", bool control = false, uint64_t retryTimeoutUS = 0);
 
     // Sends a single request, returning the response content as a STable.
     // If the response method line doesn't begin with the expected result, throws.
     // Convenience wrapper around executeWaitMultipleData.
-    virtual STable executeWaitVerifyContentTable(SData request, const string& expectedResult = "200 OK");
+    virtual STable executeWaitVerifyContentTable(const SData& request, const string& expectedResult = "200 OK");
 
     // Read from the DB file, without going through the bedrock server. Two interfaces are provided to maintain
     // compatibility with the `SQLite` class.
