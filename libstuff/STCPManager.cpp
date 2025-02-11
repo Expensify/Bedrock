@@ -342,7 +342,7 @@ unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host, int rema
     return make_unique<Port>(s, host);
 }
 
-STCPManager::Port::Port(int _s, string _host) : s(_s), host(_host)
+STCPManager::Port::Port(int _s, const string& _host) : s(_s), host(_host)
 {
 }
 

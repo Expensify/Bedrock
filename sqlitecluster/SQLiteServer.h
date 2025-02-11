@@ -1,6 +1,7 @@
 #pragma once
 class SQLiteCommand;
 class SQLitePeer;
+#include "SQLiteNode.h"
 
 #include <libstuff/STCPManager.h>
 
