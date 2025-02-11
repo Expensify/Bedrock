@@ -15,7 +15,7 @@ BedrockCommandQueue::BedrockCommandQueue() :
 BedrockCommandQueue::BedrockCommandQueue(
     function<void(unique_ptr<BedrockCommand>& item)> startFunction,
     function<void(unique_ptr<BedrockCommand>& item)> endFunction
-) : SScheduledPriorityQueue<unique_ptr<BedrockCommand>>(startFunction, endFunction)
+) : SScheduledPriorityQueue<unique_ptr<BedrockCommand>>(move(startFunction), move(endFunction))
 { }
 
 list<string> BedrockCommandQueue::getRequestMethodLines() {
