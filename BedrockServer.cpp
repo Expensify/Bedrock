@@ -760,7 +760,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         if (result) {
             SINFO("Synchronizing while accepting commands; successfully forwarded the command to peer", {{"command", command->request.methodLine}});
         } else {
-            SWARN("Synchronizing while accepting commands, but failed to forward the command to peer.", {{"command", command->request.methodLine}});
+            SHMMM("Synchronizing while accepting commands, but failed to forward the command to peer.", {{"command", command->request.methodLine}});
         }
     }
 
