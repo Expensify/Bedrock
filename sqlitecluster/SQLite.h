@@ -533,4 +533,7 @@ class SQLite {
 
     // One of 0|1|2|3 (a.k.a. PASSIVE|FULL|RESTART|TRUNCATE), which is the value to be passed to sqlite3_wal_checkpoint_v2.
     int _checkpointMode;
+
+    bool _inUpdateOrDelete{false};
+    bool _inSchemaChange{false};
 };

@@ -594,13 +594,6 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
     // Must finish everything with semicolon.
     SASSERT(query.empty() || SEndsWith(query, ";"));
 
-    // First, check our current state
-    SQResult results;
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
-    SASSERT(!results.empty() && !results[0].empty());
-    uint64_t schemaBefore = SToUInt64(results[0][0]);
-    uint64_t changesBefore = sqlite3_total_changes(_db);
-
     _currentlyWriting = true;
     // Try to execute the query
     uint64_t before = STimeNow();
@@ -609,18 +602,42 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
     {
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         if (_enableRewrite) {
+            _inUpdateOrDelete = false;
+            _inSchemaChange = false;
             resultCode = SQuery(_db, "read/write transaction", query, result, 2'000'000, true);
             if (resultCode == SQLITE_AUTH) {
                 // Run re-written query.
                 _currentlyRunningRewritten = true;
                 SASSERT(SEndsWith(_rewrittenQuery, ";"));
+                _inUpdateOrDelete = false;
+                _inSchemaChange = false;
                 resultCode = SQuery(_db, "read/write transaction", _rewrittenQuery);
                 usedRewrittenQuery = true;
                 _currentlyRunningRewritten = false;
             }
         } else {
+            _inUpdateOrDelete = false;
+            _inSchemaChange = false;
             resultCode = SQuery(_db, "read/write transaction", query, result);
         }
+    }
+
+    // Check if this was an UDPATE or DELETE operation that didn't actually make any changes.
+    // This is an optimization to avoid replicating useless queries.
+    bool writeMadeChanges = true;
+    if (_inUpdateOrDelete) {
+        SINFO("update or delete for query: " << query);
+        writeMadeChanges = sqlite3_changes64(_db);
+        
+        // Clear this for the next user (shouldn't matter, as it is used here, and would be cleared above).
+        _inUpdateOrDelete = false;
+    }
+    
+    // Schema changes can also trigger UPDATE. We want to keep any schema changes, and not have them look like an
+    // UPDATE that didn't touch any rows.
+    if (_inSchemaChange) {
+        writeMadeChanges = true;
+        _inSchemaChange = false;
     }
 
     // If we got a constraints error, throw that.
@@ -636,14 +653,8 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
         return false;
     }
 
-    // See if the query changed anything
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
-    SASSERT(!results.empty() && !results[0].empty());
-    uint64_t schemaAfter = SToUInt64(results[0][0]);
-    uint64_t changesAfter = sqlite3_total_changes(_db);
-
     // If something changed, or we're always keeping queries, then save this.
-    if (alwaysKeepQueries || (schemaAfter > schemaBefore) || (changesAfter > changesBefore)) {
+    if (alwaysKeepQueries || writeMadeChanges) {
         _uncommittedQuery += usedRewrittenQuery ? _rewrittenQuery : query;
     }
 
@@ -994,6 +1005,41 @@ int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const cha
 }
 
 int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4) {
+    // We record if we're in an UPDATE or DELETE query. Because multiple action codes happen per query, if any of them are
+    // UDPATE or DELETE, we want to treat the qhole query as UPDATE or DELETE.
+    // It's up to the caller to clear this.
+    if (actionCode == SQLITE_DELETE || actionCode == SQLITE_UPDATE) {
+        _inUpdateOrDelete = true;
+    }
+
+    static const set<int> schemaOps = {
+        SQLITE_CREATE_INDEX,
+        SQLITE_CREATE_TABLE,
+        SQLITE_CREATE_TEMP_INDEX,
+        SQLITE_CREATE_TEMP_TABLE,
+        SQLITE_CREATE_TEMP_TRIGGER,
+        SQLITE_CREATE_TEMP_VIEW,
+        SQLITE_CREATE_TRIGGER,
+        SQLITE_CREATE_VIEW,
+        SQLITE_DROP_INDEX,
+        SQLITE_DROP_TABLE,
+        SQLITE_DROP_TEMP_INDEX,
+        SQLITE_DROP_TEMP_TABLE,
+        SQLITE_DROP_TEMP_TRIGGER,
+        SQLITE_DROP_TEMP_VIEW,
+        SQLITE_DROP_TRIGGER,
+        SQLITE_DROP_VIEW,
+        SQLITE_ALTER_TABLE,
+        SQLITE_REINDEX,
+        SQLITE_CREATE_VTABLE,
+        SQLITE_DROP_VTABLE,
+    };
+    if (schemaOps.contains(actionCode)) {
+        _inSchemaChange = true;
+    }
+
+    SINFO("ActionCode: " << actionCode);
+
     // If we've enabled re-writing, see if we need to re-write this query.
     if (_enableRewrite && !_currentlyRunningRewritten && (*_rewriteHandler)(actionCode, detail1, _rewrittenQuery)) {
         // Deny the original query, we'll re-run on the re-written version.
