@@ -46,7 +46,7 @@ class BedrockPlugin_Cache : public BedrockPlugin {
         map<string, Entry*> _lruMap;
     };
 
-    static int64_t initCacheSize(string cacheString);
+    static int64_t initCacheSize(const string& cacheString);
 
     // Constants
     const int64_t _maxCacheSize;
