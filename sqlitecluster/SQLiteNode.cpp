@@ -1530,7 +1530,10 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
 
             // We send every remaining commit that the node doesn't have, but we set a timeout on the query that gathers these to half the
             // maximum time limit that will cause this node to be disconnected from the cluster.
+            uint64_t start = STimeNow();
             _queueSynchronize(this, peer, _db, response, true, RECV_TIMEOUT / 2);
+            uint64_t end = STimeNow();
+            SINFO("Final commits for SUBSCRIPTION_APPROVED queried in " << ((end - start) / 1000) << "ms.");
             _sendToPeer(peer, response);
             SASSERTWARN(!peer->subscribed);
             peer->subscribed = true;
