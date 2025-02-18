@@ -148,7 +148,7 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.49.0"
 #define SQLITE_VERSION_NUMBER 3049000
-#define SQLITE_SOURCE_ID      "2025-02-06 12:46:51 cc3ce784b0feea2f7e86960d262a04c555df817192695d5760c2a83fb804a212"
+#define SQLITE_SOURCE_ID      "2025-02-15 18:04:57 ffc6891a1d847689ca1aa1105f99ab18c6dfeffda5413e49c63c6faa4c67c8bc"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -8493,7 +8493,8 @@ SQLITE_API int sqlite3_test_control(int op, ...);
 #define SQLITE_TESTCTRL_TUNE                    32
 #define SQLITE_TESTCTRL_LOGEST                  33
 #define SQLITE_TESTCTRL_USELONGDOUBLE           34  /* NOT USED */
-#define SQLITE_TESTCTRL_LAST                    34  /* Largest TESTCTRL */
+#define SQLITE_TESTCTRL_HCT_MTCOMMIT            35
+#define SQLITE_TESTCTRL_LAST                    35  /* Largest TESTCTRL */
 
 /*
 ** CAPI3REF: SQL Keyword Checking
@@ -10840,31 +10841,6 @@ SQLITE_API SQLITE_EXPERIMENTAL int sqlite3_snapshot_cmp(
 SQLITE_API SQLITE_EXPERIMENTAL int sqlite3_snapshot_recover(sqlite3 *db, const char *zDb);
 
 /*
-** CAPI3REF: Wal related information regarding the most recent COMMIT
-** EXPERIMENTAL
-**
-** This function reports on the state of the wal file (if any) for database
-** zDb, which should be "main", "temp", or the name of the attached database.
-** Its results - the values written to the output parameters - are only
-** defined if the most recent SQL command on the connection was a successful
-** COMMIT that wrote data to wal-mode database zDb.
-**
-** Assuming the above conditions are met, output parameter (*pnFrame) is set
-** to the total number of frames in the wal file. Parameter (*pnPrior) is
-** set to the number of frames that were present in the wal file before the
-** most recent transaction was committed. So that the number of frames written
-** by the most recent transaction is (*pnFrame)-(*pnPrior).
-**
-** If successful, SQLITE_OK is returned. Otherwise, an SQLite error code. It
-** is not an error if this function is called at a time when the results
-** are undefined.
-*/
-SQLITE_API SQLITE_EXPERIMENTAL int sqlite3_wal_info(
-  sqlite3 *db, const char *zDb,
-  unsigned int *pnPrior, unsigned int *pnFrame
-);
-
-/*
 ** CAPI3REF: Serialize a database
 **
 ** The sqlite3_serialize(D,S,P,F) interface returns a pointer to
@@ -11009,104 +10985,15 @@ SQLITE_API int sqlite3_deserialize(
 #define SQLITE_DESERIALIZE_READONLY    4 /* Database is read-only */
 
 /*
-** Access details of recent COMMIT commands. This function allows various
-** details related to the most recent COMMIT command to be accessed.
-** The requested value is always returned via output parameter (*piVal).
-** The specific value requested is identified by parameter op (see
-** below).
-**
-** SQLITE_OK is returned if successful, or SQLITE_ERROR if the "op" or
-** "zDb" paramters are unrecognized.
-*/
-SQLITE_API int sqlite3_commit_status(
-  sqlite3 *db,                    /* Database handle */
-  const char *zDb,                /* Name of database - "main" etc. */
-  int op,                         /* SQLITE_COMMIT_XXX constant */
-  unsigned int *piVal             /* OUT: Write requested value here */
-);
-
-/*
-** The following describes the five requests supported by
-** sqlite3_commit_status(), each identified by an SQLITE_COMMIT_XXX
-** constant:
-**
-** SQLITE_COMMIT_FIRSTFRAME:
-**   In this case argument zDb must be "main", or "temp", or else the name of
-**   an attached database. If zDb does not correspond to any attached database,
-**   SQLITE_ERROR is returned.
-**
-**   The final value of (*piVal) for this request is only defined if (a) the
-**   most recent attempt to write to the database connection was successful,
-**   (b) the most recent attempt to write to the database did write to database
-**   zDb, and (c) zDb is a wal mode database.
-**
-**   If the above conditions are true, then output parameter (*piVal) is
-**   set to the frame number of the first frame written by the recent
-**   transaction. In wal mode, or in wal2 mode when a transaction is
-**   written into the *-wal file, the frame number indicates the frame's
-**   position in the wal file - frames are numbered starting from 1. In
-**   wal2 mode, when a transaction is written to the *-wal2 file, the frame
-**   number is the frame's position in the *-wal2 file, plus (1 << 31).
-**
-**   Note: Although the a database may have up to (1<<32) pages, each wal
-**   file may contain at most (1<<31) frames.
-**
-** SQLITE_COMMIT_NFRAME:
-**   zDb is interpreted in the same way as, and the final value of (*piVal)
-**   is undefined, for SQLITE_COMMIT_FIRSTFRAME.
-**
-**   Otherwise, (*piVal) is set to the number of frames written by the
-**   recent transaction.
-**
-** SQLITE_COMMIT_CONFLICT_DB:
-**   Parameter zDb is ignored for this request. The results of this
-**   request are only defined if the most recent attempt to write to
-**   the database handle was a BEGIN CONCURRENT transaction that
-**   failed with an SQLITE_BUSY_SNAPSHOT error.
-**
-**   In other cases, (*piVal) is set to the index of the database
-**   on which the SQLITE_BUSY_SNAPSHOT error occurred (0 for main,
-**   a value of 2 or greater for an attached database). This value
-**   may be used with the sqlite3_db_name() API to find the name
-**   of the conflicting database.
-**
-** SQLITE_COMMIT_CONFLICT_FRAME:
-**   Parameter zDb is ignored for this request. The results of this
-**   request are only defined if the most recent attempt to write to
-**   the database handle was a BEGIN CONCURRENT transaction that
-**   failed with an SQLITE_BUSY_SNAPSHOT error.
-**
-**   (*piVal) is set to the frame number of the conflicting frame for
-**   the recent SQLITE_BUSY_SNAPSHOT error. The conflicting transaction may
-**   be found by comparing this value with the FIRSTFRAME and
-**   NFRAME values for recent succesfully committed transactions on
-**   the same db. If the CONFLICT_FRAME value is F, then the conflicting
-**   transaction is the most recent successful commit for which
-**   (FIRSTFRAME <= F <= FIRSTFRAME+NFRAME) is true.
-**
-** SQLITE_COMMIT_CONFLICT_PGNO:
-**   Parameter zDb is ignored for this request. The results of this
-**   request are only defined if the previous attempt to write to
-**   the database using database handle db failed with
-**   SQLITE_BUSY_SNAPSHOT.
-**
-**   Return the page number of the conflicting page for the most
-**   recent SQLITE_BUSY_SNAPSHOT error.
-*/
-#define SQLITE_COMMIT_FIRSTFRAME     0
-#define SQLITE_COMMIT_NFRAME         1
-#define SQLITE_COMMIT_CONFLICT_DB    2
-#define SQLITE_COMMIT_CONFLICT_FRAME 3
-#define SQLITE_COMMIT_CONFLICT_PGNO  4
-
-
-/*
 ** Undo the hack that converts floating point types to integer for
 ** builds on processors without floating point support.
 */
 #ifdef SQLITE_OMIT_FLOATING_POINT
 # undef double
 #endif
+
+SQLITE_API void sqlite3_hct_cas_failure(int nCASFailCnt, int nCASFailReset);
+SQLITE_API void sqlite3_hct_proc_failure(int nProcFailCnt);
 
 #if defined(__wasi__)
 # undef SQLITE_WASI
@@ -11614,32 +11501,6 @@ SQLITE_API int sqlite3session_changeset(
 );
 
 /*
-** CAPI3REF: Generate A Full Changeset From A Session Object
-**
-** This function is similar to sqlite3session_changeset(), except that for
-** each row affected by an UPDATE statement, all old.* values are recorded
-** as part of the changeset, not just those modified.
-*/
-SQLITE_API int sqlite3session_fullchangeset(
-  sqlite3_session *pSession,      /* Session object */
-  int *pnChangeset,               /* OUT: Size of buffer at *ppChangeset */
-  void **ppChangeset              /* OUT: Buffer containing changeset */
-);
-
-/*
-** CAPI3REF: Generate A Full Changeset From A Session Object
-**
-** This function is similar to sqlite3session_changeset(), except that for
-** each row affected by an UPDATE statement, all old.* values are recorded
-** as part of the changeset, not just those modified.
-*/
-SQLITE_API int sqlite3session_fullchangeset(
-  sqlite3_session *pSession,      /* Session object */
-  int *pnChangeset,               /* OUT: Size of buffer at *ppChangeset */
-  void **ppChangeset              /* OUT: Buffer containing changeset */
-);
-
-/*
 ** CAPI3REF: Return An Upper-limit For The Size Of The Changeset
 ** METHOD: sqlite3_session
 **
@@ -11839,16 +11700,12 @@ SQLITE_API int sqlite3changeset_start_v2(
 ** The following flags may passed via the 4th parameter to
 ** [sqlite3changeset_start_v2] and [sqlite3changeset_start_v2_strm]:
 **
-** <dt>SQLITE_CHANGESETSTART_INVERT <dd>
+** <dt>SQLITE_CHANGESETAPPLY_INVERT <dd>
 **   Invert the changeset while iterating through it. This is equivalent to
 **   inverting a changeset using sqlite3changeset_invert() before applying it.
 **   It is an error to specify this flag with a patchset.
-**
-** <dt>SQLITE_CHANGESETSTART_FULL <dd>
-**   Do not trim extra fields added to fullchangeset changesets.
 */
 #define SQLITE_CHANGESETSTART_INVERT        0x0002
-#define SQLITE_CHANGESETSTART_FULL          0x0004
 
 
 /*
