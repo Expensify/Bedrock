@@ -148,7 +148,7 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.49.0"
 #define SQLITE_VERSION_NUMBER 3049000
-#define SQLITE_SOURCE_ID      "2025-02-06 12:46:51 cc3ce784b0feea2f7e86960d262a04c555df817192695d5760c2a83fb804a212"
+#define SQLITE_SOURCE_ID      "2025-02-21 19:04:13 d778748eb79616ecec1116aa2c34583625845eb7010804f5352f15a2c3aaf683"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -8493,7 +8493,8 @@ SQLITE_API int sqlite3_test_control(int op, ...);
 #define SQLITE_TESTCTRL_TUNE                    32
 #define SQLITE_TESTCTRL_LOGEST                  33
 #define SQLITE_TESTCTRL_USELONGDOUBLE           34  /* NOT USED */
-#define SQLITE_TESTCTRL_LAST                    34  /* Largest TESTCTRL */
+#define SQLITE_TESTCTRL_HCT_MTCOMMIT            35
+#define SQLITE_TESTCTRL_LAST                    35  /* Largest TESTCTRL */
 
 /*
 ** CAPI3REF: SQL Keyword Checking
@@ -11107,6 +11108,9 @@ SQLITE_API int sqlite3_commit_status(
 #ifdef SQLITE_OMIT_FLOATING_POINT
 # undef double
 #endif
+
+SQLITE_API void sqlite3_hct_cas_failure(int nCASFailCnt, int nCASFailReset);
+SQLITE_API void sqlite3_hct_proc_failure(int nProcFailCnt);
 
 #if defined(__wasi__)
 # undef SQLITE_WASI
