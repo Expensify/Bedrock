@@ -51,11 +51,11 @@ jobs:
         sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys BA9EF27F
         sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 4F4EA0AAE5267A6C
         wget -qO - https://package.perforce.com/perforce.pubkey --no-check-certificate | sudo apt-key add -
-        echo "deb [arch=amd64] https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu focal main" | sudo tee -a /etc/apt/sources.list
+        echo "deb [arch=amd64] https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu noble main" | sudo tee -a /etc/apt/sources.list
 
         # For clang.
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        echo "deb https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/apt.llvm.org/focal/ llvm-toolchain-focal-18 main" | sudo tee -a /etc/apt/sources.list
+        echo "deb https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/apt.llvm.org/noble/ llvm-toolchain-noble-18 main" | sudo tee -a /etc/apt/sources.list
 
         sudo apt-get update -y
         sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake libpcre2-dev libsodium-dev libgpgme11-dev libstdc++-13-dev
