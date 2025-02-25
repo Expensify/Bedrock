@@ -63,6 +63,9 @@ jobs:
         # Install clang.
         sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install clang-18 lldb-18 lld-18 clangd-18 clang-tidy-18 clang-format-18 clang-tools-18 llvm-18-dev lld-18 lldb-18 llvm-18-tools libomp-18-dev libc++-18-dev libc++abi-18-dev libclang-common-18-dev libclang-18-dev libclang-cpp18-dev libunwind-18-dev
 
+        # These packages are not installed by default in the 24.04 GH image
+        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install libpcre3-dev
+
         sudo locale-gen "en_US.UTF-8"
         sudo service rsyslog start
 
