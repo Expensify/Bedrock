@@ -5,7 +5,9 @@
 #include <libgen.h>
 #include <syslog.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <functional>
 #include <iomanip>
 #include <list>
