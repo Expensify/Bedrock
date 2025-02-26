@@ -60,7 +60,7 @@ jobs:
         # Remove libstdc++-12 and 14 which are installed by default
         # Need to explicitly reinstall libstdc++-13-dev as well
         sudo -E apt-get remove -yq libstdc++-14-dev libstdc++-12-dev
-        sudo -E apt-get -yq --reinstall libstdc++-13-dev
+        sudo -E apt-get install -y --reinstall libstdc++-13-dev
 
         sudo apt-get update -y
         sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake libpcre2-dev libsodium-dev libgpgme11-dev
