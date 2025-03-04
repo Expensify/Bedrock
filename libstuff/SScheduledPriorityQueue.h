@@ -188,6 +188,7 @@ void SScheduledPriorityQueue<T>::push(T&& item, Priority priority, Scheduled sch
     _lookupByTimeout.insert(make_pair(timeout, make_pair(priority, scheduled)));
     queue.emplace(scheduled, ItemTimeoutPair(move(item), timeout));
     _queueCondition.notify_one();
+    SINFO("Enqueued command with timeout " << timeout)
 }
 
 template<typename T>
@@ -302,6 +303,9 @@ T SScheduledPriorityQueue<T>::_dequeue() {
                     _lookupByTimeout.erase(it);
                     break;
                 }
+
+                // We should always break before we get here, some timeout should match.
+                SWARN("Did not find a matching timeout to remove for command: " << item->request.methodLine);
             }
 
             // Call the end function and return!
