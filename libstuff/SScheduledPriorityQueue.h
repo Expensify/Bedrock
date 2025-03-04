@@ -188,7 +188,7 @@ void SScheduledPriorityQueue<T>::push(T&& item, Priority priority, Scheduled sch
     _lookupByTimeout.insert(make_pair(timeout, make_pair(priority, scheduled)));
     queue.emplace(scheduled, ItemTimeoutPair(move(item), timeout));
     _queueCondition.notify_one();
-    SINFO("Enqueued command with timeout " << timeout)
+    SINFO("Enqueued command with timeout " << timeout);
 }
 
 template<typename T>
