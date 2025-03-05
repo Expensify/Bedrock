@@ -15,7 +15,7 @@ env:
 jobs:
   Run_Bedrock_Tests:
     name: "Create Bedrock and Test"
-    runs-on: ubuntu-20.04-v64-2 # The biggest and best for my baby
+    runs-on: ubuntu-24.04-v64 # The biggest and best for my baby
     timeout-minutes: 30
     steps:
 
@@ -51,14 +51,14 @@ jobs:
         sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys BA9EF27F
         sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 4F4EA0AAE5267A6C
         wget -qO - https://package.perforce.com/perforce.pubkey --no-check-certificate | sudo apt-key add -
-        echo "deb [arch=amd64] https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu focal main" | sudo tee -a /etc/apt/sources.list
+        echo "deb [arch=amd64] https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu noble main" | sudo tee -a /etc/apt/sources.list.d/ubuntu-toolchain.list
 
         # For clang.
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        echo "deb https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/apt.llvm.org/focal/ llvm-toolchain-focal-18 main" | sudo tee -a /etc/apt/sources.list
+        echo "deb [arch=amd64] https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/apt.llvm.org/noble/ llvm-toolchain-noble-18 main" | sudo tee -a /etc/apt/sources.list.d/llvm-toolchain.list
 
         sudo apt-get update -y
-        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake libpcre2-dev libsodium-dev libgpgme11-dev libstdc++-13-dev
+        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake libpcre2-dev libsodium-dev libgpgme11-dev libstdc++-14-dev
 
         # Install clang.
         sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install clang-18 lldb-18 lld-18 clangd-18 clang-tidy-18 clang-format-18 clang-tools-18 llvm-18-dev lld-18 lldb-18 llvm-18-tools libomp-18-dev libc++-18-dev libc++abi-18-dev libclang-common-18-dev libclang-18-dev libclang-cpp18-dev libunwind-18-dev
