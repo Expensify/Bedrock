@@ -1,4 +1,5 @@
 #include "SQLite.h"
+#include "libstuff/sqlite3.h"
 
 #include <linux/limits.h>
 #include <string.h>
@@ -73,6 +74,16 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
         if (!hctree && !isDBCurrentlyUsingWAL2) {
             SASSERT(!SQuery(db, "", "PRAGMA journal_mode = delete;", result));
             SASSERT(!SQuery(db, "", "PRAGMA journal_mode = WAL2;", result));
+        }
+
+        // Pull indexes into memory. We currently skip this for HC-Tree as compatibility isn't clear.
+        if (!hctree) {
+            SQResult indexes;
+            SQuery(db,"", "SELECT name FROM sqlite_master WHERE type = 'index';", indexes);
+            for (auto& indexRow : indexes.rows) {
+                SINFO("Loading index " << indexRow[0] << " into memory");
+                SQuery(db, "", "PRAGMA loadall(" + SQ(indexRow[0]) + ");");
+            }
         }
 
         // Read the highest commit count from the database, and store it in commitCount.
