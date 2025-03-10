@@ -54,6 +54,30 @@ int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine) {
     return 400;
 }
 
+string SStandaloneHTTPSManager::getHeaderValue(const SData& fullResponse, const string& headerKey) {
+
+    const string fullResponseString = fullResponse.serialize();
+
+    // Find the starting position of the specified header.
+    size_t startPos = fullResponseString.find(headerKey);
+    string headerValue = "";
+    if (startPos == string::npos) {
+        return headerValue;
+    }
+
+    // Move to the position after the header key to get its value.
+    startPos += headerKey.length();
+
+    // Find the end of the line (delimiter is '\r\n').
+    const size_t endPos = fullResponseString.find_first_of("\r\n", startPos);
+
+    // Extract and trim the value of x-request-id.
+    headerValue = fullResponseString.substr(startPos, endPos - startPos);
+    headerValue.erase(0, headerValue.find_first_not_of(" \t"));
+
+    return headerValue;
+}
+
 void SStandaloneHTTPSManager::prePoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction) {
     if (!transaction.s || transaction.finished) {
         // If there's no socket, or we're done, skip.

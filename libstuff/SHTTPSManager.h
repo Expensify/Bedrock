@@ -42,6 +42,8 @@ class SStandaloneHTTPSManager : public STCPManager {
 
     static int getHTTPResponseCode(const string& methodLine);
 
+    static string getHeaderValue(const SData& fullResponse, const string& headerKey);
+
   protected: // Child API
 
     // Used to create the signing certificate.
