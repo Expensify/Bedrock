@@ -65,8 +65,8 @@ string SStandaloneHTTPSManager::getHeaderValue(const SData& fullResponse, const 
         return headerValue;
     }
 
-    // Move to the position after the header key to get its value.
-    startPos += headerKey.length();
+    // Move to the position after the header key to get its value (+2 accounts for the colon and space)
+    startPos += (headerKey.length() + 2);
 
     // Find the end of the line (delimiter is '\r\n').
     const size_t endPos = fullResponseString.find_first_of("\r\n", startPos);
