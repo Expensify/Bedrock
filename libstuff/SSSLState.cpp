@@ -6,7 +6,6 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
-#include <libstuff/SX509.h>
 
 SSSLState::SSSLState() {
     mbedtls_ssl_init(&ssl);
@@ -23,7 +22,7 @@ SSSLState::~SSSLState() {
 }
 
 // --------------------------------------------------------------------------
-SSSLState* SSSLOpen(int s, SX509* x509) {
+SSSLState* SSSLOpen(int s) {
     // Initialize the SSL state
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
@@ -50,7 +49,8 @@ SSSLState* SSSLOpen(int s, SX509* x509) {
         STHROW("ssl setup failed");
     }
 
-    /* Skipped.
+    /* We don't verify hostnames, and it's also why aboe we set MBEDTLS_SSL_VERIFY_OPTIONAL instead of MBEDTLS_SSL_VERIFY_REQUIRED.
+     * This could be a possible securiy improvement.
     if (mbedtls_ssl_set_hostname(&state->ssl, "your.server.hostname")) {
         STHROW("ssl set hostname failed");
     }

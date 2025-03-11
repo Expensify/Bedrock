@@ -6,7 +6,6 @@
 #include <string.h>
 
 #include <libstuff/SQResult.h>
-#include <libstuff/SX509.h>
 
 extern int* __pointerToFakeIntArray;
 
@@ -648,8 +647,6 @@ SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, c
         host += ":443";
     }
 
-    // If this is going to be an https transaction, create a certificate and give it to the socket.
-    //SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
     Socket* s = nullptr;
     try {
         s = new Socket(host, true);

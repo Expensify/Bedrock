@@ -4,7 +4,6 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
-#include <libstuff/SX509.h>
 
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
@@ -190,7 +189,7 @@ STCPManager::Socket::Socket(const string& host, bool useSSL)
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
-    ssl = useSSL ? SSSLOpen(s, nullptr) : nullptr;
+    ssl = useSSL ? SSSLOpen(s) : nullptr;
     SASSERT(!useSSL || ssl);
 }
 

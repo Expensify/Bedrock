@@ -3,7 +3,6 @@
 #include <BedrockPlugin.h>
 #include <BedrockServer.h>
 #include <libstuff/libstuff.h>
-#include <libstuff/SX509.h>
 #include <sqlitecluster/SQLiteNode.h>
 
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_) : plugin(plugin_)
@@ -164,14 +163,11 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
     // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
     Transaction* transaction = new Transaction(*this);
 
-    // If this is going to be an https transaction, create a certificate and give it to the socket.
-    //SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
     Socket* s = nullptr;
     try {
-        s = new Socket(host, SStartsWith(url, "https://") ? 1 : 0);
+        s = new Socket(host, SStartsWith(url, "https://"));
     } catch (const SException& exception) {
         delete transaction;
-        //delete x509;
         return _createErrorTransaction();
     }
 
