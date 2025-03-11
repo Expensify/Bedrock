@@ -44,12 +44,14 @@ SSSLState* SSSLOpen(int s, const string& hostname) {
     mbedtls_ssl_conf_dbg(&state->conf, my_mbedtls_debug, nullptr);
     mbedtls_debug_set_threshold(5); 
 
+    /* This block doesn't work, we'd like it to, but we need a real certificate chain to use.
     mbedtls_x509_crt cacert;
     mbedtls_x509_crt_init(&cacert);
     if (mbedtls_x509_crt_parse_file(&cacert, "/etc/ssl/certs/ca-certificates.crt") != 0) {
         STHROW("Failed to load CA chain");
     }
     mbedtls_ssl_conf_ca_chain(&state->conf, &cacert, nullptr);
+    */
 
     mbedtls_entropy_init(&state->ec);
     mbedtls_ctr_drbg_init(&state->ctr_drbg);
@@ -65,10 +67,9 @@ SSSLState* SSSLOpen(int s, const string& hostname) {
         STHROW("ssl setup failed");
     }
 
-    if (hostname.empty()) {
-        mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_NONE);
-    } else {
-        mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_NONE);
+    // We'd like to set MBEDTLS_SSL_VERIFY_REQUIRED, but we need a certificate chain to verify against.
+    mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_NONE);
+    if (hostname.size()) {
         if (mbedtls_ssl_set_hostname(&state->ssl, hostname.c_str())) {
             STHROW("ssl set hostname failed");
         }
