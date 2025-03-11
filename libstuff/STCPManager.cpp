@@ -4,7 +4,7 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
-#include <iostream>
+
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
 void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
