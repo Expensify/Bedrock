@@ -12,7 +12,7 @@
 void my_mbedtls_debug(void *ctx, int level, const char *file, int line, const char *str) {
     (void)ctx; // unused context
     //SINFO("MBEDTLS DEBUG level: " << level << ", file: " << file << ", line: " << line << " str:" << str);
-    cout << "MBEDTLS DEBUG level: " << level << ", file: " << file << ", line: " << line << " str:" << str << endl;
+    cout << "MBEDTLS DEBUG level: " << level << ", file: " << file << ", line: " << line << " str:" << str;
 }
 
 SSSLState::SSSLState() {
