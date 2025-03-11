@@ -13,6 +13,5 @@ struct SX509 {
 };
 
 // X509 Certificates
-extern SX509* SX509Open();
 extern SX509* SX509Open(const string& pem, const string& srvCrt, const string& caCrt);
 extern void SX509Close(SX509* x509);

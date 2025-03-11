@@ -1,7 +1,7 @@
 #include "SSSLState.h"
 
 #include <mbedtls/error.h>
-#include <mbedtls/net.h>
+#include <mbedtls/net_sockets.h>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
@@ -103,36 +103,6 @@ int SSSLRecv(SSSLState* sslState, char* buffer, int length) {
         SINFO("SSL reports recv error #" << numRecv << " (" << errStr << ")");
         return -1;
     }
-}
-
-// --------------------------------------------------------------------------
-string SSSLGetState(SSSLState* ssl) {
-    // Just return direct
-    SASSERT(ssl);
-#define SSLSTATE(_STATE_)                                                                                              \
-    case _STATE_:                                                                                                      \
-        return #_STATE_
-    switch (ssl->ssl.state) {
-        SSLSTATE(MBEDTLS_SSL_HELLO_REQUEST);
-        SSLSTATE(MBEDTLS_SSL_CLIENT_HELLO);
-        SSLSTATE(MBEDTLS_SSL_SERVER_HELLO);
-        SSLSTATE(MBEDTLS_SSL_SERVER_CERTIFICATE);
-        SSLSTATE(MBEDTLS_SSL_SERVER_KEY_EXCHANGE);
-        SSLSTATE(MBEDTLS_SSL_CERTIFICATE_REQUEST);
-        SSLSTATE(MBEDTLS_SSL_SERVER_HELLO_DONE);
-        SSLSTATE(MBEDTLS_SSL_CLIENT_CERTIFICATE);
-        SSLSTATE(MBEDTLS_SSL_CLIENT_KEY_EXCHANGE);
-        SSLSTATE(MBEDTLS_SSL_CERTIFICATE_VERIFY);
-        SSLSTATE(MBEDTLS_SSL_CLIENT_CHANGE_CIPHER_SPEC);
-        SSLSTATE(MBEDTLS_SSL_CLIENT_FINISHED);
-        SSLSTATE(MBEDTLS_SSL_SERVER_CHANGE_CIPHER_SPEC);
-        SSLSTATE(MBEDTLS_SSL_SERVER_FINISHED);
-        SSLSTATE(MBEDTLS_SSL_FLUSH_BUFFERS);
-        SSLSTATE(MBEDTLS_SSL_HANDSHAKE_OVER);
-    default:
-        return "(unknown)";
-    }
-#undef SSLSTATE
 }
 
 // --------------------------------------------------------------------------

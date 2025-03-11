@@ -30,6 +30,5 @@ extern bool SSSLSendConsume(SSSLState* ssl, SFastBuffer& sendBuffer);
 extern bool SSSLSendAll(SSSLState* ssl, const string& buffer);
 extern int SSSLRecv(SSSLState* ssl, char* buffer, int length);
 extern bool SSSLRecvAppend(SSSLState* ssl, SFastBuffer& recvBuffer);
-extern string SSSLGetState(SSSLState* ssl);
 extern void SSSLShutdown(SSSLState* ssl);
 extern void SSSLClose(SSSLState* ssl);
