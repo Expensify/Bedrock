@@ -49,7 +49,7 @@ SSSLState* SSSLOpen(int s) {
         STHROW("ssl setup failed");
     }
 
-    /* We don't verify hostnames, and it's also why aboe we set MBEDTLS_SSL_VERIFY_OPTIONAL instead of MBEDTLS_SSL_VERIFY_REQUIRED.
+    /* We don't verify hostnames, and it's also why above we set MBEDTLS_SSL_VERIFY_OPTIONAL instead of MBEDTLS_SSL_VERIFY_REQUIRED.
      * This could be a possible securiy improvement.
     if (mbedtls_ssl_set_hostname(&state->ssl, "your.server.hostname")) {
         STHROW("ssl set hostname failed");
