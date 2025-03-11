@@ -7,14 +7,6 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
 
-#include <mbedtls/debug.h>
-#include <iostream>
-void my_mbedtls_debug(void *ctx, int level, const char *file, int line, const char *str) {
-    (void)ctx; // unused context
-    //SINFO("MBEDTLS DEBUG level: " << level << ", file: " << file << ", line: " << line << " str:" << str);
-    cout << "MBEDTLS DEBUG level: " << level << ", file: " << file << ", line: " << line << " str:" << str;
-}
-
 SSSLState::SSSLState() {
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
@@ -40,9 +32,6 @@ SSSLState* SSSLOpen(int s, const string& hostname) {
     mbedtls_ssl_init(&state->ssl);
     mbedtls_ssl_config_init(&state->conf);
     mbedtls_net_init(&state->net_ctx);
-
-    mbedtls_ssl_conf_dbg(&state->conf, my_mbedtls_debug, nullptr);
-    mbedtls_debug_set_threshold(5); 
 
     /* This block doesn't work, we'd like it to, but we need a real certificate chain to use.
     mbedtls_x509_crt cacert;
