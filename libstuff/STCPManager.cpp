@@ -45,6 +45,10 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
                 int ret = mbedtls_ssl_handshake_step(&sslState->ssl);
                 if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
                     SFDset(fdm, socket.s, SWRITEEVTS);
+                } else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
+                    // This is expected, but is already set.
+                } else if (ret) {
+                    SWARN("SSL ERROR");
                 }
             }
         }
@@ -172,22 +176,22 @@ void STCPManager::Socket::shutdown(Socket::State toState) {
     state.store(toState);
 }
 
-STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)
+STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool useSSL)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _useSSL(useSSL)
 { }
 
-STCPManager::Socket::Socket(const string& host, SX509* x509)
+STCPManager::Socket::Socket(const string& host, bool useSSL)
   : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _useSSL(useSSL)
 {
     SASSERT(SHostIsValid(host));
     s = S_socket(host, true, false, false);
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
-    ssl = x509 ? SSSLOpen(s, x509) : nullptr;
-    SASSERT(!x509 || ssl);
+    ssl = useSSL ? SSSLOpen(s, nullptr) : nullptr;
+    SASSERT(!useSSL || ssl);
 }
 
 STCPManager::Socket::Socket(Socket&& from)
@@ -201,12 +205,11 @@ STCPManager::Socket::Socket(Socket&& from)
     ssl(from.ssl),
     data(from.data),
     id(from.id),
-    _x509(from._x509)
+    _useSSL(from._useSSL)
 {
     from.s = -1;
     from.ssl = nullptr;
     from.data = nullptr;
-    from._x509 = nullptr;
 }
 
 STCPManager::Socket::~Socket() {
@@ -215,9 +218,6 @@ STCPManager::Socket::~Socket() {
     }
     if (ssl) {
         SSSLClose(ssl);
-    }
-    if (_x509) {
-        SX509Close(_x509);
     }
 }
 
