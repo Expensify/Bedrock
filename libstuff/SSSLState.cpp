@@ -40,11 +40,16 @@ SSSLState* SSSLOpen(int s, const string& hostname) {
     mbedtls_ssl_init(&state->ssl);
     mbedtls_ssl_config_init(&state->conf);
     mbedtls_net_init(&state->net_ctx);
-    state->net_ctx.fd = s;
-
 
     mbedtls_ssl_conf_dbg(&state->conf, my_mbedtls_debug, nullptr);
     mbedtls_debug_set_threshold(5); 
+
+    mbedtls_x509_crt cacert;
+    mbedtls_x509_crt_init(&cacert);
+    if (mbedtls_x509_crt_parse_file(&cacert, "/etc/ssl/certs/ca-certificates.crt") != 0) {
+        STHROW("Failed to load CA chain");
+    }
+    mbedtls_ssl_conf_ca_chain(&state->conf, &cacert, nullptr);
 
     mbedtls_entropy_init(&state->ec);
     mbedtls_ctr_drbg_init(&state->ctr_drbg);
@@ -54,18 +59,19 @@ SSSLState* SSSLOpen(int s, const string& hostname) {
         STHROW("ssl config defaults failed");
     }
 
-    if (hostname.empty()) {
+    mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
+
+    if (mbedtls_ssl_setup(&state->ssl, &state->conf)) {
+        STHROW("ssl setup failed");
+    }
+
+    if (true || hostname.empty()) {
         mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_NONE);
     } else {
         mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
         if (mbedtls_ssl_set_hostname(&state->ssl, hostname.c_str())) {
             STHROW("ssl set hostname failed");
         }
-    }
-    mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
-
-    if (mbedtls_ssl_setup(&state->ssl, &state->conf)) {
-        STHROW("ssl setup failed");
     }
 
     mbedtls_net_init(&state->net_ctx);

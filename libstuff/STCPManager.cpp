@@ -185,13 +185,16 @@ STCPManager::Socket::Socket(const string& host, bool useSSL)
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _useSSL(useSSL)
 {
     SASSERT(SHostIsValid(host));
-    cout << "HOST: " << host << endl;
     s = S_socket(host, true, false, false);
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
-    // pass `host` as second param to SSSLOpen.
-    ssl = useSSL ? SSSLOpen(s) : nullptr;
+    
+    string domain;
+    uint16_t port;
+    SParseHost(host, domain, port);
+    cout << "HOST: " << domain << endl;
+    ssl = useSSL ? SSSLOpen(s, domain) : nullptr;
     SASSERT(!useSSL || ssl);
 }
 
