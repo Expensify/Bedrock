@@ -135,7 +135,12 @@ void SSSLShutdown(SSSLState* ssl) {
 void SSSLClose(SSSLState* ssl) {
     // Just clean up
     SASSERT(ssl);
+    mbedtls_net_free(&ssl->net_ctx);
     mbedtls_ssl_free(&ssl->ssl);
+    mbedtls_ssl_config_free(&ssl->conf);
+    mbedtls_ctr_drbg_free(&ssl->ctr_drbg);
+    mbedtls_entropy_free(&ssl->ec);
+
     delete ssl;
 }
 
