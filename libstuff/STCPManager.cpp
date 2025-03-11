@@ -4,7 +4,7 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
-
+#include <iostream>
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
 void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
@@ -185,10 +185,12 @@ STCPManager::Socket::Socket(const string& host, bool useSSL)
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _useSSL(useSSL)
 {
     SASSERT(SHostIsValid(host));
+    cout << "HOST: " << host << endl;
     s = S_socket(host, true, false, false);
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
+    // pass `host` as second param to SSSLOpen.
     ssl = useSSL ? SSSLOpen(s) : nullptr;
     SASSERT(!useSSL || ssl);
 }

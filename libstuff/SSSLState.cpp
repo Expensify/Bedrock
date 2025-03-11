@@ -30,7 +30,7 @@ SSSLState::~SSSLState() {
 }
 
 // --------------------------------------------------------------------------
-SSSLState* SSSLOpen(int s) {
+SSSLState* SSSLOpen(int s, const string& hostname) {
     // Initialize the SSL state
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
@@ -54,19 +54,19 @@ SSSLState* SSSLOpen(int s) {
         STHROW("ssl config defaults failed");
     }
 
-    mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
+    if (hostname.empty()) {
+        mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_NONE);
+    } else {
+        mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
+        if (mbedtls_ssl_set_hostname(&state->ssl, hostname.c_str())) {
+            STHROW("ssl set hostname failed");
+        }
+    }
     mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
 
     if (mbedtls_ssl_setup(&state->ssl, &state->conf)) {
         STHROW("ssl setup failed");
     }
-
-    /* We don't verify hostnames, and it's also why above we set MBEDTLS_SSL_VERIFY_OPTIONAL instead of MBEDTLS_SSL_VERIFY_REQUIRED.
-     * This could be a possible securiy improvement.
-    if (mbedtls_ssl_set_hostname(&state->ssl, "your.server.hostname")) {
-        STHROW("ssl set hostname failed");
-    }
-    */
 
     mbedtls_net_init(&state->net_ctx);
     state->net_ctx.fd = state->s;
