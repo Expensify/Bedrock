@@ -1,4 +1,5 @@
 #include "SSSLState.h"
+#include "mbedtls/ssl.h"
 
 #include <mbedtls/error.h>
 #include <mbedtls/net_sockets.h>
@@ -28,20 +29,38 @@ SSSLState* SSSLOpen(int s, SX509* x509) {
     SSSLState* state = new SSSLState;
     state->s = s;
 
-    mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, 0, 0);
-    mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, 0);
+    // All new code here.
+    mbedtls_ssl_init(&state->ssl);
+    mbedtls_ssl_config_init(&state->conf);
+    mbedtls_net_init(&state->net_ctx);
+    state->net_ctx.fd = s;
 
-    mbedtls_ssl_setup(&state->ssl, &state->conf);
+    mbedtls_entropy_init(&state->ec);
+    mbedtls_ctr_drbg_init(&state->ctr_drbg);
+    mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, nullptr, 0);
+
+    if (mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)) {
+        STHROW("ssl config defaults failed");
+    }
 
     mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
-    mbedtls_ssl_set_bio(&state->ssl, &state->s, mbedtls_net_send, mbedtls_net_recv, 0);
 
-    if (x509) {
-        // Add the certificate
-        mbedtls_ssl_conf_ca_chain(&state->conf, x509->srvcert.next, 0);
-        SASSERT(mbedtls_ssl_conf_own_cert(&state->conf, &x509->srvcert, &x509->pk) == 0);
+    if (mbedtls_ssl_setup(&state->ssl, &state->conf)) {
+        STHROW("ssl setup failed");
     }
+
+    /* Skipped.
+    if (mbedtls_ssl_set_hostname(&state->ssl, "your.server.hostname")) {
+        STHROW("ssl set hostname failed");
+    }
+    */
+
+    mbedtls_net_init(&state->net_ctx);
+    state->net_ctx.fd = state->s;
+
+    mbedtls_ssl_set_bio(&state->ssl, &state->net_ctx, mbedtls_net_send, mbedtls_net_recv, nullptr);
+
     return state;
 }
 

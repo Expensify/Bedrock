@@ -4,6 +4,7 @@
 #include <mbedtls/entropy.h>
 #include <mbedtls/ssl.h>
 #include <string>
+#include <mbedtls/net_sockets.h>
 
 using namespace std;
 
@@ -17,6 +18,7 @@ struct SSSLState {
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_ssl_config conf;
     mbedtls_ssl_context ssl;
+    mbedtls_net_context net_ctx;
 
     SSSLState();
     ~SSSLState();
