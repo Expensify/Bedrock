@@ -65,10 +65,10 @@ SSSLState* SSSLOpen(int s, const string& hostname) {
         STHROW("ssl setup failed");
     }
 
-    if (true || hostname.empty()) {
+    if (hostname.empty()) {
         mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_NONE);
     } else {
-        mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
+        mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_NONE);
         if (mbedtls_ssl_set_hostname(&state->ssl, hostname.c_str())) {
             STHROW("ssl set hostname failed");
         }
