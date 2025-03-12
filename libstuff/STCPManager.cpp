@@ -193,7 +193,6 @@ STCPManager::Socket::Socket(const string& host, bool useSSL)
     string domain;
     uint16_t port;
     SParseHost(host, domain, port);
-    SINFO("SNI Host: " << domain);
     ssl = useSSL ? SSSLOpen(s, domain) : nullptr;
     SASSERT(!useSSL || ssl);
 }
