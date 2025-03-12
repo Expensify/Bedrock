@@ -22,7 +22,7 @@ SSSLState::~SSSLState() {
 }
 
 // --------------------------------------------------------------------------
-SSSLState* SSSLOpen(int s, SX509* x509) {
+SSSLState* SSSLOpen(int s, SX509* x509, const string& hostname) {
     // Initialize the SSL state
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
@@ -36,6 +36,12 @@ SSSLState* SSSLOpen(int s, SX509* x509) {
     mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
     mbedtls_ssl_set_bio(&state->ssl, &state->s, mbedtls_net_send, mbedtls_net_recv, 0);
+
+    if (hostname.size()) {
+        if (mbedtls_ssl_set_hostname(&state->ssl, hostname.c_str())) {
+            STHROW("ssl set hostname failed");
+        }
+    }
 
     if (x509) {
         // Add the certificate
