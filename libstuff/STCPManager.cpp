@@ -212,7 +212,14 @@ STCPManager::Socket::Socket(const string& host, SX509* x509)
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
-    ssl = x509 ? SSSLOpen(s, x509) : nullptr;
+
+    string domain;
+    if (x509) {
+        uint16_t port;
+        SParseHost(host, domain, port);
+    }
+
+    ssl = x509 ? SSSLOpen(s, x509, domain) : nullptr;
     SASSERT(!x509 || ssl);
 }
 
