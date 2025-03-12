@@ -189,7 +189,11 @@ STCPManager::Socket::Socket(const string& host, bool useSSL)
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
-    ssl = useSSL ? SSSLOpen(s) : nullptr;
+    
+    string domain;
+    uint16_t port;
+    SParseHost(host, domain, port);
+    ssl = useSSL ? SSSLOpen(s, domain) : nullptr;
     SASSERT(!useSSL || ssl);
 }
 

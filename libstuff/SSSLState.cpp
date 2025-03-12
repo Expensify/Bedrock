@@ -22,7 +22,7 @@ SSSLState::~SSSLState() {
 }
 
 // --------------------------------------------------------------------------
-SSSLState* SSSLOpen(int s) {
+SSSLState* SSSLOpen(int s, const string& hostname) {
     // Initialize the SSL state
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
@@ -32,7 +32,15 @@ SSSLState* SSSLOpen(int s) {
     mbedtls_ssl_init(&state->ssl);
     mbedtls_ssl_config_init(&state->conf);
     mbedtls_net_init(&state->net_ctx);
-    state->net_ctx.fd = s;
+
+    /* This block doesn't work, we'd like it to, but we need a real certificate chain to use.
+    mbedtls_x509_crt cacert;
+    mbedtls_x509_crt_init(&cacert);
+    if (mbedtls_x509_crt_parse_file(&cacert, "/etc/ssl/certs/ca-certificates.crt") != 0) {
+        STHROW("Failed to load CA chain");
+    }
+    mbedtls_ssl_conf_ca_chain(&state->conf, &cacert, nullptr);
+    */
 
     mbedtls_entropy_init(&state->ec);
     mbedtls_ctr_drbg_init(&state->ctr_drbg);
@@ -42,19 +50,19 @@ SSSLState* SSSLOpen(int s) {
         STHROW("ssl config defaults failed");
     }
 
-    mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
 
     if (mbedtls_ssl_setup(&state->ssl, &state->conf)) {
         STHROW("ssl setup failed");
     }
 
-    /* We don't verify hostnames, and it's also why above we set MBEDTLS_SSL_VERIFY_OPTIONAL instead of MBEDTLS_SSL_VERIFY_REQUIRED.
-     * This could be a possible securiy improvement.
-    if (mbedtls_ssl_set_hostname(&state->ssl, "your.server.hostname")) {
-        STHROW("ssl set hostname failed");
+    // We'd like to set MBEDTLS_SSL_VERIFY_REQUIRED, but we need a certificate chain to verify against.
+    mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_NONE);
+    if (hostname.size()) {
+        if (mbedtls_ssl_set_hostname(&state->ssl, hostname.c_str())) {
+            STHROW("ssl set hostname failed");
+        }
     }
-    */
 
     mbedtls_net_init(&state->net_ctx);
     state->net_ctx.fd = state->s;
