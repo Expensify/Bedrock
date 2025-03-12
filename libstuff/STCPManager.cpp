@@ -217,7 +217,6 @@ STCPManager::Socket::Socket(const string& host, SX509* x509)
     if (x509) {
         uint16_t port;
         SParseHost(host, domain, port);
-        SINFO("SNI HOST: " << domain);
     }
 
     ssl = x509 ? SSSLOpen(s, x509, domain) : nullptr;
