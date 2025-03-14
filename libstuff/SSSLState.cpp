@@ -7,6 +7,14 @@
 #include <libstuff/SFastBuffer.h>
 #include <libstuff/SX509.h>
 
+#include <mbedtls/debug.h>
+#include <iostream>
+void my_mbedtls_debug(void *ctx, int level, const char *file, int line, const char *str) {
+    (void)ctx; // unused context
+    //SINFO("MBEDTLS DEBUG level: " << level << ", file: " << file << ", line: " << line << " str:" << str);
+    cout << "MBEDTLS DEBUG level: " << level << ", file: " << file << ", line: " << line << " str:" << str;
+}
+
 SSSLState::SSSLState() {
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
@@ -36,6 +44,9 @@ SSSLState* SSSLOpen(int s, SX509* x509, const string& hostname) {
     mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
     mbedtls_ssl_set_bio(&state->ssl, &state->s, mbedtls_net_send, mbedtls_net_recv, 0);
+
+    mbedtls_ssl_conf_dbg(&state->conf, my_mbedtls_debug, nullptr);
+    mbedtls_debug_set_threshold(5);
 
     if (hostname.size()) {
         if (mbedtls_ssl_set_hostname(&state->ssl, hostname.c_str())) {
