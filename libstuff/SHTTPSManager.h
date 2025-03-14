@@ -49,6 +49,7 @@ class SStandaloneHTTPSManager : public STCPManager {
     const string _srvCrt;
     const string _caCrt;
 
+    public:
     // Methods
     Transaction* _httpsSend(const string& url, const SData& request);
     Transaction* _createErrorTransaction();
