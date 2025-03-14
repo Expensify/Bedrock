@@ -49,6 +49,7 @@ SSSLState* SSSLOpen(int s, SX509* x509, const string& hostname) {
     mbedtls_debug_set_threshold(5);
 
     if (hostname.size()) {
+        cout << "HOSTNAME: " << hostname << endl;
         if (mbedtls_ssl_set_hostname(&state->ssl, hostname.c_str())) {
             STHROW("ssl set hostname failed");
         }
