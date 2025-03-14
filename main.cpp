@@ -2,6 +2,7 @@
 /// =================
 /// Process entry point for Bedrock server.
 ///
+#include "libstuff/SHTTPSManager.h"
 #include <dlfcn.h>
 #include <iostream>
 #include <signal.h>
@@ -141,6 +142,41 @@ set<string> loadPlugins(SData& args) {
 
 /////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[]) {
+    // Start libstuff. Generally, we want to initialize libstuff immediately on any new thread, but we wait until after
+    // the `fork` above has completed, as we can get strange behaviors from signal handlers across forked processes.
+    SInitialize("main");
+    SLogLevel(LOG_INFO);
+
+    string requestString = SFileLoad("request.txt");
+    SData request(requestString);
+
+    cout << "SENDING:" << endl;
+    cout << request.serialize() << endl;
+    cout << endl << endl;
+    // Create whatever HTTP stack we need.
+    SStandaloneHTTPSManager manager;
+    SStandaloneHTTPSManager::Transaction* transaction = manager._httpsSend("https://" + request["Host"], request);
+    transaction->timeoutAt = STimeNow() + 10'000'000;
+
+    while(1) {
+        fd_map fdm;
+        manager.prePoll(fdm, *transaction);
+        uint64_t now = STimeNow();
+        S_poll(fdm, now);
+        manager.postPoll(fdm, *transaction, now, 1'000'000);
+        if (transaction->response) {
+            break;
+        }
+    }
+
+    cout << "RECEIVED: " << endl;
+    cout << transaction->fullResponse << endl;
+    cout << endl;
+
+    // Finished with our signal handler.
+    SStopSignalThread();
+
+    return 0;
     // Process the command line
     SData args = SParseCommandLine(argc, argv);
     if (args.empty()) {
