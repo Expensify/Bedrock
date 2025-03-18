@@ -82,15 +82,13 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     //See if we got a response.
     uint64_t now = STimeNow();
     int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
-    cout << "Did we get a content-length? " << transaction.fullResponse["Content-Length"] << endl; 
-    if (size) {
 
-        size_t contentLength = SToUInt64(transaction.fullResponse["Content-Length"]);
-        if (!contentLength) {
-            cout << "Parsed a response with no Content-Length, this is only valid if the socket is EOF" << endl;
-            cout << "Is socket closed? " << ((transaction.s->state == STCPManager::Socket::CLOSED) ? "true" : "false") << endl;
-        }
-
+    // If there's no `content-length` then all `size` indicates is that we have all of the HTTP headers,
+    // but this indicates nothing about whether we have the whole body. We can only know we have the whole body in the case if
+    // the connection is marked as closed.
+    bool hasContentLength = transaction.fullResponse.nameValueMap.contains("Content-Length");
+    bool completeRequest = size && (hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
+    if (completeRequest) {
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
         transaction.finished = now;
