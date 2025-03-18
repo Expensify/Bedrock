@@ -1197,7 +1197,6 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     // Just walk across and compose a valid HTTP-like message
     buffer.clear();
     buffer += methodLine + "\r\n";
-    bool hadContentLength = false;
     for (pair<string, string> item : nameValueMap) {
         if (SIEquals("Set-Cookie", item.first)) {
             // Parse this list and generate a separate cookie for each.
@@ -1211,7 +1210,7 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
             }
         } else if (SIEquals("Content-Length", item.first)) {
             // Ignore Content-Length; will be generated fresh later
-            hadContentLength = true;
+            cout << "Ignored Content-Length in serialize: " << item.second << endl;
         } else if (SIEquals("Content-Encoding", item.first) && SIEquals("gzip", item.second)) {
             tryGzip = !content.empty();
         } else {
@@ -1229,9 +1228,7 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
 
     // Always add a Content-Length, even if no content, so there is no ambiguity
     buffer += "Content-Length: " + SToStr(finalContent.size()) + "\r\n";
-    if (!hadContentLength) {
-        cout << "Added Content-Length in serialize (" << finalContent.size() << ")" << endl;
-    }
+    cout << "Set Content-Length in serialize (" << finalContent.size() << ")" << endl;
 
     // Finish the message and add the content, if any
     buffer += "\r\n";
