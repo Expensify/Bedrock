@@ -312,10 +312,10 @@ bool STCPManager::Socket::recv() {
     bool result = false;
     const size_t oldSize = recvBuffer.size();
     if (ssl) {
-        cout << "SSL recv" << endl;
+        //cout << "SSL recv" << endl;
         result = SSSLRecvAppend(ssl, recvBuffer);
     } else if (s > 0) {
-        cout << "HTTP recv" << endl;
+        //cout << "HTTP recv" << endl;
         result = S_recvappend(s, recvBuffer);
     }
 

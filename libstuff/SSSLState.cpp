@@ -219,7 +219,7 @@ bool SSSLRecvAppend(SSSLState* ssl, SFastBuffer& recvBuffer) {
     while ((numRecv = SSSLRecv(ssl, buffer, sizeof(buffer))) > 0) {
         // Got some more data
         recvBuffer.append(buffer, numRecv);
-        cout << "BUFFER: " << recvBuffer.c_str() << endl << endl;
+        //cout << "BUFFER: " << recvBuffer.c_str() << endl << endl;
     }
 
     // Return whether or not the socket is still alive
