@@ -6,8 +6,6 @@
 #include <libstuff/SSSLState.h>
 #include <libstuff/SX509.h>
 
-#include <iostream>
-
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
 void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
@@ -312,10 +310,8 @@ bool STCPManager::Socket::recv() {
     bool result = false;
     const size_t oldSize = recvBuffer.size();
     if (ssl) {
-        //cout << "SSL recv" << endl;
         result = SSSLRecvAppend(ssl, recvBuffer);
     } else if (s > 0) {
-        //cout << "HTTP recv" << endl;
         result = S_recvappend(s, recvBuffer);
     }
 

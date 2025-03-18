@@ -871,8 +871,7 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                                              ? atoi(nameValueMap["Content-Length"].c_str())
                                              : 0);
                     if (!contentLength) {
-                        
-                        // Content is whatever is here.
+                        // Since we don't know, just return everything we have.
                         content = string(parseEnd, buffer + length);
                         return length;
                     }
@@ -1005,7 +1004,6 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
     methodLine.clear();
     nameValueMap.clear();
     content.clear();
-
     return 0;
 }
 
@@ -1200,7 +1198,6 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
             }
         } else if (SIEquals("Content-Length", item.first)) {
             // Ignore Content-Length; will be generated fresh later
-            cout << "Ignored Content-Length in serialize: " << item.second << endl;
         } else if (SIEquals("Content-Encoding", item.first) && SIEquals("gzip", item.second)) {
             tryGzip = !content.empty();
         } else {
@@ -1218,7 +1215,6 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
 
     // Always add a Content-Length, even if no content, so there is no ambiguity
     buffer += "Content-Length: " + SToStr(finalContent.size()) + "\r\n";
-    cout << "Set Content-Length in serialize (" << finalContent.size() << ")" << endl;
 
     // Finish the message and add the content, if any
     buffer += "\r\n";
