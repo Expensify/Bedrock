@@ -877,7 +877,11 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                                              : 0);
                     if (!contentLength) {
                         cout << "HEADER DATA YET" << endl;
-                        return headerLength;
+                        
+                        // Content is whatever is here.
+                        content = string(parseEnd, buffer + length);
+                        cout << "Content data: " << content << endl;
+                        return length;
                     }
 
                     // There is a content length -- if we don't have enough, then cancel the parse.

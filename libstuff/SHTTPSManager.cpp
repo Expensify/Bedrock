@@ -83,6 +83,12 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
     cout << "Did we get a content-length? " << transaction.fullResponse["Content-Length"] << endl; 
     if (size) {
+
+        size_t contentLength = SToUInt64(transaction.fullResponse["Content-Length"]);
+        if (!contentLength) {
+            cout << "Parsed a response with no Content-Length, this is only valid if the socket is EOF" << endl;
+        }
+
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
         transaction.finished = now;
