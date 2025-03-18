@@ -5,7 +5,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SX509.h>
 #include <sqlitecluster/SQLiteNode.h>
-
+#include <iostream>
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_) : plugin(plugin_)
 {
 }
@@ -81,6 +81,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     //See if we got a response.
     uint64_t now = STimeNow();
     int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
+    cout << "Did we get a content-length? " << transaction.fullResponse["Content-Length"] << endl; 
     if (size) {
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
