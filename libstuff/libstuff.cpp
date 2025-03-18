@@ -44,8 +44,6 @@
 #endif
 #endif
 
-#include <iostream>
-
 // Setting this default allows us to not have to worry about calling the specific unit size methods, see https://www.pcre.org/current/doc/html/pcre2.html
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h> // sudo apt-get install libpcre2-dev
@@ -812,7 +810,6 @@ void _SParseHTTP_GetUpToEnd(const char* start, const char* end, string& out) {
 
 // --------------------------------------------------------------------------
 int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& nameValueMap, string& content) {
-    cout << "PARSING HTTP:" << endl << buffer << endl << endl;
     // Clear the output
     methodLine.clear();
     nameValueMap.clear();
@@ -834,7 +831,6 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
             methodLine.clear();
             nameValueMap.clear();
             content.clear();
-            cout << "NO ENDLINE DATA YET" << endl;
             return 0;
         }
 
@@ -857,7 +853,6 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
 
                     // The SData object we've generated is not chunked, we remove this header as it does not describe the state of this request.
                     nameValueMap.erase("Transfer-Encoding");
-                    cout << "IS CHUNKED DATA YET" << endl;
                     return (int)(parseEnd - buffer);
                 }
 
@@ -876,11 +871,9 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                                              ? atoi(nameValueMap["Content-Length"].c_str())
                                              : 0);
                     if (!contentLength) {
-                        cout << "HEADER DATA YET" << endl;
                         
                         // Content is whatever is here.
                         content = string(parseEnd, buffer + length);
-                        cout << "Content data: " << content << endl;
                         return length;
                     }
 
@@ -896,7 +889,6 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                     // We have enough data -- copy it and return the full length
                     content.resize(contentLength);
                     memcpy(&content[0], parseEnd, contentLength);
-                    cout << "DATA YET " << (headerLength + contentLength) << endl;
                     return (headerLength + contentLength);
                 }
 
@@ -934,7 +926,6 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                             methodLine.clear();
                             nameValueMap.clear();
                             content.clear();
-                            cout << "INSUFFICIENT DATA YET" << endl;
                             return 0;
                         }
 
@@ -1015,7 +1006,6 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
     nameValueMap.clear();
     content.clear();
 
-    cout << "NO DATA YET" << endl;
     return 0;
 }
 

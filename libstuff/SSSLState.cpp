@@ -7,14 +7,6 @@
 #include <libstuff/SFastBuffer.h>
 #include <libstuff/SX509.h>
 
-#include <mbedtls/debug.h>
-#include <iostream>
-void my_mbedtls_debug(void *ctx, int level, const char *file, int line, const char *str) {
-    (void)ctx; // unused context
-    //SINFO("MBEDTLS DEBUG level: " << level << ", file: " << file << ", line: " << line << " str:" << str);
-    cout << "MBEDTLS DEBUG level: " << level << ", file: " << file << ", line: " << line << " str:" << str;
-}
-
 SSSLState::SSSLState() {
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
@@ -36,8 +28,6 @@ SSSLState* SSSLOpen(int s, SX509* x509, const string& hostname) {
     SSSLState* state = new SSSLState;
     state->s = s;
 
-    //const int ciphersuites[] = {MBEDTLS_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256, 0};
-
     mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, 0, 0);
     mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, 0);
 
@@ -47,13 +37,7 @@ SSSLState* SSSLOpen(int s, SX509* x509, const string& hostname) {
     mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
     mbedtls_ssl_set_bio(&state->ssl, &state->s, mbedtls_net_send, mbedtls_net_recv, 0);
 
-    //mbedtls_ssl_conf_ciphersuites(&state->conf, ciphersuites);
-
-    mbedtls_ssl_conf_dbg(&state->conf, my_mbedtls_debug, nullptr);
-    mbedtls_debug_set_threshold(1);
-
     if (hostname.size()) {
-        cout << "HOSTNAME: " << hostname << endl;
         if (mbedtls_ssl_set_hostname(&state->ssl, hostname.c_str())) {
             STHROW("ssl set hostname failed");
         }
@@ -219,7 +203,6 @@ bool SSSLRecvAppend(SSSLState* ssl, SFastBuffer& recvBuffer) {
     while ((numRecv = SSSLRecv(ssl, buffer, sizeof(buffer))) > 0) {
         // Got some more data
         recvBuffer.append(buffer, numRecv);
-        //cout << "BUFFER: " << recvBuffer.c_str() << endl << endl;
     }
 
     // Return whether or not the socket is still alive

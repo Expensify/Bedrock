@@ -6,7 +6,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SX509.h>
 #include <sqlitecluster/SQLiteNode.h>
-#include <iostream>
+
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_) : plugin(plugin_)
 {
 }
@@ -81,11 +81,15 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
 
     //See if we got a response.
     uint64_t now = STimeNow();
+
+    // The API for `deserialize` returns `0` if no response was deserialized (generally, because the response is incomplete), but
+    // there is an unusual case for responses that do not supply a `Content-Length` header. It's impossible to know if these
+    // are complete solely based on the content, so these return the size as if the body thus-far were the entire content.
+    // This means we have to check if we've hit EOF and closed the socket to know for sure that we've received the entire
+    // response in these cases.
     int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
 
-    // If there's no `content-length` then all `size` indicates is that we have all of the HTTP headers,
-    // but this indicates nothing about whether we have the whole body. We can only know we have the whole body in the case if
-    // the connection is marked as closed.
+    // If there's not a Content-Length, we need to check for the socket being closed.
     bool hasContentLength = transaction.fullResponse.nameValueMap.contains("Content-Length");
     bool completeRequest = size && (hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
     if (completeRequest) {
