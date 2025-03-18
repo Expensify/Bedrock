@@ -1,4 +1,5 @@
 #include "SHTTPSManager.h"
+#include "libstuff/STCPManager.h"
 
 #include <BedrockPlugin.h>
 #include <BedrockServer.h>
@@ -87,6 +88,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         size_t contentLength = SToUInt64(transaction.fullResponse["Content-Length"]);
         if (!contentLength) {
             cout << "Parsed a response with no Content-Length, this is only valid if the socket is EOF" << endl;
+            cout << "Is socket closed? " << ((transaction.s->state == STCPManager::Socket::CLOSED) ? "true" : "false") << endl;
         }
 
         // Consume how much we read.
