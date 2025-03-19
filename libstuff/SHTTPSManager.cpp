@@ -1,4 +1,5 @@
 #include "SHTTPSManager.h"
+#include "libstuff/STCPManager.h"
 
 #include <BedrockPlugin.h>
 #include <BedrockServer.h>
@@ -80,8 +81,18 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
 
     //See if we got a response.
     uint64_t now = STimeNow();
+
+    // The API for `deserialize` returns `0` if no response was deserialized (generally, because the response is incomplete), but
+    // there is an unusual case for responses that do not supply a `Content-Length` header. It's impossible to know if these
+    // are complete solely based on the content, so these return the size as if the body thus-far were the entire content.
+    // This means we have to check if we've hit EOF and closed the socket to know for sure that we've received the entire
+    // response in these cases.
     int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
-    if (size) {
+
+    // If there's not a Content-Length, we need to check for the socket being closed.
+    bool hasContentLength = transaction.fullResponse.nameValueMap.contains("Content-Length");
+    bool completeRequest = size && (hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
+    if (completeRequest) {
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
         transaction.finished = now;
