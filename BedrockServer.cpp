@@ -2012,7 +2012,12 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
                             return;
                         }
                         uint64_t startTime = STimeNow();
-                        dbPoolCopy->initializeIndex(current_index).read("SELECT name FROM sqlite_schema;");
+                        dbPoolCopy->initializeIndex(current_index);
+                        {
+                            SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
+                            SQLite& db = dbScope.db();
+                            db.read("SELECT name FROM sqlite_schema;");
+                        }
                         uint64_t endTime = STimeNow();
 
                         timings[current_index] = endTime - startTime;
