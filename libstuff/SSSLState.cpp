@@ -1,11 +1,11 @@
 #include "SSSLState.h"
+#include "mbedtls/ssl.h"
 
 #include <mbedtls/error.h>
-#include <mbedtls/net.h>
+#include <mbedtls/net_sockets.h>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
-#include <libstuff/SX509.h>
 
 SSSLState::SSSLState() {
     mbedtls_ssl_init(&ssl);
@@ -22,20 +22,28 @@ SSSLState::~SSSLState() {
 }
 
 // --------------------------------------------------------------------------
-SSSLState* SSSLOpen(int s, SX509* x509, const string& hostname) {
+SSSLState* SSSLOpen(int s, const string& hostname) {
     // Initialize the SSL state
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
     state->s = s;
 
-    mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, 0, 0);
-    mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, 0);
+    // All new code here.
+    mbedtls_ssl_init(&state->ssl);
+    mbedtls_ssl_config_init(&state->conf);
+    mbedtls_net_init(&state->net_ctx);
+    state->net_ctx.fd = s;
 
-    mbedtls_ssl_setup(&state->ssl, &state->conf);
+    mbedtls_entropy_init(&state->ec);
+    mbedtls_ctr_drbg_init(&state->ctr_drbg);
+    mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, nullptr, 0);
+
+    if (mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)) {
+        STHROW("ssl config defaults failed");
+    }
 
     mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
-    mbedtls_ssl_set_bio(&state->ssl, &state->s, mbedtls_net_send, mbedtls_net_recv, 0);
 
     if (hostname.size()) {
         if (mbedtls_ssl_set_hostname(&state->ssl, hostname.c_str())) {
@@ -43,11 +51,15 @@ SSSLState* SSSLOpen(int s, SX509* x509, const string& hostname) {
         }
     }
 
-    if (x509) {
-        // Add the certificate
-        mbedtls_ssl_conf_ca_chain(&state->conf, x509->srvcert.next, 0);
-        SASSERT(mbedtls_ssl_conf_own_cert(&state->conf, &x509->srvcert, &x509->pk) == 0);
+    if (mbedtls_ssl_setup(&state->ssl, &state->conf)) {
+        STHROW("ssl setup failed");
     }
+
+    mbedtls_net_init(&state->net_ctx);
+    state->net_ctx.fd = state->s;
+
+    mbedtls_ssl_set_bio(&state->ssl, &state->net_ctx, mbedtls_net_send, mbedtls_net_recv, nullptr);
+
     return state;
 }
 
@@ -112,36 +124,6 @@ int SSSLRecv(SSSLState* sslState, char* buffer, int length) {
 }
 
 // --------------------------------------------------------------------------
-string SSSLGetState(SSSLState* ssl) {
-    // Just return direct
-    SASSERT(ssl);
-#define SSLSTATE(_STATE_)                                                                                              \
-    case _STATE_:                                                                                                      \
-        return #_STATE_
-    switch (ssl->ssl.state) {
-        SSLSTATE(MBEDTLS_SSL_HELLO_REQUEST);
-        SSLSTATE(MBEDTLS_SSL_CLIENT_HELLO);
-        SSLSTATE(MBEDTLS_SSL_SERVER_HELLO);
-        SSLSTATE(MBEDTLS_SSL_SERVER_CERTIFICATE);
-        SSLSTATE(MBEDTLS_SSL_SERVER_KEY_EXCHANGE);
-        SSLSTATE(MBEDTLS_SSL_CERTIFICATE_REQUEST);
-        SSLSTATE(MBEDTLS_SSL_SERVER_HELLO_DONE);
-        SSLSTATE(MBEDTLS_SSL_CLIENT_CERTIFICATE);
-        SSLSTATE(MBEDTLS_SSL_CLIENT_KEY_EXCHANGE);
-        SSLSTATE(MBEDTLS_SSL_CERTIFICATE_VERIFY);
-        SSLSTATE(MBEDTLS_SSL_CLIENT_CHANGE_CIPHER_SPEC);
-        SSLSTATE(MBEDTLS_SSL_CLIENT_FINISHED);
-        SSLSTATE(MBEDTLS_SSL_SERVER_CHANGE_CIPHER_SPEC);
-        SSLSTATE(MBEDTLS_SSL_SERVER_FINISHED);
-        SSLSTATE(MBEDTLS_SSL_FLUSH_BUFFERS);
-        SSLSTATE(MBEDTLS_SSL_HANDSHAKE_OVER);
-    default:
-        return "(unknown)";
-    }
-#undef SSLSTATE
-}
-
-// --------------------------------------------------------------------------
 void SSSLShutdown(SSSLState* ssl) {
     // Just clean up
     SASSERT(ssl);
@@ -152,7 +134,12 @@ void SSSLShutdown(SSSLState* ssl) {
 void SSSLClose(SSSLState* ssl) {
     // Just clean up
     SASSERT(ssl);
+    mbedtls_net_free(&ssl->net_ctx);
     mbedtls_ssl_free(&ssl->ssl);
+    mbedtls_ssl_config_free(&ssl->conf);
+    mbedtls_ctr_drbg_free(&ssl->ctr_drbg);
+    mbedtls_entropy_free(&ssl->ec);
+
     delete ssl;
 }
 

@@ -4,7 +4,6 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
-#include <libstuff/SX509.h>
 
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
@@ -36,32 +35,19 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
             // Have we completed the handshake?
             SASSERT(socket.ssl);
             SSSLState* sslState = socket.ssl;
-            if (sslState->ssl.state == MBEDTLS_SSL_HANDSHAKE_OVER) {
+            if (mbedtls_ssl_is_handshake_over(&sslState->ssl)) {
                 // Handshake done -- send if we have anything buffered
                 if (!socket.sendBufferEmpty()) {
                     SFDset(fdm, socket.s, SWRITEEVTS);
                 }
             } else {
-                // Handshake isn't done -- send if SSL wants to
-                bool write;
-                switch (sslState->ssl.state) {
-                case MBEDTLS_SSL_HELLO_REQUEST:
-                case MBEDTLS_SSL_CLIENT_HELLO:
-                case MBEDTLS_SSL_CLIENT_CERTIFICATE:
-                case MBEDTLS_SSL_CLIENT_KEY_EXCHANGE:
-                case MBEDTLS_SSL_CERTIFICATE_VERIFY:
-                case MBEDTLS_SSL_CLIENT_CHANGE_CIPHER_SPEC:
-                case MBEDTLS_SSL_CLIENT_FINISHED:
-                    // In these cases, SSL is waiting to write already.
-                    // @see https://www.mail-archive.com/list@xyssl.org/msg00041.html
-                    write = true;
-                    break;
-                default:
-                    write = false;
-                    break;
-                }
-                if (write) {
+                int ret = mbedtls_ssl_handshake_step(&sslState->ssl);
+                if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
                     SFDset(fdm, socket.s, SWRITEEVTS);
+                } else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
+                    // This is expected, but is already set.
+                } else if (ret) {
+                    SWARN("SSL ERROR");
                 }
             }
         }
@@ -107,15 +93,6 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
         bool aliveAfterRecv = true;
         bool aliveAfterSend = true;
         if (socket.ssl) {
-            // If the socket is ready to send or receive, do both: SSL has its own internal traffic, so even if we
-            // only want to receive, SSL might need to send (and vice versa)
-            //
-            // **NOTE: SSL can receive data for a while before giving any back, so if this gets called many times
-            //         in a row it might just be filling an internal buffer (and not due to some busy loop)
-            SDEBUG("sslState=" << SSSLGetState(socket.ssl) << ", canrecv=" << SFDAnySet(fdm, socket.s, SREADEVTS)
-                               << ", recvsize=" << socket.recvBuffer.size()
-                               << ", cansend=" << SFDAnySet(fdm, socket.s, SWRITEEVTS)
-                               << ", sendsize=" << socket.sendBufferCopy().size());
             if (SFDAnySet(fdm, socket.s, SREADEVTS | SWRITEEVTS)) {
                 // Do both
                 aliveAfterRecv = socket.recv();
@@ -198,29 +175,22 @@ void STCPManager::Socket::shutdown(Socket::State toState) {
     state.store(toState);
 }
 
-STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)
+STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool useSSL)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _useSSL(useSSL)
 { }
 
-STCPManager::Socket::Socket(const string& host, SX509* x509)
+STCPManager::Socket::Socket(const string& host, bool useSSL)
   : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _useSSL(useSSL)
 {
     SASSERT(SHostIsValid(host));
     s = S_socket(host, true, false, false);
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
-
-    string domain;
-    if (x509) {
-        uint16_t port;
-        SParseHost(host, domain, port);
-    }
-
-    ssl = x509 ? SSSLOpen(s, x509, domain) : nullptr;
-    SASSERT(!x509 || ssl);
+    ssl = useSSL ? SSSLOpen(s) : nullptr;
+    SASSERT(!useSSL || ssl);
 }
 
 STCPManager::Socket::Socket(Socket&& from)
@@ -234,12 +204,11 @@ STCPManager::Socket::Socket(Socket&& from)
     ssl(from.ssl),
     data(from.data),
     id(from.id),
-    _x509(from._x509)
+    _useSSL(from._useSSL)
 {
     from.s = -1;
     from.ssl = nullptr;
     from.data = nullptr;
-    from._x509 = nullptr;
 }
 
 STCPManager::Socket::~Socket() {
@@ -248,9 +217,6 @@ STCPManager::Socket::~Socket() {
     }
     if (ssl) {
         SSSLClose(ssl);
-    }
-    if (_x509) {
-        SX509Close(_x509);
     }
 }
 
