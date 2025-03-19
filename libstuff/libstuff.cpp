@@ -871,11 +871,11 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                         ++parseEnd;
                     int headerLength = (int)(parseEnd - buffer);
 
-                    // If there is no content-length, just return the length of the headers
-                    int contentLength = (SContains(nameValueMap, "Content-Length")
-                                             ? atoi(nameValueMap["Content-Length"].c_str())
-                                             : 0);
-                    if (!contentLength) {
+                    // If there's a Content-Length (including a Content-Length of 0), we will parse that much data.
+                    // Otherwise, we just parse everything that's left, as we have no other reasonable options.
+                    bool hasContentLength = nameValueMap.contains("Content-Length");
+                    int contentLength = hasContentLength ? stoll(nameValueMap["Content-Length"]) : 0;
+                    if (!hasContentLength) {
                         // Since we don't know, just return everything we have.
                         content = string(parseEnd, buffer + length);
                         return length;
