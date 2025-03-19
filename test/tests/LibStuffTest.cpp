@@ -192,14 +192,14 @@ struct LibStuff : tpunit::TestFixture {
                      "header2: value2\n"
                      "header3: value3\r\n"
                      "\r\n"
-                     "ignored body";
+                     "this is the body";
         processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        ASSERT_EQUAL((int64_t)processed, (int)recvBuffer.size() - (int)strlen("ignored body"));
+        ASSERT_EQUAL((int64_t)processed, (int)recvBuffer.size());
         ASSERT_EQUAL(methodLine, "some method line");
         ASSERT_EQUAL(headers["header1"], "value1");
         ASSERT_EQUAL(headers["header2"], "value2");
         ASSERT_EQUAL(headers["header3"], "value3");
-        ASSERT_EQUAL(content, "");
+        ASSERT_EQUAL(content, "this is the body");
 
         recvBuffer = "some method line\r\n"
                      "Content-Length: 100\r"

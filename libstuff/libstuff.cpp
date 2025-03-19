@@ -852,7 +852,12 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                         ++parseEnd;
 
                     // The SData object we've generated is not chunked, we remove this header as it does not describe the state of this request.
+                    // We add back a Content-Length header to make this request into a canonical format as it's length is known.
+                    // It's important to add back Content-Length as consumers *must* end connections with no length specified to indicate that the
+                    // message is complete. Both "Transfer:encoding: chunked" and "Content-Length: N" then imply that the connections can continue,
+                    // so if we remove one, we add back the other to communicate this to the caller.
                     nameValueMap.erase("Transfer-Encoding");
+                    nameValueMap["Content-Length"] = SToStr(content.size());
                     return (int)(parseEnd - buffer);
                 }
 
@@ -866,12 +871,15 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                         ++parseEnd;
                     int headerLength = (int)(parseEnd - buffer);
 
-                    // If there is no content-length, just return the length of the headers
-                    int contentLength = (SContains(nameValueMap, "Content-Length")
-                                             ? atoi(nameValueMap["Content-Length"].c_str())
-                                             : 0);
-                    if (!contentLength)
-                        return headerLength;
+                    // If there's a Content-Length (including a Content-Length of 0), we will parse that much data.
+                    // Otherwise, we just parse everything that's left, as we have no other reasonable options.
+                    bool hasContentLength = nameValueMap.contains("Content-Length");
+                    int contentLength = hasContentLength ? stoll(nameValueMap["Content-Length"]) : 0;
+                    if (!hasContentLength) {
+                        // Since we don't know, just return everything we have.
+                        content = string(parseEnd, buffer + length);
+                        return length;
+                    }
 
                     // There is a content length -- if we don't have enough, then cancel the parse.
                     if ((int)(length - headerLength) < contentLength) {
