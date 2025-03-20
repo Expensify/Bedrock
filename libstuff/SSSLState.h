@@ -8,7 +8,6 @@
 
 using namespace std;
 
-struct SX509;
 class SFastBuffer;
 
 struct SSSLState {

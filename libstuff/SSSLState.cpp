@@ -12,6 +12,7 @@ SSSLState::SSSLState() {
     mbedtls_ssl_config_init(&conf);
     mbedtls_ctr_drbg_init(&ctr_drbg);
     mbedtls_entropy_init(&ec);
+    mbedtls_net_init(&net_ctx);
 }
 
 SSSLState::~SSSLState() {
@@ -19,6 +20,7 @@ SSSLState::~SSSLState() {
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_ssl_config_free(&conf);
     mbedtls_ssl_free(&ssl);
+    mbedtls_net_free(&net_ctx);
 }
 
 // --------------------------------------------------------------------------
@@ -27,15 +29,8 @@ SSSLState* SSSLOpen(int s, const string& hostname) {
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
     state->s = s;
-
-    // All new code here.
-    mbedtls_ssl_init(&state->ssl);
-    mbedtls_ssl_config_init(&state->conf);
-    mbedtls_net_init(&state->net_ctx);
+    state->net_ctx.fd = state->s;
     state->net_ctx.fd = s;
-
-    mbedtls_entropy_init(&state->ec);
-    mbedtls_ctr_drbg_init(&state->ctr_drbg);
     mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, nullptr, 0);
 
     if (mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)) {
@@ -54,9 +49,6 @@ SSSLState* SSSLOpen(int s, const string& hostname) {
     if (mbedtls_ssl_setup(&state->ssl, &state->conf)) {
         STHROW("ssl setup failed");
     }
-
-    mbedtls_net_init(&state->net_ctx);
-    state->net_ctx.fd = state->s;
 
     mbedtls_ssl_set_bio(&state->ssl, &state->net_ctx, mbedtls_net_send, mbedtls_net_recv, nullptr);
 
@@ -134,12 +126,6 @@ void SSSLShutdown(SSSLState* ssl) {
 void SSSLClose(SSSLState* ssl) {
     // Just clean up
     SASSERT(ssl);
-    mbedtls_net_free(&ssl->net_ctx);
-    mbedtls_ssl_free(&ssl->ssl);
-    mbedtls_ssl_config_free(&ssl->conf);
-    mbedtls_ctr_drbg_free(&ssl->ctr_drbg);
-    mbedtls_entropy_free(&ssl->ec);
-
     delete ssl;
 }
 
