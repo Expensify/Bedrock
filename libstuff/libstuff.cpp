@@ -1778,7 +1778,8 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             hints.ai_socktype = SOCK_STREAM;
 
             // Do the initialization.
-            int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
+            string temp = to_string(port);
+            int result = getaddrinfo(domain.c_str(), temp.c_str(), &hints, &resolved);
             SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
 
             // There was a problem.
