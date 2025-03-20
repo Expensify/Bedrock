@@ -198,6 +198,7 @@ STCPManager::Socket::Socket(struct addrinfo& host, bool useSSL)
   : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _useSSL(useSSL)
 {
+    SINFO("calling addrinfo socket constructor");
     s = S_socket("", true, false, false, &host);
     if (s < 0) {
         STHROW("Couldn't open socket");
