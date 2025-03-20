@@ -1750,44 +1750,49 @@ string SGUnzip (const string& content) {
 /////////////////////////////////////////////////////////////////////////////
 // Socket helpers
 /////////////////////////////////////////////////////////////////////////////
-mutex RESOLVER_MUTEX;
 // --------------------------------------------------------------------------
-int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
+int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, struct addrinfo* addressInfo) {
     // Try to set up the socket
     int s = 0;
     try {
         // First, just parse the host
         string domain;
         uint16_t port = 0;
-        if (!SParseHost(host, domain, port)) {
+        if (!addressInfo && !SParseHost(host, domain, port)) {
             STHROW("invalid host: " + host);
         }
+
+        struct addrinfo* resolved = nullptr;
 
         // Is the domain just a raw IP?
         unsigned int ip = inet_addr(domain.c_str());
         if (!ip || ip == INADDR_NONE) {
-            lock_guard<mutex> lock(RESOLVER_MUTEX);
             // Nope -- resolve the domain
             uint64_t start = STimeNow();
 
-            // Allocate and initialize addrinfo structures.
-            struct addrinfo hints;
-            memset(&hints, 0, sizeof hints);
-            struct addrinfo* resolved = nullptr;
+            if (!addressInfo) {
+                // Allocate and initialize addrinfo structures.
+                struct addrinfo hints;
+                memset(&hints, 0, sizeof hints);
 
-            // Set up the hints.
-            hints.ai_family = AF_INET; // IPv4
-            hints.ai_socktype = SOCK_STREAM;
+                // Set up the hints.
+                hints.ai_family = AF_INET; // IPv4
+                hints.ai_socktype = SOCK_STREAM;
 
-            // Do the initialization.
-            int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
-            SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
+                // Do the initialization.
+                int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
+                SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
 
-            // There was a problem.
-            if (result || !resolved) {
-                freeaddrinfo(resolved);
-                STHROW("can't resolve host error no#" + SToStr(result));
+                // There was a problem.
+                if (result || !resolved) {
+                    freeaddrinfo(resolved);
+                    STHROW("can't resolve host error no#" + SToStr(result));
+                }
+            } else {
+                SINFO("DNS lookup skipped.");
+                resolved = addressInfo;
             }
+
             // Grab the resolved address.
             sockaddr_in* addr = (sockaddr_in*)resolved->ai_addr;
             ip = addr->sin_addr.s_addr;

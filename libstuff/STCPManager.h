@@ -23,6 +23,7 @@ struct STCPManager {
       public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
         Socket(const string& host, bool useSSL = false);
+        Socket(struct addrinfo&, bool useSSL = false);
         Socket(int sock = 0, State state_ = CONNECTING, bool useSSL = false);
         Socket(Socket&& from);
         ~Socket();

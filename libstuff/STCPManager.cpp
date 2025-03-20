@@ -4,6 +4,7 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
+#include <zconf.h>
 
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
@@ -188,6 +189,18 @@ STCPManager::Socket::Socket(const string& host, bool useSSL)
     s = S_socket(host, true, false, false);
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
+    }
+    ssl = useSSL ? SSSLOpen(s) : nullptr;
+    SASSERT(!useSSL || ssl);
+}
+
+STCPManager::Socket::Socket(struct addrinfo& host, bool useSSL)
+  : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _useSSL(useSSL)
+{
+    s = S_socket("", true, false, false, &host);
+    if (s < 0) {
+        STHROW("Couldn't open socket");
     }
     ssl = useSSL ? SSSLOpen(s) : nullptr;
     SASSERT(!useSSL || ssl);
