@@ -3,6 +3,7 @@
 // --------------------------------------------------------------------------
 // C library
 #include <arpa/inet.h>
+#include <mutex>
 #include <netinet/in.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
@@ -1749,7 +1750,7 @@ string SGUnzip (const string& content) {
 /////////////////////////////////////////////////////////////////////////////
 // Socket helpers
 /////////////////////////////////////////////////////////////////////////////
-
+mutex RESOLVER_MUTEX;
 // --------------------------------------------------------------------------
 int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
     // Try to set up the socket
@@ -1765,6 +1766,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         // Is the domain just a raw IP?
         unsigned int ip = inet_addr(domain.c_str());
         if (!ip || ip == INADDR_NONE) {
+            lock_guard<mutex> lock(RESOLVER_MUTEX);
             // Nope -- resolve the domain
             uint64_t start = STimeNow();
 
@@ -1778,8 +1780,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             hints.ai_socktype = SOCK_STREAM;
 
             // Do the initialization.
-            string temp = to_string(port);
-            int result = getaddrinfo(domain.c_str(), temp.c_str(), &hints, &resolved);
+            int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
             SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
 
             // There was a problem.
