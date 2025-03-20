@@ -185,6 +185,7 @@ STCPManager::Socket::Socket(const string& host, bool useSSL)
   : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _useSSL(useSSL)
 {
+    SINFO("calling host socket constructor");
     SASSERT(SHostIsValid(host));
     s = S_socket(host, true, false, false);
     if (s < 0) {
