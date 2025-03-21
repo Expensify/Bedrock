@@ -186,9 +186,8 @@ STCPManager::Socket::Socket(const string& host, bool useSSL)
 {
     SASSERT(SHostIsValid(host));
     if (useSSL) {
-        ssl = SSSLOpen(host);
+        ssl = new SSSLState(host);
         s = ssl->net_ctx.fd;
-        SINFO("Set SSL socket to " << s);
     } else {
         ssl = nullptr;
         s = S_socket(host, true, false, false);
@@ -197,8 +196,6 @@ STCPManager::Socket::Socket(const string& host, bool useSSL)
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
-
-    SASSERT(useSSL == static_cast<bool>(ssl));
 }
 
 STCPManager::Socket::Socket(Socket&& from)
@@ -221,7 +218,7 @@ STCPManager::Socket::Socket(Socket&& from)
 
 STCPManager::Socket::~Socket() {
     if (ssl) {
-        SSSLClose(ssl);
+        delete ssl;
     } else if ( s != -1) {
         ::close(s);
     }
@@ -233,7 +230,7 @@ bool STCPManager::Socket::send(size_t* bytesSentCount) {
     bool result = false;
     size_t oldSize = sendBuffer.size();
     if (ssl) {
-        result = SSSLSendConsume(ssl, sendBuffer);
+        result = ssl->sendConsume(sendBuffer);
     } else if (s > 0) {
         result = S_sendconsume(s, sendBuffer);
     }
@@ -283,7 +280,7 @@ bool STCPManager::Socket::recv() {
     bool result = false;
     const size_t oldSize = recvBuffer.size();
     if (ssl) {
-        result = SSSLRecvAppend(ssl, recvBuffer);
+        result = ssl->recvAppend(recvBuffer);
     } else if (s > 0) {
         result = S_recvappend(s, recvBuffer);
     }
