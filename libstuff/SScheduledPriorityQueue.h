@@ -314,7 +314,7 @@ T SScheduledPriorityQueue<T>::_dequeue() {
                 }
 
                 // We should always break before we get here, some timeout should match.
-                SWARN("Did not find a matching timeout (" << thisItemTimeout << ")to remove for command: " << item->request.methodLine);
+                SWARN("Did not find a matching timeout (" << thisItemTimeout << ") to remove for command: " << item->request.methodLine);
             }
 
             // Call the end function and return!
