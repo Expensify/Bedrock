@@ -16,6 +16,8 @@ SSSLState::~SSSLState() {
 }
 
 SSSLState::SSSLState(const string& hostname) {
+    psa_crypto_init();
+
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
     mbedtls_ctr_drbg_init(&ctr_drbg);
