@@ -8,20 +8,18 @@
 #include <libstuff/SFastBuffer.h>
 
 SSSLState::~SSSLState() {
-    mbedtls_entropy_free(&ec);
-    mbedtls_ctr_drbg_free(&ctr_drbg);
-    mbedtls_ssl_config_free(&conf);
-    mbedtls_ssl_free(&ssl);
     mbedtls_net_free(&net_ctx);
+    mbedtls_ssl_free(&ssl);
+    mbedtls_ssl_config_free(&conf);
+    mbedtls_ctr_drbg_free(&ctr_drbg);
+    mbedtls_entropy_free(&ec);
 }
 
 SSSLState::SSSLState(const string& hostname) {
-    psa_crypto_init();
-
-    mbedtls_ssl_init(&ssl);
-    mbedtls_ssl_config_init(&conf);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
     mbedtls_entropy_init(&ec);
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+    mbedtls_ssl_config_init(&conf);
+    mbedtls_ssl_init(&ssl);
     mbedtls_net_init(&net_ctx);
 
     // Hostname here is expected to contain the port. I.e.: expensiofy.com:443
