@@ -181,16 +181,24 @@ STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool us
 { }
 
 STCPManager::Socket::Socket(const string& host, bool useSSL)
-  : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+  : s(-1), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _useSSL(useSSL)
 {
     SASSERT(SHostIsValid(host));
-    s = S_socket(host, true, false, false);
+    if (useSSL) {
+        ssl = SSSLOpen(host);
+        s = ssl->net_ctx.fd;
+        SINFO("Set SSL socket to " << s);
+    } else {
+        ssl = nullptr;
+        s = S_socket(host, true, false, false);
+    }
+
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
-    ssl = useSSL ? SSSLOpen(s) : nullptr;
-    SASSERT(!useSSL || ssl);
+
+    SASSERT(useSSL == static_cast<bool>(ssl));
 }
 
 STCPManager::Socket::Socket(Socket&& from)
@@ -212,11 +220,10 @@ STCPManager::Socket::Socket(Socket&& from)
 }
 
 STCPManager::Socket::~Socket() {
-    if (s != -1) {
-        ::close(s);
-    }
     if (ssl) {
         SSSLClose(ssl);
+    } else if ( s != -1) {
+        ::close(s);
     }
 }
 

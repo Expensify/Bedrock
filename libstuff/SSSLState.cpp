@@ -20,33 +20,61 @@ SSSLState::~SSSLState() {
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_ssl_config_free(&conf);
     mbedtls_ssl_free(&ssl);
-    //mbedtls_net_free(&net_ctx);
+    mbedtls_net_free(&net_ctx);
 }
 
 // --------------------------------------------------------------------------
-SSSLState* SSSLOpen(int s, const string& hostname) {
-    // Initialize the SSL state
-    SASSERT(s >= 0);
-    SSSLState* state = new SSSLState;
-    state->s = s;
-    state->net_ctx.fd = s;
-    mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, nullptr, 0);
+SSSLState* SSSLOpen(const string& hostname) {
+    // Hostname here is expected to contain the port. I.e.: expensiofy.com:443
+    // We need to split it into its componenets.
+    string domain;
+    uint16_t port;
+    SParseHost(hostname, domain, port);
 
-    if (mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)) {
-        STHROW("ssl config defaults failed");
+    // Allocate the object we'll return.
+    SSSLState* state = new SSSLState;
+
+    // Do a bunch of TLS initialization.
+    int lastResult = 0;
+    char errorBuffer[500] = {0};
+    lastResult = mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, nullptr, 0);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ctr_drbg_seed failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
 
+    lastResult = mbedtls_net_connect( &state->net_ctx, domain.c_str(),to_string(port).c_str(), MBEDTLS_NET_PROTO_TCP );
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_net_connect failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    lastResult = mbedtls_net_set_nonblock(&state->net_ctx);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_net_set_nonblock failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    lastResult = mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ssl_config_defaults failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    // These two calls do not return error codes.
     mbedtls_ssl_conf_authmode(&state->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&state->conf, mbedtls_ctr_drbg_random, &state->ctr_drbg);
 
-    if (hostname.size()) {
-        if (mbedtls_ssl_set_hostname(&state->ssl, hostname.c_str())) {
-            STHROW("ssl set hostname failed");
-        }
+    lastResult = mbedtls_ssl_set_hostname(&state->ssl, domain.c_str());
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ssl_set_hostname failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
 
-    if (mbedtls_ssl_setup(&state->ssl, &state->conf)) {
-        STHROW("ssl setup failed");
+    lastResult = mbedtls_ssl_setup(&state->ssl, &state->conf);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ssl_setup failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
 
     mbedtls_ssl_set_bio(&state->ssl, &state->net_ctx, mbedtls_net_send, mbedtls_net_recv, nullptr);
