@@ -2,7 +2,6 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
-#include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <string>
@@ -23,7 +22,6 @@ struct STCPManager {
       public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
         Socket(const string& host, bool useSSL = false);
-        Socket(const struct addrinfo&, bool useSSL = false);
         Socket(int sock = 0, State state_ = CONNECTING, bool useSSL = false);
         Socket(Socket&& from);
         ~Socket();

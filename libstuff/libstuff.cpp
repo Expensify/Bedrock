@@ -3,7 +3,6 @@
 // --------------------------------------------------------------------------
 // C library
 #include <arpa/inet.h>
-#include <mutex>
 #include <netinet/in.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
@@ -1750,19 +1749,18 @@ string SGUnzip (const string& content) {
 /////////////////////////////////////////////////////////////////////////////
 // Socket helpers
 /////////////////////////////////////////////////////////////////////////////
+
 // --------------------------------------------------------------------------
-int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, const struct addrinfo* addressInfo) {
+int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
     // Try to set up the socket
     int s = 0;
     try {
         // First, just parse the host
         string domain;
         uint16_t port = 0;
-        if (!addressInfo && !SParseHost(host, domain, port)) {
+        if (!SParseHost(host, domain, port)) {
             STHROW("invalid host: " + host);
         }
-
-        struct addrinfo* resolved = nullptr;
 
         // Is the domain just a raw IP?
         unsigned int ip = inet_addr(domain.c_str());
@@ -1770,41 +1768,33 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, const
             // Nope -- resolve the domain
             uint64_t start = STimeNow();
 
-            if (!addressInfo) {
-                // Allocate and initialize addrinfo structures.
-                struct addrinfo hints;
-                memset(&hints, 0, sizeof hints);
+            // Allocate and initialize addrinfo structures.
+            struct addrinfo hints;
+            memset(&hints, 0, sizeof hints);
+            struct addrinfo* resolved = nullptr;
 
-                // Set up the hints.
-                hints.ai_family = AF_INET; // IPv4
-                hints.ai_socktype = SOCK_STREAM;
+            // Set up the hints.
+            hints.ai_family = AF_INET; // IPv4
+            hints.ai_socktype = SOCK_STREAM;
 
-                // Do the initialization.
-                int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
-                SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
+            // Do the initialization.
+            int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
+            SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
 
-                // There was a problem.
-                if (result || !resolved) {
-                    freeaddrinfo(resolved);
-                    STHROW("can't resolve host error no#" + SToStr(result));
-                }
-            } else {
-                SINFO("DNS lookup skipped.");
+            // There was a problem.
+            if (result || !resolved) {
+                freeaddrinfo(resolved);
+                STHROW("can't resolve host error no#" + SToStr(result));
             }
-
-            const struct addrinfo* addrInfoUsed = addressInfo ? addressInfo : resolved;
-
             // Grab the resolved address.
-            sockaddr_in* addr = (sockaddr_in*)addrInfoUsed->ai_addr;
+            sockaddr_in* addr = (sockaddr_in*)resolved->ai_addr;
             ip = addr->sin_addr.s_addr;
             char plainTextIP[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &addr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
             SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
 
             // Done resolving.
-            if (!addressInfo) {
-                freeaddrinfo(resolved);
-            }
+            freeaddrinfo(resolved);
         }
 
         // Open a socket

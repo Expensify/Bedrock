@@ -29,8 +29,9 @@ SSSLState* SSSLOpen(int s, const string& hostname) {
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
     state->s = s;
-    state->net_ctx.fd = state->s;
+
     state->net_ctx.fd = s;
+    state->net_ctx.fd = state->s;
     mbedtls_ctr_drbg_seed(&state->ctr_drbg, mbedtls_entropy_func, &state->ec, nullptr, 0);
 
     if (mbedtls_ssl_config_defaults(&state->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT)) {
