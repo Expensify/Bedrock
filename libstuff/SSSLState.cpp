@@ -31,6 +31,11 @@ SSSLState::SSSLState(const string& hostname) {
     // Do a bunch of TLS initialization.
     int lastResult = 0;
     char errorBuffer[500] = {0};
+
+    // Disable tls 1.3
+    // TODO: Fix? This (maybe?) causes a use-after-free bug to appear when we try and run backups.
+    mbedtls_ssl_conf_max_version(&conf, MBEDTLS_SSL_MAJOR_VERSION_3, MBEDTLS_SSL_MINOR_VERSION_3);
+
     lastResult = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &ec, nullptr, 0);
     if (lastResult) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
