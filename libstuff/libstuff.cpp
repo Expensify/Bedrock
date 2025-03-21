@@ -1751,7 +1751,7 @@ string SGUnzip (const string& content) {
 // Socket helpers
 /////////////////////////////////////////////////////////////////////////////
 // --------------------------------------------------------------------------
-int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, struct addrinfo* addressInfo) {
+int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, const struct addrinfo* addressInfo) {
     // Try to set up the socket
     int s = 0;
     try {
@@ -1790,18 +1790,21 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, struc
                 }
             } else {
                 SINFO("DNS lookup skipped.");
-                resolved = addressInfo;
             }
 
+            const struct addrinfo* addrInfoUsed = addressInfo ? addressInfo : resolved;
+
             // Grab the resolved address.
-            sockaddr_in* addr = (sockaddr_in*)resolved->ai_addr;
+            sockaddr_in* addr = (sockaddr_in*)addrInfoUsed->ai_addr;
             ip = addr->sin_addr.s_addr;
             char plainTextIP[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &addr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
             SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
 
             // Done resolving.
-            freeaddrinfo(resolved);
+            if (!addressInfo) {
+                freeaddrinfo(resolved);
+            }
         }
 
         // Open a socket
