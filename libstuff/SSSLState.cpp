@@ -6,7 +6,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
 
-SSSLState::SSSLState(int s, const string& hostname) :s(s) {
+SSSLState::SSSLState(int s, const string& hostname) : socket(s) {
     mbedtls_ssl_init(&ssl);
     mbedtls_ssl_config_init(&conf);
     mbedtls_ctr_drbg_init(&ctr_drbg);
@@ -21,7 +21,7 @@ SSSLState::SSSLState(int s, const string& hostname) :s(s) {
 
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
-    mbedtls_ssl_set_bio(&ssl, &s, mbedtls_net_send, mbedtls_net_recv, 0);
+    mbedtls_ssl_set_bio(&ssl, &socket, mbedtls_net_send, mbedtls_net_recv, 0);
 
     if (hostname.size()) {
         if (mbedtls_ssl_set_hostname(&ssl, hostname.c_str())) {

@@ -9,7 +9,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
 
-struct SSSLState;
+class SSSLState;
 
 using namespace std;
 

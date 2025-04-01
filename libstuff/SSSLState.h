@@ -8,13 +8,8 @@
 using namespace std;
 class SFastBuffer;
 
-struct SSSLState {
-    int s;
-    mbedtls_entropy_context ec;
-    mbedtls_ctr_drbg_context ctr_drbg;
-    mbedtls_ssl_config conf;
-    mbedtls_ssl_context ssl;
-
+class SSSLState {
+public:
     SSSLState(int s, const string& hostname);
     ~SSSLState();
 
@@ -24,4 +19,10 @@ struct SSSLState {
     bool sendAll(const string& buffer);
     int recv(char* buffer, int length);
     bool recvAppend(SFastBuffer& recvBuffer);
+
+    int socket;
+    mbedtls_entropy_context ec;
+    mbedtls_ctr_drbg_context ctr_drbg;
+    mbedtls_ssl_config conf;
+    mbedtls_ssl_context ssl;
 };
