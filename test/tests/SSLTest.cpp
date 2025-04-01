@@ -1,5 +1,6 @@
 #include "libstuff/SHTTPSManager.h"
 #include "libstuff/STCPManager.h"
+#include "test/lib/tpunit++.hpp"
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>
@@ -50,17 +51,20 @@ struct SSLTest : tpunit::TestFixture {
     }
 
     void proxyTest() {
+        // This is a generic HTTPS mamanger.
         SStandaloneHTTPSManager manager;
-        SStandaloneHTTPSManager::Transaction* transaction = new SStandaloneHTTPSManager::Transaction(manager);
 
         const string host = "www.example.com:443";
         SData request("GET " + host + " HTTP/1.1");
         request["host"] = host;
 
-        STCPManager::Socket* socket = new STCPManager::Socket(host, true);
-        transaction->s = socket;
-        socket->send(request.serialize());
+        // Create a transaction with a socket, send the above request.
+        SStandaloneHTTPSManager::Transaction* transaction = new SStandaloneHTTPSManager::Transaction(manager);
+        transaction->s = new STCPManager::Socket(host, true);
+        transaction->timeoutAt = STimeNow() + 5'000'000;
+        transaction->s->send(request.serialize());
 
+        // Wait for a response.
         while (!transaction->response) {
             fd_map fdm;
             uint64_t nextActivity = STimeNow();
@@ -69,8 +73,11 @@ struct SSLTest : tpunit::TestFixture {
             manager.postPoll(fdm, *transaction, nextActivity);
         }
 
+        // Validate that the response is reasonable
         cout << transaction->fullResponse.serialize() << endl;
+        ASSERT_EQUAL(transaction->response, 200);
 
+        // Close the transaction.
         manager.closeTransaction(transaction);
     }
 } __SSLTest;
