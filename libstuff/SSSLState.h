@@ -24,5 +24,4 @@ struct SSSLState {
     bool sendAll(const string& buffer);
     int recv(char* buffer, int length);
     bool recvAppend(SFastBuffer& recvBuffer);
-    void shutdown();
 };

@@ -96,10 +96,6 @@ int SSSLState::recv(char* buffer, int length) {
     }
 }
 
-void SSSLState::shutdown() {
-    mbedtls_ssl_close_notify(&ssl);
-}
-
 int SSSLState::send(const SFastBuffer& buffer) {
     // Unwind the buffer
     return send(buffer.c_str(), (int)buffer.size());
