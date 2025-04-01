@@ -1,3 +1,5 @@
+#include "libstuff/SHTTPSManager.h"
+#include "libstuff/STCPManager.h"
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>
@@ -9,6 +11,7 @@ struct SSLTest : tpunit::TestFixture {
     SSLTest()
         : tpunit::TestFixture("SSL",
                               BEFORE_CLASS(SSLTest::setup),
+                              TEST(SSLTest::proxyTest),
                               TEST(SSLTest::test),
                               AFTER_CLASS(SSLTest::teardown))
     { }
@@ -44,5 +47,30 @@ struct SSLTest : tpunit::TestFixture {
             // Note: the fake URL is known to periodically time out. (after 60s) Give it enough time for one retry.
             tester->executeWaitVerifyContent({request}, url.second, false, 70'000'000);
         }
+    }
+
+    void proxyTest() {
+        SStandaloneHTTPSManager manager;
+        SStandaloneHTTPSManager::Transaction* transaction = new SStandaloneHTTPSManager::Transaction(manager);
+
+        const string host = "www.example.com:443";
+        SData request("GET " + host + " HTTP/1.1");
+        request["host"] = host;
+
+        STCPManager::Socket* socket = new STCPManager::Socket(host, true);
+        transaction->s = socket;
+        socket->send(request.serialize());
+
+        while (!transaction->response) {
+            fd_map fdm;
+            uint64_t nextActivity = STimeNow();
+            manager.prePoll(fdm, *transaction);
+            S_poll(fdm, 1'000);
+            manager.postPoll(fdm, *transaction, nextActivity);
+        }
+
+        cout << transaction->fullResponse.serialize() << endl;
+
+        manager.closeTransaction(transaction);
     }
 } __SSLTest;
