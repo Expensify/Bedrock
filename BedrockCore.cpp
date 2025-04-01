@@ -372,7 +372,7 @@ void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, c
 
     STable logParams;
     if (!e.body.empty()) {
-        logParams["request_body"] = e.body;
+        logParams = SParseJSONObject(e.body);
     }
 
     if (SContains(e.what(), "_ALERT_")) {
