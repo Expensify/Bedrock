@@ -369,19 +369,22 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
 
 void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db, const BedrockServer* server) {
     string msg = "Error processing command '" + command->request.methodLine + "' (" + e.what() + "), ignoring.";
+
+    STable logParams;
     if (!e.body.empty()) {
-        msg = msg + " Request body: " + e.body;
+        logParams["request_body"] = e.body;
     }
+
     if (SContains(e.what(), "_ALERT_")) {
-        SALERT(msg);
+        SALERT(msg, logParams);
     } else if (SContains(e.what(), "_WARN_")) {
-        SWARN(msg);
+        SWARN(msg, logParams);
     } else if (SContains(e.what(), "_HMMM_")) {
-        SHMMM(msg);
+        SHMMM(msg, logParams);
     } else if (SStartsWith(e.what(), "50")) {
-        SALERT(msg); // Alert on 500 level errors.
+        SALERT(msg, logParams); // Alert on 500 level errors.
     } else {
-        SINFO(msg);
+        SINFO(msg, logParams);
     }
 
     // Set the response to the values from the exception, if set.
