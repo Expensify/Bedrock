@@ -111,10 +111,6 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
             //
             // **NOTE: SSL can receive data for a while before giving any back, so if this gets called many times
             //         in a row it might just be filling an internal buffer (and not due to some busy loop)
-            SDEBUG("sslState=" << SSSLGetState(socket.ssl) << ", canrecv=" << SFDAnySet(fdm, socket.s, SREADEVTS)
-                               << ", recvsize=" << socket.recvBuffer.size()
-                               << ", cansend=" << SFDAnySet(fdm, socket.s, SWRITEEVTS)
-                               << ", sendsize=" << socket.sendBufferCopy().size());
             if (SFDAnySet(fdm, socket.s, SREADEVTS | SWRITEEVTS)) {
                 // Do both
                 aliveAfterRecv = socket.recv();
@@ -218,7 +214,7 @@ STCPManager::Socket::Socket(const string& host, bool https)
         SParseHost(host, domain, port);
     }
 
-    ssl = https ? SSSLOpen(s, domain) : nullptr;
+    ssl = https ? new SSSLState(s, domain) : nullptr;
 }
 
 STCPManager::Socket::Socket(Socket&& from)
@@ -244,7 +240,7 @@ STCPManager::Socket::~Socket() {
         ::close(s);
     }
     if (ssl) {
-        SSSLClose(ssl);
+        delete ssl;
     }
 }
 
@@ -254,7 +250,7 @@ bool STCPManager::Socket::send(size_t* bytesSentCount) {
     bool result = false;
     size_t oldSize = sendBuffer.size();
     if (ssl) {
-        result = SSSLSendConsume(ssl, sendBuffer);
+        result = ssl->sendConsume(sendBuffer);
     } else if (s > 0) {
         result = S_sendconsume(s, sendBuffer);
     }
@@ -304,7 +300,7 @@ bool STCPManager::Socket::recv() {
     bool result = false;
     const size_t oldSize = recvBuffer.size();
     if (ssl) {
-        result = SSSLRecvAppend(ssl, recvBuffer);
+        result = ssl->recvAppend(recvBuffer);
     } else if (s > 0) {
         result = S_recvappend(s, recvBuffer);
     }
