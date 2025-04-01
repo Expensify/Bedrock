@@ -19,5 +19,4 @@ SHTTPSProxySocket::SHTTPSProxySocket(SHTTPSProxySocket&& from)
 }
 
 SHTTPSProxySocket::~SHTTPSProxySocket() {
-    STCPManager::Socket::~Socket();
 }

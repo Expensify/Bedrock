@@ -7,6 +7,7 @@
 #include <libstuff/SData.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <test/lib/BedrockTester.h>
+#include <libstuff/SHTTPSProxySocket.h>
 
 struct SSLTest : tpunit::TestFixture {
     SSLTest()
@@ -58,9 +59,12 @@ struct SSLTest : tpunit::TestFixture {
         SData request("GET " + host + " HTTP/1.1");
         request["host"] = host;
 
+        // Note: this works with a default squid install, which Github actions doesn't currently have.
+        const string proxy = "127.0.0.1:3128";
+
         // Create a transaction with a socket, send the above request.
         SStandaloneHTTPSManager::Transaction* transaction = new SStandaloneHTTPSManager::Transaction(manager);
-        transaction->s = new STCPManager::Socket(host, true);
+        transaction->s = new SHTTPSProxySocket(proxy, host, true);
         transaction->timeoutAt = STimeNow() + 5'000'000;
         transaction->s->send(request.serialize());
 
