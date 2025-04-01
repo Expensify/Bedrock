@@ -4,7 +4,6 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
-#include <libstuff/SX509.h>
 
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
@@ -198,14 +197,14 @@ void STCPManager::Socket::shutdown(Socket::State toState) {
     state.store(toState);
 }
 
-STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)
+STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool https)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
 { }
 
-STCPManager::Socket::Socket(const string& host, SX509* x509)
+STCPManager::Socket::Socket(const string& host, bool https)
   : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
 {
     SASSERT(SHostIsValid(host));
     s = S_socket(host, true, false, false);
@@ -214,13 +213,12 @@ STCPManager::Socket::Socket(const string& host, SX509* x509)
     }
 
     string domain;
-    if (x509) {
+    if (https) {
         uint16_t port;
         SParseHost(host, domain, port);
     }
 
-    ssl = x509 ? SSSLOpen(s, x509, domain) : nullptr;
-    SASSERT(!x509 || ssl);
+    ssl = https ? SSSLOpen(s, domain) : nullptr;
 }
 
 STCPManager::Socket::Socket(Socket&& from)
@@ -234,12 +232,11 @@ STCPManager::Socket::Socket(Socket&& from)
     ssl(from.ssl),
     data(from.data),
     id(from.id),
-    _x509(from._x509)
+    https(from.https)
 {
     from.s = -1;
     from.ssl = nullptr;
     from.data = nullptr;
-    from._x509 = nullptr;
 }
 
 STCPManager::Socket::~Socket() {
@@ -248,9 +245,6 @@ STCPManager::Socket::~Socket() {
     }
     if (ssl) {
         SSSLClose(ssl);
-    }
-    if (_x509) {
-        SX509Close(_x509);
     }
 }
 

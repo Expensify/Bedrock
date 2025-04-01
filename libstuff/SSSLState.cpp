@@ -5,7 +5,6 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
-#include <libstuff/SX509.h>
 
 SSSLState::SSSLState() {
     mbedtls_ssl_init(&ssl);
@@ -22,7 +21,7 @@ SSSLState::~SSSLState() {
 }
 
 // --------------------------------------------------------------------------
-SSSLState* SSSLOpen(int s, SX509* x509, const string& hostname) {
+SSSLState* SSSLOpen(int s, const string& hostname) {
     // Initialize the SSL state
     SASSERT(s >= 0);
     SSSLState* state = new SSSLState;
@@ -43,11 +42,6 @@ SSSLState* SSSLOpen(int s, SX509* x509, const string& hostname) {
         }
     }
 
-    if (x509) {
-        // Add the certificate
-        mbedtls_ssl_conf_ca_chain(&state->conf, x509->srvcert.next, 0);
-        SASSERT(mbedtls_ssl_conf_own_cert(&state->conf, &x509->srvcert, &x509->pk) == 0);
-    }
     return state;
 }
 

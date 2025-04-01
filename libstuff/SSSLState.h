@@ -7,7 +7,6 @@
 
 using namespace std;
 
-struct SX509;
 class SFastBuffer;
 
 struct SSSLState {
@@ -23,7 +22,7 @@ struct SSSLState {
 };
 
 // SSL helpers
-extern SSSLState* SSSLOpen(int s, SX509* x509, const string& hostname = "");
+extern SSSLState* SSSLOpen(int s, const string& hostname = "");
 extern int SSSLSend(SSSLState* ssl, const char* buffer, int length);
 extern int SSSLSend(SSSLState* ssl, const SFastBuffer& buffer);
 extern bool SSSLSendConsume(SSSLState* ssl, SFastBuffer& sendBuffer);
