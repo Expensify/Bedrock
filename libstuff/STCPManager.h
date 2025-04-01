@@ -21,9 +21,9 @@ struct STCPManager {
       public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
         Socket(const string& host, bool https = false);
-        Socket(int sock = 0, State state_ = CONNECTING,bool https = false);
+        Socket(int sock = 0, State state_ = CONNECTING, bool https = false);
         Socket(Socket&& from);
-        ~Socket();
+        virtual ~Socket();
         // Attributes
         int s;
         sockaddr_in addr;
