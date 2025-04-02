@@ -82,7 +82,7 @@ bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
     return send(bytesSentCount);
 }
 
-
+#include <iostream>
 bool SHTTPSProxySocket::recv() {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
 
@@ -92,7 +92,10 @@ bool SHTTPSProxySocket::recv() {
         if (!proxyNegotiationComplete) {
             result = S_recvappend(s, recvBuffer);
             if (recvBuffer.size()) {
-                // TODO: We need to decide if we've received the entire message and clear this only if we have.
+                cout << "Proxy sent: " << endl << recvBuffer.c_str() << endl;
+            }
+            if (recvBuffer.size()) {
+                // TODO: Verify this is actually complete, only clear once the entire message is received.
                 proxyNegotiationComplete = true;
             }
         } else  {
