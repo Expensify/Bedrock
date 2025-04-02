@@ -6,30 +6,23 @@
 #include <string>
 
 using namespace std;
-
-struct SX509;
 class SFastBuffer;
 
-struct SSSLState {
-    // Attributes
-    int s;
+class SSSLState {
+public:
+    SSSLState(int s, const string& hostname);
+    ~SSSLState();
+
+    int send(const char* buffer, int length);
+    int send(const SFastBuffer& buffer);
+    bool sendConsume(SFastBuffer& sendBuffer);
+    bool sendAll(const string& buffer);
+    int recv(char* buffer, int length);
+    bool recvAppend(SFastBuffer& recvBuffer);
+
+    int socket;
     mbedtls_entropy_context ec;
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_ssl_config conf;
     mbedtls_ssl_context ssl;
-
-    SSSLState();
-    ~SSSLState();
 };
-
-// SSL helpers
-extern SSSLState* SSSLOpen(int s, SX509* x509, const string& hostname = "");
-extern int SSSLSend(SSSLState* ssl, const char* buffer, int length);
-extern int SSSLSend(SSSLState* ssl, const SFastBuffer& buffer);
-extern bool SSSLSendConsume(SSSLState* ssl, SFastBuffer& sendBuffer);
-extern bool SSSLSendAll(SSSLState* ssl, const string& buffer);
-extern int SSSLRecv(SSSLState* ssl, char* buffer, int length);
-extern bool SSSLRecvAppend(SSSLState* ssl, SFastBuffer& recvBuffer);
-extern string SSSLGetState(SSSLState* ssl);
-extern void SSSLShutdown(SSSLState* ssl);
-extern void SSSLClose(SSSLState* ssl);

@@ -4,7 +4,6 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
-#include <libstuff/SX509.h>
 
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
@@ -112,10 +111,6 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
             //
             // **NOTE: SSL can receive data for a while before giving any back, so if this gets called many times
             //         in a row it might just be filling an internal buffer (and not due to some busy loop)
-            SDEBUG("sslState=" << SSSLGetState(socket.ssl) << ", canrecv=" << SFDAnySet(fdm, socket.s, SREADEVTS)
-                               << ", recvsize=" << socket.recvBuffer.size()
-                               << ", cansend=" << SFDAnySet(fdm, socket.s, SWRITEEVTS)
-                               << ", sendsize=" << socket.sendBufferCopy().size());
             if (SFDAnySet(fdm, socket.s, SREADEVTS | SWRITEEVTS)) {
                 // Do both
                 aliveAfterRecv = socket.recv();
@@ -198,14 +193,14 @@ void STCPManager::Socket::shutdown(Socket::State toState) {
     state.store(toState);
 }
 
-STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, SX509* x509)
+STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool https)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
 { }
 
-STCPManager::Socket::Socket(const string& host, SX509* x509)
+STCPManager::Socket::Socket(const string& host, bool https)
   : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _x509(x509)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
 {
     SASSERT(SHostIsValid(host));
     s = S_socket(host, true, false, false);
@@ -214,13 +209,12 @@ STCPManager::Socket::Socket(const string& host, SX509* x509)
     }
 
     string domain;
-    if (x509) {
+    if (https) {
         uint16_t port;
         SParseHost(host, domain, port);
     }
 
-    ssl = x509 ? SSSLOpen(s, x509, domain) : nullptr;
-    SASSERT(!x509 || ssl);
+    ssl = https ? new SSSLState(s, domain) : nullptr;
 }
 
 STCPManager::Socket::Socket(Socket&& from)
@@ -234,12 +228,11 @@ STCPManager::Socket::Socket(Socket&& from)
     ssl(from.ssl),
     data(from.data),
     id(from.id),
-    _x509(from._x509)
+    https(from.https)
 {
     from.s = -1;
     from.ssl = nullptr;
     from.data = nullptr;
-    from._x509 = nullptr;
 }
 
 STCPManager::Socket::~Socket() {
@@ -247,10 +240,7 @@ STCPManager::Socket::~Socket() {
         ::close(s);
     }
     if (ssl) {
-        SSSLClose(ssl);
-    }
-    if (_x509) {
-        SX509Close(_x509);
+        delete ssl;
     }
 }
 
@@ -260,7 +250,7 @@ bool STCPManager::Socket::send(size_t* bytesSentCount) {
     bool result = false;
     size_t oldSize = sendBuffer.size();
     if (ssl) {
-        result = SSSLSendConsume(ssl, sendBuffer);
+        result = ssl->sendConsume(sendBuffer);
     } else if (s > 0) {
         result = S_sendconsume(s, sendBuffer);
     }
@@ -310,7 +300,7 @@ bool STCPManager::Socket::recv() {
     bool result = false;
     const size_t oldSize = recvBuffer.size();
     if (ssl) {
-        result = SSSLRecvAppend(ssl, recvBuffer);
+        result = ssl->recvAppend(recvBuffer);
     } else if (s > 0) {
         result = S_recvappend(s, recvBuffer);
     }
