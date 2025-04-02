@@ -302,29 +302,156 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     result.rows.back()[1] = g_MySQLVariables[c][1];
                 }
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW DATABASES;")) {
+            } else if (SIEquals(query, "SHOW DATABASES;") || SIEquals(query, "SELECT DATABASE();")) {
                 // Return a fake "main" database
-                SINFO("Responding with fake database list");
                 SQResult result;
-                result.headers.push_back("Database");
+                if (SIEquals(query, "SELECT DATABASE();")) {
+                    SINFO("Responding with fake selected database");
+                    result.headers.push_back("DATABASE()");
+                } else {
+                    SINFO("Responding with fake database list");
+                    result.headers.push_back("Database");
+                }
                 result.rows.resize(1);
                 result.rows.back().push_back("main");
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW /*!50002 FULL*/ TABLES;")) {
-                // Return an empty list of tables
-                SINFO("Responding with fake table list");
-                SQResult result;
-                result.headers.push_back("Tables");
-                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SContains(query, "information_schema")) {
-                // Return an empty set
-                SINFO("Responding with empty routine list");
-                SQResult result;
-                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+            } else if (SIEquals(query, "SHOW /*!50002 FULL*/ TABLES;")
+                || SIEquals(SToUpper(query), "show full tables from `main`;")
+                || SIEquals(SToUpper(query), "show tables;")) {
+                // Return list of tables
+                request.methodLine = "Query";
+                request["format"] = "json";
+                request["sequenceID"] = SToStr(packet.sequenceID);
+                request["query"] = "SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';";
+            } else if (SContains(query, "SHOW CREATE TABLE")) {
+                // TablePlus is wanting the schema for a table. Re-write the query and send it on its way
+                string tableName;
+                string regExp = "^.*(?:`main`\\.`)(.*?)(?:`).*$";
+                if (pcrecpp::RE(regExp, pcrecpp::RE_Options().set_caseless(true)).FullMatch(query, &tableName)) {
+                    SINFO("Responding with table schema for table '"  << tableName << "'");
+                    request.methodLine = "Query";
+                    request["format"] = "json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] = "SELECT name AS 'Table', sql AS 'Create Table' from sqlite_master WHERE type = 'table' and name ='" + tableName + "';";
+                } else {
+                    s->send(MySQLPacket::serializeOK(packet.sequenceID));
+                }
+	        } else if (SContains(query, "information_schema")) {
+	            // Check to see if it's a query we need for TablePlus
+	            if (SContains(query, "index_name = 'PRIMARY' ORDER BY seq_in_index ASC")) {
+	                // Must be the query to get the index column name. Re-write it and send it on its way (TablePlus)
+	                string tableName;
+                    string regExp = "^.*(?:table_name = ')(.*?)(?:' AND).*$";
+                    if (pcrecpp::RE(regExp, pcrecpp::RE_Options().set_caseless(true)).FullMatch(query, &tableName)) {
+                        SINFO("Responding with column_name for table '"  << tableName << "'");
+                        request.methodLine = "Query";
+                        request["format"] = "json";
+                        request["sequenceID"] = SToStr(packet.sequenceID);
+                        request["query"] = "SELECT name as column_name FROM pragma_table_info('" + tableName + "') where pk = 1;";
+                    } else {
+                        s->send(MySQLPacket::serializeOK(packet.sequenceID));
+                    }
+                } else if (SStartsWith(query, "SELECT ordinal_position as ordinal_position,column_name")) {
+                    // Must be the query to get the table schema in table format (TablePlus)
+                    string tableName;
+                    string regExp = "^.*(?:table_name=')(.*?)(?:').*$";
+                    if (pcrecpp::RE(regExp, pcrecpp::RE_Options().set_caseless(true)).FullMatch(query, &tableName)) {
+                        SINFO("Responding with table schema in table format for table '"  << tableName << "'");
+                        request.methodLine = "Query";
+                        request["format"] = "json";
+                        request["sequenceID"] = SToStr(packet.sequenceID);
+                        request["query"] = "SELECT cid as 'ordinal_position', name as 'column_name', type as 'data_type', NULL as 'character_set', NULL as 'collation', CASE `notnull` WHEN 0 THEN 'YES' ELSE 'NO' END as 'is_nullable', `dflt_value` as 'column_default', NULL as 'extra', name as 'forign_key', '' as 'comment' from pragma_table_info('" + tableName + "');";
+                    } else {
+                        s->send(MySQLPacket::serializeOK(packet.sequenceID));
+                    }
+                } else if (SStartsWith(query, "SELECT sub_part as index_length,index_name as index_name")) {
+                    // Must be the query to get the index info in table format (TablePlus)
+                    string tableName;
+                    string regExp = "^.*(?:table_name=')(.*?)(?:').*$";
+                    if (pcrecpp::RE(regExp, pcrecpp::RE_Options().set_caseless(true)).FullMatch(query, &tableName)) {
+                        SINFO("Responding with table index info in table format for table '"  << tableName << "'");
+                        request.methodLine = "Query";
+                        request["format"] = "json";
+                        request["sequenceID"] = SToStr(packet.sequenceID);
+                        request["query"] = "SELECT DISTINCT NULL as'index_length',il.name as'index_name','BTREE' as'index_algorithm',CASE`unique` WHEN 1 THEN'TRUE' ELSE'FALSE' END as'is_unique',ii.name as'column_name' FROM sqlite_master AS m,pragma_index_list(m.name)AS il,pragma_index_info(il.name)AS ii WHERE m.type='table' and tbl_name='" + tableName + "';";
+                    } else {
+                        s->send(MySQLPacket::serializeOK(packet.sequenceID));
+                    }
+	            } else {
+	                // Return an empty set
+                    SINFO("Responding with empty routine list");
+                    SQResult result;
+                    result.headers.push_back("");
+                    result.rows.resize(1);
+                    result.rows.back().push_back("");
+                    s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+	            }
+	        } else if (SStartsWith(SToUpper(query), "ALTER TABLE ")) {
+	            // Convert MySQL to sqlite formatted ALTER TABLE statements
+	            if (SContains(query, "COMMENT ")) {
+                    // Must be an ADD COLUMN statement. Strip any COMMENT related stuff and send it on its way
+                    string group1;
+                    string group2;
+                    string regExp = "^(.*?)(?:COMMENT '')(.*?)$";
+                    if (pcrecpp::RE(regExp, pcrecpp::RE_Options().set_caseless(true)).FullMatch(query, &group1, &group2)) {
+                        query = group1 + group2;
+                        SINFO("Processing ALTER TABLE ADD COLUMN statement '" << query << "'");
+                        request.methodLine = "Query";
+                        request["format"] = "json";
+                        request["sequenceID"] = SToStr(packet.sequenceID);
+                        request["query"] = query;
+                    }
+                } else if (SStartsWith(SToUpper(query), "ALTER TABLE ") && SContains(query, "DROP INDEX")) {
+                    // remove the first part because all indexes in sqlite are uniquely named
+                    string group1;
+                    string regExp = "^.*(DROP INDEX.*)$";
+                    if (pcrecpp::RE(regExp, pcrecpp::RE_Options().set_caseless(true)).FullMatch(query, &group1)) {
+                        query = group1;
+                        SINFO("Processing DROP INDEX: '" << query << "'");
+                        request.methodLine = "Query";
+                        request["format"] = "json";
+                        request["sequenceID"] = SToStr(packet.sequenceID);
+                        request["query"] = query;
+                    } else {
+                        // Just sent it on its way
+                        request.methodLine = "Query";
+                        request["format"] = "json";
+                        request["sequenceID"] = SToStr(packet.sequenceID);
+                        request["query"] = query;
+                    }
+	            } else {
+	                // Just sent it on its way
+	                request.methodLine = "Query";
+                    request["format"] = "json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] = query;
+	            }
+	        } else if (SStartsWith(SToUpper(query), "CREATE INDEX ") || SStartsWith(SToUpper(query), "CREATE UNIQUE INDEX ")) {
+                // Must be trying to create an index. Remove any USING BTREE and database name and send it on its way
+                string group1;
+                string group2;
+                string group3;
+                string regExp = "^(.*?)(?:`main`.)(.*?)(?:USING BTREE)(.*?)$";
+                if (pcrecpp::RE(regExp, pcrecpp::RE_Options().set_caseless(true)).FullMatch(query, &group1, &group2, &group3)) {
+                    query = group1 + group2 + group3;
+                    SINFO("Processing CREATE INDEX: '" << query << "'");
+                    request.methodLine = "Query";
+                    request["format"] = "json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] = query;
+
+                } else {
+                    // Just send it on its way
+                    request.methodLine = "Query";
+                    request["format"] = "json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] = query;
+                }
             } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ")
-                       || SIEquals(query, "ROLLBACK;")) {
+                       || SIEquals(query, "ROLLBACK;") || SIEquals(query, "START TRANSACTION;")
+                       || SIEquals(query, "COMMIT;")) {
                 // Ignore
-                SINFO("Responding OK to SET/USE/ROLLBACK query.");
+                SINFO("Responding OK to SET/USE/ROLLBACK/START TRANSACTION/COMMIT query.");
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
             } else {
                 // Transform this into an internal request
