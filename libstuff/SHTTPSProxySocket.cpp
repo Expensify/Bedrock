@@ -4,7 +4,9 @@
 #include <libstuff/SSSLState.h>
 
 SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host)
- : STCPManager::Socket::Socket(0, STCPManager::Socket::State::CONNECTING, true), proxyAddress(proxyAddress)
+ : STCPManager::Socket::Socket(0, STCPManager::Socket::State::CONNECTING, true),
+   proxyAddress(proxyAddress),
+   hostname(host)
 {
     SASSERT(SHostIsValid(proxyAddress));
     s = S_socket(proxyAddress, true, false, false);
@@ -15,7 +17,7 @@ SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& h
     string domain;
     if (https) {
         uint16_t port;
-        SParseHost(host, domain, port);
+        SParseHost(hostname, domain, port);
     }
 
     ssl = new SSSLState(s, domain);
@@ -62,13 +64,15 @@ bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
     return result;
 }
 
+#include <iostream>
 bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
 
     if (state.load() < Socket::State::SHUTTINGDOWN) {
         if (!filledPreSendBuffer) {
-            SData connectMessage("CONNECT " + proxyAddress + " HTTP/1.1");
+            SData connectMessage("CONNECT " + hostname + " HTTP/1.1");
             connectMessage["Host"] = proxyAddress;
+            cout << "Sending:" << endl << connectMessage.serialize() << endl;
             string serialized = connectMessage.serialize();
             preSendBuffer.append(serialized.c_str(), serialized.size());
             filledPreSendBuffer = true;
@@ -82,7 +86,6 @@ bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
     return send(bytesSentCount);
 }
 
-#include <iostream>
 bool SHTTPSProxySocket::recv() {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
 
@@ -97,6 +100,7 @@ bool SHTTPSProxySocket::recv() {
             if (recvBuffer.size()) {
                 // TODO: Verify this is actually complete, only clear once the entire message is received.
                 proxyNegotiationComplete = true;
+                recvBuffer.clear();
             }
         } else  {
             result = ssl->recvAppend(recvBuffer);

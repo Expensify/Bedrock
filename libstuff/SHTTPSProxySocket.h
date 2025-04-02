@@ -16,11 +16,12 @@ class SHTTPSProxySocket : public STCPManager::Socket {
 
     private:
 
-    // This should contain the address and port, i.e.:
+    // These should contain the address and port, i.e.:
     // www.proxy.com:443
     // or:
     // 127.0.0.1:443
     string proxyAddress;
+    string hostname;
 
     // Before we can send real HTTPS data, we need to establish the connecton to the proxy.
     bool proxyNegotiationComplete = false;
