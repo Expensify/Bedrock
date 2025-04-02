@@ -1,13 +1,18 @@
+#include "libstuff/SFastBuffer.h"
 #include <libstuff/STCPManager.h>
 
 class SHTTPSProxySocket : public STCPManager::Socket {
   public:
     // Implement all the same constructors as the base class.
-    SHTTPSProxySocket(const string& proxyAddress, const string& host, bool https = false);
-    SHTTPSProxySocket(const string& proxyAddress, int sock = 0, State state_ = CONNECTING, bool https = false);
+    SHTTPSProxySocket(const string& proxyAddress, const string& host);
     SHTTPSProxySocket(SHTTPSProxySocket&& from);
 
     ~SHTTPSProxySocket();
+
+    // Allow us to send and receive without SSL at the start.
+    virtual bool send(size_t* bytesSentCount = nullptr) override;
+    virtual bool send(const string& buffer, size_t* bytesSentCount = nullptr) override;
+    virtual bool recv() override;
 
     private:
 
@@ -16,4 +21,9 @@ class SHTTPSProxySocket : public STCPManager::Socket {
     // or:
     // 127.0.0.1:443
     string proxyAddress;
+
+    // Before we can send real HTTPS data, we need to establish the connecton to the proxy.
+    bool proxyNegotiationComplete = false;
+    bool filledPreSendBuffer = false;
+    SFastBuffer preSendBuffer;
 };

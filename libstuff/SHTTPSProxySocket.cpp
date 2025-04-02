@@ -1,14 +1,24 @@
 #include "SHTTPSProxySocket.h"
+#include "libstuff/SData.h"
 #include "libstuff/STCPManager.h"
+#include <libstuff/SSSLState.h>
 
-SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host, bool https)
- : STCPManager::Socket(host, https), proxyAddress(proxyAddress)
+SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host)
+ : STCPManager::Socket::Socket(0, STCPManager::Socket::State::CONNECTING, true), proxyAddress(proxyAddress)
 {
-}
+    SASSERT(SHostIsValid(proxyAddress));
+    s = S_socket(proxyAddress, true, false, false);
+    if (s < 0) {
+        STHROW("Couldn't open socket to " + host);
+    }
 
-SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, int sock, State state_, bool https)
- : STCPManager::Socket(sock, state_, https), proxyAddress(proxyAddress)
-{
+    string domain;
+    if (https) {
+        uint16_t port;
+        SParseHost(host, domain, port);
+    }
+
+    ssl = new SSSLState(s, domain);
 }
 
 SHTTPSProxySocket::SHTTPSProxySocket(SHTTPSProxySocket&& from)
@@ -19,4 +29,80 @@ SHTTPSProxySocket::SHTTPSProxySocket(SHTTPSProxySocket&& from)
 }
 
 SHTTPSProxySocket::~SHTTPSProxySocket() {
+}
+
+bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+
+    bool result = false;
+    size_t oldSize = sendBuffer.size();
+    size_t oldPreSendSize = preSendBuffer.size();
+    if (oldPreSendSize) {
+        result = S_sendconsume(s, preSendBuffer);
+        size_t bytesSent = oldPreSendSize - preSendBuffer.size();
+        if (bytesSent) {
+            lastSendTime = STimeNow();
+            if (bytesSentCount) {
+                *bytesSentCount = bytesSent;
+            }
+        }
+    } else if (proxyNegotiationComplete) {
+        result = ssl->sendConsume(sendBuffer);
+    } else {
+        // Waiting for proxy negotiation to complete before sending more.
+        return true;
+    }
+    size_t bytesSent = oldSize - sendBuffer.size();
+    if (bytesSent) {
+        lastSendTime = STimeNow();
+        if (bytesSentCount) {
+            *bytesSentCount = bytesSent;
+        }
+    }
+    return result;
+}
+
+bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+
+    if (state.load() < Socket::State::SHUTTINGDOWN) {
+        if (!filledPreSendBuffer) {
+            SData connectMessage("CONNECT " + proxyAddress + " HTTP/1.1");
+            connectMessage["Host"] = proxyAddress;
+            string serialized = connectMessage.serialize();
+            preSendBuffer.append(serialized.c_str(), serialized.size());
+            filledPreSendBuffer = true;
+        }
+
+        sendBuffer += buffer;
+    } else if (!sendBuffer.empty()) {
+        SWARN("Not appending to sendBuffer in socket state " << state.load());
+    }
+
+    return send(bytesSentCount);
+}
+
+
+bool SHTTPSProxySocket::recv() {
+    lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+
+    bool result = false;
+    if (s > 0) {
+        const size_t oldSize = recvBuffer.size();
+        if (!proxyNegotiationComplete) {
+            result = S_recvappend(s, recvBuffer);
+            if (recvBuffer.size()) {
+                // TODO: We need to decide if we've received the entire message and clear this only if we have.
+                proxyNegotiationComplete = true;
+            }
+        } else  {
+            result = ssl->recvAppend(recvBuffer);
+        }
+
+        if (oldSize != recvBuffer.size()) {
+            lastRecvTime = STimeNow();
+        }
+    }
+
+    return result;
 }

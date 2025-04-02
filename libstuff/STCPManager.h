@@ -35,9 +35,9 @@ struct STCPManager {
         uint64_t lastRecvTime;
         SSSLState* ssl;
         void* data;
-        bool send(size_t* bytesSentCount = nullptr);
-        bool send(const string& buffer, size_t* bytesSentCount = nullptr);
-        bool recv();
+        virtual bool send(size_t* bytesSentCount = nullptr);
+        virtual bool send(const string& buffer, size_t* bytesSentCount = nullptr);
+        virtual bool recv();
         void shutdown(State toState = SHUTTINGDOWN);
         uint64_t id;
         string logString;
@@ -46,7 +46,7 @@ struct STCPManager {
         string sendBufferCopy();
         void setSendBuffer(const string& buffer);
 
-      private:
+      protected:
         static atomic<uint64_t> socketCount;
         recursive_mutex sendRecvMutex;
 

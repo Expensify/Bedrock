@@ -64,7 +64,7 @@ struct SSLTest : tpunit::TestFixture {
 
         // Create a transaction with a socket, send the above request.
         SStandaloneHTTPSManager::Transaction* transaction = new SStandaloneHTTPSManager::Transaction(manager);
-        transaction->s = new SHTTPSProxySocket(proxy, host, true);
+        transaction->s = new SHTTPSProxySocket(proxy, host);
         transaction->timeoutAt = STimeNow() + 5'000'000;
         transaction->s->send(request.serialize());
 
