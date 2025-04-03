@@ -56,7 +56,7 @@ struct SSLTest : tpunit::TestFixture {
         SStandaloneHTTPSManager manager;
 
         const string host = "www.example.com:443";
-        SData request("GET " + host + " HTTP/1.1");
+        SData request("GET / HTTP/1.1");
         request["host"] = host;
 
         // Note: this works with a default squid install, which Github actions doesn't currently have.

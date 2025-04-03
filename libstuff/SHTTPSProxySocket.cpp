@@ -3,6 +3,7 @@
 #include "libstuff/STCPManager.h"
 #include <libstuff/SSSLState.h>
 
+#include <iostream>
 SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host)
  : STCPManager::Socket::Socket(0, STCPManager::Socket::State::CONNECTING, true),
    proxyAddress(proxyAddress),
@@ -49,6 +50,8 @@ bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
             }
         }
     } else if (proxyNegotiationComplete) {
+        cout << "SENDING SSL:" << endl;
+        cout << sendBuffer << endl;
         result = ssl->sendConsume(sendBuffer);
     } else {
         // Waiting for proxy negotiation to complete before sending more.
@@ -64,7 +67,6 @@ bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
     return result;
 }
 
-#include <iostream>
 bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
 
