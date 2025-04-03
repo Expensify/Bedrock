@@ -52,7 +52,7 @@ struct SSLTest : tpunit::TestFixture {
     }
 
     void proxyTest() {
-        // This is a generic HTTPS mamanger.
+        // This is a generic HTTPS manager.
         SStandaloneHTTPSManager manager;
 
         const string host = "www.example.com:443";
