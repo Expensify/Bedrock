@@ -9,8 +9,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
 
-struct SSSLState;
-struct SX509;
+class SSSLState;
 
 using namespace std;
 
@@ -21,8 +20,8 @@ struct STCPManager {
     class Socket {
       public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
-        Socket(const string& host, SX509* x509 = nullptr);
-        Socket(int sock = 0, State state_ = CONNECTING, SX509* x509 = nullptr);
+        Socket(const string& host, bool https = false);
+        Socket(int sock = 0, State state_ = CONNECTING,bool https = false);
         Socket(Socket&& from);
         ~Socket();
         // Attributes
@@ -56,10 +55,7 @@ struct STCPManager {
         // NOTE: Currently there's no synchronization around `recvBuffer`. It can only be accessed by one thread.
         SFastBuffer sendBuffer;
 
-        // Each socket owns it's own SX509 object to avoid thread-safety issues reading/writing the same certificate in
-        // the underlying ssl code. Once assigned, the socket owns this object for it's lifetime and will delete it
-        // upon destruction.
-        SX509* _x509;
+        bool https;
     };
 
     class Port {
