@@ -1,9 +1,10 @@
 #include "SHTTPSProxySocket.h"
 #include "libstuff/SData.h"
 #include "libstuff/STCPManager.h"
+#include "libstuff/libstuff.h"
 #include <libstuff/SSSLState.h>
+#include <mutex>
 
-#include <iostream>
 SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host)
  : STCPManager::Socket::Socket(0, STCPManager::Socket::State::CONNECTING, true),
    proxyAddress(proxyAddress),
@@ -50,8 +51,6 @@ bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
             }
         }
     } else if (proxyNegotiationComplete) {
-        cout << "SENDING SSL:" << endl;
-        cout << sendBuffer << endl;
         result = ssl->sendConsume(sendBuffer);
     } else {
         // Waiting for proxy negotiation to complete before sending more.
@@ -74,7 +73,6 @@ bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
         if (!filledPreSendBuffer) {
             SData connectMessage("CONNECT " + hostname + " HTTP/1.1");
             connectMessage["Host"] = proxyAddress;
-            cout << "Sending:" << endl << connectMessage.serialize() << endl;
             string serialized = connectMessage.serialize();
             preSendBuffer.append(serialized.c_str(), serialized.size());
             filledPreSendBuffer = true;
@@ -97,12 +95,20 @@ bool SHTTPSProxySocket::recv() {
         if (!proxyNegotiationComplete) {
             result = S_recvappend(s, recvBuffer);
             if (recvBuffer.size()) {
-                cout << "Proxy sent: " << endl << recvBuffer.c_str() << endl;
-            }
-            if (recvBuffer.size()) {
-                // TODO: Verify this is actually complete, only clear once the entire message is received.
-                proxyNegotiationComplete = true;
-                recvBuffer.clear();
+                SData connectionEstablished;
+                connectionEstablished.deserialize(recvBuffer);
+                if (!connectionEstablished.empty()) {
+                    // Basic checking that we got back a 200.
+                    if (SContains(connectionEstablished.methodLine, " 200 ")) {
+                        proxyNegotiationComplete = true;
+                        recvBuffer.clear();
+                    } else {
+                        SWARN("Proxy server " << proxyAddress << " returned methodLine: " << connectionEstablished.methodLine);
+                        close(s);
+                        s = -1;
+                        state = STCPManager::Socket::CLOSED;
+                    }
+                }
             }
         } else  {
             result = ssl->recvAppend(recvBuffer);
