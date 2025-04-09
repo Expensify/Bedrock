@@ -327,14 +327,22 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 request["format"] = "json";
                 request["sequenceID"] = SToStr(packet.sequenceID);
                 request["query"] =
-                    "SELECT name as Tables_in_main, CASE type WHEN 'table' THEN 'BASE TABLE' WHEN 'view' THEN 'VIEW' "
-                    "END as Table_type FROM sqlite_master WHERE type IN ('table', 'view');";
+                    "SELECT "
+                        "name as Tables_in_main, "
+                        "CASE type "
+                            "WHEN 'table' THEN 'BASE TABLE' "
+                            "WHEN 'view' THEN 'VIEW' "
+                        "END as Table_type "
+                    "FROM sqlite_master "
+                    "WHERE type IN ('table', 'view');";
             } else if (SIEquals(SToUpper(query),
                                 "SELECT TABLE_NAME,TABLE_COMMENT,IF(TABLE_TYPE='BASE TABLE', 'TABLE', "
                                 "TABLE_TYPE),TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=DATABASE() "
                                 "AND ( TABLE_TYPE='BASE TABLE' OR TABLE_TYPE='VIEW' ) AND TABLE_NAME LIKE '%' ORDER BY "
                                 "TABLE_SCHEMA, TABLE_NAME;")) {
-                // This is the query Alteryx users to get Table information to display in the GUI, so let's support it.
+                // This is the query Alteryx uses to get Table information to display in the GUI, so let's support it.
+                // This likely isn't restricted to just Alteryx, becuase it uses a generic ODBC connector from MySQL,
+                // but that is the only client we have tested that has sent this query.
                 SINFO("Getting table list");
 
                 // Transform this into an internal request
@@ -342,8 +350,14 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 request["format"] = "json";
                 request["sequenceID"] = SToStr(packet.sequenceID);
                 request["query"] =
-                    "SELECT name as TABLE_NAME, '' as TABLE_COMMENT, UPPER(type) as TABLE_TYPE, 'main' as TABLE_SCHEMA "
-                    "FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY TABLE_SCHEMA, TABLE_NAME;";
+                    "SELECT "
+                        "name as TABLE_NAME, "
+                        "'' as TABLE_COMMENT, "
+                        "UPPER(type) as TABLE_TYPE, "
+                        "'main' as TABLE_SCHEMA "
+                    "FROM sqlite_master "
+                    "WHERE type IN ('table', 'view') "
+                    "ORDER BY TABLE_SCHEMA, TABLE_NAME;";
             } else if (SContains(query, "information_schema")) {
                 // Return an empty set
                 SINFO("Responding with empty routine list");
