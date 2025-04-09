@@ -25,7 +25,7 @@ class SStandaloneHTTPSManager : public STCPManager {
         const string requestID;
     };
 
-    static const string proxyAddress;
+    static const string proxyAddressHTTPS;
 
     // Constructor/Destructor
     SStandaloneHTTPSManager();
@@ -56,7 +56,7 @@ class SStandaloneHTTPSManager : public STCPManager {
     Transaction* _createErrorTransaction();
     virtual bool _onRecv(Transaction* transaction);
 
-    static string initProxyAddress();
+    static string initProxyAddressHTTPS();
 };
 
 class SHTTPSManager : public SStandaloneHTTPSManager {

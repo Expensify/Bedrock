@@ -7,10 +7,10 @@
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
 
-const string SStandaloneHTTPSManager::proxyAddress = initProxyAddress();
+const string SStandaloneHTTPSManager::proxyAddressHTTPS = initProxyAddressHTTPS();
 
-string SStandaloneHTTPSManager::initProxyAddress() {
-    const char* proxyString = getenv("HTTP_PROXY");
+string SStandaloneHTTPSManager::initProxyAddressHTTPS() {
+    const char* proxyString = getenv("HTTPS_PROXY");
     if (proxyString != nullptr) {
         return proxyString;
     }
@@ -190,9 +190,9 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
     try {
         // If a proxy is set, and it's allowed to use it, go through the proxy.
         bool isHttps = SStartsWith(url, "https://");
-        if (isHttps && allowProxy && proxyAddress.size()) {
+        if (isHttps && allowProxy && proxyAddressHTTPS.size()) {
             string proxyHost, path;
-            SParseURI(proxyAddress, proxyHost, path);
+            SParseURI(proxyAddressHTTPS, proxyHost, path);
             SINFO("Proxying " << url << " through " << proxyHost);
             s = new SHTTPSProxySocket(proxyHost, host);
         } else {
