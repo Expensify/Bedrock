@@ -4,11 +4,15 @@
 // C library
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <execinfo.h>
 #include <sys/un.h>
 #include <cxxabi.h>
 #include <sys/ioctl.h>
+
+#include <thread>
 
 #include "libstuff.h"
 #include <sys/stat.h>
@@ -30,6 +34,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <dirent.h>
+#include <string.h>
 #ifdef __APPLE__
 // Apple specific tweaks
 #include <sys/types.h>
@@ -39,7 +44,9 @@
 #endif
 #endif
 
-#include <pcrecpp.h> // sudo apt-get install libpcre++-dev
+// Setting this default allows us to not have to worry about calling the specific unit size methods, see https://www.pcre.org/current/doc/html/pcre2.html
+#define PCRE2_CODE_UNIT_WIDTH 8
+#include <pcre2.h> // sudo apt-get install libpcre2-dev
 
 // Common error definitions
 #define S_errno errno
@@ -97,7 +104,7 @@ atomic_flag SLogSocketsInitialized = ATOMIC_FLAG_INIT;
 // Set to `syslog` or `SSyslogSocketDirect`.
 atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc = &syslog;
 
-void SInitialize(string threadName, const char* processName) {
+void SInitialize(const string& threadName, const char* processName) {
     isSyncThread = false;
     // This is not really thread safe. It's guaranteed to run only once, because of the atomic flag, but it's not
     // guaranteed that a second caller to `SInitialize` will wait until this block has completed before attempting to
@@ -511,7 +518,7 @@ string SUnescape(const char* lhs, char escaper) {
                 else if (utfValue <= 0x07ff) {
                     // UTF-8 2 byte header is 110.
                     // 1100.0000 | Top 5 bits of utfValue
-                    char byte = 0xc0 | (utfValue >> 6);
+                    char byte = (char)(0xc0 | (utfValue >> 6));
                     working += byte;
 
                     // Cancel out the bits we just used.
@@ -524,7 +531,7 @@ string SUnescape(const char* lhs, char escaper) {
                 else if (utfValue <= 0xffff) {
                     // UTF-8 3 byte header is 1110.
                     // 1110.0000 | Top 4 bits of utfValue.
-                    char byte = 0xe0 | (utfValue >> 12);
+                    char byte = (char)(0xe0 | (utfValue >> 12));
                     working += byte;
 
                     // Cancel out the bits we just used.
@@ -845,7 +852,12 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                         ++parseEnd;
 
                     // The SData object we've generated is not chunked, we remove this header as it does not describe the state of this request.
+                    // We add back a Content-Length header to make this request into a canonical format as it's length is known.
+                    // It's important to add back Content-Length as consumers *must* end connections with no length specified to indicate that the
+                    // message is complete. Both "Transfer:encoding: chunked" and "Content-Length: N" then imply that the connections can continue,
+                    // so if we remove one, we add back the other to communicate this to the caller.
                     nameValueMap.erase("Transfer-Encoding");
+                    nameValueMap["Content-Length"] = SToStr(content.size());
                     return (int)(parseEnd - buffer);
                 }
 
@@ -859,12 +871,15 @@ int SParseHTTP(const char* buffer, size_t length, string& methodLine, STable& na
                         ++parseEnd;
                     int headerLength = (int)(parseEnd - buffer);
 
-                    // If there is no content-length, just return the length of the headers
-                    int contentLength = (SContains(nameValueMap, "Content-Length")
-                                             ? atoi(nameValueMap["Content-Length"].c_str())
-                                             : 0);
-                    if (!contentLength)
-                        return headerLength;
+                    // If there's a Content-Length (including a Content-Length of 0), we will parse that much data.
+                    // Otherwise, we just parse everything that's left, as we have no other reasonable options.
+                    bool hasContentLength = nameValueMap.contains("Content-Length");
+                    int contentLength = hasContentLength ? stoll(nameValueMap["Content-Length"]) : 0;
+                    if (!hasContentLength) {
+                        // Since we don't know, just return everything we have.
+                        content = string(parseEnd, buffer + length);
+                        return length;
+                    }
 
                     // There is a content length -- if we don't have enough, then cancel the parse.
                     if ((int)(length - headerLength) < contentLength) {
@@ -1684,7 +1699,7 @@ string SGZip(const string& content) {
 }
 
 string SGUnzip (const string& content) {
-    int CHUNK = 16384;
+    const int CHUNK = 16384;
     int status;
     unsigned have;
     z_stream strm;
@@ -1703,7 +1718,7 @@ string SGUnzip (const string& content) {
         return "";
     }
 
-    strm.avail_in = content.size();
+    strm.avail_in = (decltype(strm.avail_in))content.size();
     strm.next_in = (unsigned char*)content.c_str();
 
     do {
@@ -2004,14 +2019,12 @@ bool S_recvappend(int s, SFastBuffer& recvBuffer) {
 
     // Keep trying to receive as long as we can
     char buffer[4096];
-    int totalRecv = 0;
     ssize_t numRecv = 0;
     sockaddr_in fromAddr;
     socklen_t fromAddrLen = sizeof(fromAddr);
     while ((numRecv = recvfrom(s, buffer, sizeof(buffer), 0, (sockaddr*)&fromAddr, &fromAddrLen)) > 0) {
         // Got some more data
         recvBuffer.append(buffer, numRecv);
-        totalRecv += numRecv;
 
         // If this is a blocking socket, don't try again, once is enough
         if (blocking) {
@@ -2108,7 +2121,7 @@ int S_poll(fd_map& fdm, uint64_t timeout) {
 
     // Timeout is specified in microseconds, but poll uses milliseconds, so we divide by 1000.
     int timeoutVal = int(timeout / 1000);
-    int returnValue = poll(&pollvec[0], fdm.size(), timeoutVal);
+    int returnValue = poll(&pollvec[0], (nfds_t)fdm.size(), timeoutVal);
 
     // And write our returned events back to our original structure.
     for (pollfd pfd : pollvec) {
@@ -2283,7 +2296,7 @@ bool SFileSave(const string& path, const string& buffer) {
 // --------------------------------------------------------------------------
 bool SFileCopy(const string& fromPath, const string& toPath) {
     // Figure out the size of the file we're copying.
-    uint64_t fromSize = SFileSize(fromPath);
+    size_t fromSize = SFileSize(fromPath);
     if (!fromSize) {
         SWARN("File " << fromPath << " is empty! Copying anyway.");
     }
@@ -2307,8 +2320,8 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
         // Read and write
         char buf[1024 * 64];
         size_t numRead = 0;
-        uint64_t completeBytes = 0;
-        int completePercent = 0;
+        size_t completeBytes = 0;
+        size_t completePercent = 0;
         bool readAny = false;
         bool writtenAny = false;
         while ((numRead = fread(buf, 1, sizeof(buf), from)) > 0) {
@@ -2325,7 +2338,7 @@ bool SFileCopy(const string& fromPath, const string& toPath) {
                     SINFO("Wrote first " << numRead << " bytes to " << toPath << ".");
                 }
                 completeBytes += numRead;
-                int percent = fromSize ? ((completeBytes * 100) / fromSize) : 0;
+                size_t percent = fromSize ? ((completeBytes * 100) / fromSize) : 0;
                 if (percent > completePercent) {
                     SINFO("Copying " << fromPath << " to " << toPath << " is " << percent << "% complete.");
                     completePercent = percent;
@@ -2398,7 +2411,7 @@ string SHashSHA256(const string& buffer) {
 
 // --------------------------------------------------------------------------
 
-string SEncodeBase64(const unsigned char* buffer, int size) {
+string SEncodeBase64(const unsigned char* buffer, size_t size) {
     // First, get the required buffer size
     size_t olen = 0;
     mbedtls_base64_encode(0, 0, &olen, buffer, size);
@@ -2415,7 +2428,7 @@ string SEncodeBase64(const string& bufferString) {
 }
 
 // --------------------------------------------------------------------------
-string SDecodeBase64(const unsigned char* buffer, int size) {
+string SDecodeBase64(const unsigned char* buffer, size_t size) {
     // First, get the required buffer size
     size_t olen = 0;
     mbedtls_base64_decode(0, 0, &olen, buffer, size);
@@ -2576,7 +2589,7 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             // Calling strlen() or any function that iterates across the whole string here is a giant performance problem, and all the operations chosen here have
             // been picked specifically to avoid that.
             size_t maxLength = sql.size() - (statementRemainder - sql.c_str()) + 1;
-            error = sqlite3_prepare_v2(db, statementRemainder, maxLength, &preparedStatement, &statementRemainder);
+            error = sqlite3_prepare_v2(db, statementRemainder, (int)maxLength, &preparedStatement, &statementRemainder);
             if (isSyncThread) {
                 prepareTimeUS += STimeNow() - beforePrepare;
             }
@@ -2709,7 +2722,8 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
         // We don't warn for constraints errors because sometimes they're allowed, and BedrockCore.cpp will warn for the ones that aren't.
         // This prevents creating bugbot issues for the allowed cases. We still log as INFO though so we can diagnose the query with the problem.
-        if (error == SQLITE_CONSTRAINT) {
+        // We also don't warn for `interrupt` because it generally means a timeout which is handled separately.
+        if (error == SQLITE_CONSTRAINT || error == SQLITE_INTERRUPT) {
             SINFO("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         } else {
             SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
@@ -2718,7 +2732,6 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
     if (extErr == SQLITE_BUSY_SNAPSHOT) {
-        SHMMM("[concurrent] commit conflict.");
         return extErr;
     }
     return error;
@@ -2754,13 +2767,13 @@ string SGetCurrentExceptionName()
     // __cxa_demangle takes all its parameters by reference, so we create a buffer where it can demangle the current
     // exception name.
     int status = 0;
-    size_t length = 1000;
+    const size_t length = 1000;
     char buffer[length];
     memset(buffer, 0, length);
 
     // Demangle the name of the current exception.
     // See: https://libcxxabi.llvm.org/spec.html for details on this ABI interface.
-    abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, &length, &status);
+    abi::__cxa_demangle(abi::__cxa_current_exception_type()->name(), buffer, nullptr, &status);
     string exceptionName = buffer;
 
     // If it failed, use the original name instead.
@@ -2805,25 +2818,116 @@ bool SIsValidSQLiteDateModifier(const string& modifier) {
     return true;
 }
 
-bool SREMatch(const string& regExp, const string& s) {
-    return pcrecpp::RE(regExp, pcrecpp::RE_Options().set_match_limit_recursion(1000)).FullMatch(s);
+bool SREMatch(const string& regExp, const string& input, bool caseSensitive, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset) {
+    int errornumber = 0;
+    PCRE2_SIZE erroroffset = 0;
+    uint32_t matchFlags = 0;
+
+    // These require full-string matches as that's the historical way this function works.
+    uint32_t compileFlags = partialMatch ? 0 : PCRE2_ANCHORED | PCRE2_ENDANCHORED;
+    if (!caseSensitive) {
+        compileFlags |= PCRE2_CASELESS;
+    }
+    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
+    if (!re) {
+        STHROW("Bad regex: " + regExp);
+    }
+
+    pcre2_match_context* matchContext = pcre2_match_context_create(0);
+    pcre2_set_depth_limit(matchContext, 1000);
+    pcre2_match_data* matchData = pcre2_match_data_create_from_pattern(re, 0);
+
+    int result = pcre2_match(re, (PCRE2_SPTR8)input.c_str() + startOffset, input.size() - startOffset, 0, matchFlags, matchData, matchContext);
+
+    // Clear out existing matches.
+    if (matches) {
+        matches->clear();
+    }
+
+    // If the caller wanted to receive matches, and we have them, figure them out.
+    if (result > 0 && matches) {
+        PCRE2_SIZE* ovector = pcre2_get_ovector_pointer(matchData);
+        int count = pcre2_get_ovector_count(matchData);
+        for (int i = 0; i < count; ++i) {
+            PCRE2_SIZE start = ovector[2 * i];
+            PCRE2_SIZE end = ovector[2 * i + 1];
+            if (start == PCRE2_UNSET || end == PCRE2_UNSET) {
+                continue;
+            }
+            matches->push_back(input.substr(startOffset + start, end - start));
+            if (i == 0 && matchOffset) {
+                *matchOffset = startOffset + start;
+            }
+        }
+    }
+
+    pcre2_code_free(re);
+    pcre2_match_context_free(matchContext);
+    pcre2_match_data_free(matchData);
+
+    return result > 0;
 }
 
-bool SREMatch(const string& regExp, const string& s, string& match) {
-    return pcrecpp::RE(regExp, pcrecpp::RE_Options().set_match_limit_recursion(1000)).FullMatch(s, &match);
+vector<vector <string>> SREMatchAll(const string& regExp, const string& input, bool caseSensitive) {
+    vector<vector<string>> returnValue;
+    vector<string> matches;
+    size_t startOffset = 0;
+    size_t matchOffset = 0;
+    while(SREMatch(regExp, input, caseSensitive, true, &matches, startOffset, &matchOffset)) {
+        returnValue.push_back(matches);
+        startOffset = matchOffset + matches[0].size();
+    }
+
+    return returnValue;
+}
+
+string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive) {
+    char* output = nullptr;
+    size_t outSize = 0;
+    int errornumber = 0;
+    PCRE2_SIZE erroroffset = 0;
+    uint32_t compileFlags = caseSensitive ? 0 : PCRE2_CASELESS;
+    uint32_t substituteFlags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
+    pcre2_code* re = pcre2_compile((PCRE2_SPTR8)regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
+    if (!re) {
+        STHROW("Bad regex: " + regExp);
+    }
+    pcre2_match_context* matchContext = pcre2_match_context_create(0);
+    pcre2_set_depth_limit(matchContext, 1000);
+    for (int i = 0; i < 2; i++) {
+        int result = pcre2_substitute(re, (PCRE2_SPTR8)input.c_str(), input.size(), 0, substituteFlags, 0, matchContext, (PCRE2_SPTR8)replacement.c_str(), replacement.size(), (PCRE2_UCHAR*)output, &outSize);
+        if (i == 0 && result == PCRE2_ERROR_NOMEMORY) {
+            // This is the expected case on the first run, there's not enough space to store the result, so we allocate the space and do it again.
+            output = (char*)malloc(outSize);
+        } else if (result < 0) {
+            SHMMM("Regex replacement failed with result " << result << ", returning nothing.");
+            output = (char*)malloc(1);
+            *output = 0;
+            break;
+        }
+    }
+    string outputString(output);
+    pcre2_code_free(re);
+    pcre2_match_context_free(matchContext);
+    free(output);
+
+    return outputString;
 }
 
 void SRedactSensitiveValues(string& s) {
     // This code removing authTokens is a quick fix and should be removed once https://github.com/Expensify/Expensify/issues/144185 is done.
     // The message may be truncated midway through the authToken, so there may not be a closing quote (") at the end of
     // the authToken, so we need to optionally match the closing quote with a question mark (?).
-    pcrecpp::RE("\"authToken\":\".*\"?").GlobalReplace("\"authToken\":<REDACTED>", &s);
+    s = SREReplace("\"authToken\":\".*\"?", s, "\"authToken\":<REDACTED>");
 
     // Redact queries that contain encrypted fields since there's no value in logging them.
-    pcrecpp::RE("v[0-9]+:[0-9A-F]{10,}").GlobalReplace("<REDACTED>", &s);
+    s = SREReplace("v[0-9]+:[0-9A-F]{10,}", s, "<REDACTED>");
 
     // Remove anything inside "html" because we intentionally don't log chats.
-    pcrecpp::RE("\"html\":\".*\"").GlobalReplace("\"html\":\"<REDACTED>\"", &s);
+    s = SREReplace("\"html\":\".*\"", s, "\"html\":\"<REDACTED>\"");
+
+    // Remove anything inside "edits" because these are also chats.
+    s = SREReplace(R"(\"edits\":\[.*?\])", s, "\"edits\":[\"REDACTED\"]");
 }
 
 SStopwatch::SStopwatch() {
@@ -3109,3 +3213,10 @@ SString& SString::operator=(const bool from) {
     return *this;
 }
 
+double SGetCPUUserTime() {
+    struct rusage usage;
+    getrusage(RUSAGE_THREAD, &usage);
+
+    // Returns the current threads CPU user time in microseconds
+    return static_cast<double>(usage.ru_utime.tv_sec) * 1e6 + static_cast<double>(usage.ru_utime.tv_usec);
+}

@@ -3,6 +3,7 @@
 
 // Global logging state shared between all threads
 atomic<int> _g_SLogMask(LOG_INFO);
+atomic<bool> GLOBAL_IS_LIVE{true};
 
 void SLogStackTrace(int level) {
     // If the level isn't set in the log mask, nothing more to do
@@ -37,4 +38,51 @@ void SLogStackTrace(int level) {
             break;
         }
     }
+}
+
+// If the param name is not in this whitelist, we will log <REDACTED> in addLogParams.
+static set<string> PARAMS_WHITELIST = {
+    "command",
+    "Connection",
+    "Content-Length",
+    "count",
+    "indexName",
+    "isUnique",
+    "logParam",
+    "message",
+    "peer",
+    "reason",
+    "requestID",
+    "status",
+    "userID",
+    "policyID",
+    "employeeEmail",
+    "approver",
+    "approvers",
+    "employees",
+};
+
+string addLogParams(string&& message, const STable& params) {
+    if (params.empty()) {
+        return message;
+    }
+
+    message += " ~~";
+    for (const auto& [key, value] : params) {
+        message += " ";
+        string valueToLog = value;
+        if (!SContains(PARAMS_WHITELIST, key)) {
+            if (!GLOBAL_IS_LIVE) {
+                STHROW("500 Log param " + key + " not in the whitelist, either do not log that or add it to PARAMS_WHITELIST if it's not sensitive");
+            }
+            valueToLog = "<REDACTED>";
+        }
+        message += key + ": '" + valueToLog + "'";
+    }
+
+    return message;
+}
+
+void SWhitelistLogParams(const set<string>& params) {
+    PARAMS_WHITELIST.insert(params.begin(), params.end());
 }

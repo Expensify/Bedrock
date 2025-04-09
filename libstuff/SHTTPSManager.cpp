@@ -1,9 +1,9 @@
 #include "SHTTPSManager.h"
+#include "libstuff/STCPManager.h"
 
 #include <BedrockPlugin.h>
 #include <BedrockServer.h>
 #include <libstuff/libstuff.h>
-#include <libstuff/SX509.h>
 #include <sqlitecluster/SQLiteNode.h>
 
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_) : plugin(plugin_)
@@ -80,8 +80,18 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
 
     //See if we got a response.
     uint64_t now = STimeNow();
+
+    // The API for `deserialize` returns `0` if no response was deserialized (generally, because the response is incomplete), but
+    // there is an unusual case for responses that do not supply a `Content-Length` header. It's impossible to know if these
+    // are complete solely based on the content, so these return the size as if the body thus-far were the entire content.
+    // This means we have to check if we've hit EOF and closed the socket to know for sure that we've received the entire
+    // response in these cases.
     int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
-    if (size) {
+
+    // If there's not a Content-Length, we need to check for the socket being closed.
+    bool hasContentLength = transaction.fullResponse.nameValueMap.contains("Content-Length");
+    bool completeRequest = size && (hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
+    if (completeRequest) {
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
         transaction.finished = now;
@@ -89,11 +99,11 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         // Shut down the socket, we're done with it.
         transaction.s->shutdown(Socket::CLOSED);
 
-        // This is supposed to check for a "200 OK" response, which it does very poorly. It also checks for message
+        // This is supposed to check for a "200" response, which it does very poorly. It also checks for message
         // content. Why this is the what constitutes a valid response is lost to time. Any well-formed response should
         // be valid here, and this should get cleaned up. However, this requires testing anything that might rely on
         // the existing behavior, which is an exercise for later.
-        if (SContains(transaction.fullResponse.methodLine, " 200 ") || transaction.fullResponse.content.size()) {
+        if (SContains(transaction.fullResponse.methodLine, " 200") || transaction.fullResponse.content.size()) {
             // Pass the transaction down to the subclass.
             _onRecv(&transaction);
         } else {
@@ -111,7 +121,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         //    the whole server on a single stuck network request.
         // 2. If the transaction's timeout (which is likely it's associated command's timeout) has passed.
         if ((transaction.s->state.load() > Socket::CONNECTED) ||
-            (now > transaction.s->lastSendTime + timeoutMS * 1000) || 
+            (now > transaction.s->lastSendTime + timeoutMS * 1000) ||
             (now > transaction.timeoutAt)) {
             SWARN("Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
             transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
@@ -165,13 +175,11 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
     Transaction* transaction = new Transaction(*this);
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
-    SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
     Socket* s = nullptr;
     try {
-        s = new Socket(host, x509);
+        s = new Socket(host, SStartsWith(url, "https://"));
     } catch (const SException& exception) {
         delete transaction;
-        delete x509;
         return _createErrorTransaction();
     }
 

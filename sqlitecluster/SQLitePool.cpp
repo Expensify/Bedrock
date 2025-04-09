@@ -7,11 +7,11 @@ SQLitePool::SQLitePool(size_t maxDBs,
                        int cacheSize,
                        int maxJournalSize,
                        int minJournalTables,
-                       const string& synchronous,
                        int64_t mmapSizeGB,
-                       bool hctree)
+                       bool hctree,
+                       const string& checkpointMode)
 : _maxDBs(max(maxDBs, 1ul)),
-  _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, synchronous, mmapSizeGB, hctree),
+  _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, mmapSizeGB, hctree, checkpointMode),
   _objects(_maxDBs, nullptr)
 {
 }
@@ -87,11 +87,18 @@ void SQLitePool::returnToPool(size_t index) {
     _wait.notify_one();
 }
 
-SQLiteScopedHandle::SQLiteScopedHandle(SQLitePool& pool, size_t index) : _pool(pool), _index(index)
+SQLiteScopedHandle::SQLiteScopedHandle(SQLitePool& pool, size_t index) : _pool(pool), _index(index), _released(false)
 {}
 
+void SQLiteScopedHandle::release() {
+    if (!_released) {
+        _pool.returnToPool(_index);
+        _released = true;
+    }
+}
+
 SQLiteScopedHandle::~SQLiteScopedHandle() {
-    _pool.returnToPool(_index);
+    release();
 }
 
 SQLite& SQLiteScopedHandle::db() {

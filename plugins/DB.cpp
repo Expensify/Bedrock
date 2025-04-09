@@ -73,6 +73,10 @@ bool BedrockDBCommand::peek(SQLite& db) {
         return false;
     }
 
+    // We rollback here because if we are in a transaction and the querytakes long (which the queries in this command can)
+    // it prevents sqlite from checkpointing and if we accumulate a lot of things to checkpoint, things become slow
+    ((SQLite&) db).rollback();
+
     // Attempt the read-only query
     SQResult result;
     if (!db.read(query, result)) {

@@ -17,6 +17,7 @@ sqlite3* SQLite::getDBHandle() {
 
 thread_local string SQLite::_mostRecentSQLiteErrorLog;
 thread_local int64_t SQLite::_conflictPage;
+thread_local string SQLite::_conflictTable;
 
 const string SQLite::getMostRecentSQLiteErrorLog() const {
     return _mostRecentSQLiteErrorLog;
@@ -162,32 +163,9 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables) {
     return journalNames;
 }
 
-uint64_t SQLite::initializeJournalSize(sqlite3* db, const vector<string>& journalNames) {
-    // We keep track of the number of rows in the journal, so that we can delete old entries when we're over our size
-    // limit.
-    // We want the min of all journal tables.
-    string minQuery = _getJournalQuery(journalNames, {"SELECT MIN(id) AS id FROM"}, true);
-    minQuery = "SELECT MIN(id) AS id FROM (" + minQuery + ")";
-
-    // And the max.
-    string maxQuery = _getJournalQuery(journalNames, {"SELECT MAX(id) AS id FROM"}, true);
-    maxQuery = "SELECT MAX(id) AS id FROM (" + maxQuery + ")";
-
-    // Look up the min and max values in the database.
-    SQResult result;
-    SASSERT(!SQuery(db, "getting commit min", minQuery, result));
-    uint64_t min = SToUInt64(result[0][0]);
-    SASSERT(!SQuery(db, "getting commit max", maxQuery, result));
-    uint64_t max = SToUInt64(result[0][0]);
-
-    // And save the difference as the size of the journal.
-    return max - min;
-}
-
 void SQLite::commonConstructorInitialization(bool hctree) {
     // Perform sanity checks.
     SASSERT(!_filename.empty());
-    SASSERT(_cacheSize > 0);
     SASSERT(_maxJournalSize > 0);
 
     // WAL is what allows simultaneous read/writing.
@@ -203,8 +181,10 @@ void SQLite::commonConstructorInitialization(bool hctree) {
     sqlite3_trace_v2(_db, SQLITE_TRACE_STMT, _sqliteTraceCallback, this);
 
     // Update the cache. -size means KB; +size means pages
-    SINFO("Setting cache_size to " << _cacheSize << "KB");
-    SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(_cacheSize) + ";");
+    if (_cacheSize) {
+        SINFO("Setting cache_size to " << _cacheSize << "KB");
+        SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(_cacheSize) + ";");
+    }
 
     // Register the authorizer callback which allows callers to whitelist particular data in the DB.
     sqlite3_set_authorizer(_db, _sqliteAuthorizerCallback, this);
@@ -216,25 +196,23 @@ void SQLite::commonConstructorInitialization(bool hctree) {
     // Setting a wal hook prevents auto-checkpointing.
     sqlite3_wal_hook(_db, _walHookCallback, this);
 
-    // Check if synchronous has been set and run query to use a custom synchronous setting
-    if (!_synchronous.empty()) {
-        SASSERT(!SQuery(_db, "setting custom synchronous commits", "PRAGMA synchronous = " + SQ(_synchronous)  + ";"));
-    } else {
-        DBINFO("Using SQLite default PRAGMA synchronous");
+    // For non-passive checkpoints, we must set a busy timeout in order to wait on any readers.
+    // We set it to 2 minutes as the majority of transactions should take less than that.
+    if (_checkpointMode != SQLITE_CHECKPOINT_PASSIVE) {
+        sqlite3_busy_timeout(_db, 120'000);
     }
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, const string& synchronous, int64_t mmapSizeGB, bool hctree) :
+               int minJournalTables, int64_t mmapSizeGB, bool hctree, const string& checkpointMode) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _db(initializeDB(_filename, mmapSizeGB, hctree)),
     _journalNames(initializeJournal(_db, minJournalTables)),
     _sharedData(initializeSharedData(_db, _filename, _journalNames, hctree)),
-    _journalSize(initializeJournalSize(_db, _journalNames)),
     _cacheSize(cacheSize),
-    _synchronous(synchronous),
-    _mmapSizeGB(mmapSizeGB)
+    _mmapSizeGB(mmapSizeGB),
+    _checkpointMode(getCheckpointModeFromString(checkpointMode))
 {
     commonConstructorInitialization(hctree);
 }
@@ -245,10 +223,9 @@ SQLite::SQLite(const SQLite& from) :
     _db(initializeDB(_filename, from._mmapSizeGB, false)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
     _journalNames(from._journalNames),
     _sharedData(from._sharedData),
-    _journalSize(from._journalSize),
     _cacheSize(from._cacheSize),
-    _synchronous(from._synchronous),
-    _mmapSizeGB(from._mmapSizeGB)
+    _mmapSizeGB(from._mmapSizeGB),
+    _checkpointMode(from._checkpointMode)
 {
     // This can always pass "true" because the copy constructor does not need to set the DB to WAL2 mode, it would have been set in the object being copied.
     commonConstructorInitialization(true);
@@ -282,8 +259,27 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     // This is sort of hacky to parse this from the logging info. If it works we could ask sqlite for a better interface to get this info.
     if (SStartsWith(zMsg, "cannot commit")) {
         // 17 is the length of "conflict at page" and the following space.
-        const char* offset = strstr(zMsg, "conflict at page") + 17;
-        _conflictPage = atol(offset);
+        const char* pageOffset = strstr(zMsg, "conflict at page") + 17;
+        _conflictPage = atol(pageOffset);
+
+        // Check if the tableOffset exists since not all conflicts are on tables
+        const char* tableOffset = strstr(pageOffset, "part of db table");
+        if (tableOffset) {
+            // 17 is the length of "part of db table" and the following space.
+            tableOffset += 17;
+
+            // Based on the SQLite log line, we should always have ';' after the table name,
+            // so let's find it and use it to limit the size of the substring we need
+            const char* semicolonOffset = strstr(tableOffset, ";");
+
+            // Let's add this check in case the SQLite log changes and we don't notice it
+            // since this would generate a runtime error.
+            if (semicolonOffset) {
+                _conflictTable = string(tableOffset, semicolonOffset - tableOffset);
+            } else {
+                _conflictTable = string(tableOffset);
+            }
+        }
     }
 }
 
@@ -332,13 +328,17 @@ void SQLite::exclusiveLockDB() {
     // writes in this case.
     // So when these are both locked by the same thread at the same time, `commitLock` is always locked first, and we do it the same way here to avoid deadlocks.
     try {
+        SINFO("Locking commitLock");
         _sharedData.commitLock.lock();
+        SINFO("commitLock Locked");
     } catch (const system_error& e) {
         SWARN("Caught system_error calling _sharedData.commitLock, code: " << e.code() << ", message: " << e.what());
         throw;
     }
     try {
+        SINFO("Locking writeLock");
         _sharedData.writeLock.lock();
+        SINFO("writeLock Locked");
     } catch(const system_error& e) {
         SWARN("Caught system_error calling _sharedData.writeLock, code: " << e.code() << ", message: " << e.what());
         throw;
@@ -364,14 +364,32 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
         _sharedData._commitLockTimer.start("EXCLUSIVE");
         _mutexLocked = true;
     }
-    SASSERT(!_insideTransaction);
-    SASSERT(_uncommittedHash.empty());
-    SASSERT(_uncommittedQuery.empty());
+
+    // The most likely case for hitting this is that we forgot to roll back a transaction when we were finished with it
+    // during the last use of this DB handle. In that case, `_insideTransaction` is likely true, and possibly
+    // _uncommittedHash or _uncommittedQuery is set. Rollback should put this DB handle back into a usable state,
+    // but it breaks the current transaction on this handle. We throw and fail the one transaction and hopefully have
+    // fixed the handle for the next use
+    if (_insideTransaction) {
+        rollback();
+        STHROW("Attempted to begin transaction while in invalid state: already inside transaction");
+    }
+    if (!_uncommittedHash.empty()) {
+        rollback();
+        STHROW("Attempted to begin transaction while in invalid state: _uncommittedHash not empty");
+    }
+    if (!_uncommittedQuery.empty()) {
+        rollback();
+        STHROW("Attempted to begin transaction while in invalid state: _uncommittedQuery not empty");
+    }
 
     // Reset before the query, as it's possible the query sets these.
     _autoRolledBack = false;
 
-    SINFO("[concurrent] Beginning transaction");
+    // We actively track transaction counts incrementing and decrementing to log the number of active open transactions at any given moment.
+    _sharedData.openTransactionCount++;
+
+    SINFO("Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
 
@@ -383,7 +401,8 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     _dbCountAtStart = getCommitCount();
     _queryCache.clear();
     _tablesUsed.clear();
-    _queryCount = 0;
+    _readQueryCount = 0;
+    _writeQueryCount = 0;
     _cacheHits = 0;
     _beginElapsed = STimeNow() - before;
     _readElapsed = 0;
@@ -392,6 +411,7 @@ bool SQLite::beginTransaction(TRANSACTION_TYPE type) {
     _commitElapsed = 0;
     _rollbackElapsed = 0;
     _lastConflictPage = 0;
+    _lastConflictTable = "";
     return _insideTransaction;
 }
 
@@ -429,7 +449,7 @@ bool SQLite::verifyTable(const string& tableName, const string& sql, bool& creat
 }
 
 bool SQLite::verifyIndex(const string& indexName, const string& tableName, const string& indexSQLDefinition, bool isUnique, bool createIfNotExists) {
-    SINFO("Verifying index '" << indexName << "'. isUnique? " << to_string(isUnique));
+    SINFO("Verifying index", {{"indexName", indexName}, {"isUnique", to_string(isUnique)}});
     SQResult result;
     SASSERT(read("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=" + SQ(tableName) + " AND name=" + SQ(indexName) + ";", result));
 
@@ -478,7 +498,7 @@ string SQLite::read(const string& query) const {
 bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) const {
     uint64_t before = STimeNow();
     bool queryResult = false;
-    _queryCount++;
+    _readQueryCount++;
     auto foundQuery = _queryCache.find(query);
     if (foundQuery != _queryCache.end()) {
         result = foundQuery->second;
@@ -487,7 +507,7 @@ bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) cons
     } else {
         _isDeterministicQuery = true;
         queryResult = !SQuery(_db, "read only query", query, result, 2000 * STIME_US_PER_MS, skipInfoWarn);
-        if (_isDeterministicQuery && queryResult) {
+        if (_isDeterministicQuery && queryResult && insideTransaction()) {
             _queryCache.emplace(make_pair(query, result));
         }
     }
@@ -535,21 +555,41 @@ bool SQLite::write(const string& query) {
     }
 
     // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
-    return _writeIdempotent(query);
+    SQResult ignore;
+    return _writeIdempotent(query, ignore);
+}
+
+bool SQLite::write(const string& query, SQResult& result) {
+    if (_noopUpdateMode) {
+        SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
+        return true;
+    }
+
+    // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
+    return _writeIdempotent(query, result);
 }
 
 bool SQLite::writeIdempotent(const string& query) {
-    return _writeIdempotent(query);
+    SQResult ignore;
+    return _writeIdempotent(query, ignore);
+}
+
+bool SQLite::writeIdempotent(const string& query, SQResult& result) {
+    return _writeIdempotent(query, result);
 }
 
 bool SQLite::writeUnmodified(const string& query) {
-    return _writeIdempotent(query, true);
+    SQResult ignore;
+    return _writeIdempotent(query, ignore, true);
 }
 
-bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
-    SASSERT(_insideTransaction);
+bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries) {
+    if (!_insideTransaction) {
+        STHROW("500 Attempted to write outside of transaction");
+    }
+
     _queryCache.clear();
-    _queryCount++;
+    _writeQueryCount++;
 
     // Must finish everything with semicolon.
     SASSERT(query.empty() || SEndsWith(query, ";"));
@@ -569,7 +609,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
     {
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         if (_enableRewrite) {
-            resultCode = SQuery(_db, "read/write transaction", query, 2'000'000, true);
+            resultCode = SQuery(_db, "read/write transaction", query, result, 2'000'000, true);
             if (resultCode == SQLITE_AUTH) {
                 // Run re-written query.
                 _currentlyRunningRewritten = true;
@@ -579,7 +619,7 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
                 _currentlyRunningRewritten = false;
             }
         } else {
-            resultCode = SQuery(_db, "read/write transaction", query);
+            resultCode = SQuery(_db, "read/write transaction", query, result);
         }
     }
 
@@ -614,6 +654,33 @@ bool SQLite::_writeIdempotent(const string& query, bool alwaysKeepQueries) {
 bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     SASSERT(_insideTransaction);
 
+    // Pick a journal for this transaction.
+    const int64_t journalID = _sharedData.nextJournalCount++;
+    _journalName = _journalNames[journalID % _journalNames.size()];
+
+    // Look up the oldest commit in our chosen journal, and compute the oldest commit we intend to keep.
+    SQResult journalLookupResult;
+    SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) FROM " + _journalName, journalLookupResult));
+    uint64_t minJournalEntry = journalLookupResult.size() ? SToUInt64(journalLookupResult[0][0]) : 0;
+
+    // Note that this can change before we hold the lock on _sharedData.commitLock, but it doesn't matter yet, as we're only
+    // using it to truncate the journal. We'll reset this value once we acquire that lock.
+    uint64_t commitCount = _sharedData.commitCount;
+
+    // If the commitCount is less than the max journal size, keep everything. Otherwise, keep everything from
+    // commitCount - _maxJournalSize forward. We can't just do the last subtraction part because it overflows our unsigned
+    // int.
+    uint64_t oldestCommitToKeep = commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize;
+
+    // We limit deletions to a relatively small number to avoid making this extremely slow for some transactions in the case
+    // where this journal in particular has accumulated a large backlog.
+    static const size_t deleteLimit = 10;
+    if (minJournalEntry < oldestCommitToKeep) {
+        shared_lock<shared_mutex> lock(_sharedData.writeLock);
+        string query = "DELETE FROM " + _journalName + " WHERE id < " + SQ(oldestCommitToKeep) + " LIMIT " + SQ(deleteLimit);
+        SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
+    }
+
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     if (!_mutexLocked) {
         auto start = STimeNow();
@@ -629,15 +696,13 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     // We pass the journal number selected to the handler so that a caller can utilize the
     // same method bedrock does for accessing 1 table per thread, in order to attempt to
     // reduce conflicts on tables that are written to on every command
-    const int64_t journalID = _sharedData.nextJournalCount++;
-    _journalName = _journalNames[journalID % _journalNames.size()];
     if (_shouldNotifyPluginsOnPrepare) {
         (*_onPrepareHandler)(*this, journalID);
     }
 
     // Now that we've locked anybody else from committing, look up the state of the database. We don't need to lock the
     // SharedData object to get these values as we know it can't currently change.
-    uint64_t commitCount = _sharedData.commitCount;
+    commitCount = _sharedData.commitCount;
 
     // Queue up the journal entry
     string lastCommittedHash = getCommittedHash(); // This is why we need the lock.
@@ -687,28 +752,6 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     SASSERT(!_uncommittedHash.empty()); // Must prepare first
     int result = 0;
 
-    // Do we need to truncate as we go?
-    uint64_t newJournalSize = _journalSize + 1;
-    if (newJournalSize > _maxJournalSize) {
-        // Delete the oldest entry
-        uint64_t before = STimeNow();
-        string query = "DELETE FROM " + _journalName + " "
-                       "WHERE id < (SELECT MAX(id) FROM " + _journalName + ") - " + SQ(_maxJournalSize) + " "
-                       "LIMIT 10";
-        SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
-
-        // Figure out the new journal size.
-        SQResult result;
-        SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) AS id FROM " + _journalName, result));
-        uint64_t min = SToUInt64(result[0][0]);
-        SASSERT(!SQuery(_db, "getting commit max", "SELECT MAX(id) AS id FROM " + _journalName, result));
-        uint64_t max = SToUInt64(result[0][0]);
-        newJournalSize = max - min;
-
-        // Log timing info.
-        _writeElapsed += STimeNow() - before;
-    }
-
     // Make sure one is ready to commit
     SDEBUG("Committing transaction");
 
@@ -717,13 +760,12 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &startPages, &dummy, 0);
 
     _conflictPage = 0;
+    _conflictTable = "";
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
     _lastConflictPage = _conflictPage;
-    if (_lastConflictPage) {
-        SINFO("part of last conflict page: " << _lastConflictPage);
-    }
+    _lastConflictTable = _conflictTable;
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
@@ -745,7 +787,6 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         }
 
         _commitElapsed += STimeNow() - before;
-        _journalSize = newJournalSize;
         _sharedData.incrementCommit(_uncommittedHash);
         _insideTransaction = false;
         _uncommittedHash.clear();
@@ -754,6 +795,8 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _sharedData.commitLock.unlock();
         _mutexLocked = false;
         _queryCache.clear();
+
+        _sharedData.openTransactionCount--;
 
         if (preCheckpointCallback != nullptr) {
             (*preCheckpointCallback)();
@@ -764,29 +807,47 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
             if (_sharedData.outstandingFramesToCheckpoint) {
                 auto start = STimeNow();
                 int framesCheckpointed = 0;
-                sqlite3_wal_checkpoint_v2(_db, 0, SQLITE_CHECKPOINT_PASSIVE, NULL, &framesCheckpointed);
+                sqlite3_wal_checkpoint_v2(_db, 0, _checkpointMode, NULL, &framesCheckpointed);
                 auto end = STimeNow();
-                SINFO("Checkpointed " << framesCheckpointed << " (total) frames of " << _sharedData.outstandingFramesToCheckpoint << " in " << (end - start) << "us.");
+                SINFO("Checkpoint with type=" << _checkpointMode << " complete with " << framesCheckpointed << " frames checkpointed of " << _sharedData.outstandingFramesToCheckpoint << " frames outstanding in " << (end - start) << "us.");
 
                 // It might not actually be 0, but we'll just let sqlite tell us what it is next time _walHookCallback runs.
                 _sharedData.outstandingFramesToCheckpoint = 0;
             }
             _sharedData.checkpointInProgress.clear();
         }
-        SINFO(description << " COMMIT complete in " << time << ". Wrote " << (endPages - startPages)
-              << " pages. WAL file size is " << sz << " bytes. " << _queryCount << " queries attempted, " << _cacheHits
+        SINFO(description << " COMMIT " << SToStr(_sharedData.commitCount) << " complete in " << time << ". Wrote " << (endPages - startPages)
+              << " pages. WAL file size is " << sz << " bytes. " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits
               << " served from cache. Used journal " << _journalName);
-        _queryCount = 0;
+        _readQueryCount = 0;
+        _writeQueryCount = 0;
         _cacheHits = 0;
         _dbCountAtStart = 0;
         _lastConflictPage = 0;
+        _lastConflictTable = "";
     } else {
-        SINFO("Commit failed, waiting for rollback.");
+        // The commit failed, we will rollback.
     }
 
     // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
     // calling rollback().
     return result;
+}
+
+int SQLite::getCheckpointModeFromString(const string& checkpointModeString) {
+    if (checkpointModeString == "PASSIVE") {
+        return SQLITE_CHECKPOINT_PASSIVE;
+    }
+    if (checkpointModeString == "FULL") {
+        return SQLITE_CHECKPOINT_FULL;
+    }
+    if (checkpointModeString == "RESTART") {
+        return SQLITE_CHECKPOINT_RESTART;
+    }
+    if (checkpointModeString == "TRUNCATE") {
+        return SQLITE_CHECKPOINT_TRUNCATE;
+    }
+    SERROR("Invalid checkpoint type: " << checkpointModeString);
 }
 
 map<uint64_t, tuple<string, string, uint64_t>> SQLite::popCommittedTransactions() {
@@ -809,12 +870,11 @@ void SQLite::rollback() {
             _rollbackElapsed += STimeNow() - before;
         }
 
+        _sharedData.openTransactionCount--;
+
         // Finally done with this.
         _insideTransaction = false;
         _uncommittedHash.clear();
-        if (_uncommittedQuery.size()) {
-            SINFO("Rollback successful.");
-        }
         _uncommittedQuery.clear();
 
         // Only unlock the mutex if we've previously locked it. We can call `rollback` to cancel a transaction without
@@ -828,8 +888,9 @@ void SQLite::rollback() {
         SINFO("Rolling back but not inside transaction, ignoring.");
     }
     _queryCache.clear();
-    SDEBUG("Transaction rollback with " << _queryCount << " queries attempted, " << _cacheHits << " served from cache.");
-    _queryCount = 0;
+    SINFO("[performance] Transaction rollback with " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits << " served from cache.");
+    _readQueryCount = 0;
+    _writeQueryCount = 0;
     _cacheHits = 0;
     _dbCountAtStart = 0;
 }
@@ -850,7 +911,7 @@ bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
     return getCommit(_db, _journalNames, id, query, hash);
 }
 
-bool SQLite::getCommit(sqlite3* db, const vector<string> journalNames, uint64_t id, string& query, string& hash) {
+bool SQLite::getCommit(sqlite3* db, const vector<string>& journalNames, uint64_t id, string& query, string& hash) {
     // TODO: This can fail if called after `BEGIN TRANSACTION`, if the id we want to look up was committed by another
     // thread. We may or may never need to handle this case.
     // Look up the query and hash for the given commit
@@ -954,14 +1015,21 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
             !strcmp(detail2, "strftime") ||
             !strcmp(detail2, "changes") ||
             !strcmp(detail2, "last_insert_rowid") ||
-            !strcmp(detail2, "sqlite3_version")
+            !strcmp(detail2, "sqlite_version")
         ) {
             _isDeterministicQuery = false;
         }
 
-        if (!strcmp(detail2, "current_timestamp")) {
+        // Prevent using certain non-deterministic functions in writes which could cause synchronization with followers to
+        // result in inconsistent data. Some are not included here because they can be used in a deterministic way that is valid.
+        // i.e. you can do UPDATE x = DATE('2024-01-01') and its deterministic whereas UPDATE x = DATE('now') is not. It's up to
+        // callers to prevent using these functions inappropriately.
+        if (!strcmp(detail2, "current_timestamp") ||
+            !strcmp(detail2, "random") ||
+            !strcmp(detail2, "last_insert_rowid") ||
+            !strcmp(detail2, "changes") ||
+            !strcmp(detail2, "sqlite_version")) {
             if (_currentlyWriting) {
-                // Prevent using `current_timestamp` in writes which could cause synchronization with followers to result in inconsistent data.
                 return SQLITE_DENY;
             }
         }
@@ -1127,9 +1195,14 @@ int64_t SQLite::getLastConflictPage() const {
     return _lastConflictPage;
 }
 
+string SQLite::getLastConflictTable() const {
+    return _lastConflictTable;
+}
+
 SQLite::SharedData::SharedData() :
 nextJournalCount(0),
 _commitEnabled(true),
+openTransactionCount(0),
 _commitLockTimer("commit lock timer", {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
     {"SHARED", chrono::steady_clock::duration::zero()},

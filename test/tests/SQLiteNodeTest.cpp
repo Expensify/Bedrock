@@ -26,6 +26,8 @@ class TestServer : public SQLiteServer {
     virtual bool canStandDown() { return true; }
     virtual void onNodeLogin(SQLitePeer* peer) { }
     virtual void notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState) {}
+    virtual void blockCommandPort(const string& reason) { };
+    virtual void unblockCommandPort(const string& reason) { };
 };
 
 struct SQLiteNodeTest : tpunit::TestFixture {

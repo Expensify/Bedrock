@@ -52,12 +52,12 @@ uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& comman
     return isProcessing ? min(processTimeout, adjustedTimeout) : adjustedTimeout;
 }
 
-bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command) {
+bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db, const BedrockServer* server) {
     try {
         _getRemainingTime(command, false);
     } catch (const SException& e) {
         // Yep, timed out.
-        _handleCommandException(command, e);
+        _handleCommandException(command, e, db, server);
         command->complete = true;
         return true;
     }
@@ -104,7 +104,7 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
             STHROW("555 Timeout prePeeking command");
         }
     } catch (const SException& e) {
-        _handleCommandException(command, e);
+        _handleCommandException(command, e, &_db, &_server);
         command->complete = true;
     } catch (...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
@@ -134,6 +134,9 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         try {
             if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
+            }
+            if (exclusive && command->writeConsistency != SQLiteNode::QUORUM) {
+                decreaseCommandTimeout(command, BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT);
             }
 
             // We start the timer here to avoid including the time spent acquiring the lock _sharedData.commitLock
@@ -183,7 +186,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         }
     } catch (const SException& e) {
         command->repeek = false;
-        _handleCommandException(command, e);
+        _handleCommandException(command, e, &_db, &_server);
     } catch (const SHTTPSManager::NotLeading& e) {
         command->repeek = false;
         returnValue = RESULT::SHOULD_PROCESS;
@@ -228,6 +231,9 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             // case we need to open a new transaction.
             if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
+            }
+            if (exclusive && command->writeConsistency != SQLiteNode::QUORUM) {
+                decreaseCommandTimeout(command, BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT);
             }
         }
 
@@ -278,7 +284,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             }
         }
     } catch (const SException& e) {
-        _handleCommandException(command, e);
+        _handleCommandException(command, e, &_db, &_server);
         _db.rollback();
         needsCommit = false;
     } catch (const SQLite::constraint_error& e) {
@@ -347,7 +353,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
             STHROW("555 Timeout postProcessing command");
         }
     } catch (const SException& e) {
-        _handleCommandException(command, e);
+        _handleCommandException(command, e, &_db, &_server);
     } catch (...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
@@ -361,7 +367,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
     _db.setQueryOnly(false);
 }
 
-void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e) {
+void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db, const BedrockServer* server) {
     string msg = "Error processing command '" + command->request.methodLine + "' (" + e.what() + "), ignoring.";
     if (!e.body.empty()) {
         msg = msg + " Request body: " + e.body;
@@ -390,10 +396,23 @@ void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, c
     }
 
     // Add the commitCount header to the response.
-    command->response["commitCount"] = to_string(_db.getCommitCount());
+    if (db) {
+        command->response["commitCount"] = to_string(db->getCommitCount());
+    }
 
-    if (_server.args.isSet("-extraExceptionLogging")) {
+    if (server && server->args.isSet("-extraExceptionLogging")) {
         auto stack = e.details();
         command->response["exceptionSource"] = stack.back();
+    }
+}
+
+void BedrockCore::decreaseCommandTimeout(unique_ptr<BedrockCommand>& command, uint64_t timeoutMS)
+{
+    const uint64_t remainingTimeUS = _getRemainingTime(command, false);
+    if ((timeoutMS * 1000ull) < remainingTimeUS) {
+        command->setTimeout(timeoutMS);
+        const int64_t newRemainingTimeUS = _getRemainingTime(command, false);
+        _db.setTimeout(newRemainingTimeUS);
+        SINFO("Decreased command timeout from " << STIMESTAMP(STimeNow() + remainingTimeUS) << " to " << STIMESTAMP(STimeNow() + newRemainingTimeUS));
     }
 }

@@ -5,16 +5,16 @@
 #include <chrono>
 using namespace tpunit;
 
-bool tpunit::TestFixture::exitFlag = false;
+bool tpunit::_TestFixture::exitFlag = false;
 thread_local string tpunit::currentTestName;
-thread_local tpunit::TestFixture* tpunit::currentTestPtr = nullptr;
+thread_local tpunit::_TestFixture* tpunit::currentTestPtr = nullptr;
 thread_local mutex tpunit::currentTestNameMutex;
 
-thread_local int tpunit::TestFixture::perFixtureStats::_assertions = 0;
-thread_local int tpunit::TestFixture::perFixtureStats::_exceptions = 0;
-thread_local int tpunit::TestFixture::perFixtureStats::_traces = 0;
+thread_local int tpunit::_TestFixture::perFixtureStats::_assertions = 0;
+thread_local int tpunit::_TestFixture::perFixtureStats::_exceptions = 0;
+thread_local int tpunit::_TestFixture::perFixtureStats::_traces = 0;
 
-tpunit::TestFixture::method::method(TestFixture* obj, void (TestFixture::*addr)(), const char* name, unsigned char type)
+tpunit::_TestFixture::method::method(_TestFixture* obj, void (_TestFixture::*addr)(), const char* name, unsigned char type)
     : _this(obj)
     , _addr(addr)
     , _type(type)
@@ -26,20 +26,26 @@ tpunit::TestFixture::method::method(TestFixture* obj, void (TestFixture::*addr)(
         *dest = 0;
 }
 
-tpunit::TestFixture::method::~method() {
+tpunit::_TestFixture::method::~method() {
     delete _next;
 }
 
-tpunit::TestFixture::stats::stats()
+tpunit::_TestFixture::stats::stats()
     : _failures(0)
     , _passes(0)
     {}
 
-tpunit::TestFixture::perFixtureStats::perFixtureStats()
+tpunit::_TestFixture::perFixtureStats::perFixtureStats()
 {
 }
 
-tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* m3,  method* m4,
+tpunit::_TestFixture::_TestFixture(const char* name, bool parallel)
+  : _name(name),
+    _parallel(parallel)
+{
+}
+
+void tpunit::_TestFixture::registerTests(method* m0,  method* m1,  method* m2,  method* m3,  method* m4,
                          method* m5,  method* m6,  method* m7,  method* m8,  method* m9,
                          method* m10, method* m11, method* m12, method* m13, method* m14,
                          method* m15, method* m16, method* m17, method* m18, method* m19,
@@ -52,10 +58,7 @@ tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* 
                          method* m50, method* m51, method* m52, method* m53, method* m54,
                          method* m55, method* m56, method* m57, method* m58, method* m59,
                          method* m60, method* m61, method* m62, method* m63, method* m64,
-                         method* m65, method* m66, method* m67, method* m68, method* m69,
-                         const char* name, bool parallel)
-  : _name(name),
-    _parallel(parallel)
+                         method* m65, method* m66, method* m67, method* m68, method* m69)
 {
     tpunit_detail_fixture_list()->push_back(this);
 
@@ -90,6 +93,9 @@ tpunit::TestFixture::TestFixture(method* m0,  method* m1,  method* m2,  method* 
 }
 
 tpunit::TestFixture::~TestFixture() {
+}
+
+tpunit::_TestFixture::~_TestFixture() {
     delete _afters;
     delete _after_classes;
     delete _befores;
@@ -97,13 +103,13 @@ tpunit::TestFixture::~TestFixture() {
     delete _tests;
 }
 
-int tpunit::TestFixture::tpunit_detail_do_run(int threads, std::function<void()> threadInitFunction) {
+int tpunit::_TestFixture::tpunit_detail_do_run(int threads, std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction) {
     const std::set<std::string> include, exclude;
     const std::list<std::string> before, after;
-    return tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction);
+    return tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction, sortFunction);
 }
 
-void tpunit::TestFixture::tpunit_run_test_class(TestFixture* f) {
+void tpunit::_TestFixture::tpunit_run_test_class(_TestFixture* f) {
    f->_stats._assertions = 0;
    f->_stats._exceptions = 0;
    tpunit_detail_do_methods(f->_before_classes);
@@ -123,23 +129,24 @@ void tpunit::TestFixture::tpunit_run_test_class(TestFixture* f) {
       cout << "\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C cleaning up " << f->_name << "." << endl;
    }
 }
+bool tpunit::_TestFixture::sorter(_TestFixture* a, _TestFixture* b) {
+   if (a->_name && b->_name) {
+      return strcmp(a->_name, b->_name) < 0;
+   }
+   return false;
+}
 
-int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const set<string>& exclude,
+int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const set<string>& exclude,
                                               const list<string>& before, const list<string>& after, int threads,
-                                              std::function<void()> threadInitFunction) {
+                                              std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction) {
    threadInitFunction();
     /*
     * Run specific tests by name. If 'include' is empty, then every test is
     * run unless it's in 'exclude'. If 'include' has at least one entry,
     * then only tests in 'include' are run, and 'exclude' is ignored.
     */
-    std::list<TestFixture*> testFixtureList = *tpunit_detail_fixture_list();
-    testFixtureList.sort([&](TestFixture* a, TestFixture* b) {
-        if (a->_name && b->_name) {
-            return strcmp(a->_name, b->_name) < 0;
-        }
-        return false;
-    });
+    std::list<_TestFixture*> testFixtureList = *tpunit_detail_fixture_list();
+    testFixtureList.sort(sortFunction);
 
     // Make local, mutable copies of the include and exclude lists.
     set<string> _include = include;
@@ -174,7 +181,7 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
         _exclude.insert(name);
     }
 
-    list<TestFixture*> afterTests;
+    list<_TestFixture*> afterTests;
     mutex testTimeLock;
     multimap<chrono::milliseconds, string> testTimes;
 
@@ -182,13 +189,14 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
         // Capture everything by reference except threadID, because we don't want it to be incremented for the
         // next thread in the loop.
         thread t = thread([&, threadID]{
-           auto start = chrono::steady_clock::now();
+           chrono::steady_clock::time_point start = chrono::steady_clock::now();
+           chrono::steady_clock::time_point end = start;
 
            threadInitFunction();
             try {
                 // Do test.
                 while (1) {
-                    TestFixture* f = 0;
+                    _TestFixture* f = 0;
                     {
                         lock_guard<recursive_mutex> lock(m);
                         if (testFixtureList.empty()) {
@@ -247,22 +255,32 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                         continue;
                     }
 
-                   // At this point, we know this test should run.
-                   if (!f->_multiThreaded) {
-                       printf("--------------\n");
-                   }
-                   {
-                       lock_guard<mutex> lock(currentTestNameMutex);
-                       currentTestPtr = f;
-                       if (f->_name) {
-                           currentTestName = f->_name;
-                       } else {
-                           cout << "test has no name???" << endl;
-                           currentTestName = "UNSPECIFIED";
-                       }
-                   }
+                    // At this point, we know this test should run.
+                    if (!f->_multiThreaded) {
+                        printf("--------------\n");
+                    }
+                    {
+                        lock_guard<mutex> lock(currentTestNameMutex);
+                        currentTestPtr = f;
+                        if (f->_name) {
+                            currentTestName = f->_name;
+                        } else {
+                            cout << "test has no name???" << endl;
+                            currentTestName = "UNSPECIFIED";
+                        }
+                    }
 
-                   tpunit_run_test_class(f);
+                    start = chrono::steady_clock::now();
+
+                    tpunit_run_test_class(f);
+
+                    // Do this to capture the longest test classes, not longest thread.
+                    end = chrono::steady_clock::now();
+
+                   if (currentTestName.size() && currentTestName != "UNSPECIFIED") {
+                        lock_guard<mutex> lock(testTimeLock);
+                        testTimes.emplace(make_pair(chrono::duration_cast<std::chrono::milliseconds>(end - start), currentTestName));
+                    }
                 }
             } catch (ShutdownException se) {
                 // This will have broken us out of our main loop, so we'll just exit. We also set the exit flag to let
@@ -270,11 +288,6 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
                 lock_guard<recursive_mutex> lock(m);
                 exitFlag = true;
                 printf("Thread %d caught shutdown exception, exiting.\n", threadID);
-            }
-            auto end = chrono::steady_clock::now();
-            if (currentTestName.size()) {
-                lock_guard<mutex> lock(testTimeLock);
-                testTimes.emplace(make_pair(chrono::duration_cast<std::chrono::milliseconds>(end - start), currentTestName));
             }
         });
         threadList.push_back(move(t));
@@ -314,21 +327,30 @@ int tpunit::TestFixture::tpunit_detail_do_run(const set<string>& include, const 
 
         cout << endl;
         cout << "Slowest Test Classes: " << endl;
+
+        // Combine total thread time so its not obscured by multi-threaded tests.
+        long long totalTestTime = 0;
+        for (auto testTime : testTimes) {
+            totalTestTime += testTime.first.count();
+        }
+
         auto it = testTimes.rbegin();
         for (size_t i = 0; i < 10; i++) {
             if (it == testTimes.rend()) {
                 break;
             }
-            cout << it->first << ": " << it->second << endl;
+            cout << it->first << ": " << it->second << " : " << (static_cast<double>(it->first.count()) / totalTestTime) * 100.0 << "% of total test time" << endl;
             it++;
         }
+
+        cout << "Total test time across threads: " << totalTestTime << "ms" << endl;
 
         return tpunit_detail_stats()._failures;
     }
     return 1;
 }
 
-bool tpunit::TestFixture::tpunit_detail_fp_equal(float lhs, float rhs, unsigned char ulps) {
+bool tpunit::_TestFixture::tpunit_detail_fp_equal(float lhs, float rhs, unsigned char ulps) {
     union {
        float f;
        char  c[4];
@@ -355,7 +377,7 @@ bool tpunit::TestFixture::tpunit_detail_fp_equal(float lhs, float rhs, unsigned 
            ((lhs_u.c[lsb] > rhs_u.c[lsb]) ? lhs_u.c[lsb] - rhs_u.c[lsb] : rhs_u.c[lsb] - lhs_u.c[lsb]) <= ulps;
 }
 
-bool tpunit::TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsigned char ulps) {
+bool tpunit::_TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsigned char ulps) {
     union {
        double d;
        char   c[8];
@@ -393,25 +415,25 @@ bool tpunit::TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsigne
            ((lhs_u.c[lsb] > rhs_u.c[lsb]) ? lhs_u.c[lsb] - rhs_u.c[lsb] : rhs_u.c[lsb] - lhs_u.c[lsb]) <= ulps;
 }
 
-void tpunit::TestFixture::tpunit_detail_assert(TestFixture* f, const char* _file, int _line) {
+void tpunit::_TestFixture::tpunit_detail_assert(_TestFixture* f, const char* _file, int _line) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("   assertion #%i at %s:%i\n", ++f->_stats._assertions, _file, _line);
     f->printTestBuffer();
 }
 
-void tpunit::TestFixture::tpunit_detail_exception(TestFixture* f, method* _method, const char* _message) {
+void tpunit::_TestFixture::tpunit_detail_exception(_TestFixture* f, method* _method, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("   exception #%i from %s with cause: %s\n", ++f->_stats._exceptions, _method->_name, _message);
     f->printTestBuffer();
 }
 
-void tpunit::TestFixture::tpunit_detail_trace(TestFixture* f, const char* _file, int _line, const char* _message) {
+void tpunit::_TestFixture::tpunit_detail_trace(_TestFixture* f, const char* _file, int _line, const char* _message) {
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("   trace #%i at %s:%i: %s\n", ++f->_stats._traces, _file, _line, _message);
     f->printTestBuffer();
 }
 
-void tpunit::TestFixture::tpunit_detail_do_method(tpunit::TestFixture::method* m) {
+void tpunit::_TestFixture::tpunit_detail_do_method(tpunit::_TestFixture::method* m) {
     try {
        // If we're exiting, then don't try and run any more tests.
        if (exitFlag) {
@@ -433,14 +455,14 @@ void tpunit::TestFixture::tpunit_detail_do_method(tpunit::TestFixture::method* m
     }
 }
 
-void tpunit::TestFixture::tpunit_detail_do_methods(tpunit::TestFixture::method* m) {
+void tpunit::_TestFixture::tpunit_detail_do_methods(tpunit::_TestFixture::method* m) {
     while (m) {
        tpunit_detail_do_method(m);
        m = m->_next;
     }
 }
 
-void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
+void tpunit::_TestFixture::tpunit_detail_do_tests(_TestFixture* f) {
     method* t = f->_tests;
     list<thread> testThreads;
     while(t) {
@@ -494,35 +516,35 @@ void tpunit::TestFixture::tpunit_detail_do_tests(TestFixture* f) {
     }
 }
 
-void tpunit::TestFixture::TESTINFO(const string& newLog) {
+void tpunit::_TestFixture::TESTINFO(const string& newLog) {
     lock_guard<recursive_mutex> lock(*(_mutex));
 
     // Format the buffer with an indent as we print it out.
     testOutputBuffer += "    " + newLog + "\n";
 }
 
-void tpunit::TestFixture::printTestBuffer() {
+void tpunit::_TestFixture::printTestBuffer() {
     lock_guard<recursive_mutex> lock(*(_mutex));
 
     cout << testOutputBuffer;
     testOutputBuffer = "";
 }
 
-tpunit::TestFixture::stats& tpunit::TestFixture::tpunit_detail_stats() {
+tpunit::_TestFixture::stats& tpunit::_TestFixture::tpunit_detail_stats() {
     static stats _stats;
     return _stats;
 }
 
-list<tpunit::TestFixture*>* tpunit::TestFixture::tpunit_detail_fixture_list() {
-    static list<TestFixture*>* _fixtureList = new list<TestFixture*>;
+list<tpunit::_TestFixture*>* tpunit::_TestFixture::tpunit_detail_fixture_list() {
+    static list<_TestFixture*>* _fixtureList = new list<_TestFixture*>;
     return _fixtureList;
 }
 
-int tpunit::Tests::run(int threads, std::function<void()> threadInitFunction) {
-    return TestFixture::tpunit_detail_do_run(threads, threadInitFunction);
+int tpunit::Tests::run(int threads, std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction) {
+    return _TestFixture::tpunit_detail_do_run(threads, threadInitFunction, sortFunction);
 }
 
 int tpunit::Tests::run(const set<string>& include, const set<string>& exclude,
-                       const list<string>& before, const list<string>& after, int threads, std::function<void()> threadInitFunction) {
-    return TestFixture::tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction);
+                       const list<string>& before, const list<string>& after, int threads, std::function<void()> threadInitFunction, std::function<bool(_TestFixture*, _TestFixture*)> sortFunction) {
+    return _TestFixture::tpunit_detail_do_run(include, exclude, before, after, threads, threadInitFunction, sortFunction);
 }

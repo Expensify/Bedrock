@@ -32,7 +32,11 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testBase32Conversion),
                                     TEST(LibStuff::testContains),
                                     TEST(LibStuff::testFirstOfMonth),
-                                    TEST(LibStuff::SQResultTest)
+                                    TEST(LibStuff::SREMatchTest),
+                                    TEST(LibStuff::SREReplaceTest),
+                                    TEST(LibStuff::SQResultTest),
+                                    TEST(LibStuff::testReturningClause),
+                                    TEST(LibStuff::SRedactSensitiveValuesTest)
                                     )
     { }
 
@@ -188,14 +192,14 @@ struct LibStuff : tpunit::TestFixture {
                      "header2: value2\n"
                      "header3: value3\r\n"
                      "\r\n"
-                     "ignored body";
+                     "this is the body";
         processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        ASSERT_EQUAL((int64_t)processed, (int)recvBuffer.size() - (int)strlen("ignored body"));
+        ASSERT_EQUAL((int64_t)processed, (int)recvBuffer.size());
         ASSERT_EQUAL(methodLine, "some method line");
         ASSERT_EQUAL(headers["header1"], "value1");
         ASSERT_EQUAL(headers["header2"], "value2");
         ASSERT_EQUAL(headers["header3"], "value3");
-        ASSERT_EQUAL(content, "");
+        ASSERT_EQUAL(content, "this is the body");
 
         recvBuffer = "some method line\r\n"
                      "Content-Length: 100\r"
@@ -638,6 +642,69 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -25), "2018-06-01");
     }
 
+    void SREMatchTest() {
+        // Basic case.
+        ASSERT_TRUE(SREMatch(".*cat.*", "this contains cat"));
+        ASSERT_FALSE(SREMatch(".*cat.*", "this does not"));
+
+        // Case sensitive but case doesn't match.
+        ASSERT_FALSE(SREMatch(".*CAT.*", "this contains cat"));
+
+        // Case-insensitive.
+        ASSERT_TRUE(SREMatch(".*CAT.*", "this contains cat", false));
+        ASSERT_FALSE(SREMatch(".*CAT.*", "this does not", false));
+
+        // Capture groups don't break internal code.
+        ASSERT_TRUE(SREMatch(".*cat.*", "(this) (contains) (cat)"));
+        ASSERT_FALSE(SREMatch(".*cat.*", "(this) (does) (not)"));
+
+        // Partial matches aren't counted.
+        ASSERT_FALSE(SREMatch("cat", "this contains cat"));
+
+        // Now try with partial specified, should work.
+        ASSERT_TRUE(SREMatch("cat", "this contains cat", true, true));
+
+        // Test returning matches.
+        vector<string> matches;
+        SREMatch(R"((\w+) (\w+) (\w+))", "this contains cat", false, false, &matches);
+
+        // The whole string, and the three groups.
+        ASSERT_EQUAL(matches.size(), 4);
+        ASSERT_EQUAL(matches[0], "this contains cat");
+        ASSERT_EQUAL(matches[1], "this");
+        ASSERT_EQUAL(matches[2], "contains");
+        ASSERT_EQUAL(matches[3], "cat");
+
+        // Let's do multiple matches.
+        string catNames = "kitty Whiskers, kitty Mittens, kitty Snowball";
+        auto matchList = SREMatchAll(R"(kitty\s+(\w+))", catNames);
+        ASSERT_EQUAL(matchList.size(), 3);
+        ASSERT_EQUAL(matchList[0][1], "Whiskers");
+        ASSERT_EQUAL(matchList[1][1], "Mittens");
+        ASSERT_EQUAL(matchList[2][1], "Snowball");
+    }
+
+    void SREReplaceTest() {
+        // This specifically tests multiple replacements and that the final string is longer than the starting string.
+        string from = "a cat is not a dog it is a cat";
+        string expected = "a dinosaur is not a dog it is a dinosaur";
+        string result = SREReplace("cat", from, "dinosaur");
+        ASSERT_EQUAL(result, expected);
+
+        // And test case sensitivity (disabled)
+        string result2 = SREReplace("CAT", from, "dinosaur");
+        ASSERT_EQUAL(result2, from);
+
+        // And test case sensitivity (enabled)
+        string result3 = SREReplace("CAT", from, "dinosaur", false);
+        ASSERT_EQUAL(result3, expected);
+
+        // Test match groups.
+        string from2 = "a cat did something to a dog";
+        string result4 = SREReplace("cat(.*)dog", from2, "chicken$1horse");
+        ASSERT_EQUAL(result4, "a chicken did something to a horse");
+    }
+
     void SQResultTest() {
         SQLite db(":memory:", 1000, 1000, 1);
         db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
@@ -678,5 +745,50 @@ struct LibStuff : tpunit::TestFixture {
         db.read("SELECT name as coco, value FROM testTable ORDER BY id;", result);
         db.rollback();
         ASSERT_EQUAL(result[0]["coco"], "name1");
+    }
+
+    void testReturningClause() {
+        // Given a sqlite DB with a table and pre inserted values
+        SQLite db(":memory:", 1000, 1000, 1);
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        db.write("CREATE TABLE testReturning(id INTEGER PRIMARY KEY, name STRING, value STRING, created DATE);");
+        db.write("INSERT INTO testReturning VALUES(11, 'name1', 'value1', '2024-12-02');");
+        db.write("INSERT INTO testReturning VALUES(21, 'name2', 'value2', '2024-12-03');");
+        db.prepare();
+        db.commit();
+
+        // When trying to delete a row by returning the deleted items
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
+        SQResult result;
+        db.writeIdempotent("DELETE FROM testReturning WHERE id = 21 AND name = 'name2' RETURNING id, name;", result);
+        db.prepare();
+        db.commit();
+
+        // Verify that deleted items were returned as expected
+        ASSERT_EQUAL("21", result[0][0]);
+        ASSERT_EQUAL("name2", result[0][1]);
+
+        // Verify that the row was successfully deleted and now the table has only one row
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
+        db.read("SELECT name, value FROM testReturning ORDER BY id;", result);
+        db.rollback();
+
+        ASSERT_EQUAL(1, result.size());
+        ASSERT_EQUAL(result[0]["name"], "name1");
+        ASSERT_EQUAL(result[0]["value"], "value1");
+    }
+
+    void SRedactSensitiveValuesTest() {
+        string logValue = R"({"edits":["test1", "test2", "test3"]})";
+        SRedactSensitiveValues(logValue);
+        ASSERT_EQUAL(R"({"edits":["REDACTED"]})", logValue);
+
+        logValue = R"({"authToken":"123IMANAUTHTOKEN321"})";
+        SRedactSensitiveValues(logValue);
+        ASSERT_EQUAL(R"({"authToken":<REDACTED>)", logValue);
+
+        logValue = R"({"html":"private conversation happens here"})";
+        SRedactSensitiveValues(logValue);
+        ASSERT_EQUAL(R"({"html":"<REDACTED>"})", logValue);
     }
 } __LibStuff;

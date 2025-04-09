@@ -5,7 +5,7 @@
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 
-bool isBetweenSecondsInclusive(uint64_t startTimestamp, uint64_t endTimestamp, string timestampString) {
+bool isBetweenSecondsInclusive(uint64_t startTimestamp, uint64_t endTimestamp, const string& timestampString) {
     uint64_t testTime = startTimestamp;
     while (true) {
         string testTimeString = SComposeTime("%Y-%m-%d %H:%M:%S", testTime);

@@ -4,7 +4,10 @@
 #include <libstuff/STCPManager.h>
 #include <sqlitecluster/SQLite.h>
 #include <sqlitecluster/SQLitePool.h>
-#include <sqlitecluster/SQLiteSequentialNotifier.h>
+
+#include <mutex>
+#include <condition_variable>
+#include <queue>
 
 // This file is long and complex. For each nested sub-structure (I.e., classes inside classes) we have attempted to
 // arrange things as such:
@@ -22,12 +25,12 @@
  * Rules for maintaining SQLiteNode methods so that atomicity works as intended.
  *
  * No non-const members should be publicly exposed.
- * Any public method that is `const` must shared_lock<>(nodeMutex).
+ * Any public method that is `const` must shared_lock<>(_stateMutex).
  * Alternatively, a public `const` method that is a simple getter for an atomic property can skip the lock.
- * Any public method that is non-const must unique_lock<>(nodeMutex) before changing any internal state, and must hold
+ * Any public method that is non-const must unique_lock<>(_stateMutex) before changing any internal state, and must hold
  * this lock until it is done changing state to make this method's changes atomic.
  * Any private methods must not call public methods.
- * Any private methods must not lock nodeMutex (for recursion reasons).
+ * Any private methods must not lock _stateMutex (for recursion reasons).
  * Any public methods must not call other public methods.
  *
  * `_replicate` is a special exception because it runs in multiple threads internally. It needs to handle locking if it
@@ -55,7 +58,7 @@ enum class SQLiteNodeState {
 // Distributed, leader/follower, failover, transactional DB cluster
 class SQLiteNode : public STCPManager {
     // This exists to expose internal state to a test harness. It is not used otherwise.
-    friend class SQLiteNodeTest;
+    friend struct SQLiteNodeTest;
     friend class SQLiteNodeTester;
 
   public:
@@ -86,9 +89,6 @@ class SQLiteNode : public STCPManager {
     // The minimum frequency of APPROVE_TRANSACTION messages we'll send when following, back to leader, to indicate our own current synchronization state.
     // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th BEGIN_TRANSACTION message.
     static const size_t MIN_APPROVE_FREQUENCY;
-
-    // The maximum number of commits behind we'll allow a quorum number of peers to be before we block commits on leader.
-    static atomic<uint64_t> MAX_PEER_FALL_BEHIND;
 
     // Get and SQLiteNode State from it's name.
     static SQLiteNodeState stateFromName(const string& name);
@@ -157,8 +157,9 @@ class SQLiteNode : public STCPManager {
     // Can block.
     bool shutdownComplete() const;
 
-    // Call this if you want to shut down the node.
-    void beginShutdown();
+    // Call this if you want to shut down the node. Returns true if shutdown was initiated,
+    // false if shutdown was already happening.
+    bool beginShutdown();
 
     // kill all peer connections on this node.
     void kill();
@@ -167,7 +168,7 @@ class SQLiteNode : public STCPManager {
     void postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Constructor/Destructor
-    SQLiteNode(SQLiteServer& server, shared_ptr<SQLitePool> dbPool, const string& name, const string& host,
+    SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPool, const string& name, const string& host,
                const string& peerList, int priority, uint64_t firstTimeout, const string& version,
                const string& commandPort = "localhost:8890");
     ~SQLiteNode();
@@ -180,7 +181,7 @@ class SQLiteNode : public STCPManager {
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
 
-    // Look up the correct peer by the name it supplies in a NODE_LOGIN
+    // Look up the correct peer by the name it supplies in a LOGIN
     // message. Does not lock, but this method is const and all it does is
     // access _peerList and peer->name, both of which are const. So it is safe
     // to call from other public functions.
@@ -207,11 +208,7 @@ class SQLiteNode : public STCPManager {
     // for logging.
     static const string CONSISTENCY_LEVEL_NAMES[NUM_CONSISTENCY_LEVELS];
 
-    // Monotonically increasing thread counter, used for thread IDs for logging purposes.
-    static atomic<int64_t> currentReplicateThreadID;
-
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
-    static size_t _initQuorumSize(const vector<SQLitePeer*>& _peerList, const int priority);
 
     // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
     // *correct* DB for the thread that's making the call (i.e., you can't use the node's internal DB from a worker
@@ -228,9 +225,11 @@ class SQLiteNode : public STCPManager {
 
     void _changeState(SQLiteNodeState newState, uint64_t commitIDToCancelAfter = 0);
 
+    string _getLostQuorumLogMessage() const;
+
     // Handlers for transaction messages.
-    void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message, bool wasConflict);
-    void _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime, uint64_t threadStartTime);
+    void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
+    void _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime);
     int _handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
     void _handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
 
@@ -261,10 +260,11 @@ class SQLiteNode : public STCPManager {
     //
     // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
     // which happens when a node stops FOLLOWING.
-    void _replicate(SQLitePeer* peer, SData command, size_t sqlitePoolIndex, uint64_t threadAttemptStartTimestamp);
+    void _replicate();
 
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
+    void _sendStandupResponse(SQLitePeer* peer, const SData& message);
     void _sendPING(SQLitePeer* peer);
     void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
     void _sendToPeer(SQLitePeer* peer, const SData& message);
@@ -272,6 +272,10 @@ class SQLiteNode : public STCPManager {
     // Choose the best peer to synchronize from. If no other peer is logged in, or no logged in peer has a higher
     // commitCount that we do, this will return null.
     void _updateSyncPeer();
+
+    void _dieIfForkedFromCluster();
+
+    void _processPeerMessages(uint64_t& nextActivity, SQLitePeer* peer, bool unlimited = false);
 
     const string _commandAddress;
     const string _name;
@@ -281,11 +285,6 @@ class SQLiteNode : public STCPManager {
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
     const int _originalPriority;
 
-    // If we're leading and we're too far ahead of the rest of the cluster, we block new commits. This prevents us from forking too far ahead of everyone else.
-    const size_t _quorumSize;
-    bool _commitsBlocked{false};
-    set<SQLitePeer*> _upToDatePeers;
-
     // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command port".
     const unique_ptr<Port> _port;
 
@@ -293,7 +292,7 @@ class SQLiteNode : public STCPManager {
     const string _version;
 
     // These are sockets that have been accepted on the node port but have not yet been associated with a peer (because
-    // they need to send a NODE_LOGIN message with their name first).
+    // they need to send a LOGIN message with their name first).
     set<Socket*> _unauthenticatedIncomingSockets;
 
     // The write consistency requested for the current in-progress commit.
@@ -320,16 +319,16 @@ class SQLiteNode : public STCPManager {
     // Set to true to indicate we're attempting to shut down.
     atomic<bool> _isShuttingDown;
 
+    // When we spontaneously lose quorum (due to an unexpected node disconnection) we log the time. Later, if we detect we've forked,
+    // We show this time in a log line as a diagnostic message.
+    atomic<uint64_t> _lastLostQuorum = 0;
+
     // Store the ID of the last transaction that we replicated to peers. Whenever we do an update, we will try and send
     // any new committed transactions to peers, and update this value.
     uint64_t _lastSentTransactionID;
 
     // Pointer to the peer that is the leader. Null if we're the leader, or if we don't have a leader yet.
     atomic<SQLitePeer*> _leadPeer;
-
-    // These are used in _replicate, _changeState, and _recvSynchronize to coordinate the replication threads.
-    SQLiteSequentialNotifier _leaderCommitNotifier;
-    SQLiteSequentialNotifier _localCommitNotifier;
 
     // We can spin up threads to handle responding to `SYNCHRONIZE` messages out-of-band. We want to make sure we don't
     // shut down in the middle of running these, so we keep a count of them.
@@ -342,21 +341,17 @@ class SQLiteNode : public STCPManager {
     // Remove. See: https://github.com/Expensify/Expensify/issues/208449
     atomic<int> _priority;
 
-    // Counter of the total number of currently active replication threads. This is used to let us know when all
-    // threads have finished.
-    atomic<int64_t> _replicationThreadCount;
-
-    // State variable that indicates when the above threads should quit.
-    atomic<bool> _replicationThreadsShouldExit;
-
     // Server that implements `SQLiteServer` interface.
     SQLiteServer& _server;
 
     // Stopwatch to track if we're giving up on the server preventing a standdown.
     SStopwatch _standDownTimeout;
 
-   // Our current State.
+    // Our current State.
     atomic<SQLiteNodeState> _state;
+
+    // Keeps track if we have closed the command port for commits fallen behind.
+    bool _blockedCommandPortForBeingBehind{false};
 
     // This is an integer that increments every time we change states. This is useful for responses to state changes
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
@@ -373,18 +368,13 @@ class SQLiteNode : public STCPManager {
     // Remove. See: https://github.com/Expensify/Expensify/issues/208439
     SQLitePeer* _syncPeer;
 
-    // Debugging info. Log the current number of transactions we're actually performing in replicate threads.
-    // This can be removed once we've figured out why replication falls behind. See this issue: https://github.com/Expensify/Expensify/issues/210528
-    atomic<size_t> _concurrentReplicateTransactions = 0;
-
-    // We keep a set of strings that are the names of nodes we've forked from, in the case we ever receive a hash mismatch while trying to synchronize.
-    // Whenever we become LEADING or FOLLOWING this is cleared. This resets the case where one node has forked, we attempt to synchronize from it, and fail,
-    // but later synchronize from someone else. Once we've come up completely, we no longer "hold a grudge" against this node, which will likely get fixed
-    // while we're online.
-    // In the event that this list becomes longer than half the cluster size, the node kills itself and logs that it's in an unrecoverable state.
-    set<string> _forkedFrom;
-
     // A pointer to a SQLite instance that is passed to plugin's stateChanged function. This prevents plugins from operating on the same handle that
     // the sync node is when they run queries in stateChanged.
     SQLite* pluginDB;
+
+    thread* _replicateThread = nullptr;
+    mutex _replicateMutex;
+    condition_variable _replicateCV;
+    queue<pair<SQLitePeer*, SData>> _replicateQueue;
+    atomic<bool> _shouldReplicateThreadExit;
 };

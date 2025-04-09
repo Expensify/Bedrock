@@ -8,8 +8,7 @@ class SQLitePeer {
     enum class Response {
         NONE,
         APPROVE,
-        DENY,
-        ABSTAIN
+        DENY
     };
 
     enum class PeerPostPollStatus {
@@ -46,6 +45,8 @@ class SQLitePeer {
     // If there are no messages, throws `std::out_of_range`.
     SData popMessage();
 
+    // NOTE: If this returns PeerPostPollStatus::SOCKET_CLOSED then the caller must call `reset` on this peer.
+    // This is not done internally becuase we need to expose the outstanding data on the socket before deleting it.
     PeerPostPollStatus postPoll(fd_map& fdm, uint64_t& nextActivity);
 
     // Send a message to this peer. Thread-safe.
@@ -62,6 +63,9 @@ class SQLitePeer {
 
     SQLitePeer(const string& name_, const string& host_, const STable& params_, uint64_t id_);
     ~SQLitePeer();
+
+    // Returns true if it seems there's more data to send on this peer connection.
+    bool remainingDataToSend() const;
 
     // This is const because it's public, and we don't want it to be changed outside of this class, as it needs to
     // be synchronized with `hash`. However, it's often useful just as it is, so we expose it like this and update
@@ -87,6 +91,9 @@ class SQLitePeer {
     atomic<Response> transactionResponse;
     atomic<string> version;
     atomic<uint64_t> lastPingTime;
+
+    // Set to true when this peer is known to be unusable, I.e., when it has a database that is forked from us.
+    atomic<bool> forked;
 
   private:
     // For initializing the permafollower value from the params list.

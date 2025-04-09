@@ -82,7 +82,7 @@ pair<string, bool> BedrockPlugin_Cache::LRUMap::popLRU() {
     return make_pair(nameCopy, true);
 }
 
-int64_t BedrockPlugin_Cache::initCacheSize(string cacheString) {
+int64_t BedrockPlugin_Cache::initCacheSize(const string& cacheString) {
     // Check the configuration
     const string& maxCache = SToUpper(cacheString);
     int64_t maxCacheSize = SToInt64(maxCache);

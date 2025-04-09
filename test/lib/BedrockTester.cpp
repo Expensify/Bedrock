@@ -1,4 +1,5 @@
 #include "BedrockTester.h"
+#include "libstuff/libstuff.h"
 
 #include <cstring>
 #include <iostream>
@@ -18,9 +19,10 @@ mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
 const bool BedrockTester::ENABLE_HCTREE{false};
 
-string BedrockTester::getTempFileName(string prefix) {
+string BedrockTester::getTempFileName(const string& prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
-    char buffer[templateStr.size() + 1];
+    char buffer[100];
+    memset(buffer, 0, 100);
     strcpy(buffer, templateStr.c_str());
     int filedes = mkstemps(buffer, 3);
     close(filedes);
@@ -152,7 +154,7 @@ BedrockTester::~BedrockTester() {
     _testers.erase(this);
 }
 
-void BedrockTester::updateArgs(const map<string, string> args) {
+void BedrockTester::updateArgs(const map<string, string>& args) {
     for (auto& row : args) {
         _args[row.first] = row.second;
     }
@@ -200,22 +202,22 @@ string BedrockTester::startServer(bool wait) {
     #define xstr(a) str(a)
     #define str(a) #a
 
-    list<string> valgrind = SParseList(xstr(VALGRIND), ' ');
-    if (valgrind.size()) {
-        serverName = valgrind.front();
-        cout << "Starting bedrock server in '" << serverName << "' with args: " << endl;
-        auto it = valgrind.rbegin();
-        while (it != valgrind.rend()) {
-            args.push_front(*it);
-            it++;
+        list<string> valgrind = SParseList(xstr(VALGRIND), ' ');
+        if (valgrind.size()) {
+            serverName = valgrind.front();
+            cout << "Starting bedrock server in '" << serverName << "' with args: " << endl;
+            auto it = valgrind.rbegin();
+            while (it != valgrind.rend()) {
+                args.push_front(*it);
+                it++;
+            }
+            cout << SComposeList(args, " ") << endl;
+            cout << "==========================" << endl;
         }
-        cout << SComposeList(args, " ") << endl;
-        cout << "==========================" << endl;
-    }
 #endif
 
         // Convert our c++ strings to old-school C strings for exec.
-        char* cargs[args.size() + 1];
+        char** cargs = (char**)malloc((args.size() + 1) * sizeof(char*));
         int count = 0;
         for(string arg : args) {
             char* newstr = (char*)malloc(arg.size() + 1);
@@ -271,7 +273,7 @@ string BedrockTester::startServer(bool wait) {
                 return result[0].content;
             }
             // This will happen if the server's not up yet. We'll just try again.
-            usleep(100000); // 0.1 seconds.
+            usleep(50'000); // 0.05 seconds.
             continue;
         }
     }
@@ -287,11 +289,11 @@ void BedrockTester::stopServer(int signal) {
     }
 }
 
-string BedrockTester::executeWaitVerifyContent(SData request, const string& expectedResult, bool control, uint64_t retryTimeoutUS) {
+string BedrockTester::executeWaitVerifyContent(const SData& request, const string& expectedResult, bool control, uint64_t retryTimeoutUS) {
     uint64_t start = STimeNow();
     vector<SData> results;
     do {
-        results = executeWaitMultipleData({request}, 1, control);
+        results = BedrockTester::executeWaitMultipleData({request}, 1, control);
 
         if (results.size() > 0 && SStartsWith(results[0].methodLine, expectedResult)) {
             // good, got the result we wanted
@@ -308,13 +310,13 @@ string BedrockTester::executeWaitVerifyContent(SData request, const string& expe
     if (!SStartsWith(results[0].methodLine, expectedResult)) {
         STable temp;
         temp["originalMethod"] = results[0].methodLine;
-        STHROW("Expected " + expectedResult + ", but got '" + results[0].methodLine + "'. " + results[0]["exceptionSource"], temp);
+        STHROW("From command " + request.methodLine + ", expected " + expectedResult + ", but got '" + results[0].methodLine + "'. " + results[0]["exceptionSource"], temp);
     }
 
     return results[0].content;
 }
 
-STable BedrockTester::executeWaitVerifyContentTable(SData request, const string& expectedResult) {
+STable BedrockTester::executeWaitVerifyContentTable(const SData& request, const string& expectedResult) {
     string result = executeWaitVerifyContent(request, expectedResult);
     return SParseJSONObject(result);
 }
@@ -340,7 +342,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
     // Spawn a thread for each connection.
     for (int i = 0; i < connections; i++) {
-        threads.emplace_back([&, i](){
+        threads.emplace_back([&](){
             int socket = 0;
 
             // This continues until there are no more requests to process.
@@ -432,7 +434,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                 SFastBuffer recvBuffer("");
                 string methodLine, content;
                 STable headers;
-                int count = 0;
                 uint64_t recvStart = STimeNow();
                 while (!SParseHTTP(recvBuffer.c_str(), recvBuffer.size(), methodLine, headers, content)) {
                     // Poll the socket, so we get a timeout.
@@ -443,7 +444,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
                     // wait for a second...
                     poll(&readSock, 1, 1000);
-                    count++;
                     if (readSock.revents & POLLIN) {
                         bool result = S_recvappend(socket, recvBuffer);
                         if (!result) {
@@ -536,7 +536,7 @@ SQLite& BedrockTester::getSQLiteDB()
 {
     if (!_db) {
         // Assumes wal2 mode.
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, "", 0, ENABLE_HCTREE);
+        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
     }
     return *_db;
 }
@@ -546,35 +546,47 @@ void BedrockTester::freeDB() {
     _db = nullptr;
 }
 
-string BedrockTester::readDB(const string& query, bool online)
+string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS)
 {
-    if (ENABLE_HCTREE && online) {
-        SData command("Query");
-        command["Query"] = query;
-        command["Format"] = "JSON";
-        auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
-        if (row0 == "") {
-            return "";
-        }
-
-        return SParseJSONArray(SParseJSONArray(row0).front()).front();
-    } else {
-        SQLite& db = getSQLiteDB();
-        db.beginTransaction();
-        string result = db.read(query);
-        db.rollback();
-        return result;
+    SQResult result;
+    bool success = readDB(query, result, online, timeoutMS);
+    if (!success) {
+        return "";
     }
+
+    if (result.empty()) {
+        return "";
+    }
+
+    if (result.rows[0].empty()) {
+        return "";
+    }
+
+    return result.rows[0][0];
 }
 
-bool BedrockTester::readDB(const string& query, SQResult& result, bool online)
+bool BedrockTester::readDB(const string& query, SQResult& result, bool online, int64_t timeoutMS)
 {
     if (ENABLE_HCTREE && online) {
+        string fixedQuery = query;
+        if (!SEndsWith(query, ";")) {
+            fixedQuery += ";";
+        }
         result.clear();
         SData command("Query");
-        command["Query"] = query;
+        command["Query"] = fixedQuery;
         command["Format"] = "JSON";
-        auto row0 = SParseJSONObject(executeWaitMultipleData({command})[0].content)["rows"];
+        if (timeoutMS) {
+            command["timeout"] = to_string(timeoutMS);
+        }
+        auto commandResult = executeWaitMultipleData({command}, 1);
+        auto row0 = SParseJSONObject(commandResult[0].content)["rows"];
+        auto headerString = SParseJSONObject(commandResult[0].content)["headers"];
+
+        list<string> headers = SParseJSONArray(headerString);
+        for (const auto& h : headers) {
+            result.headers.push_back(h);
+        }
 
         list<string> rows = SParseJSONArray(row0);
         for (const string& rowStr : rows) {
@@ -599,10 +611,28 @@ bool BedrockTester::waitForStatusTerm(const string& term, const string& testValu
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
-            string result = SParseJSONObject(executeWaitVerifyContent(SData("Status"), "200", true))[term];
+            string result = SParseJSONObject(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))[term];
 
             // if the value matches, return, otherwise wait
             if (result == testValue) {
+                return true;
+            }
+        } catch (...) {
+            // Doesn't do anything, we'll fall through to the sleep and try again.
+        }
+        usleep(100'000);
+    }
+    return false;
+}
+
+bool BedrockTester::waitForLeadingFollowing(uint64_t timeoutUS) {
+    uint64_t start = STimeNow();
+    while (STimeNow() < start + timeoutUS) {
+        try {
+            string result = SParseJSONObject(BedrockTester::executeWaitVerifyContent(SData("Status"), "200", true))["state"];
+
+            // if the value matches, return, otherwise wait
+            if (result == "LEADING" || result == "FOLLOWING") {
                 return true;
             }
         } catch (...) {

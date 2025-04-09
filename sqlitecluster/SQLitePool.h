@@ -7,7 +7,7 @@ class SQLitePool {
   public:
     // Create a pool of DB handles.
     SQLitePool(size_t maxDBs, const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-               const string& synchronous = "", int64_t mmapSizeGB = 0, bool hctree = false);
+               int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE");
     ~SQLitePool();
 
     // Get the base object (the first one created, which uses the `journal` table). Note that if called by multiple
@@ -53,8 +53,10 @@ class SQLiteScopedHandle {
     SQLiteScopedHandle(SQLitePool& pool, size_t index);
     ~SQLiteScopedHandle();
     SQLite& db();
+    void release();
 
   private:
     SQLitePool& _pool;
     size_t _index;
+    bool _released;
 };

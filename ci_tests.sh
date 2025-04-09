@@ -1,9 +1,6 @@
 #!/bin/bash
 set -e
 
-export CXX=g++-13
-export CC=gcc-13
-
 # Add the current working directory to $PATH so that tests can find bedrock.
 export PATH=$PATH:`pwd`
 
@@ -31,6 +28,9 @@ mark_fold() {
 
   echo "::group::${name}"
 }
+
+export CC="clang-18"
+export CXX="clang++-18"
 
 # don't print out versions until after they are installed
 ${CC} --version

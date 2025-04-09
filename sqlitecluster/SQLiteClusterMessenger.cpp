@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-SQLiteClusterMessenger::SQLiteClusterMessenger(const shared_ptr<const SQLiteNode> node)
+SQLiteClusterMessenger::SQLiteClusterMessenger(const shared_ptr<const SQLiteNode>& node)
  : _node(node), _socketPool()
 { }
 
@@ -129,10 +129,10 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
     // that needs serialization, and if so, we serialize that as well.
     if (command.httpsRequests.size()) {
         request["httpsRequests"] = command.serializeHTTPSRequests();
-        string serializedData = command.serializeData();
-        if (serializedData.size()) {
-            request["serializedData"] = move(serializedData);
-        }
+    }
+    string serializedData = command.serializeData();
+    if (serializedData.size()) {
+        request["serializedData"] = move(serializedData);
     }
 
     request.nameValueMap["ID"] = command.id;
@@ -220,7 +220,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
     return true;
 }
 
-unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(string address) {
+unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(const string& address) {
     unique_ptr<SHTTPSManager::Socket> s;
 
     // SParseURI expects a typical http or https scheme.

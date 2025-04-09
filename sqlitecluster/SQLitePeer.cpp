@@ -1,7 +1,10 @@
 #include "SQLitePeer.h"
+#include "BedrockServer.h"
 
 #include <libstuff/SData.h>
 #include <libstuff/SRandom.h>
+
+#include <sys/ioctl.h>
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << name << "} "
@@ -23,6 +26,7 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     transactionResponse(Response::NONE),
     version(),
     lastPingTime(0),
+    forked(false),
     hash()
 { }
 
@@ -33,6 +37,33 @@ SQLitePeer::~SQLitePeer() {
 bool SQLitePeer::connected() const {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     return (socket && socket->state.load() == STCPManager::Socket::CONNECTED);
+}
+
+bool SQLitePeer::remainingDataToSend() const {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
+
+    // If there's no socket, there's no data to send (even if there's data in the sendbuffer, which would be weird.)
+    if (!socket) {
+        return false;
+    }
+
+    // If the sendbuffer's not empty, there's data to send.
+    if (!socket->sendBufferEmpty()) {
+        return true;
+    }
+
+    // Does the OS say there's data left to send?
+    int unsentBytes = 0;
+    if (ioctl(socket->s, TIOCOUTQ, &unsentBytes) == 0) {
+        if (unsentBytes) {
+            SINFO("Unsent buffer of size " << unsentBytes);
+            return true;
+        }
+    } else {
+        SWARN("Couldn't check socket buffer size.");
+    }
+
+    return false;
 }
 
 void SQLitePeer::reset() {
@@ -49,6 +80,7 @@ void SQLitePeer::reset() {
     version = "";
     lastPingTime = 0,
     setCommit(0, "");
+    forked = false;
 }
 
 void SQLitePeer::shutdownSocket() {
@@ -89,7 +121,6 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextA
                 } else {
                     SHMMM("Lost peer connection after " << (STimeNow() - socket->openTime) / 1000 << "ms, reconnecting in " << delay / 1000 << "ms");
                 }
-                reset();
                 nextReconnect = STimeNow() + delay;
                 nextActivity = min(nextActivity, nextReconnect.load());
                 return PeerPostPollStatus::SOCKET_CLOSED;
@@ -175,9 +206,6 @@ string SQLitePeer::responseName(Response response) {
         case Response::DENY:
             return "DENY";
             break;
-        case Response::ABSTAIN:
-            return "ABSTAIN";
-            break;
         default:
             return "";
     }
@@ -196,6 +224,7 @@ void SQLitePeer::getCommit(uint64_t& count, string& hashString) const {
 }
 
 STable SQLitePeer::getData() const {
+    lock_guard<decltype(peerMutex)> lock(peerMutex);
     // Add all of our standard stuff.
     STable result({
         {"name", name},
@@ -236,9 +265,7 @@ void SQLitePeer::sendMessage(const SData& message) {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         size_t bytesSent = 0;
-        if (socket->send(message.serialize(), &bytesSent)) {
-            SINFO("No error sending " << message.methodLine << " to peer " << name << " (" << bytesSent << " bytes actually sent).");
-        } else {
+        if (!socket->send(message.serialize(), &bytesSent)) {
             SHMMM("Error sending " << message.methodLine << " to peer " << name << ".");
         }
     } else {

@@ -1,6 +1,9 @@
 #pragma once
 #include <libstuff/sqlite3.h>
+#include <libstuff/SQResult.h>
 #include <libstuff/SPerformanceTimer.h>
+
+#include <shared_mutex>
 
 class SQLite {
   public:
@@ -56,12 +59,8 @@ class SQLite {
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-           const string& synchronous = "", int64_t mmapSizeGB = 0, bool hctree = false);
+           int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE");
 
-    // Compatibility constructor. Remove when AuthTester::getStripeSQLiteDB no longer uses this outdated version.
-    SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables, int synchronous) :
-        SQLite(filename, cacheSize, maxJournalSize, minJournalTables, "") {}
-    
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
     // exist because we already have a SQLite object for this file.
@@ -104,14 +103,22 @@ class SQLite {
     bool addColumn(const string& tableName, const string& column, const string& columnType);
 
     // Performs a read/write query (eg, INSERT, UPDATE, DELETE). This is added to the current transaction's query list.
-    // Returns true  on success.
+    // Returns true on success.
     // If we're in noop-update mode, this call alerts and performs no write, but returns as if it had completed.
     bool write(const string& query);
+
+    // Performs a read/write query
+    // Designed for use with queries that include a RETURNING clause
+    bool write(const string& query, SQResult& result);
 
     // This is the same as `write` except it runs successfully without any warnings or errors in noop-update mode.
     // It's intended to be used for `mockRequest` enabled commands, such that we only run a version of them that's
     // known to be repeatable. What counts as repeatable is up to the individual command.
     bool writeIdempotent(const string& query);
+
+    // Executes a write query and retrieves the result.
+    // Designed for use with queries that include a RETURNING clause
+    bool writeIdempotent(const string& query, SQResult& result);
 
     // This runs a query completely unchanged, always adding it to the uncommitted query, such that it will be recorded
     // in the journal even if it had no effect on the database. This lets replicated or synchronized queries be added
@@ -154,7 +161,7 @@ class SQLite {
     void setRewriteHandler(bool (*handler)(int, const char*, string&));
 
     // Enables the on prepare handler.
-    // The on commit handler allows a plugin to be notified when a transaction is prepared but not yet committed. 
+    // The on commit handler allows a plugin to be notified when a transaction is prepared but not yet committed.
     // This allows the plugin to take arbitrary actions prior to committing to the database. Bedrock does not
     // pass up any information in this case, it simply notifies the plugin that a transaction was prepared.
     void enablePrepareNotifications(bool enable);
@@ -162,10 +169,10 @@ class SQLite {
     // Update the on prepare handler.
     // The on prepare handler accepts a reference to this SQLiteDB object and an int tableID. The tableID is the
     // same ID that is used for the journal number in the current running thread. This allows the handler to utilize
-    // SQLite.cpp's method for avoiding conflicts on tables written on every command. 
+    // SQLite.cpp's method for avoiding conflicts on tables written on every command.
     // IMPORTANT: The on prepare handler allows a plugin to run code inside the commit lock. This code should be time sensitive
     // as increases to the amount of time this lock is held increase conflict chances and decreases the parallelness
-    // of bedrock commands. 
+    // of bedrock commands.
     // IMPORTANT: there can be only one on-prepare handler for a given DB at once.
     void setOnPrepareHandler(void (*handler)(SQLite& _db, int64_t tableID));
 
@@ -211,14 +218,14 @@ class SQLite {
     const string getMostRecentSQLiteErrorLog() const;
 
     // Returns true if we're inside an uncommitted transaction.
-    bool insideTransaction() { return _insideTransaction; }
+    bool insideTransaction() const { return _insideTransaction; }
 
     // Looks up the exact SQL of a paricular commit to the database, as well as gets the SHA1 hash of the database
     // immediately following tha commit.
     bool getCommit(uint64_t index, string& query, string& hash);
 
     // A static version of the above that can be used in initializers.
-    static bool getCommit(sqlite3* db, const vector<string> journalNames, uint64_t index, string& query, string& hash);
+    static bool getCommit(sqlite3* db, const vector<string>& journalNames, uint64_t index, string& query, string& hash);
 
     // Looks up a range of commits.
     int getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS = 0);
@@ -247,6 +254,8 @@ class SQLite {
     uint64_t getDBCountAtStart() const;
 
     int64_t getLastConflictPage() const;
+
+    string getLastConflictTable() const;
 
     // This is the callback function we use to log SQLite's internal errors.
     static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
@@ -316,6 +325,9 @@ class SQLite {
         // If set to false, this prevents any thread from being able to commit to the DB.
         atomic<bool> _commitEnabled;
 
+        // This variable is used to monitor the number of open transactions on the whole server.
+        atomic<int64_t> openTransactionCount;
+
         SPerformanceTimer _commitLockTimer;
 
         // We use this flag to prevent to threads running checkpoints t the same time.
@@ -344,8 +356,8 @@ class SQLite {
     static SharedData& initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool hctree);
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree);
     static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
-    static uint64_t initializeJournalSize(sqlite3* db, const vector<string>& journalNames);
     void commonConstructorInitialization(bool hctree = false);
+    static int getCheckpointModeFromString(const string& checkpointModeString);
 
     // The filename of this DB, canonicalized to its full path on disk.
     const string _filename;
@@ -364,9 +376,6 @@ class SQLite {
 
     // The name of the journal table that this particular DB handle with write to.
     string _journalName;
-
-    // The current size of the journal, in rows. TODO: Why isn't this in SharedData?
-    uint64_t _journalSize;
 
     // True when we have a transaction in progress.
     bool _insideTransaction = false;
@@ -398,9 +407,11 @@ class SQLite {
     bool _mutexLocked = false;
 
     atomic<int64_t> _lastConflictPage = 0;
+    atomic<string> _lastConflictTable;
     static thread_local int64_t _conflictPage;
+    static thread_local string _conflictTable;
 
-    bool _writeIdempotent(const string& query, bool alwaysKeepQueries = false);
+    bool _writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries = false);
 
     // Constructs a UNION query from a list of 'query parts' over each of our journal tables.
     // Fore each table, queryParts will be joined with that table's name as a separator. I.e., if you have a tables
@@ -468,6 +479,15 @@ class SQLite {
     void _checkInterruptErrors(const string& error) const;
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
+    //
+    // PRO-TIP: you can play with the authorizer using the `sqlite3` CLI tool, by running `.auth ON` then running
+    // your query. The columns displayed are the same as what is passed to this function.
+    //
+    // The information passed to this function is different based on the first parameter, actionCode.
+    // You can see what information is passed for each action code here https://www.sqlite.org/c3ref/c_alter_table.html.
+    // Note that as of writing this comment, the page seems slightly out of date and the parameter numbers are all off
+    // by one. That is, the first paramter passed to the callback funciton is actually the integer action code, not the
+    // second.
     int _authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4);
 
     // It's possible for certain transactions (namely, timing out a write operation, see here:
@@ -488,7 +508,9 @@ class SQLite {
     set<string> _tablesUsed;
 
     // Number of queries that have been attempted in this transaction (for metrics only).
-    mutable int64_t _queryCount = 0;
+    mutable int64_t _readQueryCount = 0;
+
+    mutable int64_t _writeQueryCount = 0;
 
     // Number of queries found in cache in this transaction (for metrics only).
     mutable int64_t _cacheHits = 0;
@@ -501,7 +523,6 @@ class SQLite {
 
     // Copies of parameters used to initialize the DB that we store if we make child objects based on this one.
     int _cacheSize;
-    const string _synchronous;
     int64_t _mmapSizeGB;
 
     // This is a string (which may be empty) containing the most recent logged error by SQLite in this thread.
@@ -509,4 +530,7 @@ class SQLite {
 
     // Set to true inside of a write query.
     bool _currentlyWriting{false};
+
+    // One of 0|1|2|3 (a.k.a. PASSIVE|FULL|RESTART|TRUNCATE), which is the value to be passed to sqlite3_wal_checkpoint_v2.
+    int _checkpointMode;
 };

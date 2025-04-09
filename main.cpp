@@ -149,6 +149,8 @@ int main(int argc, char* argv[]) {
         cout << "Protip: check syslog for details, or run 'bedrock -?' for help" << endl;
     }
 
+    GLOBAL_IS_LIVE = args.isSet("-live");
+
     // Initialize the sqlite library before any other code has a chance to do anything with it.
     // Set the logging callback for sqlite errors.
     SASSERT(sqlite3_config(SQLITE_CONFIG_LOG, SQLite::_sqliteLogCallback, 0) == SQLITE_OK);
@@ -234,9 +236,7 @@ int main(int argc, char* argv[]) {
              << endl;
         cout << "-maxJournalSize <#commits>  Number of commits to retain in the historical journal (default 1000000)"
              << endl;
-        cout << "-synchronous    <value>     Set the PRAGMA schema.synchronous "
-                "(defaults see https://sqlite.org/pragma.html#pragma_synchronous)"
-             << endl;
+        cout << "-checkpointMode <mode>      Accepts PASSIVE|FULL|RESTART|TRUNCATE, which is the value passed to https://www.sqlite.org/c3ref/wal_checkpoint_v2.html" << endl;
         cout << endl;
         cout << "Quick Start Tips:" << endl;
         cout << "-----------------" << endl;
@@ -294,12 +294,15 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-commandPortPrivate", "localhost:8890");
     SETDEFAULT("-controlPort", "localhost:9999");
     SETDEFAULT("-nodeName", SGetHostName());
-    SETDEFAULT("-cacheSize", SToStr(1024 * 1024)); // 1024 * 1024KB = 1GB.
+    SETDEFAULT("-cacheSize", SToStr(0));
     SETDEFAULT("-plugins", "db,jobs,cache,mysql");
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
     SETDEFAULT("-enableMultiWrite", "true");
+
+    // We default to PASSIVE checkpoint everywhere as that has been the value proven to work fine for many years.
+    SETDEFAULT("-checkpointMode", "PASSIVE");
 
     args["-plugins"] = SComposeList(loadPlugins(args));
 

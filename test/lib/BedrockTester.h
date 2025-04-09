@@ -36,14 +36,14 @@ class BedrockTester {
                   atomic<uint64_t>* alternateCounter = nullptr);
 
     // Destructor.
-    ~BedrockTester();
+    virtual ~BedrockTester();
 
     // Start the server. If `wait` is specified, wait until the server is fully up with the command port open and
     // accepting requests. Otherwise, returns as soon as the control port is open and can return `Status`.
     string startServer(bool wait = true);
 
     // Stop a server by sending it a signal.
-    void stopServer(int signal = SIGTERM);
+    virtual void stopServer(int signal = SIGTERM);
 
     // Shuts down all bedrock servers associated with any existing testers.
     static void stopAll();
@@ -54,33 +54,34 @@ class BedrockTester {
 
     // Generate a temporary filename with an optional prefix. Used particularly to create new DB files for each server,
     // but can generally be used for any temporary file required.
-    static string getTempFileName(string prefix = "");
+    static string getTempFileName(const string& prefix = "");
 
     // Change the arguments for a server. Only takes effect when the server next starts. This can change or add args,
     // but not remove args. Any args specified here are added or replaced into the existing set.
-    void updateArgs(const map<string, string> args);
+    void updateArgs(const map<string, string>& args);
 
     string getArg(const string& arg) const;
 
     // Takes a list of requests, and returns a corresponding list of responses.
     // Uses `connections` parallel connections to the server to send the requests.
     // If `control` is set, sends the message to the control port.
-    vector<SData> executeWaitMultipleData(vector<SData> requests, int connections = 10, bool control = false, bool returnOnDisconnect = false, int* errorCode = nullptr);
+    virtual vector<SData> executeWaitMultipleData(vector<SData> requests, int connections = 10, bool control = false, bool returnOnDisconnect = false, int* errorCode = nullptr);
 
     // Sends a single request, returning the response content.
     // If the response method line doesn't begin with the expected result, throws.
     // Convenience wrapper around executeWaitMultipleData.
-    string executeWaitVerifyContent(SData request, const string& expectedResult = "200 OK", bool control = false, uint64_t retryTimeoutUS = 0);
+    virtual string executeWaitVerifyContent(const SData& request, const string& expectedResult = "200 OK", bool control = false, uint64_t retryTimeoutUS = 0);
 
     // Sends a single request, returning the response content as a STable.
     // If the response method line doesn't begin with the expected result, throws.
     // Convenience wrapper around executeWaitMultipleData.
-    STable executeWaitVerifyContentTable(SData request, const string& expectedResult = "200 OK");
+    virtual STable executeWaitVerifyContentTable(const SData& request, const string& expectedResult = "200 OK");
 
     // Read from the DB file, without going through the bedrock server. Two interfaces are provided to maintain
     // compatibility with the `SQLite` class.
-    string readDB(const string& query, bool online = true);
-    bool readDB(const string& query, SQResult& result, bool online = true);
+    // Note that timeoutMS only applies in HC-Tree mode. It is ignored in WAL2 mode.
+    string readDB(const string& query, bool online = true, int64_t timeoutMS = 0);
+    bool readDB(const string& query, SQResult& result, bool online = true, int64_t timeoutMS = 0);
 
     // Closes and releases any existing DB file.
     void freeDB();
@@ -88,6 +89,9 @@ class BedrockTester {
     // Wait for a particular key in a `Status` message to equal a particular value, for up to `timeoutUS` us. Returns
     // true if a match was found, or times out otherwose.
     bool waitForStatusTerm(const string& term, const string& testValue, uint64_t timeoutUS = 60'000'000);
+
+    // Waits for the status to be either LEADING or FOLLOWING
+    bool waitForLeadingFollowing(uint64_t timeoutUS = 60'000'000);
 
     // This is just a convenience wrapper around `waitForStatusTerm` looking for the state of the node.
     bool waitForState(const string& state, uint64_t timeoutUS = 60'000'000);

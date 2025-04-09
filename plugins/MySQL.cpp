@@ -1,9 +1,9 @@
 #include "MySQL.h"
 
-#include <pcrecpp.h>
-
 #include <bedrockVersion.h>
 #include <libstuff/SQResult.h>
+
+#include <cstring>
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
@@ -275,9 +275,10 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
             SINFO("Processing query '" << query << "'");
 
             // See if it's asking for a global variable
-            string varName;
             string regExp = "^(?:(?:SELECT\\s+)?@@(?:\\w+\\.)?|SHOW VARIABLES LIKE ')(\\w+).*$";
-            if (pcrecpp::RE(regExp, pcrecpp::RE_Options().set_caseless(true)).FullMatch(query, &varName)) {
+            vector<string> matches;
+            if (SREMatch(regExp, query, false, false, &matches)) {
+                string varName = matches[0];
                 // Loop across and look for it
                 SQResult result;
                 result.headers.push_back(varName);

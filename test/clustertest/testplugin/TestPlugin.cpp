@@ -1,11 +1,13 @@
 #include "TestPlugin.h"
 
+#include <dlfcn.h>
 #include <iostream>
 #include <sys/file.h>
 #include <string.h>
 
 #include <libstuff/SQResult.h>
-#include <libstuff/SX509.h>
+
+extern int* __pointerToFakeIntArray;
 
 mutex BedrockPlugin_TestPlugin::dataLock;
 map<string, string> BedrockPlugin_TestPlugin::arbitraryData;
@@ -100,7 +102,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "prepeekpostprocesscommand",
         "preparehandler",
         "testquery",
-        "testPostProcessTimeout"
+        "testPostProcessTimeout",
+        "EscalateSerializedData"
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -115,6 +118,19 @@ TestPluginCommand::TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_
   pendingResult(false),
   urls(request["urls"])
 {
+}
+
+string TestPluginCommand::serializeData() const {
+    if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
+        return serializedDataString;
+    }
+    return "";
+}
+
+void TestPluginCommand::deserializeData(const string& data) {
+    if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
+        serializedDataString = data;
+    }
 }
 
 TestPluginCommand::~TestPluginCommand()
@@ -198,6 +214,15 @@ bool TestPluginCommand::peek(SQLite& db) {
         }
         response.content = "this is a test response";
         return true;
+    } else if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
+        // Only set this if it's blank. The intention is that it will be blank on a follower, but already set by
+        // serialize/deserialize on the leader.
+        if (serializedDataString.empty()) {
+            serializedDataString = _plugin->server.args["-nodeName"] + ":" + _plugin->server.args["-testName"];
+        }
+        // On followers, this immediately escalates to leader.
+        // On leader, it immediately skips to `process`.
+        return false;
     } else if (SStartsWith(request.methodLine, "broadcastwithtimeouts")) {
         // First, send a `broadcastwithtimeouts` which will generate a new command and broadcast that to peers.
         SData subCommand("storeboradcasttimeouts");
@@ -275,9 +300,11 @@ bool TestPluginCommand::peek(SQLite& db) {
     } else if (SStartsWith(request.methodLine, "exceptioninpeek")) {
         throw 1;
     } else if (SStartsWith(request.methodLine, "generatesegfaultpeek")) {
-        int* i = 0;
-        int x = *i;
-        response["invalid"] = to_string(x);
+        int total = 0;
+        for (int i = 0; i < 1000000; i++) {
+            total += __pointerToFakeIntArray[i];
+        }
+        response["invalid"] = to_string(total);
     } else if (SStartsWith(request.methodLine, "generateassertpeek")) {
         SASSERT(0);
         response["invalid"] = "nope";
@@ -365,7 +392,7 @@ void TestPluginCommand::process(SQLite& db) {
     // upgradeDatabase and the thread running in `stateChanged`, it is possible the sync thread
     // tries to accept a command on a loop before `stateChanged` queries and gets a value for _maxID.
     // Also note this really doesn't matter in production, because we don't use `upgradeDatabase` this
-    // truly only exists for dev and testing to function properly. 
+    // truly only exists for dev and testing to function properly.
     while (plugin()._maxID < 0) {
         SINFO("Waiting for _maxID " << plugin()._maxID);
         usleep(50'000);
@@ -387,6 +414,10 @@ void TestPluginCommand::process(SQLite& db) {
             querySize += nq.size();
         }
         response["QuerySize"] = to_string(querySize);
+    } else if (SStartsWith(request.methodLine,"EscalateSerializedData")) {
+        // We want to return the data that was serialized and escalated, and also our own nodename, to verify it does not match
+        // the node that serialized the data.
+        response.content = _plugin->server.args["-nodeName"] + ":" + serializedDataString;
     } else if (SStartsWith(request.methodLine, "sendrequest")) {
         // This flag makes us pass through the response we got from the server, rather than returning 200 if every
         // response we got from the server was < 400. I.e., if the server returns 202, or 304, or anything less than
@@ -481,9 +512,11 @@ void TestPluginCommand::process(SQLite& db) {
     } else if (SStartsWith(request.methodLine, "exceptioninprocess")) {
         throw 2;
     } else if (SStartsWith(request.methodLine, "generatesegfaultprocess")) {
-        int* i = 0;
-        int x = *i;
-        response["invalid"] = to_string(x);
+        int total = 0;
+        for (int i = 0; i < 1000000; i++) {
+            total += __pointerToFakeIntArray[i];
+        }
+        response["invalid"] = to_string(total);
     } else if (SStartsWith(request.methodLine, "ineffectiveUpdate")) {
         // This command does nothing on purpose so that we can run it in 10x mode and verify it replicates OK.
         return;
@@ -615,10 +648,9 @@ SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, c
     }
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
-    SX509* x509 = SStartsWith(url, "https://") ? SX509Open(_pem, _srvCrt, _caCrt) : nullptr;
     Socket* s = nullptr;
     try {
-        s = new Socket(host, x509);
+        s = new Socket(host, SStartsWith(url, "https://"));
     } catch (const SException& e) {
         return _createErrorTransaction();
     }

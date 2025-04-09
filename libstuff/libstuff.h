@@ -5,17 +5,17 @@
 #include <libgen.h>
 #include <syslog.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <functional>
 #include <iomanip>
 #include <list>
 #include <map>
 #include <mutex>
 #include <set>
-#include <shared_mutex>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <vector>
 
 // Forward declarations of types only used by reference.
@@ -24,14 +24,23 @@ struct pollfd;
 struct sqlite3;
 class SQResult;
 class SFastBuffer;
-class SData;
+struct SData;
 
 using namespace std;
 
-// Initialize libstuff on every thread before calling any of its functions
-void SInitialize(string threadName = "", const char* processName = 0);
+// Global indicating whether we're running the server on dev or production.
+extern atomic<bool> GLOBAL_IS_LIVE;
 
-void SSetSignalHandlerDieFunc(function<void()>&& func);
+extern void* SSIGNAL_NOTIFY_INTERRUPT;
+
+// Initialize libstuff on every thread before calling any of its functions
+void SInitialize(const string& threadName = "", const char* processName = 0);
+
+// This function sets a lambda that will be executed while the process is being killed for any reason
+// (e.g. it crashed). Since we usually add logs in the lambda function, we'll also need to return the log as a
+// string so we can write that log in the crash file. We do that to guaurantee we'll have the log message
+// instantly available in the crash file instead of depending on rsyslog, which can be late.
+void SSetSignalHandlerDieFunc(function<string()>&& func);
 
 // --------------------------------------------------------------------------
 // Assertion stuff
@@ -224,20 +233,25 @@ void SLogLevel(int level);
 // Stack trace logging
 void SLogStackTrace(int level = LOG_WARNING);
 
+// This method will allow plugins to whitelist log params they need to log.
+void SWhitelistLogParams(const set<string>& params);
+
 // This is a drop-in replacement for syslog that directly logs to `/run/systemd/journal/syslog` bypassing journald.
 void SSyslogSocketDirect(int priority, const char* format, ...);
 
 // Atomic pointer to the syslog function that we'll actually use. Easy to change to `syslog` or `SSyslogSocketDirect`.
 extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
 
+string addLogParams(string&& message, const STable& params = {});
+
 // **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
 #define SWHEREAMI SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
-#define SSYSLOG(_PRI_, _MSG_)                                                   \
+#define SSYSLOG(_PRI_, _MSG_, ...)                                              \
     do {                                                                        \
         if (_g_SLogMask & (1 << (_PRI_))) {                                     \
             ostringstream __out;                                                \
-            __out << _MSG_ << endl;                                             \
-            const string s = __out.str();                                       \
+            __out << _MSG_;                                                     \
+            const string s = addLogParams(__out.str(), ##__VA_ARGS__);          \
             const string prefix = SWHEREAMI;                                    \
             for (size_t i = 0; i < s.size(); i += 7168) {                       \
                 (*SSyslogFunc)(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
@@ -246,14 +260,14 @@ extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
     } while (false)
 
 #define SLOGPREFIX ""
-#define SDEBUG(_MSG_) SSYSLOG(LOG_DEBUG, "[dbug] " << SLOGPREFIX << _MSG_)
-#define SINFO(_MSG_) SSYSLOG(LOG_INFO, "[info] " << SLOGPREFIX << _MSG_)
-#define SHMMM(_MSG_) SSYSLOG(LOG_NOTICE, "[hmmm] " << SLOGPREFIX << _MSG_)
-#define SWARN(_MSG_) SSYSLOG(LOG_WARNING, "[warn] " << SLOGPREFIX << _MSG_)
-#define SALERT(_MSG_) SSYSLOG(LOG_ALERT, "[alrt] " << SLOGPREFIX << _MSG_)
-#define SERROR(_MSG_)                                       \
+#define SDEBUG(_MSG_, ...) SSYSLOG(LOG_DEBUG, "[dbug] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
+#define SINFO(_MSG_, ...) SSYSLOG(LOG_INFO, "[info] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
+#define SHMMM(_MSG_, ...) SSYSLOG(LOG_NOTICE, "[hmmm] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
+#define SWARN(_MSG_, ...) SSYSLOG(LOG_WARNING, "[warn] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
+#define SALERT(_MSG_, ...) SSYSLOG(LOG_ALERT, "[alrt] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
+#define SERROR(_MSG_, ...)                                  \
     do {                                                    \
-        SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_); \
+        SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__); \
         SLogStackTrace();                                   \
         abort();                                            \
     } while (false)
@@ -295,7 +309,7 @@ struct SAutoThreadPrefix {
 namespace std {
     template<>
     struct atomic<string> {
-        string operator=(string desired) {
+        string operator=(const string& desired) {
             lock_guard<decltype(m)> l(m);
             _string = desired;
             return _string;
@@ -303,11 +317,11 @@ namespace std {
         bool is_lock_free() const {
             return false;
         }
-        void store(string desired, std::memory_order order = std::memory_order_seq_cst) {
+        void store(const string& desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
             lock_guard<decltype(m)> l(m);
             _string = desired;
         };
-        string load(std::memory_order order = std::memory_order_seq_cst) const {
+        string load([[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) const {
             lock_guard<decltype(m)> l(m);
             return _string;
         }
@@ -315,7 +329,7 @@ namespace std {
             lock_guard<decltype(m)> l(m);
             return _string;
         }
-        string exchange(string desired, std::memory_order order = std::memory_order_seq_cst) {
+        string exchange(const string& desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
             lock_guard<decltype(m)> l(m);
             string existing = _string;
             _string = desired;
@@ -387,9 +401,23 @@ bool SEndsWith(const string& haystack, const string& needle);
 bool SConstantTimeEquals(const string& secret, const string& userInput);
 bool SConstantTimeIEquals(const string& secret, const string& userInput);
 
-// Perform a full regex match. The '^' and '$' symbols are implicit.
-bool SREMatch(const string& regExp, const string& s);
-bool SREMatch(const string& regExp, const string& s, string& match);
+// Unless `partialMatch` is specified, perform a full regex match (the '^' and '$' symbols are implicit).
+//
+// If `matches` is supplied it will be cleared, and any matches to the expression will fill it. The first entry in matches will be the entire matched portion of the string,
+// and any following entries will be matched parenthesized subgroups.
+//
+// startOffset can be supplied to ignore the first part of the input string.
+//
+// If matchOffset is supplied, and a match is found, it will be set to the offset of the first character of the matched substring.
+// To find the end of the matched substring, you can do something like matchOffset + matches[0].size().
+bool SREMatch(const string& regExp, const string& input, bool caseSensitive = true, bool partialMatch = false, vector<string>* matches = nullptr, size_t startOffset = 0, size_t* matchOffset = nullptr);
+
+// Matches every instance of regExp in the input string. Returns a vector of vectors or strings.
+// The outer vector has one entry for each match found. The inner vectors contain first the entire matched substring, and following that, each match group
+vector<vector <string>> SREMatchAll(const string& regExp, const string& input, bool caseSensitive = true);
+
+// Replaces all instances of the matched `regExp` with `replacement` in `input`.
+string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive = true);
 
 // Redact values that should not be logged.
 void SRedactSensitiveValues(string& s);
@@ -549,9 +577,9 @@ string SHashSHA1(const string& buffer);
 string SHashSHA256(const string& buffer);
 
 // Various encoding/decoding functions
-string SEncodeBase64(const unsigned char* buffer, const int size);
+string SEncodeBase64(const unsigned char* buffer, const size_t size);
 string SEncodeBase64(const string& buffer);
-string SDecodeBase64(const unsigned char* buffer, const int size);
+string SDecodeBase64(const unsigned char* buffer, const size_t size);
 string SDecodeBase64(const string& buffer);
 
 // HMAC (for use with Amazon S3)
@@ -603,6 +631,7 @@ string STIMESTAMP(uint64_t when);
 string SUNQUOTED_CURRENT_TIMESTAMP();
 string SCURRENT_TIMESTAMP();
 string SCURRENT_TIMESTAMP_MS();
+string STIMESTAMP_MS(uint64_t time);
 
 // --------------------------------------------------------------------------
 // Miscellaneous stuff
@@ -613,5 +642,8 @@ string SGUnzip(const string& content);
 
 // Command-line helpers
 STable SParseCommandLine(int argc, char* argv[]);
+
+// Returns the CPU usage inside the current thread
+double SGetCPUUserTime();
 
 #endif	// LIBSTUFF_H

@@ -1,4 +1,5 @@
 #include "libstuff.h"
+#include "SSynchronizedQueue.h"
 #include <sqlitecluster/SQLiteNode.h>
 #include <cxxabi.h>
 #include <execinfo.h>
@@ -6,15 +7,18 @@
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
+#include <format>
 
-thread_local function<void()> SSignalHandlerDieFunc;
-void SSetSignalHandlerDieFunc(function<void()>&& func) {
+thread_local function<string()> SSignalHandlerDieFunc;
+void SSetSignalHandlerDieFunc(function<string()>&& func) {
     SSignalHandlerDieFunc = move(func);
 }
 
 // 64kb emergency stack location.
 constexpr auto sigStackSize{1024*64};
 char __SIGSTACK[sigStackSize];
+
+void* SSIGNAL_NOTIFY_INTERRUPT;
 
 // The function to call in our thread that handles signals.
 void _SSignal_signalHandlerThreadFunc();
@@ -74,7 +78,7 @@ void SClearSignals() {
 
 void SInitializeSignals() {
     // Our default die function does nothing.
-    SSignalHandlerDieFunc = [](){};
+    SSignalHandlerDieFunc = [](){ return ""; };
 
     // Clear the thread-local signal number.
     _SSignal_threadCaughtSignalNumber = 0;
@@ -96,7 +100,7 @@ void SInitializeSignals() {
     sigprocmask(SIG_BLOCK, &signals, 0);
 
     // This is the signal action structure we'll use to specify what to listen for.
-    struct sigaction newAction = {0};
+    struct sigaction newAction = {};
 
     // The old style handler is explicitly null
     newAction.sa_handler = nullptr;
@@ -162,6 +166,10 @@ void _SSignal_signalHandlerThreadFunc() {
                 _SSignal_pendingSignalBitMask.fetch_or(1 << signum);
             }
         }
+
+        if (SSIGNAL_NOTIFY_INTERRUPT) {
+            static_cast<SSynchronizedQueue<bool>*>(SSIGNAL_NOTIFY_INTERRUPT)->push(true);
+        }
     }
 }
 
@@ -209,6 +217,9 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 SWARN("Stack depth is " << depth << " only logging first and last 20 frames.");
             }
 
+            // We mainly depend on syslog to investigate crashes, but when performance is real bad, sometimes we lose those logs.
+            // For cases like those, we'll also save the stack trace for the crash in a file.
+            int fd = creat(format("/tmp/bedrock_crash_{}.log", STimeNow()).c_str(), 0666);
             for (int i = 0; i < depth; i++) {
                 if (depth > 40 && i >= 20 && i < depth - 20) {
                     // Skip frames in the middle of large stacks.
@@ -219,25 +230,41 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 int status{0};
                 char* front = strchr(frame[0], '(') + 1;
                 char* end = strchr(front, '+');
-                char copy[end - front + 1]{0};
-                strncpy(copy, front, end - front);
+                char copy[1000];
+                memset(copy, 0, 1000);
+                strncpy(copy, front, min((size_t)999, (size_t)(end - front)));
                 char* demangled = abi::__cxa_demangle(copy, 0, 0, &status);
                 char* tolog = status ? copy : demangled;
                 if (tolog[0] == '\0') {
                     tolog = frame[0];
                 }
-                SWARN("Frame #" << i << ": " << tolog);
+                string fullLogLine = format("Frame #{}: {}", i, tolog);
+                SWARN(fullLogLine);
+                if (fd != -1) {
+                    fullLogLine = format("{}{}", fullLogLine, "\n");
+                    write(fd, fullLogLine.c_str(), strlen(fullLogLine.c_str()));
+                }
                 free(frame);
             }
-
             // Done.
             free(callstack);
 
             // Call our die function and then reset it.
             SWARN("Calling DIE function.");
-            SSignalHandlerDieFunc();
-            SSignalHandlerDieFunc = [](){};
+            string logMessage = SSignalHandlerDieFunc();
+            if (!logMessage.empty()) {
+                SALERT(logMessage);
+            }
+            SSignalHandlerDieFunc = [](){ return ""; };
             SWARN("DIE function returned.");
+            
+            // Finish writing the crash file with the request details if it exists
+            if (fd != -1 && !logMessage.empty()) {
+                logMessage += "\n";
+                write(fd, logMessage.c_str(), strlen(logMessage.c_str()));
+            }
+            close(fd);
+
             if (SQLiteNode::KILLABLE_SQLITE_NODE) {
                 SWARN("Killing peer connections.");
                 SQLiteNode::KILLABLE_SQLITE_NODE->kill();

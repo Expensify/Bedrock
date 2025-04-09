@@ -1,14 +1,3 @@
-# If $CC and $CXX are defined as environment variables, those will be used here. However, if they aren't then GNU make
-# automatically defines them as `cc` and `g++`. Ultimately, we'd like those names to work, or the environment variables
-# to be set, but for the time being we need to override the defaults so that our existing dev environment works. This
-# can be removed when that is resolved.
-ifeq ($(CC),cc)
-CC = gcc-13
-endif
-ifeq ($(CXX),g++)
-CXX = g++-13
-endif
-
 # Set the optimization level from the environment, or default to -O2.
 ifndef BEDROCK_OPTIM_COMPILE_FLAG
 	BEDROCK_OPTIM_COMPILE_FLAG = -O2
@@ -23,17 +12,17 @@ PROJECT = $(shell git rev-parse --show-toplevel)
 INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
 
 # Set our standard C++ compiler flags
-CXXFLAGS = -g -std=c++20 -fPIC -DSQLITE_ENABLE_NORMALIZE $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security  -Wno-error=deprecated-declarations $(INCLUDE)
+CXXFLAGS = -g -std=c++20 -fPIC -DSQLITE_ENABLE_NORMALIZE $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security -Wno-unqualified-std-cast-call -Wno-error=deprecated-declarations $(INCLUDE)
 
 # Amalgamation flags
-AMALGAMATION_FLAGS = -Wno-unused-but-set-variable -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -DSQLITE_MAX_PAGE_COUNT=4294967294 -DSQLITE_DISABLE_PAGECACHE_OVERFLOW_STATS
+AMALGAMATION_FLAGS = -Wno-unused-but-set-variable -DSQLITE_ENABLE_FTS5 -DSQLITE_ENABLE_STAT4 -DSQLITE_ENABLE_JSON1 -DSQLITE_ENABLE_SESSION -DSQLITE_ENABLE_PREUPDATE_HOOK -DSQLITE_ENABLE_UPDATE_DELETE_LIMIT -DSQLITE_ENABLE_NOOP_UPDATE -DSQLITE_MUTEX_ALERT_MILLISECONDS=20 -DHAVE_USLEEP=1 -DSQLITE_MAX_MMAP_SIZE=17592186044416ull -DSQLITE_SHARED_MAPPING -DSQLITE_ENABLE_NORMALIZE -DSQLITE_MAX_PAGE_COUNT=4294967294 -DSQLITE_DISABLE_PAGECACHE_OVERFLOW_STATS -DSQLITE_DEFAULT_CACHE_SIZE=-51200 -DSQLITE_MAX_FUNCTION_ARG=32767 -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=0 -DSQLITE_ENABLE_WAL_BIGHASH -DSQLITE_ENABLE_WAL2NOCKSUM
 
 # All our intermediate, dependency, object, etc files get hidden in here.
 INTERMEDIATEDIR = .build
 
 # We use the same library paths and required libraries for all binaries.
 LIBPATHS =-L$(PROJECT) -Lmbedtls/library
-LIBRARIES =-Wl,--start-group -lbedrock -lstuff -Wl,--end-group -ldl -lpcrecpp -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lm
+LIBRARIES =-Wl,--start-group -lbedrock -lstuff -Wl,--end-group -ldl -lpcre2-8 -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lm
 
 # These targets aren't actual files.
 .PHONY: all test clustertest clean testplugin
@@ -63,7 +52,7 @@ clean:
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
 	git submodule init
 	git submodule update
-	cd mbedtls && git checkout -q v2.26.0
+	cd mbedtls && git checkout -q v2.28.8
 	cd mbedtls && $(MAKE) no_test
 
 # We select all of the cpp files (and manually add sqlite3.c) that will be in libstuff.
@@ -94,7 +83,7 @@ CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
 # And the same for the test plugin.
-TESTPLUGINCPP = test/clustertest/testplugin/TestPlugin.cpp
+TESTPLUGINCPP = test/clustertest/testplugin/TestPlugin.cpp test/clustertest/testplugin/ExternPointer.cpp
 TESTPLUGINOBJ = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 TESTPLUGINTDEP = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
@@ -124,7 +113,7 @@ test/clustertest/testplugin/testplugin.so : $(TESTPLUGINOBJ) $(TESTPLUGINCPP) $(
 $(INTERMEDIATEDIR)/BedrockServer.d $(INTERMEDIATEDIR)/BedrockServer.o: BedrockServer.cpp
 	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/BedrockServer.d -MT $(INTERMEDIATEDIR)/BedrockServer.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/BedrockServer.o -c BedrockServer.cpp
 
-$(INTERMEDIATEDIR)/main.d $(INTERMEDIATEDIR)/main.o: main.cpp
+$(INTERMEDIATEDIR)/main.d $(INTERMEDIATEDIR)/main.o: main.cpp $(INTERMEDIATEDIR)
 	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/main.d -MT $(INTERMEDIATEDIR)/main.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/main.o -c main.cpp
 
 $(INTERMEDIATEDIR)/plugins/MySQL.d $(INTERMEDIATEDIR)/plugins/MySQL.o: plugins/MySQL.cpp

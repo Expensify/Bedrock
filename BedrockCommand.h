@@ -46,6 +46,7 @@ class BedrockCommand : public SQLiteCommand {
     static const uint64_t DEFAULT_TIMEOUT = 110'000; // 110 seconds, so clients can have a 2 minutes timeout.
     static const uint64_t DEFAULT_TIMEOUT_FORGET = 60'000 * 60; // 1 hour for `connection: forget` commands.
     static const uint64_t DEFAULT_PROCESS_TIMEOUT = 30'000; // 30 seconds.
+    static const uint64_t DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT = 10'000; // 10 seconds.
 
     // Constructor to initialize via a request object (by move).
     BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin, bool escalateImmediately_ = false);
@@ -84,6 +85,8 @@ class BedrockCommand : public SQLiteCommand {
     // Return the name of the plugin for this command.
     const string& getName() const;
 
+    const BedrockPlugin* getPlugin() const;
+
     // Take all of the HTTPS requests attached to this object, and serialize them to a string.
     string serializeHTTPSRequests();
 
@@ -98,7 +101,7 @@ class BedrockCommand : public SQLiteCommand {
     }
 
     // Bedrock will call this before writing to the database after it has prepared a transaction for each plugin to allow it to
-    // enable a handler function for prepare If a plugin would like to perform operations after prepare but before commit, this should 
+    // enable a handler function for prepare If a plugin would like to perform operations after prepare but before commit, this should
     // return true, and it should set the prepareHandler it would like to use.
     virtual bool shouldEnableOnPrepareNotification(const SQLite& db, void (**onPrepareHandler)(SQLite& _db, int64_t tableID)) {
         return false;
@@ -118,7 +121,54 @@ class BedrockCommand : public SQLiteCommand {
     bool areHttpsRequestsComplete() const;
 
     // If the `peek` portion of this command needs to make an HTTPS request, this is where we store it.
-    list<SHTTPSManager::Transaction*> httpsRequests;
+    template <typename T>
+    class GrowOnlyList {
+    public:
+        auto front() const {
+            return _list.front();
+        }
+
+        auto back() const {
+            return _list.back();
+        }
+
+        auto size() const {
+            return _list.size();
+        }
+
+        auto begin() const {
+            return _list.begin();
+        }
+
+          auto rbegin() const {
+            return _list.rbegin();
+        }
+
+        auto end() const {
+            return _list.end();
+        }
+
+        auto rend() const {
+            return _list.rend();
+        }
+
+        auto empty() const {
+            return _list.empty();
+        }
+
+        auto push_back(const T& i)  {
+            return _list.push_back(i);
+        }
+
+        auto push_back(T&& i)  {
+            return _list.push_back(move(i));
+        }
+
+    private:
+        list<T> _list;
+    };
+
+    GrowOnlyList<SHTTPSManager::Transaction*> httpsRequests;
 
     // Each command is assigned a priority.
     Priority priority;

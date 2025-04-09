@@ -188,6 +188,7 @@ void SScheduledPriorityQueue<T>::push(T&& item, Priority priority, Scheduled sch
     _lookupByTimeout.insert(make_pair(timeout, make_pair(priority, scheduled)));
     queue.emplace(scheduled, ItemTimeoutPair(move(item), timeout));
     _queueCondition.notify_one();
+    SINFO("Enqueued command with timeout " << timeout);
 }
 
 template<typename T>
@@ -221,7 +222,9 @@ T SScheduledPriorityQueue<T>::_dequeue() {
                 auto matchingItemIterators = priorityQueueIt->second.equal_range(itemScheduled);
 
                 // Iterate across the matching section of items.
+                size_t itemsChecked = 0;
                 for (auto it = matchingItemIterators.first; it != matchingItemIterators.second; it++) {
+                    itemsChecked++;
 
                     // Convenience names for legibility.
                     ItemTimeoutPair& thisItemTimeoutPair = it->second;
@@ -248,6 +251,13 @@ T SScheduledPriorityQueue<T>::_dequeue() {
                         return item;
                     }
                 }
+                if (!itemsChecked) {
+                    SWARN("No items found scheduled at requested time: " << itemScheduled);
+                } else {
+                    SWARN("Checked " << itemsChecked << " items scheduled at " << itemScheduled << " but none had timeout " << itemTimeout);
+                }
+            } else {
+                SWARN("No queue found with priority: " << itemPriority);
             }
 
             // This isn't supposed to be possible.
@@ -302,6 +312,9 @@ T SScheduledPriorityQueue<T>::_dequeue() {
                     _lookupByTimeout.erase(it);
                     break;
                 }
+
+                // We should always break before we get here, some timeout should match.
+                SWARN("Did not find a matching timeout (" << thisItemTimeout << ") to remove for command: " << item->request.methodLine);
             }
 
             // Call the end function and return!
