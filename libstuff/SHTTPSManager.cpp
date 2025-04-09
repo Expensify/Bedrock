@@ -193,6 +193,7 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
         if (isHttps && allowProxy && proxyAddress.size()) {
             string proxyHost, path;
             SParseURI(proxyAddress, proxyHost, path);
+            SINFO("Proxying " << url << " through " << proxyHost);
             s = new SHTTPSProxySocket(proxyHost, host);
         } else {
             s = new Socket(host, isHttps);
