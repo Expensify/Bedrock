@@ -51,7 +51,7 @@ clean:
 # Rule to build mbedtls.
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
 	git submodule init
-	cd mbedtls && [ -f include/mbedtls/mbedtls_config.h ] && git checkout -f include/mbedtls/mbedtls_config.h
+	( [ -f mbedtls/include/mbedtls/mbedtls_config.h ] && cd mbedtls && git checkout -f include/mbedtls/mbedtls_config.h ) || true
 	git submodule update
 	cd mbedtls && git submodule update --init
 	cd mbedtls && git checkout -q v3.6.2
