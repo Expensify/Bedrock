@@ -647,6 +647,7 @@ SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, c
         host += ":443";
     }
 
+    // If this is going to be an https transaction, create a certificate and give it to the socket.
     Socket* s = nullptr;
     try {
         s = new Socket(host, SStartsWith(url, "https://"));

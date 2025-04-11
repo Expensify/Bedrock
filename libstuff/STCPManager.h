@@ -10,7 +10,6 @@
 #include <libstuff/SFastBuffer.h>
 
 class SSSLState;
-class SSSLState;
 
 using namespace std;
 
