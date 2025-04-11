@@ -169,7 +169,6 @@ bool SSSLState::sendConsume(SFastBuffer& sendBuffer) {
 }
 
 bool SSSLState::recvAppend(SFastBuffer& recvBuffer) {
-    // Keep trying to receive as long as we can
     char buffer[1024 * 16];
     int numRecv = 0;
     while ((numRecv = recv(buffer, sizeof(buffer))) > 0) {

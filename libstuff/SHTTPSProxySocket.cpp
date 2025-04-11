@@ -5,14 +5,11 @@
 #include <libstuff/SSSLState.h>
 #include <mutex>
 
-#include <iostream>
-
 SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host)
  : STCPManager::Socket::Socket(0, STCPManager::Socket::State::CONNECTING, true),
    proxyAddress(proxyAddress),
    hostname(host)
 {
-    cout << "PROXY ADDRESS: " << proxyAddress << endl;
     SASSERT(SHostIsValid(proxyAddress));
     s = S_socket(proxyAddress, true, false, false);
     if (s < 0) {
