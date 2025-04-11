@@ -7,22 +7,17 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
 
-SSSLState::~SSSLState() {
-    mbedtls_net_free(&net_ctx);
-    mbedtls_ssl_free(&ssl);
-    mbedtls_ssl_config_free(&conf);
-    mbedtls_ctr_drbg_free(&ctr_drbg);
-    mbedtls_entropy_free(&ec);
-}
 
-SSSLState::SSSLState(const string& hostname) {
+SSSLState::SSSLState(const string& hostname) : SSSLState(hostname, -1) {}
+
+SSSLState::SSSLState(const string& hostname, int socket) {
     mbedtls_entropy_init(&ec);
     mbedtls_ctr_drbg_init(&ctr_drbg);
     mbedtls_ssl_config_init(&conf);
     mbedtls_ssl_init(&ssl);
     mbedtls_net_init(&net_ctx);
 
-    // Hostname here is expected to contain the port. I.e.: expensiofy.com:443
+    // Hostname here is expected to contain the port. I.e.: expensify.com:443
     // We need to split it into its componenets.
     string domain;
     uint16_t port;
@@ -42,16 +37,21 @@ SSSLState::SSSLState(const string& hostname) {
         STHROW("mbedtls_ctr_drbg_seed failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
 
-    lastResult = mbedtls_net_connect( &net_ctx, domain.c_str(),to_string(port).c_str(), MBEDTLS_NET_PROTO_TCP );
-    if (lastResult) {
-        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
-        STHROW("mbedtls_net_connect failed with error " + to_string(lastResult) + ": " + errorBuffer);
-    }
-
-    lastResult = mbedtls_net_set_nonblock(&net_ctx);
-    if (lastResult) {
-        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
-        STHROW("mbedtls_net_set_nonblock failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    // If no socket was supplied, create our own.
+    if (socket == -1) {
+        lastResult = mbedtls_net_connect(&net_ctx, domain.c_str(),to_string(port).c_str(), MBEDTLS_NET_PROTO_TCP);
+        if (lastResult) {
+            mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+            STHROW("mbedtls_net_connect failed with error " + to_string(lastResult) + ": " + errorBuffer);
+        }
+        lastResult = mbedtls_net_set_nonblock(&net_ctx);
+        if (lastResult) {
+            mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+            STHROW("mbedtls_net_set_nonblock failed with error " + to_string(lastResult) + ": " + errorBuffer);
+        }
+    } else {
+        // Otherwise, just borrow the existing socket.
+        net_ctx.fd = socket;
     }
 
     lastResult = mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
@@ -78,6 +78,16 @@ SSSLState::SSSLState(const string& hostname) {
 
     mbedtls_ssl_set_bio(&ssl, &net_ctx, mbedtls_net_send, mbedtls_net_recv, nullptr);
 }
+
+SSSLState::~SSSLState() {
+    // I *beleive* this closes the socket. Let's check.
+    mbedtls_net_free(&net_ctx);
+    mbedtls_ssl_free(&ssl);
+    mbedtls_ssl_config_free(&conf);
+    mbedtls_ctr_drbg_free(&ctr_drbg);
+    mbedtls_entropy_free(&ec);
+}
+
 
 int SSSLState::send(const char* buffer, int length) {
     // Send as much as possible and report what happened

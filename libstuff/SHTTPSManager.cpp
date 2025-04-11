@@ -1,10 +1,21 @@
 #include "SHTTPSManager.h"
+#include "SHTTPSProxySocket.h"
 #include "libstuff/STCPManager.h"
 
 #include <BedrockPlugin.h>
 #include <BedrockServer.h>
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
+
+const string SStandaloneHTTPSManager::proxyAddressHTTPS = initProxyAddressHTTPS();
+
+string SStandaloneHTTPSManager::initProxyAddressHTTPS() {
+    const char* proxyString = getenv("HTTPS_PROXY");
+    if (proxyString != nullptr) {
+        return proxyString;
+    }
+    return "";
+}
 
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_) : plugin(plugin_)
 {
@@ -121,7 +132,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         //    the whole server on a single stuck network request.
         // 2. If the transaction's timeout (which is likely it's associated command's timeout) has passed.
         if ((transaction.s->state.load() > Socket::CONNECTED) ||
-            (now > transaction.s->lastSendTime + timeoutMS * 1000) || 
+            (now > transaction.s->lastSendTime + timeoutMS * 1000) ||
             (now > transaction.timeoutAt)) {
             SWARN("Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
             transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
@@ -160,7 +171,7 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTrans
     return transaction;
 }
 
-SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request) {
+SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy) {
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
     string host, path;
@@ -176,7 +187,16 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
 
     Socket* s = nullptr;
     try {
-        s = new Socket(host, SStartsWith(url, "https://"));
+        // If a proxy is set, and it's allowed to use it, go through the proxy.
+        bool isHttps = SStartsWith(url, "https://");
+        if (isHttps && allowProxy && proxyAddressHTTPS.size()) {
+            string proxyHost, path;
+            SParseURI(proxyAddressHTTPS, proxyHost, path);
+            SINFO("Proxying " << url << " through " << proxyHost);
+            s = new SHTTPSProxySocket(proxyHost, host);
+        } else {
+            s = new Socket(host, isHttps);
+        }
     } catch (const SException& exception) {
         delete transaction;
         return _createErrorTransaction();

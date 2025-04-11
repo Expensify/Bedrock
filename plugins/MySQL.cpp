@@ -87,7 +87,7 @@ string MySQLPacket::serializeHandshake() {
     // Just hard code the values for now
     MySQLPacket handshake;
     handshake.payload += lenEncInt(10);      // protocol version
-    handshake.payload += "5.0.0"s; // server version
+    handshake.payload += BedrockPlugin_MySQL::mysqlVersion; // server version
     handshake.payload += lenEncInt(0);       // NULL
     uint32_t connectionID = 1;
     SAppend(handshake.payload, &connectionID, 4); // connection_id
@@ -112,7 +112,7 @@ string MySQLPacket::serializeHandshake() {
     SAppend(handshake.payload, &capability_flags_2, 2); // capability_flags_2 (high 2 bytes)
 
     // The first byte is the length of the auth_plugin_name string. Followed by 10 NULL
-    // characters for the "reserved" field. Since we don't support CLIENT_SECURE_CONNECTION 
+    // characters for the "reserved" field. Since we don't support CLIENT_SECURE_CONNECTION
     // in our capabilities we can skip auth-plugin-data-part-2
     // https://dev.mysql.com/doc/internals/en/client-wants-native-server-wants-old.html
     // (Initial Handshake Packet)
@@ -229,12 +229,17 @@ string MySQLPacket::serializeERR(int sequenceID, uint16_t code, const string& me
     return err.serialize();
 }
 
-BedrockPlugin_MySQL::BedrockPlugin_MySQL(BedrockServer& s) : BedrockPlugin_DB(s)
+BedrockPlugin_MySQL::BedrockPlugin_MySQL(BedrockServer& s) : BedrockPlugin(s)
 {
 }
 
 string BedrockPlugin_MySQL::getPort() {
     return server.args.isSet("-mysql.host") ? server.args["-mysql.host"] : "localhost:3306";
+}
+
+// This plugin supports no commands.
+unique_ptr<BedrockCommand> BedrockPlugin_MySQL::getCommand(SQLiteCommand&& baseCommand) {
+    return nullptr;
 }
 
 void BedrockPlugin_MySQL::onPortAccept(STCPManager::Socket* s) {
@@ -249,8 +254,9 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
     MySQLPacket packet;
     while ((packetSize = packet.deserialize(s->recvBuffer.c_str(), s->recvBuffer.size()))) {
         // Got a packet, process it
-        SDEBUG("Received command #" << (int)packet.sequenceID << ": '" << SToHex(packet.serialize()) << "'");
+        SDEBUG("Received command #" << packet.payload[0] << ", sequenceID #" << (int)packet.sequenceID << " : '" << SToHex(packet.serialize()) << "'");
         s->recvBuffer.consumeFront(packetSize);
+        SDEBUG("Packet payload " + packet.payload);
         switch (packet.payload[0]) {
         case 3: { // COM_QUERY
             // Decode the query
@@ -302,7 +308,9 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     result.rows.back()[1] = g_MySQLVariables[c][1];
                 }
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW DATABASES;")) {
+            } else if (SIEquals(query, "SHOW DATABASES;") ||
+                       SIEquals(SToUpper(query), "SELECT DATABASE();") ||
+                       SIEquals(SToUpper(query), "SELECT * FROM (SELECT DATABASE() AS DATABASE_NAME) A WHERE A.DATABASE_NAME IS NOT NULL;")) {
                 // Return a fake "main" database
                 SINFO("Responding with fake database list");
                 SQResult result;
@@ -310,22 +318,71 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 result.rows.resize(1);
                 result.rows.back().push_back("main");
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW /*!50002 FULL*/ TABLES;")) {
-                // Return an empty list of tables
-                SINFO("Responding with fake table list");
-                SQResult result;
-                result.headers.push_back("Tables");
-                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+            } else if (SIEquals(SToUpper(query), "SHOW /*!50002 FULL*/ TABLES;") ||
+                       SIEquals(SToUpper(query), "SHOW FULL TABLES;")) {
+                SINFO("Getting table list");
+
+                // Transform this into an internal request
+                request.methodLine = "Query";
+                request["format"] = "json";
+                request["sequenceID"] = SToStr(packet.sequenceID);
+                request["query"] =
+                    "SELECT "
+                        "name as Tables_in_main, "
+                        "CASE type "
+                            "WHEN 'table' THEN 'BASE TABLE' "
+                            "WHEN 'view' THEN 'VIEW' "
+                        "END as Table_type "
+                    "FROM sqlite_master "
+                    "WHERE type IN ('table', 'view');";
+            } else if (SIEquals(SToUpper(query),
+                                "SELECT TABLE_NAME,TABLE_COMMENT,IF(TABLE_TYPE='BASE TABLE', 'TABLE', "
+                                "TABLE_TYPE),TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=DATABASE() "
+                                "AND ( TABLE_TYPE='BASE TABLE' OR TABLE_TYPE='VIEW' ) AND TABLE_NAME LIKE '%' ORDER BY "
+                                "TABLE_SCHEMA, TABLE_NAME;")) {
+                // This is the query Alteryx uses to get Table information to display in the GUI, so let's support it.
+                // This likely isn't restricted to just Alteryx, becuase it uses a generic ODBC connector from MySQL,
+                // but that is the only client we have tested that has sent this query.
+                SINFO("Getting table list");
+
+                // Transform this into an internal request
+                request.methodLine = "Query";
+                request["format"] = "json";
+                request["sequenceID"] = SToStr(packet.sequenceID);
+                request["query"] =
+                    "SELECT "
+                        "name as TABLE_NAME, "
+                        "'' as TABLE_COMMENT, "
+                        "UPPER(type) as TABLE_TYPE, "
+                        "'main' as TABLE_SCHEMA "
+                    "FROM sqlite_master "
+                    "WHERE type IN ('table', 'view') "
+                    "ORDER BY TABLE_SCHEMA, TABLE_NAME;";
             } else if (SContains(query, "information_schema")) {
                 // Return an empty set
                 SINFO("Responding with empty routine list");
                 SQResult result;
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ")
-                       || SIEquals(query, "ROLLBACK;")) {
+            } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ") ||
+                       SIEquals(query, "ROLLBACK;")) {
                 // Ignore
                 SINFO("Responding OK to SET/USE/ROLLBACK query.");
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
+            } else if (SIEquals(SToUpper(query), "SELECT $$;")) {
+                // Some new clients send this through and expect an OK, non-empty string
+                // response or else the client will hang.
+                SINFO("Responding OK to $$ query.");
+                s->send(MySQLPacket::serializeOK(packet.sequenceID));
+            } else if (SIEquals(SToUpper(query), "SELECT VERSION();")) {
+                // Return our fake version
+                SINFO("Responding fake version string");
+                SQResult result;
+                result.headers.push_back("version()");
+                result.rows.resize(1);
+                result.rows.back().push_back(BedrockPlugin_MySQL::mysqlVersion);
+                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+            // Add SHOW KEYS() support
+
             } else {
                 // Transform this into an internal request
                 request.methodLine = "Query";
@@ -363,8 +420,10 @@ void BedrockPlugin_MySQL::onPortRequestComplete(const BedrockCommand& command, S
         }
     } else {
         // Failure -- pass along the message
-        s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), SToInt(command.response.methodLine),
-                                          command.response["error"]));
+        int64_t errorCode = SToInt64(SBefore(command.response.methodLine, " "));
+        string errorMessage = SAfter(command.response.methodLine, " ");
+        string sqliteError = command.response["error"];
+        s->send(MySQLPacket::serializeERR(command.request.calc("sequenceID"), errorCode, errorMessage + " " + sqliteError));
     }
 }
 
@@ -665,7 +724,7 @@ const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2] = {
     {"tx_isolation", "REPEATABLE-READ"},
     {"unique_checks", "ON"},
     {"updatable_views_with_limit", "YES"},
-    {"version", "5.1.73-log"},
+    {"version", BedrockPlugin_MySQL::mysqlVersion},
     {"version_comment", VERSION},
     {"version_compile_machine", "x86_64"},
     {"version_compile_os", "unknown-linux-gnu"},

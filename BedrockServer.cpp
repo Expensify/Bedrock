@@ -2194,6 +2194,8 @@ void BedrockServer::_acceptSockets() {
                 auto plugin = _portPluginMap.find(port);
                 if (plugin != _portPluginMap.end()) {
                     socket.data = plugin->second;
+                    // Call the plugin's handler.
+                    plugin->second->onPortAccept(&socket);
                 }
 
                 // And start up this socket's thread.

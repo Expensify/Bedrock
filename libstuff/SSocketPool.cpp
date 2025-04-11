@@ -59,7 +59,7 @@ unique_ptr<STCPManager::Socket> SSocketPool::getSocket() {
     // If we get here, we need to create a socket to return. No need to hold the lock, so it goes out of scope.
     try {
         // TODO: Allow S_socket to take a parsed address instead of redoing all the parsing each time.
-        return unique_ptr<STCPManager::Socket>(new STCPManager::Socket(host, false));
+        return unique_ptr<STCPManager::Socket>(new STCPManager::Socket(host));
     } catch (const SException& exception) {
         return nullptr;
     }

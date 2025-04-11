@@ -13,7 +13,8 @@ class SFastBuffer;
 class SSSLState {
   public:
 
-    SSSLState(const string& hostname = "");
+    SSSLState(const string& hostname);
+    SSSLState(const string& hostname, int socket);
     ~SSSLState();
 
     int send(const char* buffer, int length);

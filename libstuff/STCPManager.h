@@ -10,6 +10,7 @@
 #include <libstuff/SFastBuffer.h>
 
 class SSSLState;
+class SSSLState;
 
 using namespace std;
 
@@ -20,10 +21,10 @@ struct STCPManager {
     class Socket {
       public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
-        Socket(const string& host, bool useSSL = false);
-        Socket(int sock = 0, State state_ = CONNECTING, bool useSSL = false);
+        Socket(const string& host, bool https = false);
+        Socket(int sock = 0, State state_ = CONNECTING, bool https = false);
         Socket(Socket&& from);
-        ~Socket();
+        virtual ~Socket();
         // Attributes
         int s;
         sockaddr_in addr;
@@ -35,9 +36,9 @@ struct STCPManager {
         uint64_t lastRecvTime;
         SSSLState* ssl;
         void* data;
-        bool send(size_t* bytesSentCount = nullptr);
-        bool send(const string& buffer, size_t* bytesSentCount = nullptr);
-        bool recv();
+        virtual bool send(size_t* bytesSentCount = nullptr);
+        virtual bool send(const string& buffer, size_t* bytesSentCount = nullptr);
+        virtual bool recv();
         void shutdown(State toState = SHUTTINGDOWN);
         uint64_t id;
         string logString;
@@ -46,7 +47,7 @@ struct STCPManager {
         string sendBufferCopy();
         void setSendBuffer(const string& buffer);
 
-      private:
+      protected:
         static atomic<uint64_t> socketCount;
         recursive_mutex sendRecvMutex;
 
@@ -55,10 +56,7 @@ struct STCPManager {
         // NOTE: Currently there's no synchronization around `recvBuffer`. It can only be accessed by one thread.
         SFastBuffer sendBuffer;
 
-        // Each socket owns it's own SX509 object to avoid thread-safety issues reading/writing the same certificate in
-        // the underlying ssl code. Once assigned, the socket owns this object for it's lifetime and will delete it
-        // upon destruction.
-        bool _useSSL;
+        bool https;
     };
 
     class Port {

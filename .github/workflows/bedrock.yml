@@ -20,10 +20,12 @@ jobs:
     steps:
 
     - name: Install the Mold Linker
-      uses: rui314/setup-mold@v1
+      # v1
+      uses: rui314/setup-mold@f80524ca6eeaa76759b57fb78ddce5d87a20c720
 
     - name: Checkout Bedrock
-      uses: actions/checkout@v4.1.0
+      # v4.1.0
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
 
     - name: Get Date for cache
       id: get-date
@@ -32,7 +34,8 @@ jobs:
       shell: bash
 
     - name: Set up cache
-      uses: actions/cache@v4.2.0
+      # v4.2.0
+      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
       with:
         path: |-
           ${{ env.CCACHE_BASEDIR }}
@@ -58,7 +61,7 @@ jobs:
         echo "deb [arch=amd64] https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/apt.llvm.org/noble/ llvm-toolchain-noble-18 main" | sudo tee -a /etc/apt/sources.list.d/llvm-toolchain.list
 
         sudo apt-get update -y
-        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake libpcre2-dev libsodium-dev libgpgme11-dev libstdc++-14-dev
+        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake libpcre2-dev libsodium-dev libgpgme11-dev libstdc++-14-dev squid
 
         # Install clang.
         sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install clang-18 lldb-18 lld-18 clangd-18 clang-tidy-18 clang-format-18 clang-tools-18 llvm-18-dev lld-18 lldb-18 llvm-18-tools libomp-18-dev libc++-18-dev libc++abi-18-dev libclang-common-18-dev libclang-18-dev libclang-cpp18-dev libunwind-18-dev
@@ -77,7 +80,8 @@ jobs:
 
     - name: Setup tmate session
       if: runner.debug == '1'
-      uses: mxschmitt/action-tmate@v3
+      # v3
+      uses: mxschmitt/action-tmate@e5c7151931ca95bad1c6f4190c730ecf8c7dde48
       timeout-minutes: 60
       with:
         limit-access-to-actor: true

@@ -392,7 +392,7 @@ void TestPluginCommand::process(SQLite& db) {
     // upgradeDatabase and the thread running in `stateChanged`, it is possible the sync thread
     // tries to accept a command on a loop before `stateChanged` queries and gets a value for _maxID.
     // Also note this really doesn't matter in production, because we don't use `upgradeDatabase` this
-    // truly only exists for dev and testing to function properly. 
+    // truly only exists for dev and testing to function properly.
     while (plugin()._maxID < 0) {
         SINFO("Waiting for _maxID " << plugin()._maxID);
         usleep(50'000);
@@ -649,7 +649,7 @@ SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, c
 
     Socket* s = nullptr;
     try {
-        s = new Socket(host, true);
+        s = new Socket(host, SStartsWith(url, "https://"));
     } catch (const SException& e) {
         return _createErrorTransaction();
     }

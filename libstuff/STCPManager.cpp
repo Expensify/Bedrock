@@ -93,6 +93,11 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
         bool aliveAfterRecv = true;
         bool aliveAfterSend = true;
         if (socket.ssl) {
+            // If the socket is ready to send or receive, do both: SSL has its own internal traffic, so even if we
+            // only want to receive, SSL might need to send (and vice versa)
+            //
+            // **NOTE: SSL can receive data for a while before giving any back, so if this gets called many times
+            //         in a row it might just be filling an internal buffer (and not due to some busy loop)
             if (SFDAnySet(fdm, socket.s, SREADEVTS | SWRITEEVTS)) {
                 // Do both
                 aliveAfterRecv = socket.recv();
@@ -175,17 +180,17 @@ void STCPManager::Socket::shutdown(Socket::State toState) {
     state.store(toState);
 }
 
-STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool useSSL)
+STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool https)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _useSSL(useSSL)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
 { }
 
-STCPManager::Socket::Socket(const string& host, bool useSSL)
-  : s(-1), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), _useSSL(useSSL)
+STCPManager::Socket::Socket(const string& host, bool https)
+  : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
 {
     SASSERT(SHostIsValid(host));
-    if (useSSL) {
+    if (https) {
         ssl = new SSSLState(host);
         s = ssl->net_ctx.fd;
     } else {
@@ -209,7 +214,7 @@ STCPManager::Socket::Socket(Socket&& from)
     ssl(from.ssl),
     data(from.data),
     id(from.id),
-    _useSSL(from._useSSL)
+    https(from.https)
 {
     from.s = -1;
     from.ssl = nullptr;
@@ -219,8 +224,11 @@ STCPManager::Socket::Socket(Socket&& from)
 STCPManager::Socket::~Socket() {
     if (ssl) {
         delete ssl;
-    } else if ( s != -1) {
-        ::close(s);
+    } else {
+        if (s >= 0) {
+            ::shutdown(s, SHUT_RDWR);
+            ::close(s);
+        }
     }
 }
 
