@@ -7,9 +7,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
 
-
 SSSLState::SSSLState(const string& hostname) : SSSLState(hostname, -1) {}
-
 SSSLState::SSSLState(const string& hostname, int socket) {
     mbedtls_entropy_init(&ec);
     mbedtls_ctr_drbg_init(&ctr_drbg);
@@ -26,7 +24,6 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     // Do a bunch of TLS initialization.
     int lastResult = 0;
     char errorBuffer[500] = {0};
-
     lastResult = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &ec, nullptr, 0);
     if (lastResult) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
@@ -76,14 +73,13 @@ SSSLState::SSSLState(const string& hostname, int socket) {
 }
 
 SSSLState::~SSSLState() {
-    // I *beleive* this closes the socket. Let's check.
+    // Note that this closes the socket if one is set, so there is no need (and in fact it is a bug) to close it otherwise.
     mbedtls_net_free(&net_ctx);
     mbedtls_ssl_free(&ssl);
     mbedtls_ssl_config_free(&conf);
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_entropy_free(&ec);
 }
-
 
 int SSSLState::send(const char* buffer, int length) {
     // Send as much as possible and report what happened
