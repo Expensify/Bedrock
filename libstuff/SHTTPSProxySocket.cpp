@@ -17,12 +17,10 @@ SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& h
     }
 
     string domain;
-    if (https) {
-        uint16_t port;
-        SParseHost(hostname, domain, port);
-    }
+    uint16_t port;
+    SParseHost(hostname, domain, port);
 
-    ssl = new SSSLState(s, domain);
+    ssl = new SSSLState(domain, s);
 }
 
 SHTTPSProxySocket::SHTTPSProxySocket(SHTTPSProxySocket&& from)

@@ -35,32 +35,19 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
             // Have we completed the handshake?
             SASSERT(socket.ssl);
             SSSLState* sslState = socket.ssl;
-            if (sslState->ssl.state == MBEDTLS_SSL_HANDSHAKE_OVER) {
+            if (mbedtls_ssl_is_handshake_over(&sslState->ssl)) {
                 // Handshake done -- send if we have anything buffered
                 if (!socket.sendBufferEmpty()) {
                     SFDset(fdm, socket.s, SWRITEEVTS);
                 }
             } else {
-                // Handshake isn't done -- send if SSL wants to
-                bool write;
-                switch (sslState->ssl.state) {
-                case MBEDTLS_SSL_HELLO_REQUEST:
-                case MBEDTLS_SSL_CLIENT_HELLO:
-                case MBEDTLS_SSL_CLIENT_CERTIFICATE:
-                case MBEDTLS_SSL_CLIENT_KEY_EXCHANGE:
-                case MBEDTLS_SSL_CERTIFICATE_VERIFY:
-                case MBEDTLS_SSL_CLIENT_CHANGE_CIPHER_SPEC:
-                case MBEDTLS_SSL_CLIENT_FINISHED:
-                    // In these cases, SSL is waiting to write already.
-                    // @see https://www.mail-archive.com/list@xyssl.org/msg00041.html
-                    write = true;
-                    break;
-                default:
-                    write = false;
-                    break;
-                }
-                if (write) {
+                int ret = mbedtls_ssl_handshake_step(&sslState->ssl);
+                if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
                     SFDset(fdm, socket.s, SWRITEEVTS);
+                } else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
+                    // This is expected, but is already set.
+                } else if (ret) {
+                    SWARN("SSL ERROR");
                 }
             }
         }
@@ -203,18 +190,17 @@ STCPManager::Socket::Socket(const string& host, bool https)
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
 {
     SASSERT(SHostIsValid(host));
-    s = S_socket(host, true, false, false);
+    if (https) {
+        ssl = new SSSLState(host);
+        s = ssl->net_ctx.fd;
+    } else {
+        ssl = nullptr;
+        s = S_socket(host, true, false, false);
+    }
+
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
-
-    string domain;
-    if (https) {
-        uint16_t port;
-        SParseHost(host, domain, port);
-    }
-
-    ssl = https ? new SSSLState(s, domain) : nullptr;
 }
 
 STCPManager::Socket::Socket(Socket&& from)
@@ -236,11 +222,13 @@ STCPManager::Socket::Socket(Socket&& from)
 }
 
 STCPManager::Socket::~Socket() {
-    if (s != -1) {
-        ::close(s);
-    }
     if (ssl) {
         delete ssl;
+    } else {
+        if (s >= 0) {
+            ::shutdown(s, SHUT_RDWR);
+            ::close(s);
+        }
     }
 }
 
