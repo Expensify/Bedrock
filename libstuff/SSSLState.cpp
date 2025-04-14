@@ -1,43 +1,86 @@
 #include "SSSLState.h"
+#include "mbedtls/ssl.h"
 
 #include <mbedtls/error.h>
-#include <mbedtls/net.h>
+#include <mbedtls/net_sockets.h>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
 
-SSSLState::SSSLState(int s, const string& hostname) : socket(s) {
-    mbedtls_ssl_init(&ssl);
-    mbedtls_ssl_config_init(&conf);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
+SSSLState::SSSLState(const string& hostname) : SSSLState(hostname, -1) {}
+SSSLState::SSSLState(const string& hostname, int socket) {
     mbedtls_entropy_init(&ec);
+    mbedtls_ctr_drbg_init(&ctr_drbg);
+    mbedtls_ssl_config_init(&conf);
+    mbedtls_ssl_init(&ssl);
+    mbedtls_net_init(&net_ctx);
 
-    SASSERT(s >= 0);
+    // Hostname here is expected to contain the port. I.e.: expensify.com:443
+    // We need to split it into its componenets.
+    string domain;
+    uint16_t port;
+    SParseHost(hostname, domain, port);
 
-    mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &ec, 0, 0);
-    mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, 0);
+    // Do a bunch of TLS initialization.
+    int lastResult = 0;
+    char errorBuffer[500] = {0};
+    lastResult = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &ec, nullptr, 0);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ctr_drbg_seed failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
 
-    mbedtls_ssl_setup(&ssl, &conf);
+    // If no socket was supplied, create our own.
+    if (socket == -1) {
+        lastResult = mbedtls_net_connect(&net_ctx, domain.c_str(),to_string(port).c_str(), MBEDTLS_NET_PROTO_TCP);
+        if (lastResult) {
+            mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+            STHROW("mbedtls_net_connect failed with error " + to_string(lastResult) + ": " + errorBuffer);
+        }
+        lastResult = mbedtls_net_set_nonblock(&net_ctx);
+        if (lastResult) {
+            mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+            STHROW("mbedtls_net_set_nonblock failed with error " + to_string(lastResult) + ": " + errorBuffer);
+        }
+    } else {
+        // Otherwise, just borrow the existing socket.
+        net_ctx.fd = socket;
+    }
 
+    lastResult = mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ssl_config_defaults failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    // These two calls do not return error codes.
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
-    mbedtls_ssl_set_bio(&ssl, &socket, mbedtls_net_send, mbedtls_net_recv, 0);
 
-    if (hostname.size()) {
-        if (mbedtls_ssl_set_hostname(&ssl, hostname.c_str())) {
-            STHROW("ssl set hostname failed");
-        }
+    lastResult = mbedtls_ssl_set_hostname(&ssl, domain.c_str());
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ssl_set_hostname failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
+
+    lastResult = mbedtls_ssl_setup(&ssl, &conf);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ssl_setup failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    mbedtls_ssl_set_bio(&ssl, &net_ctx, mbedtls_net_send, mbedtls_net_recv, nullptr);
 }
 
 SSSLState::~SSSLState() {
-    mbedtls_entropy_free(&ec);
-    mbedtls_ctr_drbg_free(&ctr_drbg);
-    mbedtls_ssl_config_free(&conf);
+    // Note that this closes the socket if one is set, so there is no need (and in fact it is a bug) to close it otherwise.
+    mbedtls_net_free(&net_ctx);
     mbedtls_ssl_free(&ssl);
+    mbedtls_ssl_config_free(&conf);
+    mbedtls_ctr_drbg_free(&ctr_drbg);
+    mbedtls_entropy_free(&ec);
 }
 
-// --------------------------------------------------------------------------
 int SSSLState::send(const char* buffer, int length) {
     // Send as much as possible and report what happened
     SASSERT(buffer);
@@ -115,18 +158,6 @@ bool SSSLState::sendConsume(SFastBuffer& sendBuffer) {
 
     // Done!
     return (numSent != -1);
-}
-
-bool SSSLState::sendAll(const string& buffer) {
-    int totalSent = 0;
-    while (totalSent < (int)buffer.size()) {
-        int numSent = send(&buffer[totalSent], (int)buffer.size() - totalSent);
-        if (numSent == -1) {
-            return false;
-        }
-        totalSent += numSent;
-    }
-    return true;
 }
 
 bool SSSLState::recvAppend(SFastBuffer& recvBuffer) {
