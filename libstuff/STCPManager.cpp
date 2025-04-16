@@ -185,7 +185,6 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
 
 void STCPManager::Socket::shutdown(Socket::State toState) {
     SDEBUG("Shutting down socket '" << addr << "'");
-    cout << "TYLER SHUT 1" << endl;
     ::shutdown(s, SHUT_RDWR);
     state.store(toState);
 }
@@ -236,7 +235,6 @@ STCPManager::Socket::~Socket() {
         delete ssl;
     } else {
         if (s >= 0) {
-            cout << "TYLER SHUT 2" << endl;
             ::shutdown(s, SHUT_RDWR);
             ::close(s);
         }
@@ -347,7 +345,6 @@ STCPManager::Port::Port(int _s, const string& _host) : s(_s), host(_host)
 STCPManager::Port::~Port()
 {
     if (s != -1) {
-        cout << "TYLER SHUT 3" << endl;
         ::shutdown(s, SHUT_RDWR);
         ::close(s);
     }

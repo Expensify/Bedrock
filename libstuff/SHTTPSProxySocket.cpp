@@ -15,12 +15,6 @@ SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& h
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
-
-    string domain;
-    uint16_t port;
-    SParseHost(hostname, domain, port);
-
-    //ssl = new SSSLState(domain, s);
 }
 
 SHTTPSProxySocket::SHTTPSProxySocket(SHTTPSProxySocket&& from)
@@ -40,12 +34,8 @@ bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
     size_t oldSize = sendBuffer.size();
     size_t oldPreSendSize = preSendBuffer.size();
     if (oldPreSendSize) {
-        cout << "Presending: " << preSendBuffer.c_str() << endl;
         result = S_sendconsume(s, preSendBuffer);
         size_t bytesSent = oldPreSendSize - preSendBuffer.size();
-        if (preSendBuffer.size() == 0) {
-            cout << "Present all " << bytesSent << "bytes" << endl;
-        }
         if (bytesSent) {
             lastSendTime = STimeNow();
             if (bytesSentCount) {
@@ -53,14 +43,9 @@ bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
             }
         }
     } else if (proxyNegotiationComplete) {
-        SINFO("TYLER starting send buffer: " << sendBuffer.c_str());
-        cout << "TYLER starting send buffer: " << sendBuffer.c_str() << endl;
         result = ssl->sendConsume(sendBuffer);
-        SINFO("TYLER remaining send buffer: " << sendBuffer.c_str());
-        cout << "TYLER remaining send buffer: " << sendBuffer.c_str() << endl;
     } else {
         // Waiting for proxy negotiation to complete before sending more.
-        // cout << "WAITING ON PROXY" << endl;
         return true;
     }
     size_t bytesSent = oldSize - sendBuffer.size();
@@ -112,18 +97,10 @@ bool SHTTPSProxySocket::recv() {
                     // Basic checking that we got back a 200.
                     if (SContains(connectionEstablished.methodLine, " 200 ")) {
                         proxyNegotiationComplete = true;
-                        SINFO("TYLER finished proxy negotiation");
-                        cout << "TYLER finished proxy negotiation: " << recvBuffer.c_str() << endl;
-
                         recvBuffer.clear();
 
-                        //string domain;
-                        //uint16_t port;
-                        //SParseHost(hostname, domain, port);
                         ssl = new SSSLState(hostname, s);
-
                     } else {
-                        cout << "TYLER BROKEN" << endl;
                         SWARN("Proxy server " << proxyAddress << " returned methodLine: " << connectionEstablished.methodLine);
                         close(s);
                         s = -1;
@@ -132,8 +109,6 @@ bool SHTTPSProxySocket::recv() {
                 }
             }
         } else  {
-            SINFO("TYLER recvBuffer is: " << recvBuffer.c_str());
-            cout << "TYLER recvBuffer is: " << recvBuffer.c_str() << endl;
             result = ssl->recvAppend(recvBuffer);
         }
 
