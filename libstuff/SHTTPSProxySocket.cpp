@@ -4,7 +4,7 @@
 #include "libstuff/libstuff.h"
 #include <libstuff/SSSLState.h>
 #include <mutex>
-
+#include <iostream>
 SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host)
  : STCPManager::Socket::Socket(0, STCPManager::Socket::State::CONNECTING, true),
    proxyAddress(proxyAddress),
@@ -20,7 +20,7 @@ SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& h
     uint16_t port;
     SParseHost(hostname, domain, port);
 
-    ssl = new SSSLState(domain, s);
+    //ssl = new SSSLState(domain, s);
 }
 
 SHTTPSProxySocket::SHTTPSProxySocket(SHTTPSProxySocket&& from)
@@ -40,8 +40,12 @@ bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
     size_t oldSize = sendBuffer.size();
     size_t oldPreSendSize = preSendBuffer.size();
     if (oldPreSendSize) {
+        cout << "Presending: " << preSendBuffer.c_str() << endl;
         result = S_sendconsume(s, preSendBuffer);
         size_t bytesSent = oldPreSendSize - preSendBuffer.size();
+        if (preSendBuffer.size() == 0) {
+            cout << "Present all " << bytesSent << "bytes" << endl;
+        }
         if (bytesSent) {
             lastSendTime = STimeNow();
             if (bytesSentCount) {
@@ -49,9 +53,14 @@ bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
             }
         }
     } else if (proxyNegotiationComplete) {
+        SINFO("TYLER starting send buffer: " << sendBuffer.c_str());
+        cout << "TYLER starting send buffer: " << sendBuffer.c_str() << endl;
         result = ssl->sendConsume(sendBuffer);
+        SINFO("TYLER remaining send buffer: " << sendBuffer.c_str());
+        cout << "TYLER remaining send buffer: " << sendBuffer.c_str() << endl;
     } else {
         // Waiting for proxy negotiation to complete before sending more.
+        cout << "WAITING ON PROXY" << endl;
         return true;
     }
     size_t bytesSent = oldSize - sendBuffer.size();
@@ -70,7 +79,10 @@ bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
     if (state.load() < Socket::State::SHUTTINGDOWN) {
         if (!filledPreSendBuffer) {
             SData connectMessage("CONNECT " + hostname + " HTTP/1.1");
-            connectMessage["Host"] = proxyAddress;
+            connectMessage["Host"] = hostname;
+            connectMessage["Proxy-Connection"] = "Keep-Alive";
+            connectMessage["User-Agent"] = "bedrock/3.0";
+
             string serialized = connectMessage.serialize();
             preSendBuffer.append(serialized.c_str(), serialized.size());
             filledPreSendBuffer = true;
@@ -86,6 +98,7 @@ bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
 
 bool SHTTPSProxySocket::recv() {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+    cout << "SHTTPSProxySocket recv called" << endl;
 
     bool result = false;
     if (s > 0) {
@@ -99,8 +112,18 @@ bool SHTTPSProxySocket::recv() {
                     // Basic checking that we got back a 200.
                     if (SContains(connectionEstablished.methodLine, " 200 ")) {
                         proxyNegotiationComplete = true;
+                        SINFO("TYLER finished proxy negotiation");
+                        cout << "TYLER finished proxy negotiation: " << recvBuffer.c_str() << endl;
+
                         recvBuffer.clear();
+
+                        string domain;
+                        uint16_t port;
+                        SParseHost(hostname, domain, port);
+                        ssl = new SSSLState(domain, s);
+
                     } else {
+                        cout << "TYLER BROKEN" << endl;
                         SWARN("Proxy server " << proxyAddress << " returned methodLine: " << connectionEstablished.methodLine);
                         close(s);
                         s = -1;
@@ -109,6 +132,8 @@ bool SHTTPSProxySocket::recv() {
                 }
             }
         } else  {
+            SINFO("TYLER recvBuffer is: " << recvBuffer.c_str());
+            cout << "TYLER recvBuffer is: " << recvBuffer.c_str() << endl;
             result = ssl->recvAppend(recvBuffer);
         }
 

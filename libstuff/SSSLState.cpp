@@ -6,6 +6,12 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
+#include <iostream>
+
+#include <mbedtls/debug.h>
+void my_debug(void *ctx, int level, const char *file, int line, const char *str) {
+    cout << "MBEDTLS debug f: " << file << ", line: " << line << ", level: " << level << ", str: " << str;
+}
 
 SSSLState::SSSLState(const string& hostname) : SSSLState(hostname, -1) {}
 SSSLState::SSSLState(const string& hostname, int socket) {
@@ -14,6 +20,9 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     mbedtls_ssl_config_init(&conf);
     mbedtls_ssl_init(&ssl);
     mbedtls_net_init(&net_ctx);
+
+    mbedtls_ssl_conf_dbg(&conf, my_debug, stdout);
+    mbedtls_debug_set_threshold(4);
 
     // Hostname here is expected to contain the port. I.e.: expensify.com:443
     // We need to split it into its componenets.
@@ -86,6 +95,7 @@ int SSSLState::send(const char* buffer, int length) {
     SASSERT(buffer);
     const int numSent = mbedtls_ssl_write(&ssl, (unsigned char*)buffer, length);
     if (numSent > 0) {
+        cout << "Sent " << numSent << " bytes" << endl;
         return numSent;
     }
 
@@ -94,10 +104,12 @@ int SSSLState::send(const char* buffer, int length) {
     case MBEDTLS_ERR_SSL_WANT_READ:
     case MBEDTLS_ERR_SSL_WANT_WRITE:
     case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
+        cout << "Send retry " << numSent << endl;
         return 0; // retry
 
     default:
         // Error
+        cout << "TYLER OTHER ERROR" << endl;
         char errStr[100];
         mbedtls_strerror(numSent, errStr, 100);
         SINFO("SSL reports send error #" << numSent << " (" << errStr << ")");
@@ -127,11 +139,15 @@ int SSSLState::recv(char* buffer, int length) {
 
     case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
         // the connection is about to be closed
+        cout << "TYLER  MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY" << endl;
+
         SINFO("SSL reports MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY");
         return -1;
 
     default:
         // Error
+        cout << "TYLER OTHER ERROR" << endl;
+
         char errStr[100];
         mbedtls_strerror(numRecv, errStr, 100);
         SINFO("SSL reports recv error #" << numRecv << " (" << errStr << ")");
@@ -153,7 +169,10 @@ bool SSSLState::sendConsume(SFastBuffer& sendBuffer) {
     // Nothing to send, assume we're alive
     int numSent = send(sendBuffer);
     if (numSent > 0) {
+        cout << "Sent some bytes: " << numSent << endl;
         sendBuffer.consumeFront(numSent);
+    } else {
+        cout << "Sent no bytes" << endl;
     }
 
     // Done!
