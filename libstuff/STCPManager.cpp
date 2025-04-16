@@ -4,7 +4,7 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
-#include <iostream>
+
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
 void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
@@ -16,7 +16,6 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
                   << socket.s << "), we're probably about to corrupt stack memory. FD_SETSIZE=" << FD_SETSIZE);
         }
         // Add this socket. First, we always want to read, and we always want to learn of exceptions.
-       //cout << "Setting read event for " << socket.s << endl;
         SFDset(fdm, socket.s, SREADEVTS);
 
         // However, we only want to write in some states. No matter what, we want to send if we're not yet
@@ -37,20 +36,16 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
             SASSERT(socket.ssl);
             SSSLState* sslState = socket.ssl;
             if (mbedtls_ssl_is_handshake_over(&sslState->ssl)) {
-                cout << "Handshake complete" << endl;
                 // Handshake done -- send if we have anything buffered
                 if (!socket.sendBufferEmpty()) {
                     SFDset(fdm, socket.s, SWRITEEVTS);
                 }
             } else {
-                cout << "Handshake in progress" << endl;
                 int ret = mbedtls_ssl_handshake(&sslState->ssl);
                 if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
-                    cout << "Need write" << endl;
                     SFDset(fdm, socket.s, SWRITEEVTS);
                 } else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
                     // This is expected, but is already set.
-                    cout << "Need read" << endl;
                 } else if (ret) {
                     SWARN("SSL ERROR");
                 }
@@ -94,7 +89,6 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
     }
 
     case Socket::CONNECTED: {
-        //cout << "Post poll state is connected " << socket.s << endl;
         // Connected -- see if we're ready to send
         bool aliveAfterRecv = true;
         bool aliveAfterSend = true;
@@ -105,12 +99,9 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
             // **NOTE: SSL can receive data for a while before giving any back, so if this gets called many times
             //         in a row it might just be filling an internal buffer (and not due to some busy loop)
             if (SFDAnySet(fdm, socket.s, SREADEVTS | SWRITEEVTS)) {
-                cout << "Send and receive on SSL socket" << endl;
                 // Do both
                 aliveAfterRecv = socket.recv();
                 aliveAfterSend = socket.send();
-            } else {
-                cout << "Neither send nor receive on SSL socket" << endl;
             }
         } else {
             // Only send/recv if the socket is ready
@@ -292,8 +283,6 @@ void STCPManager::Socket::setSendBuffer(const string& buffer) {
 
 bool STCPManager::Socket::recv() {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
-
-    cout << "basic socket recv called" << endl;
 
     // Read data
     bool result = false;

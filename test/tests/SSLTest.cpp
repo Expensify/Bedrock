@@ -14,7 +14,7 @@ struct SSLTest : tpunit::TestFixture {
         : tpunit::TestFixture("SSL",
                               BEFORE_CLASS(SSLTest::setup),
                               TEST(SSLTest::proxyTest),
-                              //TEST(SSLTest::test),
+                              TEST(SSLTest::test),
                               AFTER_CLASS(SSLTest::teardown))
     { }
 
@@ -58,7 +58,6 @@ struct SSLTest : tpunit::TestFixture {
         const string host = "example.com:443";
         SData request("GET / HTTP/1.1");
         request["host"] = host;
-        request["User-Agent"] = "bedrock/3.0";
 
         // Note: this works with a default squid install, which Github actions doesn't currently have.
         const string proxy = "127.0.0.1:3128";

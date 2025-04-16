@@ -6,7 +6,7 @@
 #include <BedrockServer.h>
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
-#include <iostream>
+
 const string SStandaloneHTTPSManager::proxyAddressHTTPS = initProxyAddressHTTPS();
 
 string SStandaloneHTTPSManager::initProxyAddressHTTPS() {
@@ -103,7 +103,6 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     bool hasContentLength = transaction.fullResponse.nameValueMap.contains("Content-Length");
     bool completeRequest = size && (hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
     if (completeRequest) {
-        cout << "transaction completed request " << transaction.fullResponse.serialize() << endl;
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
         transaction.finished = now;

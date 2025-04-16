@@ -1,5 +1,4 @@
 #include "libstuff/SFastBuffer.h"
-#include "libstuff/SSSLState.h"
 #include <libstuff/STCPManager.h>
 
 class SHTTPSProxySocket : public STCPManager::Socket {
@@ -28,6 +27,4 @@ class SHTTPSProxySocket : public STCPManager::Socket {
     bool proxyNegotiationComplete = false;
     bool filledPreSendBuffer = false;
     SFastBuffer preSendBuffer;
-
-    //SSSLState* tempSSL;
 };

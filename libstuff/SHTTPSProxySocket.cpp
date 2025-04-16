@@ -4,7 +4,7 @@
 #include "libstuff/libstuff.h"
 #include <libstuff/SSSLState.h>
 #include <mutex>
-#include <iostream>
+
 SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host)
  : STCPManager::Socket::Socket(0, STCPManager::Socket::State::CONNECTING, true),
    proxyAddress(proxyAddress),
@@ -65,8 +65,6 @@ bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
         if (!filledPreSendBuffer) {
             SData connectMessage("CONNECT " + hostname + " HTTP/1.1");
             connectMessage["Host"] = hostname;
-            connectMessage["Proxy-Connection"] = "Keep-Alive";
-            connectMessage["User-Agent"] = "bedrock/3.0";
 
             string serialized = connectMessage.serialize();
             preSendBuffer.append(serialized.c_str(), serialized.size());
@@ -83,7 +81,6 @@ bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
 
 bool SHTTPSProxySocket::recv() {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
-    cout << "SHTTPSProxySocket recv called" << endl;
 
     bool result = false;
     if (s > 0) {
