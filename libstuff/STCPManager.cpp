@@ -16,7 +16,7 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
                   << socket.s << "), we're probably about to corrupt stack memory. FD_SETSIZE=" << FD_SETSIZE);
         }
         // Add this socket. First, we always want to read, and we always want to learn of exceptions.
-        cout << "Setting read event for " << socket.s << endl;
+       //cout << "Setting read event for " << socket.s << endl;
         SFDset(fdm, socket.s, SREADEVTS);
 
         // However, we only want to write in some states. No matter what, we want to send if we're not yet
@@ -94,7 +94,7 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
     }
 
     case Socket::CONNECTED: {
-        cout << "Post poll state is connected " << socket.s << endl;
+        //cout << "Post poll state is connected " << socket.s << endl;
         // Connected -- see if we're ready to send
         bool aliveAfterRecv = true;
         bool aliveAfterSend = true;

@@ -28,6 +28,7 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     // We need to split it into its componenets.
     string domain;
     uint16_t port;
+    cout << "TYLER HOST: " << hostname << endl;
     SParseHost(hostname, domain, port);
 
     // Do a bunch of TLS initialization.
@@ -66,6 +67,7 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
 
+    cout << "TYLER SETTING SNI: " << domain.c_str() << endl;
     lastResult = mbedtls_ssl_set_hostname(&ssl, domain.c_str());
     if (lastResult) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));

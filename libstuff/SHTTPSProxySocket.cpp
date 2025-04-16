@@ -60,7 +60,7 @@ bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
         cout << "TYLER remaining send buffer: " << sendBuffer.c_str() << endl;
     } else {
         // Waiting for proxy negotiation to complete before sending more.
-        cout << "WAITING ON PROXY" << endl;
+        // cout << "WAITING ON PROXY" << endl;
         return true;
     }
     size_t bytesSent = oldSize - sendBuffer.size();
@@ -117,10 +117,10 @@ bool SHTTPSProxySocket::recv() {
 
                         recvBuffer.clear();
 
-                        string domain;
-                        uint16_t port;
-                        SParseHost(hostname, domain, port);
-                        ssl = new SSSLState(domain, s);
+                        //string domain;
+                        //uint16_t port;
+                        //SParseHost(hostname, domain, port);
+                        ssl = new SSSLState(hostname, s);
 
                     } else {
                         cout << "TYLER BROKEN" << endl;
