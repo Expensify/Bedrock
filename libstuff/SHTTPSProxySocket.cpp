@@ -96,6 +96,14 @@ bool SHTTPSProxySocket::recv() {
                         proxyNegotiationComplete = true;
                         recvBuffer.clear();
 
+                        // We create this here, rather than in the constructor or somewhere that seems more reasonable, because
+                        // STCPManager::prePoll will start the TLS handshake if the Socket object's `ssl` field is set. Since the
+                        // `CONNECT` message is plain HTTP, we want to skip the handshake until that is all completed, and then set
+                        // the ssl field so that the handsahke begins.
+                        // Technically, it's feasible to begin the TLS handahake as soon as the CONNECT message has sent, even without
+                        // waiting for the response, but this was causing issues debugging in wireshark, which couldn't reassemble the
+                        // stream of packets in a way that really made sense. It's also just sort of strange looking, so we just
+                        // wait to start the TLS handshake until the CONNECT message is complete and its response is received.
                         ssl = new SSSLState(hostname, s);
                     } else {
                         SWARN("Proxy server " << proxyAddress << " returned methodLine: " << connectionEstablished.methodLine);
