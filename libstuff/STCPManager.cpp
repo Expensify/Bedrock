@@ -41,7 +41,7 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
                     SFDset(fdm, socket.s, SWRITEEVTS);
                 }
             } else {
-                int ret = mbedtls_ssl_handshake_step(&sslState->ssl);
+                int ret = mbedtls_ssl_handshake(&sslState->ssl);
                 if (ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
                     SFDset(fdm, socket.s, SWRITEEVTS);
                 } else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {

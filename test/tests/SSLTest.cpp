@@ -55,7 +55,7 @@ struct SSLTest : tpunit::TestFixture {
         // This is a generic HTTPS manager.
         SStandaloneHTTPSManager manager;
 
-        const string host = "www.example.com:443";
+        const string host = "example.com:443";
         SData request("GET / HTTP/1.1");
         request["host"] = host;
 
@@ -73,7 +73,7 @@ struct SSLTest : tpunit::TestFixture {
             fd_map fdm;
             uint64_t nextActivity = STimeNow();
             manager.prePoll(fdm, *transaction);
-            S_poll(fdm, 1'000);
+            S_poll(fdm, 1'000'000);
             manager.postPoll(fdm, *transaction, nextActivity);
         }
 
