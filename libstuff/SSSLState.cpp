@@ -19,7 +19,9 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     // We need to split it into its componenets.
     string domain;
     uint16_t port;
-    SParseHost(hostname, domain, port);
+    if (!SParseHost(hostname, domain, port)) {
+        STHROW("Invalid host: " + hostname);
+    }
 
     // Do a bunch of TLS initialization.
     int lastResult = 0;
