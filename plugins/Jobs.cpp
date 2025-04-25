@@ -951,12 +951,9 @@ void BedrockJobsCommand::process(SQLite& db) {
         mockRequest = result[0][3] == "1";
 
         // Preserve the jobs mockRequest attribute so it is not overwritten by data updates.
-        STable newData = SParseJSONObject(request["data"]);
-        if (mockRequest) {
-            newData["mockRequest"] = mockRequest;
-        } else {
-            newData.erase("mockRequest");
-        }
+        const string newData = mockRequest
+            ? db.read("SELECT IFF(JSON_VALID(" + SQ(request["data"]) + "), JSON_SET(" + SQ(request["data"]) + ", '$.mockRequest', JSON('true')), '{}');")
+            : db.read("SELECT IFF(JSON_VALID(" + SQ(request["data"]) + "), JSON_REMOVE(" + SQ(request["data"]) + ", '$.mockRequest'), '{}');");
 
         // Passed next run takes priority over the one computed via the repeat feature
         string newNextRun;
