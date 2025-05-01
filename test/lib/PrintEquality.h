@@ -5,6 +5,7 @@
 #include <set>
 #include <map>
 #include <list>
+#include <optional>
 
 using namespace std;
 
@@ -28,6 +29,16 @@ ostream& operator<<(ostream& output, const map<T, U>& val)
         output << k << ": " << v << endl;
     }
     return output << "}";
+}
+
+template<typename T>
+ostream& operator<<(ostream& output, const std::optional<T>& val)
+{
+    if (val.has_value()) {
+        return output << val.value();
+    }
+
+    return output << "(nullopt)";
 }
 
 class PrintEquality {
