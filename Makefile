@@ -49,17 +49,20 @@ clean:
 	(test -f mbedtls/Makefile && cd mbedtls && $(MAKE) clean) || true
 
 # Rule to build mbedtls.
+MBEDTLS_VERSION = v3.6.2
 MBEDTLS_CONFIG = include/mbedtls/mbedtls_config.h
 MBEDTLS_CONFIG_BAK = $(MBEDTLS_CONFIG).bak
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
+	# This build step assumes nobody wants to locally change mbedtls. So we check if there's a diff and print a warning if there is
+	# If you want to do edit mbedtls locally, too bad. Modify the Makefile. Fork the mbedtls repo and point submodule at our fork if you must.
+	( [ -f mbedtls/.git ] && cd mbedtls && git fetch --quiet --tags && ! git diff --quiet --exit-code "$(MBEDTLS_VERSION)" && echo >&2 "⚠️  Warning: Local changes in 'mbedtls' will be discarded!" && GIT_PAGER=cat git diff "$(MBEDTLS_VERSION)" >&2 ) || true
+
 	# Fully reinitialize mbedtls submodule including nested submodules.
 	git submodule update --init --recursive --force
-
-	# This assumes nobody wants to locally change mbedtls. If you want to do that, too bad. Change the Makefile if you must.
 	cd mbedtls && git reset --hard && git clean -fdx
 
 	# Ensure correct version is checked out.
-	cd mbedtls && git checkout -q v3.6.2
+	cd mbedtls && git checkout -q "$(MBEDTLS_VERSION)"
 
 	# Configure threading options (stash old version of the config file).
 	( cd mbedtls && [ -f "$(MBEDTLS_CONFIG)" ] && git checkout -f "$(MBEDTLS_CONFIG)" && cp "$(MBEDTLS_CONFIG)" "$(MBEDTLS_CONFIG_BAK)" ) || true
