@@ -142,7 +142,18 @@ void BedrockCommand::_waitForTransactions() {
         if (now < timeout()) {
             maxWaitUs = timeout() - now;
         } else {
-            // TODO: Need to set an error state on every incomplete request and mark them finished.
+            // This uses the same starting point as in areHttpsRequestsComplete, for efficiency.
+            // We won't iterate over large numbers of known completed requests, instead starting
+            // from the the point of the list of known completed request.
+            auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
+            while (requestIt != httpsRequests.end()) {
+                if (!(*requestIt)->response) {
+                    (*requestIt)->response = 500;
+                }
+                requestIt++;
+            }
+
+            // Timed everything out, can return.
             break;
         }
 
