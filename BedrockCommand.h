@@ -96,7 +96,7 @@ class BedrockCommand : public SQLiteCommand {
 
     // Blocks until all outstanding HTTPS transactions are complete.
     // If called from inside an active DB transaction, this will validate that the transaction is running inside
-    // `peek` or `prePeek` (`postProcess` could also probably be allowed, but currently is not).
+    // `peek`, `prePeek` or `postProcess`.
     // If it is not, this will throw.
     // The reason for this is because the current transaction will be rolled back and then restarted at the end of waiting
     // for network requests, which will break everything if done from `process`.
