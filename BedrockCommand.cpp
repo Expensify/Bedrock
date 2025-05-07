@@ -130,10 +130,7 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
     return true;
 }
 
-void BedrockCommand::waitForTransactions() {
-    if (_inDBReadOperation || _inDBWriteOperation) {
-        STHROW("500 Can not wait for transactions with DB assigned");
-    }
+void BedrockCommand::_waitForTransactions() {
     uint64_t startTime = 0;
     while (!areHttpsRequestsComplete()) {
         // Wait until the command's timeout, or break early if the command has timed out.
@@ -174,6 +171,13 @@ void BedrockCommand::waitForTransactions() {
     }
 }
 
+void BedrockCommand::waitForTransactions() {
+    if (_inDBReadOperation || _inDBWriteOperation) {
+        STHROW("500 Can not wait for transactions with DB assigned");
+    }
+    _waitForTransactions();
+}
+
 void BedrockCommand::waitForTransactions(SQLite& db) {
     bool wasInTransaction = db.insideTransaction();
     if (wasInTransaction) {
@@ -183,7 +187,7 @@ void BedrockCommand::waitForTransactions(SQLite& db) {
         db.rollback();
     }
 
-    waitForTransactions();
+    _waitForTransactions();
 
     if (wasInTransaction) {
         if (!db.beginTransaction(db.getLastTransactionType())) {

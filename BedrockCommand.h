@@ -296,6 +296,9 @@ class BedrockCommand : public SQLiteCommand {
     // Set to true whene we are in `process`.
     bool _inDBWriteOperation = false;
 
+    // Internal function that provides the main functionality for waitForTransactions().
+    void _waitForTransactions();
+
     // Set certain initial state on construction. Common functionality to several constructors.
     void _init();
 
