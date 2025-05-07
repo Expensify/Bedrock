@@ -49,8 +49,6 @@ clean:
 	(test -f mbedtls/Makefile && cd mbedtls && $(MAKE) clean) || true
 
 # Rule to build mbedtls.
-MBEDTLS_CONFIG = include/mbedtls/mbedtls_config.h
-MBEDTLS_CONFIG_BAK = $(MBEDTLS_CONFIG).bak
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
 	# Fully reinitialize mbedtls submodule including nested submodules.
 	git submodule update --init --recursive
@@ -59,15 +57,12 @@ mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/lib
 	cd mbedtls && git checkout -q v3.6.2
 
 	# Configure threading options (stash old version of the config file).
-	( cd mbedtls && [ -f "$(MBEDTLS_CONFIG)" ] && git checkout -f "$(MBEDTLS_CONFIG)" && cp "$(MBEDTLS_CONFIG)" "$(MBEDTLS_CONFIG_BAK)" ) || true
+	( [ -f mbedtls/include/mbedtls/mbedtls_config.h ] && git checkout -f mbedtls/include/mbedtls/mbedtls_config.h ) || true
 	mbedtls/scripts/config.py set MBEDTLS_THREADING_C
 	mbedtls/scripts/config.py set MBEDTLS_THREADING_PTHREAD
 
 	# Build mbedtls (skip tests).
 	cd mbedtls && $(MAKE) no_test
-
-	# Restore threading options after build so submodule does not show up as dirty in git index.
-	( cd mbedtls && [ -f "$(MBEDTLS_CONFIG_BAK)" ] && mv -f "$(MBEDTLS_CONFIG_BAK)" "$(MBEDTLS_CONFIG)") || true
 
 # We select all of the cpp files (and manually add sqlite3.c) that will be in libstuff.
 # We then transform those file names into a list of object file name and dependency file names.
