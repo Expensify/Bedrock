@@ -334,7 +334,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         if (responseNow) {
             STHROW("500 Shouldn't have a response yet");
         }
-        waitForTransactions(db);
+        waitForHTTPSRequests(db);
         responseNow = httpsRequests.back()->response;
         if (responseNow != 200) {
             STHROW("500 expected 200 response");

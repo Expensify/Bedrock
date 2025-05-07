@@ -100,12 +100,12 @@ class BedrockCommand : public SQLiteCommand {
     // If it is not, this will throw.
     // The reason for this is because the current transaction will be rolled back and then restarted at the end of waiting
     // for network requests, which will break everything if done from `process`.
-    void waitForTransactions(SQLite& db);
+    void waitForHTTPSRequests(SQLite& db);
 
     // This call is the same as the above, but is only allowed if you are neither peeking *nor* processing.
     // It is intended only for use when the command is not assigned a DB at all, and thus does not need rolling back and
     // restarting.
-    void waitForTransactions();
+    void waitForHTTPSRequests();
 
     // Bedrock will call this before each `processCommand` (note: not `peekCommand`) for each plugin to allow it to
     // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
@@ -296,8 +296,8 @@ class BedrockCommand : public SQLiteCommand {
     // Set to true whene we are in `process`.
     bool _inDBWriteOperation = false;
 
-    // Internal function that provides the main functionality for waitForTransactions().
-    void _waitForTransactions();
+    // Internal function that provides the main functionality for waitForHTTPSRequests().
+    void _waitForHTTPSRequests();
 
     // Set certain initial state on construction. Common functionality to several constructors.
     void _init();

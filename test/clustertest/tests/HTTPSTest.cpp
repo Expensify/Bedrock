@@ -23,7 +23,7 @@ struct HTTPSTest : tpunit::TestFixture {
                               BEFORE_CLASS(HTTPSTest::setup),
                               AFTER_CLASS(HTTPSTest::teardown),
                               TEST(HTTPSTest::testMultipleRequests),
-                              TEST(HTTPSTest::testWaitForTransactions),
+                              TEST(HTTPSTest::testWaitForHTTPSRequests),
                               TEST(HTTPSTest::test)) { }
 
     BedrockClusterTester* tester;
@@ -45,7 +45,7 @@ struct HTTPSTest : tpunit::TestFixture {
         ASSERT_EQUAL(lines.size(), 3);
     }
 
-    void testWaitForTransactions() {
+    void testWaitForHTTPSRequests() {
         BedrockTester& brtester = tester->getTester(1);
         SData request("httpswait");
         auto result = brtester.executeWaitMultipleData({request});
