@@ -94,10 +94,18 @@ class BedrockCommand : public SQLiteCommand {
     // Take a serialized list of HTTPS requests as from `serializeHTTPSRequests` and deserialize them into the `httpsRequests` object.
     void deserializeHTTPSRequests(const string& serializedHTTPSRequests);
 
-    // Blocks until the given transaction completes.
-    // Only allowed in peek or prePeek, throws otherwise.
-    // Will roll back the current DB transaction and restart it before returning.
-    void waitForTransaction(SQLite& db, SHTTPSManager::Transaction* transaction);
+    // Blocks until all outstanding HTTPS transactions are complete.
+    // If called from inside an active DB transaction, this will validate that the transaction is running inside
+    // `peek` or `prePeek` (`postProcess` could also probably be allowed, but currently is not).
+    // If it is not, this will throw.
+    // The reason for this is because the current transaction will be rolled back and then restarted at the end of waiting
+    // for network requests, which will break everything if done from `process`.
+    void waitForTransactions(SQLite& db);
+
+    // This call is the same as the above, but is only allowed if you are neither peeking *nor* processing.
+    // It is intended only for use when the command is not assigned a DB at all, and thus does not need rolling back and
+    // restarting.
+    void waitForTransactions();
 
     // Bedrock will call this before each `processCommand` (note: not `peekCommand`) for each plugin to allow it to
     // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
@@ -282,8 +290,11 @@ class BedrockCommand : public SQLiteCommand {
 
   private:
 
-    // Set to true when we are in `peek` or `prePeek`.
-    bool _isPeeking = false;
+    // Set to true when we are in `peek`, `prePeek`, or `postProcess`.
+    bool _inDBReadOperation = false;
+
+    // Set to true whene we are in `process`.
+    bool _inDBWriteOperation = false;
 
     // Set certain initial state on construction. Common functionality to several constructors.
     void _init();

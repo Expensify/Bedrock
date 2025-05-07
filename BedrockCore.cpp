@@ -83,9 +83,9 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
 
             // prePeek.
             command->reset(BedrockCommand::STAGE::PREPEEK);
-            command->_isPeeking = true;
+            command->_inDBReadOperation = true;
             command->prePeek(_db);
-            command->_isPeeking = false;
+            command->_inDBReadOperation = false;
             SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
 
             if (!content.empty()) {
@@ -103,18 +103,18 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
             if (!command->shouldSuppressTimeoutWarnings()) {
                 SALERT("Command " << command->request.methodLine << " timed out after " << e.time() / 1000 << "ms.");
             }
-            command->_isPeeking = false;
+            command->_inDBReadOperation = false;
             STHROW("555 Timeout prePeeking command");
         }
     } catch (const SException& e) {
         _handleCommandException(command, e, &_db, &_server);
         command->complete = true;
-        command->_isPeeking = false;
+        command->_inDBReadOperation = false;
     } catch (...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
         command->complete = true;
-        command->_isPeeking = false;
+        command->_inDBReadOperation = false;
 
     }
     _db.clearTimeout();
@@ -153,9 +153,9 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
 
             // Peek.
             command->reset(BedrockCommand::STAGE::PEEK);
-            command->_isPeeking = true;
+            command->_inDBReadOperation = true;
             bool completed = command->peek(_db);
-            command->_isPeeking = false;
+            command->_inDBReadOperation = false;
             SDEBUG("Plugin '" << command->getName() << "' peeked command '" << request.methodLine << "'");
 
             if (!completed) {
@@ -170,7 +170,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             if (!command->shouldSuppressTimeoutWarnings()) {
                 SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
             }
-            command->_isPeeking = false;
+            command->_inDBReadOperation = false;
             STHROW("555 Timeout peeking command");
         }
 
@@ -195,16 +195,16 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         }
     } catch (const SException& e) {
         command->repeek = false;
-        command->_isPeeking = false;
+        command->_inDBReadOperation = false;
         _handleCommandException(command, e, &_db, &_server);
     } catch (const SHTTPSManager::NotLeading& e) {
         command->repeek = false;
-        command->_isPeeking = false;
+        command->_inDBReadOperation = false;
         returnValue = RESULT::SHOULD_PROCESS;
         SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
     } catch (...) {
         command->repeek = false;
-        command->_isPeeking = false;
+        command->_inDBReadOperation = false;
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
     }

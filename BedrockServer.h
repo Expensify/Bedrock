@@ -185,6 +185,8 @@ class BedrockServer : public SQLiteServer {
     void blockCommandPort(const string& reason) override;
     void unblockCommandPort(const string& reason) override;
 
+    bool isShuttingDown();
+
     // Legacy version of above.
     void suppressCommandPort(const string& reason, bool suppress, bool manualOverride = false);
 
