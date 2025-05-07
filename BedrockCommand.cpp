@@ -2,6 +2,8 @@
 #include <libstuff/SHTTPSManager.h>
 #include "BedrockCommand.h"
 #include "BedrockPlugin.h"
+#include "sqlitecluster/SQLite.h"
+#include "test/clustertest/BedrockClusterTester.h"
 
 atomic<size_t> BedrockCommand::_commandCount(0);
 
@@ -125,6 +127,17 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
         requestIt++;
     }
     return true;
+}
+
+void BedrockCommand::waitForTransaction(SQLite& db, SHTTPSManager:: Transaction* transaction) {
+    if (! _isPeeking) {
+        STHROW("500 Can only wait for transaction in peek/prepeek");
+    }
+    db.rollback();
+    // TODO: wait
+    if (!db.beginTransaction(db.getLastTransactionType())) {
+        STHROW("501 Failed to begin transaction");
+    }
 }
 
 void BedrockCommand::reset(BedrockCommand::STAGE stage) {

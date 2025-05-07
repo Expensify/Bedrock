@@ -5,6 +5,7 @@
 class BedrockPlugin;
 
 class BedrockCommand : public SQLiteCommand {
+  friend class BedrockCore;
   public:
     enum Priority {
         PRIORITY_MIN = 0,
@@ -92,6 +93,11 @@ class BedrockCommand : public SQLiteCommand {
 
     // Take a serialized list of HTTPS requests as from `serializeHTTPSRequests` and deserialize them into the `httpsRequests` object.
     void deserializeHTTPSRequests(const string& serializedHTTPSRequests);
+
+    // Blocks until the given transaction completes.
+    // Only allowed in peek or prePeek, throws otherwise.
+    // Will roll back the current DB transaction and restart it before returning.
+    void waitForTransaction(SQLite& db, SHTTPSManager::Transaction* transaction);
 
     // Bedrock will call this before each `processCommand` (note: not `peekCommand`) for each plugin to allow it to
     // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
@@ -275,6 +281,10 @@ class BedrockCommand : public SQLiteCommand {
     bool _commitEmptyTransactions;
 
   private:
+
+    // Set to true when we are in `peek` or `prePeek`.
+    bool _isPeeking = false;
+
     // Set certain initial state on construction. Common functionality to several constructors.
     void _init();
 
