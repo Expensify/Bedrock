@@ -1,7 +1,10 @@
+#include <cstdint>
 #include <libstuff/libstuff.h>
 #include <libstuff/SHTTPSManager.h>
 #include "BedrockCommand.h"
 #include "BedrockPlugin.h"
+#include "sqlitecluster/SQLite.h"
+#include "BedrockServer.h"
 
 atomic<size_t> BedrockCommand::_commandCount(0);
 
@@ -125,6 +128,83 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
         requestIt++;
     }
     return true;
+}
+
+void BedrockCommand::_waitForHTTPSRequests() {
+    uint64_t startTime = 0;
+    while (!areHttpsRequestsComplete()) {
+        // Wait until the command's timeout, or break early if the command has timed out.
+        uint64_t maxWaitUs = 0;
+        uint64_t now = STimeNow();
+        if (!startTime) {
+            startTime = now;
+        }
+        if (now < timeout()) {
+            maxWaitUs = timeout() - now;
+        } else {
+            // This uses the same starting point as in areHttpsRequestsComplete, for efficiency.
+            // We won't iterate over large numbers of known completed requests, instead starting
+            // from the the point of the list of known completed request.
+            auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
+            while (requestIt != httpsRequests.end()) {
+                if (!(*requestIt)->response) {
+                    (*requestIt)->response = 500;
+                }
+                requestIt++;
+            }
+
+            // Timed everything out, can return.
+            break;
+        }
+
+        fd_map fdm;
+        prePoll(fdm);
+
+        // We never wait more than 1 second in `poll`. There are two uses for this. One is that at shutdown, we want to kill any sockets that have are making no progress.
+        // We don't want these to be stuck sitting for 5 minutes doing nothing while the server hangs, so we will interrupt every second to check on them.
+        // The other case is that there can be no sockets at all.
+        // Why would there be no sockets? It's because Auth::Stripe, as a rate-limiting feature, attaches sockets to requests after they're made.
+        // This means a request can sit around with no actual socket attached to it for some length of time until it's turn to talk to Stripe comes up.
+        // If that happens though, and we're sitting in `poll` when it becomes our turn, we will wait the full five minute timeout of the original `poll`
+        // call before we time out and try again with the newly-attached socket.
+        // Setting this to one second lets us try again more frequently.
+        maxWaitUs = min(maxWaitUs, 1'000'000ul);
+        S_poll(fdm, maxWaitUs);
+        uint64_t ignore{0};
+
+        // The 3rd parameter to `postPoll` here is the total allowed idle time on this connection. We will kill connections that do nothing at all after 5 minutes normally,
+        // or after only 5 seconds when we're shutting down so that we can clean up and move along.
+        postPoll(fdm, ignore, _plugin->server.isShuttingDown() ? 5'000 : 300'000);
+    }
+
+    if (startTime) {
+        SINFO("Waited " << ((STimeNow() - startTime) / 1000) << "ms for network requests.");
+    }
+}
+
+void BedrockCommand::waitForHTTPSRequests() {
+    if (_inDBReadOperation || _inDBWriteOperation) {
+        STHROW("500 Can not wait for transactions with DB assigned");
+    }
+    _waitForHTTPSRequests();
+}
+
+void BedrockCommand::waitForHTTPSRequests(SQLite& db) {
+    bool wasInTransaction = db.insideTransaction();
+    if (wasInTransaction) {
+        if (!_inDBReadOperation) {
+            STHROW("500 Can only wait for transaction in peek/prepeek");
+        }
+        db.rollback();
+    }
+
+    _waitForHTTPSRequests();
+
+    if (wasInTransaction) {
+        if (!db.beginTransaction(db.getLastTransactionType())) {
+            STHROW("501 Failed to begin transaction");
+        }
+    }
 }
 
 void BedrockCommand::reset(BedrockCommand::STAGE stage) {
