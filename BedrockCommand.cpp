@@ -166,7 +166,7 @@ void BedrockCommand::_waitForHTTPSRequests() {
         // Why would there be no sockets? It's because Auth::Stripe, as a rate-limiting feature, attaches sockets to requests after their made.
         // This means a request can sit around with no actual socket attached to it for some length of time until it's turn to talk to Stripe comes up.
         // If that happens though, and we're sitting in `poll` when it becomes our turn, we will wait the full five minute timeout of the original `poll`
-        // call before we time out and try again wit the newly-attached socket.
+        // call before we time out and try again with the newly-attached socket.
         // Setting this to one second lets us try again more frequently.
         maxWaitUs = min(maxWaitUs, 1'000'000ul);
         S_poll(fdm, maxWaitUs);
