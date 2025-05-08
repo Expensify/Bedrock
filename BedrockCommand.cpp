@@ -163,7 +163,7 @@ void BedrockCommand::_waitForHTTPSRequests() {
         // We never wait more than 1 second in `poll`. There are two uses for this. One is that at shutdown, we want to kill any sockets that have are making no progress.
         // We don't want these to be stuck sitting for 5 minutes doing nothing while the server hangs, so we will interrupt every second to check on them.
         // The other case is that there can be no sockets at all.
-        // Why would there be no sockets? It's because Auth::Stripe, as a rate-limiting feature, attaches sockets to requests after their made.
+        // Why would there be no sockets? It's because Auth::Stripe, as a rate-limiting feature, attaches sockets to requests after they're made.
         // This means a request can sit around with no actual socket attached to it for some length of time until it's turn to talk to Stripe comes up.
         // If that happens though, and we're sitting in `poll` when it becomes our turn, we will wait the full five minute timeout of the original `poll`
         // call before we time out and try again with the newly-attached socket.
