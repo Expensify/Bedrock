@@ -191,6 +191,8 @@ class SQLite {
     uint64_t getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
                                       uint64_t& commit, uint64_t& rollback);
 
+    TRANSACTION_TYPE getLastTransactionType();
+
     // Returns the number of changes that were performed in the last query.
     size_t getLastWriteChangeCount();
 
@@ -376,6 +378,9 @@ class SQLite {
 
     // The name of the journal table that this particular DB handle with write to.
     string _journalName;
+
+    // Stored whenever we begin a transaction to allow stopping and restarting with the same transaction type.
+    TRANSACTION_TYPE _lastTransactionType = TRANSACTION_TYPE::SHARED;
 
     // True when we have a transaction in progress.
     bool _insideTransaction = false;

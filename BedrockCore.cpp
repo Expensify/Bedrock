@@ -83,7 +83,9 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
 
             // prePeek.
             command->reset(BedrockCommand::STAGE::PREPEEK);
+            command->_inDBReadOperation = true;
             command->prePeek(_db);
+            command->_inDBReadOperation = false;
             SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
 
             if (!content.empty()) {
@@ -101,15 +103,19 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
             if (!command->shouldSuppressTimeoutWarnings()) {
                 SALERT("Command " << command->request.methodLine << " timed out after " << e.time() / 1000 << "ms.");
             }
+            command->_inDBReadOperation = false;
             STHROW("555 Timeout prePeeking command");
         }
     } catch (const SException& e) {
         _handleCommandException(command, e, &_db, &_server);
         command->complete = true;
+        command->_inDBReadOperation = false;
     } catch (...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
         command->complete = true;
+        command->_inDBReadOperation = false;
+
     }
     _db.clearTimeout();
 
@@ -147,7 +153,9 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
 
             // Peek.
             command->reset(BedrockCommand::STAGE::PEEK);
+            command->_inDBReadOperation = true;
             bool completed = command->peek(_db);
+            command->_inDBReadOperation = false;
             SDEBUG("Plugin '" << command->getName() << "' peeked command '" << request.methodLine << "'");
 
             if (!completed) {
@@ -162,6 +170,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             if (!command->shouldSuppressTimeoutWarnings()) {
                 SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
             }
+            command->_inDBReadOperation = false;
             STHROW("555 Timeout peeking command");
         }
 
@@ -186,13 +195,16 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         }
     } catch (const SException& e) {
         command->repeek = false;
+        command->_inDBReadOperation = false;
         _handleCommandException(command, e, &_db, &_server);
     } catch (const SHTTPSManager::NotLeading& e) {
         command->repeek = false;
+        command->_inDBReadOperation = false;
         returnValue = RESULT::SHOULD_PROCESS;
         SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
     } catch (...) {
         command->repeek = false;
+        command->_inDBReadOperation = false;
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
     }
@@ -247,7 +259,9 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             AutoScopeRewrite rewrite(enable, _db, handler);
             try {
                 command->reset(BedrockCommand::STAGE::PROCESS);
+                command->_inDBWriteOperation = true;
                 command->process(_db);
+                command->_inDBWriteOperation = false;
                 SDEBUG("Plugin '" << command->getName() << "' processed command '" << request.methodLine << "'");
             } catch (const SQLite::timeout_error& e) {
                 if (!command->shouldSuppressTimeoutWarnings()) {
@@ -287,16 +301,19 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         _handleCommandException(command, e, &_db, &_server);
         _db.rollback();
         needsCommit = false;
+        command->_inDBWriteOperation = false;
     } catch (const SQLite::constraint_error& e) {
         SWARN("Unique Constraints Violation, command: " << request.methodLine);
         command->response.methodLine = "400 Unique Constraints Violation";
         _db.rollback();
         needsCommit = false;
+        command->_inDBWriteOperation = false;
     } catch(...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
         _db.rollback();
         needsCommit = false;
+        command->_inDBWriteOperation = false;
     }
 
     // We can turn this back off now, this is a noop if it's not turned on.
@@ -330,7 +347,9 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
             _db.setQueryOnly(true);
 
             // postProcess.
+            command->_inDBReadOperation = true;
             command->postProcess(_db);
+            command->_inDBReadOperation = false;
             SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
 
             // Success. If a command has set "content", encode it in the response.
@@ -350,13 +369,16 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
             if (!command->shouldSuppressTimeoutWarnings()) {
                 SALERT("Command " << command->request.methodLine << " timed out after " << e.time()/1000 << "ms.");
             }
+            command->_inDBReadOperation = false;
             STHROW("555 Timeout postProcessing command");
         }
     } catch (const SException& e) {
         _handleCommandException(command, e, &_db, &_server);
+        command->_inDBReadOperation = false;
     } catch (...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
+        command->_inDBReadOperation = false;
     }
 
     // The command is complete.
