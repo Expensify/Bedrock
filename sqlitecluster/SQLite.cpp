@@ -102,7 +102,38 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
 
 sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree) {
     // Open the DB in read-write mode.
-    SINFO((SFileExists(filename) ? "Opening" : "Creating") << " database '" << filename << "'.");
+    const bool fileExists = SFileExists(filename);
+    const bool fileIsEmpty = !SFileSize(filename);
+
+    // If the file either doesn't exist, or is empty, we'll create it, or initialize it. However, if it does exist, we'll use the existing
+    // file format.
+    // Read enough data to determine the format of the file.
+    if (fileExists && !fileIsEmpty) {
+        FILE* fp = fopen(filename.c_str(), "rb");
+        if (fp) {
+            char readBuffer[32];
+            fread(readBuffer, 1, sizeof(readBuffer), fp);
+            readBuffer[31] = 0;
+            string headerString(readBuffer);
+            SINFO("Existing database format: " << headerString);
+            if (SStartsWith(headerString, "Hctree database version")) {
+                SINFO("Existing HCTree db");
+                hctree = true;
+            } else if (SStartsWith(headerString, "SQLite format 3")) {
+                SINFO("Existing WAL2 db");
+                hctree = false;
+            } else {
+                SWARN("Invalid db format");
+            }
+            fclose(fp);
+        } else {
+            SWARN("Failed to read existing file.");
+        }
+        SINFO("Opening database '" << filename << "'.");
+    } else {
+        SINFO( "Creating database '" << filename << "'.");
+    }
+
     sqlite3* db;
     string completeFilename = filename;
     if (hctree) {
