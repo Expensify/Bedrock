@@ -309,18 +309,13 @@ int main(int argc, char* argv[]) {
     // Reset the database if requested
     if (args.isSet("-clean")) {
         // Remove it
-        SDEBUG("Resetting database");
+        SINFO("Resetting database");
         string db = args["-db"];
         unlink(db.c_str());
-    } else if (args.isSet("-bootstrap")) {
-        // Allow for bootstraping a node with no database file in place.
-        SINFO("Loading in bootstrap mode, skipping check for database existance.");
-    } else if (args.isSet("-hctree")) {
-        SINFO("Starting in hctree mode, skipping check for database existance.");
-    } else {
-        // Otherwise verify the database exists
-        SDEBUG("Verifying database exists");
-        SASSERT(SFileExists(args["-db"]));
+        unlink(string(db + "-pagemap").c_str());
+        unlink(string(db + "-wal2").c_str());
+        unlink(string(db + "-wal").c_str());
+        unlink(string(db + "-shm").c_str());
     }
 
     // Set our soft limit to the same as our hard limit to allow for more file handles.
