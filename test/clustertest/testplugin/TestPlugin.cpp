@@ -103,7 +103,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "preparehandler",
         "testquery",
         "testPostProcessTimeout",
-        "EscalateSerializedData"
+        "EscalateSerializedData",
+        "httpswait"
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -324,6 +325,21 @@ bool TestPluginCommand::peek(SQLite& db) {
             // Reset so the tester can attach this time.
             pluginPtr->shouldPreventAttach = false;
         }).detach();
+        return true;
+    } else if (SStartsWith(request.methodLine, "httpswait")) {
+        SData newRequest("GET / HTTP/1.1");
+        newRequest["Host"] = "example.com";
+        httpsRequests.push_back(plugin().httpsManager->send("https://example.com/", newRequest));
+        int responseNow = httpsRequests.back()->response;
+        if (responseNow) {
+            STHROW("500 Shouldn't have a response yet");
+        }
+        waitForHTTPSRequests(db);
+        responseNow = httpsRequests.back()->response;
+        if (responseNow != 200) {
+            STHROW("500 expected 200 response");
+        }
+        response.content = httpsRequests.back()->fullResponse.content;
         return true;
     } else if (SStartsWith(request.methodLine, "chainedrequest")) {
         // Let's see what the user wanted to request.

@@ -1,3 +1,4 @@
+#include "libstuff/libstuff.h"
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -13,7 +14,7 @@
  *
  * However, to actually verify that you saw a conflict during the test, you can look at the logs for something like:
  *
- * Feb 22 00:32:16 vagrant-ubuntu-trusty-64 bedrock: brcluster_node_0 (SQLiteNode.cpp:1298) update [sync] [warn] 
+ * Feb 22 00:32:16 vagrant-ubuntu-trusty-64 bedrock: brcluster_node_0 (SQLiteNode.cpp:1298) update [sync] [warn]
  *     {brcluster_node_0/LEADING} ROLLBACK, conflicted on sync: brcluster_node_0#109 : sendrequest
  */
 struct HTTPSTest : tpunit::TestFixture {
@@ -22,6 +23,7 @@ struct HTTPSTest : tpunit::TestFixture {
                               BEFORE_CLASS(HTTPSTest::setup),
                               AFTER_CLASS(HTTPSTest::teardown),
                               TEST(HTTPSTest::testMultipleRequests),
+                              TEST(HTTPSTest::testWaitForHTTPSRequests),
                               TEST(HTTPSTest::test)) { }
 
     BedrockClusterTester* tester;
@@ -41,6 +43,13 @@ struct HTTPSTest : tpunit::TestFixture {
         auto result = brtester.executeWaitVerifyContent(request);
         auto lines = SParseList(result, '\n');
         ASSERT_EQUAL(lines.size(), 3);
+    }
+
+    void testWaitForHTTPSRequests() {
+        BedrockTester& brtester = tester->getTester(1);
+        SData request("httpswait");
+        auto result = brtester.executeWaitMultipleData({request});
+        ASSERT_TRUE(SStartsWith(result[0].methodLine, "200"));
     }
 
     void test() {
