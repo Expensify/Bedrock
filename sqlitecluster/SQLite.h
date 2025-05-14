@@ -356,6 +356,7 @@ class SQLite {
     // Initializers to support RAII-style allocation in constructors.
     static string initializeFilename(const string& filename);
     static SharedData& initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool hctree);
+    static bool validateDBFormat(const string& filename, bool hctree);
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree);
     static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
     void commonConstructorInitialization(bool hctree = false);
@@ -366,6 +367,8 @@ class SQLite {
 
     // The maximum number of rows to store in the journal before we start truncating old ones.
     uint64_t _maxJournalSize;
+
+    const bool _hctree;
 
     // The underlying sqlite3 DB handle.
     sqlite3* _db;
