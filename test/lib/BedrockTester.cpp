@@ -92,7 +92,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
     };
 
     if (ENABLE_HCTREE) {
-        defaultArgs["-hctree"] = "";
+        defaultArgs["-newDBsUseHctree"] = "";
     }
 
     // Set defaults.
