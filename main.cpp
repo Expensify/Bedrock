@@ -304,10 +304,8 @@ int main(int argc, char* argv[]) {
     // We default to PASSIVE checkpoint everywhere as that has been the value proven to work fine for many years.
     SETDEFAULT("-checkpointMode", "PASSIVE");
 
-    args["-plugins"] = SComposeList(loadPlugins(args));
-
     // Reset the database if requested
-    if (args.isSet("-clean")) {
+    if (args.isSet("-clean") || args.isSet("-bootstrap") ) {
         // Remove it
         SINFO("Resetting database");
         string db = args["-db"];
@@ -317,6 +315,8 @@ int main(int argc, char* argv[]) {
         unlink(string(db + "-wal").c_str());
         unlink(string(db + "-shm").c_str());
     }
+
+    args["-plugins"] = SComposeList(loadPlugins(args));
 
     // Set our soft limit to the same as our hard limit to allow for more file handles.
     struct rlimit limits;
