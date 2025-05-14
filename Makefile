@@ -53,14 +53,6 @@ mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/lib
 	# Fully reinitialize mbedtls submodule including nested submodules.
 	git submodule update --init --recursive
 
-	# Ensure correct version is checked out.
-	cd mbedtls && git checkout -q v3.6.2
-
-	# Configure threading options (stash old version of the config file).
-	( [ -f mbedtls/include/mbedtls/mbedtls_config.h ] && git checkout -f mbedtls/include/mbedtls/mbedtls_config.h ) || true
-	mbedtls/scripts/config.py set MBEDTLS_THREADING_C
-	mbedtls/scripts/config.py set MBEDTLS_THREADING_PTHREAD
-
 	# Build mbedtls (skip tests).
 	cd mbedtls && $(MAKE) no_test
 
