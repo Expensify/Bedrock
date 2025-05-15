@@ -3,6 +3,8 @@
 #include <iostream>
 #include <regex>
 #include <chrono>
+#include <map>
+#include <utility>
 using namespace tpunit;
 
 bool tpunit::_TestFixture::exitFlag = false;
@@ -184,6 +186,10 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
     list<_TestFixture*> afterTests;
     mutex testTimeLock;
     multimap<chrono::milliseconds, string> testTimes;
+    std::map<std::string, bool> includeMatched; // Track which include patterns matched at least one test
+    for (const auto& name : include) {
+        includeMatched[name] = false;
+    }
 
     for (int threadID = 0; threadID < threads; threadID++) {
         // Capture everything by reference except threadID, because we don't want it to be incremented for the
@@ -223,11 +229,14 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                         if (f->_name) {
                             for (const string& includedName : _include) {
                                 try {
-                                    if (regex_match(f->_name, regex("^" + includedName + "$"))) {
+                                    std::regex pattern("^" + includedName + "$", std::regex::ECMAScript);
+                                    if (std::regex_match(f->_name, pattern)) {
                                         included = true;
+                                        // Mark this pattern as matched
+                                        includeMatched[includedName] = true;
                                         break;
                                     }
-                                } catch (const regex_error& e) {
+                                } catch (const std::regex_error& e) {
                                     cout << "Invalid pattern: " << includedName << ", skipping." << endl;
                                 }
                             }
@@ -290,7 +299,7 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                 printf("Thread %d caught shutdown exception, exiting.\n", threadID);
             }
         });
-        threadList.push_back(move(t));
+        threadList.push_back(std::move(t));
     }
 
     // Wait for them all to finish.
@@ -316,16 +325,11 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
         }
     }
 
-    // Print message if no tests were found for the given include set
-    if (include.size() > 0 && tpunit_detail_stats()._passes == 0 && tpunit_detail_stats()._failures == 0) {
-        printf("\xE2\x9D\x8C  Could not find any test matching, make sure the test name is right: ");
-        bool first = true;
-        for (const auto& name : include) {
-            if (!first) printf(", ");
-            printf("%s", name.c_str());
-            first = false;
+    // Print message for each include pattern that did not match any test
+    for (const auto& entry : includeMatched) {
+        if (!entry.second) {
+            printf("\xE2\x9D\x8C Could not find any test matching, make sure the test name is right: %s\n", entry.first.c_str());
         }
-        printf("\n");
     }
 
     if (!exitFlag) {
