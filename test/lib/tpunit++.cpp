@@ -3,8 +3,6 @@
 #include <iostream>
 #include <regex>
 #include <chrono>
-#include <map>
-#include <utility>
 using namespace tpunit;
 
 bool tpunit::_TestFixture::exitFlag = false;
@@ -188,10 +186,7 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
     multimap<chrono::milliseconds, string> testTimes;
 
     // Track which include patterns matched at least one test
-    std::map<std::string, bool> includeMatched;
-    for (const auto& name : include) {
-        includeMatched[name] = false;
-    }
+    set<string> includeMatched;
 
     for (int threadID = 0; threadID < threads; threadID++) {
         // Capture everything by reference except threadID, because we don't want it to be incremented for the
@@ -233,8 +228,9 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                                 try {
                                     if (regex_match(f->_name, regex("^" + includedName + "$"))) {
                                         included = true;
-                                        // Mark this pattern as matched
-                                        includeMatched[includedName] = true;
+
+                                        // Track that this pattern matched at least one test
+                                        includeMatched.insert(includedName);
                                         break;
                                     }
                                 } catch (const regex_error& e) {
@@ -327,9 +323,9 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
     }
 
     // Print message for each include pattern that did not match any test
-    for (const auto& entry : includeMatched) {
-        if (!entry.second) {
-            printf("\xE2\x9D\x8C Could not find any test matching, make sure the test name is right: %s\n", entry.first.c_str());
+    for (const auto& pattern : include) {
+        if (includeMatched.find(pattern) == includeMatched.end()) {
+            printf("\xE2\x9D\x8C Could not find any test matching, make sure the test name is right: %s\n", pattern.c_str());
         }
     }
 
