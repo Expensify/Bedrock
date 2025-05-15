@@ -184,7 +184,6 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
     list<_TestFixture*> afterTests;
     mutex testTimeLock;
     multimap<chrono::milliseconds, string> testTimes;
-    int testsRun = 0; // Track number of tests actually run in this invocation
 
     for (int threadID = 0; threadID < threads; threadID++) {
         // Capture everything by reference except threadID, because we don't want it to be incremented for the
@@ -275,12 +274,6 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
 
                     tpunit_run_test_class(f);
 
-                    // Mark that a test was run
-                    {
-                        lock_guard<recursive_mutex> lock(m);
-                        testsRun++;
-                    }
-
                     // Do this to capture the longest test classes, not longest thread.
                     end = chrono::steady_clock::now();
 
@@ -324,8 +317,8 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
     }
 
     // Print message if no tests were found for the given include set
-    if (include.size() > 0 && testsRun == 0) {
-        printf("\xE2\x9A\xA0  Could not find any test matching, make sure the test name is right: "); // ⚠️
+    if (include.size() > 0 && tpunit_detail_stats()._passes == 0 && tpunit_detail_stats()._failures == 0) {
+        printf("\xE2\x9D\x8C  Could not find any test matching, make sure the test name is right: ");
         bool first = true;
         for (const auto& name : include) {
             if (!first) printf(", ");
