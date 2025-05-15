@@ -186,7 +186,9 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
     list<_TestFixture*> afterTests;
     mutex testTimeLock;
     multimap<chrono::milliseconds, string> testTimes;
-    std::map<std::string, bool> includeMatched; // Track which include patterns matched at least one test
+
+    // Track which include patterns matched at least one test
+    std::map<std::string, bool> includeMatched;
     for (const auto& name : include) {
         includeMatched[name] = false;
     }
@@ -229,14 +231,13 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                         if (f->_name) {
                             for (const string& includedName : _include) {
                                 try {
-                                    std::regex pattern("^" + includedName + "$", std::regex::ECMAScript);
-                                    if (std::regex_match(f->_name, pattern)) {
+                                    if (regex_match(f->_name, regex("^" + includedName + "$"))) {
                                         included = true;
                                         // Mark this pattern as matched
                                         includeMatched[includedName] = true;
                                         break;
                                     }
-                                } catch (const std::regex_error& e) {
+                                } catch (const regex_error& e) {
                                     cout << "Invalid pattern: " << includedName << ", skipping." << endl;
                                 }
                             }
@@ -299,7 +300,7 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                 printf("Thread %d caught shutdown exception, exiting.\n", threadID);
             }
         });
-        threadList.push_back(std::move(t));
+        threadList.push_back(move(t));
     }
 
     // Wait for them all to finish.
