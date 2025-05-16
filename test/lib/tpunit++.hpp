@@ -29,6 +29,7 @@
 #include <mutex>
 #include <algorithm>
 #include <functional>
+#include <atomic>
 #include <test/lib/PrintEquality.h>
 using namespace std;
 
@@ -202,7 +203,7 @@ namespace tpunit {
    class _TestFixture {
       public:
 
-         static bool exitFlag;
+         static std::atomic<bool> exitFlag;
 
          struct perFixtureStats {
             perFixtureStats();
