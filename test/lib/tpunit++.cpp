@@ -185,6 +185,9 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
     mutex testTimeLock;
     multimap<chrono::milliseconds, string> testTimes;
 
+    // Track which include patterns matched at least one test
+    set<string> includeMatched;
+
     for (int threadID = 0; threadID < threads; threadID++) {
         // Capture everything by reference except threadID, because we don't want it to be incremented for the
         // next thread in the loop.
@@ -225,6 +228,9 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
                                 try {
                                     if (regex_match(f->_name, regex("^" + includedName + "$"))) {
                                         included = true;
+
+                                        // Track that this pattern matched at least one test
+                                        includeMatched.insert(includedName);
                                         break;
                                     }
                                 } catch (const regex_error& e) {
@@ -313,6 +319,13 @@ int tpunit::_TestFixture::tpunit_detail_do_run(const set<string>& include, const
 
                continue; // Don't bother checking the rest of the tests.
             }
+        }
+    }
+
+    // Print message for each include pattern that did not match any test
+    for (const auto& pattern : include) {
+        if (includeMatched.find(pattern) == includeMatched.end()) {
+            printf("\xE2\x9D\x8C Could not find any test matching, make sure the test name is right: %s\n", pattern.c_str());
         }
     }
 
