@@ -18,13 +18,25 @@
 
 long VMTouch::pagesize = sysconf(_SC_PAGESIZE);
 
-int64_t VMTouch::bytes2pages(int64_t bytes) { return (bytes + pagesize - 1) / pagesize; }
+int64_t VMTouch::bytes2pages(int64_t bytes) {
+    int64_t pages = bytes / pagesize;
+    if (bytes % pagesize) {
+        pages++;
+    }
+    return pages;
+}
 
-int VMTouch::aligned_p(void* p) { return 0 == ((long)p & (pagesize - 1)); }
+int VMTouch::aligned_p(void* p) {
+    return 0 == ((long)p & (pagesize - 1));
+}
 
-bool VMTouch::is_mincore_page_resident(char p) { return p & 0x1; }
+bool VMTouch::is_mincore_page_resident(char p) {
+    return p & 0x1;
+}
 
-void VMTouch::do_nothing(unsigned int nothing) { return; }
+void VMTouch::do_nothing(unsigned int nothing) {
+    return;
+}
 
 void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
     int fd = -1;
@@ -108,13 +120,13 @@ void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
             counters.emplace_back([i, &pages_per_thread, &total_pages_resident, &pages_in_range, &mincore_array]() {
                 int64_t first_page = pages_per_thread * i;
                 int64_t last_page = min(first_page + pages_per_thread, pages_in_range - 1);
-                int64_t pages_in_range = 0;
+                int64_t page_in_range_count = 0;
                 for (int64_t j = first_page; j < last_page; j++) {
                     if (is_mincore_page_resident(mincore_array[j])) {
-                        pages_in_range++;
+                        page_in_range_count++;
                     }
                 }
-                total_pages_resident += pages_in_range;
+                total_pages_resident += page_in_range_count;
             });
         }
         for (auto& t : counters) {
@@ -123,7 +135,7 @@ void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
 
         double percentage_resident = ((double)total_pages_resident / (double)pages_in_range) * 100.0;
         if (verbose) {
-            printf("Pages resident: %li (%.2f%%)", total_pages_resident.load(), percentage_resident);
+            printf("Pages resident: %li (%.2f%%)\n", total_pages_resident.load(), percentage_resident);
         }
 
         // This doesn't work yet.

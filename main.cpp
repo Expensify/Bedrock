@@ -319,6 +319,7 @@ int main(int argc, char* argv[]) {
 
     if (args.isSet("-checkDBFileResidency")) {
         VMTouch::vmtouch_file(args["-db"].c_str(), false, true);
+        SStopSignalThread();
         return 0;
     }
 
