@@ -38,5 +38,5 @@ class VMTouch {
     static void do_nothing(unsigned int nothing);
 
   public:
-    static void vmtouch_file(char* path, bool o_touch, bool verbose);
+    static void vmtouch_file(const char* path, bool o_touch, bool verbose);
 };

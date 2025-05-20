@@ -26,7 +26,7 @@ bool VMTouch::is_mincore_page_resident(char p) { return p & 0x1; }
 
 void VMTouch::do_nothing(unsigned int nothing) { return; }
 
-void VMTouch::vmtouch_file(char* path, bool o_touch, bool verbose) {
+void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
     int fd = -1;
     void* mem = NULL;
     struct stat sb;
