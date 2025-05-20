@@ -317,8 +317,8 @@ int main(int argc, char* argv[]) {
         unlink(string(db + "-shm").c_str());
     }
 
-    if (args.isSet("-checkDBFileResidency")) {
-        VMTouch::vmtouch_file(args["-db"].c_str(), false, true);
+    if (args.isSet("-checkDBMemoryMapping") || args.isSet("-setDBMemoryMapping")) {
+        VMTouch::vmtouch_file(args["-db"].c_str(), args.isSet("-setDBMemoryMapping"), true);
         SStopSignalThread();
         return 0;
     }
@@ -404,7 +404,6 @@ int main(int argc, char* argv[]) {
 
     // All done
     SINFO("Graceful process shutdown complete");
-
 
     return 0;
 }

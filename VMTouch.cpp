@@ -44,11 +44,8 @@ void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
     struct stat sb;
     int64_t len_of_file = 0;
     int64_t pages_in_range;
-    int i;
     int res;
     int open_flags;
-
-    unsigned int junk_counter = 0; // just to prevent any compiler optimizations
 
     open_flags = O_RDONLY;
     open_flags |= O_NOATIME;
@@ -107,6 +104,40 @@ void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
             SERROR("mincore " << path << " (" << strerror(errno) << ")");
         }
 
+        if (o_touch) {
+            if (verbose) {
+                cout << "Touching memory." << endl;
+            }
+            list<thread> counters;
+            const size_t thread_count = thread::hardware_concurrency();
+            int64_t pages_per_thread = (pages_in_range / thread_count) + 1;
+            for (size_t i = 0; i < thread_count; i++) {
+                counters.emplace_back([i, &pages_per_thread, &pages_in_range, &mincore_array, &mem]() {
+                    unsigned int junk_counter = 0;
+                    int64_t first_page = pages_per_thread * i;
+                    int64_t last_page = min(first_page + pages_per_thread, pages_in_range - 1);
+                    for (int64_t j = first_page; j < last_page; j++) {
+                        if (!is_mincore_page_resident(mincore_array[j])) {
+                            junk_counter += ((char*)mem)[j * pagesize];
+                        }
+                    }
+
+                    // Passing junk_counter here avoids a "set but not used" error.
+                    do_nothing(junk_counter);
+                });
+            }
+            for (auto& t : counters) {
+                t.join();
+            }
+            cout << "Reloading map." << endl;
+            if (mincore(mem, len_of_file, (unsigned char*)mincore_array)) {
+                SERROR("mincore " << path << " (" << strerror(errno) << ")");
+            }
+            if (verbose) {
+                cout << "Done touching memory." << endl;
+            }
+        }
+
         if (verbose) {
             cout << "Checking " << pages_in_range << " pages in file " << path << endl;
         }
@@ -119,7 +150,7 @@ void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
         for (size_t i = 0; i < thread_count; i++) {
             counters.emplace_back([i, &pages_per_thread, &total_pages_resident, &pages_in_range, &mincore_array]() {
                 int64_t first_page = pages_per_thread * i;
-                int64_t last_page = min(first_page + pages_per_thread, pages_in_range - 1);
+                int64_t last_page = min(first_page + pages_per_thread, pages_in_range);
                 int64_t page_in_range_count = 0;
                 for (int64_t j = first_page; j < last_page; j++) {
                     if (is_mincore_page_resident(mincore_array[j])) {
@@ -136,17 +167,6 @@ void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
         double percentage_resident = ((double)total_pages_resident / (double)pages_in_range) * 100.0;
         if (verbose) {
             printf("Pages resident: %li (%.2f%%)\n", total_pages_resident.load(), percentage_resident);
-        }
-
-        // This doesn't work yet.
-        if (o_touch) {
-            for (i = 0; i < pages_in_range; i++) {
-                junk_counter += ((char*)mem)[i * pagesize];
-                mincore_array[i] = 1;
-            }
-
-            // Passing junk_counter here avoids a "set but not used" error.
-            do_nothing(junk_counter);
         }
 
         free(mincore_array);
