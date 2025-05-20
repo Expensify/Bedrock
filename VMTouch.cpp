@@ -31,7 +31,6 @@ void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
     void* mem = NULL;
     struct stat sb;
     int64_t len_of_file = 0;
-    int64_t len_of_range = 0;
     int64_t pages_in_range;
     int i;
     int res;
@@ -85,14 +84,14 @@ void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
             SERROR("mmap(" << path << ") wasn't page aligned");
         }
 
-        pages_in_range = bytes2pages(len_of_range);
+        pages_in_range = bytes2pages(len_of_file);
 
         char* mincore_array = (char*)malloc(pages_in_range);
         if (mincore_array == NULL) {
             SWARN("Failed to allocate memory for mincore array (" << strerror(errno) << ")");
         }
 
-        if (mincore(mem, len_of_range, (unsigned char*)mincore_array)) {
+        if (mincore(mem, len_of_file, (unsigned char*)mincore_array)) {
             SERROR("mincore " << path << " (" << strerror(errno) << ")");
         }
 
@@ -104,12 +103,13 @@ void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
         list<thread> counters;
         atomic<size_t> total_pages_resident(0);
         const size_t thread_count = thread::hardware_concurrency();
-        const size_t pages_per_thread = (pages_in_range / thread_count) + 1;
+        int64_t pages_per_thread = (pages_in_range / thread_count) + 1;
         for (size_t i = 0; i < thread_count; i++) {
-            counters.emplace_back([i, &pages_per_thread, &total_pages_resident, &mincore_array]() {
-                size_t first_page = pages_per_thread * i;
-                size_t pages_in_range = 0;
-                for (size_t j = first_page; j < first_page + pages_per_thread; j++) {
+            counters.emplace_back([i, &pages_per_thread, &total_pages_resident, &pages_in_range, &mincore_array]() {
+                int64_t first_page = pages_per_thread * i;
+                int64_t last_page = min(first_page + pages_per_thread, pages_in_range - 1);
+                int64_t pages_in_range = 0;
+                for (int64_t j = first_page; j < last_page; j++) {
                     if (is_mincore_page_resident(mincore_array[j])) {
                         pages_in_range++;
                     }
@@ -140,7 +140,7 @@ void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
         free(mincore_array);
     } catch (const SException& e) {
         if (mem) {
-            if (munmap(mem, len_of_range)) {
+            if (munmap(mem, len_of_file)) {
                 SWARN("unable to munmap file " << path << " (" << strerror(errno) << ")");
             }
         }

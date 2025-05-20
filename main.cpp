@@ -17,6 +17,7 @@
 #include <plugins/MySQL.h>
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLite.h>
+#include <VMTouch.h>
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -314,6 +315,11 @@ int main(int argc, char* argv[]) {
         unlink(string(db + "-wal2").c_str());
         unlink(string(db + "-wal").c_str());
         unlink(string(db + "-shm").c_str());
+    }
+
+    if (args.isSet("-checkDBFileResidency")) {
+        VMTouch::vmtouch_file(args["-db"].c_str(), false, true);
+        return 0;
     }
 
     args["-plugins"] = SComposeList(loadPlugins(args));
