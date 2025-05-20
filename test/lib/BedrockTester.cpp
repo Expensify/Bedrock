@@ -599,6 +599,7 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
         }
         return true;
     } else {
+        cout << "Running query: " << query << endl;
         SQLite& db = getSQLiteDB();
         db.beginTransaction();
         bool success = db.read(query, result);

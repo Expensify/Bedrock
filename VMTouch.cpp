@@ -9,7 +9,10 @@
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
+#include <thread>
 #include <unistd.h>
+
+#include <iostream>
 
 /*
 This is based on VMTouch by Doug Hoyte (see copyright notice)
@@ -42,7 +45,15 @@ class VMTouch {
         return 0 == ((long)p & (pagesize - 1));
     }
 
-    static void vmtouch_file(char* path, bool o_touch) {
+    static bool is_mincore_page_resident(char p) {
+        return p & 0x1;
+    }
+
+    static void do_nothing(unsigned int nothing) {
+        return;
+    }
+
+    static void vmtouch_file(char* path, bool o_touch, bool verbose) {
         int fd = -1;
         void* mem = NULL;
         struct stat sb;
@@ -52,6 +63,8 @@ class VMTouch {
         int i;
         int res;
         int open_flags;
+
+        unsigned int junk_counter = 0; // just to prevent any compiler optimizations
 
         open_flags = O_RDONLY;
         open_flags |= O_NOATIME;
@@ -85,7 +98,7 @@ class VMTouch {
             }
 
             if (len_of_file == 0) {
-                throw exception();
+                throw SException("Empty file");
             }
 
             mem = mmap(NULL, len_of_file, PROT_READ, MAP_SHARED, fd, 0);
@@ -110,10 +123,44 @@ class VMTouch {
                 SERROR("mincore " << path << " (" << strerror(errno) << ")");
             }
 
+            if (verbose) {
+                cout << "Checking " << pages_in_range << " pages in file " << path << endl;
+            }
+
+            // Parallel counting.
+            list<thread> counters;
+            atomic<size_t> total_pages_resident(0);
+            const size_t thread_count = thread::hardware_concurrency();
+            const size_t pages_per_thread = (pages_in_range / thread_count) + 1;
+            for (size_t i = 0; i < thread_count; i++) {
+                counters.emplace_back([i, &pages_per_thread, &total_pages_resident, &mincore_array](){
+                    size_t first_page = pages_per_thread * i;
+                    size_t pages_in_range = 0;
+                    for (size_t j = first_page; j < first_page + pages_per_thread; j++) {
+                        if (is_mincore_page_resident(mincore_array[j])) {
+                            pages_in_range++;
+                        }
+                    }
+                    total_pages_resident += pages_in_range;
+                });
+            }
+            for (auto& t : counters) {
+                t.join();
+            }
+
+            double percentage_resident = ((double)total_pages_resident / (double)pages_in_range) * 100.0;
+            if (verbose) {
+                printf("Pages resident: %li (%.2f%%)", total_pages_resident.load(), percentage_resident);
+            }
+
             if (o_touch) {
                 for (i = 0; i < pages_in_range; i++) {
+                    junk_counter += ((char*)mem)[i*pagesize];
                     mincore_array[i] = 1;
                 }
+
+                // Passing junk_counter here avoids a "set but not used" error.
+                do_nothing(junk_counter);
             }
 
             free(mincore_array);

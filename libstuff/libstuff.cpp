@@ -2546,6 +2546,8 @@ void SQueryLogClose() {
     }
 }
 
+#include <iostream>
+
 // --------------------------------------------------------------------------
 // Executes a SQLite query
 int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn) {
@@ -2728,6 +2730,8 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         } else {
             SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         }
+
+        cout << "'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog << endl;
     }
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
@@ -2742,15 +2746,27 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
     // First, see if it's there
     SQResult result;
-    SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
+    int failure = SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result);
+    if (failure) {
+        cout << "Failed to look up journal query." << failure << endl;
+    } else {
+        cout << "Looked up journal OK" << endl;
+    }
     if (result.empty()) {
         // Table doesn't already exist, create it
         SINFO("Creating '" << tableName << "'");
+        cout <<  "Creating journal: " << sql << endl;
         SASSERT(!SQuery(db, "SQVerifyTable", sql));
         return true; // Created new table
     } else {
         // Table exists, verify it's correct
         SINFO("'" << tableName << "' already exists, verifying. ");
+        if (failure) {
+            cout << "Verifying journal. Should be:" << endl;
+            cout << "SQL" << endl;
+            cout << " is " << endl;
+            cout << result[0][4] << endl;
+        }
         SASSERT(result[0][4] == sql);
         return false; // Table already exists with correct definition
     }
