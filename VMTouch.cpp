@@ -30,8 +30,10 @@ int VMTouch::aligned_p(void* p) {
     return 0 == ((long)p & (pagesize - 1));
 }
 
-bool VMTouch::is_mincore_page_resident(char p) {
-    return p & 0x1;
+
+bool VMTouch::is_mincore_page_resident(char page) {
+    // The least significant bit (0x1) indicates if the corresponding page is currently resident (present in physical memory).
+    return page & 0x1;
 }
 
 void VMTouch::do_nothing(unsigned int nothing) {
