@@ -1,4 +1,3 @@
-#include "libstuff/libstuff.h"
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +13,7 @@
 
 #include <iostream>
 
+#include <libstuff/libstuff.h>
 #include <VMTouch.h>
 
 long VMTouch::pagesize = sysconf(_SC_PAGESIZE);
