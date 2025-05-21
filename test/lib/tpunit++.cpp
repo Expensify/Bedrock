@@ -3,9 +3,10 @@
 #include <iostream>
 #include <regex>
 #include <chrono>
+#include <atomic>
 using namespace tpunit;
 
-bool tpunit::_TestFixture::exitFlag = false;
+atomic<bool> tpunit::_TestFixture::exitFlag(false);
 thread_local string tpunit::currentTestName;
 thread_local tpunit::_TestFixture* tpunit::currentTestPtr = nullptr;
 thread_local mutex tpunit::currentTestNameMutex;
