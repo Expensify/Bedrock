@@ -26,7 +26,7 @@ int64_t VMTouch::bytes2pages(int64_t bytes) {
     return pages;
 }
 
-int VMTouch::aligned_p(void* p) {
+bool VMTouch::isPageAligned(void* p) {
     return 0 == ((long)p & (pagesize - 1));
 }
 
@@ -40,7 +40,7 @@ void VMTouch::do_nothing(unsigned int nothing) {
     return;
 }
 
-void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
+void VMTouch::check(const char* path, bool touch, bool verbose) {
     int fd = -1;
     void* mem = NULL;
     struct stat sb;
@@ -91,7 +91,7 @@ void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
             throw SException("unable to mmap");
         }
 
-        if (!aligned_p(mem)) {
+        if (!isPageAligned(mem)) {
             SERROR("mmap(" << path << ") wasn't page aligned");
         }
 
@@ -106,7 +106,7 @@ void VMTouch::vmtouch_file(const char* path, bool o_touch, bool verbose) {
             SERROR("mincore " << path << " (" << strerror(errno) << ")");
         }
 
-        if (o_touch) {
+        if (touch) {
             if (verbose) {
                 cout << "Touching memory." << endl;
             }

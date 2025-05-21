@@ -33,10 +33,10 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 class VMTouch {
     static long pagesize;
     static int64_t bytes2pages(int64_t bytes);
-    static int aligned_p(void* p);
+    static bool isPageAligned(void* p);
     static bool is_mincore_page_resident(char p);
     static void do_nothing(unsigned int nothing);
 
   public:
-    static void vmtouch_file(const char* path, bool o_touch, bool verbose);
+    static void check(const char* path, bool touch, bool verbose = false);
 };

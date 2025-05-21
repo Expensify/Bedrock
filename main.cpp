@@ -318,7 +318,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (args.isSet("-checkDBMemoryMapping") || args.isSet("-setDBMemoryMapping")) {
-        VMTouch::vmtouch_file(args["-db"].c_str(), args.isSet("-setDBMemoryMapping"), true);
+        VMTouch::check(args["-db"].c_str(), args.isSet("-setDBMemoryMapping"), true);
         SStopSignalThread();
         return 0;
     }
