@@ -51,6 +51,7 @@ clean:
 # Rule to build mbedtls.
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
 	# Fully reinitialize mbedtls submodule including nested submodules.
+	git submodule sync
 	git submodule update --init --recursive
 
 	# Build mbedtls (skip tests).
