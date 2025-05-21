@@ -304,24 +304,19 @@ int main(int argc, char* argv[]) {
     // We default to PASSIVE checkpoint everywhere as that has been the value proven to work fine for many years.
     SETDEFAULT("-checkpointMode", "PASSIVE");
 
-    args["-plugins"] = SComposeList(loadPlugins(args));
-
     // Reset the database if requested
-    if (args.isSet("-clean")) {
+    if (args.isSet("-clean") || args.isSet("-bootstrap") ) {
         // Remove it
-        SDEBUG("Resetting database");
+        SINFO("Resetting database");
         string db = args["-db"];
         unlink(db.c_str());
-    } else if (args.isSet("-bootstrap")) {
-        // Allow for bootstraping a node with no database file in place.
-        SINFO("Loading in bootstrap mode, skipping check for database existance.");
-    } else if (args.isSet("-hctree")) {
-        SINFO("Starting in hctree mode, skipping check for database existance.");
-    } else {
-        // Otherwise verify the database exists
-        SDEBUG("Verifying database exists");
-        SASSERT(SFileExists(args["-db"]));
+        unlink(string(db + "-pagemap").c_str());
+        unlink(string(db + "-wal2").c_str());
+        unlink(string(db + "-wal").c_str());
+        unlink(string(db + "-shm").c_str());
     }
+
+    args["-plugins"] = SComposeList(loadPlugins(args));
 
     // Set our soft limit to the same as our hard limit to allow for more file handles.
     struct rlimit limits;

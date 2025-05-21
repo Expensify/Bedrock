@@ -100,9 +100,44 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
     }
 }
 
-sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree) {
+bool SQLite::validateDBFormat(const string& filename, bool hctree) {
     // Open the DB in read-write mode.
-    SINFO((SFileExists(filename) ? "Opening" : "Creating") << " database '" << filename << "'.");
+    const bool fileExists = SFileExists(filename);
+    const bool fileIsEmpty = !SFileSize(filename);
+
+    // If the file either doesn't exist, or is empty, we'll create it, or initialize it. However, if it does exist, we'll use the existing
+    // file format.
+    // Read enough data to determine the format of the file.
+    if (fileExists && !fileIsEmpty) {
+        FILE* fp = fopen(filename.c_str(), "rb");
+        if (fp) {
+            char readBuffer[32];
+            fread(readBuffer, 1, sizeof(readBuffer), fp);
+            readBuffer[31] = 0;
+            string headerString(readBuffer);
+            SINFO("Existing database format: " << headerString);
+            if (SStartsWith(headerString, "Hctree database version")) {
+                SINFO("Existing HCTree db");
+                hctree = true;
+            } else if (SStartsWith(headerString, "SQLite format 3")) {
+                SINFO("Existing WAL2 db");
+                hctree = false;
+            } else {
+                SWARN("Invalid db format");
+            }
+            fclose(fp);
+        } else {
+            SWARN("Failed to read existing file.");
+        }
+        SINFO("Opening database '" << filename << "'.");
+    } else {
+        SINFO( "Creating database '" << filename << "'.");
+    }
+
+    return hctree;
+}
+
+sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree) {
     sqlite3* db;
     string completeFilename = filename;
     if (hctree) {
@@ -207,19 +242,21 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
                int minJournalTables, int64_t mmapSizeGB, bool hctree, const string& checkpointMode) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
-    _db(initializeDB(_filename, mmapSizeGB, hctree)),
+    _hctree(validateDBFormat(_filename, hctree)),
+    _db(initializeDB(_filename, mmapSizeGB, _hctree)),
     _journalNames(initializeJournal(_db, minJournalTables)),
-    _sharedData(initializeSharedData(_db, _filename, _journalNames, hctree)),
+    _sharedData(initializeSharedData(_db, _filename, _journalNames, _hctree)),
     _cacheSize(cacheSize),
     _mmapSizeGB(mmapSizeGB),
     _checkpointMode(getCheckpointModeFromString(checkpointMode))
 {
-    commonConstructorInitialization(hctree);
+    commonConstructorInitialization(_hctree);
 }
 
 SQLite::SQLite(const SQLite& from) :
     _filename(from._filename),
     _maxJournalSize(from._maxJournalSize),
+    _hctree(from._hctree),
     _db(initializeDB(_filename, from._mmapSizeGB, false)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
     _journalNames(from._journalNames),
     _sharedData(from._sharedData),
@@ -227,8 +264,7 @@ SQLite::SQLite(const SQLite& from) :
     _mmapSizeGB(from._mmapSizeGB),
     _checkpointMode(from._checkpointMode)
 {
-    // This can always pass "true" because the copy constructor does not need to set the DB to WAL2 mode, it would have been set in the object being copied.
-    commonConstructorInitialization(true);
+    commonConstructorInitialization(_hctree);
 }
 
 int SQLite::_progressHandlerCallback(void* arg) {
