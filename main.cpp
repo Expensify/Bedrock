@@ -17,6 +17,7 @@
 #include <plugins/MySQL.h>
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLite.h>
+#include <VMTouch.h>
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -316,6 +317,12 @@ int main(int argc, char* argv[]) {
         unlink(string(db + "-shm").c_str());
     }
 
+    if (args.isSet("-checkDBMemoryMapping") || args.isSet("-setDBMemoryMapping")) {
+        VMTouch::check(args["-db"].c_str(), args.isSet("-setDBMemoryMapping"), true);
+        SStopSignalThread();
+        return 0;
+    }
+
     args["-plugins"] = SComposeList(loadPlugins(args));
 
     // Set our soft limit to the same as our hard limit to allow for more file handles.
@@ -397,7 +404,6 @@ int main(int argc, char* argv[]) {
 
     // All done
     SINFO("Graceful process shutdown complete");
-
 
     return 0;
 }
