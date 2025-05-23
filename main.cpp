@@ -317,10 +317,11 @@ int main(int argc, char* argv[]) {
         unlink(string(db + "-shm").c_str());
     }
 
-    if (args.isSet("-checkDBMemoryMapping") || args.isSet("-setDBMemoryMapping")) {
-        VMTouch::check(args["-db"].c_str(), args.isSet("-setDBMemoryMapping"), true);
-        SStopSignalThread();
-        return 0;
+    if (args.isSet("-checkDBMemoryMapping")) {
+        VMTouch::check(args["-db"].c_str(), true);
+    }
+    if (args.isSet("-setDBMemoryMapping")) {
+        VMTouch::touch(args["-db"].c_str(), true);
     }
 
     args["-plugins"] = SComposeList(loadPlugins(args));
