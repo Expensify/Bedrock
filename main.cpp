@@ -319,9 +319,13 @@ int main(int argc, char* argv[]) {
 
     if (args.isSet("-checkDBMemoryMapping")) {
         VMTouch::check(args["-db"].c_str(), true);
+        SStopSignalThread();
+        return 0;
     }
     if (args.isSet("-setDBMemoryMapping")) {
         VMTouch::touch(args["-db"].c_str(), true);
+        SStopSignalThread();
+        return 0;
     }
 
     args["-plugins"] = SComposeList(loadPlugins(args));
