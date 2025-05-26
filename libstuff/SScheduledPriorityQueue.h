@@ -28,7 +28,7 @@ class SScheduledPriorityQueue {
 
     // Typedefs are here for legibility's sake.
     typedef int Priority;
-    typedef uint64_t Timeout; 
+    typedef uint64_t Timeout;
     typedef uint64_t Scheduled;
 
     // If nothing becomes available to dequeue while waiting, a timeout_error exception is thrown.
@@ -188,7 +188,6 @@ void SScheduledPriorityQueue<T>::push(T&& item, Priority priority, Scheduled sch
     _lookupByTimeout.insert(make_pair(timeout, make_pair(priority, scheduled)));
     queue.emplace(scheduled, ItemTimeoutPair(move(item), timeout));
     _queueCondition.notify_one();
-    SINFO("Enqueued command with timeout " << timeout);
 }
 
 template<typename T>

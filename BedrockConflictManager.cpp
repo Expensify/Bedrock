@@ -38,9 +38,6 @@ void BedrockConflictManager::recordTables(const string& commandName, const set<s
             }
         }
     }
-
-    // And increase the count for each used table.
-    SINFO("Command " << commandName << " used tables: " << SComposeList(tables));
 }
 
 string BedrockConflictManager::generateReport() {

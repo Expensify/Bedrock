@@ -281,10 +281,10 @@ bool BedrockJobsCommand::peek(SQLite& db) {
 
                 if (parentIsMocked && !childIsMocked) {
                     mockRequest = true;
-                    SINFO("Setting child job to mocked to match parent.");
+                    SDEBUG("Setting child job to mocked to match parent.");
                 } else if (!parentIsMocked && childIsMocked) {
                     mockRequest = false;
-                    SINFO("Setting child job to non-mocked to match parent.");
+                    SDEBUG("Setting child job to non-mocked to match parent.");
                 }
             }
 
@@ -474,7 +474,7 @@ void BedrockJobsCommand::process(SQLite& db) {
             int64_t updateJobID = 0;
             if (SContains(job, "unique") && job["unique"] == "true") {
                 SQResult result;
-                SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
+                SDEBUG("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
                       << (mockRequest ? "true" : "false"));
                 string operation = mockRequest ? "IS NOT" : "IS";
                 if (!db.read("SELECT jobID, data "
@@ -505,14 +505,6 @@ void BedrockJobsCommand::process(SQLite& db) {
                 if (!result.empty()) {
                     updateJobID = SToInt64(result[0][0]);
                 }
-            }
-
-            // Record whether or not this job is scheduling itself in the future. If so, it's not suitable for
-            // immediate scheduling and won't benefit from disk-access-free assignment to waiting workers.
-            if ((!SContains(job, "repeat") || job["repeat"].empty()) && (!SContains(job, "firstRun") && job["firstRun"].empty())) {
-                SINFO("Job has no run time, can be scheduled immediately.");
-            } else {
-                SINFO("Job specified run time or repeat, not suitable for immediate scheduling.");
             }
 
             const string& currentTime = SCURRENT_TIMESTAMP();
@@ -610,7 +602,7 @@ void BedrockJobsCommand::process(SQLite& db) {
 
                 // Create this new job with a new generated ID
                 const int64_t jobIDToUse = SQLiteUtils::getRandomID(db, "jobs", "jobID");
-                SINFO("Next jobID to be used " << jobIDToUse);
+                SINFO("Next jobID: " << jobIDToUse);
                 if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
                          "VALUES( " +
                             SQ(jobIDToUse) + ", " +
@@ -770,7 +762,6 @@ void BedrockJobsCommand::process(SQLite& db) {
 
             // Add this object to our output
             STable job;
-            SINFO("Returning jobID " << result[c][0] << " from " << requestVerb);
             job["jobID"] = result[c][0];
             job["name"] = result[c][1];
             job["data"] = result[c][2];

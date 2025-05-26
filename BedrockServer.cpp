@@ -1006,7 +1006,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             command->response["commitCount"] = to_string(db.getCommitCount());
                             command->complete = true;
                         } else {
-                            SINFO("Conflict or state change committing " << command->request.methodLine << " on worker thread.");
+                            SINFO("Conflict or state change committing " << command->request.methodLine);
                             if (_enableConflictPageLocks) {
                                 lastConflictTable = db.getLastConflictTable();
 
@@ -1501,7 +1501,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     const string& pluginName = command->request["plugin"];
 
     if (command->socket) {
-        SINFO("[performance] Command " << command->request.methodLine << " has a socket, going to try to reply.");
+        SDEBUG("[performance] Command " << command->request.methodLine << " has a socket, going to try to reply.");
         if (!pluginName.empty()) {
             // Let the plugin handle it
             SINFO("Plugin '" << pluginName << "' handling response '" << command->response.methodLine
@@ -1519,7 +1519,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
                 SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
                 command->handleFailedReply();
             } else {
-                SINFO("[performance] Replied");
+                SDEBUG("[performance] Replied");
             }
         }
 
@@ -1535,7 +1535,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
         }
         command->handleFailedReply();
     }
-    SINFO("[performance] Finished replying to command " << command->request.methodLine << " moving on to the next command.");
+    SDEBUG("[performance] Finished replying to command " << command->request.methodLine);
 }
 
 
