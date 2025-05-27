@@ -1,7 +1,9 @@
 // Manages connections to a single instance of the bedrock server.
 #include "BedrockServer.h"
+#include "sqlitecluster/SQLiteNode.h"
 
 #include <arpa/inet.h>
+#include <chrono>
 #include <csignal>
 #include <cstring>
 #include <fstream>
@@ -20,6 +22,14 @@
 set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
 thread_local atomic<SQLiteNodeState> BedrockServer::_nodeStateSnapshot = SQLiteNodeState::UNKNOWN;
+
+// Temporary object we're using to log typical timing for various stages of shutting down.
+struct {
+    chrono::time_point<chrono::steady_clock> shutdownStart{chrono::steady_clock::now()};
+    chrono::time_point<chrono::steady_clock> safeNodeState{chrono::steady_clock::now()};
+    chrono::time_point<chrono::steady_clock> commandsComplete{chrono::steady_clock::now()};
+    chrono::time_point<chrono::steady_clock> serverDestructor{chrono::steady_clock::now()};
+} shutdownTimer;
 
 void BedrockServer::syncWrapper()
 {
@@ -284,10 +294,11 @@ void BedrockServer::sync()
             }
         }
 
-        // If we were LEADING, but we've transitioned, then something's gone wrong (perhaps we got disconnected
-        // from the cluster). Reset some state and try again.
+        // Reset some state on falling out of leading. This could be normal, if we're just shutting down, or it
+        // could be exceptional, in the case we've lost connection to the cluster or some other problem.
         if ((preUpdateState == SQLiteNodeState::LEADING || preUpdateState == SQLiteNodeState::STANDINGDOWN) &&
             (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::STANDINGDOWN)) {
+            shutdownTimer.safeNodeState = chrono::steady_clock::now();
 
             // If we bailed out while doing a upgradeDB, clear state
             if (_upgradeInProgress) {
@@ -1333,6 +1344,13 @@ BedrockServer::~BedrockServer() {
     for (auto& p : plugins) {
         delete p.second;
     }
+
+    shutdownTimer.serverDestructor = chrono::steady_clock::now();
+    SINFO("Shutdown timing: "
+        << "start->safeState=" << chrono::duration_cast<chrono::milliseconds>(shutdownTimer.safeNodeState - shutdownTimer.shutdownStart)
+        << ", safeState->commandsComplete=" << chrono::duration_cast<chrono::milliseconds>(shutdownTimer.commandsComplete - shutdownTimer.shutdownStart)
+        << ", commandsComplete->destructor=" << chrono::duration_cast<chrono::milliseconds>(shutdownTimer.serverDestructor - shutdownTimer.commandsComplete)
+        << ".");
 }
 
 bool BedrockServer::shutdownComplete() {
@@ -1450,6 +1468,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
         // Don't tell the sync node to shut down while we still have commands or sockets left.
         if (!_outstandingSocketThreads && !count) {
             _shutdownState.store(COMMANDS_FINISHED);
+            shutdownTimer.commandsComplete = chrono::steady_clock::now();
 
             // This interrupts the sync thread's poll() loop so it doesn't wait for up to an extra second to finish.
             // When it wakes up, it will begin its own shutdown.
@@ -2020,6 +2039,10 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
         _detach = detach;
         // Begin a graceful shutdown; close our port
         SINFO("Beginning graceful shutdown due to '" << reason << "', closing command port on '" << args["-serverHost"] << "'.");
+        shutdownTimer.shutdownStart = chrono::steady_clock::now();
+        if (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::STANDINGDOWN) {
+            shutdownTimer.safeNodeState = shutdownTimer.shutdownStart;
+        }
 
         // Delete any commands scheduled in the future.
         _commandQueue.abandonFutureCommands(5000);
