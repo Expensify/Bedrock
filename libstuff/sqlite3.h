@@ -133,7 +133,7 @@ extern "C" {
 **
 ** Since [version 3.6.18] ([dateof:3.6.18]),
 ** SQLite source code has been stored in the
-** <a href="http://www.fossil-scm.org/">Fossil configuration management
+** <a href="http://fossil-scm.org/">Fossil configuration management
 ** system</a>.  ^The SQLITE_SOURCE_ID macro evaluates to
 ** a string which identifies a particular check-in of SQLite
 ** within its configuration management system.  ^The SQLITE_SOURCE_ID
@@ -148,7 +148,7 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.50.0"
 #define SQLITE_VERSION_NUMBER 3050000
-#define SQLITE_SOURCE_ID      "2025-05-14 15:41:59 da6f866d0009b1ffcce2f91b63a8f30b8eb358bcb7dd45bb4a0d91b2364eeda3"
+#define SQLITE_SOURCE_ID      "2025-05-24 19:55:57 435082c1195964560d02cb3c39fdf540e20327f578de977d0ea61305112951fe"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -7071,6 +7071,8 @@ SQLITE_API int sqlite3_autovacuum_pages(
 **
 ** ^The second argument is a pointer to the function to invoke when a
 ** row is updated, inserted or deleted in a rowid table.
+** ^The update hook is disabled by invoking sqlite3_update_hook()
+** with a NULL pointer as the second parameter.
 ** ^The first argument to the callback is a copy of the third argument
 ** to sqlite3_update_hook().
 ** ^The second callback argument is one of [SQLITE_INSERT], [SQLITE_DELETE],
@@ -11674,9 +11676,10 @@ SQLITE_API void sqlite3session_table_filter(
 ** is inserted while a session object is enabled, then later deleted while
 ** the same session object is disabled, no INSERT record will appear in the
 ** changeset, even though the delete took place while the session was disabled.
-** Or, if one field of a row is updated while a session is disabled, and
-** another field of the same row is updated while the session is enabled, the
-** resulting changeset will contain an UPDATE change that updates both fields.
+** Or, if one field of a row is updated while a session is enabled, and
+** then another field of the same row is updated while the session is disabled,
+** the resulting changeset will contain an UPDATE change that updates both
+** fields.
 */
 SQLITE_API int sqlite3session_changeset(
   sqlite3_session *pSession,      /* Session object */
@@ -11774,8 +11777,9 @@ SQLITE_API sqlite3_int64 sqlite3session_changeset_size(sqlite3_session *pSession
 ** database zFrom the contents of the two compatible tables would be
 ** identical.
 **
-** It an error if database zFrom does not exist or does not contain the
-** required compatible table.
+** Unless the call to this function is a no-op as described above, it is an
+** error if database zFrom does not exist or does not contain the required
+** compatible table.
 **
 ** If the operation is successful, SQLITE_OK is returned. Otherwise, an SQLite
 ** error code. In this case, if argument pzErrMsg is not NULL, *pzErrMsg
