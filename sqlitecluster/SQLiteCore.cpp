@@ -3,12 +3,12 @@
 #include "SQLiteCore.h"
 #include "SQLite.h"
 #include "SQLiteNode.h"
-    
+
 SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 { }
 
 bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID)) noexcept {
-    
+
     // This handler only needs to exist in prepare so we scope it here to automatically unset
     // the handler function once we are done with prepare.
     {
@@ -33,7 +33,6 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
     // Perform the actual commit, rollback if it fails.
     int errorCode = _db.commit(SQLiteNode::stateName(node.getState()));
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
-        SINFO("Commit conflict, rolling back.");
         _db.rollback();
         return false;
     } else if (errorCode == SQLite::COMMIT_DISABLED) {
