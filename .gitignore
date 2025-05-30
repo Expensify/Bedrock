@@ -18,3 +18,4 @@ libstuff/libstuff.h.gch
 .cache
 compile_commands.json
 .vscode/*
+.fuse_hidden*
