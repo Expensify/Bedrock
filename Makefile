@@ -50,13 +50,11 @@ clean:
 
 # Rule to build mbedtls.
 mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/libmbedx509.a:
-	git submodule init
-	( [ -f mbedtls/include/mbedtls/mbedtls_config.h ] && cd mbedtls && git checkout -f include/mbedtls/mbedtls_config.h ) || true
-	git submodule update
-	cd mbedtls && git submodule update --init
-	cd mbedtls && git checkout -q v3.6.2
-	mbedtls/scripts/config.py set MBEDTLS_THREADING_C
-	mbedtls/scripts/config.py set MBEDTLS_THREADING_PTHREAD
+	# Fully reinitialize mbedtls submodule including nested submodules.
+	git submodule sync
+	git submodule update --init --recursive
+
+	# Build mbedtls (skip tests).
 	cd mbedtls && $(MAKE) no_test
 
 # We select all of the cpp files (and manually add sqlite3.c) that will be in libstuff.
