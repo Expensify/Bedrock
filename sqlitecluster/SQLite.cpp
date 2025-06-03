@@ -199,11 +199,6 @@ void SQLite::commonConstructorInitialization(bool hctree) {
     SASSERT(!_filename.empty());
     SASSERT(_maxJournalSize > 0);
 
-    // WAL is what allows simultaneous read/writing.
-    if (!hctree) {
-        SASSERT(!_wrapSQuery(_db, "enabling write ahead logging (wal2)", "PRAGMA journal_mode = wal2;"));
-    }
-
     if (_mmapSizeGB) {
         SASSERT(!_wrapSQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
     }
@@ -1290,16 +1285,13 @@ int SQLite::_wrapSQuery(sqlite3* db, const char* e, const string& sql, SQResult&
     int squeryResult = SQuery(db, e, sql, result, warnThreshold, _isFirstQuery || skipInfoWarn);
     if (_isFirstQuery && !skipInfoWarn) {
         uint64_t elapsed = STimeNow() - startTime;
-        if ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000) {
-            // Avoid logging queries so long that we need dozens of lines to log them.
-            string sqlToLog = sql.substr(0, 20000);
-            SRedactSensitiveValues(sqlToLog);
-            if ((int64_t)elapsed > warnThreshold) {
-                SWARN("Slow first query (" << elapsed / 1000 << "ms): " << sqlToLog);
-            } else {
-                // We log the time the queries took, as long as they are over 10ms (to reduce noise of many queries that are consistently faster)
-                SINFO("First query completed (" << elapsed / 1000 << "ms): " << sqlToLog);
-            }
+        // Avoid logging queries so long that we need dozens of lines to log them.
+        string sqlToLog = sql.substr(0, 20000);
+        SRedactSensitiveValues(sqlToLog);
+        if ((int64_t)elapsed > warnThreshold) {
+            SWARN("Slow first query (" << elapsed / 1000 << "ms): " << sqlToLog);
+        } else {
+            SINFO("First query completed (" << elapsed / 1000 << "ms): " << sqlToLog);
         }
     }
     _isFirstQuery = false;
@@ -1315,16 +1307,13 @@ int SQLite::_wrapSQuery(sqlite3* db, const char* e, const string& sql, int64_t w
     int squeryResult = SQuery(db, e, sql, warnThreshold, _isFirstQuery || skipInfoWarn);
     if (_isFirstQuery && !skipInfoWarn) {
         uint64_t elapsed = STimeNow() - startTime;
-        if ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000) {
-            // Avoid logging queries so long that we need dozens of lines to log them.
-            string sqlToLog = sql.substr(0, 20000);
-            SRedactSensitiveValues(sqlToLog);
-            if ((int64_t)elapsed > warnThreshold) {
-                SWARN("Slow first query (" << elapsed / 1000 << "ms): " << sqlToLog);
-            } else {
-                // We log the time the queries took, as long as they are over 10ms (to reduce noise of many queries that are consistently faster)
-                SINFO("First query completed (" << elapsed / 1000 << "ms): " << sqlToLog);
-            }
+        // Avoid logging queries so long that we need dozens of lines to log them.
+        string sqlToLog = sql.substr(0, 20000);
+        SRedactSensitiveValues(sqlToLog);
+        if ((int64_t)elapsed > warnThreshold) {
+            SWARN("Slow first query (" << elapsed / 1000 << "ms): " << sqlToLog);
+        } else {
+            SINFO("First query completed (" << elapsed / 1000 << "ms): " << sqlToLog);
         }
     }
     _isFirstQuery = false;
