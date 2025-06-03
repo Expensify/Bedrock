@@ -1287,10 +1287,50 @@ map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::popCommittedT
 
 int SQLite::_wrapSQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn)
 {
-    return SQuery(db, e, sql, result, warnThreshold, skipInfoWarn);
+    uint64_t startTime = 0;
+    if (_isFirstQuery && !skipInfoWarn) {
+        startTime = STimeNow();
+    }
+    int squeryResult = SQuery(db, e, sql, result, warnThreshold, _isFirstQuery || skipInfoWarn);
+    if (_isFirstQuery && !skipInfoWarn) {
+        uint64_t elapsed = STimeNow() - startTime;
+        if ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000) {
+            // Avoid logging queries so long that we need dozens of lines to log them.
+            string sqlToLog = sql.substr(0, 20000);
+            SRedactSensitiveValues(sqlToLog);
+            if ((int64_t)elapsed > warnThreshold) {
+                SWARN("Slow first query (" << elapsed / 1000 << "ms): " << sqlToLog);
+            } else {
+                // We log the time the queries took, as long as they are over 10ms (to reduce noise of many queries that are consistently faster)
+                SINFO("First query completed (" << elapsed / 1000 << "ms): " << sqlToLog);
+            }
+        }
+    }
+    _isFirstQuery = false;
+    return squeryResult;
 }
 
 int SQLite::_wrapSQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipInfoWarn)
 {
-    return SQuery(db, e, sql, warnThreshold, skipInfoWarn);
+    uint64_t startTime = 0;
+    if (_isFirstQuery && !skipInfoWarn) {
+        startTime = STimeNow();
+    }
+    int squeryResult = SQuery(db, e, sql, warnThreshold, _isFirstQuery || skipInfoWarn);
+    if (_isFirstQuery && !skipInfoWarn) {
+        uint64_t elapsed = STimeNow() - startTime;
+        if ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000) {
+            // Avoid logging queries so long that we need dozens of lines to log them.
+            string sqlToLog = sql.substr(0, 20000);
+            SRedactSensitiveValues(sqlToLog);
+            if ((int64_t)elapsed > warnThreshold) {
+                SWARN("Slow first query (" << elapsed / 1000 << "ms): " << sqlToLog);
+            } else {
+                // We log the time the queries took, as long as they are over 10ms (to reduce noise of many queries that are consistently faster)
+                SINFO("First query completed (" << elapsed / 1000 << "ms): " << sqlToLog);
+            }
+        }
+    }
+    _isFirstQuery = false;
+    return squeryResult;
 }
