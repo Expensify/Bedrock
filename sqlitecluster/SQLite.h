@@ -479,8 +479,8 @@ class SQLite {
     static int _walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize);
 
     // Wrappers around SQuery that exist to let us check if we're running the first query on a handle.
-    int _wrapSQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
-    int _wrapSQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
+    int _wrapSQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false) const;
+    int _wrapSQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false) const;
 
     mutable uint64_t _timeoutLimit = 0;
     mutable uint64_t _timeoutStart;
