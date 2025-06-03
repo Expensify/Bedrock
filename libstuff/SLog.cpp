@@ -42,24 +42,25 @@ void SLogStackTrace(int level) {
 
 // If the param name is not in this whitelist, we will log <REDACTED> in addLogParams.
 static set<string> PARAMS_WHITELIST = {
+    "approver",
+    "approvers",
     "command",
     "Connection",
     "Content-Length",
     "count",
+    "employeeEmail",
+    "employees",
     "indexName",
     "isUnique",
     "logParam",
     "message",
     "peer",
+    "policyID",
     "reason",
     "requestID",
     "status",
+    "topic",
     "userID",
-    "policyID",
-    "employeeEmail",
-    "approver",
-    "approvers",
-    "employees",
 };
 
 string addLogParams(string&& message, const STable& params) {
