@@ -199,8 +199,9 @@ void SQLite::commonConstructorInitialization(bool hctree) {
     SASSERT(!_filename.empty());
     SASSERT(_maxJournalSize > 0);
 
+    uint64_t startTime = STimeNow();
     if (_mmapSizeGB) {
-        SASSERT(!_wrapSQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
+        SASSERT(!SQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
     }
 
     // Enable tracing for performance analysis.
@@ -209,8 +210,10 @@ void SQLite::commonConstructorInitialization(bool hctree) {
     // Update the cache. -size means KB; +size means pages
     if (_cacheSize) {
         SINFO("Setting cache_size to " << _cacheSize << "KB");
-        _wrapSQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(_cacheSize) + ";");
+        SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(_cacheSize) + ";");
     }
+    uint64_t elapsed = STimeNow() - startTime;
+    SINFO("Pragma init time: " << elapsed / 1000 << "ms.");
 
     // Register the authorizer callback which allows callers to whitelist particular data in the DB.
     sqlite3_set_authorizer(_db, _sqliteAuthorizerCallback, this);
