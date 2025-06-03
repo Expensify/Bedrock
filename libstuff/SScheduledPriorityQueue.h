@@ -335,6 +335,7 @@ list<T> SScheduledPriorityQueue<T>::getAll() {
     // Iterate across each map in each queue and pull out all the items.
     for (auto& queue: _queue) {
         for (auto& p : queue.second) {
+            _endFunction(p.second.item);
             items.emplace_back(move(p.second.item));
         }
     }
