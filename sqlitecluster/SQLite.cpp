@@ -1284,3 +1284,13 @@ map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::popCommittedT
     _committedTransactions.clear();
     return result;
 }
+
+int SQLite::_wrapSQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn)
+{
+    return SQuery(db, e, sql, result, warnThreshold, skipInfoWarn);
+}
+
+int SQLite::_wrapSQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipInfoWarn)
+{
+    return SQuery(db, e, sql, warnThreshold, skipInfoWarn);
+}

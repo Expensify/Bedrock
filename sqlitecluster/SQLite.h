@@ -478,6 +478,10 @@ class SQLite {
     // Registering this has the important side effect of preventing the DB from auto-checkpointing.
     static int _walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize);
 
+    // Wrappers around SQuery that exist to let us check if we're running the first query on a handle.
+    int _wrapSQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
+    int _wrapSQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
+
     mutable uint64_t _timeoutLimit = 0;
     mutable uint64_t _timeoutStart;
     mutable uint64_t _timeoutError;
@@ -522,6 +526,9 @@ class SQLite {
 
     // Number of queries found in cache in this transaction (for metrics only).
     mutable int64_t _cacheHits = 0;
+
+    // Set to true only for the first query on an object to diagnose performance problems that seem to stem from this.
+    mutable bool _isFirstQuery{true};
 
     // A string indicating the name of the transaction (typically a command name) for metric purposes.
     string _transactionName;
