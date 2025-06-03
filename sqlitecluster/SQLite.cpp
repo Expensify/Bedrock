@@ -426,7 +426,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
 
     SINFO("Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
     uint64_t before = STimeNow();
-    _insideTransaction = !_wrapSQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
+    _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
 
     // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
     // where we're actually able to start such that we know we shouldn't get a conflict if this commits successfully on
@@ -1223,7 +1223,7 @@ int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& stat
 void SQLite::setQueryOnly(bool enabled) {
     SQResult result;
     string query = "PRAGMA query_only = "s + (enabled ? "true" : "false") + ";";
-    _wrapSQuery(_db, "set query_only", query, result);
+    SQuery(_db, "set query_only", query, result);
 }
 
 int64_t SQLite::getLastConflictPage() const {
