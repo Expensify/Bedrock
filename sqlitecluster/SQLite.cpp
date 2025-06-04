@@ -1292,7 +1292,7 @@ int SQLite::_wrapSQuery(sqlite3* db, const char* e, const string& sql, SQResult&
         string sqlToLog = sql.substr(0, 20000);
         SRedactSensitiveValues(sqlToLog);
         if ((int64_t)elapsed > warnThreshold) {
-            SWARN("Slow first query (" << elapsed / 1000 << "ms): " << sqlToLog);
+            SWARN("Slow query (first query) (" << elapsed / 1000 << "ms): " << sqlToLog);
         } else {
             SINFO("First query completed (" << elapsed / 1000 << "ms): " << sqlToLog);
         }
@@ -1314,7 +1314,7 @@ int SQLite::_wrapSQuery(sqlite3* db, const char* e, const string& sql, int64_t w
         string sqlToLog = sql.substr(0, 20000);
         SRedactSensitiveValues(sqlToLog);
         if ((int64_t)elapsed > warnThreshold) {
-            SWARN("Slow first query (" << elapsed / 1000 << "ms): " << sqlToLog);
+            SWARN("Slow query (first query) (" << elapsed / 1000 << "ms): " << sqlToLog);
         } else {
             SINFO("First query completed (" << elapsed / 1000 << "ms): " << sqlToLog);
         }
