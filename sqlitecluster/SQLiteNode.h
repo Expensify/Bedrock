@@ -8,6 +8,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <queue>
+#include <thread>
 
 // This file is long and complex. For each nested sub-structure (I.e., classes inside classes) we have attempted to
 // arrange things as such:
