@@ -193,8 +193,8 @@ The above takes some getting used to, but is incredibly powerful for expressing 
 ### Canned Repeat Schedules
 Confused by all the above?  No problem -- there are a few "canned" patterns built in for simplicity:
 
-* **HOURLY** = FINISHED, + 1 HOUR
-* **DAILY** = FINISHED, + 1 DAY
-* **WEEKLY** = FINISHED, + 7 DAYS
+* **HOURLY** = FINISHED, +1 HOUR
+* **DAILY** = FINISHED, +1 DAY
+* **WEEKLY** = FINISHED, +7 DAYS
 
 These are useful if you generally want something to happen *approximately but no greater* than the indicated frequency.
