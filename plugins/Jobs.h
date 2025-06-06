@@ -24,6 +24,38 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     static const int64_t JOBS_DEFAULT_PRIORITY;
 };
 
+/*
+Let's discuss parent/child jobs.
+When a parent job is started, there's nothing in particular that makes it a parent, it's just a job.
+When the actual job script runs, it has the ability to create children of this parents,
+which it can do by creating new jobs and passing the existing job's ID as `parentJobID`.
+This is only allowed when the parent is RUNNING, RUNQUEUED or PAUSED.
+
+Runqueued is a special case of RUNNING for retryable jobs. In the case they get stuck, they are not perpetually left RUNNING,
+they can be retried as if they were queued.
+
+CancelJob can be called only on a child job, but only if it doesn't in turn have children of its own.
+RUNNING, FINISHED and PAUSED jobs cannot be cancelled, this functionality exists to remove jobs that have been queued
+but not started yet.
+
+Grandchildren are not allowed, which makes the code from above in `CancelJob` unclear. It's likely just overly cautious gaurding.
+
+Jobs are generally created in the QUEUED state, meaning they're ready to start, however, child jobs follow different rules.
+If the parent job is currently RUNNING or RUNQUEUED, then the child is created PAUSED. If the parent is in any other state,
+then the normal rule of creating the job in QUEUED applies.
+
+Parent jobs should always be paused when children are running.
+
+Calling FinishJob on a parent job sets its state to PAUSED and its childrens states to QUEUED.
+Calling FinishJob on a child job will resume the parent if there are no other outstanding children
+(i.e., only the last child should resume the parent).
+
+Any child job (or standalone job) should be deleted on completion.
+
+Calling CancelJob may also cause the parent to resume for the last child.
+
+*/
+
 class BedrockJobsCommand : public BedrockCommand {
   public:
     BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin);
