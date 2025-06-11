@@ -2730,6 +2730,11 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         }
     }
 
+    SINFO("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "), extErr #" << extErr << " (" << sqlite3_errmsg(db) << "): ");
+    if (error == 10) {
+        SINFO("ERROR 10");
+    }
+
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
     if (extErr == SQLITE_BUSY_SNAPSHOT) {
         return extErr;
@@ -2742,7 +2747,8 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
     // First, see if it's there
     SQResult result;
-    SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
+    int qr = SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result);
+    SASSERT(!qr);
     if (result.empty()) {
         // Table doesn't already exist, create it
         SINFO("Creating '" << tableName << "'");

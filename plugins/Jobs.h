@@ -53,7 +53,6 @@ Calling FinishJob on a child job will resume the parent if there are no other ou
 Any child job (or standalone job) should be deleted on completion.
 
 Calling CancelJob may also cause the parent to resume for the last child.
-
 */
 
 class BedrockJobsCommand : public BedrockCommand {
