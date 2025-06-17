@@ -631,7 +631,7 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
 
     // First, check our current state
     SQResult results;
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+    SASSERT(!_wrapSQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaBefore = SToUInt64(results[0][0]);
     uint64_t changesBefore = sqlite3_total_changes(_db);
@@ -672,7 +672,7 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
     }
 
     // See if the query changed anything
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+    SASSERT(!_wrapSQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaAfter = SToUInt64(results[0][0]);
     uint64_t changesAfter = sqlite3_total_changes(_db);
@@ -901,7 +901,7 @@ void SQLite::rollback() {
                 SINFO("Rolling back transaction: " << _uncommittedQuery.substr(0, 100));
             }
             uint64_t before = STimeNow();
-            SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
+            SASSERT(!_wrapSQuery(_db, "rolling back db transaction", "ROLLBACK"));
             _rollbackElapsed += STimeNow() - before;
         }
 
