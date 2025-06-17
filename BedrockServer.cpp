@@ -1791,7 +1791,6 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "BlockWrites")            ||
         SIEquals(command->request.methodLine, "UnblockWrites")          ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads")    ||
-        SIEquals(command->request.methodLine, "OpenDBHandlesAndRunQuery") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
         ) {
         return true;
@@ -1951,63 +1950,6 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command) {
             _maxSocketThreads = newMax;
         } else {
             response.methodLine = "401 Don't Use Zero";
-        }
-    } else if (SIEquals(command->request.methodLine, "OpenDBHandlesAndRunQuery")) {
-        // Note that calling this with more handles than the pool is configured to open will effectively lock up the server.
-        // Calling it with fewer than that should eventually work but may have big performance impacts if this number
-        // is very close to the maximum allowed.
-        // Whether or not this creates a bunch of handles or recycles existing handles is indeterminate.
-        size_t handlesCount = command->request.calcU64("handlesCount");
-        size_t maxThreads = 16;
-        if (command->request.isSet("maxThreads")) {
-            maxThreads = command->request.calcU64("maxThreads");
-        }
-
-        if (handlesCount < 0 || maxThreads < 1 || maxThreads > 1000) {
-            response.methodLine = "405 Pick saner values.";
-        }
-
-        auto dbPoolCopy = atomic_load(&_dbPool);
-        if (dbPoolCopy && handlesCount) {
-            SINFO("Reserving " << handlesCount << " DB handles.");
-            vector<size_t> indicies(handlesCount);
-            vector<size_t> timings(handlesCount);
-            list<thread> threads;
-
-            // Grab the indices of the handles we'll load.
-            for (size_t index = 0; index < handlesCount; index++) {
-                indicies[index] = dbPoolCopy->getIndex(false);
-            }
-
-            SINFO("Reserved " << handlesCount << " DB handles, initializing.");
-            atomic<size_t> index(0);
-            for (size_t t = 0; t < maxThreads; t++) {
-                threads.emplace_back([&](){
-                    while (true) {
-                        size_t current_index = index.fetch_add(1);
-                        if (current_index >= handlesCount) {
-                            return;
-                        }
-                        uint64_t startTime = STimeNow();
-                        dbPoolCopy->initializeIndex(current_index).read("SELECT name FROM sqlite_schema;");
-                        uint64_t endTime = STimeNow();
-
-                        timings[current_index] = endTime - startTime;
-                    }
-                });
-            }
-
-            // Wait for them all to initialize.
-            for (thread& t : threads) {
-                t.join();
-            }
-
-            SINFO("Initialized " << handlesCount << " DB handles, cleaning up.");
-            for (size_t i = 0; i < handlesCount; i++) {
-                dbPoolCopy->returnToPool(indicies[i]);
-            }
-            SINFO("Returned " << handlesCount << " DB handles.");
-            command->response.content = SComposeList(timings, "\n");
         }
     }
 }
