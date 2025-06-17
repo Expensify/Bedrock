@@ -203,6 +203,12 @@ vector<string> SException::details() const noexcept {
     return stack;
 }
 
+void SException::logStackTrace() const noexcept {
+    for (const auto& frame : details()) {
+        SINFO(frame);
+    }
+}
+
 void SSyslogSocketDirect(int priority, const char *format, ...) {
     int socketError = 0;
     static const size_t MAX_MESSAGE_SIZE = 8 * 1024;
