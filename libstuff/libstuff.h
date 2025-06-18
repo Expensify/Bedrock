@@ -146,6 +146,7 @@ class SException : public exception {
                const string& _body = "");
     const char* what() const noexcept;
     vector<string> details() const noexcept;
+    void logStackTrace() const noexcept;
 
     const string method;
     const STable headers;
