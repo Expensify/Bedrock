@@ -203,6 +203,10 @@ vector<string> SException::details() const noexcept {
     return stack;
 }
 
+bool SException::hasStackTrace() const noexcept {
+    return _depth > 0;
+}
+
 void SException::logStackTrace() const noexcept {
     for (const auto& frame : details()) {
         SINFO(frame);
