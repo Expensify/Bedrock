@@ -748,6 +748,13 @@ bool SQLiteNode::update() {
         }
         if (peerVersions[_version] == maxVal) {
             // We are in the biggest group. But I'm not sure if this is useful.
+
+            // I think the question is "can you be leading with less than a quorum number of nodes on your own version?"
+            // and I think the answer is "yes".
+            // Imagine a five node cluster, mid-upgrade, one node is down for changeover.
+            // There are two remaining nodes on each version.
+            // The cluster should still function.
+            // Additionally, a single flaky connection should not take the cluster offline.
         }
 
         // No leader and we're in sync, perhaps everybody is waiting for us
