@@ -1288,6 +1288,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 STHROW("you're *not* supposed to be a 0-priority permafollower");
             }
 
+            // Is it on the same version as us?
+
             // It's an error to have to peers configured with the same priority, except 0 and -1
             SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
             peer->priority = message.calc("Priority");
