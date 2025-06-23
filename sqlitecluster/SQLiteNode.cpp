@@ -178,7 +178,7 @@ void SQLiteNode::_replicate() {
             while (!_shouldReplicateThreadExit && _replicateQueue.empty()) {
                 _replicateCV.wait(lock);
             }
-            
+
             shouldExitWhenQueueEmpty = _shouldReplicateThreadExit;
             isQueueEmpty = _replicateQueue.empty();
             if (!isQueueEmpty) {
@@ -197,7 +197,7 @@ void SQLiteNode::_replicate() {
                     SINFO("Finished replication mid-transaction, missing COMMIT_TRANSACTION, rolling back.");
                     db.rollback();
                 }
-                
+
                 // Done with replication.
                 return;
             } else {
@@ -1211,8 +1211,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             peer->commandAddress = message["commandAddress"];
         }
         peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
-        
-        // We check the commit difference with 12,500 commits behind because that 
+
+        // We check the commit difference with 12,500 commits behind because that
         // represents ~30s of commits. If we're behind, let's close the command port
         // so we can catch up with the cluster before processing new commands.
         const string blockReason = "COMMITS_LAGGING_BEHIND";
@@ -1386,10 +1386,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             // Contains a header "Response" with either the value "approve" or "deny".  This response is stored within the
             // peer for testing in the update loop.
             if (_state == SQLiteNodeState::STANDINGUP) {
-                // We only verify this if it's present, which allows us to still receive valid STANDUP_RESPONSE
-                // messages from peers on older versions. Once all nodes have been upgraded past the first version that
-                // supports this, we can enforce that this count is present.
-                if (message.isSet("StateChangeCount") && message.calc("StateChangeCount") != _stateChangeCount) {
+                if (message.calc("StateChangeCount") != _stateChangeCount) {
                     SHMMM("Received STANDUP_RESPONSE for old standup attempt (" << message.calc("StateChangeCount") << "), ignoring.");
                     return;
                 }
@@ -1783,7 +1780,7 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer) {
             // It works for the sync thread as well, as there's handling in _changeState to rollback a commit when
             // dropping out of leading or standing down (and there can't be commits in progress in other states).
             SWARN("[clustersync] We were " << stateName(_state) << " but lost quorum (Disconnected from " << peer->name << "). Going to SEARCHING.");
-            
+
             // Store the time at which this happened for diagnostic purposes.
             _lastLostQuorum = STimeNow();
             for (const auto* p : _peerList) {
@@ -2664,10 +2661,10 @@ void SQLiteNode::kill() {
 string SQLiteNode::_getLostQuorumLogMessage() const {
     string lostQuorumMessage;
     if (_lastLostQuorum) {
-        lostQuorumMessage = " Lost Quorum at: " + STIMESTAMP_MS(_lastLostQuorum) + " (" + 
+        lostQuorumMessage = " Lost Quorum at: " + STIMESTAMP_MS(_lastLostQuorum) + " (" +
         to_string((double)(STimeNow() - _lastLostQuorum) / 1000000.0) + " seconds ago).";
     }
-    
+
     return lostQuorumMessage;
 }
 
