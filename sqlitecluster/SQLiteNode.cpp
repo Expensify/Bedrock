@@ -726,12 +726,38 @@ bool SQLiteNode::update() {
             return true; // Re-update
         }
 
+        // Determine which peers are on which version.
+        map <string, size_t> peerVersions;
+        for (auto peer : _peerList) {
+            if (peerVersions.find(peer->version) == peerVersions.end()) {
+                peerVersions[peer->version] = 0;
+            }
+            peerVersions[peer->version]++;
+        }
+
+        // Add ourself to one of the versions.
+        if (peerVersions.find(_version) == peerVersions.end()) {
+            peerVersions[_version] = 0;
+        }
+        peerVersions[_version]++;
+
+        // At this point, we have a set of versions, we can attempt to stand upif we're in the biggest one of these groups.
+        size_t maxVal = 0;
+        for (const auto& kv : peerVersions) {
+            maxVal = max(maxVal, kv.second);
+        }
+        if (peerVersions[_version] == maxVal) {
+            // We are in the biggest group. But I'm not sure if this is useful.
+        }
+
         // No leader and we're in sync, perhaps everybody is waiting for us
         // to stand up?  If we're higher than the highest priority, are using
         // a real priority and are not a permafollower, and are connected to
         // enough full peers to achieve quorum, we should be leader.
-        if (!currentLeader && numLoggedInFullPeers * 2 >= numFullPeers &&
-            _priority > 0 && _priority > highestPriorityPeer->priority) {
+        if (numLoggedInFullPeers * 2 >= numFullPeers && _priority > 0 && _priority > highestPriorityPeer->priority) {
+
+
+
             // Yep -- time for us to stand up -- clear everyone's
             // last approval status as they're about to send them.
             SINFO("No leader and we're highest priority (over " << highestPriorityPeer->name << "), STANDINGUP");
@@ -2701,7 +2727,8 @@ void SQLiteNode::_sendStandupResponse(SQLitePeer* peer, const SData& message) {
                 PWARN("Higher-priority peer is trying to stand up while we are STANDINGUP, SEARCHING.");
                 _changeState(SQLiteNodeState::SEARCHING);
             } else if (_state == SQLiteNodeState::LEADING) {
-                // This is where we would catch this, and it seems like it should be OK.
+                // This is where we would catch this, and it seems like it should be OK. Now we just need leader to not stand up
+                // if it doesn't think it can.
                 PINFO("Higher-priority peer is trying to stand up while we are LEADING, STANDINGDOWN.");
                 _changeState(SQLiteNodeState::STANDINGDOWN);
             } else {
