@@ -1056,6 +1056,8 @@ bool SQLiteNode::update() {
                     } else if (peer->state == SQLiteNodeState::WAITING) {
                         // We have a WAITING peer; is it waiting to STANDUP?
                         if (peer->priority > _priority) {
+                            // So should we stand down here, or not? This might be the hardest problem here.
+                            // We don't know if this peer has any other peers on its version.
                             // We've got a higher priority peer in the works; stand down so it can stand up.
                             standDownReason = "Found higher priority WAITING peer (" + peer->name
                                               + ") while LEADING, STANDINGDOWN";
