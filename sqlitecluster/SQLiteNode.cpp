@@ -1058,6 +1058,7 @@ bool SQLiteNode::update() {
                         if (peer->priority > _priority) {
                             // So should we stand down here, or not? This might be the hardest problem here.
                             // We don't know if this peer has any other peers on its version.
+                            // If we remove this case, then we still need to stand down somewhere else.
                             // We've got a higher priority peer in the works; stand down so it can stand up.
                             standDownReason = "Found higher priority WAITING peer (" + peer->name
                                               + ") while LEADING, STANDINGDOWN";
@@ -2700,6 +2701,7 @@ void SQLiteNode::_sendStandupResponse(SQLitePeer* peer, const SData& message) {
                 PWARN("Higher-priority peer is trying to stand up while we are STANDINGUP, SEARCHING.");
                 _changeState(SQLiteNodeState::SEARCHING);
             } else if (_state == SQLiteNodeState::LEADING) {
+                // This is where we would catch this, and it seems like it should be OK.
                 PINFO("Higher-priority peer is trying to stand up while we are LEADING, STANDINGDOWN.");
                 _changeState(SQLiteNodeState::STANDINGDOWN);
             } else {
