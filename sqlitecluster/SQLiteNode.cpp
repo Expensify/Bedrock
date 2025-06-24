@@ -1289,6 +1289,14 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             }
 
             // Is it on the same version as us?
+            if (peer->version.load() == _version) {
+                _peerOnSameVersion = true;
+            }
+
+            // We can't just do this here, we also need to have gone waiting.
+            if (_priority == -1 && _peerOnSameVersion) {
+                _priority = _originalPriority;
+            }
 
             // It's an error to have to peers configured with the same priority, except 0 and -1
             SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
@@ -1973,7 +1981,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             // TODO: No we don't, we finish it, as per other documentation in this file.
         } else if (newState == SQLiteNodeState::WAITING) {
             // The first time we enter WAITING, we're caught up and ready to join the cluster - use our real priority from now on
-            if (_priority == -1) {
+            if (_priority == -1 && _peerOnSameVersion) {
                 _priority = _originalPriority;
             }
         }
