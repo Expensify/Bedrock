@@ -286,7 +286,7 @@ class SQLiteNode : public STCPManager {
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
     const int _originalPriority;
 
-    bool _peerOnSameVersion = false;
+    bool _haveSeenPeerOnSameVersion = false;
     bool _haveBeenWAITING = false;
 
     // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command port".
