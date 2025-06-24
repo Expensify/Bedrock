@@ -1946,8 +1946,8 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             // Abort all remote initiated commands if no longer LEADING
             // TODO: No we don't, we finish it, as per other documentation in this file.
         } else if (newState == SQLiteNodeState::WAITING) {
-            // The first time we enter WAITING, we're caught up and ready to join the cluster - use our real priority from now on
-            if (_priority == -1 && _haveSeenPeerOnSameVersion) {
+            _haveBeenWAITING = true;
+            if (_haveBeenWAITING && _haveSeenPeerOnSameVersion) {
                 _priority = _originalPriority;
             }
         }
