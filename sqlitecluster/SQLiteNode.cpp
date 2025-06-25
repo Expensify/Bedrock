@@ -1261,10 +1261,9 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             // Is it on the same version as us?
             if (!_haveSeenPeerOnSameVersion && peer->version.load() == _version) {
                 _haveSeenPeerOnSameVersion = true;
-            }
-
-            if (_haveBeenWAITING && _haveSeenPeerOnSameVersion) {
+                if (_haveBeenWAITING && _haveSeenPeerOnSameVersion) {
                 _priority = _originalPriority;
+                }
             }
 
             uint64_t peerCommitCount;
