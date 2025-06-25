@@ -1252,6 +1252,12 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 STHROW("you're *not* supposed to be a 0-priority permafollower");
             }
 
+            // It's an error to have to peers configured with the same priority, except 0 and -1
+            SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
+            peer->priority = message.calc("Priority");
+            peer->version = message["Version"];
+            peer->state = stateFromName(message["State"]);
+
             // Is it on the same version as us?
             if (!_haveSeenPeerOnSameVersion && peer->version.load() == _version) {
                 _haveSeenPeerOnSameVersion = true;
@@ -1260,12 +1266,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             if (_haveBeenWAITING && _haveSeenPeerOnSameVersion) {
                 _priority = _originalPriority;
             }
-
-            // It's an error to have to peers configured with the same priority, except 0 and -1
-            SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
-            peer->priority = message.calc("Priority");
-            peer->version = message["Version"];
-            peer->state = stateFromName(message["State"]);
 
             uint64_t peerCommitCount;
             string peerCommitHash;
@@ -1943,9 +1943,11 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             // Abort all remote initiated commands if no longer LEADING
             // TODO: No we don't, we finish it, as per other documentation in this file.
         } else if (newState == SQLiteNodeState::WAITING) {
-            _haveBeenWAITING = true;
-            if (_haveBeenWAITING && _haveSeenPeerOnSameVersion) {
-                _priority = _originalPriority;
+            if (!_haveBeenWAITING) {
+                _haveBeenWAITING = true;
+                if (_haveBeenWAITING && _haveSeenPeerOnSameVersion) {
+                    _priority = _originalPriority;
+                }
             }
         }
 
