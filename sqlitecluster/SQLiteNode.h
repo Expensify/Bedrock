@@ -287,7 +287,7 @@ class SQLiteNode : public STCPManager {
     const int _originalPriority;
 
     // Tracks whether this node has seen at least one peer running the same version as itself.
-    // We use this along with _haveBeenWAITING to determine when to restore the node's original priority after startup,
+    // We use this along with _haveBeenWAITING to determine when to restore the node's original priority after startup.
     // This prevents a node started on the wrong (perhaps out-of-date) version from taking over leadership and thus having
     // the entirety of traffic to the cluster directed to it.
     bool _haveSeenPeerOnSameVersion = false;
