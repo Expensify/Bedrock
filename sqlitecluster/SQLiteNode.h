@@ -295,7 +295,7 @@ class SQLiteNode : public STCPManager {
     // Tracks whether this node has ever entered the WAITING state during its lifecycle.
     // We will avoid having a high priority until after synchronization is complete becuase if we are the expected leader,
     // with the highest priority, the secondary leader will stand down when it sees us online. However, if synchronization
-    // is not complete, this can leave the cluster with no leader for a long time. we will never go WAITING until we've run
+    // is not complete, this can leave the cluster with no leader for a long time. We will never go WAITING until we've run
     // through synchronization once, so this avoids that scenario.
     bool _haveBeenWAITING = false;
 
