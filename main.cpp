@@ -317,8 +317,13 @@ int main(int argc, char* argv[]) {
         unlink(string(db + "-shm").c_str());
     }
 
-    if (args.isSet("-checkDBMemoryMapping") || args.isSet("-setDBMemoryMapping")) {
-        VMTouch::check(args["-db"].c_str(), args.isSet("-setDBMemoryMapping"), true);
+    if (args.isSet("-checkDBMemoryMapping")) {
+        VMTouch::check(args["-db"].c_str(), true);
+        SStopSignalThread();
+        return 0;
+    }
+    if (args.isSet("-setDBMemoryMapping")) {
+        VMTouch::touch(args["-db"].c_str(), true);
         SStopSignalThread();
         return 0;
     }
