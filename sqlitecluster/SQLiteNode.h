@@ -286,7 +286,17 @@ class SQLiteNode : public STCPManager {
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
     const int _originalPriority;
 
+    // Tracks whether this node has seen at least one peer running the same version as itself.
+    // We use this along with _haveBeenWAITING to determine when to restore the node's original priority after startup,
+    // This prevents a node started on the wrong (perhaps out-of-date) version from taking over leadership and thus having
+    // the entirety of traffic to the cluster directed to it.
     bool _haveSeenPeerOnSameVersion = false;
+
+    // Tracks whether this node has ever entered the WAITING state during its lifecycle.
+    // We will avoid having a high priority until after synchronization is complete becuase if we are the expected leader,
+    // with the highest priority, the secondary leader will stand down when it sees us online. However, if synchronization
+    // is not complete, this can leave the cluster with no leader for a long time. we will never go WAITING until we've run
+    // through synchronization once, so this avoids that scenario.
     bool _haveBeenWAITING = false;
 
     // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command port".
