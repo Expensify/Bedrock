@@ -1261,8 +1261,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             // Is it on the same version as us?
             if (!_haveSeenPeerOnSameVersion && peer->version.load() == _version) {
                 _haveSeenPeerOnSameVersion = true;
-                if (_haveBeenWAITING && _haveSeenPeerOnSameVersion) {
-                _priority = _originalPriority;
+                if (_haveBeenWAITING) {
+                    _priority = _originalPriority;
                 }
             }
 
@@ -1944,7 +1944,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
         } else if (newState == SQLiteNodeState::WAITING) {
             if (!_haveBeenWAITING) {
                 _haveBeenWAITING = true;
-                if (_haveBeenWAITING && _haveSeenPeerOnSameVersion) {
+                if (_haveSeenPeerOnSameVersion) {
                     _priority = _originalPriority;
                 }
             }
