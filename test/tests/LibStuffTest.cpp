@@ -734,7 +734,7 @@ struct LibStuff : tpunit::TestFixture {
         bool threw = false;
         try {
             string s = result[0]["notacolumn"];
-        } catch (const out_of_range& e) {
+        } catch (const SException& e) {
             threw = true;
         }
         ASSERT_TRUE(threw);

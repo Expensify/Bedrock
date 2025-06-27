@@ -38,7 +38,7 @@ string& SQResultRow::operator[](const string& key) {
             }
         }
     }
-    throw out_of_range("No column named " + key);
+    STHROW_STACK("No column named " + key);
 }
 
 const string& SQResultRow::operator[](const string& key) const {
@@ -55,7 +55,7 @@ const string& SQResultRow::operator[](const string& key) const {
             }
         }
     }
-    throw out_of_range("No column named " + key);
+    STHROW_STACK("No column named " + key);
 }
 
 string SQResult::serializeToJSON() const {
@@ -151,7 +151,8 @@ SQResultRow& SQResult::operator[](size_t rowNum) {
     try {
         return rows.at(rowNum);
     } catch (const out_of_range& e) {
-        STHROW("Out of range");
+        SINFO("SQResult::operator out of range", {{"rowNum", to_string(rowNum)}});
+        STHROW_STACK("Out of range");
     }
 }
 
@@ -159,7 +160,8 @@ const SQResultRow& SQResult::operator[](size_t rowNum) const {
     try {
         return rows.at(rowNum);
     } catch (const out_of_range& e) {
-        STHROW("Out of range");
+        SINFO("SQResult::operator out of range", {{"rowNum", to_string(rowNum)}});
+        STHROW_STACK("Out of range");
     }
 }
 
