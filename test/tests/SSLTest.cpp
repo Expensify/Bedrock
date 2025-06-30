@@ -109,6 +109,7 @@ struct SSLTest : tpunit::TestFixture {
 
         // Wait for a response or connection failure
         bool connectionFailed = false;
+        bool timedOut = false;
         while (!transaction->response && !connectionFailed) {
             fd_map fdm;
             uint64_t nextActivity = STimeNow();
@@ -119,17 +120,40 @@ struct SSLTest : tpunit::TestFixture {
             // Check if the connection failed due to SSL certificate validation
             if (transaction->s && transaction->s->state == STCPManager::Socket::CLOSED) {
                 connectionFailed = true;
+                cout << "SSL Test: Connection closed, socket state is CLOSED" << endl;
             }
 
             // Check for timeout
             if (STimeNow() > transaction->timeoutAt) {
                 connectionFailed = true;
+                timedOut = true;
+                cout << "SSL Test: Connection timed out after 10 seconds" << endl;
             }
+        }
+
+        // Log the final state after S_poll loop exits
+        cout << "SSL Test: S_poll loop ended with:" << endl;
+        cout << "  - transaction->response: " << (transaction->response ? to_string(transaction->response) : "null") << endl;
+        cout << "  - connectionFailed: " << (connectionFailed ? "true" : "false") << endl;
+        cout << "  - timedOut: " << (timedOut ? "true" : "false") << endl;
+        if (transaction->s) {
+            cout << "  - socket state: " << transaction->s->state << endl;
+            cout << "  - socket lastSendTime: " << transaction->s->lastSendTime << endl;
+            cout << "  - socket lastRecvTime: " << transaction->s->lastRecvTime << endl;
+        } else {
+            cout << "  - socket: null" << endl;
         }
 
         // We expect the connection to fail due to certificate validation error
         // The wrong.host.badssl.com site has a certificate that doesn't match the hostname
-        ASSERT_TRUE(connectionFailed || transaction->response >= 400);
+        // A successful connection with a 2xx or 3xx response indicates SSL validation passed
+        if (transaction->response && transaction->response < 400) {
+            cout << "SSL Test: Got successful HTTP response " << transaction->response << " - SSL validation passed" << endl;
+            ASSERT_TRUE(false); // This should fail for hosts with invalid certificates
+        } else {
+            cout << "SSL Test: Connection failed or got error response - SSL validation likely failed" << endl;
+            ASSERT_TRUE(connectionFailed || transaction->response >= 400);
+        }
 
         // Close the transaction
         manager.closeTransaction(transaction);
