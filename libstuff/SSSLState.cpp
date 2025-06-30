@@ -6,7 +6,6 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
-#include <string>
 
 SSSLState::SSSLState(const string& hostname) : SSSLState(hostname, -1) {}
 SSSLState::SSSLState(const string& hostname, int socket) {
