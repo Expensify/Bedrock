@@ -53,8 +53,6 @@ struct SSLTest : tpunit::TestFixture {
     }
 
     void proxyTest() {
-        cout << "proxyTest" << endl;
-        SINFO("proxyTest TYLER");
         // This is a generic HTTPS manager.
         SStandaloneHTTPSManager manager;
 
@@ -86,74 +84,37 @@ struct SSLTest : tpunit::TestFixture {
         // Make sure that the response has a body. This differentiates it from the response to a CONNECT message
         // So that we can test we're looking at the actual proxied response and not just the response from the proxy itself.
         ASSERT_TRUE(transaction->fullResponse.content.size());
-        SINFO("Response: " << transaction->fullResponse.content);
 
         // Close the transaction.
         manager.closeTransaction(transaction);
     }
 
     void certificateValidationTest() {
-        cout << "certificateValidationTest" << endl;
-        // This test verifies that we properly detect SSL certificate/hostname mismatches
         SStandaloneHTTPSManager manager;
 
+        // Specifically validates that we properly detect SSL certificate/hostname mismatches
         const string host = "wrong.host.badssl.com:443";
         SData request("GET / HTTP/1.1");
         request["host"] = host;
 
         // Create a transaction with a socket, send the above request.
         SStandaloneHTTPSManager::Transaction* transaction = new SStandaloneHTTPSManager::Transaction(manager);
-        transaction->s = new STCPManager::Socket(host, true); // true for HTTPS
-        transaction->timeoutAt = STimeNow() + 10'000'000; // 10 second timeout
+        transaction->s = new STCPManager::Socket(host, true);
+        transaction->timeoutAt = STimeNow() + 10'000'000;
         transaction->s->send(request.serialize());
 
-        // Wait for a response or connection failure
-        bool connectionFailed = false;
-        bool timedOut = false;
-        while (!transaction->response && !connectionFailed) {
+        while (!transaction->response && (STimeNow() < transaction->timeoutAt)) {
             fd_map fdm;
             uint64_t nextActivity = STimeNow();
             manager.prePoll(fdm, *transaction);
             S_poll(fdm, 1'000'000);
             manager.postPoll(fdm, *transaction, nextActivity);
-
-            // Check if the connection failed due to SSL certificate validation
-            if (transaction->s && transaction->s->state == STCPManager::Socket::CLOSED) {
-                connectionFailed = true;
-                cout << "SSL Test: Connection closed, socket state is CLOSED" << endl;
-            }
-
-            // Check for timeout
-            if (STimeNow() > transaction->timeoutAt) {
-                connectionFailed = true;
-                timedOut = true;
-                cout << "SSL Test: Connection timed out after 10 seconds" << endl;
-            }
-        }
-
-        // Log the final state after S_poll loop exits
-        cout << "SSL Test: S_poll loop ended with:" << endl;
-        cout << "  - transaction->response: " << (transaction->response ? to_string(transaction->response) : "null") << endl;
-        cout << "  - connectionFailed: " << (connectionFailed ? "true" : "false") << endl;
-        cout << "  - timedOut: " << (timedOut ? "true" : "false") << endl;
-        if (transaction->s) {
-            cout << "  - socket state: " << transaction->s->state << endl;
-            cout << "  - socket lastSendTime: " << transaction->s->lastSendTime << endl;
-            cout << "  - socket lastRecvTime: " << transaction->s->lastRecvTime << endl;
-        } else {
-            cout << "  - socket: null" << endl;
         }
 
         // We expect the connection to fail due to certificate validation error
         // The wrong.host.badssl.com site has a certificate that doesn't match the hostname
         // A successful connection with a 2xx or 3xx response indicates SSL validation passed
-        if (transaction->response && transaction->response < 400) {
-            cout << "SSL Test: Got successful HTTP response " << transaction->response << " - SSL validation passed" << endl;
-            ASSERT_TRUE(false); // This should fail for hosts with invalid certificates
-        } else {
-            cout << "SSL Test: Connection failed or got error response - SSL validation likely failed" << endl;
-            ASSERT_TRUE(connectionFailed || transaction->response >= 400);
-        }
+        ASSERT_TRUE(transaction->response >= 400);
 
         // Close the transaction
         manager.closeTransaction(transaction);
