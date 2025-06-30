@@ -15,6 +15,7 @@ struct SSLTest : tpunit::TestFixture {
                               BEFORE_CLASS(SSLTest::setup),
                               TEST(SSLTest::proxyTest),
                               TEST(SSLTest::test),
+                              TEST(SSLTest::certificateValidationTest),
                               AFTER_CLASS(SSLTest::teardown))
     { }
 
@@ -85,6 +86,48 @@ struct SSLTest : tpunit::TestFixture {
         ASSERT_TRUE(transaction->fullResponse.content.size());
 
         // Close the transaction.
+        manager.closeTransaction(transaction);
+    }
+
+    void certificateValidationTest() {
+        // This test verifies that we properly detect SSL certificate/hostname mismatches
+        SStandaloneHTTPSManager manager;
+
+        const string host = "wrong.host.badssl.com:443";
+        SData request("GET / HTTP/1.1");
+        request["host"] = host;
+
+        // Create a transaction with a socket, send the above request.
+        SStandaloneHTTPSManager::Transaction* transaction = new SStandaloneHTTPSManager::Transaction(manager);
+        transaction->s = new STCPManager::Socket(host, true); // true for HTTPS
+        transaction->timeoutAt = STimeNow() + 10'000'000; // 10 second timeout
+        transaction->s->send(request.serialize());
+
+        // Wait for a response or connection failure
+        bool connectionFailed = false;
+        while (!transaction->response && !connectionFailed) {
+            fd_map fdm;
+            uint64_t nextActivity = STimeNow();
+            manager.prePoll(fdm, *transaction);
+            S_poll(fdm, 1'000'000);
+            manager.postPoll(fdm, *transaction, nextActivity);
+
+            // Check if the connection failed due to SSL certificate validation
+            if (transaction->s && transaction->s->state == STCPManager::Socket::CLOSED) {
+                connectionFailed = true;
+            }
+
+            // Check for timeout
+            if (STimeNow() > transaction->timeoutAt) {
+                connectionFailed = true;
+            }
+        }
+
+        // We expect the connection to fail due to certificate validation error
+        // The wrong.host.badssl.com site has a certificate that doesn't match the hostname
+        ASSERT_TRUE(connectionFailed || transaction->response >= 400);
+
+        // Close the transaction
         manager.closeTransaction(transaction);
     }
 } __SSLTest;

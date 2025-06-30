@@ -6,6 +6,7 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
+#include <string>
 
 SSSLState::SSSLState(const string& hostname) : SSSLState(hostname, -1) {}
 SSSLState::SSSLState(const string& hostname, int socket) {
@@ -32,12 +33,18 @@ SSSLState::SSSLState(const string& hostname, int socket) {
         STHROW("mbedtls_ctr_drbg_seed failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
 
+    lastResult = mbedtls_ssl_set_hostname(&ssl, domain.c_str());
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ssl_set_hostname failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
     // If no socket was supplied, create our own.
     if (socket == -1) {
         lastResult = mbedtls_net_connect(&net_ctx, domain.c_str(),to_string(port).c_str(), MBEDTLS_NET_PROTO_TCP);
         if (lastResult) {
             mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
-            STHROW("mbedtls_net_connect failed with error " + to_string(lastResult) + ": " + errorBuffer);
+            STHROW("mbedtls_net_connect failed with error (" + domain + ":" + to_string(port) + "): " + to_string(lastResult) + ": " + errorBuffer);
         }
         lastResult = mbedtls_net_set_nonblock(&net_ctx);
         if (lastResult) {
@@ -56,14 +63,8 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     }
 
     // These two calls do not return error codes.
-    mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
+    mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_REQUIRED);
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
-
-    lastResult = mbedtls_ssl_set_hostname(&ssl, domain.c_str());
-    if (lastResult) {
-        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
-        STHROW("mbedtls_ssl_set_hostname failed with error " + to_string(lastResult) + ": " + errorBuffer);
-    }
 
     lastResult = mbedtls_ssl_setup(&ssl, &conf);
     if (lastResult) {
