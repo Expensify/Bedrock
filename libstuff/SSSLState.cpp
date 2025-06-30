@@ -34,8 +34,10 @@ SSSLState::SSSLState(const string& hostname, int socket) {
         STHROW("mbedtls_ctr_drbg_seed failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
 
-    // Load OS default CA certificates for peer verification (based on Ubuntu)
-    const string certPath = "/etc/ssl/certs/";
+    // Load environement or OS default (based on Ubuntu) CA certificates for peer verification.
+    // NOTE: Environment variable should have a trailing slash.
+    const char* envCertPath = getenv("CERT_PATH");
+    const string certPath = envCertPath ? envCertPath : "/etc/ssl/certs/";
     lastResult = mbedtls_x509_crt_parse_path(&cacert, certPath.c_str());
     bool successfullyLoadedCACerts = false;
     if (lastResult < 0) {
