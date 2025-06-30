@@ -15,6 +15,7 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     mbedtls_ssl_config_init(&conf);
     mbedtls_ssl_init(&ssl);
     mbedtls_net_init(&net_ctx);
+    mbedtls_x509_crt_init(&cacert);
 
     // Hostname here is expected to contain the port. I.e.: expensify.com:443
     // We need to split it into its componenets.
@@ -31,6 +32,27 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     if (lastResult) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
         STHROW("mbedtls_ctr_drbg_seed failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    // Load OS default CA certificates for peer verification
+    // Try loading from the certificate directory first (Ubuntu's preferred method)
+    lastResult = mbedtls_x509_crt_parse_path(&cacert, "/etc/ssl/certs/");
+    if (lastResult < 0) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        SWARN("Failed to load CA certificates from /etc/ssl/certs/ directory. Error: " + to_string(lastResult) + ": " + errorBuffer);
+
+        // If directory loading failed, try the bundle file as fallback
+        lastResult = mbedtls_x509_crt_parse_file(&cacert, "/etc/ssl/certs/ca-certificates.crt");
+        if (lastResult < 0) {
+            mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+            SWARN("Bundle file fallback also failed. SSL certificate verification may fail. Error: " + to_string(lastResult) + ": " + errorBuffer);
+        } else {
+            SINFO("Successfully loaded CA certificates from /etc/ssl/certs/ca-certificates.crt (fallback)");
+        }
+    } else if (lastResult > 0) {
+        SWARN("Loaded CA certificates from /etc/ssl/certs/ directory, but " + to_string(lastResult) + " certificates failed to parse");
+    } else {
+        SINFO("Successfully loaded all CA certificates from /etc/ssl/certs/ directory (0 failures)");
     }
 
     lastResult = mbedtls_ssl_set_hostname(&ssl, domain.c_str());
@@ -62,9 +84,10 @@ SSSLState::SSSLState(const string& hostname, int socket) {
         STHROW("mbedtls_ssl_config_defaults failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
 
-    // These two calls do not return error codes.
+    // These calls do not return error codes.
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_REQUIRED);
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
+    mbedtls_ssl_conf_ca_chain(&conf, &cacert, nullptr);
 
     lastResult = mbedtls_ssl_setup(&ssl, &conf);
     if (lastResult) {
@@ -82,6 +105,7 @@ SSSLState::~SSSLState() {
     mbedtls_ssl_config_free(&conf);
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_entropy_free(&ec);
+    mbedtls_x509_crt_free(&cacert);
 }
 
 int SSSLState::send(const char* buffer, int length) {
