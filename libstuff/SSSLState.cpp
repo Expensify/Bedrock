@@ -34,21 +34,25 @@ SSSLState::SSSLState(const string& hostname, int socket) {
         STHROW("mbedtls_ctr_drbg_seed failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
 
-    // Load OS default CA certificates for peer verification
-    // Try loading from the certificate directory first (Ubuntu's preferred method)
-    lastResult = mbedtls_x509_crt_parse_path(&cacert, "/etc/ssl/certs/");
+    // Load OS default CA certificates for peer verification (based on Ubuntu)
+    const string certPath = "/etc/ssl/certs/";
+    lastResult = mbedtls_x509_crt_parse_path(&cacert, certPath.c_str());
+    bool successfullyLoadedCACerts = false;
     if (lastResult < 0) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
-        SWARN("Failed to load CA certificates from /etc/ssl/certs/ directory. Error: " + to_string(lastResult) + ": " + errorBuffer);
+        SWARN("Failed to load CA certificates from " + certPath + " directory. Error: " + to_string(lastResult) + ": " + errorBuffer);
 
         // If directory loading failed, try the bundle file as fallback
-        lastResult = mbedtls_x509_crt_parse_file(&cacert, "/etc/ssl/certs/ca-certificates.crt");
+        lastResult = mbedtls_x509_crt_parse_file(&cacert, (certPath + "ca-certificates.crt").c_str());
         if (lastResult < 0) {
             mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
             SWARN("Bundle file fallback also failed. SSL certificate verification may fail. Error: " + to_string(lastResult) + ": " + errorBuffer);
         }
     } else if (lastResult > 0) {
-        SWARN("Loaded CA certificates from /etc/ssl/certs/ directory, but " + to_string(lastResult) + " certificates failed to parse");
+        SWARN("Loaded CA certificates from " + certPath + " directory, but " + to_string(lastResult) + " certificates failed to parse");
+        successfullyLoadedCACerts = true;
+    } else {
+        successfullyLoadedCACerts = true;
     }
 
     lastResult = mbedtls_ssl_set_hostname(&ssl, domain.c_str());
@@ -81,7 +85,7 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     }
 
     // These calls do not return error codes.
-    mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_REQUIRED);
+    mbedtls_ssl_conf_authmode(&conf, successfullyLoadedCACerts ? MBEDTLS_SSL_VERIFY_REQUIRED : MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
     mbedtls_ssl_conf_ca_chain(&conf, &cacert, nullptr);
 
