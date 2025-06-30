@@ -13,8 +13,8 @@ struct SSLTest : tpunit::TestFixture {
     SSLTest()
         : tpunit::TestFixture("SSL",
                               BEFORE_CLASS(SSLTest::setup),
-                              TEST(SSLTest::proxyTest),
                               TEST(SSLTest::test),
+                              TEST(SSLTest::proxyTest),
                               TEST(SSLTest::certificateValidationTest),
                               AFTER_CLASS(SSLTest::teardown))
     { }
@@ -53,6 +53,8 @@ struct SSLTest : tpunit::TestFixture {
     }
 
     void proxyTest() {
+        cout << "proxyTest" << endl;
+        SINFO("proxyTest TYLER");
         // This is a generic HTTPS manager.
         SStandaloneHTTPSManager manager;
 
@@ -84,12 +86,14 @@ struct SSLTest : tpunit::TestFixture {
         // Make sure that the response has a body. This differentiates it from the response to a CONNECT message
         // So that we can test we're looking at the actual proxied response and not just the response from the proxy itself.
         ASSERT_TRUE(transaction->fullResponse.content.size());
+        SINFO("Response: " << transaction->fullResponse.content);
 
         // Close the transaction.
         manager.closeTransaction(transaction);
     }
 
     void certificateValidationTest() {
+        cout << "certificateValidationTest" << endl;
         // This test verifies that we properly detect SSL certificate/hostname mismatches
         SStandaloneHTTPSManager manager;
 
