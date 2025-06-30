@@ -155,7 +155,9 @@ SException::SException(const string& file,
     if (generateCallstack) {
         _depth = backtrace(_callstack, CALLSTACK_LIMIT);
     }
-    SINFO("Throwing exception with message: '" << _method << "' from " << file << ":" << line);
+    if (!file.empty() || line != 0) {
+        SINFO("Throwing exception with message: '" << _method << "' from " << file << ":" << line);
+    }
 }
 
 const char* SException::what() const noexcept {
