@@ -33,7 +33,6 @@ SSSLState::SSSLState(const string& hostname, int socket) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
         STHROW("mbedtls_ctr_drbg_seed failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
-    SINFO("mbedtls_ctr_drbg_seed succeeded");
 
     // Load OS default CA certificates for peer verification
     // Try loading from the certificate directory first (Ubuntu's preferred method)
@@ -47,13 +46,9 @@ SSSLState::SSSLState(const string& hostname, int socket) {
         if (lastResult < 0) {
             mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
             SWARN("Bundle file fallback also failed. SSL certificate verification may fail. Error: " + to_string(lastResult) + ": " + errorBuffer);
-        } else {
-            SINFO("Successfully loaded CA certificates from /etc/ssl/certs/ca-certificates.crt (fallback)");
         }
     } else if (lastResult > 0) {
         SWARN("Loaded CA certificates from /etc/ssl/certs/ directory, but " + to_string(lastResult) + " certificates failed to parse");
-    } else {
-        SINFO("Successfully loaded all CA certificates from /etc/ssl/certs/ directory (0 failures)");
     }
 
     lastResult = mbedtls_ssl_set_hostname(&ssl, domain.c_str());
@@ -61,7 +56,6 @@ SSSLState::SSSLState(const string& hostname, int socket) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
         STHROW("mbedtls_ssl_set_hostname failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
-    SINFO("mbedtls_ssl_set_hostname succeeded for domain: " + domain);
 
     // If no socket was supplied, create our own.
     if (socket == -1) {
@@ -70,13 +64,11 @@ SSSLState::SSSLState(const string& hostname, int socket) {
             mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
             STHROW("mbedtls_net_connect failed with error (" + domain + ":" + to_string(port) + "): " + to_string(lastResult) + ": " + errorBuffer);
         }
-        SINFO("mbedtls_net_connect succeeded to " + domain + ":" + to_string(port));
         lastResult = mbedtls_net_set_nonblock(&net_ctx);
         if (lastResult) {
             mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
             STHROW("mbedtls_net_set_nonblock failed with error " + to_string(lastResult) + ": " + errorBuffer);
         }
-        SINFO("mbedtls_net_set_nonblock succeeded");
     } else {
         // Otherwise, just borrow the existing socket.
         net_ctx.fd = socket;
@@ -87,27 +79,19 @@ SSSLState::SSSLState(const string& hostname, int socket) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
         STHROW("mbedtls_ssl_config_defaults failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
-    SINFO("mbedtls_ssl_config_defaults succeeded");
 
     // These calls do not return error codes.
     mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_REQUIRED);
-    SINFO("mbedtls_ssl_conf_authmode set to MBEDTLS_SSL_VERIFY_REQUIRED");
     mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
-    SINFO("mbedtls_ssl_conf_rng succeeded");
     mbedtls_ssl_conf_ca_chain(&conf, &cacert, nullptr);
-    SINFO("mbedtls_ssl_conf_ca_chain succeeded");
 
     lastResult = mbedtls_ssl_setup(&ssl, &conf);
     if (lastResult) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
         STHROW("mbedtls_ssl_setup failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
-    SINFO("mbedtls_ssl_setup succeeded");
 
     mbedtls_ssl_set_bio(&ssl, &net_ctx, mbedtls_net_send, mbedtls_net_recv, nullptr);
-    SINFO("mbedtls_ssl_set_bio succeeded");
-
-    SINFO("SSSLState constructor completed successfully for " + hostname);
 }
 
 SSSLState::~SSSLState() {
