@@ -85,7 +85,11 @@ int main(int argc, char* argv[]) {
     int retval = 0;
     for (int i = 0; i < repeatCount; i++) {
         try {
-            retval = tpunit::Tests::run(include, exclude, before, after, threads);
+            retval = tpunit::Tests::run(include, exclude, before, after, threads, [](){
+                SLogSetThreadName("");
+                SLogSetThreadPrefix("");
+                SLogLevel(LOG_DEBUG);
+            });
         } catch (...) {
             cout << "Unhandled exception running tests!" << endl;
             retval = 1;

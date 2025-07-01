@@ -4,6 +4,7 @@
 #include <mbedtls/entropy.h>
 #include <mbedtls/ssl.h>
 #include <mbedtls/net_sockets.h>
+#include <mbedtls/x509_crt.h>
 #include <string>
 
 using namespace std;
@@ -27,4 +28,5 @@ class SSSLState {
     mbedtls_ssl_config conf;
     mbedtls_ssl_context ssl;
     mbedtls_net_context net_ctx;
+    mbedtls_x509_crt cacert;
 };
