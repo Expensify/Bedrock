@@ -106,10 +106,6 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
     }
 
     void test() {
-        SLogSetThreadName("");
-        SLogSetThreadPrefix("");
-        SLogLevel(LOG_DEBUG);
-
         // Let the entire cluster come up on the production version.
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
         ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
@@ -146,23 +142,18 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         tester->getTester(0).stopServer();
 
         // We should now have a two-node cluster with 1 leading and 2 following.
-        SINFO("TYLER two node");
         ASSERT_TRUE(tester->getTester(1).waitForState("LEADING"));
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
-        SINFO("TYLER two node done");
 
         // Start up the old leader on the new version.
         tester->getTester(0).serverName = "bedrock";
         tester->getTester(0).updateArgs({{"-plugins", newTestPlugin}});
         tester->getTester(0).startServer();
-        SINFO("TYLER start old leader");
+
         // We should get the expected cluster state.
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
-        SINFO("TYLER old leader done");
         ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
-        SINFO("TYLER old follower done");
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
-        SINFO("TYLER old follower done");
 
         // Now 0 and 2 are the new version, and 1 is the old version.
         versions = getVersions();
