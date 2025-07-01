@@ -1263,6 +1263,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 _haveSeenPeerOnSameVersion = true;
                 if (_haveBeenWAITING) {
                     _priority = _originalPriority;
+                    _reconnectAll();
                 }
             }
 
@@ -1946,6 +1947,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
                 _haveBeenWAITING = true;
                 if (_haveSeenPeerOnSameVersion) {
                     _priority = _originalPriority;
+                    _reconnectAll();
                 }
             }
         }
