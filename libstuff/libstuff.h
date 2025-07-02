@@ -143,7 +143,8 @@ class SException : public exception {
                bool generateCallstack = false,
                const string& _method = "",
                const STable& _headers = {},
-               const string& _body = "");
+               const string& _body = "",
+               const bool shouldLogFileAndLine = true);
     const char* what() const noexcept;
     vector<string> details() const noexcept;
     void logStackTrace() const noexcept;
