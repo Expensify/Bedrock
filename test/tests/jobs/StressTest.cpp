@@ -17,7 +17,7 @@ struct StressTest : tpunit::TestFixture {
     BedrockTester* tester;
 
     // Configuration constants
-    const int NUM_POLICY_HARVESTER_JOBS = 100;
+    const int NUM_POLICY_HARVESTER_JOBS = 10000;
     const int JOBS_PER_BATCH = 25;
     const int MAX_TIMEOUT_SECONDS = 10;
 
