@@ -45,6 +45,18 @@ def is_user_harvester_job(job_name):
     """Check if job name indicates a UserHarvester job"""
     return job_name and 'UserHarvester' in job_name
 
+def safe_read_stdin():
+    """Safely read from stdin with encoding error handling"""
+    for line_bytes in sys.stdin.buffer:
+        try:
+            # Try to decode as UTF-8, replacing bad bytes
+            line = line_bytes.decode('utf-8', errors='replace').strip()
+            yield line
+        except Exception as e:
+            # If there's any other error, skip this line and continue
+            print(f"Warning: Skipped line due to encoding error: {e}", file=sys.stderr)
+            continue
+
 def main():
     # Store PolicyHarvester jobs: {jobID: policyID}
     policy_harvesters = {}
@@ -52,10 +64,8 @@ def main():
     # Store child job counts: {parentJobID: {'user': count, 'non_user': count}}
     child_counts = defaultdict(lambda: {'user': 0, 'non_user': 0})
 
-    # Process each line from stdin
-    for line_num, line in enumerate(sys.stdin, 1):
-        line = line.strip()
-
+    # Process each line from stdin with encoding error handling
+    for line_num, line in enumerate(safe_read_stdin(), 1):
         # Look for PolicyHarvester job starts - pattern: running job ~~ name: 'www-prod/PolicyHarvester' id: 'ID' extraParams: 'policyID=...'
         if "running job" in line and "www-prod/PolicyHarvester" in line:
             # Extract job ID
