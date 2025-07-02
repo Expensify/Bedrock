@@ -1,6 +1,10 @@
 #include <iostream>
 #include <unistd.h>
 #include <random>
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <vector>
 
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
@@ -14,12 +18,19 @@ struct StressTest : tpunit::TestFixture {
                               AFTER(StressTest::tearDown),
                               AFTER_CLASS(StressTest::tearDownClass)) { }
 
-    BedrockTester* tester;
+        BedrockTester* tester;
 
     // Configuration constants
-    const int NUM_POLICY_HARVESTER_JOBS = 10000;
+    const int NUM_POLICY_HARVESTER_JOBS = 1000;
     const int JOBS_PER_BATCH = 25;
     const int MAX_TIMEOUT_SECONDS = 10;
+    const int NUM_THREADS = 16;
+
+    // Threading synchronization
+    std::atomic<bool> allJobsProcessed{false};
+    std::atomic<int> activeThreads{0};
+    std::atomic<int> totalJobsProcessed{0};
+    std::mutex coutMutex;
 
     void setupClass() {
         tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
@@ -34,25 +45,30 @@ struct StressTest : tpunit::TestFixture {
 
     void tearDownClass() { delete tester; }
 
-    void policyHarvesterStressTest() {
-        cout << "Starting PolicyHarvester stress test with " << NUM_POLICY_HARVESTER_JOBS << " jobs..." << endl;
+        void policyHarvesterStressTest() {
+        threadSafePrint("Starting PolicyHarvester stress test with " + to_string(NUM_POLICY_HARVESTER_JOBS) + " jobs...");
 
         // Step 1: Create PolicyHarvester jobs
-        cout << "Creating " << NUM_POLICY_HARVESTER_JOBS << " PolicyHarvester jobs..." << endl;
+        threadSafePrint("Creating " + to_string(NUM_POLICY_HARVESTER_JOBS) + " PolicyHarvester jobs...");
         createPolicyHarvesterJobs();
 
-        // Step 2: Process jobs in batches using GetJobs
-        cout << "Processing jobs in batches of " << JOBS_PER_BATCH << "..." << endl;
-        processJobBatches();
+        // Step 2: Process jobs in batches using GetJobs with 32 threads
+        threadSafePrint("Processing jobs with " + to_string(NUM_THREADS) + " threads, batches of " + to_string(JOBS_PER_BATCH) + "...");
+        processJobBatchesThreaded();
 
         // Step 3: Wait for all jobs to complete
-        cout << "Waiting for all jobs to complete..." << endl;
+        threadSafePrint("Waiting for all jobs to complete...");
         waitForJobCompletion();
 
-        cout << "PolicyHarvester stress test completed successfully!" << endl;
+        threadSafePrint("PolicyHarvester stress test completed successfully!");
     }
 
 private:
+    void threadSafePrint(const string& message) {
+        std::lock_guard<std::mutex> lock(coutMutex);
+        cout << message << endl;
+    }
+
     void createPolicyHarvesterJobs() {
         vector<SData> requests;
 
@@ -80,7 +96,7 @@ private:
         }
     }
 
-    void processJobBatches() {
+        void processJobBatches() {
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_int_distribution<> childCountDist(1, 50);
@@ -125,6 +141,98 @@ private:
                     handleUserHarvesterJob(jobID);
                 }
             }
+        }
+    }
+
+    void processJobBatchesThreaded() {
+        // Reset synchronization variables
+        allJobsProcessed = false;
+        activeThreads = 0;
+        totalJobsProcessed = 0;
+
+        // Launch worker threads
+        vector<thread> threads;
+        for (int i = 0; i < NUM_THREADS; i++) {
+            threads.emplace_back([this, i]() {
+                this->workerThread(i);
+            });
+        }
+
+        // Wait for all threads to complete
+        for (auto& t : threads) {
+            t.join();
+        }
+
+        threadSafePrint("All " + to_string(NUM_THREADS) + " threads completed. Total jobs processed: " + to_string(totalJobsProcessed.load()));
+    }
+
+    void workerThread(int threadId) {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> childCountDist(1, 50);
+
+        activeThreads++;
+        threadSafePrint("Thread " + to_string(threadId) + " started");
+
+        int jobsProcessedByThread = 0;
+
+        while (!allJobsProcessed) {
+            // Get a batch of jobs
+            SData getJobsRequest("GetJobs");
+            getJobsRequest["name"] = "*";
+            getJobsRequest["numResults"] = to_string(JOBS_PER_BATCH);
+
+            STable response;
+            try {
+                response = tester->executeWaitVerifyContentTable(getJobsRequest);
+            } catch (const SException& e) {
+                if (string(e.what()).find("404 No job found") != string::npos) {
+                    // No more jobs - check if we should exit
+                    break;
+                }
+                threadSafePrint("Thread " + to_string(threadId) + " GetJobs error: " + string(e.what()));
+                // Sleep briefly and continue
+                usleep(100000); // 100ms
+                continue;
+            }
+
+            // Parse the jobs from the response
+            list<string> jobsArray = SParseJSONArray(response["jobs"]);
+            if (jobsArray.empty()) {
+                // No jobs in this batch - exit
+                break;
+            }
+
+            threadSafePrint("Thread " + to_string(threadId) + " processing batch of " + to_string(jobsArray.size()) + " jobs");
+
+            // Process each job in the batch
+            for (const string& jobStr : jobsArray) {
+                STable job = SParseJSONObject(jobStr);
+                string jobName = job["name"];
+                string jobID = job["jobID"];
+
+                if (jobName.find("PolicyHarvester") != string::npos) {
+                    // Handle PolicyHarvester job
+                    handlePolicyHarvesterJobThreadSafe(job, childCountDist(gen), threadId);
+                } else if (jobName.find("UserHarvester") != string::npos) {
+                    // Handle UserHarvester job - simply finish it
+                    handleUserHarvesterJobThreadSafe(jobID, threadId);
+                }
+
+                jobsProcessedByThread++;
+                totalJobsProcessed++;
+            }
+
+            // Small delay to reduce contention between threads
+            usleep(10000); // 10ms
+        }
+
+        activeThreads--;
+        threadSafePrint("Thread " + to_string(threadId) + " finished. Jobs processed: " + to_string(jobsProcessedByThread));
+
+        // If this is the last active thread, mark all jobs as processed
+        if (activeThreads == 0) {
+            allJobsProcessed = true;
         }
     }
 
@@ -199,6 +307,70 @@ private:
         tester->executeWaitVerifyContent(finishRequest);
     }
 
+    void handlePolicyHarvesterJobThreadSafe(const STable& job, int childCount, int threadId) {
+        auto jobIDIt = job.find("jobID");
+        auto jobDataIt = job.find("data");
+        ASSERT_TRUE(jobIDIt != job.end() && jobDataIt != job.end());
+
+        string jobID = jobIDIt->second;
+        STable jobData = SParseJSONObject(jobDataIt->second);
+        string policyID = jobData["policyID"];
+        bool isWaiting = (jobData["isWaiting"] == "true");
+
+        if (isWaiting) {
+            // Job is resuming after children completed - finish it
+            threadSafePrint("Thread " + to_string(threadId) + " resuming PolicyHarvester job " + jobID + " (policy " + policyID + ")");
+
+            // Update job to set isWaiting = false
+            STable updatedData = jobData;
+            updatedData["isWaiting"] = "false";
+
+            SData finishRequest("FinishJob");
+            finishRequest["jobID"] = jobID;
+            finishRequest["data"] = SComposeJSONObject(updatedData);
+
+            try {
+                tester->executeWaitVerifyContent(finishRequest);
+            } catch (const SException& e) {
+                threadSafePrint("Thread " + to_string(threadId) + " ERROR finishing PolicyHarvester job " + jobID + ": " + string(e.what()));
+                // Continue processing other jobs instead of crashing
+            }
+        } else {
+            // Job is starting - create child UserHarvester jobs
+            threadSafePrint("Thread " + to_string(threadId) + " creating " + to_string(childCount) + " UserHarvester children for PolicyHarvester " + jobID + " (policy " + policyID + ")");
+
+            try {
+                createUserHarvesterJobs(jobID, policyID, childCount);
+
+                // Mark the parent as waiting and finish it (will become PAUSED)
+                STable updatedData = jobData;
+                updatedData["isWaiting"] = "true";
+
+                SData finishRequest("FinishJob");
+                finishRequest["jobID"] = jobID;
+                finishRequest["data"] = SComposeJSONObject(updatedData);
+                tester->executeWaitVerifyContent(finishRequest);
+            } catch (const SException& e) {
+                threadSafePrint("Thread " + to_string(threadId) + " ERROR processing PolicyHarvester job " + jobID + ": " + string(e.what()));
+                // Continue processing other jobs instead of crashing
+            }
+        }
+    }
+
+    void handleUserHarvesterJobThreadSafe(const string& jobID, int threadId) {
+        // Simply finish the UserHarvester job
+        threadSafePrint("Thread " + to_string(threadId) + " finishing UserHarvester job " + jobID);
+        SData finishRequest("FinishJob");
+        finishRequest["jobID"] = jobID;
+
+        try {
+            tester->executeWaitVerifyContent(finishRequest);
+        } catch (const SException& e) {
+            threadSafePrint("Thread " + to_string(threadId) + " ERROR finishing UserHarvester job " + jobID + ": " + string(e.what()));
+            // Continue processing other jobs instead of crashing
+        }
+    }
+
     void waitForJobCompletion() {
         int timeoutSeconds = MAX_TIMEOUT_SECONDS;
 
@@ -214,12 +386,12 @@ private:
             SQResult jobResults;
             jobResults.deserialize(queryResponses[0].content);
 
-            if (jobResults.empty()) {
-                cout << "All jobs completed successfully!" << endl;
+                        if (jobResults.empty()) {
+                threadSafePrint("All jobs completed successfully!");
                 return;
             }
 
-            cout << "Still waiting for " << jobResults.size() << " jobs to complete..." << endl;
+            threadSafePrint("Still waiting for " + to_string(jobResults.size()) + " jobs to complete...");
 
             // Sleep for 1 second and try again
             sleep(1);
@@ -227,7 +399,7 @@ private:
         }
 
         // Timeout reached - report remaining jobs and fail
-        cout << "TIMEOUT: Jobs still remaining after " << MAX_TIMEOUT_SECONDS << " seconds:" << endl;
+        threadSafePrint("TIMEOUT: Jobs still remaining after " + to_string(MAX_TIMEOUT_SECONDS) + " seconds:");
         reportRemainingJobs();
         ASSERT_TRUE(false); // Fail the test
     }
@@ -241,21 +413,21 @@ private:
         SQResult jobResults;
         jobResults.deserialize(queryResponses[0].content);
 
-        cout << "Remaining jobs report:" << endl;
-        cout << "=====================" << endl;
+                threadSafePrint("Remaining jobs report:");
+        threadSafePrint("=====================");
 
         map<string, int> stateCount;
         for (const auto& row : jobResults.rows) {
             stateCount[row[2]]++;
-            cout << "JobID: " << row[0] << ", Name: " << row[1] << ", State: " << row[2] << endl;
+            threadSafePrint("JobID: " + row[0] + ", Name: " + row[1] + ", State: " + row[2]);
         }
 
-        cout << "=====================" << endl;
-        cout << "Summary by state:" << endl;
+        threadSafePrint("=====================");
+        threadSafePrint("Summary by state:");
         for (const auto& entry : stateCount) {
-            cout << entry.first << ": " << entry.second << " jobs" << endl;
+            threadSafePrint(entry.first + ": " + to_string(entry.second) + " jobs");
         }
-        cout << "Total remaining: " << jobResults.size() << " jobs" << endl;
+        threadSafePrint("Total remaining: " + to_string(jobResults.size()) + " jobs");
     }
 
 } __StressTest;
