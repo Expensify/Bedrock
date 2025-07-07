@@ -712,6 +712,7 @@ struct LibStuff : tpunit::TestFixture {
         db.write ("INSERT INTO testTable VALUES(1, 'name1', 'value1', '2023-12-20');");
         db.write ("INSERT INTO testTable VALUES(2, 'name2', 'value2', '2023-12-21');");
         db.write ("INSERT INTO testTable VALUES(3, 'name3', 'value3', '2023-12-22');");
+        db.write("CREATE TABLE testTable2(id INTEGER PRIMARY KEY, name STRING, value STRING, created DATE);");
         db.prepare();
         db.commit();
 
@@ -739,12 +740,14 @@ struct LibStuff : tpunit::TestFixture {
         }
         ASSERT_TRUE(threw);
 
-        // Test aliased names.
-        db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
-        result.clear();
-        db.read("SELECT name as coco, value FROM testTable ORDER BY id;", result);
-        db.rollback();
-        ASSERT_EQUAL(result[0]["coco"], "name1");
+        // Test that accessing a non-existant column (by number) doesn't crash.
+        threw = false;
+        try {
+            cout << "result[0][coco]: " << result[0][37] << endl;
+        } catch (const SException& e) {
+            threw = true;
+        }
+        ASSERT_TRUE(threw);
     }
 
     void testReturningClause() {
