@@ -11,11 +11,21 @@ void SQResultRow::push_back(const string& s) {
     vector<string>::push_back(s);
 }
 
-string& SQResultRow::operator[](const size_t& key) {
-    return vector<string>::operator[](key);
+string& SQResultRow::operator[](const size_t& rowNum) {
+    try {
+        return at(rowNum);
+    } catch (const out_of_range& e) {
+        SINFO("SQResultRow::operator[] out of range", {{"rowNum", to_string(rowNum)}});
+        STHROW_STACK("Out of range");
+    }
 }
-const string& SQResultRow::operator[](const size_t& key) const {
-    return vector<string>::operator[](key);
+const string& SQResultRow::operator[](const size_t& rowNum) const {
+    try {
+        return at(rowNum);
+    } catch (const out_of_range& e) {
+        SINFO("SQResultRow::operator[] out of range", {{"rowNum", to_string(rowNum)}});
+        STHROW_STACK("Out of range");
+    }
 }
 
 SQResultRow& SQResultRow::operator=(const SQResultRow& other) {
@@ -151,7 +161,7 @@ SQResultRow& SQResult::operator[](size_t rowNum) {
     try {
         return rows.at(rowNum);
     } catch (const out_of_range& e) {
-        SINFO("SQResult::operator out of range", {{"rowNum", to_string(rowNum)}});
+        SINFO("SQResult::operator[] out of range", {{"rowNum", to_string(rowNum)}});
         STHROW_STACK("Out of range");
     }
 }
@@ -160,7 +170,7 @@ const SQResultRow& SQResult::operator[](size_t rowNum) const {
     try {
         return rows.at(rowNum);
     } catch (const out_of_range& e) {
-        SINFO("SQResult::operator out of range", {{"rowNum", to_string(rowNum)}});
+        SINFO("SQResult::operator[] out of range", {{"rowNum", to_string(rowNum)}});
         STHROW_STACK("Out of range");
     }
 }
