@@ -152,6 +152,10 @@ size_t SQResult::size() const {
     return rows.size();
 }
 
+const vector<SQResultRow>& SQResult::getRows() const {
+    return rows;
+}
+
 void SQResult::clear() {
     headers.clear();
     rows.clear();
@@ -182,4 +186,28 @@ SQResult& SQResult::operator=(const SQResult& other) {
         row.result = this;
     }
     return *this;
+}
+
+vector<SQResultRow>::iterator SQResult::begin() {
+    return rows.begin();
+}
+
+vector<SQResultRow>::iterator SQResult::end() {
+    return rows.end();
+}
+
+vector<SQResultRow>::const_iterator SQResult::begin() const {
+    return rows.begin();
+}
+
+vector<SQResultRow>::const_iterator SQResult::end() const {
+    return rows.end();
+}
+
+vector<SQResultRow>::const_iterator SQResult::cbegin() const {
+    return rows.cbegin();
+}
+
+vector<SQResultRow>::const_iterator SQResult::cend() const {
+    return rows.cend();
 }

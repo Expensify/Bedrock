@@ -34,6 +34,7 @@ class SQResult {
     // Accessors
     bool empty() const;
     size_t size() const;
+    const vector<SQResultRow>& getRows() const;
 
     // Mutators
     void clear();
@@ -50,4 +51,12 @@ class SQResult {
 
     // Deserializers
     bool deserialize(const string& json);
+
+    // Iterator support for range-based for loops
+    vector<SQResultRow>::iterator begin();
+    vector<SQResultRow>::iterator end();
+    vector<SQResultRow>::const_iterator begin() const;
+    vector<SQResultRow>::const_iterator end() const;
+    vector<SQResultRow>::const_iterator cbegin() const;
+    vector<SQResultRow>::const_iterator cend() const;
 };
