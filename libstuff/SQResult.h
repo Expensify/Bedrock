@@ -26,7 +26,6 @@ class SQResult {
   public:
     // Attributes
     vector<string> headers;
-    vector<SQResultRow> rows;
 
     SQResult() = default;
     SQResult(SQResult const&) = default;
@@ -64,4 +63,7 @@ class SQResult {
     vector<SQResultRow>::const_iterator end() const;
     vector<SQResultRow>::const_iterator cbegin() const;
     vector<SQResultRow>::const_iterator cend() const;
+
+  private:
+    vector<SQResultRow> rows;
 };
