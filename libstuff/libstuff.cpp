@@ -2709,6 +2709,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
             } else {
                 SWARN("Slow query (" << elapsed / 1000 << "ms): " << sqlToLog);
             }
+            if (sql == "COMMIT") {
+                // Extra logging for commit queries
+            }
         } else {
             // We log the time the queries took, as long as they are over 10ms (to reduce noise of many queries that are
             // consistently faster)
