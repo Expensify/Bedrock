@@ -813,7 +813,12 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         if ((afterCommit - beforeCommit) > 1'000'000) {
             SQResult slowCommitResult;
             SQuery(_db, "Slow commit logging", "SELECT * FROM hctvalid", slowCommitResult);
-
+            SINFO("SLOW HCTREE COMMIT " << (slowCommitResult.size() + 1) << " lines to follow");
+            string headers = SComposeList(slowCommitResult.headers);
+            SINFO("SLOW HCTREE COMMIT HEADERS: " << headers);
+            for (size_t i = 0; i < slowCommitResult.size(); i++) {
+                SINFO("SLOW HCTREE COMMIT ROW: " << i << ": " << SComposeList(slowCommitResult[i]));
+            }
         }
     }
 
