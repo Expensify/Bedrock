@@ -214,9 +214,10 @@ vector<SQResultRow>::const_iterator SQResult::cend() const {
 }
 
 void SQResult::resize(size_t newSize) {
-    rows.resize(newSize);
-    for (auto& row : rows) {
-        row.result = this;
+    if (newSize > rows.size()) {
+        rows.resize(newSize, SQResultRow(*this));
+    } else {
+        rows.resize(newSize);
     }
 }
 
