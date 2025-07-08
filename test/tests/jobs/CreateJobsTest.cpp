@@ -194,7 +194,7 @@ struct CreateJobsTest : tpunit::TestFixture {
         string query = "SELECT jobID, state FROM jobs WHERE jobID in (" + SQList(jobIDs) + ");";
         tester->readDB(query, result);
 
-        ASSERT_EQUAL(result.rows.size(), 0);
+        ASSERT_EQUAL(result.size(), 0);
     }
 
     void createUniqueChildWithWrongParent()

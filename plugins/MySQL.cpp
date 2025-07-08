@@ -183,7 +183,7 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
     sendBuffer += eofPacket.serialize();
 
     // Add all the rows
-    for (const auto& row : result.rows) {
+    for (const auto& row : result) {
         // Now the row
         MySQLPacket rowPacket;
         rowPacket.sequenceID = ++sequenceID;
@@ -286,12 +286,12 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     if (SIEquals(g_MySQLVariables[c][0], varName)) {
                         // Found it!
                         SINFO("Returning variable '" << varName << "'='" << g_MySQLVariables[c][1] << "'");
-                        result.rows.resize(1);
-                        result.rows[0].push_back(g_MySQLVariables[c][1]);
+                        result.resize(1);
+                        result[0].push_back(g_MySQLVariables[c][1]);
                         break;
                     }
                 }
-                if (result.rows.empty()) {
+                if (result.empty()) {
                     SHMMM("Couldn't find variable '" << varName << "', returning empty.");
                 }
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
@@ -302,10 +302,10 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 result.headers.push_back("Variable Name");
                 result.headers.push_back("Value");
                 for (int c = 0; c < MYSQL_NUM_VARIABLES; ++c) {
-                    result.rows.resize(result.rows.size() + 1);
-                    result.rows.back().resize(2);
-                    result.rows.back()[0] = g_MySQLVariables[c][0];
-                    result.rows.back()[1] = g_MySQLVariables[c][1];
+                    result.resize(result.size() + 1);
+                    result.back().resize(2);
+                    result.back()[0] = g_MySQLVariables[c][0];
+                    result.back()[1] = g_MySQLVariables[c][1];
                 }
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             } else if (SIEquals(query, "SHOW DATABASES;") ||
@@ -315,8 +315,8 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 SINFO("Responding with fake database list");
                 SQResult result;
                 result.headers.push_back("Database");
-                result.rows.resize(1);
-                result.rows.back().push_back("main");
+                result.resize(1);
+                result.back().push_back("main");
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             } else if (SIEquals(SToUpper(query), "SHOW /*!50002 FULL*/ TABLES;") ||
                        SIEquals(SToUpper(query), "SHOW FULL TABLES;")) {
@@ -378,8 +378,8 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 SINFO("Responding fake version string");
                 SQResult result;
                 result.headers.push_back("version()");
-                result.rows.resize(1);
-                result.rows.back().push_back(BedrockPlugin_MySQL::mysqlVersion);
+                result.resize(1);
+                result.back().push_back(BedrockPlugin_MySQL::mysqlVersion);
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             // Add SHOW KEYS() support
 

@@ -38,6 +38,11 @@ class SQResult {
 
     // Mutators
     void clear();
+    void resize(size_t newSize);
+    void push_back(const SQResultRow& row);
+    void emplace_back(const SQResultRow& row);
+    SQResultRow& back();
+    const SQResultRow& back() const;
 
     // Operators
     SQResultRow& operator[](size_t rowNum);
