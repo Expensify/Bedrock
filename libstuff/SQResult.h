@@ -34,13 +34,12 @@ class SQResult {
     // Accessors
     bool empty() const;
     size_t size() const;
-    const vector<SQResultRow>& getRows() const;
 
     // Mutators
     void clear();
     void resize(size_t newSize);
-    void push_back(const SQResultRow& row);
-    void emplace_back(const SQResultRow& row);
+    void push_back(const SQResultRow&& row);
+    void emplace_back(const SQResultRow&& row);
     SQResultRow& back();
     const SQResultRow& back() const;
 

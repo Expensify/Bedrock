@@ -153,10 +153,6 @@ size_t SQResult::size() const {
     return rows.size();
 }
 
-const vector<SQResultRow>& SQResult::getRows() const {
-    return rows;
-}
-
 void SQResult::clear() {
     headers.clear();
     rows.clear();
@@ -221,16 +217,12 @@ void SQResult::resize(size_t newSize) {
     }
 }
 
-void SQResult::push_back(const SQResultRow& row) {
-    SQResultRow newRow = row;
-    newRow.result = this;
-    rows.push_back(newRow);
+void SQResult::push_back(const SQResultRow&& row) {
+    rows.push_back(row);
 }
 
-void SQResult::emplace_back(const SQResultRow& row) {
-    SQResultRow newRow = row;
-    newRow.result = this;
-    rows.emplace_back(newRow);
+void SQResult::emplace_back(const SQResultRow&& row) {
+    rows.emplace_back(move(row));
 }
 
 SQResultRow& SQResult::back() {
