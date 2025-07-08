@@ -805,6 +805,18 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
+
+    // In HCTree mode, we log extra info for slow commits.
+    if (_hctree) {
+        uint64_t afterCommit = STimeNow();
+        // log for any commit over 1 second.
+        if ((afterCommit - beforeCommit) > 1'000'000) {
+            SQResult slowCommitResult;
+            SQuery(_db, "Slow commit logging", "SELECT * FROM hctvalid", slowCommitResult);
+
+        }
+    }
+
     _lastConflictPage = _conflictPage;
     _lastConflictTable = _conflictTable;
 
