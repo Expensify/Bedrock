@@ -542,6 +542,10 @@ SQLite& BedrockTester::getSQLiteDB()
 }
 
 void BedrockTester::freeDB() {
+    if (_db == nullptr) {
+        return;
+    }
+    lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     delete _db;
     _db = nullptr;
 }
