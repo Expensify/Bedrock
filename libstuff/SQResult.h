@@ -58,8 +58,6 @@ class SQResult {
     bool deserialize(const string& json);
 
     // Iterator support for range-based for loops
-    vector<SQResultRow>::iterator begin();
-    vector<SQResultRow>::iterator end();
     vector<SQResultRow>::const_iterator begin() const;
     vector<SQResultRow>::const_iterator end() const;
     vector<SQResultRow>::const_iterator cbegin() const;

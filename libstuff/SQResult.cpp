@@ -185,14 +185,6 @@ SQResult& SQResult::operator=(const SQResult& other) {
     return *this;
 }
 
-vector<SQResultRow>::iterator SQResult::begin() {
-    return rows.begin();
-}
-
-vector<SQResultRow>::iterator SQResult::end() {
-    return rows.end();
-}
-
 vector<SQResultRow>::const_iterator SQResult::begin() const {
     return rows.begin();
 }
