@@ -30,6 +30,9 @@ class SQResult {
 
     SQResult() = default;
     SQResult(SQResult const&) = default;
+    SQResult(vector<SQResultRow>&& rows, vector<string>&& headers)
+        : headers(move(headers)), rows(move(rows)) {
+    }
 
     // Accessors
     bool empty() const;
@@ -38,9 +41,7 @@ class SQResult {
     // Mutators
     void clear();
     void resize(size_t newSize);
-    void push_back(const SQResultRow&& row);
     void emplace_back(const SQResultRow&& row);
-    SQResultRow& back();
     const SQResultRow& back() const;
 
     // Operators

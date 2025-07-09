@@ -2640,27 +2640,28 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                 }
 
                 if (error == SQLITE_ROW) {
-                    result.emplace_back(SQResultRow(result, numColumns));
+                    SQResultRow row(result, numColumns);
                     for (int i = 0; i < numColumns; i++) {
                         int colType = sqlite3_column_type(preparedStatement, i);
                         switch (colType) {
                             case SQLITE_INTEGER:
-                                result.back()[i] = to_string(sqlite3_column_int64(preparedStatement, i));
+                                row[i] = to_string(sqlite3_column_int64(preparedStatement, i));
                                 break;
                             case SQLITE_FLOAT:
-                                result.back()[i] = to_string(sqlite3_column_double(preparedStatement, i));
+                                row[i] = to_string(sqlite3_column_double(preparedStatement, i));
                                 break;
                             case SQLITE_TEXT:
-                                result.back()[i] = reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i));
+                                row[i] = reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i));
                                 break;
                             case SQLITE_BLOB:
-                                result.back()[i] = string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i));
+                                row[i] = string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i));
                                 break;
                             case SQLITE_NULL:
                                 // null string.
                                 break;
                         }
                     }
+                    result.emplace_back(move(row));
                 } else {
                     if (error == SQLITE_DONE) {
                         // Treat "done" as just not-an-error.

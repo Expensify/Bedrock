@@ -217,16 +217,8 @@ void SQResult::resize(size_t newSize) {
     }
 }
 
-void SQResult::push_back(const SQResultRow&& row) {
-    rows.push_back(row);
-}
-
 void SQResult::emplace_back(const SQResultRow&& row) {
     rows.emplace_back(move(row));
-}
-
-SQResultRow& SQResult::back() {
-    return rows.back();
 }
 
 const SQResultRow& SQResult::back() const {

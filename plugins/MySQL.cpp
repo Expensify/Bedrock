@@ -280,43 +280,46 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
             if (SREMatch(regExp, query, false, false, &matches)) {
                 string varName = matches[0];
                 // Loop across and look for it
-                SQResult result;
-                result.headers.push_back(varName);
+                vector<SQResultRow> rows;
                 for (int c = 0; c < MYSQL_NUM_VARIABLES; ++c) {
                     if (SIEquals(g_MySQLVariables[c][0], varName)) {
                         // Found it!
                         SINFO("Returning variable '" << varName << "'='" << g_MySQLVariables[c][1] << "'");
-                        result.resize(1);
-                        result[0].push_back(g_MySQLVariables[c][1]);
+                        SQResultRow row;
+                        row.push_back(g_MySQLVariables[c][1]);
+                        rows.push_back(row);
                         break;
                     }
                 }
-                if (result.empty()) {
+                if (rows.empty()) {
                     SHMMM("Couldn't find variable '" << varName << "', returning empty.");
                 }
+                vector<string> headers = {varName};
+                SQResult result(move(rows), move(headers));
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             } else if (SIEquals(query, "SHOW VARIABLES;")) {
                 // Return the variable list
                 SINFO("Responding with fake variable list");
-                SQResult result;
-                result.headers.push_back("Variable Name");
-                result.headers.push_back("Value");
+                vector<SQResultRow> rows;
                 for (int c = 0; c < MYSQL_NUM_VARIABLES; ++c) {
-                    result.resize(result.size() + 1);
-                    result.back().resize(2);
-                    result.back()[0] = g_MySQLVariables[c][0];
-                    result.back()[1] = g_MySQLVariables[c][1];
+                    SQResultRow row;
+                    row.push_back(g_MySQLVariables[c][0]);
+                    row.push_back(g_MySQLVariables[c][1]);
+                    rows.push_back(row);
                 }
+                vector<string> headers = {"Variable Name", "Value"};
+                SQResult result(move(rows), move(headers));
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             } else if (SIEquals(query, "SHOW DATABASES;") ||
                        SIEquals(SToUpper(query), "SELECT DATABASE();") ||
                        SIEquals(SToUpper(query), "SELECT * FROM (SELECT DATABASE() AS DATABASE_NAME) A WHERE A.DATABASE_NAME IS NOT NULL;")) {
                 // Return a fake "main" database
                 SINFO("Responding with fake database list");
-                SQResult result;
-                result.headers.push_back("Database");
-                result.resize(1);
-                result.back().push_back("main");
+                SQResultRow row;
+                row.push_back("main");
+                vector<SQResultRow> rows = {row};
+                vector<string> headers = {"Database"};
+                SQResult result(move(rows), move(headers));
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             } else if (SIEquals(SToUpper(query), "SHOW /*!50002 FULL*/ TABLES;") ||
                        SIEquals(SToUpper(query), "SHOW FULL TABLES;")) {
@@ -376,10 +379,11 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
             } else if (SIEquals(SToUpper(query), "SELECT VERSION();")) {
                 // Return our fake version
                 SINFO("Responding fake version string");
-                SQResult result;
-                result.headers.push_back("version()");
-                result.resize(1);
-                result.back().push_back(BedrockPlugin_MySQL::mysqlVersion);
+                SQResultRow row;
+                row.push_back(BedrockPlugin_MySQL::mysqlVersion);
+                vector<SQResultRow> rows = {row};
+                vector<string> headers = {"version()"};
+                SQResult result(move(rows), move(headers));
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             // Add SHOW KEYS() support
 
