@@ -201,14 +201,6 @@ vector<SQResultRow>::const_iterator SQResult::cend() const {
     return rows.cend();
 }
 
-void SQResult::resize(size_t newSize) {
-    if (newSize > rows.size()) {
-        rows.resize(newSize, SQResultRow(*this));
-    } else {
-        rows.resize(newSize);
-    }
-}
-
 void SQResult::emplace_back(const SQResultRow&& row) {
     rows.emplace_back(move(row));
 }
