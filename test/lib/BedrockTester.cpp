@@ -595,7 +595,7 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
             for (auto& v : vals) {
                 row.push_back(v);
             }
-            result.push_back(row);
+            result.emplace_back(move(row));
         }
         return true;
     } else {

@@ -79,7 +79,7 @@ struct GetJobsTest : tpunit::TestFixture {
         // `retryAfter`. We allow this to be within 3 seconds, because it's possible that the timestamps are generated
         // in sequential seconds, and so these can end up being, for instance, 5 minutes and 1 second different.
         SQResult jobData = getAllJobData(tester);
-        for (auto& row : jobData.rows) {
+        for (auto& row : jobData) {
             // Assert that the difference between "lastRun + 5min" and "nextRun" is less than 3 seconds.
             ASSERT_LESS_THAN(absoluteDiff(JobTestHelper::getTimestampForDateTimeString(row[2]) + 5 * 60, JobTestHelper::getTimestampForDateTimeString(row[3])), 3);
             ASSERT_EQUAL(row[1], "RUNQUEUED");
@@ -100,7 +100,7 @@ struct GetJobsTest : tpunit::TestFixture {
 
         // Now see what they look like.
         jobData = getAllJobData(tester);
-        for (auto& row : jobData.rows) {
+        for (auto& row : jobData) {
             // Should be queued again.
             ASSERT_EQUAL(row[1], "QUEUED");
 

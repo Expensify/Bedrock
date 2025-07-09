@@ -153,10 +153,6 @@ size_t SQResult::size() const {
     return rows.size();
 }
 
-const vector<SQResultRow>& SQResult::getRows() const {
-    return rows;
-}
-
 void SQResult::clear() {
     headers.clear();
     rows.clear();
@@ -189,14 +185,6 @@ SQResult& SQResult::operator=(const SQResult& other) {
     return *this;
 }
 
-vector<SQResultRow>::iterator SQResult::begin() {
-    return rows.begin();
-}
-
-vector<SQResultRow>::iterator SQResult::end() {
-    return rows.end();
-}
-
 vector<SQResultRow>::const_iterator SQResult::begin() const {
     return rows.begin();
 }
@@ -213,27 +201,8 @@ vector<SQResultRow>::const_iterator SQResult::cend() const {
     return rows.cend();
 }
 
-void SQResult::resize(size_t newSize) {
-    rows.resize(newSize);
-    for (auto& row : rows) {
-        row.result = this;
-    }
-}
-
-void SQResult::push_back(const SQResultRow& row) {
-    SQResultRow newRow = row;
-    newRow.result = this;
-    rows.push_back(newRow);
-}
-
-void SQResult::emplace_back(const SQResultRow& row) {
-    SQResultRow newRow = row;
-    newRow.result = this;
-    rows.emplace_back(newRow);
-}
-
-SQResultRow& SQResult::back() {
-    return rows.back();
+void SQResult::emplace_back(SQResultRow&& row) {
+    rows.emplace_back(move(row));
 }
 
 const SQResultRow& SQResult::back() const {

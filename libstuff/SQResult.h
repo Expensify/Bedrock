@@ -29,18 +29,17 @@ class SQResult {
 
     SQResult() = default;
     SQResult(SQResult const&) = default;
+    SQResult(vector<SQResultRow>&& rows, vector<string>&& headers)
+        : headers(move(headers)), rows(move(rows)) {
+    }
 
     // Accessors
     bool empty() const;
     size_t size() const;
-    const vector<SQResultRow>& getRows() const;
 
     // Mutators
     void clear();
-    void resize(size_t newSize);
-    void push_back(const SQResultRow& row);
-    void emplace_back(const SQResultRow& row);
-    SQResultRow& back();
+    void emplace_back(SQResultRow&& row);
     const SQResultRow& back() const;
 
     // Operators
@@ -57,8 +56,6 @@ class SQResult {
     bool deserialize(const string& json);
 
     // Iterator support for range-based for loops
-    vector<SQResultRow>::iterator begin();
-    vector<SQResultRow>::iterator end();
     vector<SQResultRow>::const_iterator begin() const;
     vector<SQResultRow>::const_iterator end() const;
     vector<SQResultRow>::const_iterator cbegin() const;
