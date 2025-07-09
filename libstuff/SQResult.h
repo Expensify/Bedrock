@@ -40,7 +40,7 @@ class SQResult {
 
     // Mutators
     void clear();
-    void emplace_back(const SQResultRow&& row);
+    void emplace_back(SQResultRow&& row);
     const SQResultRow& back() const;
 
     // Operators
