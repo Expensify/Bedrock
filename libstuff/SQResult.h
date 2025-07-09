@@ -40,10 +40,8 @@ class SQResult {
     // Mutators
     void clear();
     void emplace_back(SQResultRow&& row);
-    const SQResultRow& back() const;
 
     // Operators
-    SQResultRow& operator[](size_t rowNum);
     const SQResultRow& operator[](size_t rowNum) const;
     SQResult& operator=(const SQResult& other);
 
