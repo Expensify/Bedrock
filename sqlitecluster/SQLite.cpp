@@ -67,7 +67,7 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
         // Look up the existing wal setting for this DB.
         SQResult result;
         SQuery(db, "", "PRAGMA journal_mode;", result);
-        bool isDBCurrentlyUsingWAL2 = result.rows.size() && result.rows[0][0] == "wal2";
+        bool isDBCurrentlyUsingWAL2 = result.size() && result[0][0] == "wal2";
 
         // If the intended wal setting doesn't match the existing wal setting, change it.
         if (!hctree && !isDBCurrentlyUsingWAL2) {
@@ -805,6 +805,23 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
+
+    // In HCTree mode, we log extra info for slow commits.
+    if (_hctree) {
+        uint64_t afterCommit = STimeNow();
+        // log for any commit over 1 second.
+        if ((afterCommit - beforeCommit) > 1'000'000) {
+            SQResult slowCommitResult;
+            SQuery(_db, "Slow commit logging", "SELECT * FROM hctvalid", slowCommitResult);
+            SINFO("SLOW HCTREE COMMIT " << (slowCommitResult.size() + 1) << " lines to follow");
+            string headers = SComposeList(slowCommitResult.headers);
+            SINFO("SLOW HCTREE COMMIT HEADERS: " << headers);
+            for (size_t i = 0; i < slowCommitResult.size(); i++) {
+                SINFO("SLOW HCTREE COMMIT ROW: " << i << ": " << SComposeList(slowCommitResult[i]));
+            }
+        }
+    }
+
     _lastConflictPage = _conflictPage;
     _lastConflictTable = _conflictTable;
 

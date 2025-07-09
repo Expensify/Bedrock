@@ -124,6 +124,9 @@ class BedrockTester {
     // This is the underlying storage for `getSQLiteDB` and will only be initialized once per tester.
     SQLite* _db = nullptr;
 
+    // Locks around initializing and deleting _db in case a tester is being used concurrently
+    mutex _dbMutex;
+
     // The ports the server will listen on.
     uint16_t _serverPort;
     uint16_t _nodePort;

@@ -1,5 +1,6 @@
 #include <libstuff/libstuff.h>
 #include "SQResult.h"
+#include <stdexcept>
 
 SQResultRow::SQResultRow(SQResult& result, size_t count) : vector<string>(count), result(&result) {
 }
@@ -183,3 +184,28 @@ SQResult& SQResult::operator=(const SQResult& other) {
     }
     return *this;
 }
+
+vector<SQResultRow>::const_iterator SQResult::begin() const {
+    return rows.begin();
+}
+
+vector<SQResultRow>::const_iterator SQResult::end() const {
+    return rows.end();
+}
+
+vector<SQResultRow>::const_iterator SQResult::cbegin() const {
+    return rows.cbegin();
+}
+
+vector<SQResultRow>::const_iterator SQResult::cend() const {
+    return rows.cend();
+}
+
+void SQResult::emplace_back(SQResultRow&& row) {
+    rows.emplace_back(move(row));
+}
+
+const SQResultRow& SQResult::back() const {
+    return rows.back();
+}
+

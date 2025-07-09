@@ -796,7 +796,7 @@ void BedrockJobsCommand::process(SQLite& db) {
                 // Add arrays of children jobs to our response, 2 arrays to clearly distinguish between finished and cancelled children.
                 list<string> finishedChildJobArray;
                 list<string> cancelledChildJobArray;
-                for (auto row : childJobs.rows) {
+                for (auto row : childJobs) {
                     STable childJob;
                     childJob["jobID"] = row[0];
                     childJob["data"] = row[1];

@@ -534,6 +534,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
 
 SQLite& BedrockTester::getSQLiteDB()
 {
+    lock_guard<decltype(_dbMutex)> lock(_dbMutex);
     if (!_db) {
         // Assumes wal2 mode.
         _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
@@ -542,6 +543,7 @@ SQLite& BedrockTester::getSQLiteDB()
 }
 
 void BedrockTester::freeDB() {
+    lock_guard<decltype(_dbMutex)> lock(_dbMutex);
     delete _db;
     _db = nullptr;
 }
@@ -558,11 +560,11 @@ string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS
         return "";
     }
 
-    if (result.rows[0].empty()) {
+    if (result[0].empty()) {
         return "";
     }
 
-    return result.rows[0][0];
+    return result[0][0];
 }
 
 bool BedrockTester::readDB(const string& query, SQResult& result, bool online, int64_t timeoutMS)
@@ -595,7 +597,7 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
             for (auto& v : vals) {
                 row.push_back(v);
             }
-            result.rows.push_back(row);
+            result.emplace_back(move(row));
         }
         return true;
     } else {
