@@ -201,7 +201,7 @@ vector<SQResultRow>::const_iterator SQResult::cend() const {
     return rows.cend();
 }
 
-void SQResult::emplace_back(const SQResultRow&& row) {
+void SQResult::emplace_back(SQResultRow&& row) {
     rows.emplace_back(move(row));
 }
 
