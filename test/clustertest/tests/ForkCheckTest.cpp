@@ -17,7 +17,7 @@ struct ForkCheckTest : tpunit::TestFixture {
         tester.readDB("SELECT name FROM sqlite_schema WHERE type ='table' AND name LIKE 'journal%';", journals, online);
         uint64_t maxJournalCommit = 0;
         string maxJournalTable;
-        for (auto& row : journals.rows) {
+        for (auto& row : journals) {
             string maxID = tester.readDB("SELECT MAX(id) FROM " + row[0] + ";", online);
             try {
                 uint64_t maxCommitNum = stoull(maxID);

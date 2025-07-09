@@ -259,8 +259,8 @@ struct FinishJobTest : tpunit::TestFixture {
         SQResult result;
         list<string> ids = {parentID, finishedChildID, cancelledChildID};
         clusterTester->getTester(0).readDB("SELECT jobID, state FROM jobs WHERE jobID IN(" + SComposeList(ids) + ");", result);
-        ASSERT_EQUAL(result.rows.size(), 3);
-        for (auto& row : result.rows) {
+        ASSERT_EQUAL(result.size(), 3);
+        for (auto& row : result) {
             if (row[0] == parentID) {
                 ASSERT_EQUAL(row[1], "PAUSED");
             } else if (row[0] == finishedChildID) {

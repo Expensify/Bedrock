@@ -67,7 +67,7 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
         // Look up the existing wal setting for this DB.
         SQResult result;
         SQuery(db, "", "PRAGMA journal_mode;", result);
-        bool isDBCurrentlyUsingWAL2 = result.rows.size() && result.rows[0][0] == "wal2";
+        bool isDBCurrentlyUsingWAL2 = result.size() && result[0][0] == "wal2";
 
         // If the intended wal setting doesn't match the existing wal setting, change it.
         if (!hctree && !isDBCurrentlyUsingWAL2) {

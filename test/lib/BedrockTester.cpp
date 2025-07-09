@@ -558,11 +558,11 @@ string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS
         return "";
     }
 
-    if (result.rows[0].empty()) {
+    if (result[0].empty()) {
         return "";
     }
 
-    return result.rows[0][0];
+    return result[0][0];
 }
 
 bool BedrockTester::readDB(const string& query, SQResult& result, bool online, int64_t timeoutMS)
@@ -595,7 +595,7 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
             for (auto& v : vals) {
                 row.push_back(v);
             }
-            result.rows.push_back(row);
+            result.emplace_back(move(row));
         }
         return true;
     } else {
