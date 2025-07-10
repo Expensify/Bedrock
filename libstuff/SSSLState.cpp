@@ -28,7 +28,7 @@ void SSSLState::initConfig() {
     const char* envCertPath = getenv("CERT_PATH");
     const string certPath = envCertPath ? envCertPath : "/etc/ssl/certs/";
     lastResult = mbedtls_x509_crt_parse_path(&_cacert, certPath.c_str());
-    bool certificatesLoaded = false;
+    bool successfullyLoadedCACerts = false;
     if (lastResult < 0) {
 
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
@@ -42,13 +42,13 @@ void SSSLState::initConfig() {
         }
     } else if (lastResult > 0) {
         SWARN("Loaded CA certificates from " + certPath + " directory, but " + to_string(lastResult) + " certificates failed to parse");
-        certificatesLoaded = true;
+        successfullyLoadedCACerts = true;
     } else {
-        certificatesLoaded = true;
+        successfullyLoadedCACerts = true;
     }
 
     // These calls do not return error codes.
-    mbedtls_ssl_conf_authmode(&_conf, certificatesLoaded ? MBEDTLS_SSL_VERIFY_REQUIRED : MBEDTLS_SSL_VERIFY_OPTIONAL);
+    mbedtls_ssl_conf_authmode(&_conf, successfullyLoadedCACerts ? MBEDTLS_SSL_VERIFY_REQUIRED : MBEDTLS_SSL_VERIFY_OPTIONAL);
     mbedtls_ssl_conf_rng(&_conf, mbedtls_ctr_drbg_random, &_ctr_drbg);
     mbedtls_ssl_conf_ca_chain(&_conf, &_cacert, nullptr);
 
