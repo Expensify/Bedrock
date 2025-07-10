@@ -16,8 +16,8 @@ void SSSLState::initConfig() {
     mbedtls_ctr_drbg_init(&_ctr_drbg);
     mbedtls_ssl_config_init(&_conf);
 
-    int lastResult = mbedtls_ctr_drbg_seed(&_ctr_drbg, mbedtls_entropy_func, &_ec, nullptr, 0);
     char errorBuffer[500] = {0};
+    int lastResult = mbedtls_ctr_drbg_seed(&_ctr_drbg, mbedtls_entropy_func, &_ec, nullptr, 0);
     if (lastResult) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
         STHROW("mbedtls_ctr_drbg_seed failed with error " + to_string(lastResult) + ": " + errorBuffer);

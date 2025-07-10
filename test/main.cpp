@@ -3,6 +3,7 @@
 #include <libstuff/SData.h>
 #include <libstuff/libstuff.h>
 #include <test/lib/BedrockTester.h>
+#include <libstuff/SSSLState.h>
 
 /*
  * Command line args to support:
@@ -24,6 +25,9 @@ int main(int argc, char* argv[]) {
 
     // Catch sigint.
     signal(SIGINT, sigclean);
+
+    // Set up SSL configuration
+    SSSLState::initConfig();
 
     // Tests to run (or skip);
     set<string> include;
@@ -95,6 +99,9 @@ int main(int argc, char* argv[]) {
             retval = 1;
         }
     }
+
+    // Tear down SSL configuration
+    SSSLState::freeConfig();
 
     return retval;
 }
