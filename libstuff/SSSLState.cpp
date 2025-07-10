@@ -79,10 +79,8 @@ SSSLState::SSSLState(const string& hostname, int socket) {
         STHROW("Invalid host: " + hostname);
     }
 
-    // Do a bunch of TLS initialization.
     int lastResult = 0;
     char errorBuffer[500] = {0};
-
     lastResult = mbedtls_ssl_set_hostname(&ssl, domain.c_str());
     if (lastResult) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
