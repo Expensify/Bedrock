@@ -7,6 +7,12 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
 
+void SSSLState::initConfig() {
+}
+
+void SSSLState::freeConfig() {
+}
+
 SSSLState::SSSLState(const string& hostname) : SSSLState(hostname, -1) {}
 SSSLState::SSSLState(const string& hostname, int socket) {
     mbedtls_entropy_init(&ec);
