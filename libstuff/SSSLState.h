@@ -6,6 +6,8 @@
 #include <mbedtls/net_sockets.h>
 #include <mbedtls/x509_crt.h>
 #include <string>
+#include <mutex>
+#include <atomic>
 
 using namespace std;
 class SFastBuffer;
@@ -28,5 +30,11 @@ class SSSLState {
     mbedtls_ssl_config conf;
     mbedtls_ssl_context ssl;
     mbedtls_net_context net_ctx;
-    mbedtls_x509_crt cacert;
+    static mbedtls_x509_crt _cacert;
+
+  private:
+    static mutex _certificateMutex;
+    static atomic<bool> _certificatesLoadingComplete;
+    static atomic<bool> _certificatesLoaded;
+    static void _loadCerts();
 };
