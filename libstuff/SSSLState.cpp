@@ -1,26 +1,75 @@
 #include "SSSLState.h"
 #include "mbedtls/ssl.h"
-
 #include <mbedtls/error.h>
 #include <mbedtls/net_sockets.h>
-
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
-#include <mutex>
 
-mutex SSSLState::_certificateMutex;
-atomic<bool> SSSLState::_certificatesLoaded = false;
-atomic<bool> SSSLState::_certificatesLoadingComplete = false;
+mbedtls_entropy_context SSSLState::_ec;
+mbedtls_ctr_drbg_context SSSLState::_ctr_drbg;
+mbedtls_ssl_config SSSLState::_conf;
 mbedtls_x509_crt SSSLState::_cacert;
+
+void SSSLState::initConfig() {
+    mbedtls_entropy_init(&_ec);
+    mbedtls_x509_crt_init(&_cacert);
+    mbedtls_ctr_drbg_init(&_ctr_drbg);
+    mbedtls_ssl_config_init(&_conf);
+
+    int lastResult = mbedtls_ctr_drbg_seed(&_ctr_drbg, mbedtls_entropy_func, &_ec, nullptr, 0);
+    char errorBuffer[500] = {0};
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ctr_drbg_seed failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    // Load environment or OS default (based on Ubuntu) CA certificates for peer verification.
+    // NOTE: Environment variable should have a trailing slash.
+    const char* envCertPath = getenv("CERT_PATH");
+    const string certPath = envCertPath ? envCertPath : "/etc/ssl/certs/";
+    lastResult = mbedtls_x509_crt_parse_path(&_cacert, certPath.c_str());
+    bool certificatesLoaded = false;
+    if (lastResult < 0) {
+
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        SWARN("Failed to load CA certificates from " + certPath + " directory. Error: " + to_string(lastResult) + ": " + errorBuffer);
+
+        // If directory loading failed, try the bundle file as fallback
+        lastResult = mbedtls_x509_crt_parse_file(&_cacert, (certPath + "ca-certificates.crt").c_str());
+        if (lastResult < 0) {
+            mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+            SWARN("Bundle file fallback also failed. SSL certificate verification may fail. Error: " + to_string(lastResult) + ": " + errorBuffer);
+        }
+    } else if (lastResult > 0) {
+        SWARN("Loaded CA certificates from " + certPath + " directory, but " + to_string(lastResult) + " certificates failed to parse");
+        certificatesLoaded = true;
+    } else {
+        certificatesLoaded = true;
+    }
+
+    // These calls do not return error codes.
+    mbedtls_ssl_conf_authmode(&_conf, certificatesLoaded ? MBEDTLS_SSL_VERIFY_REQUIRED : MBEDTLS_SSL_VERIFY_OPTIONAL);
+    mbedtls_ssl_conf_rng(&_conf, mbedtls_ctr_drbg_random, &_ctr_drbg);
+    mbedtls_ssl_conf_ca_chain(&_conf, &_cacert, nullptr);
+
+    lastResult = mbedtls_ssl_config_defaults(&_conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
+    if (lastResult) {
+        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+        STHROW("mbedtls_ssl_config_defaults failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+}
+
+void SSSLState::freeConfig() {
+    mbedtls_ssl_config_free(&_conf);
+    mbedtls_ctr_drbg_free(&_ctr_drbg);
+    mbedtls_entropy_free(&_ec);
+    mbedtls_x509_crt_free(&_cacert);
+}
 
 SSSLState::SSSLState(const string& hostname) : SSSLState(hostname, -1) {}
 SSSLState::SSSLState(const string& hostname, int socket) {
-    mbedtls_entropy_init(&ec);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
-    mbedtls_ssl_config_init(&conf);
     mbedtls_ssl_init(&ssl);
     mbedtls_net_init(&net_ctx);
-
 
     // Hostname here is expected to contain the port. I.e.: expensify.com:443
     // We need to split it into its componenets.
@@ -33,14 +82,6 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     // Do a bunch of TLS initialization.
     int lastResult = 0;
     char errorBuffer[500] = {0};
-    lastResult = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &ec, nullptr, 0);
-    if (lastResult) {
-        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
-        STHROW("mbedtls_ctr_drbg_seed failed with error " + to_string(lastResult) + ": " + errorBuffer);
-    }
-
-    // This will load the certificates if they haven't been loaded yet.
-    _loadCerts();
 
     lastResult = mbedtls_ssl_set_hostname(&ssl, domain.c_str());
     if (lastResult) {
@@ -65,18 +106,7 @@ SSSLState::SSSLState(const string& hostname, int socket) {
         net_ctx.fd = socket;
     }
 
-    lastResult = mbedtls_ssl_config_defaults(&conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
-    if (lastResult) {
-        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
-        STHROW("mbedtls_ssl_config_defaults failed with error " + to_string(lastResult) + ": " + errorBuffer);
-    }
-
-    // These calls do not return error codes.
-    mbedtls_ssl_conf_authmode(&conf, _certificatesLoaded ? MBEDTLS_SSL_VERIFY_REQUIRED : MBEDTLS_SSL_VERIFY_OPTIONAL);
-    mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
-    mbedtls_ssl_conf_ca_chain(&conf, &_cacert, nullptr);
-
-    lastResult = mbedtls_ssl_setup(&ssl, &conf);
+    lastResult = mbedtls_ssl_setup(&ssl, &_conf);
     if (lastResult) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
         STHROW("mbedtls_ssl_setup failed with error " + to_string(lastResult) + ": " + errorBuffer);
@@ -85,48 +115,10 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     mbedtls_ssl_set_bio(&ssl, &net_ctx, mbedtls_net_send, mbedtls_net_recv, nullptr);
 }
 
-void SSSLState::_loadCerts() {
-    lock_guard<mutex> lock(_certificateMutex);
-    if (_certificatesLoadingComplete) {
-        return;
-    }
-    mbedtls_x509_crt_init(&_cacert);
-
-    // Load environment or OS default (based on Ubuntu) CA certificates for peer verification.
-    // NOTE: Environment variable should have a trailing slash.
-    const char* envCertPath = getenv("CERT_PATH");
-    const string certPath = envCertPath ? envCertPath : "/etc/ssl/certs/";
-    int lastResult = mbedtls_x509_crt_parse_path(&_cacert, certPath.c_str());
-    if (lastResult < 0) {
-        char errorBuffer[500] = {0};
-
-        mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
-        SWARN("Failed to load CA certificates from " + certPath + " directory. Error: " + to_string(lastResult) + ": " + errorBuffer);
-
-        // If directory loading failed, try the bundle file as fallback
-        lastResult = mbedtls_x509_crt_parse_file(&_cacert, (certPath + "ca-certificates.crt").c_str());
-        if (lastResult < 0) {
-            mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
-            SWARN("Bundle file fallback also failed. SSL certificate verification may fail. Error: " + to_string(lastResult) + ": " + errorBuffer);
-        }
-    } else if (lastResult > 0) {
-        SWARN("Loaded CA certificates from " + certPath + " directory, but " + to_string(lastResult) + " certificates failed to parse");
-        _certificatesLoaded = true;
-    } else {
-        _certificatesLoaded = true;
-    }
-    _certificatesLoadingComplete = true;
-}
-
 SSSLState::~SSSLState() {
     // Note that this closes the socket if one is set, so there is no need (and in fact it is a bug) to close it otherwise.
     mbedtls_net_free(&net_ctx);
     mbedtls_ssl_free(&ssl);
-    mbedtls_ssl_config_free(&conf);
-    mbedtls_ctr_drbg_free(&ctr_drbg);
-    mbedtls_entropy_free(&ec);
-
-    //mbedtls_x509_crt_free(&_cacert);
 }
 
 int SSSLState::send(const char* buffer, int length) {
