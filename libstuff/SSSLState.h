@@ -17,6 +17,9 @@ class SSSLState {
     SSSLState(const string& hostname, int socket);
     ~SSSLState();
 
+    static void initConfig();
+    static void freeConfig();
+
     int send(const char* buffer, int length);
     int send(const SFastBuffer& buffer);
     bool sendConsume(SFastBuffer& sendBuffer);
