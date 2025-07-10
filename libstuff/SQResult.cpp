@@ -158,15 +158,6 @@ void SQResult::clear() {
     rows.clear();
 }
 
-SQResultRow& SQResult::operator[](size_t rowNum) {
-    try {
-        return rows.at(rowNum);
-    } catch (const out_of_range& e) {
-        SINFO("SQResult::operator[] out of range", {{"rowNum", to_string(rowNum)}});
-        STHROW_STACK("Out of range");
-    }
-}
-
 const SQResultRow& SQResult::operator[](size_t rowNum) const {
     try {
         return rows.at(rowNum);
@@ -204,8 +195,3 @@ vector<SQResultRow>::const_iterator SQResult::cend() const {
 void SQResult::emplace_back(SQResultRow&& row) {
     rows.emplace_back(move(row));
 }
-
-const SQResultRow& SQResult::back() const {
-    return rows.back();
-}
-

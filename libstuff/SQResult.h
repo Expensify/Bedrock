@@ -26,7 +26,6 @@ class SQResult {
   public:
     // Attributes
     vector<string> headers;
-    vector<SQResultRow> rows;
 
     SQResult() = default;
     SQResult(SQResult const&) = default;
@@ -41,10 +40,8 @@ class SQResult {
     // Mutators
     void clear();
     void emplace_back(SQResultRow&& row);
-    const SQResultRow& back() const;
 
     // Operators
-    SQResultRow& operator[](size_t rowNum);
     const SQResultRow& operator[](size_t rowNum) const;
     SQResult& operator=(const SQResult& other);
 
@@ -61,4 +58,7 @@ class SQResult {
     vector<SQResultRow>::const_iterator end() const;
     vector<SQResultRow>::const_iterator cbegin() const;
     vector<SQResultRow>::const_iterator cend() const;
+
+  private:
+    vector<SQResultRow> rows;
 };
