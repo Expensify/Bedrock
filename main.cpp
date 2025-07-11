@@ -16,6 +16,7 @@
 #include <plugins/Jobs.h>
 #include <plugins/MySQL.h>
 #include <libstuff/libstuff.h>
+#include <libstuff/SSSLState.h>
 #include <sqlitecluster/SQLite.h>
 #include <VMTouch.h>
 
@@ -339,6 +340,9 @@ int main(int argc, char* argv[]) {
     // Log stack traces if we have unhandled exceptions.
     set_terminate(STerminateHandler);
 
+    // Set up SSL configuration
+    SSSLState::initConfig();
+
     // Create our BedrockServer object so we can keep it for the life of the
     // program.
     SINFO("Starting bedrock server");
@@ -398,6 +402,9 @@ int main(int argc, char* argv[]) {
     SINFO("Deleting BedrockServer");
     delete _server;
     SINFO("BedrockServer deleted");
+
+    // Tear down SSL configuration
+    SSSLState::freeConfig();
 
     // Finished with our signal handler.
     SStopSignalThread();

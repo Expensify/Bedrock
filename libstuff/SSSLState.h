@@ -12,7 +12,6 @@ class SFastBuffer;
 
 class SSSLState {
   public:
-
     SSSLState(const string& hostname);
     SSSLState(const string& hostname, int socket);
     ~SSSLState();
@@ -26,10 +25,12 @@ class SSSLState {
     int recv(char* buffer, int length);
     bool recvAppend(SFastBuffer& recvBuffer);
 
-    mbedtls_entropy_context ec;
-    mbedtls_ctr_drbg_context ctr_drbg;
-    mbedtls_ssl_config conf;
     mbedtls_ssl_context ssl;
     mbedtls_net_context net_ctx;
-    mbedtls_x509_crt cacert;
+
+  private:
+    static mbedtls_entropy_context _ec;
+    static mbedtls_ctr_drbg_context _ctr_drbg;
+    static mbedtls_ssl_config _conf;
+    static mbedtls_x509_crt _cacert;
 };
