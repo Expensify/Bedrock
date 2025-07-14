@@ -81,8 +81,12 @@ class SQLiteNode : public STCPManager {
     };
 
     // This is a globally accessible pointer to some node instance. The intention here is to let signal handling code attempt to kill outstanding
-    // peer connections on this node before shutting down.
+    // peer connections on this node before shutting down. Generally, there is only a single node instance per application, and this will
+    // refer to that node, there may be exceptions in cases like test harnesses.
     static SQLiteNode* KILLABLE_SQLITE_NODE;
+
+    // If the above node has been killed, this will be set. The intention is to be able to detect and avoid various race conditions,
+    // i.e., immediately reconnecting a network socket after killing it.
     static atomic<bool> NODE_KILLED;
 
     // Receive timeout for cluster messages.
