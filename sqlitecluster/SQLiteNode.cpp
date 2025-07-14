@@ -480,7 +480,7 @@ string SQLiteNode::getEligibleFollowerForForwardingAddress() const {
 // Each state transitions according to the following events and operates as follows:
 bool SQLiteNode::update() {
     if (NODE_KILLED) {
-        SINFO("Killed, skipping update");
+        SWARN("Killed, skipping update");
         return false;
     }
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
@@ -2486,7 +2486,8 @@ void SQLiteNode::_processPeerMessages(uint64_t& nextActivity, SQLitePeer* peer, 
 
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
     if (NODE_KILLED) {
-        SINFO("Killed, skipping postPoll");
+        SWARN("Killed, skipping postPoll");
+        return;
     }
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
 
