@@ -61,6 +61,7 @@
 #define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
 
 SQLiteNode* SQLiteNode::KILLABLE_SQLITE_NODE{0};
+atomic<bool> SQLiteNode::NODE_KILLED{false};
 
 // Initializations for static vars.
 const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S * 30};
@@ -478,6 +479,10 @@ string SQLiteNode::getEligibleFollowerForForwardingAddress() const {
 // -----------------
 // Each state transitions according to the following events and operates as follows:
 bool SQLiteNode::update() {
+    if (NODE_KILLED) {
+        SINFO("Killed, skipping update");
+        return false;
+    }
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
 
     // Process the database state machine
@@ -2480,6 +2485,9 @@ void SQLiteNode::_processPeerMessages(uint64_t& nextActivity, SQLitePeer* peer, 
 }
 
 void SQLiteNode::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+    if (NODE_KILLED) {
+        SINFO("Killed, skipping postPoll");
+    }
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
 
     // Accept any new peers
@@ -2664,6 +2672,7 @@ SQLiteNodeState SQLiteNode::stateFromName(const string& name) {
 }
 
 void SQLiteNode::kill() {
+    NODE_KILLED = true;
     for (SQLitePeer* peer : _peerList) {
         SWARN("Killing peer: " << peer->name);
         peer->reset();
