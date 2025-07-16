@@ -11,6 +11,7 @@
 #include <sys/un.h>
 #include <cxxabi.h>
 #include <sys/ioctl.h>
+#include <cmath>
 
 #include <thread>
 
@@ -1352,8 +1353,9 @@ string SToJSON(const string& value, const bool forceString) {
     if (SToStr(SToInt64(value.c_str())) == value) {
         return value;
     }
-    // Is it a float?
-    if (SToStr(SToFloat(value.c_str())) == value) {
+    // Is it a float? (Must be finite - JSON doesn't support NaN/infinity)
+    float floatValue = SToFloat(value.c_str());
+    if (std::isfinite(floatValue) && SToStr(floatValue) == value) {
         return value;
     }
 
