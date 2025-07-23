@@ -1,5 +1,6 @@
 #include "SQLitePeer.h"
 #include "BedrockServer.h"
+#include "sqlitecluster/SQLiteNode.h"
 
 #include <libstuff/SData.h>
 #include <libstuff/SRandom.h>
@@ -139,8 +140,13 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextA
             SINFO("Retrying the connection");
             reset();
             try {
-                socket = new STCPManager::Socket(host);
-                return PeerPostPollStatus::JUST_CONNECTED;
+                if (SQLiteNode::NODE_KILLED) {
+                    SWARN("Node killed, skipping peer re-connect");
+                    STHROW("500 Node killed");
+                } else {
+                    socket = new STCPManager::Socket(host);
+                    return PeerPostPollStatus::JUST_CONNECTED;
+                }
             } catch (const SException& exception) {
                 // Failed to open -- try again later
                 SWARN(exception.what());

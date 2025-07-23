@@ -141,6 +141,32 @@ struct LibStuff : tpunit::TestFixture {
                         "348706C9EDFE8A0CDD13BFB476367DEA2761A102B26443C7D3A464DB49A37F1F816B8BEC4C55DBD9DAF0B70652D32A"
                         "CBD224F9487E25398E740E99B24089A6343B6FD6C1BC6A89AF90F3DC69016A42066AAF430B1B584D236B8AD285828D"
                         "59BB8375E2E955E246390DE9AA69D05DEF1FBC25318C9CCFE90159EC7EAA71637C07BD"));
+
+        // Test NaN/Infinity handling - these should be treated as strings, not numbers
+        ASSERT_EQUAL(SToJSON("nan"), "\"nan\"");
+        ASSERT_EQUAL(SToJSON("inf"), "\"inf\"");
+        ASSERT_EQUAL(SToJSON("-inf"), "\"-inf\"");
+        ASSERT_EQUAL(SToJSON("NaN"), "\"NaN\"");
+        ASSERT_EQUAL(SToJSON("Infinity"), "\"Infinity\"");
+        ASSERT_EQUAL(SToJSON("-Infinity"), "\"-Infinity\"");
+
+        // Test SComposeJSONObject with problematic values
+        STable nanTest;
+        nanTest["note"] = "nan";
+        nanTest["value"] = "inf"; 
+        nanTest["negative"] = "-inf";
+        string nanJSON = SComposeJSONObject(nanTest);
+        
+        // Verify the JSON is valid and contains quoted strings
+        ASSERT_TRUE(nanJSON.find("\"nan\"") != string::npos);
+        ASSERT_TRUE(nanJSON.find("\"inf\"") != string::npos);
+        ASSERT_TRUE(nanJSON.find("\"-inf\"") != string::npos);
+        
+        // Verify round-trip parsing works
+        STable nanParsed = SParseJSONObject(nanJSON);
+        ASSERT_EQUAL(nanParsed["note"], "nan");
+        ASSERT_EQUAL(nanParsed["value"], "inf");
+        ASSERT_EQUAL(nanParsed["negative"], "-inf");
     }
 
     void testEscapeUnescape() {
