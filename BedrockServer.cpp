@@ -1676,6 +1676,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         content["version"] = _version;
         content["host"] = args["-nodeHost"];
         content["commandCount"] = BedrockCommand::getCommandCount();
+        content["isDetached"] = isDetached() ? "true" : "false";
 
         {
             // Make it known if anything is known to cause crashes.
