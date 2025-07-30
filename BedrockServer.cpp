@@ -1677,6 +1677,8 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         content["host"] = args["-nodeHost"];
         content["commandCount"] = BedrockCommand::getCommandCount();
         content["isDetached"] = isDetached() ? "true" : "false";
+        content["detached"] = isDetached() ? "true" : "false";
+        content["outstandingFramesToCheckpoint"] = _syncNode->getOutstandingFramesToCheckpoint();
 
         {
             // Make it known if anything is known to cause crashes.

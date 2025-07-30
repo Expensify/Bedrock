@@ -200,6 +200,9 @@ class SQLite {
     // database.
     uint64_t getCommitCount() const;
 
+    // Returns the number of WAL frames that are currently waiting to be checkpointed.
+    uint64_t getOutstandingFramesToCheckpoint() const;
+
     // Returns the current state of the database, as a SHA1 hash of all queries committed.
     string getCommittedHash();
 
