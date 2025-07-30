@@ -346,13 +346,13 @@ const string SQLiteNode::getLeaderVersion() const {
 
 uint64_t SQLiteNode::getCommitCount() const {
     // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
-    // private methods.
+    // private methods. (Yes, SQLite::SharedData::getCommitCount is atomic, go check).
     return _db.getCommitCount();
 }
 
 uint64_t SQLiteNode::getOutstandingFramesToCheckpoint() const {
     // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
-    // private methods. (Yes, SQLite::SharedData::outstandingFramesToCheckpoint is atomic, go check).
+    // private methods.
     return _db.getOutstandingFramesToCheckpoint();
 }
 
