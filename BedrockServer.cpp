@@ -1677,7 +1677,6 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
         content["host"] = args["-nodeHost"];
         content["commandCount"] = BedrockCommand::getCommandCount();
         content["isDetached"] = isDetached() ? "true" : "false";
-        content["outstandingFramesToCheckpoint"] = _syncNode->getOutstandingFramesToCheckpoint();
 
         {
             // Make it known if anything is known to cause crashes.
@@ -1739,6 +1738,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command) {
             // Set some information about this node.
             content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
             content["priority"] = to_string(_syncNodeCopy->getPriority());
+            content["outstandingFramesToCheckpoint"] = to_string(_syncNodeCopy->getOutstandingFramesToCheckpoint());
             _syncNodeCopy = nullptr;
         } else {
             content["syncNodeAvailable"] = "false";
