@@ -1944,9 +1944,6 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             // start the timeout countdown.
             _standDownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
             _standDownTimeout.start();
-
-            // Abort all remote initiated commands if no longer LEADING
-            // TODO: No we don't, we finish it, as per other documentation in this file.
         } else if (newState == SQLiteNodeState::WAITING) {
             if (!_haveBeenWAITING) {
                 _haveBeenWAITING = true;

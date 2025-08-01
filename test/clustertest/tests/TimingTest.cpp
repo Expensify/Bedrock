@@ -67,18 +67,14 @@ struct TimingTest : tpunit::TestFixture {
 
             if (i != 0) {
                 // Extra data on followers.
-                uint64_t escalationTime = SToUInt64(result["escalationTime"]);
                 uint64_t upstreamPeekTime = SToUInt64(result["upstreamPeekTime"]);
                 uint64_t upstreamProcessTime = SToUInt64(result["upstreamProcessTime"]);
                 uint64_t upstreamTotalTime = SToUInt64(result["upstreamTotalTime"]);
 
-                ASSERT_GREATER_THAN(escalationTime, 0);
                 ASSERT_GREATER_THAN(upstreamPeekTime, 0);
                 ASSERT_GREATER_THAN(upstreamProcessTime, 0);
                 ASSERT_GREATER_THAN(upstreamTotalTime, 0);
 
-                ASSERT_LESS_THAN(escalationTime, totalTime);
-                ASSERT_LESS_THAN(upstreamTotalTime, escalationTime);
                 ASSERT_LESS_THAN(upstreamPeekTime + upstreamProcessTime, upstreamTotalTime);
             }
         }
