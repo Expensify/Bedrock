@@ -10,7 +10,7 @@ To see a full list of Bedrock's configuration options, just run `bedrock -?` on 
 	------
 	bedrock [-? | -h | -help]
 	bedrock -version
-	bedrock [-clean] [-v] [-db <filename>] [-serverHost <host:port>] [-nodeHost <host:port>] [-nodeName <name>] [-peerList <list>] [-priority <value>] [-plugins <list>] [-cacheSize <kb>] [-readThreads <#>] [-versionOverride <version>]
+	bedrock [-clean] [-v] [-db <filename>] [-serverHost <host:port>] [-nodeHost <host:port>] [-nodeName <name>] [-peerList <list>] [-priority <value>] [-plugins <list>] [-cacheSize <kb>] [-workerThreads <#>] [-versionOverride <version>]
 
 	Common Commands:
 	----------------
@@ -27,7 +27,7 @@ To see a full list of Bedrock's configuration options, just run `bedrock -?` on 
 	-priority       <value>     See '-peerList Details' below (defaults to 100)
 	-plugins        <list>      Enable these plugins (defaults to 'status,db,jobs,cache')
 	-cacheSize      <kb>        number of KB to allocate for a page cache (defaults to 1GB)
-	-readThreads    <#>         Number of read threads to start (min 1, defaults to 1)
+	-workerThreads  <#>         Number of worker threads to start (min 1, defaults to number of CPU cores)
 	-queryLog       <filename>  Set the query log filename (default 'queryLog.csv', SIGUSR2/SIGQUIT to enable/disable)
 	-maxJournalSize <#commits>  Number of commits to retainin the historical journal (default 1000000)
 

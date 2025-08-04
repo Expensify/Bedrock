@@ -81,11 +81,8 @@ shared_ptr<SQLitePool> BedrockServer::getDBPool() {
 void BedrockServer::sync()
 {
     // Parse out the number of worker threads we'll use. The DB needs to know this because it will expect a
-    // corresponding number of journal tables. "-readThreads" exists only for backwards compatibility.
+    // corresponding number of journal tables.
     int workerThreads = args.calc("-workerThreads");
-
-    // TODO: remove when nothing uses readThreads.
-    workerThreads = workerThreads ? workerThreads : args.calc("-readThreads");
 
     // If still no value, use the number of cores on the machine, if available.
     SINFO("Note: thread::hardware_concurrency() is: " << thread::hardware_concurrency());
