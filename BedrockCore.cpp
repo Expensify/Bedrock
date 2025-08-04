@@ -197,11 +197,6 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         command->repeek = false;
         command->_inDBReadOperation = false;
         _handleCommandException(command, e, &_db, &_server);
-    } catch (const SHTTPSManager::NotLeading& e) {
-        command->repeek = false;
-        command->_inDBReadOperation = false;
-        returnValue = RESULT::SHOULD_PROCESS;
-        SINFO("Command '" << request.methodLine << "' wants to make HTTPS request, queuing for processing.");
     } catch (...) {
         command->repeek = false;
         command->_inDBReadOperation = false;
