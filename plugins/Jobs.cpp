@@ -206,118 +206,123 @@ bool BedrockJobsCommand::peek(SQLite& db) {
 
     // ----------------------------------------------------------------------
     else if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
-        list<STable> jsonJobs;
-        if (SIEquals(requestVerb, "CreateJob")) {
-            BedrockPlugin::verifyAttributeSize(request, "name", 1, BedrockPlugin_Jobs::MAX_SIZE_SMALL);
-            jsonJobs.push_back(request.nameValueMap);
-        } else {
-            list<string> multipleJobs;
-            multipleJobs = SParseJSONArray(request["jobs"]);
-            if (multipleJobs.empty()) {
-                STHROW("401 Invalid JSON");
-            }
-
-            for (auto& job : multipleJobs) {
-                STable jobObject = SParseJSONObject(job);
-                if (jobObject.empty()) {
+        try {
+            list<STable> jsonJobs;
+            if (SIEquals(requestVerb, "CreateJob")) {
+                BedrockPlugin::verifyAttributeSize(request, "name", 1, BedrockPlugin_Jobs::MAX_SIZE_SMALL);
+                jsonJobs.push_back(request.nameValueMap);
+            } else {
+                list<string> multipleJobs;
+                multipleJobs = SParseJSONArray(request["jobs"]);
+                if (multipleJobs.empty()) {
                     STHROW("401 Invalid JSON");
                 }
 
-                // Verify that name is present for every job
-                if (!SContains(job, "name")) {
-                    STHROW("402 Missing name");
-                }
-
-                jsonJobs.push_back(jobObject);
-            }
-        }
-
-        for (auto& job : jsonJobs) {
-            // If no priority set, set it
-            int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : BedrockPlugin_Jobs::JOBS_DEFAULT_PRIORITY;
-
-            // We'd initially intended for any value to be allowable here, but for
-            // performance reasons, we currently will only allow specific values to
-            // try and keep queries fast. If you pass an invalid value, we'll throw
-            // here so that the caller can know that he did something wrong rather
-            // than having his job sit unprocessed in the queue forever. Hopefully
-            // we can remove this restriction in the future.
-            _validatePriority(priority);
-
-            // Throw if data is not a valid JSON object, otherwise UPDATE query will fail.
-            if (SContains(job, "data") && SParseJSONObject(job["data"]).empty() && job["data"] != "{}") {
-                STHROW("402 Data is not a valid JSON Object");
-            }
-
-            // Validate retryAfter
-            if (SContains(job, "retryAfter") && job["retryAfter"] != "" && !SIsValidSQLiteDateModifier(job["retryAfter"])){
-                STHROW("402 Malformed retryAfter");
-            }
-
-            // Validate that the parentJobID exists and is in the right state if one was passed.
-            // Also verify that the parent job doesn't have a retryAfter set.
-            int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
-            if (parentJobID) {
-                SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
-                SQResult result;
-                if (!db.read("SELECT state, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
-                    STHROW("502 Select failed");
-                }
-                if (result.empty()) {
-                    STHROW("404 parentJobID does not exist");
-                }
-                if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "RUNQUEUED") && !SIEquals(result[0][0], "PAUSED")) {
-                    SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
-                    STHROW("405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
-                }
-
-                // Verify that the parent and child job have the same `mockRequest` setting, update them to match if
-                // not. Note that this is the first place we'll look at `mockRequest` while handling this command so
-                // any change made here will happen early enough for all of our existing checks to work correctly, and
-                // everything should be good when we get to `processCommand`.
-                STable parentData = SParseJSONObject(result[0][1]);
-                bool parentIsMocked = parentData.find("mockRequest") != parentData.end();
-                bool childIsMocked = request.isSet("mockRequest");
-
-                if (parentIsMocked && !childIsMocked) {
-                    mockRequest = true;
-                    SDEBUG("Setting child job to mocked to match parent.");
-                } else if (!parentIsMocked && childIsMocked) {
-                    mockRequest = false;
-                    SDEBUG("Setting child job to non-mocked to match parent.");
-                }
-            }
-
-            // Verify unique, but only do so when creating a single job using CreateJob
-            if (SContains(job, "unique") && job["unique"] == "true") {
-                SQResult result;
-                SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
-                      << (mockRequest ? "true" : "false"));
-                string operation = mockRequest ? "IS NOT" : "IS";
-                if (!db.read("SELECT jobID, data, parentJobID "
-                             "FROM jobs "
-                             "WHERE name=" + SQ(job["name"]) +
-                             "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
-                             result)) {
-                    STHROW("502 Select failed");
-                }
-
-                // If there's no job or the existing job doesn't match the data we've been passed, escalate to leader.
-                if (!result.empty()) {
-                    // If the parent passed does not match the parent the job already had, then it must mean we did something
-                    // wrong or made a bad CQ, so we throw so we can investigate. Updating the parent here would be
-                    // confusing, as it could leave the original parent in a bad state (like for example paused forever)
-                    if (result[0][2] != "0" && result[0][2] != job["parentJobID"]) {
-                        STHROW("404 Trying to create a child that already exists, but it is tied to a different parent");
+                for (auto& job : multipleJobs) {
+                    STable jobObject = SParseJSONObject(job);
+                    if (jobObject.empty()) {
+                        STHROW("401 Invalid JSON");
                     }
-                    if (SIEquals(requestVerb, "CreateJob") && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
-                        // Return early, no need to pass to leader, there are no more jobs to create.
-                        SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0] << ", mocked? " << (mockRequest ? "true" : "false"));
-                        jsonContent["jobID"] = result[0][0];
-                        return true;
+
+                    // Verify that name is present for every job
+                    if (!SContains(job, "name")) {
+                        STHROW("402 Missing name");
+                    }
+
+                    jsonJobs.push_back(jobObject);
+                }
+            }
+
+            for (auto& job : jsonJobs) {
+                // If no priority set, set it
+                int64_t priority = SContains(job, "jobPriority") ? SToInt(job["jobPriority"]) : BedrockPlugin_Jobs::JOBS_DEFAULT_PRIORITY;
+
+                // We'd initially intended for any value to be allowable here, but for
+                // performance reasons, we currently will only allow specific values to
+                // try and keep queries fast. If you pass an invalid value, we'll throw
+                // here so that the caller can know that he did something wrong rather
+                // than having his job sit unprocessed in the queue forever. Hopefully
+                // we can remove this restriction in the future.
+                _validatePriority(priority);
+
+                // Throw if data is not a valid JSON object, otherwise UPDATE query will fail.
+                if (SContains(job, "data") && SParseJSONObject(job["data"]).empty() && job["data"] != "{}") {
+                    STHROW("402 Data is not a valid JSON Object");
+                }
+
+                // Validate retryAfter
+                if (SContains(job, "retryAfter") && job["retryAfter"] != "" && !SIsValidSQLiteDateModifier(job["retryAfter"])){
+                    STHROW("402 Malformed retryAfter");
+                }
+
+                // Validate that the parentJobID exists and is in the right state if one was passed.
+                // Also verify that the parent job doesn't have a retryAfter set.
+                int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
+                if (parentJobID) {
+                    SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
+                    SQResult result;
+                    if (!db.read("SELECT state, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                        STHROW("502 Select failed");
+                    }
+                    if (result.empty()) {
+                        STHROW("404 parentJobID does not exist");
+                    }
+                    if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "RUNQUEUED") && !SIEquals(result[0][0], "PAUSED")) {
+                        SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
+                        STHROW("405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
+                    }
+
+                    // Verify that the parent and child job have the same `mockRequest` setting, update them to match if
+                    // not. Note that this is the first place we'll look at `mockRequest` while handling this command so
+                    // any change made here will happen early enough for all of our existing checks to work correctly, and
+                    // everything should be good when we get to `processCommand`.
+                    STable parentData = SParseJSONObject(result[0][1]);
+                    bool parentIsMocked = parentData.find("mockRequest") != parentData.end();
+                    bool childIsMocked = request.isSet("mockRequest");
+
+                    if (parentIsMocked && !childIsMocked) {
+                        mockRequest = true;
+                        SDEBUG("Setting child job to mocked to match parent.");
+                    } else if (!parentIsMocked && childIsMocked) {
+                        mockRequest = false;
+                        SDEBUG("Setting child job to non-mocked to match parent.");
                     }
                 }
+
+                // Verify unique, but only do so when creating a single job using CreateJob
+                if (SContains(job, "unique") && job["unique"] == "true") {
+                    SQResult result;
+                    SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
+                        << (mockRequest ? "true" : "false"));
+                    string operation = mockRequest ? "IS NOT" : "IS";
+                    if (!db.read("SELECT jobID, data, parentJobID "
+                                "FROM jobs "
+                                "WHERE name=" + SQ(job["name"]) +
+                                "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
+                                result)) {
+                        STHROW("502 Select failed");
+                    }
+
+                    // If there's no job or the existing job doesn't match the data we've been passed, escalate to leader.
+                    if (!result.empty()) {
+                        // If the parent passed does not match the parent the job already had, then it must mean we did something
+                        // wrong or made a bad CQ, so we throw so we can investigate. Updating the parent here would be
+                        // confusing, as it could leave the original parent in a bad state (like for example paused forever)
+                        if (result[0][2] != "0" && result[0][2] != job["parentJobID"]) {
+                            STHROW("404 Trying to create a child that already exists, but it is tied to a different parent");
+                        }
+                        if (SIEquals(requestVerb, "CreateJob") && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
+                            // Return early, no need to pass to leader, there are no more jobs to create.
+                            SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0] << ", mocked? " << (mockRequest ? "true" : "false"));
+                            jsonContent["jobID"] = result[0][0];
+                            return true;
+                        }
+                    }
+                }
             }
+        } catch (const exception& e) {
+            SALERT("Failed creating job", {{"what", e.what()}});
+            throw;
         }
         return false;
     }
