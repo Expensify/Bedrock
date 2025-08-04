@@ -632,10 +632,6 @@ void BedrockJobsCommand::process(SQLite& db) {
 
         jsonContent["jobIDs"] = SComposeJSONArray(jobIDs);
 
-        // Release workers waiting on this state
-        // TODO: No "HeldBy" anymore. If a plugin wants to hold a command, it should own it until it's done.
-        // node->clearCommandHolds("Jobs:" + request["name"]);
-
         return; // Successfully processed
     }
 
