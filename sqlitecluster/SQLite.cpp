@@ -1023,6 +1023,10 @@ uint64_t SQLite::getCommitCount() const {
     return _sharedData.commitCount;
 }
 
+uint64_t SQLite::getOutstandingFramesToCheckpoint() const {
+    return _sharedData.outstandingFramesToCheckpoint;
+}
+
 size_t SQLite::getLastWriteChangeCount() {
     int count = sqlite3_changes(_db);
     return count > 0 ? (size_t)count : 0;
