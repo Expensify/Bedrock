@@ -36,7 +36,9 @@ class VMTouch {
     static bool isPageAligned(void* p);
     static bool is_mincore_page_resident(char p);
     static void do_nothing(unsigned int nothing);
+    static void _check(const char* path, bool touch, bool verbose = false);
 
   public:
-    static void check(const char* path, bool touch, bool verbose = false);
+    static void check(const char* path, bool verbose = false);
+    static void touch(const char* path, bool verbose = false);
 };
