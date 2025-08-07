@@ -8,8 +8,6 @@
 
 using std::string;
 
-namespace {
-
 /**
  * Basic UTF-8 decoder: advances index and returns a decoded Unicode code point.
  *
@@ -32,7 +30,7 @@ namespace {
  * Note: This decoder intentionally avoids normalization/validation of overlong or
  * out-of-range sequences because the deburr logic only needs a best-effort fold.
  */
-static uint32_t decodeUTF8Codepoint(const unsigned char* bytes, size_t length, size_t& index) {
+uint32_t SDeburr::decodeUTF8Codepoint(const unsigned char* bytes, size_t length, size_t& index) {
     if (index >= length) {
         return 0;
     }
@@ -92,7 +90,7 @@ static uint32_t decodeUTF8Codepoint(const unsigned char* bytes, size_t length, s
  * - For other unmapped non-ASCII code points, returns nullptr so the caller can
  *   drop them (we only keep ASCII + explicitly mapped folds).
  */
-static const char* deburrMap(uint32_t codepoint) {
+const char* SDeburr::deburrMap(uint32_t codepoint) {
     switch (codepoint) {
         // ASCII letters pass-through; caller lowercases
         case 'A': case 'a': case 'B': case 'b': case 'C': case 'c': case 'D': case 'd':
@@ -158,7 +156,7 @@ static const char* deburrMap(uint32_t codepoint) {
  * Lowercasing is only applied to ASCII [A-Z]; mapped outputs are already
  * normalized as lowercase literals to ensure deterministic folds.
  */
-static string deburrASCIIImpl(const string& input) {
+string SDeburr::deburrASCIIImpl(const string& input) {
     const unsigned char* in = reinterpret_cast<const unsigned char*>(input.c_str());
     const size_t len = input.size();
     string result;
@@ -192,30 +190,32 @@ static string deburrASCIIImpl(const string& input) {
  * Behavior:
  * - NULL input → NULL
  * - Non-NULL input → deburred ASCII text (see deburrASCIIImpl)
- * - Declared deterministic in registerSQLiteDeburr to enable SQLite optimizations
+ * - Declared deterministic in registerSQLite to enable SQLite optimizations
  */
-static void sqliteDeburr(sqlite3_context* ctx, int argc, sqlite3_value** argv) {
-    if (argc != 1) { sqlite3_result_null(ctx); return; }
-    if (sqlite3_value_type(argv[0]) == SQLITE_NULL) { sqlite3_result_null(ctx); return; }
+void SDeburr::sqliteDeburr(sqlite3_context* ctx, int argc, sqlite3_value** argv) {
+    if (argc != 1) {
+        sqlite3_result_null(ctx);
+        return;
+    }
+    if (sqlite3_value_type(argv[0]) == SQLITE_NULL) {
+        sqlite3_result_null(ctx);
+        return;
+    }
     const unsigned char* text = sqlite3_value_text(argv[0]);
-    if (!text) { sqlite3_result_null(ctx); return; }
+    if (!text) {
+        sqlite3_result_null(ctx);
+        return;
+    }
     string out = deburrASCIIImpl(reinterpret_cast<const char*>(text));
     sqlite3_result_text(ctx, out.c_str(), static_cast<int>(out.size()), SQLITE_TRANSIENT);
 }
 
-} // namespace
-
-namespace SDeburr {
-
-std::string deburrToASCII(const std::string& input) {
+std::string SDeburr::deburr(const std::string& input) {
     return deburrASCIIImpl(input);
 }
 
-void registerSQLiteDeburr(sqlite3* db) {
+void SDeburr::registerSQLite(sqlite3* db) {
     // Deterministic to enable optimizations
     sqlite3_create_function_v2(db, "DEBURR", 1, SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr, sqliteDeburr, nullptr, nullptr, nullptr);
 }
-
-} // namespace SDeburr
-
-
+ 

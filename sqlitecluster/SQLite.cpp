@@ -226,7 +226,7 @@ void SQLite::commonConstructorInitialization(bool hctree) {
     sqlite3_set_authorizer(_db, _sqliteAuthorizerCallback, this);
 
     // Register application-defined deburr function.
-    SDeburr::registerSQLiteDeburr(_db);
+    SDeburr::registerSQLite(_db);
 
     // I tested and found that we could set about 10,000,000 and the number of steps to run and get a callback once a
     // second. This is set to be a bit more granular than that, which is probably adequate.

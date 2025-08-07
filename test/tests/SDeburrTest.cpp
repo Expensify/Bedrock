@@ -12,30 +12,30 @@ struct SDeburrTest : tpunit::TestFixture {
                                          TEST(SDeburrTest::testCombining)) {}
 
     void testBasicASCII() {
-        ASSERT_EQUAL(SDeburr::deburrToASCII("Fabio"), string("fabio"));
-        ASSERT_EQUAL(SDeburr::deburrToASCII("WARIO"), string("wario"));
-        ASSERT_EQUAL(SDeburr::deburrToASCII("#Pizza"), string("#pizza"));
+        ASSERT_EQUAL(SDeburr::deburr("Fabio"), string("fabio"));
+        ASSERT_EQUAL(SDeburr::deburr("WARIO"), string("wario"));
+        ASSERT_EQUAL(SDeburr::deburr("#Pizza"), string("#pizza"));
     }
 
     void testDiacritics() {
-        ASSERT_EQUAL(SDeburr::deburrToASCII("Fábio"), string("fabio"));
-        ASSERT_EQUAL(SDeburr::deburrToASCII("Wário"), string("wario"));
-        ASSERT_EQUAL(SDeburr::deburrToASCII("Wálüîgi"), string("waluigi"));
-        ASSERT_EQUAL(SDeburr::deburrToASCII("Ångström"), string("angstrom"));
-        ASSERT_EQUAL(SDeburr::deburrToASCII("façade"), string("facade"));
-        ASSERT_EQUAL(SDeburr::deburrToASCII("straße"), string("strasse"));
-        ASSERT_EQUAL(SDeburr::deburrToASCII("Æther"), string("aether"));
-        ASSERT_EQUAL(SDeburr::deburrToASCII("Œuvre"), string("oeuvre"));
+        ASSERT_EQUAL(SDeburr::deburr("Fábio"), string("fabio"));
+        ASSERT_EQUAL(SDeburr::deburr("Wário"), string("wario"));
+        ASSERT_EQUAL(SDeburr::deburr("Wálüîgi"), string("waluigi"));
+        ASSERT_EQUAL(SDeburr::deburr("Ångström"), string("angstrom"));
+        ASSERT_EQUAL(SDeburr::deburr("façade"), string("facade"));
+        ASSERT_EQUAL(SDeburr::deburr("straße"), string("strasse"));
+        ASSERT_EQUAL(SDeburr::deburr("Æther"), string("aether"));
+        ASSERT_EQUAL(SDeburr::deburr("Œuvre"), string("oeuvre"));
     }
 
     void testMixed() {
-        ASSERT_EQUAL(SDeburr::deburrToASCII(" Café #Team"), string(" cafe #team"));
-        ASSERT_EQUAL(SDeburr::deburrToASCII("L'ESPRIT"), string("l'esprit"));
+        ASSERT_EQUAL(SDeburr::deburr(" Café #Team"), string(" cafe #team"));
+        ASSERT_EQUAL(SDeburr::deburr("L'ESPRIT"), string("l'esprit"));
     }
 
     void testCombining() {
         // "a" + combining acute (U+0301)
-        ASSERT_EQUAL(SDeburr::deburrToASCII(string("a\xCC\x81")), string("a"));
+        ASSERT_EQUAL(SDeburr::deburr(string("a\xCC\x81")), string("a"));
     }
 } __SDeburrTest;
 
