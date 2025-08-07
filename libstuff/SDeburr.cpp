@@ -1,6 +1,3 @@
-// Copyright (c) Expensify, Inc.
-// SPDX-License-Identifier: MIT
-
 #include "SDeburr.h"
 
 #include <cstring>
@@ -13,35 +10,88 @@ using std::string;
 
 namespace {
 
-// Basic UTF-8 decoder: advances index and returns codepoint, or returns byte for invalid sequences
+/**
+ * Basic UTF-8 decoder: advances index and returns a decoded Unicode code point.
+ *
+ * The input is a UTF-8 byte sequence. UTF-8 encodes code points into 1–4 bytes:
+ * - 1-byte ASCII: 0xxxxxxx
+ * - 2-byte:       110xxxxx 10xxxxxx
+ * - 3-byte:       1110xxxx 10xxxxxx 10xxxxxx
+ * - 4-byte:       11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+ *
+ * We use bitwise masks to classify the leading byte:
+ * - (b & 0x80) == 0x00 → ASCII (0xxxxxxx)
+ * - (b & 0xE0) == 0xC0 → 2-byte sequence (110xxxxx)
+ * - (b & 0xF0) == 0xE0 → 3-byte sequence (1110xxxx)
+ * - (b & 0xF8) == 0xF0 → 4-byte sequence (11110xxx)
+ *
+ * Continuation bytes must have the high bits 10xxxxxx, i.e. (b & 0xC0) == 0x80.
+ * If the sequence is malformed (missing or invalid continuation), we fall back to
+ * treating the lead byte as a standalone value to avoid throwing in low-level code.
+ *
+ * Note: This decoder intentionally avoids normalization/validation of overlong or
+ * out-of-range sequences because the deburr logic only needs a best-effort fold.
+ */
 static uint32_t decodeUTF8Codepoint(const unsigned char* bytes, size_t length, size_t& index) {
-    if (index >= length) return 0;
+    if (index >= length) {
+        return 0;
+    }
     uint32_t current = bytes[index++];
-    if (current < 0x80) return current;
+    if (current < 0x80) {
+        return current;
+    }
+    // 2-byte: 110xxxxx 10xxxxxx
     if ((current & 0xE0) == 0xC0) {
-        if (index >= length) return current;
+        if (index >= length) {
+            return current;
+        }
         uint32_t c2 = bytes[index++];
-        if ((c2 & 0xC0) != 0x80) return current;
+        if ((c2 & 0xC0) != 0x80) {
+            return current;
+        }
         return ((current & 0x1F) << 6) | (c2 & 0x3F);
     }
+    // 3-byte: 1110xxxx 10xxxxxx 10xxxxxx
     if ((current & 0xF0) == 0xE0) {
-        if (index + 1 > length) return current;
+        if (index + 1 > length) {
+            return current;
+        }
         uint32_t c2 = bytes[index++];
         uint32_t c3 = bytes[index++];
-        if ((c2 & 0xC0) != 0x80 || (c3 & 0xC0) != 0x80) return current;
+        if ((c2 & 0xC0) != 0x80 || (c3 & 0xC0) != 0x80) {
+            return current;
+        }
         return ((current & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
     }
+    // 4-byte: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
     if ((current & 0xF8) == 0xF0) {
-        if (index + 2 > length) return current;
+        if (index + 2 > length) {
+            return current;
+        }
         uint32_t c2 = bytes[index++];
         uint32_t c3 = bytes[index++];
         uint32_t c4 = bytes[index++];
-        if ((c2 & 0xC0) != 0x80 || (c3 & 0xC0) != 0x80 || (c4 & 0xC0) != 0x80) return current;
+        if ((c2 & 0xC0) != 0x80 || (c3 & 0xC0) != 0x80 || (c4 & 0xC0) != 0x80) {
+            return current;
+        }
         return ((current & 0x07) << 18) | ((c2 & 0x3F) << 12) | ((c3 & 0x3F) << 6) | (c4 & 0x3F);
     }
-    return current; // invalid or overlong sequence
+    // invalid or overlong sequence; return the raw lead byte for a graceful degrade
+    return current;
 }
 
+/**
+ * Map a Unicode code point to a deburred ASCII string (or signal pass-through).
+ *
+ * - For ASCII letters, returns nullptr to signal the caller to copy the original
+ *   byte (caller lowercases to avoid unnecessary allocations).
+ * - For Latin-1 Supplement and a subset of Latin Extended-A, returns ASCII
+ *   approximations (e.g., Å → "a", ß → "ss", Æ → "ae", Œ → "oe").
+ * - For combining diacritical marks U+0300–U+036F, returns an empty string to
+ *   drop the mark while keeping the previously emitted base character.
+ * - For other unmapped non-ASCII code points, returns nullptr so the caller can
+ *   drop them (we only keep ASCII + explicitly mapped folds).
+ */
 static const char* deburrMap(uint32_t codepoint) {
     switch (codepoint) {
         // ASCII letters pass-through; caller lowercases
@@ -54,7 +104,7 @@ static const char* deburrMap(uint32_t codepoint) {
         case 'Y': case 'y': case 'Z': case 'z':
             return nullptr;
 
-        // Latin-1 Supplement
+        // Latin-1 Supplement (hex values are Unicode code points)
         case 0x00C0: case 0x00C1: case 0x00C2: case 0x00C3: case 0x00C4: case 0x00C5: return "a"; // ÀÁÂÃÄÅ
         case 0x00E0: case 0x00E1: case 0x00E2: case 0x00E3: case 0x00E4: case 0x00E5: return "a"; // àáâãäå
         case 0x00C7: case 0x00E7: return "c"; // Çç
@@ -85,12 +135,29 @@ static const char* deburrMap(uint32_t codepoint) {
         case 0x0178: return "y";
 
         default:
-            // Combining marks U+0300–U+036F: skip
-            if (codepoint >= 0x0300 && codepoint <= 0x036F) return "";
+            // Combining marks U+0300–U+036F (hex literal range): drop them and keep the base char
+            if (codepoint >= 0x0300 && codepoint <= 0x036F) {
+                return "";
+            }
             return nullptr;
     }
 }
 
+/**
+ * Convert a UTF-8 string to a lowercased ASCII-only approximation by removing diacritics.
+ *
+ * Algorithm:
+ * - Decode the next Unicode code point from UTF-8 (see decoder above).
+ * - Look up an ASCII replacement in deburrMap().
+ *   - If deburrMap returns nullptr:
+ *     - If the original byte was ASCII, lowercase it and keep it.
+ *     - Otherwise, drop the code point (non-ASCII without mapping).
+ *   - If deburrMap returns an empty string (""): drop it (combining diacritics).
+ *   - Otherwise, append the mapped ASCII sequence (e.g., "ss", "ae").
+ *
+ * Lowercasing is only applied to ASCII [A-Z]; mapped outputs are already
+ * normalized as lowercase literals to ensure deterministic folds.
+ */
 static string deburrASCIIImpl(const string& input) {
     const unsigned char* in = reinterpret_cast<const unsigned char*>(input.c_str());
     const size_t len = input.size();
@@ -104,7 +171,9 @@ static string deburrASCIIImpl(const string& input) {
         if (mapped == nullptr) {
             unsigned char byte = in[start];
             if (byte < 0x80) {
-                if (byte >= 'A' && byte <= 'Z') byte = static_cast<unsigned char>(byte - 'A' + 'a');
+                if (byte >= 'A' && byte <= 'Z') {
+                    byte = static_cast<unsigned char>(byte - 'A' + 'a');
+                }
                 result.push_back(static_cast<char>(byte));
             }
             // Else drop non-ASCII codepoint with no mapping
@@ -117,6 +186,14 @@ static string deburrASCIIImpl(const string& input) {
     return result;
 }
 
+/**
+ * SQLite UDF: DEBURR(text) → deburred ASCII string.
+ *
+ * Behavior:
+ * - NULL input → NULL
+ * - Non-NULL input → deburred ASCII text (see deburrASCIIImpl)
+ * - Declared deterministic in registerSQLiteDeburr to enable SQLite optimizations
+ */
 static void sqliteDeburr(sqlite3_context* ctx, int argc, sqlite3_value** argv) {
     if (argc != 1) { sqlite3_result_null(ctx); return; }
     if (sqlite3_value_type(argv[0]) == SQLITE_NULL) { sqlite3_result_null(ctx); return; }

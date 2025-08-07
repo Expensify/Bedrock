@@ -5,19 +5,32 @@
 
 #include <string>
 
-// Forward-declare sqlite3 to avoid forcing all consumers to include sqlite3 headers
+// Forward-declare sqlite3 to avoid forcing all consumers to include sqlite3 headers.
+// This keeps the header lightweight; only the implementation needs sqlite3 symbols.
 struct sqlite3;
 
 namespace SDeburr {
 
-// Returns a lowercase ASCII-folded version of the input, removing diacritics and
-// mapping common Latin characters with accents to ASCII equivalents. Non-ASCII
-// codepoints without a specific mapping are dropped. Intended to mirror lodash's
-// deburr behavior enough for search normalization.
+/**
+ * Returns a lowercased, ASCII-only approximation of `input`.
+ *
+ * - Removes diacritics (e.g., é → e, Å → a, ñ → n)
+ * - Applies specific multi-letter folds (e.g., ß → ss, Æ → ae, Œ → oe)
+ * - Drops combining marks U+0300–U+036F and non-ASCII code points without mappings
+ * - Preserves ASCII punctuation and digits; ASCII letters are lowercased
+ *
+ * Mirrors lodash's deburr behavior for search normalization and comparisons
+ * where diacritics should not affect matching.
+ */
 std::string deburrToASCII(const std::string& input);
 
-// Registers the SQLite UDF `DEBURR(text)` on the provided database handle.
-// The function returns the same value as deburrToASCII for the given argument.
+/**
+ * Register the SQLite UDF `DEBURR(text)` on the provided database handle.
+ *
+ * - Returns the same value as `deburrToASCII(text)`
+ * - Marked deterministic to allow SQLite optimizations and query planning
+ * - NULL input yields NULL
+ */
 void registerSQLiteDeburr(sqlite3* db);
 
 } // namespace SDeburr
