@@ -36,7 +36,6 @@ public:
 private:
     static uint32_t decodeUTF8Codepoint(const unsigned char* bytes, size_t length, size_t& index);
     static const char* deburrMap(uint32_t codepoint);
-    static std::string deburrASCIIImpl(const std::string& input);
     static void sqliteDeburr(sqlite3_context* ctx, int argc, sqlite3_value** argv);
 };
 

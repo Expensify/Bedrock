@@ -156,7 +156,7 @@ const char* SDeburr::deburrMap(uint32_t codepoint) {
  * Lowercasing is only applied to ASCII [A-Z]; mapped outputs are already
  * normalized as lowercase literals to ensure deterministic folds.
  */
-string SDeburr::deburrASCIIImpl(const string& input) {
+std::string SDeburr::deburr(const std::string& input) {
     const unsigned char* in = reinterpret_cast<const unsigned char*>(input.c_str());
     const size_t len = input.size();
     string result;
@@ -206,12 +206,8 @@ void SDeburr::sqliteDeburr(sqlite3_context* ctx, int argc, sqlite3_value** argv)
         sqlite3_result_null(ctx);
         return;
     }
-    string out = deburrASCIIImpl(reinterpret_cast<const char*>(text));
+    string out = SDeburr::deburr(reinterpret_cast<const char*>(text));
     sqlite3_result_text(ctx, out.c_str(), static_cast<int>(out.size()), SQLITE_TRANSIENT);
-}
-
-std::string SDeburr::deburr(const std::string& input) {
-    return deburrASCIIImpl(input);
 }
 
 void SDeburr::registerSQLite(sqlite3* db) {
