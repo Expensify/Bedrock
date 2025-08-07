@@ -103,34 +103,61 @@ const char* SDeburr::deburrMap(uint32_t codepoint) {
             return nullptr;
 
         // Latin-1 Supplement (hex values are Unicode code points)
-        case 0x00C0: case 0x00C1: case 0x00C2: case 0x00C3: case 0x00C4: case 0x00C5: return "a"; // ÀÁÂÃÄÅ
+        case 0x00C0: case 0x00C1: case 0x00C2: case 0x00C3: case 0x00C4: case 0x00C5: return "A"; // ÀÁÂÃÄÅ
         case 0x00E0: case 0x00E1: case 0x00E2: case 0x00E3: case 0x00E4: case 0x00E5: return "a"; // àáâãäå
-        case 0x00C7: case 0x00E7: return "c"; // Çç
-        case 0x00C8: case 0x00C9: case 0x00CA: case 0x00CB: return "e"; // ÈÉÊË
+        case 0x00C7: return "C"; // Ç
+        case 0x00E7: return "c"; // ç
+        case 0x00C8: case 0x00C9: case 0x00CA: case 0x00CB: return "E"; // ÈÉÊË
         case 0x00E8: case 0x00E9: case 0x00EA: case 0x00EB: return "e"; // èéêë
-        case 0x00CC: case 0x00CD: case 0x00CE: case 0x00CF: return "i"; // ÌÍÎÏ
+        case 0x00CC: case 0x00CD: case 0x00CE: case 0x00CF: return "I"; // ÌÍÎÏ
         case 0x00EC: case 0x00ED: case 0x00EE: case 0x00EF: return "i"; // ìíîï
-        case 0x00D1: case 0x00F1: return "n"; // Ññ
-        case 0x00D2: case 0x00D3: case 0x00D4: case 0x00D5: case 0x00D6: case 0x00D8: return "o"; // ÒÓÔÕÖØ
+        case 0x00D1: return "N"; // Ñ
+        case 0x00F1: return "n"; // ñ
+        case 0x00D2: case 0x00D3: case 0x00D4: case 0x00D5: case 0x00D6: case 0x00D8: return "O"; // ÒÓÔÕÖØ
         case 0x00F2: case 0x00F3: case 0x00F4: case 0x00F5: case 0x00F6: case 0x00F8: return "o"; // òóôõöø
-        case 0x00D9: case 0x00DA: case 0x00DB: case 0x00DC: return "u"; // ÙÚÛÜ
+        case 0x00D9: case 0x00DA: case 0x00DB: case 0x00DC: return "U"; // ÙÚÛÜ
         case 0x00F9: case 0x00FA: case 0x00FB: case 0x00FC: return "u"; // ùúûü
-        case 0x00DD: case 0x00FD: case 0x00FF: return "y"; // Ýýÿ
-        case 0x00DF: return "ss"; // ß
-        case 0x00C6: case 0x00E6: return "ae"; // Ææ
-        case 0x0152: case 0x0153: return "oe"; // Œœ
+        case 0x00DD: return "Y"; // Ý
+        case 0x00FD: case 0x00FF: return "y"; // ýÿ
+        case 0x00DF: return "ss"; // ß → ss (lodash)
+        case 0x00C6: return "AE"; // Æ → AE
+        case 0x00E6: return "ae"; // æ → ae
+        case 0x0152: return "OE"; // Œ → OE
+        case 0x0153: return "oe"; // œ → oe
 
         // Latin Extended-A (subset)
-        case 0x0100: case 0x0101: case 0x0102: case 0x0103: case 0x0104: case 0x0105: return "a";
-        case 0x0106: case 0x0107: case 0x0108: case 0x0109: case 0x010A: case 0x010B: case 0x010C: case 0x010D: return "c";
-        case 0x010E: case 0x010F: return "d";
-        case 0x0112: case 0x0113: case 0x0114: case 0x0115: case 0x0116: case 0x0117: case 0x0118: case 0x0119: case 0x011A: case 0x011B: return "e";
-        case 0x0128: case 0x0129: case 0x012A: case 0x012B: case 0x012C: case 0x012D: case 0x012E: case 0x012F: return "i";
-        case 0x0130: case 0x0131: return "i"; // dotless i
-        case 0x0143: case 0x0144: case 0x0147: case 0x0148: return "n";
-        case 0x014C: case 0x014D: case 0x014E: case 0x014F: case 0x0150: case 0x0151: return "o";
-        case 0x0168: case 0x0169: case 0x016A: case 0x016B: case 0x016C: case 0x016D: case 0x016E: case 0x016F: case 0x0170: case 0x0171: return "u";
-        case 0x0178: return "y";
+        case 0x0100: case 0x0102: case 0x0104: return "A"; // ĀĂĄ
+        case 0x0101: case 0x0103: case 0x0105: return "a"; // āăą
+        case 0x0106: case 0x0108: case 0x010A: case 0x010C: return "C"; // ĆĈĊČ
+        case 0x0107: case 0x0109: case 0x010B: case 0x010D: return "c"; // ćĉċč
+        case 0x010E: return "D"; // Ď
+        case 0x010F: return "d"; // ď
+        case 0x0112: case 0x0114: case 0x0116: case 0x0118: case 0x011A: return "E"; // ĒĔĖĘĚ
+        case 0x0113: case 0x0115: case 0x0117: case 0x0119: case 0x011B: return "e"; // ēĕėęě
+        case 0x0128: case 0x012A: case 0x012C: case 0x012E: return "I"; // ĨĪĬĮ
+        case 0x0129: case 0x012B: case 0x012D: case 0x012F: return "i"; // ĩīĭį
+        case 0x0130: return "I"; // İ
+        case 0x0131: return "i"; // ı
+        case 0x0143: case 0x0147: return "N"; // ŃŇ
+        case 0x0144: case 0x0148: return "n"; // ńň
+        case 0x014C: case 0x014E: case 0x0150: return "O"; // ŌŎŐ
+        case 0x014D: case 0x014F: case 0x0151: return "o"; // ōŏő
+        case 0x0168: case 0x016A: case 0x016C: case 0x016E: case 0x0170: return "U"; // ŨŪŬŮŰ
+        case 0x0169: case 0x016B: case 0x016D: case 0x016F: case 0x0171: return "u"; // ũūŭůű
+        case 0x0178: return "Y"; // Ÿ (maps to Y in lodash)
+        case 0x0141: return "L"; // Ł
+        case 0x0142: return "l"; // ł
+        case 0x015A: return "S"; // Ś
+        case 0x015B: return "s"; // ś
+        case 0x0179: return "Z"; // Ź
+        case 0x017A: return "z"; // ź
+        case 0x017B: return "Z"; // Ż
+        case 0x017C: return "z"; // ż
+        case 0x00DE: return "TH"; // Þ
+        case 0x00FE: return "th"; // þ
+        case 0x00D0: return "D"; // Ð
+        case 0x00F0: return "d"; // ð
+        case 0x1E9E: return "SS"; // ẞ (capital sharp s)
 
         default:
             // Combining marks U+0300–U+036F (hex literal range): drop them and keep the base char
@@ -142,19 +169,18 @@ const char* SDeburr::deburrMap(uint32_t codepoint) {
 }
 
 /**
- * Convert a UTF-8 string to a lowercased ASCII-only approximation by removing diacritics.
+ * Convert a UTF-8 string to an ASCII-only approximation by removing diacritics.
  *
  * Algorithm:
  * - Decode the next Unicode code point from UTF-8 (see decoder above).
  * - Look up an ASCII replacement in deburrMap().
  *   - If deburrMap returns nullptr:
- *     - If the original byte was ASCII, lowercase it and keep it.
- *     - Otherwise, drop the code point (non-ASCII without mapping).
+ *     - Append the original code point bytes unchanged (preserve case and unmapped chars),
+ *       matching lodash's deburr behavior which only alters known Latin letters.
  *   - If deburrMap returns an empty string (""): drop it (combining diacritics).
  *   - Otherwise, append the mapped ASCII sequence (e.g., "ss", "ae").
  *
- * Lowercasing is only applied to ASCII [A-Z]; mapped outputs are already
- * normalized as lowercase literals to ensure deterministic folds.
+ * Case is preserved. Mappings should account for proper case where relevant.
  */
 std::string SDeburr::deburr(const std::string& input) {
     const unsigned char* in = reinterpret_cast<const unsigned char*>(input.c_str());
@@ -167,14 +193,8 @@ std::string SDeburr::deburr(const std::string& input) {
         uint32_t cp = decodeUTF8Codepoint(in, len, i);
         const char* mapped = deburrMap(cp);
         if (mapped == nullptr) {
-            unsigned char byte = in[start];
-            if (byte < 0x80) {
-                if (byte >= 'A' && byte <= 'Z') {
-                    byte = static_cast<unsigned char>(byte - 'A' + 'a');
-                }
-                result.push_back(static_cast<char>(byte));
-            }
-            // Else drop non-ASCII codepoint with no mapping
+            // Preserve original code point bytes (ASCII or non-ASCII) when no mapping exists
+            result.append(input, start, i - start);
         } else if (*mapped) {
             result.append(mapped);
         } else {
@@ -189,7 +209,7 @@ std::string SDeburr::deburr(const std::string& input) {
  *
  * Behavior:
  * - NULL input → NULL
- * - Non-NULL input → deburred ASCII text (see deburrASCIIImpl)
+ * - Non-NULL input → deburred ASCII text
  * - Declared deterministic in registerSQLite to enable SQLite optimizations
  */
 void SDeburr::sqliteDeburr(sqlite3_context* ctx, int argc, sqlite3_value** argv) {
