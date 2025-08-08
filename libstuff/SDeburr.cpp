@@ -9,13 +9,14 @@
 using std::string;
 
 /**
- * Basic UTF-8 decoder: advances index and returns a decoded Unicode code point.
+ * Reads one character from a UTF-8 string and moves to the next character.
  *
- * The input is a UTF-8 byte sequence. UTF-8 encodes code points into 1–4 bytes:
- * - 1-byte ASCII: 0xxxxxxx
- * - 2-byte:       110xxxxx 10xxxxxx
- * - 3-byte:       1110xxxx 10xxxxxx 10xxxxxx
- * - 4-byte:       11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+ * UTF-8 can use 1-4 bytes per character:
+ * - 1 byte: regular ASCII letters (a, b, c, etc.)
+ * - 2-4 bytes: special characters with accents (é, ñ, etc.)
+ *
+ * This function figures out how many bytes the current character uses,
+ * reads the whole character, and updates the position for the next one.
  *
  * We use bitwise masks to classify the leading byte:
  * - (b & 0x80) == 0x00 → ASCII (0xxxxxxx)
@@ -23,22 +24,20 @@ using std::string;
  * - (b & 0xF0) == 0xE0 → 3-byte sequence (1110xxxx)
  * - (b & 0xF8) == 0xF0 → 4-byte sequence (11110xxx)
  *
- * Continuation bytes must have the high bits 10xxxxxx, i.e. (b & 0xC0) == 0x80.
- * If the sequence is malformed (missing or invalid continuation), we fall back to
- * treating the lead byte as a standalone value to avoid throwing in low-level code.
- *
- * Note: This decoder intentionally avoids normalization/validation of overlong or
- * out-of-range sequences because the deburr logic only needs a best-effort fold.
+ * If we find broken UTF-8, we just use what we can and keep going.
  */
 uint32_t SDeburr::decodeUTF8Codepoint(const unsigned char* bytes, size_t length, size_t& index) {
     if (index >= length) {
         return 0;
     }
+
     uint32_t current = bytes[index++];
     if (current < 0x80) {
+        // Simple ASCII character (a-z, A-Z, 0-9, etc.)
         return current;
     }
-    // 2-byte: 110xxxxx 10xxxxxx
+
+    // 2-byte character (like é, ñ)
     if ((current & 0xE0) == 0xC0) {
         if (index >= length) {
             return current;
@@ -49,7 +48,8 @@ uint32_t SDeburr::decodeUTF8Codepoint(const unsigned char* bytes, size_t length,
         }
         return ((current & 0x1F) << 6) | (c2 & 0x3F);
     }
-    // 3-byte: 1110xxxx 10xxxxxx 10xxxxxx
+
+    // 3-byte character (like €, ♥)
     if ((current & 0xF0) == 0xE0) {
         if (index + 1 > length) {
             return current;
@@ -61,7 +61,8 @@ uint32_t SDeburr::decodeUTF8Codepoint(const unsigned char* bytes, size_t length,
         }
         return ((current & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
     }
-    // 4-byte: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+
+    // 4-byte character (like emoji 😀)
     if ((current & 0xF8) == 0xF0) {
         if (index + 2 > length) {
             return current;
@@ -74,45 +75,41 @@ uint32_t SDeburr::decodeUTF8Codepoint(const unsigned char* bytes, size_t length,
         }
         return ((current & 0x07) << 18) | ((c2 & 0x3F) << 12) | ((c3 & 0x3F) << 6) | (c4 & 0x3F);
     }
-    // invalid or overlong sequence; return the raw lead byte for a graceful degrade
+
+    // Something went wrong, just use the first byte
     return current;
 }
 
 /**
- * Map a Unicode code point to a deburred ASCII string (or signal pass-through).
+ * Converts special characters to ASCII equivalents.
  *
- * - For ASCII letters, returns nullptr to signal the caller to copy the original
- *   byte (caller lowercases to avoid unnecessary allocations).
- * - For Latin-1 Supplement and a subset of Latin Extended-A, returns ASCII
- *   approximations (e.g., Å → "a", ß → "ss", Æ → "ae", Œ → "oe").
- * - For combining diacritical marks U+0300–U+036F, returns an empty string to
- *   drop the mark while keeping the previously emitted base character.
- * - For other unmapped non-ASCII code points, returns nullptr so the caller can
- *   drop them (we only keep ASCII + explicitly mapped folds).
+ * Examples:
+ * - é → "e", Å → "A", ñ → "n" (removes accents)
+ * - ß → "ss", Æ → "AE" (special cases)
+ * - Regular letters like "a" or "Z" → returns nullptr (keep as-is)
+ * - Accent marks by themselves → returns "" (delete them)
+ * - Unknown characters → returns nullptr (keep as-is)
  */
 const char* SDeburr::deburrMap(uint32_t codepoint) {
-    // Combining marks U+0300–U+036F: drop them
+    // Accent marks by themselves (like ´ ` ^) → delete them
     if (codepoint >= 0x0300 && codepoint <= 0x036F) {
         return "";
     }
 
-    // Fast reject ASCII letters (handled by caller's ASCII fast-path anyway)
+    // Regular ASCII letters (a-z, A-Z) → keep as-is
     if ((codepoint >= 'A' && codepoint <= 'Z') || (codepoint >= 'a' && codepoint <= 'z')) {
         return nullptr;
     }
 
     /**
-     * Compile-time lookup tables for fast O(1) character mapping.
+     * Fast lookup tables for converting accented characters.
      *
-     * Instead of switch/case or hash maps, we use two small fixed arrays:
-     * - latin1[]: Maps Latin-1 Supplement range (U+00C0–U+00FF) to ASCII replacements
-     * - extA[]:   Maps Latin Extended-A range (U+0100–U+017F) to ASCII replacements
+     * We have two small arrays that work like dictionaries:
+     * - latin1[]: Handles characters like é, ñ, Å (common European accents)
+     * - extA[]:   Handles characters like ő, ł, ż (less common accents)
      *
-     * Array indices are calculated by subtracting the range base (e.g., codepoint - 0xC0).
-     * nullptr entries indicate no mapping exists for that codepoint.
-     *
-     * The constexpr constructor builds these tables at compile time, so there's
-     * zero runtime initialization cost - the lookup data is baked into the binary.
+     * Instead of checking every character one-by-one, we can jump straight to 
+     * the answer by using the character's number as an array index.
      */
     struct Tables {
         const char* latin1[0x100 - 0xC0]; // 0xC0..0xFF (64 entries)
@@ -165,29 +162,30 @@ const char* SDeburr::deburrMap(uint32_t codepoint) {
         const char* v = tables.latin1[codepoint - 0x00C0];
         return v ? v : nullptr;
     }
+
     if (codepoint >= 0x0100 && codepoint <= 0x017F) {
         const char* v = tables.extA[codepoint - 0x0100];
         return v ? v : nullptr;
     }
+
     if (codepoint == 0x1E9E) {
         return "SS"; // ẞ
     }
+
     return nullptr;
 }
 
 /**
- * Convert a UTF-8 string to an ASCII-only approximation by removing diacritics.
+ * Remove accents from text to make it easier to search.
  *
- * Algorithm:
- * - Decode the next Unicode code point from UTF-8 (see decoder above).
- * - Look up an ASCII replacement in deburrMap().
- *   - If deburrMap returns nullptr:
- *     - Append the original code point bytes unchanged (preserve case and unmapped chars),
- *       matching lodash's deburr behavior which only alters known Latin letters.
- *   - If deburrMap returns an empty string (""): drop it (combining diacritics).
- *   - Otherwise, append the mapped ASCII sequence (e.g., "ss", "ae").
+ * How it works:
+ * 1. Go through each character in the text
+ * 2. If it's a regular letter (a-z, A-Z), keep it as-is
+ * 3. If it's an accented character (é, ñ, etc.), replace it with the basic version
+ * 4. If it's an accent mark by itself, delete it
+ * 5. Everything else (numbers, punctuation, emoji) stays the same
  *
- * Case is preserved. Mappings should account for proper case where relevant.
+ * Examples: "café" → "cafe", "naïve" → "naive", "Zürich" → "Zurich"
  */
 std::string SDeburr::deburr(const std::string& input) {
     const unsigned char* in = reinterpret_cast<const unsigned char*>(input.c_str());
@@ -196,7 +194,7 @@ std::string SDeburr::deburr(const std::string& input) {
     result.reserve(len);
     size_t i = 0;
     while (i < len) {
-        // Fast path: copy contiguous ASCII bytes in one append
+        // Speed optimization: copy regular ASCII text in chunks
         if (in[i] < 0x80) {
             size_t asciiStart = i++;
             while (i < len && in[i] < 0x80) {
@@ -206,17 +204,18 @@ std::string SDeburr::deburr(const std::string& input) {
             continue;
         }
 
-        // Non-ASCII: decode a single UTF-8 code point and map
+        // Handle special characters (accented letters, etc.)
         size_t start = i;
         uint32_t cp = decodeUTF8Codepoint(in, len, i);
         const char* mapped = deburrMap(cp);
         if (mapped == nullptr) {
-            // Preserve original code point bytes (non-ASCII) when no mapping exists
+            // No conversion needed, keep the original character
             result.append(reinterpret_cast<const char*>(in + start), i - start);
         } else if (*mapped) {
+            // Replace with ASCII equivalent (é→e, ß→ss, etc.)
             result.append(mapped);
         } else {
-            // empty mapping => skip (combining mark)
+            // Delete this character (accent marks)
         }
     }
     return result;
@@ -252,4 +251,3 @@ void SDeburr::registerSQLite(sqlite3* db) {
     // Deterministic to enable optimizations
     sqlite3_create_function_v2(db, "DEBURR", 1, SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr, sqliteDeburr, nullptr, nullptr, nullptr);
 }
- 
