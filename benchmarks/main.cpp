@@ -18,6 +18,8 @@ const string RED = "\033[31m";
 const string RESET = "\033[0m";
 const string BOLD = "\033[1m";
 
+const double SIGNIFICANT_CHANGE_THRESHOLD = 5.0;
+
 bool runBenchmarks(const set<string>& include, const set<string>& exclude) {
     g_benchmarkResults.clear();
     int result = tpunit::Tests::run(include, exclude, {}, {}, 1);
@@ -92,13 +94,13 @@ void printComparison(const map<string, BenchmarkResult>& baseline,
             double changePercent = ((currentResult.throughputMBps - baselineResult.throughputMBps) 
                                    / baselineResult.throughputMBps) * 100.0;
             
-            // Use colors for significant changes (>1% difference)
+            // Use colors for significant changes (>5% difference)
             string color = "";
             string status = "";
-            if (changePercent > 1.0) {
+            if (changePercent > SIGNIFICANT_CHANGE_THRESHOLD) {
                 color = GREEN;
                 status = "✅ IMPROVED";
-            } else if (changePercent < -1.0) {
+            } else if (changePercent < (-1 * SIGNIFICANT_CHANGE_THRESHOLD)) {
                 color = RED;
                 status = "⚠️ REGRESSED";
             } else {
@@ -265,9 +267,9 @@ int main(int argc, char* argv[]) {
         if (it != baselineResults.end()) {
             double changePercent = ((currentResult.throughputMBps - it->second.throughputMBps) 
                                    / it->second.throughputMBps) * 100.0;
-            if (changePercent > 1.0) {
+            if (changePercent > SIGNIFICANT_CHANGE_THRESHOLD) {
                 improved++;
-            } else if (changePercent < -1.0) {
+            } else if (changePercent < (-1 * SIGNIFICANT_CHANGE_THRESHOLD)) {
                 regressed++;
             } else {
                 unchanged++;
