@@ -10,7 +10,7 @@ using namespace std;
 
 struct SDeburrBench : tpunit::TestFixture {
     SDeburrBench() : tpunit::TestFixture(
-        "SDeburrBench",
+        "SDeburr",
         TEST(SDeburrBench::benchShortASCII),
         TEST(SDeburrBench::benchLatin1),
         TEST(SDeburrBench::benchMixedLong),
