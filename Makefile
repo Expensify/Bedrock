@@ -73,13 +73,13 @@ BEDROCKCPP = main.cpp
 BEDROCKOBJ = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 BEDROCKDEP = $(BEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
-# And the same for our tests.
-TESTCPP = $(shell find test -name '*.cpp' -not -path 'test/clustertest*')
+# And the same for our tests. Exclude benchmarks from the unit test binary.
+TESTCPP = $(shell find test -name '*.cpp' -not -path 'test/clustertest*' -not -path 'test/benchmarks*')
 TESTOBJ = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 TESTDEP = $(TESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
-# And the same for the cluster tests (manually adding one file from `test`)
-CLUSTERTESTCPP = $(shell find test -name '*.cpp' -not -path 'test/tests*' -not -path "test/main.cpp")
+# And the same for the cluster tests (manually adding one file from `test`). Exclude benchmarks too.
+CLUSTERTESTCPP = $(shell find test -name '*.cpp' -not -path 'test/tests*' -not -path 'test/benchmarks*' -not -path "test/main.cpp")
 CLUSTERTESTCPP += test/tests/jobs/JobTestHelper.cpp
 CLUSTERTESTOBJ = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 CLUSTERTESTDEP = $(CLUSTERTESTCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
@@ -106,6 +106,13 @@ test/test: $(TESTOBJ) $(BINPREREQS)
 	$(CXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+
+# Benchmarks binary (separate from unit tests) under top-level benchmarks/
+BENCHCPP = $(shell find benchmarks -name '*.cpp') test/lib/tpunit++.cpp
+BENCHOBJ = $(BENCHCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
+BENCHDEP = $(BENCHCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
+bench: $(BENCHOBJ) $(BINPREREQS)
+	$(CXX) -o benchmarks/bench $(BENCHOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 
 # The rule to build TestPlugin
 test/clustertest/testplugin/testplugin.so : $(TESTPLUGINOBJ) $(TESTPLUGINCPP) $(TESTPLUGINTDEP) $(BINPREREQS)
