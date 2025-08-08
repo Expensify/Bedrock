@@ -67,4 +67,38 @@ Benchmarks print results in this format:
 ```
 [BenchmarkName] TestName: inputs=N, iters=N, bytes=N, time_us=N, throughput_MBps=N.N
 ```
-g
+
+## Baseline Comparison
+
+Compare performance against any git ref (branch, tag, or commit):
+
+```bash
+./benchmarks/bench --baseline main
+./benchmarks/bench --baseline HEAD~1
+./benchmarks/bench --baseline v1.0.0
+```
+
+This feature will:
+1. Stash any uncommitted changes
+2. Checkout the baseline ref and run benchmarks
+3. Return to your branch and restore changes
+4. Run current benchmarks
+5. Display a comparison report with:
+   - **Green** ✅ for improvements
+   - **Red** ⚠️ for regressions
+   - Percentage changes for each benchmark
+   - Summary statistics
+
+Example output:
+```
+=== Benchmark Comparison Report ===
+
+Benchmark                 Baseline MB/s   Current MB/s    Change %         Status
+----------------------------------------------------------------------------------
+SDeburrBench::Latin1            49.71          48.73        -2.0%  ⚠️  REGRESSED
+SDeburrBench::ShortASCII       94.82          96.10        +1.3%  ✅ IMPROVED
+
+Summary: 1 improved, 1 regressed, 0 unchanged
+```
+
+This makes it easy to ensure your optimizations actually improve performance!
