@@ -189,11 +189,22 @@ std::string SDeburr::deburr(const std::string& input) {
     result.reserve(len);
     size_t i = 0;
     while (i < len) {
+        // Fast path: copy contiguous ASCII bytes in one append
+        if (in[i] < 0x80) {
+            size_t asciiStart = i++;
+            while (i < len && in[i] < 0x80) {
+                ++i;
+            }
+            result.append(reinterpret_cast<const char*>(in + asciiStart), i - asciiStart);
+            continue;
+        }
+
+        // Non-ASCII: decode a single UTF-8 code point and map
         size_t start = i;
         uint32_t cp = decodeUTF8Codepoint(in, len, i);
         const char* mapped = deburrMap(cp);
         if (mapped == nullptr) {
-            // Preserve original code point bytes (ASCII or non-ASCII) when no mapping exists
+            // Preserve original code point bytes (non-ASCII) when no mapping exists
             result.append(input, start, i - start);
         } else if (*mapped) {
             result.append(mapped);
