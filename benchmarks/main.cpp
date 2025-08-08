@@ -100,7 +100,7 @@ void printComparison(const map<string, BenchmarkResult>& baseline,
                 status = "✅ IMPROVED";
             } else if (changePercent < -1.0) {
                 color = RED;
-                status = "⚠️  REGRESSED";
+                status = "⚠️ REGRESSED";
             } else {
                 status = "≈ UNCHANGED";
             }
