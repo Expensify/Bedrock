@@ -212,7 +212,7 @@ std::string SDeburr::deburr(const std::string& input) {
         const char* mapped = deburrMap(cp);
         if (mapped == nullptr) {
             // Preserve original code point bytes (non-ASCII) when no mapping exists
-            result.append(input, start, i - start);
+            result.append(reinterpret_cast<const char*>(in + start), i - start);
         } else if (*mapped) {
             result.append(mapped);
         } else {
