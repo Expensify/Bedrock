@@ -91,81 +91,88 @@ uint32_t SDeburr::decodeUTF8Codepoint(const unsigned char* bytes, size_t length,
  *   drop them (we only keep ASCII + explicitly mapped folds).
  */
 const char* SDeburr::deburrMap(uint32_t codepoint) {
-    switch (codepoint) {
-        // ASCII letters pass-through; caller lowercases
-        case 'A': case 'a': case 'B': case 'b': case 'C': case 'c': case 'D': case 'd':
-        case 'E': case 'e': case 'F': case 'f': case 'G': case 'g': case 'H': case 'h':
-        case 'I': case 'i': case 'J': case 'j': case 'K': case 'k': case 'L': case 'l':
-        case 'M': case 'm': case 'N': case 'n': case 'O': case 'o': case 'P': case 'p':
-        case 'Q': case 'q': case 'R': case 'r': case 'S': case 's': case 'T': case 't':
-        case 'U': case 'u': case 'V': case 'v': case 'W': case 'w': case 'X': case 'x':
-        case 'Y': case 'y': case 'Z': case 'z':
-            return nullptr;
-
-        // Latin-1 Supplement (hex values are Unicode code points)
-        case 0x00C0: case 0x00C1: case 0x00C2: case 0x00C3: case 0x00C4: case 0x00C5: return "A"; // ÀÁÂÃÄÅ
-        case 0x00E0: case 0x00E1: case 0x00E2: case 0x00E3: case 0x00E4: case 0x00E5: return "a"; // àáâãäå
-        case 0x00C7: return "C"; // Ç
-        case 0x00E7: return "c"; // ç
-        case 0x00C8: case 0x00C9: case 0x00CA: case 0x00CB: return "E"; // ÈÉÊË
-        case 0x00E8: case 0x00E9: case 0x00EA: case 0x00EB: return "e"; // èéêë
-        case 0x00CC: case 0x00CD: case 0x00CE: case 0x00CF: return "I"; // ÌÍÎÏ
-        case 0x00EC: case 0x00ED: case 0x00EE: case 0x00EF: return "i"; // ìíîï
-        case 0x00D1: return "N"; // Ñ
-        case 0x00F1: return "n"; // ñ
-        case 0x00D2: case 0x00D3: case 0x00D4: case 0x00D5: case 0x00D6: case 0x00D8: return "O"; // ÒÓÔÕÖØ
-        case 0x00F2: case 0x00F3: case 0x00F4: case 0x00F5: case 0x00F6: case 0x00F8: return "o"; // òóôõöø
-        case 0x00D9: case 0x00DA: case 0x00DB: case 0x00DC: return "U"; // ÙÚÛÜ
-        case 0x00F9: case 0x00FA: case 0x00FB: case 0x00FC: return "u"; // ùúûü
-        case 0x00DD: return "Y"; // Ý
-        case 0x00FD: case 0x00FF: return "y"; // ýÿ
-        case 0x00DF: return "ss"; // ß → ss (lodash)
-        case 0x00C6: return "AE"; // Æ → AE
-        case 0x00E6: return "ae"; // æ → ae
-        case 0x0152: return "OE"; // Œ → OE
-        case 0x0153: return "oe"; // œ → oe
-
-        // Latin Extended-A (subset)
-        case 0x0100: case 0x0102: case 0x0104: return "A"; // ĀĂĄ
-        case 0x0101: case 0x0103: case 0x0105: return "a"; // āăą
-        case 0x0106: case 0x0108: case 0x010A: case 0x010C: return "C"; // ĆĈĊČ
-        case 0x0107: case 0x0109: case 0x010B: case 0x010D: return "c"; // ćĉċč
-        case 0x010E: return "D"; // Ď
-        case 0x010F: return "d"; // ď
-        case 0x0112: case 0x0114: case 0x0116: case 0x0118: case 0x011A: return "E"; // ĒĔĖĘĚ
-        case 0x0113: case 0x0115: case 0x0117: case 0x0119: case 0x011B: return "e"; // ēĕėęě
-        case 0x0128: case 0x012A: case 0x012C: case 0x012E: return "I"; // ĨĪĬĮ
-        case 0x0129: case 0x012B: case 0x012D: case 0x012F: return "i"; // ĩīĭį
-        case 0x0130: return "I"; // İ
-        case 0x0131: return "i"; // ı
-        case 0x0143: case 0x0147: return "N"; // ŃŇ
-        case 0x0144: case 0x0148: return "n"; // ńň
-        case 0x014C: case 0x014E: case 0x0150: return "O"; // ŌŎŐ
-        case 0x014D: case 0x014F: case 0x0151: return "o"; // ōŏő
-        case 0x0168: case 0x016A: case 0x016C: case 0x016E: case 0x0170: return "U"; // ŨŪŬŮŰ
-        case 0x0169: case 0x016B: case 0x016D: case 0x016F: case 0x0171: return "u"; // ũūŭůű
-        case 0x0178: return "Y"; // Ÿ (maps to Y in lodash)
-        case 0x0141: return "L"; // Ł
-        case 0x0142: return "l"; // ł
-        case 0x015A: return "S"; // Ś
-        case 0x015B: return "s"; // ś
-        case 0x0179: return "Z"; // Ź
-        case 0x017A: return "z"; // ź
-        case 0x017B: return "Z"; // Ż
-        case 0x017C: return "z"; // ż
-        case 0x00DE: return "TH"; // Þ
-        case 0x00FE: return "th"; // þ
-        case 0x00D0: return "D"; // Ð
-        case 0x00F0: return "d"; // ð
-        case 0x1E9E: return "SS"; // ẞ (capital sharp s)
-
-        default:
-            // Combining marks U+0300–U+036F (hex literal range): drop them and keep the base char
-            if (codepoint >= 0x0300 && codepoint <= 0x036F) {
-                return "";
-            }
-            return nullptr;
+    // Combining marks U+0300–U+036F: drop them
+    if (codepoint >= 0x0300 && codepoint <= 0x036F) {
+        return "";
     }
+
+    // Fast reject ASCII letters (handled by caller's ASCII fast-path anyway)
+    if ((codepoint >= 'A' && codepoint <= 'Z') || (codepoint >= 'a' && codepoint <= 'z')) {
+        return nullptr;
+    }
+
+    /**
+     * Compile-time lookup tables for fast O(1) character mapping.
+     *
+     * Instead of switch/case or hash maps, we use two small fixed arrays:
+     * - latin1[]: Maps Latin-1 Supplement range (U+00C0–U+00FF) to ASCII replacements
+     * - extA[]:   Maps Latin Extended-A range (U+0100–U+017F) to ASCII replacements
+     *
+     * Array indices are calculated by subtracting the range base (e.g., codepoint - 0xC0).
+     * nullptr entries indicate no mapping exists for that codepoint.
+     *
+     * The constexpr constructor builds these tables at compile time, so there's
+     * zero runtime initialization cost - the lookup data is baked into the binary.
+     */
+    struct Tables {
+        const char* latin1[0x100 - 0xC0]; // 0xC0..0xFF (64 entries)
+        const char* extA[0x180 - 0x100];  // 0x100..0x17F (128 entries)
+        constexpr Tables() : latin1{nullptr}, extA{nullptr} {
+            // Latin-1 Supplement mappings
+            latin1[0x00C0 - 0x00C0] = "A"; latin1[0x00C1 - 0x00C0] = "A"; latin1[0x00C2 - 0x00C0] = "A"; latin1[0x00C3 - 0x00C0] = "A"; latin1[0x00C4 - 0x00C0] = "A"; latin1[0x00C5 - 0x00C0] = "A";
+            latin1[0x00E0 - 0x00C0] = "a"; latin1[0x00E1 - 0x00C0] = "a"; latin1[0x00E2 - 0x00C0] = "a"; latin1[0x00E3 - 0x00C0] = "a"; latin1[0x00E4 - 0x00C0] = "a"; latin1[0x00E5 - 0x00C0] = "a";
+            latin1[0x00C7 - 0x00C0] = "C"; latin1[0x00E7 - 0x00C0] = "c";
+            latin1[0x00C8 - 0x00C0] = "E"; latin1[0x00C9 - 0x00C0] = "E"; latin1[0x00CA - 0x00C0] = "E"; latin1[0x00CB - 0x00C0] = "E";
+            latin1[0x00E8 - 0x00C0] = "e"; latin1[0x00E9 - 0x00C0] = "e"; latin1[0x00EA - 0x00C0] = "e"; latin1[0x00EB - 0x00C0] = "e";
+            latin1[0x00CC - 0x00C0] = "I"; latin1[0x00CD - 0x00C0] = "I"; latin1[0x00CE - 0x00C0] = "I"; latin1[0x00CF - 0x00C0] = "I";
+            latin1[0x00EC - 0x00C0] = "i"; latin1[0x00ED - 0x00C0] = "i"; latin1[0x00EE - 0x00C0] = "i"; latin1[0x00EF - 0x00C0] = "i";
+            latin1[0x00D1 - 0x00C0] = "N"; latin1[0x00F1 - 0x00C0] = "n";
+            latin1[0x00D2 - 0x00C0] = "O"; latin1[0x00D3 - 0x00C0] = "O"; latin1[0x00D4 - 0x00C0] = "O"; latin1[0x00D5 - 0x00C0] = "O"; latin1[0x00D6 - 0x00C0] = "O"; latin1[0x00D8 - 0x00C0] = "O";
+            latin1[0x00F2 - 0x00C0] = "o"; latin1[0x00F3 - 0x00C0] = "o"; latin1[0x00F4 - 0x00C0] = "o"; latin1[0x00F5 - 0x00C0] = "o"; latin1[0x00F6 - 0x00C0] = "o"; latin1[0x00F8 - 0x00C0] = "o";
+            latin1[0x00D9 - 0x00C0] = "U"; latin1[0x00DA - 0x00C0] = "U"; latin1[0x00DB - 0x00C0] = "U"; latin1[0x00DC - 0x00C0] = "U";
+            latin1[0x00F9 - 0x00C0] = "u"; latin1[0x00FA - 0x00C0] = "u"; latin1[0x00FB - 0x00C0] = "u"; latin1[0x00FC - 0x00C0] = "u";
+            latin1[0x00DD - 0x00C0] = "Y"; latin1[0x00FD - 0x00C0] = "y"; latin1[0x00FF - 0x00C0] = "y";
+            latin1[0x00DF - 0x00C0] = "ss"; latin1[0x00C6 - 0x00C0] = "AE"; latin1[0x00E6 - 0x00C0] = "ae";
+            latin1[0x00DE - 0x00C0] = "TH"; latin1[0x00FE - 0x00C0] = "th"; latin1[0x00D0 - 0x00C0] = "D"; latin1[0x00F0 - 0x00C0] = "d";
+
+            // Latin Extended-A mappings (0x0100..0x017F)
+            extA[0x0100 - 0x0100] = "A"; extA[0x0102 - 0x0100] = "A"; extA[0x0104 - 0x0100] = "A";
+            extA[0x0101 - 0x0100] = "a"; extA[0x0103 - 0x0100] = "a"; extA[0x0105 - 0x0100] = "a";
+            extA[0x0106 - 0x0100] = "C"; extA[0x0108 - 0x0100] = "C"; extA[0x010A - 0x0100] = "C"; extA[0x010C - 0x0100] = "C";
+            extA[0x0107 - 0x0100] = "c"; extA[0x0109 - 0x0100] = "c"; extA[0x010B - 0x0100] = "c"; extA[0x010D - 0x0100] = "c";
+            extA[0x010E - 0x0100] = "D"; extA[0x010F - 0x0100] = "d";
+            extA[0x0112 - 0x0100] = "E"; extA[0x0114 - 0x0100] = "E"; extA[0x0116 - 0x0100] = "E"; extA[0x0118 - 0x0100] = "E"; extA[0x011A - 0x0100] = "E";
+            extA[0x0113 - 0x0100] = "e"; extA[0x0115 - 0x0100] = "e"; extA[0x0117 - 0x0100] = "e"; extA[0x0119 - 0x0100] = "e"; extA[0x011B - 0x0100] = "e";
+            extA[0x0128 - 0x0100] = "I"; extA[0x012A - 0x0100] = "I"; extA[0x012C - 0x0100] = "I"; extA[0x012E - 0x0100] = "I";
+            extA[0x0129 - 0x0100] = "i"; extA[0x012B - 0x0100] = "i"; extA[0x012D - 0x0100] = "i"; extA[0x012F - 0x0100] = "i";
+            extA[0x0130 - 0x0100] = "I"; extA[0x0131 - 0x0100] = "i";
+            extA[0x0143 - 0x0100] = "N"; extA[0x0147 - 0x0100] = "N"; extA[0x0144 - 0x0100] = "n"; extA[0x0148 - 0x0100] = "n";
+            extA[0x014C - 0x0100] = "O"; extA[0x014E - 0x0100] = "O"; extA[0x0150 - 0x0100] = "O";
+            extA[0x014D - 0x0100] = "o"; extA[0x014F - 0x0100] = "o"; extA[0x0151 - 0x0100] = "o";
+            extA[0x0168 - 0x0100] = "U"; extA[0x016A - 0x0100] = "U"; extA[0x016C - 0x0100] = "U"; extA[0x016E - 0x0100] = "U"; extA[0x0170 - 0x0100] = "U";
+            extA[0x0169 - 0x0100] = "u"; extA[0x016B - 0x0100] = "u"; extA[0x016D - 0x0100] = "u"; extA[0x016F - 0x0100] = "u"; extA[0x0171 - 0x0100] = "u";
+            extA[0x0178 - 0x0100] = "Y";
+            extA[0x0141 - 0x0100] = "L"; extA[0x0142 - 0x0100] = "l";
+            extA[0x015A - 0x0100] = "S"; extA[0x015B - 0x0100] = "s";
+            extA[0x0179 - 0x0100] = "Z"; extA[0x017A - 0x0100] = "z"; extA[0x017B - 0x0100] = "Z"; extA[0x017C - 0x0100] = "z";
+            extA[0x0152 - 0x0100] = "OE"; extA[0x0153 - 0x0100] = "oe";
+        }
+    };
+
+    static constexpr Tables tables;
+
+    if (codepoint >= 0x00C0 && codepoint <= 0x00FF) {
+        const char* v = tables.latin1[codepoint - 0x00C0];
+        return v ? v : nullptr;
+    }
+    if (codepoint >= 0x0100 && codepoint <= 0x017F) {
+        const char* v = tables.extA[codepoint - 0x0100];
+        return v ? v : nullptr;
+    }
+    if (codepoint == 0x1E9E) {
+        return "SS"; // ẞ
+    }
+    return nullptr;
 }
 
 /**
