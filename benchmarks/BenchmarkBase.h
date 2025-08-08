@@ -3,8 +3,18 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <map>
 #include <libstuff/libstuff.h>
 #include <test/lib/tpunit++.hpp>
+
+// Global storage for benchmark results
+struct BenchmarkResult {
+    double throughputMBps;
+    uint64_t elapsedUs;
+    size_t totalBytes;
+};
+
+extern std::map<std::string, BenchmarkResult> g_benchmarkResults;
 
 /**
  * Simple micro-framework for writing performance benchmarks.
@@ -83,6 +93,10 @@ protected:
         const double seconds = static_cast<double>(elapsedUs) / 1'000'000.0;
         const double mbProcessed = static_cast<double>(totalBytes) / (1024.0 * 1024.0);
         const double mbps = seconds > 0.0 ? (mbProcessed / seconds) : 0.0;
+
+        // Store result for comparison
+        std::string fullName = testName + "::" + name;
+        g_benchmarkResults[fullName] = {mbps, elapsedUs, totalBytes};
 
         std::cout << "[" << testName << "] " << name
                   << ": inputs=" << inputs.size()
