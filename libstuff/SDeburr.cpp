@@ -162,13 +162,16 @@ string SDeburr::deburr(const string& input) {
          *
          * To get the codepoint (the single number representing the character), we take all the bits from the sequence that aren't "signaling" other information and concat them together.
          *
-         *   1. Remove the prefix bits (110) from the first byte. That gives us 00011
-         *   2. Remove the prefix bits (10) from the second byte. That gives us 110001
+         *   1. Remove the prefix bits (110) from the first byte. That gives us 00011.
+         *   2. Remove the prefix bits (10) from the second byte. That gives us 110001.
          *   3. Concat these together, and the codepoint for ñ is 00011110001 (which, sure enough, is the binary representation of U+00F1).
          */
         size_t start = i;
 
         // Extract data bits from leading byte
+        // The number of prefix bits is 7 - numLeadingOnes, because the leading ones signaling the length of the sequence are always terminated by a 0.
+        // For example, two leading ones for a 2-byte sequence results in a prefix of 110 in the first byte of the sequence.
+        // Three leading ones for a 3-byte sequence results in a prefix of 1110.
         uint32_t codepoint = input_bytes[i] & ((1 << (7 - numLeadingOnes)) - 1);
         i++;
 
@@ -182,7 +185,7 @@ string SDeburr::deburr(const string& input) {
             // Shift the existing codepoint over 6 positions to make room for the new bits
             codepoint <<= 6;
 
-            // Extract lower 6 bits from continuation
+            // Extract lower 6 bits from continuation and concat them to the existing codepoint
             codepoint = codepoint | (input_bytes[i] & 0b00111111);
             i++;
         }
