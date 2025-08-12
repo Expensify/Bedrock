@@ -15,21 +15,9 @@ using namespace std;
  * Examples:
  * - é → "e", Å → "A", ñ → "n" (removes accents)
  * - ß → "ss", Æ → "AE" (special cases)
- * - Regular letters like "a" or "Z" → returns nullptr (keep as-is)
- * - Accent marks by themselves → returns "" (delete them)
  * - Unknown characters → returns nullptr (keep as-is)
  */
 const char* SDeburr::deburrMap(uint32_t codepoint) {
-    // Accent marks by themselves (like ´ ` ^) → delete them
-    if (codepoint >= 0x0300 && codepoint <= 0x036F) {
-        return "";
-    }
-
-    // Regular ASCII letters (a-z, A-Z) → keep as-is
-    if ((codepoint >= 'A' && codepoint <= 'Z') || (codepoint >= 'a' && codepoint <= 'z')) {
-        return nullptr;
-    }
-
     /**
      * Fast lookup tables for converting accented characters.
      *
@@ -188,6 +176,11 @@ string SDeburr::deburr(const string& input) {
             // Extract lower 6 bits from continuation and concat them to the existing codepoint
             codepoint = codepoint | (input_bytes[i] & 0b00111111);
             i++;
+        }
+
+        // Accent marks by themselves (like ´ ` ^) → skip them
+        if (codepoint >= 0x0300 && codepoint <= 0x036F) {
+            continue;
         }
 
         // Map the codepoint through deburrMap
