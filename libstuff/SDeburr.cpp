@@ -150,20 +150,39 @@ string SDeburr::deburr(const string& input) {
             continue;
         }
 
-        // This is a valid 2, 3, or 4 byte UTF-8 sequence, decode the full character
+        /*
+         * This is a valid 2, 3, or 4 byte UTF-8 sequence, so next we'll decode the full character.
+         *
+         * The way this works is best explained by example.
+         *
+         * The hex codepoint for ñ is U+00F1, which is represented in UTF-8 as a 2-byte sequence: 11000011 10110001
+         *
+         *   - The first byte has 2 leading ones, which tells us it's a 2-byte sequence.
+         *   - The next byte has 1 leading one, which tells us it's a continuation byte (a trailing part of a multi-byte sequence).
+         *
+         * To get the codepoint (the single number representing the character), we take all the bits from the sequence that aren't "signaling" other information and concat them together.
+         *
+         *   1. Remove the prefix bits (110) from the first byte. That gives us 00011
+         *   2. Remove the prefix bits (10) from the second byte. That gives us 110001
+         *   3. Concat these together, and the codepoint for ñ is 00011110001 (which, sure enough, is the binary representation of U+00F1).
+         */
         size_t start = i;
 
         // Extract data bits from leading byte
         uint32_t codepoint = input_bytes[i] & ((1 << (7 - numLeadingOnes)) - 1);
         i++;
 
-        // Process continuation bytes
+        // Process continuation bytes. 
         for (int j = 1; j < numLeadingOnes; j++) {
             if (countl_one(input_bytes[i]) != 1) {
                 // Invalid continuation byte, stop processing this sequence
                 break;
             }
-            codepoint = (codepoint << 6) | (input_bytes[i] & 0x3F); // Extract lower 6 bits from continuation
+            codepoint = 
+                // Shift the existing codepoint over 6 positions to make room for the new bits
+                (codepoint << 6)
+                // Extract lower 6 bits from continuation
+                | (input_bytes[i] & 0b00111111);
             i++;
         }
 
