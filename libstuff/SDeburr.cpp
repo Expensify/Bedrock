@@ -178,11 +178,12 @@ string SDeburr::deburr(const string& input) {
                 // Invalid continuation byte, stop processing this sequence
                 break;
             }
-            codepoint = 
-                // Shift the existing codepoint over 6 positions to make room for the new bits
-                (codepoint << 6)
-                // Extract lower 6 bits from continuation
-                | (input_bytes[i] & 0b00111111);
+
+            // Shift the existing codepoint over 6 positions to make room for the new bits
+            codepoint <<= 6;
+
+            // Extract lower 6 bits from continuation
+            codepoint = codepoint | (input_bytes[i] & 0b00111111);
             i++;
         }
 
