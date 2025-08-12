@@ -10,93 +10,6 @@
 using namespace std;
 
 /**
- * Reads one Unicode character from a UTF-8 encoded string and advances the position.
- *
- * UTF-8 is a variable-length encoding where each Unicode character can take 1-4 bytes:
- * - 1 byte:  U+0000 to U+007F   (ASCII: a, b, c, 1, 2, 3, etc.)
- * - 2 bytes: U+0080 to U+07FF   (Latin, Greek, Cyrillic: é, ñ, α, ß, etc.)
- * - 3 bytes: U+0800 to U+FFFF   (Most other scripts: 中, €, ♥, etc.)
- * - 4 bytes: U+10000 to U+10FFFF (Emoji, rare symbols: 😀, 𝕏, etc.)
- *
- * HOW UTF-8 ENCODING WORKS:
- * Each byte in UTF-8 has a specific bit pattern that tells us what it represents:
- *
- * 1-byte (ASCII):     0xxxxxxx        (values 0x00-0x7F)
- * 2-byte start:       110xxxxx        (values 0xC0-0xDF)
- * 3-byte start:       1110xxxx        (values 0xE0-0xEF)  
- * 4-byte start:       11110xxx        (values 0xF0-0xF7)
- * Continuation byte:  10xxxxxx        (values 0x80-0xBF)
- *
- * The 'x' bits contain the actual Unicode codepoint data.
- *
- * EXAMPLE: The character 'é' (U+00E9) is encoded as 2 bytes: 0xC3 0xA9
- * - First byte:  11000011 (0xC3) → tells us "this is a 2-byte sequence"
- * - Second byte: 10101001 (0xA9) → tells us "this is a continuation byte"
- * - Data bits:   00011 101001 → combine to get 11101001 = 0xE9 = 233 = 'é'
- *
- * This function uses bitwise AND operations to check the bit patterns:
- * - (byte & 0x80) == 0x00 → starts with 0, so it's ASCII
- * - (byte & 0xE0) == 0xC0 → starts with 110, so it's a 2-byte sequence  
- * - (byte & 0xF0) == 0xE0 → starts with 1110, so it's a 3-byte sequence
- * - (byte & 0xF8) == 0xF0 → starts with 11110, so it's a 4-byte sequence
- *
- * If we encounter malformed UTF-8 (which shouldn't happen in normal text),
- * we just return what we can and continue, rather than crashing.
- */
-uint32_t SDeburr::decodeUTF8Codepoint(const unsigned char* bytes, size_t length, size_t& index) {
-    // Safety check: make sure we're not reading past the end
-    if (index >= length) {
-        return 0;
-    }
-
-    // Read the first byte and advance our position
-    uint32_t current = bytes[index++];
-
-    // Determine how many bytes this UTF-8 sequence uses
-    // - 0 leading 1s (0xxxxxxx): 1-byte ASCII character
-    // - 2 leading 1s (110xxxxx): 2-byte character  
-    // - 3 leading 1s (1110xxxx): 3-byte character
-    // - 4 leading 1s (11110xxx): 4-byte character
-    // - 1 leading 1 (10xxxxxx): continuation byte (invalid as first byte)
-    int leadingOnes = countl_one(static_cast<uint8_t>(current));
-
-    // Handle ASCII (0 leading 1s)
-    if (leadingOnes == 0) {
-        return current;
-    }
-
-    // Handle invalid cases (1 leading 1, or more than 4 leading 1s)
-    if (leadingOnes == 1 || leadingOnes > 4) {
-        return current;  // Return malformed byte as-is
-    }
-
-    // Now we know we have a 2, 3, or 4-byte sequence
-    // Check if we have enough bytes remaining
-    if (index + leadingOnes - 2 >= length) {
-        return current;  // Malformed: not enough bytes
-    }
-
-    // Extract the data bits from the first byte
-    // The mask removes the leading 1s and the following 0
-    uint32_t codepoint = current & ((1 << (7 - leadingOnes)) - 1);
-
-    // Process continuation bytes
-    for (int i = 1; i < leadingOnes; ++i) {
-        uint32_t byte = bytes[index++];
-
-        // Verify it's a valid continuation byte (10xxxxxx pattern)
-        if ((byte & 0xC0) != 0x80) {
-            return current;  // Malformed: return the first byte
-        }
-
-        // Shift previous bits left 6 positions and add the new 6 data bits
-        codepoint = (codepoint << 6) | (byte & 0x3F);
-    }
-
-    return codepoint;
-}
-
-/**
  * Converts special characters to ASCII equivalents.
  *
  * Examples:
@@ -210,20 +123,57 @@ string SDeburr::deburr(const string& input) {
     result.reserve(len);
     size_t i = 0;
     while (i < len) {
+        // Count the leading ones in the current byte
+        // 0 leading ones -> ASCII character
+        // 1 leading one -> continuation byte
+        // 2-4 leading ones -> 2, 3, or 4-byte sequence
+        // 5+ leading ones -> invalid UTF-8
+        const int numLeadingOnes = countl_one(input_bytes[i]);
+
         // Speed optimization: copy regular ASCII text in chunks
-        if (input_bytes[i] < 0x80) {
+        if (numLeadingOnes == 0) {
             size_t asciiStart = i++;
-            while (i < len && input_bytes[i] < 0x80) {
-                ++i;
+            while (i < len && countl_one(input_bytes[i]) == 0) {
+                i++;
             }
             result.append(reinterpret_cast<const char*>(input_bytes + asciiStart), i - asciiStart);
             continue;
         }
 
-        // Handle special characters (accented letters, etc.)
+        // For non-ASCII bytes, check if it's a UTF-8 continuation byte (or invalid UTF-8)
+        if (numLeadingOnes == 1 || numLeadingOnes > 4) {
+            // This is a continuation byte (10xxxxxx), skip it
+            i++;
+            continue;
+        }
+
+        // This is a valid 2, 3, or 4 byte UTF-8 sequence, decode the full character
         size_t start = i;
-        uint32_t cp = decodeUTF8Codepoint(input_bytes, len, i);
-        const char* mapped = deburrMap(cp);
+        uint32_t codepoint = input_bytes[i];
+
+        // Check if we have enough bytes
+        if (i + numLeadingOnes > len) {
+            // Not enough bytes, treat as malformed
+            i++;
+        } else {
+            // Extract data bits from leading byte
+            codepoint = input_bytes[i] & ((1 << (7 - numLeadingOnes)) - 1);
+            i++;
+
+            // Process continuation bytes
+            for (int j = 1; j < numLeadingOnes && i < len; j++) {
+                unsigned char byte = input_bytes[i];
+                if (countl_one(byte) != 1) {
+                    // Invalid continuation byte, stop processing this sequence
+                    break;
+                }
+                codepoint = (codepoint << 6) | (byte & 0x3F);
+                i++;
+            }
+        }
+
+        // Map the codepoint through deburrMap
+        const char* mapped = deburrMap(codepoint);
         if (mapped == nullptr) {
             // No conversion needed, keep the original character
             result.append(reinterpret_cast<const char*>(input_bytes + start), i - start);
