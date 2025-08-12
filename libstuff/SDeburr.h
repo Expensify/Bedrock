@@ -9,6 +9,8 @@ struct sqlite3;
 struct sqlite3_context;
 struct sqlite3_value;
 
+using namespace std;
+
 class SDeburr {
 public:
     /**
@@ -22,7 +24,7 @@ public:
      * Mirrors lodash's deburr behavior for search normalization and comparisons
      * where diacritics should not affect matching.
      */
-    static std::string deburr(const std::string& input);
+    static string deburr(const string& input);
 
     /**
      * Register the SQLite UDF `DEBURR(text)` on the provided database handle.
