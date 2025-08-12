@@ -6,7 +6,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/sqlite3.h>
 
-using std::string;
+using namespace std;
 
 /**
  * Reads one Unicode character from a UTF-8 encoded string and advances the position.
@@ -250,7 +250,7 @@ const char* SDeburr::deburrMap(uint32_t codepoint) {
  *
  * Examples: "café" → "cafe", "naïve" → "naive", "Zürich" → "Zurich"
  */
-std::string SDeburr::deburr(const std::string& input) {
+string SDeburr::deburr(const string& input) {
     const unsigned char* in = reinterpret_cast<const unsigned char*>(input.c_str());
     const size_t len = input.size();
     string result;
