@@ -140,36 +140,31 @@ string SDeburr::deburr(const string& input) {
             continue;
         }
 
-        // For non-ASCII bytes, check if it's a UTF-8 continuation byte (or invalid UTF-8)
-        if (numLeadingOnes == 1 || numLeadingOnes > 4) {
-            // This is a continuation byte (10xxxxxx), skip it
+        // Check for invalid UTF-8. If invalid, skip the current byte and continue.
+        // Cases we check for:
+        // - A continuation byte (1 leading one). This should be handled only as part of a multi-byte sequence.
+        // - More than 4 leading ones
+        // - Not enough bytes to form a valid sequence
+        if (numLeadingOnes == 1 || numLeadingOnes > 4 || (i + numLeadingOnes) > len) {
             i++;
             continue;
         }
 
         // This is a valid 2, 3, or 4 byte UTF-8 sequence, decode the full character
         size_t start = i;
-        uint32_t codepoint = input_bytes[i];
 
-        // Check if we have enough bytes
-        if (i + numLeadingOnes > len) {
-            // Not enough bytes, treat as malformed
-            i++;
-        } else {
-            // Extract data bits from leading byte
-            codepoint = input_bytes[i] & ((1 << (7 - numLeadingOnes)) - 1);
-            i++;
+        // Extract data bits from leading byte
+        uint32_t codepoint = input_bytes[i] & ((1 << (7 - numLeadingOnes)) - 1);
+        i++;
 
-            // Process continuation bytes
-            for (int j = 1; j < numLeadingOnes && i < len; j++) {
-                unsigned char byte = input_bytes[i];
-                if (countl_one(byte) != 1) {
-                    // Invalid continuation byte, stop processing this sequence
-                    break;
-                }
-                codepoint = (codepoint << 6) | (byte & 0x3F);
-                i++;
+        // Process continuation bytes
+        for (int j = 1; j < numLeadingOnes; j++) {
+            if (countl_one(input_bytes[i]) != 1) {
+                // Invalid continuation byte, stop processing this sequence
+                break;
             }
+            codepoint = (codepoint << 6) | (input_bytes[i] & 0x3F); // Extract lower 6 bits from continuation
+            i++;
         }
 
         // Map the codepoint through deburrMap
