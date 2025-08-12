@@ -251,29 +251,29 @@ const char* SDeburr::deburrMap(uint32_t codepoint) {
  * Examples: "café" → "cafe", "naïve" → "naive", "Zürich" → "Zurich"
  */
 string SDeburr::deburr(const string& input) {
-    const unsigned char* in = reinterpret_cast<const unsigned char*>(input.c_str());
+    const unsigned char* input_bytes = reinterpret_cast<const unsigned char*>(input.c_str());
     const size_t len = input.size();
     string result;
     result.reserve(len);
     size_t i = 0;
     while (i < len) {
         // Speed optimization: copy regular ASCII text in chunks
-        if (in[i] < 0x80) {
+        if (input_bytes[i] < 0x80) {
             size_t asciiStart = i++;
-            while (i < len && in[i] < 0x80) {
+            while (i < len && input_bytes[i] < 0x80) {
                 ++i;
             }
-            result.append(reinterpret_cast<const char*>(in + asciiStart), i - asciiStart);
+            result.append(reinterpret_cast<const char*>(input_bytes + asciiStart), i - asciiStart);
             continue;
         }
 
         // Handle special characters (accented letters, etc.)
         size_t start = i;
-        uint32_t cp = decodeUTF8Codepoint(in, len, i);
+        uint32_t cp = decodeUTF8Codepoint(input_bytes, len, i);
         const char* mapped = deburrMap(cp);
         if (mapped == nullptr) {
             // No conversion needed, keep the original character
-            result.append(reinterpret_cast<const char*>(in + start), i - start);
+            result.append(reinterpret_cast<const char*>(input_bytes + start), i - start);
         } else if (*mapped) {
             // Replace with ASCII equivalent (é→e, ß→ss, etc.)
             result.append(mapped);
