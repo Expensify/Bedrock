@@ -1,5 +1,6 @@
 #include "SDeburr.h"
 
+#include <bit>
 #include <cstring>
 #include <string>
 
@@ -51,96 +52,48 @@ uint32_t SDeburr::decodeUTF8Codepoint(const unsigned char* bytes, size_t length,
     // Read the first byte and advance our position
     uint32_t current = bytes[index++];
 
-    // Check if it's a simple ASCII character (0xxxxxxx pattern)
-    if (current < 0x80) {
-        // ASCII characters (a-z, A-Z, 0-9, punctuation, etc.) are stored as-is
-        // No further processing needed, just return the byte value
+    // Determine how many bytes this UTF-8 sequence uses
+    // - 0 leading 1s (0xxxxxxx): 1-byte ASCII character
+    // - 2 leading 1s (110xxxxx): 2-byte character  
+    // - 3 leading 1s (1110xxxx): 3-byte character
+    // - 4 leading 1s (11110xxx): 4-byte character
+    // - 1 leading 1 (10xxxxxx): continuation byte (invalid as first byte)
+    int leadingOnes = countl_one(static_cast<uint8_t>(current));
+
+    // Handle ASCII (0 leading 1s)
+    if (leadingOnes == 0) {
         return current;
     }
 
-    // 2-byte UTF-8 sequence (110xxxxx 10xxxxxx pattern)
-    // Covers characters U+0080 to U+07FF (like é, ñ, ß, α, etc.)
-    if ((current & 0xE0) == 0xC0) {
-        // Check if we have enough bytes left
-        if (index >= length) {
-            return current;  // Malformed: return what we have
-        }
+    // Handle invalid cases (1 leading 1, or more than 4 leading 1s)
+    if (leadingOnes == 1 || leadingOnes > 4) {
+        return current;  // Return malformed byte as-is
+    }
 
-        // Read the second byte
-        uint32_t c2 = bytes[index++];
+    // Now we know we have a 2, 3, or 4-byte sequence
+    // Check if we have enough bytes remaining
+    if (index + leadingOnes - 2 >= length) {
+        return current;  // Malformed: not enough bytes
+    }
+
+    // Extract the data bits from the first byte
+    // The mask removes the leading 1s and the following 0
+    uint32_t codepoint = current & ((1 << (7 - leadingOnes)) - 1);
+
+    // Process continuation bytes
+    for (int i = 1; i < leadingOnes; ++i) {
+        uint32_t byte = bytes[index++];
 
         // Verify it's a valid continuation byte (10xxxxxx pattern)
-        if ((c2 & 0xC0) != 0x80) {
+        if ((byte & 0xC0) != 0x80) {
             return current;  // Malformed: return the first byte
         }
 
-        // Combine the data bits:
-        // - Take lower 5 bits from first byte (current & 0x1F)
-        // - Shift them left 6 positions to make room
-        // - Take lower 6 bits from second byte (c2 & 0x3F)
-        // - OR them together to get the final codepoint
-        // Example: é = 0xC3 0xA9 → (0x03 << 6) | 0x29 = 0xE9 = 233
-        return ((current & 0x1F) << 6) | (c2 & 0x3F);
+        // Shift previous bits left 6 positions and add the new 6 data bits
+        codepoint = (codepoint << 6) | (byte & 0x3F);
     }
 
-    // 3-byte UTF-8 sequence (1110xxxx 10xxxxxx 10xxxxxx pattern)
-    // Covers characters U+0800 to U+FFFF (like €, ♥, 中, etc.)
-    if ((current & 0xF0) == 0xE0) {
-        // Check if we have enough bytes left (need 2 more)
-        if (index + 1 > length) {
-            return current;  // Malformed: return what we have
-        }
-
-        // Read the second and third bytes
-        uint32_t c2 = bytes[index++];
-        uint32_t c3 = bytes[index++];
-
-        // Verify both are valid continuation bytes (10xxxxxx pattern)
-        if ((c2 & 0xC0) != 0x80 || (c3 & 0xC0) != 0x80) {
-            return current;  // Malformed: return the first byte
-        }
-
-        // Combine the data bits:
-        // - Take lower 4 bits from first byte, shift left 12 positions
-        // - Take lower 6 bits from second byte, shift left 6 positions  
-        // - Take lower 6 bits from third byte
-        // - OR them all together
-        // Total: 4 + 6 + 6 = 16 bits of data
-        return ((current & 0x0F) << 12) | ((c2 & 0x3F) << 6) | (c3 & 0x3F);
-    }
-
-    // 4-byte UTF-8 sequence (11110xxx 10xxxxxx 10xxxxxx 10xxxxxx pattern)
-    // Covers characters U+10000 to U+10FFFF (like emoji 😀, mathematical symbols 𝕏, etc.)
-    if ((current & 0xF8) == 0xF0) {
-        // Check if we have enough bytes left (need 3 more)
-        if (index + 2 > length) {
-            return current;  // Malformed: return what we have
-        }
-
-        // Read the second, third, and fourth bytes
-        uint32_t c2 = bytes[index++];
-        uint32_t c3 = bytes[index++];
-        uint32_t c4 = bytes[index++];
-
-        // Verify all are valid continuation bytes (10xxxxxx pattern)
-        if ((c2 & 0xC0) != 0x80 || (c3 & 0xC0) != 0x80 || (c4 & 0xC0) != 0x80) {
-            return current;  // Malformed: return the first byte
-        }
-
-        // Combine the data bits:
-        // - Take lower 3 bits from first byte, shift left 18 positions
-        // - Take lower 6 bits from second byte, shift left 12 positions
-        // - Take lower 6 bits from third byte, shift left 6 positions
-        // - Take lower 6 bits from fourth byte
-        // - OR them all together
-        // Total: 3 + 6 + 6 + 6 = 21 bits of data
-        return ((current & 0x07) << 18) | ((c2 & 0x3F) << 12) | ((c3 & 0x3F) << 6) | (c4 & 0x3F);
-    }
-
-    // If we get here, the first byte doesn't match any valid UTF-8 pattern
-    // This shouldn't happen with well-formed UTF-8, but we handle it gracefully
-    // by just returning the problematic byte and continuing
-    return current;
+    return codepoint;
 }
 
 /**
