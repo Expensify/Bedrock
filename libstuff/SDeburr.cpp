@@ -35,14 +35,10 @@ string SDeburr::deburr(const string& input) {
         // 5+ leading ones -> invalid UTF-8
         const int numLeadingOnes = countl_one(input_bytes[i]);
 
-        // Speed optimization: copy regular ASCII text in chunks
+        // Most common case: regular ASCII text
         if (numLeadingOnes == 0) {
-            size_t asciiStart = i;
+            result.append(reinterpret_cast<const char*>(input_bytes + i), 1);
             i++;
-            while (i < len && countl_one(input_bytes[i]) == 0) {
-                i++;
-            }
-            result.append(reinterpret_cast<const char*>(input_bytes + asciiStart), i - asciiStart);
             continue;
         }
 
