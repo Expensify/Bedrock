@@ -7,6 +7,8 @@
 #include <libstuff/libstuff.h>
 #include <test/lib/tpunit++.hpp>
 
+using namespace std;
+
 // Global storage for benchmark results
 struct BenchmarkResult {
     double throughputMBps;
@@ -14,7 +16,7 @@ struct BenchmarkResult {
     size_t totalBytes;
 };
 
-extern std::map<std::string, BenchmarkResult> g_benchmarkResults;
+extern map<string, BenchmarkResult> g_benchmarkResults;
 
 /**
  * Simple micro-framework for writing performance benchmarks.
@@ -26,18 +28,18 @@ extern std::map<std::string, BenchmarkResult> g_benchmarkResults;
  * 
  * Example:
  *   void myBenchmark() {
- *       std::vector<std::string> inputs = {"test1", "test2"};
- *       runBench("MyTest", inputs, 10000, [](const std::string& s) {
+ *       vector<string> inputs = {"test1", "test2"};
+ *       runBench("MyTest", inputs, 10000, [](const string& s) {
  *           return s.size(); // Your actual work here
  *       });
  *   }
  */
 class BenchmarkBase {
 public:
-    BenchmarkBase(const std::string& name) : testName(name) {}
+    BenchmarkBase(const string& name) : testName(name) {}
 
 private:
-    std::string testName;
+    string testName;
 
 protected:
     /**
@@ -60,8 +62,8 @@ protected:
      * @return Elapsed time in microseconds
      */
     template<typename InputType, typename Func>
-    uint64_t runBench(const std::string& name, 
-                      const std::vector<InputType>& inputs, 
+    uint64_t runBench(const string& name,
+                      const vector<InputType>& inputs,
                       int iterations, 
                       Func func) {
         setup();
@@ -78,7 +80,7 @@ protected:
         // Actual timing
         const uint64_t start = STimeNow();
         size_t totalBytes = 0;
-        
+
         for (int it = 0; it < iterations; ++it) {
             for (const auto& input : inputs) {
                 auto result = func(input);
@@ -86,7 +88,7 @@ protected:
                 totalBytes += getInputSize(input);
             }
         }
-        
+
         const uint64_t elapsedUs = STimeNow() - start;
 
         // Calculate and print throughput
@@ -95,20 +97,20 @@ protected:
         const double mbps = seconds > 0.0 ? (mbProcessed / seconds) : 0.0;
 
         // Store result for comparison
-        std::string fullName = testName + "::" + name;
+        string fullName = testName + "::" + name;
         g_benchmarkResults[fullName] = {mbps, elapsedUs, totalBytes};
 
-        std::cout << "[" << testName << "] " << name
+        cout << "[" << testName << "] " << name
                   << ": inputs=" << inputs.size()
                   << ", iters=" << iterations
                   << ", bytes=" << totalBytes
                   << ", time_us=" << elapsedUs
                   << ", throughput_MBps=" << mbps
-                  << std::endl;
+                  << endl;
 
         // Ensure the compiler doesn't optimize away our work
         if (guard == 0) {
-            std::cout << "[" << testName << "] guard==0" << std::endl;
+            cout << "[" << testName << "] guard==0" << endl;
         }
 
         teardown();
@@ -121,7 +123,7 @@ private:
      */
     template<typename T>
     size_t getInputSize(const T& input) {
-        if constexpr (std::is_same_v<T, std::string>) {
+        if constexpr (is_same_v<T, string>) {
             return input.size();
         } else {
             return sizeof(T);
