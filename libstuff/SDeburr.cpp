@@ -9,15 +9,7 @@
 
 using namespace std;
 
-/**
- * Converts special characters to ASCII equivalents.
- *
- * Examples:
- * - é → "e", Å → "A", ñ → "n" (removes accents)
- * - ß → "ss" (special case b/c the unicode codepoint is much higher than the others, so isn't included in the table)
- * - Unknown characters → returns nullptr (keep as-is)
- */
-const char* SDeburr::deburrMap(uint32_t codepoint) {
+const char* SDeburr::unicodeToAscii(uint32_t codepoint) {
     if (codepoint >= 0x00C0 && codepoint <= 0x017F) {
         return SDeburr::UNICODE_TO_ASCII_MAP[codepoint - 0x00C0];
     }
@@ -29,18 +21,6 @@ const char* SDeburr::deburrMap(uint32_t codepoint) {
     return nullptr;
 }
 
-/**
- * Remove accents from text to make it easier to search.
- *
- * How it works:
- * 1. Go through each character in the text
- * 2. If it's a regular letter (a-z, A-Z), keep it as-is
- * 3. If it's an accented character (é, ñ, etc.), replace it with the basic version
- * 4. If it's an accent mark by itself, delete it
- * 5. Everything else (numbers, punctuation, emoji) stays the same
- *
- * Examples: "café" → "cafe", "naïve" → "naive", "Zürich" → "Zurich"
- */
 string SDeburr::deburr(const string& input) {
     const unsigned char* input_bytes = reinterpret_cast<const unsigned char*>(input.c_str());
     const size_t len = input.size();
@@ -121,7 +101,7 @@ string SDeburr::deburr(const string& input) {
         }
 
         // Map the codepoint through deburrMap
-        const char* mapped = deburrMap(codepoint);
+        const char* mapped = unicodeToAscii(codepoint);
         if (mapped == nullptr) {
             // No conversion needed, keep the original character
             result.append(reinterpret_cast<const char*>(input_bytes + start), i - start);
@@ -135,14 +115,6 @@ string SDeburr::deburr(const string& input) {
     return result;
 }
 
-/**
- * SQLite UDF: DEBURR(text) → deburred ASCII string.
- *
- * Behavior:
- * - NULL input → NULL
- * - Non-NULL input → deburred ASCII text
- * - Declared deterministic in registerSQLite to enable SQLite optimizations
- */
 void SDeburr::sqliteDeburr(sqlite3_context* ctx, int argc, sqlite3_value** argv) {
     if (argc != 1) {
         sqlite3_result_null(ctx);
