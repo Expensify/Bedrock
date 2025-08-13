@@ -8,14 +8,14 @@ using namespace std;
 
 struct SDeburrBench : tpunit::TestFixture, BenchmarkBase {
     SDeburrBench() : tpunit::TestFixture(
-        "SDeburrBench",
+        "SDeburr",
         TEST(SDeburrBench::benchShortASCII),
         TEST(SDeburrBench::benchLatin1),
         TEST(SDeburrBench::benchMixedLong),
         TEST(SDeburrBench::benchShortASCIIHigh),
         TEST(SDeburrBench::benchLatin1High),
         TEST(SDeburrBench::benchMixedLongHigh)
-    ), BenchmarkBase("SDeburrBench") {}
+    ), BenchmarkBase("SDeburr") {}
 
     void benchShortASCII()
     {
