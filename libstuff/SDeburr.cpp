@@ -37,7 +37,8 @@ string SDeburr::deburr(const string& input) {
 
         // Speed optimization: copy regular ASCII text in chunks
         if (numLeadingOnes == 0) {
-            size_t asciiStart = i++;
+            size_t asciiStart = i;
+            i++;
             while (i < len && countl_one(input_bytes[i]) == 0) {
                 i++;
             }
@@ -76,7 +77,6 @@ string SDeburr::deburr(const string& input) {
         // Extract data bits from leading byte
         // The number of prefix bits is 7 - numLeadingOnes, because the leading ones signaling the length of the sequence are always terminated by a 0.
         // For example, two leading ones for a 2-byte sequence results in a prefix of 110 in the first byte of the sequence.
-        // Three leading ones for a 3-byte sequence results in a prefix of 1110.
         uint32_t codepoint = input_bytes[i] & ((1 << (7 - numLeadingOnes)) - 1);
         i++;
 
@@ -100,7 +100,7 @@ string SDeburr::deburr(const string& input) {
             continue;
         }
 
-        // Map the codepoint through deburrMap
+        // Map the unicode codepoint to ascii
         const char* mapped = unicodeToAscii(codepoint);
         if (mapped == nullptr) {
             // No conversion needed, keep the original character
