@@ -20,7 +20,7 @@ const char* SDeburr::unicodeToAscii(uint32_t codepoint) {
 }
 
 string SDeburr::deburr(const string& input) {
-    const unsigned char* input_bytes = reinterpret_cast<const unsigned char*>(input.c_str());
+    const unsigned char* inputBytes = reinterpret_cast<const unsigned char*>(input.c_str());
     string result;
     result.reserve(input.size());
     size_t i = 0;
@@ -30,11 +30,11 @@ string SDeburr::deburr(const string& input) {
         // 1 leading one -> continuation byte
         // 2-4 leading ones -> 2, 3, or 4-byte sequence
         // 5+ leading ones -> invalid UTF-8
-        const int numLeadingOnes = countl_one(input_bytes[i]);
+        const int numLeadingOnes = countl_one(inputBytes[i]);
 
         // Most common case: regular ASCII text
         if (numLeadingOnes == 0) {
-            result.append(reinterpret_cast<const char*>(input_bytes + i), 1);
+            result.append(1, inputBytes[i]);
             i++;
             continue;
         }
@@ -70,12 +70,12 @@ string SDeburr::deburr(const string& input) {
         // Extract data bits from leading byte
         // The number of prefix bits is 7 - numLeadingOnes, because the leading ones signaling the length of the sequence are always terminated by a 0.
         // For example, two leading ones for a 2-byte sequence results in a prefix of 110 in the first byte of the sequence.
-        uint32_t codepoint = input_bytes[i] & ((1 << (7 - numLeadingOnes)) - 1);
+        uint32_t codepoint = inputBytes[i] & ((1 << (7 - numLeadingOnes)) - 1);
         i++;
 
         // Process continuation bytes. 
         for (int j = 1; j < numLeadingOnes; j++) {
-            if (countl_one(input_bytes[i]) != 1) {
+            if (countl_one(inputBytes[i]) != 1) {
                 // Invalid continuation byte, stop processing this sequence
                 break;
             }
@@ -84,7 +84,7 @@ string SDeburr::deburr(const string& input) {
             codepoint <<= 6;
 
             // Extract lower 6 bits from continuation and concat them to the existing codepoint
-            codepoint = codepoint | (input_bytes[i] & 0b00111111);
+            codepoint = codepoint | (inputBytes[i] & 0b00111111);
             i++;
         }
 
@@ -97,7 +97,7 @@ string SDeburr::deburr(const string& input) {
         const char* mapped = unicodeToAscii(codepoint);
         if (mapped == nullptr) {
             // No conversion needed, keep the original character
-            result.append(reinterpret_cast<const char*>(input_bytes + start), i - start);
+            result.append(reinterpret_cast<const char*>(inputBytes + start), i - start);
         } else if (*mapped) {
             // Replace with ASCII equivalent (é→e, ß→ss, etc.)
             result.append(mapped);
