@@ -21,11 +21,10 @@ const char* SDeburr::unicodeToAscii(uint32_t codepoint) {
 
 string SDeburr::deburr(const string& input) {
     const unsigned char* input_bytes = reinterpret_cast<const unsigned char*>(input.c_str());
-    const size_t len = input.size();
     string result;
-    result.reserve(len);
+    result.reserve(input.size());
     size_t i = 0;
-    while (i < len) {
+    while (i < input.size()) {
         // Count the leading ones in the current byte
         // 0 leading ones -> ASCII character
         // 1 leading one -> continuation byte
@@ -45,7 +44,7 @@ string SDeburr::deburr(const string& input) {
         // - A continuation byte (1 leading one). This should be handled only as part of a multi-byte sequence.
         // - More than 4 leading ones
         // - Not enough bytes to form a valid sequence
-        if (numLeadingOnes == 1 || numLeadingOnes > 4 || (i + numLeadingOnes) > len) {
+        if (numLeadingOnes == 1 || numLeadingOnes > 4 || (i + numLeadingOnes) > input.size()) {
             i++;
             continue;
         }
