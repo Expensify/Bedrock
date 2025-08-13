@@ -4,6 +4,7 @@
 #include <vector>
 #include <iostream>
 #include <map>
+#include <chrono>
 #include <libstuff/libstuff.h>
 #include <test/lib/tpunit++.hpp>
 
@@ -78,8 +79,8 @@ protected:
         }
 
         // Actual timing
-        const uint64_t start = STimeNow();
-        size_t totalBytes = 0;
+        const auto start = chrono::high_resolution_clock::now();
+        size_t totalBytes = 0
 
         for (int it = 0; it < iterations; ++it) {
             for (const auto& input : inputs) {
@@ -89,7 +90,8 @@ protected:
             }
         }
 
-        const uint64_t elapsedUs = STimeNow() - start;
+        const auto end = chrono::high_resolution_clock::now();
+        const uint64_t elapsedUs = chrono::duration_cast<chrono::microseconds>(end - start).count();
 
         // Calculate and print throughput
         const double seconds = static_cast<double>(elapsedUs) / 1'000'000.0;
