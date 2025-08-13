@@ -5,6 +5,7 @@
 #include <iostream>
 #include <map>
 #include <chrono>
+#include <type_traits>
 #include <libstuff/libstuff.h>
 #include <test/lib/tpunit++.hpp>
 
@@ -80,7 +81,7 @@ protected:
 
         // Actual timing
         const auto start = chrono::high_resolution_clock::now();
-        size_t totalBytes = 0
+        size_t totalBytes = 0;
 
         for (int it = 0; it < iterations; ++it) {
             for (const auto& input : inputs) {
@@ -122,13 +123,21 @@ protected:
 private:
     /**
      * Get the size in bytes of different input types.
+     * For strings: returns the actual string content size
+     * For integral types: returns sizeof(T)
+     * For containers and other types: compilation error (needs explicit specialization)
      */
     template<typename T>
     size_t getInputSize(const T& input) {
         if constexpr (is_same_v<T, string>) {
             return input.size();
-        } else {
+        } else if constexpr (is_integral_v<T>) {
             return sizeof(T);
+        } else {
+            static_assert(is_integral_v<T> || is_same_v<T, string>,
+                         "getInputSize requires explicit specialization for this type. "
+                         "For containers, add a specialization that calculates actual content size.");
+            return 0; // Never reached due to static_assert
         }
     }
 };
