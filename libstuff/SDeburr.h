@@ -48,16 +48,6 @@ private:
     static const char* unicodeToAscii(uint32_t codepoint);
 
     /**
-     * SQLite UDF: DEBURR(text) → deburred ASCII string.
-     *
-     * Behavior:
-     * - NULL input → NULL
-     * - Non-NULL input → deburred ASCII text
-     * - Declared deterministic in registerSQLite to enable SQLite optimizations
-     */
-    static void sqliteDeburr(sqlite3_context* ctx, int argc, sqlite3_value** argv);
-
-    /**
      * Fast lookup table for converting accented characters.
      *
      * It's a flat array that works like a dictionary where the character's number is used as an array index,
