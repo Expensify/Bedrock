@@ -14,13 +14,12 @@ using namespace std;
  *
  * Examples:
  * - é → "e", Å → "A", ñ → "n" (removes accents)
- * - ß → "ss", Æ → "AE" (special cases)
+ * - ß → "ss" (special case b/c the unicode codepoint is much higher than the others, so isn't included in the table)
  * - Unknown characters → returns nullptr (keep as-is)
  */
 const char* SDeburr::deburrMap(uint32_t codepoint) {
     if (codepoint >= 0x00C0 && codepoint <= 0x017F) {
-        const char* v = SDeburr::UNICODE_TO_ASCII_MAP[codepoint - 0x00C0];
-        return v ? v : nullptr;
+        return SDeburr::UNICODE_TO_ASCII_MAP[codepoint - 0x00C0];
     }
 
     if (codepoint == 0x1E9E) {
