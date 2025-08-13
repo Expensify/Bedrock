@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <algorithm>
 #include <test/lib/tpunit++.hpp>
+#include <libstuff/libstuff.h>
 #include "BenchmarkBase.h"
 
 using namespace std;
@@ -63,14 +64,14 @@ bool executeCommand(const string& cmd, string* output = nullptr) {
 void printComparison(const map<string, BenchmarkResult>& baseline,
                      const map<string, BenchmarkResult>& current) {
     cout << "\n" << BOLD << "=== Benchmark Comparison Report ===" << RESET << "\n\n";
-    
+
     // Find the longest benchmark name for formatting
     size_t maxNameLen = 0;
     for (const auto& [name, _] : current) {
         maxNameLen = max(maxNameLen, name.length());
     }
     maxNameLen = max(maxNameLen, size_t(20)); // Minimum width
-    
+
     // Print header
     cout << left << setw(maxNameLen + 2) << "Benchmark"
          << right << setw(15) << "Baseline MB/s"
@@ -78,7 +79,7 @@ void printComparison(const map<string, BenchmarkResult>& baseline,
          << setw(12) << "Change %"
          << setw(15) << "Status" << "\n";
     cout << string(maxNameLen + 57, '-') << "\n";
-    
+
     // Compare results
     for (const auto& [name, currentResult] : current) {
         auto it = baseline.find(name);
@@ -93,7 +94,7 @@ void printComparison(const map<string, BenchmarkResult>& baseline,
             const auto& baselineResult = it->second;
             double changePercent = ((currentResult.throughputMBps - baselineResult.throughputMBps) 
                                    / baselineResult.throughputMBps) * 100.0;
-            
+
             // Use colors for significant changes (>5% difference)
             string color = "";
             string status = "";
@@ -106,7 +107,7 @@ void printComparison(const map<string, BenchmarkResult>& baseline,
             } else {
                 status = "≈ UNCHANGED";
             }
-            
+
             cout << left << setw(maxNameLen + 2) << name
                  << right << setw(15) << fixed << setprecision(2) << baselineResult.throughputMBps
                  << setw(15) << currentResult.throughputMBps
@@ -114,7 +115,7 @@ void printComparison(const map<string, BenchmarkResult>& baseline,
                  << noshowpos << setw(15) << status << "\n";
         }
     }
-    
+
     // Check for removed benchmarks
     for (const auto& [name, baselineResult] : baseline) {
         if (current.find(name) == current.end()) {
@@ -125,7 +126,7 @@ void printComparison(const map<string, BenchmarkResult>& baseline,
                  << setw(15) << "❌ REMOVED" << "\n";
         }
     }
-    
+
     cout << "\n";
 }
 
@@ -133,35 +134,42 @@ int main(int argc, char* argv[]) {
     set<string> include;
     set<string> exclude;
     string baselineRef;
-    
-    // Parse arguments
-    for (int i = 1; i < argc; ++i) {
-        string arg = argv[i];
-        if (arg == "--baseline" && i + 1 < argc) {
-            baselineRef = argv[++i];
-        } else if (arg == "-only" && i + 1 < argc) {
-            include.insert(argv[++i]);
-        } else if (arg == "-except" && i + 1 < argc) {
-            exclude.insert(argv[++i]);
-        } else if (arg == "--help" || arg == "-h") {
-            cout << "Usage: " << argv[0] << " [options]\n"
-                 << "Options:\n"
-                 << "  --baseline <ref>  Compare against a git ref (branch, tag, or commit)\n"
-                 << "  -only <test>      Run only specified test\n"
-                 << "  -except <test>    Run all tests except specified\n"
-                 << "  --help            Show this help message\n";
-            return 0;
-        }
+
+    // Parse arguments using SParseCommandLine
+    STable args = SParseCommandLine(argc, argv);
+
+    // Check for help
+    if (args.contains("--help") || args.contains("-h")) {
+        cout << "Usage: " << argv[0] << " [options]\n"
+             << "Options:\n"
+             << "  --baseline <ref>  Compare against a git ref (branch, tag, or commit)\n"
+             << "  -only <test>      Run only specified test\n"
+             << "  -except <test>    Run all tests except specified\n"
+             << "  --help            Show this help message\n";
+        return 0;
     }
-    
+
+    // Extract values from parsed arguments
+    if (args.contains("--baseline")) {
+        baselineRef = args["--baseline"];
+    }
+
+    if (args.contains("-only")) {
+        include.insert(args["-only"]);
+    }
+
+    if (args.contains("-except")) {
+        exclude.insert(args["-except"]);
+    }
+
     if (baselineRef.empty()) {
         // Normal benchmark run
         return runBenchmarks(include, exclude) ? 0 : 1;
     }
-    
+
     // Baseline comparison mode
     cout << BOLD << "Running baseline comparison against: " << baselineRef << RESET << "\n\n";
-    
+
     // Check for uncommitted changes
     string gitStatus;
     if (!executeCommand("git status --porcelain", &gitStatus)) {
@@ -169,7 +177,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     bool hasUncommitted = !gitStatus.empty();
-    
+
     if (hasUncommitted) {
         cout << "Stashing uncommitted changes...\n";
         string stashOutput;
@@ -179,7 +187,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     }
-    
+
     // Get current branch/ref
     string currentRef;
     if (!executeCommand("git rev-parse --abbrev-ref HEAD", &currentRef)) {
@@ -190,7 +198,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     currentRef.erase(currentRef.find_last_not_of("\n\r") + 1); // trim newline
-    
+
     // Checkout baseline and run benchmarks
     cout << "\n" << BOLD << "=== Running baseline benchmarks on " << baselineRef << " ===" << RESET << "\n\n";
     string checkoutOutput;
@@ -202,7 +210,7 @@ int main(int argc, char* argv[]) {
         }
         return 1;
     }
-    
+
     // Rebuild with baseline code
     cout << "Building baseline...\n";
     if (!executeCommand("make bench -j32", nullptr)) {
@@ -213,7 +221,7 @@ int main(int argc, char* argv[]) {
         }
         return 1;
     }
-    
+
     // Run baseline benchmarks
     cout << "\nRunning baseline benchmarks...\n";
     if (!runBenchmarks(include, exclude)) {
@@ -225,7 +233,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     auto baselineResults = g_benchmarkResults;
-    
+
     // Checkout current ref and run benchmarks
     cout << "\n" << BOLD << "=== Running current benchmarks on " << currentRef << " ===" << RESET << "\n\n";
     if (!executeCommand("git checkout " + currentRef, nullptr)) {
@@ -235,20 +243,20 @@ int main(int argc, char* argv[]) {
         }
         return 1;
     }
-    
+
     // Restore stashed changes if any
     if (hasUncommitted) {
         cout << "Restoring stashed changes...\n";
         executeCommand("git stash pop", nullptr);
     }
-    
+
     // Rebuild with current code
     cout << "Building current code...\n";
     if (!executeCommand("make bench -j32", nullptr)) {
         cerr << "Failed to build current code\n";
         return 1;
     }
-    
+
     // Run current benchmarks
     cout << "\nRunning current benchmarks...\n";
     if (!runBenchmarks(include, exclude)) {
@@ -256,10 +264,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     auto currentResults = g_benchmarkResults;
-    
+
     // Print comparison
     printComparison(baselineResults, currentResults);
-    
+
     // Summary statistics
     int improved = 0, regressed = 0, unchanged = 0;
     for (const auto& [name, currentResult] : currentResults) {
@@ -276,7 +284,7 @@ int main(int argc, char* argv[]) {
             }
         }
     }
-    
+
     cout << BOLD << "Summary: " << RESET
               << GREEN << improved << " improved" << RESET << ", "
               << RED << regressed << " regressed" << RESET << ", "
