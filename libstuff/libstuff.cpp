@@ -12,6 +12,7 @@
 #include <cxxabi.h>
 #include <sys/ioctl.h>
 #include <cmath>
+#include <iostream>
 
 #include <thread>
 
@@ -3235,4 +3236,38 @@ double SGetCPUUserTime() {
 
     // Returns the current threads CPU user time in microseconds
     return static_cast<double>(usage.ru_utime.tv_sec) * 1e6 + static_cast<double>(usage.ru_utime.tv_usec);
+}
+
+bool SExecShell(const string& cmd, string* output) {
+    string fullCmd = cmd;
+    if (output) {
+        fullCmd += " 2>&1";  // Capture stderr too when output is requested
+    }
+
+    FILE* pipe = popen(fullCmd.c_str(), "r");
+    if (!pipe) {
+        return false;
+    }
+
+    char buffer[256];
+    string result;
+    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        result += buffer;
+        if (!output) {
+            cout << buffer;  // Stream output in real-time if not capturing
+        }
+    }
+
+    if (output) {
+        *output = result;
+    }
+
+    int status = pclose(pipe);
+    // pclose returns -1 on error, otherwise the exit status
+    if (status == -1) {
+        return false;
+    }
+
+    // On success, WEXITSTATUS should be 0
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
