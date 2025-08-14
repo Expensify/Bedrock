@@ -646,6 +646,9 @@ string SGUnzip(const string& content);
 // Command-line helpers
 STable SParseCommandLine(int argc, char* argv[]);
 
+// Shell command execution
+bool SExecShell(const string& cmd, string* output = nullptr);
+
 // Returns the CPU usage inside the current thread
 double SGetCPUUserTime();
 

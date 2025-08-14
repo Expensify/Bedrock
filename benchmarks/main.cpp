@@ -27,40 +27,6 @@ bool runBenchmarks(const set<string>& include, const set<string>& exclude) {
     return result == 0;
 }
 
-bool executeCommand(const string& cmd, string* output = nullptr) {
-    string fullCmd = cmd;
-    if (output) {
-        fullCmd += " 2>&1";  // Capture stderr too when output is requested
-    }
-
-    FILE* pipe = popen(fullCmd.c_str(), "r");
-    if (!pipe) {
-        return false;
-    }
-
-    char buffer[256];
-    string result;
-    while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-        result += buffer;
-        if (!output) {
-            cout << buffer;  // Stream output in real-time if not capturing
-        }
-    }
-
-    if (output) {
-        *output = result;
-    }
-
-    int status = pclose(pipe);
-    // pclose returns -1 on error, otherwise the exit status
-    if (status == -1) {
-        return false;
-    }
-
-    // On success, WEXITSTATUS should be 0
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-}
-
 void printComparison(const map<string, BenchmarkResult>& baseline,
                      const map<string, BenchmarkResult>& current) {
     cout << "\n" << BOLD << "=== Benchmark Comparison Report ===" << RESET << "\n\n";
@@ -172,7 +138,7 @@ int main(int argc, char* argv[]) {
 
     // Check for uncommitted changes
     string gitStatus;
-    if (!executeCommand("git status --porcelain", &gitStatus)) {
+    if (!SExecShell("git status --porcelain", &gitStatus)) {
         cerr << "Failed to check git status\n";
         return 1;
     }
@@ -181,7 +147,7 @@ int main(int argc, char* argv[]) {
     if (hasUncommitted) {
         cout << "Stashing uncommitted changes...\n";
         string stashOutput;
-        if (!executeCommand("git stash", &stashOutput)) {
+        if (!SExecShell("git stash", &stashOutput)) {
             cerr << "Failed to stash changes\n";
             cerr << "Output: " << stashOutput << "\n";
             return 1;
@@ -190,10 +156,10 @@ int main(int argc, char* argv[]) {
 
     // Get current branch/ref
     string currentRef;
-    if (!executeCommand("git rev-parse --abbrev-ref HEAD", &currentRef)) {
+    if (!SExecShell("git rev-parse --abbrev-ref HEAD", &currentRef)) {
         cerr << "Failed to get current ref\n";
         if (hasUncommitted) {
-            executeCommand("git stash pop", nullptr);
+            SExecShell("git stash pop", nullptr);
         }
         return 1;
     }
@@ -202,22 +168,22 @@ int main(int argc, char* argv[]) {
     // Checkout baseline and run benchmarks
     cout << "\n" << BOLD << "=== Running baseline benchmarks on " << baselineRef << " ===" << RESET << "\n\n";
     string checkoutOutput;
-    if (!executeCommand("git checkout " + baselineRef, &checkoutOutput)) {
+    if (!SExecShell("git checkout " + baselineRef, &checkoutOutput)) {
         cerr << "Failed to checkout baseline ref: " << baselineRef << "\n";
         cerr << "Output: " << checkoutOutput << "\n";
         if (hasUncommitted) {
-            executeCommand("git stash pop", nullptr);
+            SExecShell("git stash pop", nullptr);
         }
         return 1;
     }
 
     // Rebuild with baseline code
     cout << "Building baseline...\n";
-    if (!executeCommand("make bench -j32", nullptr)) {
+    if (!SExecShell("make bench -j32", nullptr)) {
         cerr << "Failed to build baseline\n";
-        executeCommand("git checkout " + currentRef, nullptr);
+        SExecShell("git checkout " + currentRef, nullptr);
         if (hasUncommitted) {
-            executeCommand("git stash pop", nullptr);
+            SExecShell("git stash pop", nullptr);
         }
         return 1;
     }
@@ -226,9 +192,9 @@ int main(int argc, char* argv[]) {
     cout << "\nRunning baseline benchmarks...\n";
     if (!runBenchmarks(include, exclude)) {
         cerr << "Baseline benchmarks failed\n";
-        executeCommand("git checkout " + currentRef, nullptr);
+        SExecShell("git checkout " + currentRef, nullptr);
         if (hasUncommitted) {
-            executeCommand("git stash pop", nullptr);
+            SExecShell("git stash pop", nullptr);
         }
         return 1;
     }
@@ -236,10 +202,10 @@ int main(int argc, char* argv[]) {
 
     // Checkout current ref and run benchmarks
     cout << "\n" << BOLD << "=== Running current benchmarks on " << currentRef << " ===" << RESET << "\n\n";
-    if (!executeCommand("git checkout " + currentRef, nullptr)) {
+    if (!SExecShell("git checkout " + currentRef, nullptr)) {
         cerr << "Failed to checkout current ref\n";
         if (hasUncommitted) {
-            executeCommand("git stash pop", nullptr);
+            SExecShell("git stash pop", nullptr);
         }
         return 1;
     }
@@ -247,12 +213,12 @@ int main(int argc, char* argv[]) {
     // Restore stashed changes if any
     if (hasUncommitted) {
         cout << "Restoring stashed changes...\n";
-        executeCommand("git stash pop", nullptr);
+        SExecShell("git stash pop", nullptr);
     }
 
     // Rebuild with current code
     cout << "Building current code...\n";
-    if (!executeCommand("make bench -j32", nullptr)) {
+    if (!SExecShell("make bench -j32", nullptr)) {
         cerr << "Failed to build current code\n";
         return 1;
     }

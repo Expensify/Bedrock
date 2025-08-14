@@ -72,7 +72,7 @@ protected:
 
         // Warm-up: run a few times to get CPU caches ready
         volatile size_t guard = 0;
-        for (int i = 0; i < 100; ++i) {
+        for (int i = 0; i < 100; i++) {
             for (const auto& input : inputs) {
                 auto result = func(input);
                 guard += sizeof(result); // Use the result somehow
@@ -83,7 +83,7 @@ protected:
         const auto start = chrono::high_resolution_clock::now();
         size_t totalBytes = 0;
 
-        for (int it = 0; it < iterations; ++it) {
+        for (int it = 0; it < iterations; it++) {
             for (const auto& input : inputs) {
                 auto result = func(input);
                 guard += sizeof(result); // Prevent optimization
