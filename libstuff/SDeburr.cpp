@@ -19,12 +19,12 @@ const char* SDeburr::unicodeToAscii(uint32_t codepoint) {
     return nullptr;
 }
 
-string SDeburr::deburr(const string& input) {
-    const unsigned char* inputBytes = reinterpret_cast<const unsigned char*>(input.c_str());
+string SDeburr::deburr(const unsigned char* inputBytes) {
     string result;
-    result.reserve(input.size());
+    size_t inputLength = strlen(reinterpret_cast<const char*>(inputBytes));
+    result.reserve(inputLength);
     size_t i = 0;
-    while (i < input.size()) {
+    while (i < inputLength) {
         // Count the leading ones in the current byte
         // 0 leading ones -> ASCII character
         // 1 leading one -> continuation byte
@@ -44,7 +44,7 @@ string SDeburr::deburr(const string& input) {
         // - A continuation byte (1 leading one). This should be handled only as part of a multi-byte sequence.
         // - More than 4 leading ones
         // - Not enough bytes to form a valid sequence
-        if (numLeadingOnes == 1 || numLeadingOnes > 4 || (i + numLeadingOnes) > input.size()) {
+        if (numLeadingOnes == 1 || numLeadingOnes > 4 || (i + numLeadingOnes) > inputLength) {
             i++;
             continue;
         }
@@ -108,6 +108,10 @@ string SDeburr::deburr(const string& input) {
     return result;
 }
 
+string SDeburr::deburr(const string& input) {
+    return deburr(reinterpret_cast<const unsigned char*>(input.c_str()));
+}
+
 void SDeburr::registerSQLite(sqlite3* db) {
     // SQLite UDF: DEBURR(text) → deburred ASCII string.
     // Behavior: NULL input → NULL, Non-NULL input → deburred ASCII text
@@ -126,7 +130,7 @@ void SDeburr::registerSQLite(sqlite3* db) {
             sqlite3_result_null(ctx);
             return;
         }
-        string out = SDeburr::deburr(reinterpret_cast<const char*>(text));
+        string out = SDeburr::deburr(text);
         sqlite3_result_text(ctx, out.c_str(), static_cast<int>(out.size()), SQLITE_TRANSIENT);
     };
 

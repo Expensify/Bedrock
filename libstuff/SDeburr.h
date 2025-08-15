@@ -26,6 +26,7 @@ public:
      * Mirrors lodash's deburr behavior for search normalization and comparisons
      * where diacritics should not affect matching.
      */
+    static string deburr(const unsigned char* input);
     static string deburr(const string& input);
 
     /**
