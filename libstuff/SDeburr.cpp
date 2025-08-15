@@ -14,7 +14,7 @@ const char* SDeburr::unicodeToAscii(uint32_t codepoint) {
     // 0x00C0 is the first character we map in the latin1 unicode block: https://en.wikipedia.org/wiki/Latin-1_Supplement
     // 0x017F is the last character we map in the latin-extended-a unicode block: https://en.wikipedia.org/wiki/Latin_Extended-A
     if (codepoint >= 0x00C0 && codepoint <= 0x017F) {
-        return SDeburr::UNICODE_TO_ASCII_MAP[codepoint - 0x00C0];
+        return SDeburr::UNICODE_TO_ASCII_MAP[codepoint];
     }
     return nullptr;
 }
