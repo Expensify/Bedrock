@@ -45,6 +45,7 @@ string SDeburr::deburr(const unsigned char* inputBytes) {
         // - More than 4 leading ones
         // - Not enough bytes to form a valid sequence
         if (numLeadingOnes == 1 || numLeadingOnes > 4 || (i + numLeadingOnes) > inputLength) {
+            SWARN("Encounterd malformed UTF-8")
             i++;
             continue;
         }
