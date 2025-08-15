@@ -53,7 +53,7 @@ private:
      * Fast lookup table for converting accented characters.
      * The array indices are simply the unicode code points that map to the given character.
      */
-    inline static constexpr array<const char*, 0x0180> UNICODE_TO_ASCII_MAP = []() constexpr {
+    static constexpr array<const char*, 0x0180> UNICODE_TO_ASCII_MAP = []() constexpr {
         array<const char*, 0x0180> map = {};
 
         auto mapCodePoints = [&map](const char* value, vector<char32_t> codePoints) {
