@@ -342,6 +342,10 @@ class SQLite {
         // no ill effects, but currently we use it to set a floor on the number of frames we will try and checkpoint.
         atomic<size_t> outstandingFramesToCheckpoint = 0;
 
+        // Like above, this records the number of frames that we know are currently waiting to be checkpointed, however it
+        // is not reset at the end of each checkpoint. This was the graph that relies on this value won't dip to 0
+        atomic<size_t> knownOutstandingFramesToCheckpoint = 0;
+
         // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
         shared_mutex writeLock;
 
