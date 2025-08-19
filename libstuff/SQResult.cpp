@@ -83,11 +83,58 @@ string SQResult::serializeToJSON() const {
 }
 
 string SQResult::serializeToText() const {
-    // Just output as human readable text
-    // **NOTE: This could be prettied up *a lot*
-    string output = SComposeList(headers, " | ") + "\n";
-    for (size_t c = 0; c < rows.size(); ++c)
-        output += SComposeList(rows[c], " | ") + "\n";
+    // Match the native format of sqlite3.
+    vector<size_t> maxLengths(headers.size());
+    for (size_t i = 0; i < headers.size(); i++) {
+        maxLengths[i] = headers[i].size();
+    }
+    for (size_t i = 0; i < rows.size(); i++) {
+        for (size_t j = 0; j < rows[i].size(); j++) {
+            if (rows[i][j].length() > maxLengths[j]) {
+                maxLengths[j] = rows[i][j].length();
+            }
+        }
+    }
+
+    // Create the output string
+    string output;
+
+    // Append the headers.
+    for (size_t i = 0; i < headers.size(); i++) {
+        string entry = headers[i];
+        entry.resize(maxLengths[i], ' ');
+        if (i != 0) {
+            output += "  ";
+        }
+        output += entry;
+    }
+    output += "\n";
+
+    // Now create the separator line.
+    for (size_t i = 0; i < maxLengths.size(); i++) {
+        string sep;
+        sep.resize(maxLengths[i], '-');
+        if (i != 0) {
+            output += "  ";
+        }
+        output += sep;
+    }
+    output += "\n";
+
+    // Finally, do each row.
+    for (size_t i = 0; i < rows.size(); i++) {
+        for (size_t j = 0; j < rows[i].size(); j++) {
+            string entry = rows[i][j];
+            entry.resize(maxLengths[j], ' ');
+            if (j != 0) {
+                output += "  ";
+            }
+            output += entry;
+        }
+        output += "\n";
+    }
+
+    // Done.
     return output;
 }
 
