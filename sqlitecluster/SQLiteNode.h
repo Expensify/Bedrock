@@ -115,6 +115,9 @@ class SQLiteNode : public STCPManager {
     // Does not block.
     uint64_t getCommitCount() const;
 
+    // Get's the number of WAL frames that are currently waiting to be checkpointed.
+    uint64_t getOutstandingFramesToCheckpoint() const;
+
     // Get's the current leader version (our own version if we're leading)
     // Can block.
     const string getLeaderVersion() const;
