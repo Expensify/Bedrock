@@ -51,9 +51,9 @@ bool BedrockDBCommand::peek(SQLite& db) {
         readDBFlags = SParseList(request["ReadDBFlags"], ' ');
     }
 
-    // Set the format. Default to the legacy behavior for `format: json` if supplied.
+    // Set the format. Allow the legacy behavior for `format: json` if supplied.
     SQResult::FORMAT format = SQResult::FORMAT::SQLITE3;
-    if (request["Format"] == "json") {
+    if (SIEquals(request["Format"], "json")) {
         format = SQResult::FORMAT::JSON;
     }
     for (auto flag : readDBFlags) {
