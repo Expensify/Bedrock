@@ -1,4 +1,5 @@
 #include "DB.h"
+#include "libstuff/libstuff.h"
 
 #include <string.h>
 
@@ -44,6 +45,29 @@ bool BedrockDBCommand::peek(SQLite& db) {
         STHROW("402 Missing query");
     }
 
+    // Read the flags that the readdb tool supports.
+    list<string> readDBFlags;
+    if (request.isSet("ReadDBFlags")) {
+        readDBFlags = SParseList(request["ReadDBFlags"], ' ');
+    }
+
+    // Set the format. Default to the legacy behavior for `format: json` if supplied.
+    SQResult::FORMAT format = SQResult::FORMAT::SQLITE3;
+    if (request["Format"] == "json") {
+        format = SQResult::FORMAT::JSON;
+    }
+    for (auto flag : readDBFlags) {
+        if (flag == "-csv") {
+            format = SQResult::FORMAT::CSV;
+        }
+        if (flag == "-tsv") {
+            format = SQResult::FORMAT::TSV;
+        }
+        if (flag == "-json") {
+            format = SQResult::FORMAT::JSON;
+        }
+    }
+
     if (!SEndsWith(query, ";")) {
         SALERT("Query aborted, query must end in ';'");
         STHROW("502 Query Missing Semicolon");
@@ -85,8 +109,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
     }
 
     // Worked! Set the output and return.
-    //response.content = result.serialize(request["Format"]);
-
+    response.content = result.serialize(format);
     return true;
 }
 

@@ -82,7 +82,6 @@ string SQResult::serializeToJSON() const {
     return SComposeJSONObject(output);
 }
 
-#endif
 string SQResult::serializeToText() const {
     // Just output as human readable text
     // **NOTE: This could be prettied up *a lot*
@@ -91,15 +90,19 @@ string SQResult::serializeToText() const {
         output += SComposeList(rows[c], " | ") + "\n";
     return output;
 }
-#if 0
-string SQResult::serialize(const string& format) const {
-    // Output the appropriate type
-    if (SIEquals(format, "json"))
-        return serializeToJSON();
-    else
-        return serializeToText();
+
+string SQResult::serialize(SQResult::FORMAT format) const {
+    switch (format) {
+        case FORMAT::SQLITE3:
+            return serializeToText();
+        case FORMAT::CSV:
+            return "NOT IMPLEMENTED";
+        case FORMAT::TSV:
+            return "NOT IMPLEMENTED";
+        case FORMAT::JSON:
+            return serializeToJSON();
+    }
 }
-#endif
 
 bool SQResult::deserialize(const string& json) {
     // Reset ourselves to start

@@ -55,7 +55,8 @@ class SQResult {
     // Serializers
     string serializeToJSON() const;
     string serializeToText() const;
-    //string serialize(const string& format) const;
+
+    string serialize(FORMAT format) const;
 
     // Deserializers
     bool deserialize(const string& json);
