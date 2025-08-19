@@ -24,6 +24,13 @@ class SQResultRow : public vector<string> {
 
 class SQResult {
   public:
+    enum class FORMAT{
+      SQLITE3,
+      CSV,
+      TSV,
+      JSON,
+    };
+
     // Attributes
     vector<string> headers;
 
@@ -48,7 +55,7 @@ class SQResult {
     // Serializers
     string serializeToJSON() const;
     string serializeToText() const;
-    string serialize(const string& format) const;
+    //string serialize(const string& format) const;
 
     // Deserializers
     bool deserialize(const string& json);

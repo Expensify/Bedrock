@@ -85,7 +85,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
     }
 
     // Worked! Set the output and return.
-    response.content = result.serialize(request["Format"]);
+    //response.content = result.serialize(request["Format"]);
 
     return true;
 }
