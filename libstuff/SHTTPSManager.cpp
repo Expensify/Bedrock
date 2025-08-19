@@ -164,7 +164,7 @@ SStandaloneHTTPSManager::Transaction::~Transaction() {
 SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTransaction() {
     // Sometimes we have to create transactions without an attempted connect. This could happen if we don't have the
     // host or service id yet.
-    SWARN("We had to create an error transaction instead of attempting a real one.");
+    SHMMM("We had to create an error transaction instead of attempting a real one.");
     Transaction* transaction = new Transaction(*this);
     transaction->response = 503;
     transaction->finished = STimeNow();
