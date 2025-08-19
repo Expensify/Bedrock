@@ -284,6 +284,7 @@ int SQLite::_progressHandlerCallback(void* arg) {
 int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize) {
     SQLite* sqlite = static_cast<SQLite*>(sqliteObject);
     sqlite->_sharedData.outstandingFramesToCheckpoint = walFileSize;
+    sqlite->_sharedData.knownOutstandingFramesToCheckpoint = walFileSize;
     return SQLITE_OK;
 }
 
@@ -1021,6 +1022,10 @@ int64_t SQLite::getLastInsertRowID() {
 
 uint64_t SQLite::getCommitCount() const {
     return _sharedData.commitCount;
+}
+
+uint64_t SQLite::getOutstandingFramesToCheckpoint() const {
+    return _sharedData.knownOutstandingFramesToCheckpoint;
 }
 
 size_t SQLite::getLastWriteChangeCount() {

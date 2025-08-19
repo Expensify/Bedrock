@@ -200,6 +200,9 @@ class SQLite {
     // database.
     uint64_t getCommitCount() const;
 
+    // Returns the number of WAL frames that are currently waiting to be checkpointed.
+    uint64_t getOutstandingFramesToCheckpoint() const;
+
     // Returns the current state of the database, as a SHA1 hash of all queries committed.
     string getCommittedHash();
 
@@ -338,6 +341,10 @@ class SQLite {
         // This records the most recent count of the number of frames to checkpoint. We may be able to remove this with
         // no ill effects, but currently we use it to set a floor on the number of frames we will try and checkpoint.
         atomic<size_t> outstandingFramesToCheckpoint = 0;
+
+        // Like above, this records the number of frames that we know are currently waiting to be checkpointed, however it
+        // is not reset at the end of each checkpoint. This way the graph that relies on this value won't dip to 0
+        atomic<size_t> knownOutstandingFramesToCheckpoint = 0;
 
         // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
         shared_mutex writeLock;
