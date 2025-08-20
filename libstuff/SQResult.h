@@ -29,6 +29,7 @@ class SQResult {
       CSV,
       TSV,
       JSON,
+      QUOTE,
     };
 
     // Attributes
@@ -57,6 +58,7 @@ class SQResult {
     string serializeToText() const;
     string serializeToCSV() const;
     string serializeToTSV() const;
+    string serializeToQuote() const;
 
     string serialize(FORMAT format) const;
 

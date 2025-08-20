@@ -190,6 +190,99 @@ string SQResult::serializeTextDelimited(char delimiter) const {
     return output;
 }
 
+string SQResult::serializeToQuote() const {
+    auto isNumeric = [](const string& s) -> bool {
+        if (s.empty()) return false;
+        size_t i = 0;
+        // optional sign
+        if (s[i] == '+' || s[i] == '-') {
+            if (++i >= s.size()) return false;
+        }
+        bool anyDigits = false;
+        // integer part
+        while (i < s.size() && isdigit(static_cast<unsigned char>(s[i]))) {
+            anyDigits = true;
+            ++i;
+        }
+        // decimal part
+        if (i < s.size() && s[i] == '.') {
+            ++i;
+            while (i < s.size() && isdigit(static_cast<unsigned char>(s[i]))) {
+                anyDigits = true;
+                ++i;
+            }
+        }
+        if (!anyDigits) return false;
+        // exponent part
+        if (i < s.size() && (s[i] == 'e' || s[i] == 'E')) {
+            ++i;
+            if (i < s.size() && (s[i] == '+' || s[i] == '-')) ++i;
+            bool expDigits = false;
+            while (i < s.size() && isdigit(static_cast<unsigned char>(s[i]))) {
+                expDigits = true;
+                ++i;
+            }
+            if (!expDigits) return false;
+        }
+        return i == s.size();
+    };
+
+    auto quoteSQL = [](const string& s) -> string {
+        string out;
+        out.reserve(s.size() + 2);
+        out.push_back('\'');
+        for (char c : s) {
+            if (c == '\'') {
+                // SQL escape by doubling the quote
+                out.push_back('\'');
+                out.push_back('\'');
+            } else {
+                out.push_back(c);
+            }
+        }
+        out.push_back('\'');
+        return out;
+    };
+
+    const char delimiter = ','; // sqlite default separator (respects our CSV/TSV pattern)
+    string output;
+
+    // Emit headers if present (consistent with our CSV/TSV behavior)
+    if (!headers.empty()) {
+        for (size_t i = 0; i < headers.size(); ++i) {
+            if (i) output.push_back(delimiter);
+            output += quoteSQL(headers[i]);
+        }
+        output.push_back('\n');
+    }
+
+    for (const auto& row : rows) {
+        size_t cols = headers.empty() ? row.size() : headers.size();
+        for (size_t j = 0; j < cols; ++j) {
+            if (j) output.push_back(delimiter);
+            string field = (j < row.size()) ? row[j] : string();
+
+            // Literal NULL (unquoted) if exactly "NULL"
+            if (field == "NULL") {
+                output += "NULL";
+                continue;
+            }
+
+            // Numbers are bare (ASCII text, no quotes)
+            if (isNumeric(field)) {
+                output += field;
+                continue;
+            }
+
+            // Everything else is a SQL string literal
+            output += quoteSQL(field);
+        }
+        output.push_back('\n');
+    }
+
+    return output;
+}
+
 string SQResult::serializeToCSV() const {
     return serializeTextDelimited(',');
 }
@@ -208,6 +301,8 @@ string SQResult::serialize(SQResult::FORMAT format) const {
             return serializeToTSV();
         case FORMAT::JSON:
             return serializeToJSON();
+        case FORMAT::QUOTE:
+            return serializeToQuote();
     }
 }
 
