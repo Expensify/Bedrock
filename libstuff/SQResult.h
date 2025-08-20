@@ -55,6 +55,8 @@ class SQResult {
     // Serializers
     string serializeToJSON() const;
     string serializeToText() const;
+    string serializeToCSV() const;
+    string serializeToTSV() const;
 
     string serialize(FORMAT format) const;
 
@@ -69,4 +71,5 @@ class SQResult {
 
   private:
     vector<SQResultRow> rows;
+    string serializeTextDelimited(char delimiter) const;
 };

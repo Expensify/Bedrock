@@ -138,14 +138,74 @@ string SQResult::serializeToText() const {
     return output;
 }
 
+string SQResult::serializeTextDelimited(char delimiter) const {
+    auto needsQuoting = [&](const string& s) -> bool {
+        if (s.find('"') != string::npos) return true;
+        if (s.find('\n') != string::npos) return true;
+        if (s.find('\r') != string::npos) return true;
+        if (s.find(delimiter) != string::npos) return true;
+        return false;
+    };
+
+    auto quoteField = [&](const string& s) -> string {
+        if (!needsQuoting(s)) return s;
+        string out;
+        out.reserve(s.size() + 2);
+        out.push_back('"');
+        for (char c : s) {
+            if (c == '"') {
+                // CSV-style escape: double the quote
+                out.push_back('"');
+                out.push_back('"');
+            } else {
+                out.push_back(c);
+            }
+        }
+        out.push_back('"');
+        return out;
+    };
+
+    string output;
+
+    // Write headers if present
+    if (!headers.empty()) {
+        for (size_t i = 0; i < headers.size(); ++i) {
+            if (i) output.push_back(delimiter);
+            output += quoteField(headers[i]);
+        }
+        output.push_back('\n');
+    }
+
+    // Write rows
+    for (const auto& row : rows) {
+        size_t cols = headers.empty() ? row.size() : headers.size();
+        for (size_t j = 0; j < cols; ++j) {
+            if (j) output.push_back(delimiter);
+            string field = (j < row.size()) ? row[j] : string();
+            output += quoteField(field);
+        }
+        output.push_back('\n');
+    }
+
+    return output;
+}
+
+string SQResult::serializeToCSV() const {
+    return serializeTextDelimited(',');
+}
+
+string SQResult::serializeToTSV() const {
+    return serializeTextDelimited('\t');
+}
+
 string SQResult::serialize(SQResult::FORMAT format) const {
     switch (format) {
         case FORMAT::SQLITE3:
             return serializeToText();
         case FORMAT::CSV:
-            return "NOT IMPLEMENTED";
+            return serializeToCSV();
         case FORMAT::TSV:
-            return "NOT IMPLEMENTED";
+            return serializeToTSV();
         case FORMAT::JSON:
             return serializeToJSON();
     }
