@@ -20,9 +20,9 @@ public:
         string nullvalue;
         string separator = "|";
     };
-    static FORMAT_OPTIONS default_options;
+    static FORMAT_OPTIONS defaultOptions;
 
-    static string format(const SQResult& result, FORMAT format, const FORMAT_OPTIONS& options = default_options);
+    static string format(const SQResult& result, FORMAT format, const FORMAT_OPTIONS& options = defaultOptions);
 
 private:
     static string formatColumn(const SQResult& result, const FORMAT_OPTIONS& options);

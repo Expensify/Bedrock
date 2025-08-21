@@ -1,5 +1,8 @@
 #include "SQResultFormatter.h"
 #include <libstuff/libstuff.h>
+
+SQResultFormatter::FORMAT_OPTIONS SQResultFormatter::defaultOptions{};
+
 string SQResultFormatter::format(const SQResult& result, SQResultFormatter::FORMAT format, const SQResultFormatter::FORMAT_OPTIONS& options) {
     switch (format) {
         case FORMAT::COLUMN:
