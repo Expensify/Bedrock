@@ -120,20 +120,9 @@ second|2|1.25|contains LFLF
 18|Zero||0|0.0|empty note
 19|Mix\t,Match|tab	and,comma|3|7.77|both	,present
 20|Tricky "Case", Inc.|start	mid, "q"
-end|12|123.456789|final	val,ue)";
+end|12|123.456789|final	val,ue
+)";
 
-        if (result[0].content != expected) {
-            cout << "ResultSize: " << result[0].content.size() << endl;
-            cout << "ExpectedSize: " << expected.size() << endl;
-
-            for (size_t i = 0; i < min(result[0].content.size(), expected.size()); i++) {
-                if (result[0].content[i] != expected[i]) {
-                    cout << "Difference at character " << i << " expected: '" << (int)expected[i] << "', got '" << (int)result[0].content[i] << "'." << endl;
-                    cout << expected.substr(i - 10, 20) << endl;
-                    break;
-                }
-            }
-        }
         ASSERT_EQUAL(result[0].content, expected);
     }
 } __SQResultFormatterTest;
