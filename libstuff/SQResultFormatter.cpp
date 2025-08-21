@@ -40,6 +40,77 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
     // splitting cells into physical lines and aligning continuation lines
     // under their respective columns.
 
+    // --- Unicode-aware width helpers ---
+    auto utf8Next = [](const string& s, size_t& i) -> uint32_t {
+        unsigned char c = static_cast<unsigned char>(s[i++]);
+        if (c < 0x80) return c;
+        uint32_t cp = 0;
+        int extra = 0;
+        if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; extra = 1; }
+        else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; extra = 2; }
+        else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; extra = 3; }
+        else { return 0xFFFD; }
+        while (extra-- && i < s.size()) {
+            unsigned char t = static_cast<unsigned char>(s[i]);
+            if ((t & 0xC0) != 0x80) break;
+            cp = (cp << 6) | (t & 0x3F);
+            ++i;
+        }
+        return cp;
+    };
+
+    auto isCombining = [](uint32_t cp) -> bool {
+        // Common zero-width: combining marks, variation selectors, ZWJ/ZWNJ
+        if ((cp >= 0x0300 && cp <= 0x036F) ||
+            (cp >= 0x1AB0 && cp <= 0x1AFF) ||
+            (cp >= 0x1DC0 && cp <= 0x1DFF) ||
+            (cp >= 0x20D0 && cp <= 0x20FF) ||
+            (cp >= 0xFE20 && cp <= 0xFE2F) ||
+            cp == 0x200D || cp == 0x200C ||
+            (cp >= 0xFE00 && cp <= 0xFE0F)) {
+            return true;
+        }
+        return false;
+    };
+
+    auto isWide = [](uint32_t cp) -> bool {
+        // Treat most CJK and emoji as double-width for terminal-like alignment
+        if ((cp >= 0x1100 && cp <= 0x115F) ||
+            (cp >= 0x2329 && cp <= 0x232A) ||
+            (cp >= 0x2E80 && cp <= 0xA4CF) ||
+            (cp >= 0xAC00 && cp <= 0xD7A3) ||
+            (cp >= 0xF900 && cp <= 0xFAFF) ||
+            (cp >= 0xFE10 && cp <= 0xFE19) ||
+            (cp >= 0xFE30 && cp <= 0xFE6F) ||
+            (cp >= 0xFF00 && cp <= 0xFF60) ||
+            (cp >= 0xFFE0 && cp <= 0xFFE6) ||
+            // Emoji blocks
+            (cp >= 0x1F300 && cp <= 0x1FAFF) ||
+            (cp >= 0x1F900 && cp <= 0x1F9FF) ||
+            (cp >= 0x2600 && cp <= 0x26FF) ||
+            (cp >= 0x2700 && cp <= 0x27BF)) {
+            return true;
+        }
+        return false;
+    };
+
+    auto displayWidth = [&](const string& s) -> size_t {
+        size_t w = 0; size_t i = 0;
+        while (i < s.size()) {
+            uint32_t cp = utf8Next(s, i);
+            if (cp == 0) continue; // safety
+            if (cp < 0x20 || cp == 0x7F) continue; // control -> width 0
+            if (isCombining(cp)) continue;         // zero-width combining
+            w += isWide(cp) ? 2 : 1;
+        }
+        return w;
+    };
+
+    auto padToWidth = [&](string& s, size_t target) {
+        size_t w = displayWidth(s);
+        if (w < target) s.append(target - w, ' ');
+    };
+
     auto splitLines = [](const string& s) -> vector<string> {
         vector<string> lines;
         size_t start = 0;
@@ -66,8 +137,9 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
         for (size_t j = 0; j < result[i].size(); j++) {
             const auto parts = splitLines(result[i][j]);
             for (const auto& part : parts) {
-                if (part.length() > maxLengths[j]) {
-                    maxLengths[j] = part.length();
+                size_t w = displayWidth(part);
+                if (w > maxLengths[j]) {
+                    maxLengths[j] = w;
                 }
             }
         }
@@ -80,7 +152,7 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
         // Append the headers.
         for (size_t i = 0; i < result.headers.size(); i++) {
             string entry = result.headers[i];
-            entry.resize(maxLengths[i], ' ');
+            padToWidth(entry, maxLengths[i]);
             if (i != 0) {
                 output += "  ";
             }
@@ -114,7 +186,7 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
         for (size_t k = 0; k < maxRowLines; ++k) {
             for (size_t j = 0; j < result[i].size(); j++) {
                 string entry = (k < perColLines[j].size()) ? perColLines[j][k] : string();
-                entry.resize(maxLengths[j], ' ');
+                padToWidth(entry, maxLengths[j]);
                 if (j != 0) {
                     output += "  ";
                 }

@@ -183,7 +183,7 @@ R"(1   Bob                                 Simple row                           
 10  Negative Qty                        negative quantity                         -42  5.25           neg qty
 11  Supercalifragilisticexpialidocious  long name to widen columns significantly  8    12.34          loooooooooooooooooooooooooooooong
 12  café                                accented char                             2    3.14           naïve façade
-13  Smiley 🙂                            emoji inside text                         1    0.1            rocket 🚀
+13  Smiley 🙂                           emoji inside text                         1    0.1            rocket 🚀
 14  Quoter                              He said, "Hello, world", then left.       4    6.0            mix, "both"
 15  Literal NULL                        This string is "NULL"                     9    9.99           NULL
 16  Piper|Piped                         contains | pipe                           6    2.22           A|B|C
