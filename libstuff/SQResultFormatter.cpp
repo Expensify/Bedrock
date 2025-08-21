@@ -36,15 +36,39 @@ string SQResultFormatter::formatJSON(const SQResult& result, const FORMAT_OPTION
 }
 
 string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTIONS& options) {
-    // Match the native format of sqlite3.
+    // Match the native format of sqlite3 and handle embedded newlines by
+    // splitting cells into physical lines and aligning continuation lines
+    // under their respective columns.
+
+    auto splitLines = [](const string& s) -> vector<string> {
+        vector<string> lines;
+        size_t start = 0;
+        for (size_t i = 0; i <= s.size(); ++i) {
+            if (i == s.size() || s[i] == '\n') {
+                string line = s.substr(start, i - start);
+                if (!line.empty() && line.back() == '\r') {
+                    line.pop_back();
+                }
+                lines.push_back(line);
+                start = i + 1;
+            }
+        }
+        if (lines.empty()) lines.emplace_back();
+        return lines;
+    };
+
+    // Determine column widths: maximum subline length across header and all rows
     vector<size_t> maxLengths(result.headers.size());
     for (size_t i = 0; i < result.headers.size(); i++) {
         maxLengths[i] = result.headers[i].size();
     }
     for (size_t i = 0; i < result.size(); i++) {
         for (size_t j = 0; j < result[i].size(); j++) {
-            if (result[i][j].length() > maxLengths[j]) {
-                maxLengths[j] = result[i][j].length();
+            const auto parts = splitLines(result[i][j]);
+            for (const auto& part : parts) {
+                if (part.length() > maxLengths[j]) {
+                    maxLengths[j] = part.length();
+                }
             }
         }
     }
@@ -52,42 +76,54 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
     // Create the output string
     string output;
 
-    // Append the headers.
-    for (size_t i = 0; i < result.headers.size(); i++) {
-        string entry = result.headers[i];
-        entry.resize(maxLengths[i], ' ');
-        if (i != 0) {
-            output += "  ";
-        }
-        output += entry;
-    }
-    output += "\n";
-
-    // Now create the separator line.
-    for (size_t i = 0; i < maxLengths.size(); i++) {
-        string sep;
-        sep.resize(maxLengths[i], '-');
-        if (i != 0) {
-            output += "  ";
-        }
-        output += sep;
-    }
-    output += "\n";
-
-    // Finally, do each row.
-    for (size_t i = 0; i < result.size(); i++) {
-        for (size_t j = 0; j < result[i].size(); j++) {
-            string entry = result[i][j];
-            entry.resize(maxLengths[j], ' ');
-            if (j != 0) {
+    if (options.header) {
+        // Append the headers.
+        for (size_t i = 0; i < result.headers.size(); i++) {
+            string entry = result.headers[i];
+            entry.resize(maxLengths[i], ' ');
+            if (i != 0) {
                 output += "  ";
             }
             output += entry;
         }
         output += "\n";
+
+        // Separator line.
+        for (size_t i = 0; i < maxLengths.size(); i++) {
+            string sep(maxLengths[i], '-');
+            if (i != 0) {
+                output += "  ";
+            }
+            output += sep;
+        }
+        output += "\n";
     }
 
-    // Done.
+    // Render each logical row as one or more physical lines based on embedded newlines.
+    for (size_t i = 0; i < result.size(); i++) {
+        // Pre-split each column into lines and find the tallest cell for this row.
+        vector<vector<string>> perColLines(result[i].size());
+        size_t maxRowLines = 1;
+        for (size_t j = 0; j < result[i].size(); j++) {
+            perColLines[j] = splitLines(result[i][j]);
+            if (perColLines[j].size() > maxRowLines) {
+                maxRowLines = perColLines[j].size();
+            }
+        }
+
+        for (size_t k = 0; k < maxRowLines; ++k) {
+            for (size_t j = 0; j < result[i].size(); j++) {
+                string entry = (k < perColLines[j].size()) ? perColLines[j][k] : string();
+                entry.resize(maxLengths[j], ' ');
+                if (j != 0) {
+                    output += "  ";
+                }
+                output += entry;
+            }
+            output += "\n";
+        }
+    }
+
     return output;
 }
 
