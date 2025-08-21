@@ -180,7 +180,67 @@ string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIO
 }
 
 string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS& options) {
-    return "";
+    // Standard CSV + sqlite3 shell defaults:
+    //  - Separator: comma
+    //  - Quote a field if it contains comma, double-quote, CR, or LF
+    //  - Escape embedded double-quotes by doubling them
+    //  - Emit a header row if headers exist (matches our TSV/QUOTE behavior)
+
+    auto needsQuoting = [](const string& s) -> bool {
+        for (char c : s) {
+            if (c == ',' || c == '"' || c == '\n' || c == '\r') {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    auto quoteCSV = [&](const string& s) -> string {
+        if (!needsQuoting(s)) {
+            return s;
+        }
+        string out;
+        out.reserve(s.size() + 2);
+        out.push_back('"');
+        for (char c : s) {
+            if (c == '"') {
+                // CSV escaping: double the quote
+                out.push_back('"');
+                out.push_back('"');
+            } else {
+                out.push_back(c);
+            }
+        }
+        out.push_back('"');
+        return out;
+    };
+
+    const char delimiter = ',';
+    string output;
+
+    // Header row (if present)
+    if (!result.headers.empty()) {
+        for (size_t i = 0; i < result.headers.size(); ++i) {
+            if (i) output.push_back(delimiter);
+            output += quoteCSV(result.headers[i]);
+        }
+        output.push_back('\n');
+    }
+
+    // Data rows
+    for (const auto& row : result) {
+        // If headers are present, cap at header count (sqlite shell does this implicitly
+        // as it prints per-column of the statement); otherwise, print all row fields.
+        size_t cols = result.headers.empty() ? row.size() : result.headers.size();
+        for (size_t j = 0; j < cols; ++j) {
+            if (j) output.push_back(delimiter);
+            const string& field = (j < row.size()) ? row[j] : string();
+            output += quoteCSV(field);
+        }
+        output.push_back('\n');
+    }
+
+    return output;
 }
 
 string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTIONS& options) {
