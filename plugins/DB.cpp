@@ -55,7 +55,6 @@ bool BedrockDBCommand::peek(SQLite& db) {
     // Set the format. Allow the legacy behavior for `format: json` if supplied.
     SQResultFormatter::FORMAT format = SQResultFormatter::FORMAT::LIST;
     SQResultFormatter::FORMAT_OPTIONS formatOptions;
-    formatOptions.header = false;
     if (SIEquals(request["Format"], "json")) {
         format = SQResultFormatter::FORMAT::JSON;
     }

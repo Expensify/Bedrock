@@ -99,6 +99,7 @@ line two',                                                     1,     0.99, 'con
     void listNoHeader() {
         SData query("Query");
         query["query"] = "SELECT * FROM demo_format;";
+        query["readDBFlags"] = "-noheader";
         auto result = tester->executeWaitMultipleData({query});
         string expected =
 R"(1|Bob|Simple row|10|19.99|ok
@@ -167,7 +168,7 @@ end|12|123.456789|final	val,ue
     void columnNoHeader() {
         SData query("Query");
         query["query"] = "SELECT * FROM demo_format;";
-        query["readDBFlags"] = "-column";
+        query["readDBFlags"] = "-noheader -column";
         auto result = tester->executeWaitMultipleData({query});
         string expected =
 R"(1   Bob                                 Simple row                                10   19.99          ok
