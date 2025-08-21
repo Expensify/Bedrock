@@ -6,7 +6,6 @@
 
 #include <BedrockServer.h>
 #include <libstuff/SQResult.h>
-#include <libstuff/SQResultFormatter.h>
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
@@ -115,6 +114,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
 
     // Worked! Set the output and return.
     response.content = SQResultFormatter::format(result, format);
+
     return true;
 }
 
