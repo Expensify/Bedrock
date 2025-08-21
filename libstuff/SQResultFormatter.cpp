@@ -333,20 +333,25 @@ string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIO
 string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS& options) {
     // Standard CSV + sqlite3 shell defaults:
     //  - Separator: comma
-    //  - Quote a field if it contains comma, double-quote, CR, or LF
+    //  - Quote a field if it contains comma, double-quote, CR, LF, any ASCII whitespace/control, or any non-ASCII byte
     //  - Escape embedded double-quotes by doubling them
+    //  - Emit "" for the empty string (distinct from SQL NULL, which remains empty between separators)
     //  - Emit a header row if headers exist (matches our TSV/QUOTE behavior)
 
     auto needsQuoting = [](const string& s) -> bool {
-        for (char c : s) {
-            if (c == ',' || c == '"' || c == '\n' || c == '\r') {
-                return true;
-            }
+        if (s.empty()) return true; // sqlite shell prints "" for empty strings
+        for (unsigned char uc : s) {
+            if (uc == ',' || uc == '"' || uc == '\n' || uc == '\r') return true;
+            if (uc <= ' ') return true;     // spaces, tabs, other ASCII whitespace/control
+            if (uc >= 0x80) return true;    // non-ASCII bytes (e.g., accented chars, emoji bytes)
         }
         return false;
     };
 
     auto quoteCSV = [&](const string& s) -> string {
+        if (s.empty()) {
+            return "\"\""; // empty string becomes ""
+        }
         if (!needsQuoting(s)) {
             return s;
         }
@@ -355,7 +360,6 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
         out.push_back('"');
         for (char c : s) {
             if (c == '"') {
-                // CSV escaping: double the quote
                 out.push_back('"');
                 out.push_back('"');
             } else {
@@ -369,8 +373,7 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
     const char delimiter = ',';
     string output;
 
-    // Header row (if present)
-    if (!result.headers.empty()) {
+    if (options.header) {
         for (size_t i = 0; i < result.headers.size(); ++i) {
             if (i) output.push_back(delimiter);
             output += quoteCSV(result.headers[i]);
