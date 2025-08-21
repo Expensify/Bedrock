@@ -291,10 +291,11 @@ string SQResultFormatter::formatList(const SQResult& result, const FORMAT_OPTION
     const char delimiter = '|';
     string output;
 
-    // Header row (if present)
-    if (!result.headers.empty()) {
-        for (size_t i = 0; i < result.headers.size(); ++i) {
-            if (i) output.push_back(delimiter);
+    if (options.header) {
+        for (size_t i = 0; i < result.headers.size(); i++) {
+            if (i) {
+                output.push_back(delimiter);
+            }
             output += result.headers[i];
         }
         output.push_back('\n');
@@ -302,11 +303,11 @@ string SQResultFormatter::formatList(const SQResult& result, const FORMAT_OPTION
 
     // Data rows
     for (const auto& row : result) {
-        size_t cols = result.headers.empty() ? row.size() : result.headers.size();
-        for (size_t j = 0; j < cols; ++j) {
-            if (j) output.push_back(delimiter);
-            const string& field = (j < row.size()) ? row[j] : string();
-            output += field;
+        for (size_t i = 0; i < row.size(); i++) {
+            if (i) {
+                output.push_back(delimiter);
+            }
+            output += row[i];
         }
         output.push_back('\n');
     }

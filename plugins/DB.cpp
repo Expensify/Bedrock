@@ -53,11 +53,16 @@ bool BedrockDBCommand::peek(SQLite& db) {
     }
 
     // Set the format. Allow the legacy behavior for `format: json` if supplied.
-    SQResultFormatter::FORMAT format = SQResultFormatter::FORMAT::COLUMN;
+    SQResultFormatter::FORMAT format = SQResultFormatter::FORMAT::LIST;
+    SQResultFormatter::FORMAT_OPTIONS formatOptions;
+    formatOptions.header = false;
     if (SIEquals(request["Format"], "json")) {
         format = SQResultFormatter::FORMAT::JSON;
     }
     for (auto flag : readDBFlags) {
+        if (flag == "-column") {
+            format = SQResultFormatter::FORMAT::COLUMN;
+        }
         if (flag == "-csv") {
             format = SQResultFormatter::FORMAT::CSV;
         }
@@ -69,6 +74,12 @@ bool BedrockDBCommand::peek(SQLite& db) {
         }
         if (flag == "-quote") {
             format = SQResultFormatter::FORMAT::QUOTE;
+        }
+        if (flag == "-header") {
+            formatOptions.header = true;
+        }
+        if (flag == "-noheader") {
+            formatOptions.header = false;
         }
     }
 
@@ -113,7 +124,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
     }
 
     // Worked! Set the output and return.
-    response.content = SQResultFormatter::format(result, format);
+    response.content = SQResultFormatter::format(result, format, formatOptions);
 
     return true;
 }
