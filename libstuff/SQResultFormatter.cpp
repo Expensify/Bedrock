@@ -15,6 +15,8 @@ string SQResultFormatter::format(const SQResult& result, SQResultFormatter::FORM
             return formatJSON(result, options);
         case FORMAT::QUOTE:
             return formatQuote(result, options);
+        case FORMAT::LIST:
+            return formatList(result, options);
     }
 }
 
@@ -267,6 +269,39 @@ string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTION
     // Data rows
     for (const auto& row : result) {
         // If headers are present, output up to header count; otherwise, all fields.
+        size_t cols = result.headers.empty() ? row.size() : result.headers.size();
+        for (size_t j = 0; j < cols; ++j) {
+            if (j) output.push_back(delimiter);
+            const string& field = (j < row.size()) ? row[j] : string();
+            output += field;
+        }
+        output.push_back('\n');
+    }
+
+    return output;
+}
+
+string SQResultFormatter::formatList(const SQResult& result, const FORMAT_OPTIONS& options) {
+    // Mimic sqlite3 shell `.mode list`:
+    //  - Columns separated by a pipe ("|")
+    //  - Each row on a single line
+    //  - No quoting or escaping; fields are written verbatim
+    //  - Emit a header row if headers exist (consistent with our other formatters)
+
+    const char delimiter = '|';
+    string output;
+
+    // Header row (if present)
+    if (!result.headers.empty()) {
+        for (size_t i = 0; i < result.headers.size(); ++i) {
+            if (i) output.push_back(delimiter);
+            output += result.headers[i];
+        }
+        output.push_back('\n');
+    }
+
+    // Data rows
+    for (const auto& row : result) {
         size_t cols = result.headers.empty() ? row.size() : result.headers.size();
         for (size_t j = 0; j < cols; ++j) {
             if (j) output.push_back(delimiter);

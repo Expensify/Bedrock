@@ -4,13 +4,14 @@ class SQResultFormatter {
 public:
   // SQLite supports the following:
   // ascii box csv column html insert json line list markdown quote table tabs tcl
-  // We support the following five:
+  // We support the following six:
     enum class FORMAT{
         COLUMN,
         CSV,
         TABS,
         JSON,
         QUOTE,
+        LIST,
     };
 
     // Formatting options.
@@ -30,4 +31,5 @@ private:
     static string formatTabs(const SQResult& result, const FORMAT_OPTIONS& options);
     static string formatQuote(const SQResult& result, const FORMAT_OPTIONS& options);
     static string formatJSON(const SQResult& result, const FORMAT_OPTIONS& options);
+    static string formatList(const SQResult& result, const FORMAT_OPTIONS& options);
 };
