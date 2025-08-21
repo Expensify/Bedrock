@@ -244,5 +244,34 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
 }
 
 string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTIONS& options) {
-    return "";
+    // Mimic sqlite3 shell `.mode tabs`:
+    //  - Separator is a single TAB character
+    //  - No field quoting/escaping; fields are written verbatim
+    //  - Emit a header row if headers exist
+
+    const char delimiter = '\t';
+    string output;
+
+    // Header row (if present)
+    if (!result.headers.empty()) {
+        for (size_t i = 0; i < result.headers.size(); ++i) {
+            if (i) output.push_back(delimiter);
+            output += result.headers[i];
+        }
+        output.push_back('\n');
+    }
+
+    // Data rows
+    for (const auto& row : result) {
+        // If headers are present, output up to header count; otherwise, all fields.
+        size_t cols = result.headers.empty() ? row.size() : result.headers.size();
+        for (size_t j = 0; j < cols; ++j) {
+            if (j) output.push_back(delimiter);
+            const string& field = (j < row.size()) ? row[j] : string();
+            output += field;
+        }
+        output.push_back('\n');
+    }
+
+    return output;
 }
