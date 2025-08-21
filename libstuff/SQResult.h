@@ -24,7 +24,6 @@ class SQResultRow : public vector<string> {
 
 class SQResult {
   public:
-
     // Attributes
     vector<string> headers;
 
@@ -46,6 +45,11 @@ class SQResult {
     const SQResultRow& operator[](size_t rowNum) const;
     SQResult& operator=(const SQResult& other);
 
+    // Serializers
+    string serializeToJSON() const;
+    string serializeToText() const;
+    string serialize(const string& format) const;
+
     // Deserializers
     bool deserialize(const string& json);
 
@@ -57,5 +61,4 @@ class SQResult {
 
   private:
     vector<SQResultRow> rows;
-    string serializeTextDelimited(char delimiter) const;
 };

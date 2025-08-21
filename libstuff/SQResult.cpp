@@ -1,5 +1,6 @@
 #include <libstuff/libstuff.h>
 #include "SQResult.h"
+#include "libstuff/SQResultFormatter.h"
 #include <stdexcept>
 
 SQResultRow::SQResultRow(SQResult& result, size_t count) : vector<string>(count), result(&result) {
@@ -67,6 +68,22 @@ const string& SQResultRow::operator[](const string& key) const {
         }
     }
     STHROW_STACK("No column named " + key);
+}
+
+string SQResult::serializeToJSON() const {
+    return SQResultFormatter::format(*this, SQResultFormatter::FORMAT::JSON);
+}
+
+string SQResult::serializeToText() const {
+    return SQResultFormatter::format(*this, SQResultFormatter::FORMAT::COLUMN);
+}
+
+string SQResult::serialize(const string& format) const {
+    // Output the appropriate type
+    if (SIEquals(format, "json"))
+        return serializeToJSON();
+    else
+        return serializeToText();
 }
 
 bool SQResult::deserialize(const string& json) {
