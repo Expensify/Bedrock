@@ -1,10 +1,12 @@
 #include "DB.h"
+#include "libstuff/SQResultFormatter.h"
 #include "libstuff/libstuff.h"
 
 #include <string.h>
 
 #include <BedrockServer.h>
 #include <libstuff/SQResult.h>
+#include <libstuff/SQResultFormatter.h>
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
@@ -52,19 +54,22 @@ bool BedrockDBCommand::peek(SQLite& db) {
     }
 
     // Set the format. Allow the legacy behavior for `format: json` if supplied.
-    SQResult::FORMAT format = SQResult::FORMAT::SQLITE3;
+    SQResultFormatter::FORMAT format = SQResultFormatter::FORMAT::COLUMN;
     if (SIEquals(request["Format"], "json")) {
-        format = SQResult::FORMAT::JSON;
+        format = SQResultFormatter::FORMAT::JSON;
     }
     for (auto flag : readDBFlags) {
         if (flag == "-csv") {
-            format = SQResult::FORMAT::CSV;
+            format = SQResultFormatter::FORMAT::CSV;
         }
         if (flag == "-tsv") {
-            format = SQResult::FORMAT::TSV;
+            format = SQResultFormatter::FORMAT::TABS;
         }
         if (flag == "-json") {
-            format = SQResult::FORMAT::JSON;
+            format = SQResultFormatter::FORMAT::JSON;
+        }
+        if (flag == "-quote") {
+            format = SQResultFormatter::FORMAT::QUOTE;
         }
     }
 
@@ -109,7 +114,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
     }
 
     // Worked! Set the output and return.
-    response.content = result.serialize(format);
+    response.content = SQResultFormatter::format(result, format);
     return true;
 }
 
