@@ -111,6 +111,29 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
         if (w < target) s.append(target - w, ' ');
     };
 
+    auto expandTabs = [&](const string& s) -> string {
+        string out;
+        out.reserve(s.size());
+        size_t i = 0;
+        size_t pos = 0; // visual column within the cell
+        while (i < s.size()) {
+            size_t before = i;
+            uint32_t cp = utf8Next(s, i);
+            if (cp == '\t') {
+                size_t spaces = 8 - (pos % 8);
+                out.append(spaces, ' ');
+                pos += spaces;
+            } else {
+                // append original bytes for this codepoint
+                out.append(s, before, i - before);
+                if (cp >= 0x20 && cp != 0x7F && !isCombining(cp)) {
+                    pos += isWide(cp) ? 2 : 1;
+                }
+            }
+        }
+        return out;
+    };
+
     auto splitLines = [](const string& s) -> vector<string> {
         vector<string> lines;
         size_t start = 0;
@@ -131,13 +154,14 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
     // Determine column widths: maximum subline length across header and all rows
     vector<size_t> maxLengths(result.headers.size());
     for (size_t i = 0; i < result.headers.size(); i++) {
-        maxLengths[i] = result.headers[i].size();
+        maxLengths[i] = displayWidth(expandTabs(result.headers[i]));
     }
     for (size_t i = 0; i < result.size(); i++) {
         for (size_t j = 0; j < result[i].size(); j++) {
             const auto parts = splitLines(result[i][j]);
             for (const auto& part : parts) {
-                size_t w = displayWidth(part);
+                string expanded = expandTabs(part);
+                size_t w = displayWidth(expanded);
                 if (w > maxLengths[j]) {
                     maxLengths[j] = w;
                 }
@@ -149,25 +173,33 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
     string output;
 
     if (options.header) {
-        // Append the headers.
+        // Build header line in a buffer so we can trim trailing spaces
+        string line;
         for (size_t i = 0; i < result.headers.size(); i++) {
-            string entry = result.headers[i];
-            padToWidth(entry, maxLengths[i]);
-            if (i != 0) {
-                output += "  ";
+            string entry = expandTabs(result.headers[i]);
+            if (i + 1 < result.headers.size()) {
+                padToWidth(entry, maxLengths[i]);
             }
-            output += entry;
+            if (i != 0) {
+                line += "  ";
+            }
+            line += entry;
         }
+        while (!line.empty() && line.back() == ' ') line.pop_back();
+        output += line;
         output += "\n";
 
-        // Separator line.
+        // Separator line (also trim just in case)
+        line.clear();
         for (size_t i = 0; i < maxLengths.size(); i++) {
             string sep(maxLengths[i], '-');
             if (i != 0) {
-                output += "  ";
+                line += "  ";
             }
-            output += sep;
+            line += sep;
         }
+        while (!line.empty() && line.back() == ' ') line.pop_back();
+        output += line;
         output += "\n";
     }
 
@@ -184,14 +216,20 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
         }
 
         for (size_t k = 0; k < maxRowLines; ++k) {
+            string line;
             for (size_t j = 0; j < result[i].size(); j++) {
                 string entry = (k < perColLines[j].size()) ? perColLines[j][k] : string();
-                padToWidth(entry, maxLengths[j]);
-                if (j != 0) {
-                    output += "  ";
+                entry = expandTabs(entry);
+                if (j + 1 < result[i].size()) {
+                    padToWidth(entry, maxLengths[j]);
                 }
-                output += entry;
+                if (j != 0) {
+                    line += "  ";
+                }
+                line += entry;
             }
+            while (!line.empty() && line.back() == ' ') line.pop_back();
+            output += line;
             output += "\n";
         }
     }
