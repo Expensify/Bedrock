@@ -406,8 +406,7 @@ string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTION
     const char delimiter = '\t';
     string output;
 
-    // Header row (if present)
-    if (!result.headers.empty()) {
+    if (options.header) {
         for (size_t i = 0; i < result.headers.size(); ++i) {
             if (i) output.push_back(delimiter);
             output += result.headers[i];
@@ -419,7 +418,14 @@ string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTION
     for (const auto& row : result) {
         // If headers are present, output up to header count; otherwise, all fields.
         size_t cols = result.headers.empty() ? row.size() : result.headers.size();
-        for (size_t j = 0; j < cols; ++j) {
+        // Trim trailing empty fields so we don't print a trailing tab.
+        size_t last = cols;
+        while (last > 0) {
+            const string& f = (last - 1 < row.size()) ? row[last - 1] : string();
+            if (!f.empty()) break;
+            --last;
+        }
+        for (size_t j = 0; j < last; ++j) {
             if (j) output.push_back(delimiter);
             const string& field = (j < row.size()) ? row[j] : string();
             output += field;

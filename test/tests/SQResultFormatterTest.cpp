@@ -18,6 +18,8 @@ struct SQResultFormatterTest : tpunit::TestFixture {
                               TEST(SQResultFormatterTest::columnWithHeader),
                               TEST(SQResultFormatterTest::CSVNoHeader),
                               TEST(SQResultFormatterTest::CSVWithHeader),
+                              TEST(SQResultFormatterTest::TabsNoHeader),
+                              TEST(SQResultFormatterTest::TabsWithHeader),
                               AFTER_CLASS(SQResultFormatterTest::tearDown))
     { }
 
@@ -306,8 +308,76 @@ end",12,123.456789,"final	val,ue"
         ASSERT_EQUAL(result[0].content, expected);
     }
 
-} __SQResultFormatterTest;
+    void TabsNoHeader() {
+        SData query("Query");
+        query["query"] = "SELECT * FROM demo_format;";
+        query["readDBFlags"] = "-tsv -noheader";
+        auto result = tester->executeWaitMultipleData({query});
+        string expected =
+R"(1	Bob	Simple row	10	19.99	ok
+2	Smith, John	Comma in name	5	3.5	has,comma
+3	Alice "Ace"	Double quotes in name	7	2.75	He said "Hello"
+4	Line Feeder	line one
+line two	1	0.99	contains LF
+5	Carriage Return	first
+second	2	1.25	contains LFLF
+6	Tabby	has	tab	3	4.0	A	B
+7	Empty/Missing	empty string in misc next row is NULL	0	0.0
+8	Null Misc	misc is NULL here	0
+9	Sci Notation	price uses 1.23e+10	1	12300000000.0	big number
+10	Negative Qty	negative quantity	-42	5.25	neg qty
+11	Supercalifragilisticexpialidocious	long name to widen columns significantly	8	12.34	loooooooooooooooooooooooooooooong
+12	café	accented char	2	3.14	naïve façade
+13	Smiley 🙂	emoji inside text	1	0.1	rocket 🚀
+14	Quoter	He said, "Hello, world", then left.	4	6.0	mix, "both"
+15	Literal NULL	This string is "NULL"	9	9.99	NULL
+16	Piper|Piped	contains | pipe	6	2.22	A|B|C
+17	  spaced  	  keep spaces  	5	1.11	  around
+18	Zero		0	0.0	empty note
+19	Mix\t,Match	tab	and,comma	3	7.77	both	,present
+20	Tricky "Case", Inc.	start	mid, "q"
+end	12	123.456789	final	val,ue
+)";
 
+        ASSERT_EQUAL(result[0].content, expected);
+    }
+
+    void TabsWithHeader() {
+        SData query("Query");
+        query["query"] = "SELECT * FROM demo_format;";
+        query["readDBFlags"] = "-tsv -header";
+        auto result = tester->executeWaitMultipleData({query});
+        string expected =
+R"(id	name	note	qty	price	misc
+1	Bob	Simple row	10	19.99	ok
+2	Smith, John	Comma in name	5	3.5	has,comma
+3	Alice "Ace"	Double quotes in name	7	2.75	He said "Hello"
+4	Line Feeder	line one
+line two	1	0.99	contains LF
+5	Carriage Return	first
+second	2	1.25	contains LFLF
+6	Tabby	has	tab	3	4.0	A	B
+7	Empty/Missing	empty string in misc next row is NULL	0	0.0
+8	Null Misc	misc is NULL here	0
+9	Sci Notation	price uses 1.23e+10	1	12300000000.0	big number
+10	Negative Qty	negative quantity	-42	5.25	neg qty
+11	Supercalifragilisticexpialidocious	long name to widen columns significantly	8	12.34	loooooooooooooooooooooooooooooong
+12	café	accented char	2	3.14	naïve façade
+13	Smiley 🙂	emoji inside text	1	0.1	rocket 🚀
+14	Quoter	He said, "Hello, world", then left.	4	6.0	mix, "both"
+15	Literal NULL	This string is "NULL"	9	9.99	NULL
+16	Piper|Piped	contains | pipe	6	2.22	A|B|C
+17	  spaced  	  keep spaces  	5	1.11	  around
+18	Zero		0	0.0	empty note
+19	Mix\t,Match	tab	and,comma	3	7.77	both	,present
+20	Tricky "Case", Inc.	start	mid, "q"
+end	12	123.456789	final	val,ue
+)";
+
+        ASSERT_EQUAL(result[0].content, expected);
+    }
+
+} __SQResultFormatterTest;
 
 #if 0
 
