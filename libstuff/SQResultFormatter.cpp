@@ -22,8 +22,7 @@ string SQResultFormatter::format(const SQResult& result, SQResultFormatter::FORM
 
 string SQResultFormatter::formatJSON(const SQResult& result, const FORMAT_OPTIONS& options) {
     // Just output as a simple object
-    // **NOTE: This probably isn't super fast, but could be easily optimized
-    //         if it ever became necessary.
+    // This probably isn't super fast, but could be easily optimized if it ever became necessary.
     STable output;
     if (options.header) {
         output["headers"] = SComposeJSONArray(result.headers);
