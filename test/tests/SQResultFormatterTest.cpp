@@ -451,19 +451,3 @@ end',12,123.456789,'final	val,ue'
         ASSERT_EQUAL(result[0].content, expected);
     }
 } __SQResultFormatterTest;
-
-#if 0
-
-        size_t resultSize = result[0].content.size();
-        size_t expectedSize = expected.size();
-
-        cout << "Result size: " << resultSize << ", Expected size: " << expectedSize << endl;
-
-        for (size_t i = 0; i < expectedSize; i++) {
-            if (result[0].content[i] != expected[i]) {
-                cout << "At char " << i << " got " << (int)result[0].content[i] << ", expected " << (int)expected[i] <<endl;
-                cout << result[0].content.substr(i - 10, 20) << endl;
-                break;
-            }
-        }
-#endif
