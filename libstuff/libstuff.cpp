@@ -2651,7 +2651,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                                 row[i] = to_string(sqlite3_column_int64(preparedStatement, i));
                                 break;
                             case SQLITE_FLOAT:
-                                row[i] = to_string(sqlite3_column_double(preparedStatement, i));
+                                char buf[64];
+                                sqlite3_snprintf(sizeof(buf), buf, "%!.15g", sqlite3_column_double(preparedStatement, i));
+                                row[i] = buf;
                                 break;
                             case SQLITE_TEXT:
                                 row[i] = reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i));
