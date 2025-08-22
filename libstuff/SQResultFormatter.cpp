@@ -294,8 +294,7 @@ string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIO
     const char delimiter = ','; // sqlite default separator (respects our CSV/TSV pattern)
     string output;
 
-    // Emit headers if present (consistent with our CSV/TSV behavior)
-    if (!result.headers.empty()) {
+    if (options.header) {
         for (size_t i = 0; i < result.headers.size(); ++i) {
             if (i) output.push_back(delimiter);
             output += quoteSQL(result.headers[i]);
@@ -308,12 +307,6 @@ string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIO
         for (size_t j = 0; j < cols; ++j) {
             if (j) output.push_back(delimiter);
             string field = (j < row.size()) ? row[j] : string();
-
-            // Literal NULL (unquoted) if exactly "NULL"
-            if (field == "NULL") {
-                output += "NULL";
-                continue;
-            }
 
             // Numbers are bare (ASCII text, no quotes)
             if (isNumeric(field)) {
