@@ -2125,6 +2125,7 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message) {
 void SQLiteNode::_updateSyncPeer()
 {
     SQLitePeer* newSyncPeer = nullptr;
+    SQLitePeer* potentialLeadPeer = nullptr;
     uint64_t commitCount = _db.getCommitCount();
     for (auto peer : _peerList) {
         // If either of these conditions are true, then we can't use this peer.
@@ -2137,9 +2138,10 @@ void SQLiteNode::_updateSyncPeer()
             continue;
         }
 
-        // We want to sync, if possible, from a peer that is not the leader. So at this point, skip choosing it
-        // as the newSyncPeer.
-        if (peer == _leadPeer) {
+        // We want to sync, if possible, from a peer that is not the leader. So at this point, skip choosing it as the newSyncPeer.
+        if (peer->state == SQLiteNodeState::STANDINGUP || peer->state == SQLiteNodeState::LEADING || peer->state == SQLiteNodeState::STANDINGDOWN) {
+            SINFO("Skipping " << peer->name << " as sync choice because it's " << SQLiteNode::stateName(peer->state));
+            potentialLeadPeer = peer;
             continue;
         }
 
@@ -2167,8 +2169,9 @@ void SQLiteNode::_updateSyncPeer()
 
     // If we reached this point, it means that there are no other available peers to sync from, but leader
     // was a valid choice. In this case, let's use it as the newSyncPeer.
-    if (!newSyncPeer && _leadPeer) {
-        newSyncPeer = _leadPeer;
+    if (!newSyncPeer && potentialLeadPeer) {
+        SINFO("Choosing leader (" << potentialLeadPeer->name << ") as peer because we found no other options.");
+        newSyncPeer = potentialLeadPeer;
     }
 
     // Log that we've changed peers.
