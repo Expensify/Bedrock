@@ -41,22 +41,41 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
     // under their respective columns.
 
     // --- Unicode-aware width helpers ---
-    auto utf8Next = [](const string& s, size_t& i) -> uint32_t {
-        unsigned char c = static_cast<unsigned char>(s[i++]);
-        if (c < 0x80) return c;
-        uint32_t cp = 0;
-        int extra = 0;
-        if ((c & 0xE0) == 0xC0) { cp = c & 0x1F; extra = 1; }
-        else if ((c & 0xF0) == 0xE0) { cp = c & 0x0F; extra = 2; }
-        else if ((c & 0xF8) == 0xF0) { cp = c & 0x07; extra = 3; }
-        else { return 0xFFFD; }
-        while (extra-- && i < s.size()) {
-            unsigned char t = static_cast<unsigned char>(s[i]);
-            if ((t & 0xC0) != 0x80) break;
-            cp = (cp << 6) | (t & 0x3F);
-            ++i;
+    auto utf8Next = [](const string& input, size_t& byteIndex) -> uint32_t {
+        unsigned char firstByte = static_cast<unsigned char>(input[byteIndex]);
+        byteIndex += 1;
+
+        if (firstByte < 0x80) {
+            return firstByte;
         }
-        return cp;
+
+        uint32_t codePoint = 0;
+        int continuationBytesRemaining = 0;
+
+        if ((firstByte & 0xE0) == 0xC0) {
+            codePoint = firstByte & 0x1F;
+            continuationBytesRemaining = 1;
+        } else if ((firstByte & 0xF0) == 0xE0) {
+            codePoint = firstByte & 0x0F;
+            continuationBytesRemaining = 2;
+        } else if ((firstByte & 0xF8) == 0xF0) {
+            codePoint = firstByte & 0x07;
+            continuationBytesRemaining = 3;
+        } else {
+            return 0xFFFD;
+        }
+
+        while (continuationBytesRemaining > 0 && byteIndex < input.size()) {
+            unsigned char trailByte = static_cast<unsigned char>(input[byteIndex]);
+            if ((trailByte & 0xC0) != 0x80) {
+                break;
+            }
+            codePoint = (codePoint << 6) | (trailByte & 0x3F);
+            byteIndex += 1;
+            continuationBytesRemaining -= 1;
+        }
+
+        return codePoint;
     };
 
     auto isCombining = [](uint32_t cp) -> bool {
@@ -94,76 +113,94 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
         return false;
     };
 
-    auto displayWidth = [&](const string& s) -> size_t {
-        size_t w = 0; size_t i = 0;
-        while (i < s.size()) {
-            uint32_t cp = utf8Next(s, i);
-            if (cp == 0) continue; // safety
-            if (cp < 0x20 || cp == 0x7F) continue; // control -> width 0
-            if (isCombining(cp)) continue;         // zero-width combining
-            w += isWide(cp) ? 2 : 1;
-        }
-        return w;
-    };
-
-    auto padToWidth = [&](string& s, size_t target) {
-        size_t w = displayWidth(s);
-        if (w < target) s.append(target - w, ' ');
-    };
-
-    auto expandTabs = [&](const string& s) -> string {
-        string out;
-        out.reserve(s.size());
-        size_t i = 0;
-        size_t pos = 0; // visual column within the cell
-        while (i < s.size()) {
-            size_t before = i;
-            uint32_t cp = utf8Next(s, i);
-            if (cp == '\t') {
-                size_t spaces = 8 - (pos % 8);
-                out.append(spaces, ' ');
-                pos += spaces;
+    auto displayWidth = [&](const string& input) -> size_t {
+        size_t displayWidthCount = 0;
+        size_t byteIndex = 0;
+        while (byteIndex < input.size()) {
+            uint32_t codePoint = utf8Next(input, byteIndex);
+            if (codePoint == 0) {
+                continue; // safety
+            }
+            if (codePoint < 0x20 || codePoint == 0x7F) {
+                continue; // control -> width 0
+            }
+            if (isCombining(codePoint)) {
+                continue; // zero-width combining
+            }
+            if (isWide(codePoint)) {
+                displayWidthCount += 2;
             } else {
-                // append original bytes for this codepoint
-                out.append(s, before, i - before);
-                if (cp >= 0x20 && cp != 0x7F && !isCombining(cp)) {
-                    pos += isWide(cp) ? 2 : 1;
+                displayWidthCount += 1;
+            }
+        }
+        return displayWidthCount;
+    };
+
+    auto padToWidth = [&](string& input, size_t targetWidth) {
+        size_t currentWidth = displayWidth(input);
+        if (currentWidth < targetWidth) {
+            input.append(targetWidth - currentWidth, ' ');
+        }
+    };
+
+    auto expandTabs = [&](const string& input) -> string {
+        string expandedOutput;
+        expandedOutput.reserve(input.size());
+        size_t byteIndex = 0;
+        size_t visualColumn = 0; // visual column within the cell
+        while (byteIndex < input.size()) {
+            size_t codePointStart = byteIndex;
+            uint32_t codePoint = utf8Next(input, byteIndex);
+            if (codePoint == '\t') {
+                size_t spacesToInsert = 8 - (visualColumn % 8);
+                expandedOutput.append(spacesToInsert, ' ');
+                visualColumn += spacesToInsert;
+            } else {
+                expandedOutput.append(input, codePointStart, byteIndex - codePointStart);
+                if (codePoint >= 0x20 && codePoint != 0x7F && !isCombining(codePoint)) {
+                    if (isWide(codePoint)) {
+                        visualColumn += 2;
+                    } else {
+                        visualColumn += 1;
+                    }
                 }
             }
         }
-        return out;
+        return expandedOutput;
     };
 
-    auto splitLines = [](const string& s) -> vector<string> {
+    auto splitLines = [](const string& input) -> vector<string> {
         vector<string> lines;
-        size_t start = 0;
-        for (size_t i = 0; i <= s.size(); ++i) {
-            if (i == s.size() || s[i] == '\n') {
-                string line = s.substr(start, i - start);
+        size_t lineStart = 0;
+        for (size_t i = 0; i <= input.size(); i++) {
+            if (i == input.size() || input[i] == '\n') {
+                string line = input.substr(lineStart, i - lineStart);
                 if (!line.empty() && line.back() == '\r') {
                     line.pop_back();
                 }
                 lines.push_back(line);
-                start = i + 1;
+                lineStart = i + 1;
             }
         }
-        if (lines.empty()) lines.emplace_back();
+        if (lines.empty()) {
+            lines.emplace_back();
+        }
         return lines;
     };
 
     // Determine column widths: maximum subline length across header and all rows
-    vector<size_t> maxLengths(result.headers.size());
+    vector<size_t> maxColumnDisplayWidths(result.headers.size());
     for (size_t i = 0; i < result.headers.size(); i++) {
-        maxLengths[i] = displayWidth(expandTabs(result.headers[i]));
+        maxColumnDisplayWidths[i] = displayWidth(expandTabs(result.headers[i]));
     }
     for (size_t i = 0; i < result.size(); i++) {
         for (size_t j = 0; j < result[i].size(); j++) {
-            const auto parts = splitLines(result[i][j]);
-            for (const auto& part : parts) {
-                string expanded = expandTabs(part);
-                size_t w = displayWidth(expanded);
-                if (w > maxLengths[j]) {
-                    maxLengths[j] = w;
+            const auto sublines = splitLines(result[i][j]);
+            for (const auto& subline : sublines) {
+                string expandedSubline = expandTabs(subline);
+                size_t sublineWidth = displayWidth(expandedSubline);
+                if (sublineWidth > maxColumnDisplayWidths[j]) {
+                    maxColumnDisplayWidths[j] = sublineWidth;
                 }
             }
         }
@@ -174,62 +211,68 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
 
     if (options.header) {
         // Build header line in a buffer so we can trim trailing spaces
-        string line;
+        string headerLine;
         for (size_t i = 0; i < result.headers.size(); i++) {
-            string entry = expandTabs(result.headers[i]);
+            string headerCell = expandTabs(result.headers[i]);
             if (i + 1 < result.headers.size()) {
-                padToWidth(entry, maxLengths[i]);
+                padToWidth(headerCell, maxColumnDisplayWidths[i]);
             }
             if (i != 0) {
-                line += "  ";
+                headerLine += "  ";
             }
-            line += entry;
+            headerLine += headerCell;
         }
-        while (!line.empty() && line.back() == ' ') line.pop_back();
-        output += line;
+        while (!headerLine.empty() && headerLine.back() == ' ') {
+            headerLine.pop_back();
+        }
+        output += headerLine;
         output += "\n";
 
         // Separator line (also trim just in case)
-        line.clear();
-        for (size_t i = 0; i < maxLengths.size(); i++) {
-            string sep(maxLengths[i], '-');
+        headerLine.clear();
+        for (size_t i = 0; i < maxColumnDisplayWidths.size(); i++) {
+            string separator(maxColumnDisplayWidths[i], '-');
             if (i != 0) {
-                line += "  ";
+                headerLine += "  ";
             }
-            line += sep;
+            headerLine += separator;
         }
-        while (!line.empty() && line.back() == ' ') line.pop_back();
-        output += line;
+        while (!headerLine.empty() && headerLine.back() == ' ') {
+            headerLine.pop_back();
+        }
+        output += headerLine;
         output += "\n";
     }
 
     // Render each logical row as one or more physical lines based on embedded newlines.
     for (size_t i = 0; i < result.size(); i++) {
         // Pre-split each column into lines and find the tallest cell for this row.
-        vector<vector<string>> perColLines(result[i].size());
-        size_t maxRowLines = 1;
+        vector<vector<string>> linesPerColumn(result[i].size());
+        size_t maxPhysicalLinesInRow = 1;
         for (size_t j = 0; j < result[i].size(); j++) {
-            perColLines[j] = splitLines(result[i][j]);
-            if (perColLines[j].size() > maxRowLines) {
-                maxRowLines = perColLines[j].size();
+            linesPerColumn[j] = splitLines(result[i][j]);
+            if (linesPerColumn[j].size() > maxPhysicalLinesInRow) {
+                maxPhysicalLinesInRow = linesPerColumn[j].size();
             }
         }
 
-        for (size_t k = 0; k < maxRowLines; ++k) {
-            string line;
+        for (size_t k = 0; k < maxPhysicalLinesInRow; ++k) {
+            string renderedLine;
             for (size_t j = 0; j < result[i].size(); j++) {
-                string entry = (k < perColLines[j].size()) ? perColLines[j][k] : string();
-                entry = expandTabs(entry);
+                string cellText = (k < linesPerColumn[j].size()) ? linesPerColumn[j][k] : string();
+                cellText = expandTabs(cellText);
                 if (j + 1 < result[i].size()) {
-                    padToWidth(entry, maxLengths[j]);
+                    padToWidth(cellText, maxColumnDisplayWidths[j]);
                 }
                 if (j != 0) {
-                    line += "  ";
+                    renderedLine += "  ";
                 }
-                line += entry;
+                renderedLine += cellText;
             }
-            while (!line.empty() && line.back() == ' ') line.pop_back();
-            output += line;
+            while (!renderedLine.empty() && renderedLine.back() == ' ') {
+                renderedLine.pop_back();
+            }
+            output += renderedLine;
             output += "\n";
         }
     }
