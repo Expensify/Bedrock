@@ -281,84 +281,99 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
 }
 
 string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIONS& options) {
-    auto isNumeric = [](const string& s) -> bool {
-        if (s.empty()) return false;
+    auto isNumeric = [](const string& input) -> bool {
+        if (input.empty()) {
+            return false;
+        }
         size_t i = 0;
         // optional sign
-        if (s[i] == '+' || s[i] == '-') {
-            if (++i >= s.size()) return false;
+        if (input[i] == '+' || input[i] == '-') {
+            i += 1;
+            if (i >= input.size()) {
+                return false;
+            }
         }
-        bool anyDigits = false;
+        bool hasDigits = false;
         // integer part
-        while (i < s.size() && isdigit(static_cast<unsigned char>(s[i]))) {
-            anyDigits = true;
-            ++i;
+        while (i < input.size() && isdigit(static_cast<unsigned char>(input[i]))) {
+            hasDigits = true;
+            i += 1;
         }
         // decimal part
-        if (i < s.size() && s[i] == '.') {
-            ++i;
-            while (i < s.size() && isdigit(static_cast<unsigned char>(s[i]))) {
-                anyDigits = true;
-                ++i;
+        if (i < input.size() && input[i] == '.') {
+            i += 1;
+            while (i < input.size() && isdigit(static_cast<unsigned char>(input[i]))) {
+                hasDigits = true;
+                i += 1;
             }
         }
-        if (!anyDigits) return false;
+        if (!hasDigits) {
+            return false;
+        }
         // exponent part
-        if (i < s.size() && (s[i] == 'e' || s[i] == 'E')) {
-            ++i;
-            if (i < s.size() && (s[i] == '+' || s[i] == '-')) ++i;
-            bool expDigits = false;
-            while (i < s.size() && isdigit(static_cast<unsigned char>(s[i]))) {
-                expDigits = true;
-                ++i;
+        if (i < input.size() && (input[i] == 'e' || input[i] == 'E')) {
+            i += 1;
+            if (i < input.size() && (input[i] == '+' || input[i] == '-')) {
+                i += 1;
             }
-            if (!expDigits) return false;
+            bool exponentHasDigits = false;
+            while (i < input.size() && isdigit(static_cast<unsigned char>(input[i]))) {
+                exponentHasDigits = true;
+                i += 1;
+            }
+            if (!exponentHasDigits) {
+                return false;
+            }
         }
-        return i == s.size();
+        return i == input.size();
     };
 
-    auto quoteSQL = [](const string& s) -> string {
-        string out;
-        out.reserve(s.size() + 2);
-        out.push_back('\'');
-        for (char c : s) {
+    auto quoteSQL = [](const string& input) -> string {
+        string quotedOutput;
+        quotedOutput.reserve(input.size() + 2);
+        quotedOutput.push_back('\'');
+        for (char c : input) {
             if (c == '\'') {
                 // SQL escape by doubling the quote
-                out.push_back('\'');
-                out.push_back('\'');
+                quotedOutput.push_back('\'');
+                quotedOutput.push_back('\'');
             } else {
-                out.push_back(c);
+                quotedOutput.push_back(c);
             }
         }
-        out.push_back('\'');
-        return out;
+        quotedOutput.push_back('\'');
+        return quotedOutput;
     };
 
     const char delimiter = ','; // sqlite default separator (respects our CSV/TSV pattern)
     string output;
 
     if (options.header) {
-        for (size_t i = 0; i < result.headers.size(); ++i) {
-            if (i) output.push_back(delimiter);
+        for (size_t i = 0; i < result.headers.size(); i++) {
+            if (i) {
+                output.push_back(delimiter);
+            }
             output += quoteSQL(result.headers[i]);
         }
         output.push_back('\n');
     }
 
     for (const auto& row : result) {
-        size_t cols = result.headers.empty() ? row.size() : result.headers.size();
-        for (size_t j = 0; j < cols; ++j) {
-            if (j) output.push_back(delimiter);
-            string field = (j < row.size()) ? row[j] : string();
+        size_t columnCount = result.headers.empty() ? row.size() : result.headers.size();
+        for (size_t j = 0; j < columnCount; j++) {
+            if (j) {
+                output.push_back(delimiter);
+            }
+            string fieldText = (j < row.size()) ? row[j] : string();
 
             // Numbers are bare (ASCII text, no quotes)
-            if (isNumeric(field)) {
-                output += field;
+            if (isNumeric(fieldText)) {
+                output += fieldText;
                 continue;
             }
 
             // Everything else is a SQL string literal
-            output += quoteSQL(field);
+            output += quoteSQL(fieldText);
         }
         output.push_back('\n');
     }
