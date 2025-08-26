@@ -28,8 +28,9 @@ string SQResultFormatter::formatJSON(const SQResult& result, const FORMAT_OPTION
         output["headers"] = SComposeJSONArray(result.headers);
     }
     vector<string> jsonRows;
-    for (size_t c = 0; c < result.size(); ++c)
-        jsonRows.push_back(SComposeJSONArray(result[c]));
+    for (size_t rowIndex = 0; rowIndex < result.size(); ++rowIndex) {
+        jsonRows.push_back(SComposeJSONArray(result[rowIndex]));
+    }
     output["rows"] = SComposeJSONArray(jsonRows);
     return SComposeJSONObject(output);
 }
