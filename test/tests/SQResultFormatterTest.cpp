@@ -1,6 +1,4 @@
 #include "test/lib/tpunit++.hpp"
-#include <ostream>
-#include <stdexcept>
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>

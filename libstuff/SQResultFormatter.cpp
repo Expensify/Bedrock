@@ -389,44 +389,54 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
     //  - Emit "" for the empty string (distinct from SQL NULL, which remains empty between separators)
     //  - Emit a header row if headers exist (matches our TSV/QUOTE behavior)
 
-    auto needsQuoting = [](const string& s) -> bool {
-        if (s.empty()) return true; // sqlite shell prints "" for empty strings
-        for (unsigned char uc : s) {
-            if (uc == ',' || uc == '"' || uc == '\n' || uc == '\r') return true;
-            if (uc <= ' ') return true;     // spaces, tabs, other ASCII whitespace/control
-            if (uc >= 0x80) return true;    // non-ASCII bytes (e.g., accented chars, emoji bytes)
+    auto needsQuoting = [](const string& input) -> bool {
+        if (input.empty()) {
+            return true; // sqlite shell prints "" for empty strings
+        }
+        for (unsigned char byte : input) {
+            if (byte == ',' || byte == '"' || byte == '\n' || byte == '\r') {
+                return true;
+            }
+            if (byte <= ' ') {
+                return true;     // spaces, tabs, other ASCII whitespace/control
+            }
+            if (byte >= 0x80) {
+                return true;    // non-ASCII bytes (e.g., accented chars, emoji bytes)
+            }
         }
         return false;
     };
 
-    auto quoteCSV = [&](const string& s) -> string {
-        if (s.empty()) {
+    auto quoteCSV = [&](const string& input) -> string {
+        if (input.empty()) {
             return "\"\""; // empty string becomes ""
         }
-        if (!needsQuoting(s)) {
-            return s;
+        if (!needsQuoting(input)) {
+            return input;
         }
-        string out;
-        out.reserve(s.size() + 2);
-        out.push_back('"');
-        for (char c : s) {
+        string quoted;
+        quoted.reserve(input.size() + 2);
+        quoted.push_back('"');
+        for (char c : input) {
             if (c == '"') {
-                out.push_back('"');
-                out.push_back('"');
+                quoted.push_back('"');
+                quoted.push_back('"');
             } else {
-                out.push_back(c);
+                quoted.push_back(c);
             }
         }
-        out.push_back('"');
-        return out;
+        quoted.push_back('"');
+        return quoted;
     };
 
     const char delimiter = ',';
     string output;
 
     if (options.header) {
-        for (size_t i = 0; i < result.headers.size(); ++i) {
-            if (i) output.push_back(delimiter);
+        for (size_t i = 0; i < result.headers.size(); i++) {
+            if (i) {
+                output.push_back(delimiter);
+            }
             output += quoteCSV(result.headers[i]);
         }
         output.push_back('\n');
@@ -436,11 +446,13 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
     for (const auto& row : result) {
         // If headers are present, cap at header count (sqlite shell does this implicitly
         // as it prints per-column of the statement); otherwise, print all row fields.
-        size_t cols = result.headers.empty() ? row.size() : result.headers.size();
-        for (size_t j = 0; j < cols; ++j) {
-            if (j) output.push_back(delimiter);
-            const string& field = (j < row.size()) ? row[j] : string();
-            output += quoteCSV(field);
+        size_t columnCount = result.headers.empty() ? row.size() : result.headers.size();
+        for (size_t j = 0; j < columnCount; j++) {
+            if (j) {
+                output.push_back(delimiter);
+            }
+            const string& fieldText = (j < row.size()) ? row[j] : string();
+            output += quoteCSV(fieldText);
         }
         output.push_back('\n');
     }
