@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include <libstuff/libstuff.h>
+#include <libstuff/SDeburr.h>
 #include <libstuff/SQResult.h>
 
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
@@ -223,6 +224,9 @@ void SQLite::commonConstructorInitialization(bool hctree) {
 
     // Register the authorizer callback which allows callers to whitelist particular data in the DB.
     sqlite3_set_authorizer(_db, _sqliteAuthorizerCallback, this);
+
+    // Register application-defined deburr function.
+    SDeburr::registerSQLite(_db);
 
     // I tested and found that we could set about 10,000,000 and the number of steps to run and get a callback once a
     // second. This is set to be a bit more granular than that, which is probably adequate.

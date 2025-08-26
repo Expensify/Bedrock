@@ -19,3 +19,4 @@ libstuff/libstuff.h.gch
 compile_commands.json
 .vscode/*
 .fuse_hidden*
+benchmarks/bench
