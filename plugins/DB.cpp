@@ -1,4 +1,6 @@
 #include "DB.h"
+#include "libstuff/SQResultFormatter.h"
+#include "libstuff/libstuff.h"
 
 #include <string.h>
 
@@ -44,6 +46,42 @@ bool BedrockDBCommand::peek(SQLite& db) {
         STHROW("402 Missing query");
     }
 
+    // Read the flags that the readdb tool supports.
+    list<string> readDBFlags;
+    if (request.isSet("ReadDBFlags")) {
+        readDBFlags = SParseList(request["ReadDBFlags"], ' ');
+    }
+
+    // Set the format. Allow the legacy behavior for `format: json` if supplied.
+    SQResultFormatter::FORMAT format = SQResultFormatter::FORMAT::LIST;
+    SQResultFormatter::FORMAT_OPTIONS formatOptions;
+    if (SIEquals(request["Format"], "json")) {
+        format = SQResultFormatter::FORMAT::JSON;
+    }
+    for (auto flag : readDBFlags) {
+        if (flag == "-column") {
+            format = SQResultFormatter::FORMAT::COLUMN;
+        }
+        if (flag == "-csv") {
+            format = SQResultFormatter::FORMAT::CSV;
+        }
+        if (flag == "-tsv") {
+            format = SQResultFormatter::FORMAT::TABS;
+        }
+        if (flag == "-json") {
+            format = SQResultFormatter::FORMAT::JSON;
+        }
+        if (flag == "-quote") {
+            format = SQResultFormatter::FORMAT::QUOTE;
+        }
+        if (flag == "-header") {
+            formatOptions.header = true;
+        }
+        if (flag == "-noheader") {
+            formatOptions.header = false;
+        }
+    }
+
     if (!SEndsWith(query, ";")) {
         SALERT("Query aborted, query must end in ';'");
         STHROW("502 Query Missing Semicolon");
@@ -85,7 +123,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
     }
 
     // Worked! Set the output and return.
-    response.content = result.serialize(request["Format"]);
+    response.content = SQResultFormatter::format(result, format, formatOptions);
 
     return true;
 }
