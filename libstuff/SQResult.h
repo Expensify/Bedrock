@@ -45,6 +45,10 @@ class SQResultRow {
     bool empty() const;
     size_t size() const;
     SQResultRow& operator=(const SQResultRow& other);
+    string& at(size_t index);
+    const string& at(size_t index) const;
+
+    operator const std::vector<std::string>&() const;
 
   private:
     SQResult* result = nullptr;

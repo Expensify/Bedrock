@@ -34,6 +34,14 @@ size_t SQResultRow::size() const {
     return data.size();
 }
 
+string& SQResultRow::at(size_t index) {
+    return data.at(index);
+}
+
+const string& SQResultRow::at(size_t index) const {
+    return data.at(index);
+}
+
 string& SQResultRow::operator[](const size_t& rowNum) {
     try {
         return data.at(rowNum);
@@ -89,6 +97,10 @@ const string& SQResultRow::operator[](const string& key) const {
         }
     }
     STHROW_STACK("No column named " + key);
+}
+
+SQResultRow::operator const std::vector<std::string>&() const {
+    return data;
 }
 
 string SQResult::serializeToJSON() const {
