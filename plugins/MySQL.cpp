@@ -455,7 +455,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 // response or else the client will hang.
                 SINFO("Responding OK to $$ query.");
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
-            } else if (SREMatch("^SELECT\\s+VERSION\\(\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, nullptr)) {
+            } else if (SREMatch("^SELECT\\s+VERSION\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, nullptr)) {
                 // Return our fake version - handles SELECT VERSION(); and SELECT VERSION() AS alias;
                 SINFO("Responding fake version string");
                 SQResultRow row;
@@ -465,14 +465,14 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 // Extract the alias if present, otherwise use default column name
                 vector<string> matches;
                 string columnName = "version()";
-                if (SREMatch("^SELECT\\s+VERSION\\(\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, &matches) && !matches.empty()) {
-                    columnName = SToLower(matches[0]); // Use the alias if provided
+                if (SREMatch("^SELECT\\s+VERSION\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, &matches) && matches.size() > 1) {
+                    columnName = SToLower(matches[1]); // Use the alias if provided (matches[1] is the captured group)
                 }
                 
                 vector<string> headers = {columnName};
                 SQResult result(move(rows), move(headers));
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SREMatch("^SELECT\\s+CONNECTION_ID\\(\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, nullptr)) {
+            } else if (SREMatch("^SELECT\\s+CONNECTION_ID\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, nullptr)) {
                 // Return connection ID - handles SELECT connection_id(); and SELECT connection_id() AS alias;
                 SINFO("Responding with connection ID");
                 SQResultRow row;
@@ -482,15 +482,120 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 // Extract the alias if present, otherwise use default column name
                 vector<string> matches;
                 string columnName = "connection_id()";
-                if (SREMatch("^SELECT\\s+CONNECTION_ID\\(\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, &matches) && !matches.empty()) {
-                    columnName = SToLower(matches[0]); // Use the alias if provided
+                if (SREMatch("^SELECT\\s+CONNECTION_ID\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, &matches) && matches.size() > 1) {
+                    columnName = SToLower(matches[1]); // Use the alias if provided (matches[1] is the captured group)
                 }
                 
                 vector<string> headers = {columnName};
                 SQResult result(move(rows), move(headers));
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            // Add SHOW KEYS() support
-
+            } else if (SContains(SToUpper(query), "SHOW KEYS FROM")) {
+                // Handle SHOW KEYS FROM table queries
+                SINFO("Processing SHOW KEYS query for table indexes");
+                
+                // Extract table name from SHOW KEYS FROM `tableName` or SHOW KEYS FROM tableName
+                string upperQuery = SToUpper(query);
+                string tableName;
+                
+                // Look for patterns like "FROM `tablename`" or "FROM tablename"
+                size_t fromPos = upperQuery.find("FROM");
+                if (fromPos != string::npos) {
+                    size_t tableStart = query.find_first_not_of(" \t", fromPos + 4);
+                    if (tableStart != string::npos) {
+                        size_t tableEnd;
+                        if (query[tableStart] == '`') {
+                            // Handle backtick-quoted table names like `bankAccounts`
+                            tableStart++; // Skip opening backtick
+                            tableEnd = query.find('`', tableStart);
+                        } else {
+                            // Handle unquoted table names
+                            tableEnd = query.find_first_of(" \t;", tableStart);
+                            if (tableEnd == string::npos) tableEnd = query.length();
+                        }
+                        
+                        if (tableEnd != string::npos && tableEnd > tableStart) {
+                            tableName = query.substr(tableStart, tableEnd - tableStart);
+                            SINFO("Extracted table name for SHOW KEYS: '" << tableName << "'");
+                            
+                            // Transform this into an internal request to get primary key info
+                            request.methodLine = "Query";
+                            request["format"] = "json";
+                            request["sequenceID"] = SToStr(packet.sequenceID);
+                            request["query"] = 
+                                "SELECT "
+                                    "'" + tableName + "' as Table_name, "
+                                    "0 as Non_unique, "
+                                    "'PRIMARY' as Key_name, "
+                                    "(cid + 1) as Seq_in_index, "
+                                    "name as Column_name, "
+                                    "'A' as Collation, "
+                                    "NULL as Cardinality, "
+                                    "NULL as Sub_part, "
+                                    "NULL as Packed, "
+                                    "CASE WHEN \"notnull\" = 1 THEN '' ELSE 'YES' END as Null_col, "
+                                    "'BTREE' as Index_type, "
+                                    "'' as Comment, "
+                                    "'' as Index_comment "
+                                "FROM pragma_table_info('" + tableName + "') "
+                                "WHERE pk = 1 "
+                                "ORDER BY cid;";
+                        } else {
+                            // If we can't extract table name, return empty result
+                            SINFO("Could not extract table name from SHOW KEYS query, returning empty result");
+                            SQResult result;
+                            s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                        }
+                    } else {
+                        // Missing table name
+                        SINFO("No table name found in SHOW KEYS query, returning empty result");
+                        SQResult result;
+                        s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                    }
+                } else {
+                    // Malformed query
+                    SINFO("Malformed SHOW KEYS query, returning empty result");
+                    SQResult result;
+                    s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                }
+            } else if (SContains(SToUpper(query), "INFORMATION_SCHEMA.KEY_COLUMN_USAGE") && 
+                       SContains(SToUpper(query), "INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS")) {
+                // Handle foreign key constraint queries
+                SINFO("Processing information_schema foreign key constraints query");
+                
+                // Extract table name from the query
+                string tableName;
+                string upperQuery = SToUpper(query);
+                
+                // Look for pattern "table_name = 'tablename'" or "cu.table_name = 'tablename'" (case-insensitive)
+                vector<string> matches;
+                if (SREMatch("(?:\\w+\\.)?table_name\\s*=\\s*['\"]([^'\"]+)['\"]", query, false, true, &matches) && matches.size() > 1) {
+                    tableName = matches[1]; // matches[1] is the captured group, matches[0] is the entire match
+                    SINFO("Extracted table name for foreign key query: '" << tableName << "'");
+                    
+                    // Transform this into an internal request to get foreign key info using PRAGMA foreign_key_list
+                    request.methodLine = "Query";
+                    request["format"] = "json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] = 
+                        "SELECT "
+                            "'fk_' || \"table\" || '_' || \"from\" as constraint_name, "
+                            "\"from\" as column_name, "
+                            "\"table\" as referenced_table_name, "
+                            "'FOREIGN' as key_type, "
+                            "\"table\" as referenced_table, "
+                            "\"to\" as referenced_column, "
+                            "CASE WHEN on_update = 'NO ACTION' THEN 'RESTRICT' ELSE on_update END as on_update, "
+                            "CASE WHEN on_delete = 'NO ACTION' THEN 'RESTRICT' ELSE on_delete END as on_delete, "
+                            "'fk_' || \"table\" || '_' || \"from\" as rc_constraint_name, "
+                            "(seq + 1) as ordinal_position "
+                        "FROM pragma_foreign_key_list('" + tableName + "') "
+                        "ORDER BY \"table\", seq;";
+                } else {
+                    // If we can't extract table name, return empty result
+                    SINFO("Could not extract table name from foreign key query, returning empty result");
+                    SQResult result;
+                    s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                }
             } else {
                 // Transform this into an internal request
                 request.methodLine = "Query";
