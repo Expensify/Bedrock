@@ -26,10 +26,8 @@ class SQResultRow {
       };
     };
 
-    using iterator = vector<string>::iterator;
-    using const_iterator = vector<string>::const_iterator;
     template <class InputIt>
-    iterator insert(const_iterator pos, InputIt first, InputIt last) {
+    vector<string>::iterator insert(vector<string>::const_iterator pos, InputIt first, InputIt last) {
         return data.insert(pos, first, last);
     }
 
@@ -41,7 +39,11 @@ class SQResultRow {
     const string& operator[](const size_t& key) const;
     string& operator[](const string& key);
     const string& operator[](const string& key) const;
+    vector<string>::const_iterator begin() const;
     vector<string>::iterator end();
+    vector<string>::const_iterator end() const;
+    bool empty() const;
+    size_t size() const;
     SQResultRow& operator=(const SQResultRow& other);
 
   private:

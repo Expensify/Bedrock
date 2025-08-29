@@ -17,6 +17,22 @@ vector<string>::iterator SQResultRow::end() {
     return data.end();
 }
 
+vector<string>::const_iterator SQResultRow::end() const {
+    return data.end();
+}
+
+vector<string>::const_iterator SQResultRow::begin() const {
+    return data.begin();
+}
+
+bool SQResultRow::empty() const {
+    return data.empty();
+}
+
+size_t SQResultRow::size() const {
+    return data.size();
+}
+
 string& SQResultRow::operator[](const size_t& rowNum) {
     try {
         return data.at(rowNum);
