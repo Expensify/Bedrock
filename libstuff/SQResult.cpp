@@ -253,7 +253,7 @@ const string SQResultRow::operator[](const string& key) const {
     STHROW_STACK("No column named " + key);
 }
 
-SQResultRow::operator const std::vector<std::string>() const {
+SQResultRow::operator vector<string>() const {
     vector<string> out(data.size());
     for (size_t i = 0; i < data.size(); i++) {
         out[i] = data[i];

@@ -89,7 +89,7 @@ class SQResultRow {
     ColVal& get(size_t index);
     const string at(size_t index) const;
 
-    operator const std::vector<std::string>() const;
+    operator vector<string>() const;
 
   private:
     SQResult* result = nullptr;
