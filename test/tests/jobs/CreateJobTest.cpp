@@ -132,8 +132,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(originalJob[0][2], "QUEUED");
         ASSERT_EQUAL(originalJob[0][3], jobName);
         // nextRun and created should be equal or higher to the time we started the test
-        ASSERT_TRUE(originalJob[0][0].compare(startTime) >= 0);
-        ASSERT_TRUE(originalJob[0][4].compare(startTime) >= 0);
+        ASSERT_TRUE(string(originalJob[0][0]).compare(startTime) >= 0);
+        ASSERT_TRUE(string(originalJob[0][4]).compare(startTime) >= 0);
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], "");
         ASSERT_EQUAL(originalJob[0][7], data);

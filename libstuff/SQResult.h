@@ -9,25 +9,61 @@ class SQResultRow {
     friend class SQResult;
   public:
 
-    class COLVAL {
-      enum class TYPES {
-        NONE, // because NULL is overloaded.
-        INTEGER,
-        REAL,
-        TEXT,
-        BLOB,
+    class ColVal {
+      public:
+        enum class TYPE {
+            NONE, // because NULL is overloaded.
+            INTEGER,
+            REAL,
+            TEXT,
+            BLOB,
+        };
+
+      operator string() const;
+
+      // Constructors;
+      ColVal();
+      ColVal(int64_t val);
+      ColVal(double val);
+      explicit ColVal(const string& val);
+      explicit ColVal(TYPE t, const string& val);
+
+      ColVal& operator=(const string& val);
+      ColVal& operator=(string&& val);
+
+      // Allow string concatenation.
+      friend string operator+(string lhs, const ColVal& rhs);
+      friend string operator+(const ColVal& lhs, string rhs);
+      friend string operator+(const char* lhs, const ColVal& rhs);
+      friend string operator+(const ColVal& lhs, const char* rhs);
+
+      // And string comparison
+      friend bool operator==(const ColVal& a, const string& b);
+      friend bool operator==(const string& a, const ColVal& b);
+      friend bool operator==(const ColVal& a, const char* b);
+      friend bool operator==(const char* a, const ColVal& b);
+
+      friend bool operator==(const ColVal& a, const ColVal& b);
+      friend bool operator!=(const ColVal& a, const ColVal& b) { return !(a == b); }
+
+      bool empty() const;
+
+      friend ostream& operator<<(ostream& os, const ColVal& v);
+
+      private:
+          TYPE type;
+
+          // Treat these as a union.
+          int64_t integer{0};
+          double real{0.0};
+          string text;
+          // Not used, we simply store this in `text` as they're stored the same way.
+          // This is left here to make it clear it's not accidentally omitted.
+          // string blob;
       };
-      union DATA {
-        int64_t none;
-        int64_t integer;
-        double real;
-        string text;
-        string blob;
-      };
-    };
 
     template <class InputIt>
-    vector<string>::iterator insert(vector<string>::const_iterator pos, InputIt first, InputIt last) {
+    vector<ColVal>::iterator insert(vector<ColVal>::const_iterator pos, InputIt first, InputIt last) {
         return data.insert(pos, first, last);
     }
 
@@ -35,24 +71,24 @@ class SQResultRow {
     SQResultRow(SQResult& result, size_t count = 0);
     SQResultRow(SQResultRow const&) = default;
     void push_back(const string& s);
-    string& operator[](const size_t& key);
-    const string& operator[](const size_t& key) const;
-    string& operator[](const string& key);
-    const string& operator[](const string& key) const;
-    vector<string>::const_iterator begin() const;
-    vector<string>::iterator end();
-    vector<string>::const_iterator end() const;
+    ColVal& operator[](const size_t& key);
+    const ColVal& operator[](const size_t& key) const;
+    ColVal& operator[](const string& key);
+    const ColVal& operator[](const string& key) const;
+    vector<ColVal>::const_iterator begin() const;
+    vector<ColVal>::iterator end();
+    vector<ColVal>::const_iterator end() const;
     bool empty() const;
     size_t size() const;
     SQResultRow& operator=(const SQResultRow& other);
-    string& at(size_t index);
-    const string& at(size_t index) const;
+    string at(size_t index);
+    const string at(size_t index) const;
 
-    operator const std::vector<std::string>&() const;
+    operator const std::vector<std::string>() const;
 
   private:
     SQResult* result = nullptr;
-    vector<string> data;
+    vector<ColVal> data;
 };
 
 class SQResult {
