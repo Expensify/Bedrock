@@ -171,11 +171,15 @@ string SQResultRow::at(size_t index) {
     return data.at(index);
 }
 
+SQResultRow::ColVal& SQResultRow::get(size_t index) {
+    return data.at(index);
+}
+
 const string SQResultRow::at(size_t index) const {
     return data.at(index);
 }
 
-SQResultRow::ColVal::operator std::string() const {
+SQResultRow::ColVal::operator string() const {
     switch (type) {
         case TYPE::TEXT:
         case TYPE::BLOB:

@@ -2648,19 +2648,19 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                         int colType = sqlite3_column_type(preparedStatement, i);
                         switch (colType) {
                             case SQLITE_INTEGER:
-                                row[i] = (int64_t)sqlite3_column_int64(preparedStatement, i);
+                                row.get(i) = (int64_t)sqlite3_column_int64(preparedStatement, i);
                                 break;
                             case SQLITE_FLOAT:
-                                row[i] = sqlite3_column_double(preparedStatement, i);
+                                row.get(i) = sqlite3_column_double(preparedStatement, i);
                                 break;
                             case SQLITE_TEXT:
-                                row[i] = SQResultRow::ColVal(SQResultRow::ColVal::TYPE::TEXT, string(reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i))));
+                                row.get(i) = SQResultRow::ColVal(SQResultRow::ColVal::TYPE::TEXT, string(reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i))));
                                 break;
                             case SQLITE_BLOB:
-                                row[i] = SQResultRow::ColVal(SQResultRow::ColVal::TYPE::BLOB, string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i)));
+                                row.get(i) = SQResultRow::ColVal(SQResultRow::ColVal::TYPE::BLOB, string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i)));
                                 break;
                             case SQLITE_NULL:
-                                // null string.
+                                row.get(i) = SQResultRow::ColVal();
                                 break;
                         }
                     }
