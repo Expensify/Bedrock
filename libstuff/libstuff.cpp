@@ -2654,13 +2654,13 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                                 row.get(i) = sqlite3_column_double(preparedStatement, i);
                                 break;
                             case SQLITE_TEXT:
-                                row.get(i) = SQResultRow::ColVal(SQResultRow::ColVal::TYPE::TEXT, string(reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i))));
+                                row.get(i) = SQValue(SQValue::TYPE::TEXT, string(reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i))));
                                 break;
                             case SQLITE_BLOB:
-                                row.get(i) = SQResultRow::ColVal(SQResultRow::ColVal::TYPE::BLOB, string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i)));
+                                row.get(i) = SQValue(SQValue::TYPE::BLOB, string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i)));
                                 break;
                             case SQLITE_NULL:
-                                row.get(i) = SQResultRow::ColVal();
+                                row.get(i) = SQValue();
                                 break;
                         }
                     }
