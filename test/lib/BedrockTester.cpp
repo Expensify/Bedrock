@@ -167,6 +167,35 @@ string BedrockTester::getArg(const string& arg) const {
     return "";
 }
 
+void BedrockTester::autoAttachDebugger() {
+    const char* autoAttachConfigFile = getenv("BEDROCK_AUTO_ATTACH_DEBUGGER_CONFIG");
+    if (!autoAttachConfigFile || !SFileExists(autoAttachConfigFile)) {
+        return;
+    }
+
+    // Load the configuration and parse it
+    string configStr;
+    SFileLoad(autoAttachConfigFile, configStr);
+    STable config = SParseJSONObject(configStr);
+
+    // Get the rpc server and inject the current pid
+    string rpcServer = config["rpcServer"];
+    config["pid"] = getpid();
+
+    // Create, connect and send the config to the lldb RPC server
+    int socket = S_socket(rpcServer, true, false, true);
+    SFastBuffer serialized(SComposeJSONObject(config));
+    S_sendconsume(socket, serialized);
+
+    // Half close the socket (we're no longer writing to it. FIN is sent)
+    ::shutdown(socket, SHUT_WR);
+
+    // Receive the result of trying to attach and close the socket
+    SFastBuffer recvBuffer("");
+    S_recvappend(socket, recvBuffer);
+    ::close(socket);
+}
+
 string BedrockTester::startServer(bool wait) {
     int childPID = fork();
     if (childPID == -1) {
@@ -226,6 +255,8 @@ string BedrockTester::startServer(bool wait) {
             count++;
         }
         cargs[count] = 0;
+
+        autoAttachDebugger();
 
         // And then start the new server!
         execvp(serverName.c_str(), cargs);
