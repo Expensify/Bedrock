@@ -387,6 +387,23 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             // Add SHOW KEYS() support
 
+            } else if (SREMatch("^SELECT\\s+CONNECTION_ID\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, nullptr)) {
+                // Return connection ID - handles SELECT connection_id(); and SELECT connection_id() AS alias;
+                SINFO("Responding with connection ID");
+                SQResultRow row;
+                row.push_back("1"); // Return a simple connection ID
+                vector<SQResultRow> rows = {row};
+                
+                // Extract the alias if present, otherwise use default column name
+                vector<string> matches;
+                string columnName = "connection_id()";
+                if (SREMatch("^SELECT\\s+CONNECTION_ID\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, &matches) && matches.size() > 1) {
+                    columnName = SToLower(matches[1]); // Use the alias if provided (matches[1] is the captured group)
+                }
+                
+                vector<string> headers = {columnName};
+                SQResult result(move(rows), move(headers));
+                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             } else {
                 // Transform this into an internal request
                 request.methodLine = "Query";
