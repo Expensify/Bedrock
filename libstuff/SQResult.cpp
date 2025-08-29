@@ -17,6 +17,14 @@ SQResultRow::ColVal& SQResultRow::ColVal::operator=(string&& val) {
     return *this;
 }
 
+SQResultRow::ColVal::ColVal(const char* val) : type(SQResultRow::ColVal::TYPE::TEXT), text(val ? val : "") {}
+
+SQResultRow::ColVal& SQResultRow::ColVal::operator=(const char* val) {
+    type = TYPE::TEXT;
+    text = val ? val : "";
+    return *this;
+}
+
 SQResultRow::SQResultRow(SQResult& result, size_t count) : result(&result) {
     data.resize(count);
 }
@@ -54,6 +62,10 @@ string operator+(const char* lhs, const SQResultRow::ColVal& rhs) {
 
 string operator+(const SQResultRow::ColVal& lhs, const char* rhs) {
     return static_cast<string>(lhs) + string(rhs);
+}
+
+string operator+(const SQResultRow::ColVal& lhs, const SQResultRow::ColVal& rhs) {
+    return static_cast<string>(lhs) + static_cast<string>(rhs);
 }
 
 bool operator==(const SQResultRow::ColVal& a, const string& b) {
@@ -121,6 +133,10 @@ bool SQResultRow::ColVal::empty() const {
     return false;
 }
 
+size_t SQResultRow::ColVal::size() const {
+    return static_cast<string>(*this).size();
+}
+
 ostream& operator<<(ostream& os, const SQResultRow::ColVal& v) {
     // Reuse the string conversion which already formats REAL reasonably.
     os << static_cast<string>(v);
@@ -176,7 +192,7 @@ SQResultRow::ColVal::operator std::string() const {
     }
 }
 
-SQResultRow::ColVal& SQResultRow::operator[](const size_t& rowNum) {
+string SQResultRow::operator[](const size_t& rowNum) {
     try {
         return data.at(rowNum);
     } catch (const out_of_range& e) {
@@ -184,7 +200,7 @@ SQResultRow::ColVal& SQResultRow::operator[](const size_t& rowNum) {
         STHROW_STACK("Out of range");
     }
 }
-const SQResultRow::ColVal& SQResultRow::operator[](const size_t& rowNum) const {
+const string SQResultRow::operator[](const size_t& rowNum) const {
     try {
         return data.at(rowNum);
     } catch (const out_of_range& e) {
@@ -199,7 +215,7 @@ SQResultRow& SQResultRow::operator=(const SQResultRow& other) {
     return *this;
 }
 
-SQResultRow::ColVal& SQResultRow::operator[](const string& key) {
+string SQResultRow::operator[](const string& key) {
     if (result) {
         for (size_t i = 0; i < result->headers.size(); i++) {
 
@@ -216,7 +232,7 @@ SQResultRow::ColVal& SQResultRow::operator[](const string& key) {
     STHROW_STACK("No column named " + key);
 }
 
-const SQResultRow::ColVal& SQResultRow::operator[](const string& key) const {
+const string SQResultRow::operator[](const string& key) const {
     if (result) {
         for (size_t i = 0; i < result->headers.size(); i++) {
 

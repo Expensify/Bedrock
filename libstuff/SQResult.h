@@ -25,17 +25,20 @@ class SQResultRow {
       ColVal();
       ColVal(int64_t val);
       ColVal(double val);
+      ColVal(const char* val);
       explicit ColVal(const string& val);
       explicit ColVal(TYPE t, const string& val);
 
       ColVal& operator=(const string& val);
       ColVal& operator=(string&& val);
+      ColVal& operator=(const char* val);
 
       // Allow string concatenation.
       friend string operator+(string lhs, const ColVal& rhs);
       friend string operator+(const ColVal& lhs, string rhs);
       friend string operator+(const char* lhs, const ColVal& rhs);
       friend string operator+(const ColVal& lhs, const char* rhs);
+      friend string operator+(const ColVal& lhs, const ColVal& rhs);
 
       // And string comparison
       friend bool operator==(const ColVal& a, const string& b);
@@ -47,6 +50,7 @@ class SQResultRow {
       friend bool operator!=(const ColVal& a, const ColVal& b) { return !(a == b); }
 
       bool empty() const;
+      size_t size() const;
 
       friend ostream& operator<<(ostream& os, const ColVal& v);
 
@@ -71,10 +75,10 @@ class SQResultRow {
     SQResultRow(SQResult& result, size_t count = 0);
     SQResultRow(SQResultRow const&) = default;
     void push_back(const string& s);
-    ColVal& operator[](const size_t& key);
-    const ColVal& operator[](const size_t& key) const;
-    ColVal& operator[](const string& key);
-    const ColVal& operator[](const string& key) const;
+    string operator[](const size_t& key);
+    const string operator[](const size_t& key) const;
+    string operator[](const string& key);
+    const string operator[](const string& key) const;
     vector<ColVal>::const_iterator begin() const;
     vector<ColVal>::iterator end();
     vector<ColVal>::const_iterator end() const;
