@@ -4,6 +4,7 @@
 #include <stdexcept>
 
 SQResultRow::SQResultRow(SQResult& result, size_t count) : result(&result) {
+    data.resize(count);
 }
 
 SQResultRow::SQResultRow() : result(nullptr) {
