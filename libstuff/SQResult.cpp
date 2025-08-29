@@ -159,7 +159,9 @@ bool SQResult::deserialize(const string& json) {
 
             // Insert the values
             SQResultRow& row = rows[rowIndex++];
-            row.insert(row.end(), jsonRow.begin(), jsonRow.end());
+            for (const string& s : jsonRow) {
+                row.push_back(s);
+            }
         }
 
         // Success!

@@ -1,39 +1,30 @@
 #include <libstuff/SQValue.h>
 #include <libstuff/sqlite3.h>
 
-SQValue& SQValue::operator=(const string& val) {
-    type = TYPE::TEXT;
-    text = val;
-    return *this;
-}
-
-SQValue& SQValue::operator=(string&& val) {
-    type = TYPE::TEXT;
-    text = std::move(val);
-    return *this;
-}
-
+// All of our connstructor bodies are emtpy, we just use member initializer lists.
+SQValue::SQValue() : type(SQValue::TYPE::NONE) {}
+SQValue::SQValue(int64_t val) : type(SQValue::TYPE::INTEGER), integer(val) {}
+SQValue::SQValue(double val) : type(SQValue::TYPE::REAL), real(val) {}
 SQValue::SQValue(const char* val) : type(SQValue::TYPE::TEXT), text(val ? val : "") {}
+SQValue::SQValue(const string& val) : type(SQValue::TYPE::TEXT), text(val) {}
+SQValue::SQValue(TYPE t, const string& val) : type(t), text(val) {}
 
-SQValue& SQValue::operator=(const char* val) {
-    type = TYPE::TEXT;
-    text = val ? val : "";
-    return *this;
-}
-
-SQValue::SQValue() : type(SQValue::TYPE::NONE) {
-}
-
-SQValue::SQValue(int64_t val) : type(SQValue::TYPE::INTEGER), integer(val) {
-}
-
-SQValue::SQValue(double val) : type(SQValue::TYPE::REAL), real(val) {
-}
-
-SQValue::SQValue(const string& val) : type(SQValue::TYPE::TEXT), text(val) {
-}
-
-SQValue::SQValue(TYPE t, const string& val) : type(t), text(val) {
+SQValue::operator string() const {
+    switch (type) {
+        case TYPE::TEXT:
+        case TYPE::BLOB:
+            return text;
+        case TYPE::INTEGER:
+            return std::to_string(integer);
+        case TYPE::REAL:
+            // This is the same format that the sqlite3 shell uses internally.
+            char buf[64];
+            sqlite3_snprintf(sizeof(buf), buf, "%!.15g", real);
+            return string(buf);
+        case TYPE::NONE:
+        default:
+            return "";
+    }
 }
 
 string operator+(string lhs, const SQValue& rhs) {
@@ -41,7 +32,7 @@ string operator+(string lhs, const SQValue& rhs) {
     return lhs;
 }
 
-string operator+(const SQValue& lhs, string rhs) {
+string operator+(const SQValue& lhs, const string& rhs) {
     return static_cast<string>(lhs) + rhs;
 }
 
@@ -87,21 +78,30 @@ bool operator==(const SQValue& a, const SQValue& b) {
         case SQValue::TYPE::INTEGER:
             return a.integer == b.integer;
 
-        case SQValue::TYPE::REAL: {
-            // Reasonable floating-point equality: combined abs/rel tolerance
-            double da = a.real;
-            double db = b.real;
-            double diff = da - db;
-            if (diff < 0) diff = -diff;
+        case SQValue::TYPE::REAL:
+        {
+            // Floating point equality is fuzzy.
+            double aVal = a.real;
+            double bVal = b.real;
+            double difference = aVal - bVal;
+            if (difference < 0) {
+                difference = -difference;
+            }
 
             const double absTol = 1e-12;
             const double relTol = 1e-9;
 
-            double aad = da; if (aad < 0) aad = -aad;
-            double abd = db; if (abd < 0) abd = -abd;
-            double scale = (aad > abd) ? aad : abd;
+            double absA = aVal;
+            if (absA < 0) {
+                absA = -absA;
+            }
+            double absB = bVal;
+            if (absB < 0) {
+                absB = -absB;
+            }
+            double scaleFactor = (absA > absB) ? absA : absB;
 
-            return diff <= absTol + relTol * scale;
+            return difference <= absTol + relTol * scaleFactor;
         }
 
         case SQValue::TYPE::TEXT:
@@ -110,6 +110,10 @@ bool operator==(const SQValue& a, const SQValue& b) {
     }
 
     return false;
+}
+
+bool operator!=(const SQValue& a, const SQValue& b) {
+    return !(a == b);
 }
 
 bool SQValue::empty() const {
@@ -126,25 +130,7 @@ size_t SQValue::size() const {
     return static_cast<string>(*this).size();
 }
 
-SQValue::operator string() const {
-    switch (type) {
-        case TYPE::TEXT:
-        case TYPE::BLOB:
-            return text;
-        case TYPE::INTEGER:
-            return std::to_string(integer);
-        case TYPE::REAL:
-            char buf[64];
-            sqlite3_snprintf(sizeof(buf), buf, "%!.15g", real);
-            return string(buf);
-        case TYPE::NONE:
-        default:
-            return "";
-    }
-}
-
 ostream& operator<<(ostream& os, const SQValue& v) {
-    // Reuse the string conversion which already formats REAL reasonably.
     os << static_cast<string>(v);
     return os;
 }

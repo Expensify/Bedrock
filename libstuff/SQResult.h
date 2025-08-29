@@ -8,8 +8,8 @@ class SQResult;
 
 class SQResultRow {
     friend class SQResult;
-  public:
 
+  public:
     SQResultRow();
     SQResultRow(SQResult& result, size_t count = 0);
     SQResultRow(SQResultRow const&) = default;
@@ -27,13 +27,7 @@ class SQResultRow {
     string at(size_t index);
     SQValue& get(size_t index);
     const string at(size_t index) const;
-
     operator vector<string>() const;
-
-    template <class InputIt>
-    vector<SQValue>::iterator insert(vector<SQValue>::const_iterator pos, InputIt first, InputIt last) {
-        return data.insert(pos, first, last);
-    }
 
   private:
     SQResult* result = nullptr;
