@@ -5,9 +5,34 @@
 using namespace std;
 class SQResult;
 
-class SQResultRow : public vector<string> {
+class SQResultRow {
     friend class SQResult;
   public:
+
+    class COLVAL {
+      enum class TYPES {
+        NONE, // because NULL is overloaded.
+        INTEGER,
+        REAL,
+        TEXT,
+        BLOB,
+      };
+      union DATA {
+        int64_t none;
+        int64_t integer;
+        double real;
+        string text;
+        string blob;
+      };
+    };
+
+    using iterator = vector<string>::iterator;
+    using const_iterator = vector<string>::const_iterator;
+    template <class InputIt>
+    iterator insert(const_iterator pos, InputIt first, InputIt last) {
+        return data.insert(pos, first, last);
+    }
+
     SQResultRow();
     SQResultRow(SQResult& result, size_t count = 0);
     SQResultRow(SQResultRow const&) = default;
@@ -16,10 +41,12 @@ class SQResultRow : public vector<string> {
     const string& operator[](const size_t& key) const;
     string& operator[](const string& key);
     const string& operator[](const string& key) const;
+    vector<string>::iterator end();
     SQResultRow& operator=(const SQResultRow& other);
 
   private:
     SQResult* result = nullptr;
+    vector<string> data;
 };
 
 class SQResult {

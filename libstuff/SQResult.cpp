@@ -3,19 +3,23 @@
 #include "libstuff/SQResultFormatter.h"
 #include <stdexcept>
 
-SQResultRow::SQResultRow(SQResult& result, size_t count) : vector<string>(count), result(&result) {
+SQResultRow::SQResultRow(SQResult& result, size_t count) : result(&result) {
 }
 
-SQResultRow::SQResultRow() : vector<string>(), result(nullptr) {
+SQResultRow::SQResultRow() : result(nullptr) {
 }
 
 void SQResultRow::push_back(const string& s) {
-    vector<string>::push_back(s);
+    data.push_back(s);
+}
+
+vector<string>::iterator SQResultRow::end() {
+    return data.end();
 }
 
 string& SQResultRow::operator[](const size_t& rowNum) {
     try {
-        return at(rowNum);
+        return data.at(rowNum);
     } catch (const out_of_range& e) {
         SINFO("SQResultRow::operator[] out of range", {{"rowNum", to_string(rowNum)}});
         STHROW_STACK("Out of range");
@@ -23,7 +27,7 @@ string& SQResultRow::operator[](const size_t& rowNum) {
 }
 const string& SQResultRow::operator[](const size_t& rowNum) const {
     try {
-        return at(rowNum);
+        return data.at(rowNum);
     } catch (const out_of_range& e) {
         SINFO("SQResultRow::operator[] out of range", {{"rowNum", to_string(rowNum)}});
         STHROW_STACK("Out of range");
@@ -31,7 +35,7 @@ const string& SQResultRow::operator[](const size_t& rowNum) const {
 }
 
 SQResultRow& SQResultRow::operator=(const SQResultRow& other) {
-    vector<string>::operator=(other);
+    data = other.data;
     result = other.result;
     return *this;
 }
@@ -41,7 +45,7 @@ string& SQResultRow::operator[](const string& key) {
         for (size_t i = 0; i < result->headers.size(); i++) {
 
             // If the headers have more entries than the row (they really shouldn't), break early instead of segfaulting.
-            if (i >= size()) {
+            if (i >= data.size()) {
                 break;
             }
 
@@ -58,7 +62,7 @@ const string& SQResultRow::operator[](const string& key) const {
         for (size_t i = 0; i < result->headers.size(); i++) {
 
             // If the headers have more entries than the row (they really shouldn't), break early instead of segfaulting.
-            if (i >= size()) {
+            if (i >= data.size()) {
                 break;
             }
 
@@ -117,7 +121,7 @@ bool SQResult::deserialize(const string& json) {
             }
 
             // Insert the values
-            vector<string>& row = rows[rowIndex++];
+            SQResultRow& row = rows[rowIndex++];
             row.insert(row.end(), jsonRow.begin(), jsonRow.end());
         }
 
