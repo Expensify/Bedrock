@@ -2768,7 +2768,7 @@ bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
     } else {
         // Table exists, verify it's correct
         SINFO("'" << tableName << "' already exists, verifying. ");
-        SASSERT((string)result[0][4] == sql);
+        SASSERT(result[0][4] == sql);
         return false; // Table already exists with correct definition
     }
 }
