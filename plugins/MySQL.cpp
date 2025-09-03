@@ -387,7 +387,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             // Add SHOW KEYS() support
 
-            } else if (SREMatch("^SELECT\\s+CONNECTION_ID\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, nullptr)) {
+            } else if (SREMatch("^SELECT\\s+CONNECTION_ID\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, &matches)) {
                 // Return connection ID - handles SELECT connection_id(); and SELECT connection_id() AS alias;
                 SINFO("Responding with connection ID");
                 SQResultRow row;
@@ -395,10 +395,9 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 vector<SQResultRow> rows = {row};
                 
                 // Extract the alias if present, otherwise use default column name
-                vector<string> matches;
                 string columnName = "connection_id()";
-                if (SREMatch("^SELECT\\s+CONNECTION_ID\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, &matches) && matches.size() > 1) {
-                    columnName = SToLower(matches[1]); // Use the alias if provided (matches[1] is the captured group)
+                if (!matches.empty()) {
+                    columnName = SToLower(matches[0]); // Use the alias if provided
                 }
                 
                 vector<string> headers = {columnName};
