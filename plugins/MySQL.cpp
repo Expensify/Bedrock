@@ -423,7 +423,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     request["sequenceID"] = SToStr(packet.sequenceID);
                     request["query"] = 
                         "SELECT "
-                            "'" + tableName + "' as table_name, "
+                            + SQ(tableName) + " as table_name, "
                             "name as column_name, "
                             "type as column_type, "
                             "type as data_type, "
@@ -432,11 +432,11 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                             "(cid + 1) as ordinal_position, "
                             "NULL as column_comment, "
                             "CASE WHEN pk = 1 THEN 'auto_increment' ELSE NULL END as extra "
-                        "FROM pragma_table_info('" + tableName + "') "
+                        "FROM pragma_table_info(" + SQ(tableName) + ") "
                         "ORDER BY cid;";
                 } else {
                     // If we can't extract table name, return empty result
-                    SINFO("Could not extract table name from columns query, returning empty result");
+                    SWARN("Could not extract table name from columns query, returning empty result", {{"query", query}});
                     SQResult result;
                     s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
                 }
@@ -509,7 +509,9 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                         } else {
                             // Handle unquoted table names
                             tableEnd = query.find_first_of(" \t;", tableStart);
-                            if (tableEnd == string::npos) tableEnd = query.length();
+                            if (tableEnd == string::npos) {
+                                tableEnd = query.length();
+                            }
                         }
                         
                         if (tableEnd != string::npos && tableEnd > tableStart) {
@@ -522,7 +524,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                             request["sequenceID"] = SToStr(packet.sequenceID);
                             request["query"] = 
                                 "SELECT "
-                                    "'" + tableName + "' as Table_name, "
+                                    + SQ(tableName) + " as Table_name, "
                                     "0 as Non_unique, "
                                     "'PRIMARY' as Key_name, "
                                     "(cid + 1) as Seq_in_index, "
@@ -535,7 +537,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                                     "'BTREE' as Index_type, "
                                     "'' as Comment, "
                                     "'' as Index_comment "
-                                "FROM pragma_table_info('" + tableName + "') "
+                                "FROM pragma_table_info(" + SQ(tableName) + ") "
                                 "WHERE pk = 1 "
                                 "ORDER BY cid;";
                         } else {
@@ -587,11 +589,11 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                             "CASE WHEN on_delete = 'NO ACTION' THEN 'RESTRICT' ELSE on_delete END as on_delete, "
                             "'fk_' || \"table\" || '_' || \"from\" as rc_constraint_name, "
                             "(seq + 1) as ordinal_position "
-                        "FROM pragma_foreign_key_list('" + tableName + "') "
+                        "FROM pragma_foreign_key_list(" + SQ(tableName) + ") "
                         "ORDER BY \"table\", seq;";
                 } else {
                     // If we can't extract table name, return empty result
-                    SINFO("Could not extract table name from foreign key query, returning empty result");
+                    SWARN("Could not extract table name from foreign key query, returning empty result", {{"query", query}});
                     SQResult result;
                     s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
                 }
