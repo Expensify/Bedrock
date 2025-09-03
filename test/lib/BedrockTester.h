@@ -98,6 +98,8 @@ class BedrockTester {
 
     int getPID() const;
 
+    void autoAttachDebugger();
+
     string serverName;
 
   protected:
