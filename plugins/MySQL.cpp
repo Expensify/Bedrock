@@ -409,7 +409,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                             size_t quoteEnd = query.find(quoteChar, quoteStart + 1);
                             if (quoteEnd != string::npos) {
                                 tableName = query.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
-                                SINFO("Extracted table name: '" << tableName << "'");
+                                SDEBUG("Extracted table name: '" << tableName << "'");
                             }
                         }
                     }
@@ -438,7 +438,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     // If we can't extract table name, return empty result
                     SWARN("Could not extract table name from columns query, returning empty result", {{"query", query}});
                     SQResult result;
-                    s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                    s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Could not extract table name from columns query"));
                 }
             } else if (SContains(query, "information_schema")) {
                 // Return an empty set for other information_schema queries
@@ -455,7 +455,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 // response or else the client will hang.
                 SINFO("Responding OK to $$ query.");
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
-            } else if (SREMatch("^SELECT\\s+VERSION\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, nullptr)) {
+            } else if (SREMatch("^SELECT\\s+VERSION\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, &matches)) {
                 // Return our fake version - handles SELECT VERSION(); and SELECT VERSION() AS alias;
                 SINFO("Responding fake version string");
                 SQResultRow row;
@@ -463,9 +463,8 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 vector<SQResultRow> rows = {row};
                 
                 // Extract the alias if present, otherwise use default column name
-                vector<string> matches;
                 string columnName = "version()";
-                if (SREMatch("^SELECT\\s+VERSION\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, &matches) && matches.size() > 1) {
+                if (matches.size() > 1) {
                     columnName = SToLower(matches[1]); // Use the alias if provided (matches[1] is the captured group)
                 }
                 
@@ -481,8 +480,8 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 
                 // Extract the alias if present, otherwise use default column name
                 string columnName = "connection_id()";
-                if (!matches.empty()) {
-                    columnName = SToLower(matches[0]); // Use the alias if provided
+                if (matches.size() > 1) {
+                    columnName = SToLower(matches[1]); // Use the alias if provided
                 }
                 
                 vector<string> headers = {columnName};
@@ -542,21 +541,21 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                                 "ORDER BY cid;";
                         } else {
                             // If we can't extract table name, return empty result
-                            SINFO("Could not extract table name from SHOW KEYS query, returning empty result");
+                            SWARN("Could not extract table name from SHOW KEYS query, returning empty result", {{"query", query}});
                             SQResult result;
-                            s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                            s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Table " + SQ(tableName) + " does not exist"));
                         }
                     } else {
                         // Missing table name
-                        SINFO("No table name found in SHOW KEYS query, returning empty result");
+                        SWARN("No table name found in SHOW KEYS query, returning empty result", {{"query", query}});
                         SQResult result;
-                        s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                        s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "No table name found in SHOW KEYS query"));
                     }
                 } else {
                     // Malformed query
-                    SINFO("Malformed SHOW KEYS query, returning empty result");
+                    SWARN("Malformed SHOW KEYS query, returning empty result", {{"query", query}});
                     SQResult result;
-                    s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                    s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Malformed SHOW KEYS query"));
                 }
             } else if (SContains(SToUpper(query), "INFORMATION_SCHEMA.KEY_COLUMN_USAGE") &&
                        SContains(SToUpper(query), "INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS")) {
@@ -595,7 +594,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     // If we can't extract table name, return empty result
                     SWARN("Could not extract table name from foreign key query, returning empty result", {{"query", query}});
                     SQResult result;
-                    s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                    s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Could not extract table name from foreign key query"));
                 }
             } else {
                 // Transform this into an internal request
