@@ -1,4 +1,5 @@
 #include "MySQL.h"
+#include "MySQLUtils.h"
 
 #include <bedrockVersion.h>
 #include <libstuff/SQResult.h>
@@ -361,7 +362,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     "FROM sqlite_master "
                     "WHERE type IN ('table', 'view') "
                     "ORDER BY TABLE_SCHEMA, TABLE_NAME;";
-            } else if (SContains(SToUpper(query), "INFORMATION_SCHEMA.TABLES")) {
+            } else if (MySQLUtils::isInformationSchemaTablesQuery(query)) {
                 // Handle information_schema.tables queries for table listing
                 SINFO("Processing information_schema.tables query for table listing");
                 
@@ -374,7 +375,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     "FROM sqlite_master "
                     "WHERE type = 'table' "
                     "ORDER BY name;";
-            } else if (SContains(SToUpper(query), "INFORMATION_SCHEMA.VIEWS")) {
+            } else if (MySQLUtils::isInformationSchemaViewsQuery(query)) {
                 // Handle information_schema.views queries for view listing
                 SINFO("Processing information_schema.views query for view listing");
                 
@@ -387,35 +388,15 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     "FROM sqlite_master "
                     "WHERE type = 'view' "
                     "ORDER BY name;";
-            } else if (SContains(SToUpper(query), "INFORMATION_SCHEMA.COLUMNS")) {
+            } else if (MySQLUtils::isInformationSchemaColumnsQuery(query)) {
                 // Handle information_schema.columns queries for column listing
                 SINFO("Processing information_schema.columns query for column listing");
                 
-                // Extract table name from the query using simple string operations
-                string tableName;
-                string upperQuery = SToUpper(query);
-                
-                // Find "TABLE_NAME = '" pattern
-                size_t pos = upperQuery.find("TABLE_NAME");
-                if (pos != string::npos) {
-                    // Find the equals sign
-                    size_t equalsPos = upperQuery.find("=", pos);
-                    if (equalsPos != string::npos) {
-                        // Find the opening quote after the equals
-                        size_t quoteStart = query.find_first_of("'\"", equalsPos);
-                        if (quoteStart != string::npos) {
-                            char quoteChar = query[quoteStart];
-                            // Find the closing quote
-                            size_t quoteEnd = query.find(quoteChar, quoteStart + 1);
-                            if (quoteEnd != string::npos) {
-                                tableName = query.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
-                                SDEBUG("Extracted table name: '" << tableName << "'");
-                            }
-                        }
-                    }
-                }
+                // Extract table name from the query
+                string tableName = MySQLUtils::extractTableNameFromColumnsQuery(query);
                 
                 if (!tableName.empty()) {
+                    SDEBUG("Extracted table name: '" << tableName << "'");
                     
                     // Transform this into an internal request to get column info using PRAGMA table_info
                     request.methodLine = "Query";
@@ -455,7 +436,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 // response or else the client will hang.
                 SINFO("Responding OK to $$ query.");
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
-            } else if (SREMatch("^SELECT\\s+VERSION\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, &matches)) {
+            } else if (MySQLUtils::parseVersionQuery(query, matches)) {
                 // Return our fake version - handles SELECT VERSION(); and SELECT VERSION() AS alias;
                 SINFO("Responding fake version string");
                 SQResultRow row;
@@ -465,13 +446,13 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 // Extract the alias if present, otherwise use default column name
                 string columnName = "version()";
                 if (matches.size() > 1) {
-                    columnName = SToLower(matches[1]); // Use the alias if provided (matches[1] is the captured group)
+                    columnName = SToLower(matches[1]); // Use the alias if provided
                 }
                 
                 vector<string> headers = {columnName};
                 SQResult result(move(rows), move(headers));
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SREMatch("^SELECT\\s+CONNECTION_ID\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, &matches)) {
+            } else if (MySQLUtils::parseConnectionIdQuery(query, matches)) {
                 // Return connection ID - handles SELECT connection_id(); and SELECT connection_id() AS alias;
                 SINFO("Responding with connection ID");
                 SQResultRow row;
@@ -487,89 +468,52 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 vector<string> headers = {columnName};
                 SQResult result(move(rows), move(headers));
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SContains(SToUpper(query), "SHOW KEYS FROM")) {
+            } else if (MySQLUtils::isShowKeysQuery(query)) {
                 // Handle SHOW KEYS FROM table queries
                 SINFO("Processing SHOW KEYS query for table indexes");
                 
-                // Extract table name from SHOW KEYS FROM `tableName` or SHOW KEYS FROM tableName
-                string upperQuery = SToUpper(query);
-                string tableName;
+                // Extract table name from SHOW KEYS FROM query
+                string tableName = MySQLUtils::extractTableNameFromShowKeysQuery(query);
                 
-                // Look for patterns like "FROM `tablename`" or "FROM tablename"
-                size_t fromPos = upperQuery.find("FROM");
-                if (fromPos != string::npos) {
-                    size_t tableStart = query.find_first_not_of(" \t", fromPos + 4);
-                    if (tableStart != string::npos) {
-                        size_t tableEnd;
-                        if (query[tableStart] == '`') {
-                            // Handle backtick-quoted table names like `bankAccounts`
-                            tableStart++; // Skip opening backtick
-                            tableEnd = query.find('`', tableStart);
-                        } else {
-                            // Handle unquoted table names
-                            tableEnd = query.find_first_of(" \t;", tableStart);
-                            if (tableEnd == string::npos) {
-                                tableEnd = query.length();
-                            }
-                        }
-                        
-                        if (tableEnd != string::npos && tableEnd > tableStart) {
-                            tableName = query.substr(tableStart, tableEnd - tableStart);
-                            SINFO("Extracted table name for SHOW KEYS: '" << tableName << "'");
-                            
-                            // Transform this into an internal request to get primary key info
-                            request.methodLine = "Query";
-                            request["format"] = "json";
-                            request["sequenceID"] = SToStr(packet.sequenceID);
-                            request["query"] = 
-                                "SELECT "
-                                    + SQ(tableName) + " as Table_name, "
-                                    "0 as Non_unique, "
-                                    "'PRIMARY' as Key_name, "
-                                    "(cid + 1) as Seq_in_index, "
-                                    "name as Column_name, "
-                                    "'A' as Collation, "
-                                    "NULL as Cardinality, "
-                                    "NULL as Sub_part, "
-                                    "NULL as Packed, "
-                                    "CASE WHEN \"notnull\" = 1 THEN '' ELSE 'YES' END as Null_col, "
-                                    "'BTREE' as Index_type, "
-                                    "'' as Comment, "
-                                    "'' as Index_comment "
-                                "FROM pragma_table_info(" + SQ(tableName) + ") "
-                                "WHERE pk = 1 "
-                                "ORDER BY cid;";
-                        } else {
-                            // If we can't extract table name, return empty result
-                            SWARN("Could not extract table name from SHOW KEYS query, returning empty result", {{"query", query}});
-                            SQResult result;
-                            s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Table " + SQ(tableName) + " does not exist"));
-                        }
-                    } else {
-                        // Missing table name
-                        SWARN("No table name found in SHOW KEYS query, returning empty result", {{"query", query}});
-                        SQResult result;
-                        s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "No table name found in SHOW KEYS query"));
-                    }
+                if (!tableName.empty()) {
+                    SINFO("Extracted table name for SHOW KEYS: '" << tableName << "'");
+                    
+                    // Transform this into an internal request to get primary key info
+                    request.methodLine = "Query";
+                    request["format"] = "json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] = 
+                        "SELECT "
+                            + SQ(tableName) + " as Table_name, "
+                            "0 as Non_unique, "
+                            "'PRIMARY' as Key_name, "
+                            "(cid + 1) as Seq_in_index, "
+                            "name as Column_name, "
+                            "'A' as Collation, "
+                            "NULL as Cardinality, "
+                            "NULL as Sub_part, "
+                            "NULL as Packed, "
+                            "CASE WHEN \"notnull\" = 1 THEN '' ELSE 'YES' END as Null_col, "
+                            "'BTREE' as Index_type, "
+                            "'' as Comment, "
+                            "'' as Index_comment "
+                        "FROM pragma_table_info(" + SQ(tableName) + ") "
+                        "WHERE pk = 1 "
+                        "ORDER BY cid;";
                 } else {
-                    // Malformed query
-                    SWARN("Malformed SHOW KEYS query, returning empty result", {{"query", query}});
+                    // If we can't extract table name, return empty result
+                    SWARN("Could not extract table name from SHOW KEYS query, returning empty result", {{"query", query}});
                     SQResult result;
-                    s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Malformed SHOW KEYS query"));
+                    s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Could not extract table name from SHOW KEYS query"));
                 }
-            } else if (SContains(SToUpper(query), "INFORMATION_SCHEMA.KEY_COLUMN_USAGE") &&
-                       SContains(SToUpper(query), "INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS")) {
+            } else if (MySQLUtils::isForeignKeyConstraintQuery(query)) {
                 // Handle foreign key constraint queries
                 SINFO("Processing information_schema foreign key constraints query");
                 
                 // Extract table name from the query
-                string tableName;
-                string upperQuery = SToUpper(query);
+                string tableName = MySQLUtils::extractTableNameFromForeignKeyQuery(query);
                 
-                // Look for pattern "table_name = 'tablename'" or "cu.table_name = 'tablename'" (case-insensitive)
-                vector<string> matches;
-                if (SREMatch("(?:\\w+\\.)?table_name\\s*=\\s*['\"]([^'\"]+)['\"]", query, false, true, &matches) && matches.size() > 1) {
-                    tableName = matches[1]; // matches[1] is the captured group, matches[0] is the entire match
+                if (!tableName.empty()) {
                     SINFO("Extracted table name for foreign key query: '" << tableName << "'");
                     
                     // Transform this into an internal request to get foreign key info using PRAGMA foreign_key_list
