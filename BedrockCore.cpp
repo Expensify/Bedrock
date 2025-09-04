@@ -219,8 +219,6 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
 }
 
 BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
-    AutoTimer timer(command, exclusive ? BedrockCommand::BLOCKING_PROCESS : BedrockCommand::PROCESS);
-
     // Convenience references to commonly used properties.
     const SData& request = command->request;
     SData& response = command->response;
@@ -239,10 +237,14 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
+
             if (exclusive && command->writeConsistency != SQLiteNode::QUORUM) {
                 decreaseCommandTimeout(command, BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT);
             }
         }
+
+        // We start the timer here to avoid including the time spent acquiring the lock _sharedData.commitLock
+        AutoTimer timer(command, exclusive ? BedrockCommand::BLOCKING_PROCESS : BedrockCommand::PROCESS);
 
         // If the command is mocked, turn on UpdateNoopMode.
         _db.setUpdateNoopMode(command->request.isSet("mockRequest"));
