@@ -237,7 +237,6 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
-
             if (exclusive && command->writeConsistency != SQLiteNode::QUORUM) {
                 decreaseCommandTimeout(command, BedrockCommand::DEFAULT_BLOCKING_TRANSACTION_COMMIT_LOCK_TIMEOUT);
             }
