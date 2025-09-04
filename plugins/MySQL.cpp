@@ -1,4 +1,5 @@
 #include "MySQL.h"
+#include "MySQLUtils.h"
 
 #include <bedrockVersion.h>
 #include <libstuff/SQResult.h>
@@ -361,9 +362,68 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                     "FROM sqlite_master "
                     "WHERE type IN ('table', 'view') "
                     "ORDER BY TABLE_SCHEMA, TABLE_NAME;";
+            } else if (MySQLUtils::isInformationSchemaTablesQuery(query)) {
+                // Handle information_schema.tables queries for table listing
+                SINFO("Processing information_schema.tables query for table listing");
+                
+                // Transform this into an internal request to get table names from sqlite_master
+                request.methodLine = "Query";
+                request["format"] = "json";
+                request["sequenceID"] = SToStr(packet.sequenceID);
+                request["query"] = 
+                    "SELECT name as name "
+                    "FROM sqlite_master "
+                    "WHERE type = 'table' "
+                    "ORDER BY name;";
+            } else if (MySQLUtils::isInformationSchemaViewsQuery(query)) {
+                // Handle information_schema.views queries for view listing
+                SINFO("Processing information_schema.views query for view listing");
+                
+                // Transform this into an internal request to get view names from sqlite_master
+                request.methodLine = "Query";
+                request["format"] = "json";
+                request["sequenceID"] = SToStr(packet.sequenceID);
+                request["query"] = 
+                    "SELECT name as name "
+                    "FROM sqlite_master "
+                    "WHERE type = 'view' "
+                    "ORDER BY name;";
+            } else if (MySQLUtils::isInformationSchemaColumnsQuery(query)) {
+                // Handle information_schema.columns queries for column listing
+                SINFO("Processing information_schema.columns query for column listing");
+                
+                // Extract table name from the query
+                string tableName = MySQLUtils::extractTableNameFromColumnsQuery(query);
+                
+                if (!tableName.empty()) {
+                    SDEBUG("Extracted table name: '" << tableName << "'");
+                    
+                    // Transform this into an internal request to get column info using PRAGMA table_info
+                    request.methodLine = "Query";
+                    request["format"] = "json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] = 
+                        "SELECT "
+                            + SQ(tableName) + " as table_name, "
+                            "name as column_name, "
+                            "type as column_type, "
+                            "type as data_type, "
+                            "CASE WHEN \"notnull\" = 0 THEN 'YES' ELSE 'NO' END as is_nullable, "
+                            "dflt_value as column_default, "
+                            "(cid + 1) as ordinal_position, "
+                            "NULL as column_comment, "
+                            "CASE WHEN pk = 1 THEN 'auto_increment' ELSE NULL END as extra "
+                        "FROM pragma_table_info(" + SQ(tableName) + ") "
+                        "ORDER BY cid;";
+                } else {
+                    // If we can't extract table name, return empty result
+                    SWARN("Could not extract table name from columns query, returning empty result", {{"query", query}});
+                    SQResult result;
+                    s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Could not extract table name from columns query"));
+                }
             } else if (SContains(query, "information_schema")) {
-                // Return an empty set
-                SINFO("Responding with empty routine list");
+                // Return an empty set for other information_schema queries
+                SINFO("Responding with empty result for information_schema query");
                 SQResult result;
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ") ||
@@ -376,18 +436,23 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 // response or else the client will hang.
                 SINFO("Responding OK to $$ query.");
                 s->send(MySQLPacket::serializeOK(packet.sequenceID));
-            } else if (SIEquals(SToUpper(query), "SELECT VERSION();")) {
-                // Return our fake version
+            } else if (MySQLUtils::parseVersionQuery(query, matches)) {
+                // Return our fake version - handles SELECT VERSION(); and SELECT VERSION() AS alias;
                 SINFO("Responding fake version string");
                 SQResultRow row;
                 row.push_back(BedrockPlugin_MySQL::mysqlVersion);
                 vector<SQResultRow> rows = {row};
-                vector<string> headers = {"version()"};
+                
+                // Extract the alias if present, otherwise use default column name
+                string columnName = "version()";
+                if (matches.size() > 1) {
+                    columnName = SToLower(matches[1]); // Use the alias if provided
+                }
+                
+                vector<string> headers = {columnName};
                 SQResult result(move(rows), move(headers));
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            // Add SHOW KEYS() support
-
-            } else if (SREMatch("^SELECT\\s+CONNECTION_ID\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", SToUpper(query), false, false, &matches)) {
+            } else if (MySQLUtils::parseConnectionIdQuery(query, matches)) {
                 // Return connection ID - handles SELECT connection_id(); and SELECT connection_id() AS alias;
                 SINFO("Responding with connection ID");
                 SQResultRow row;
@@ -396,13 +461,85 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 
                 // Extract the alias if present, otherwise use default column name
                 string columnName = "connection_id()";
-                if (!matches.empty()) {
-                    columnName = SToLower(matches[0]); // Use the alias if provided
+                if (matches.size() > 1) {
+                    columnName = SToLower(matches[1]); // Use the alias if provided
                 }
                 
                 vector<string> headers = {columnName};
                 SQResult result(move(rows), move(headers));
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+            } else if (MySQLUtils::isShowKeysQuery(query)) {
+                // Handle SHOW KEYS FROM table queries
+                SINFO("Processing SHOW KEYS query for table indexes");
+                
+                // Extract table name from SHOW KEYS FROM query
+                string tableName = MySQLUtils::extractTableNameFromShowKeysQuery(query);
+                
+                if (!tableName.empty()) {
+                    SINFO("Extracted table name for SHOW KEYS: '" << tableName << "'");
+                    
+                    // Transform this into an internal request to get primary key info
+                    request.methodLine = "Query";
+                    request["format"] = "json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] = 
+                        "SELECT "
+                            + SQ(tableName) + " as Table_name, "
+                            "0 as Non_unique, "
+                            "'PRIMARY' as Key_name, "
+                            "(cid + 1) as Seq_in_index, "
+                            "name as Column_name, "
+                            "'A' as Collation, "
+                            "NULL as Cardinality, "
+                            "NULL as Sub_part, "
+                            "NULL as Packed, "
+                            "CASE WHEN \"notnull\" = 1 THEN '' ELSE 'YES' END as Null_col, "
+                            "'BTREE' as Index_type, "
+                            "'' as Comment, "
+                            "'' as Index_comment "
+                        "FROM pragma_table_info(" + SQ(tableName) + ") "
+                        "WHERE pk = 1 "
+                        "ORDER BY cid;";
+                } else {
+                    // If we can't extract table name, return empty result
+                    SWARN("Could not extract table name from SHOW KEYS query, returning empty result", {{"query", query}});
+                    SQResult result;
+                    s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Could not extract table name from SHOW KEYS query"));
+                }
+            } else if (MySQLUtils::isForeignKeyConstraintQuery(query)) {
+                // Handle foreign key constraint queries
+                SINFO("Processing information_schema foreign key constraints query");
+                
+                // Extract table name from the query
+                string tableName = MySQLUtils::extractTableNameFromForeignKeyQuery(query);
+                
+                if (!tableName.empty()) {
+                    SINFO("Extracted table name for foreign key query: '" << tableName << "'");
+                    
+                    // Transform this into an internal request to get foreign key info using PRAGMA foreign_key_list
+                    request.methodLine = "Query";
+                    request["format"] = "json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] = 
+                        "SELECT "
+                            "'fk_' || \"table\" || '_' || \"from\" as constraint_name, "
+                            "\"from\" as column_name, "
+                            "\"table\" as referenced_table_name, "
+                            "'FOREIGN' as key_type, "
+                            "\"table\" as referenced_table, "
+                            "\"to\" as referenced_column, "
+                            "CASE WHEN on_update = 'NO ACTION' THEN 'RESTRICT' ELSE on_update END as on_update, "
+                            "CASE WHEN on_delete = 'NO ACTION' THEN 'RESTRICT' ELSE on_delete END as on_delete, "
+                            "'fk_' || \"table\" || '_' || \"from\" as rc_constraint_name, "
+                            "(seq + 1) as ordinal_position "
+                        "FROM pragma_foreign_key_list(" + SQ(tableName) + ") "
+                        "ORDER BY \"table\", seq;";
+                } else {
+                    // If we can't extract table name, return empty result
+                    SWARN("Could not extract table name from foreign key query, returning empty result", {{"query", query}});
+                    SQResult result;
+                    s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Could not extract table name from foreign key query"));
+                }
             } else {
                 // Transform this into an internal request
                 request.methodLine = "Query";
