@@ -3,27 +3,60 @@
 #include "libstuff/SQResultFormatter.h"
 #include <stdexcept>
 
-SQResultRow::SQResultRow(SQResult& result, size_t count) : vector<string>(count), result(&result) {
+SQResultRow::SQResultRow(SQResult& result, size_t count) : result(&result) {
+    data.resize(count);
 }
 
-SQResultRow::SQResultRow() : vector<string>(), result(nullptr) {
+SQResultRow::SQResultRow() : result(nullptr) {
 }
 
 void SQResultRow::push_back(const string& s) {
-    vector<string>::push_back(s);
+    data.push_back(SQValue(SQValue::TYPE::TEXT, s));
 }
 
-string& SQResultRow::operator[](const size_t& rowNum) {
+vector<SQValue>::iterator SQResultRow::end() {
+    return data.end();
+}
+
+vector<SQValue>::const_iterator SQResultRow::end() const {
+    return data.end();
+}
+
+vector<SQValue>::const_iterator SQResultRow::begin() const {
+    return data.begin();
+}
+
+bool SQResultRow::empty() const {
+    return data.empty();
+}
+
+size_t SQResultRow::size() const {
+    return data.size();
+}
+
+string SQResultRow::at(size_t index) {
+    return data.at(index);
+}
+
+SQValue& SQResultRow::get(size_t index) {
+    return data.at(index);
+}
+
+const string SQResultRow::at(size_t index) const {
+    return data.at(index);
+}
+
+string SQResultRow::operator[](const size_t& rowNum) {
     try {
-        return at(rowNum);
+        return data.at(rowNum);
     } catch (const out_of_range& e) {
         SINFO("SQResultRow::operator[] out of range", {{"rowNum", to_string(rowNum)}});
         STHROW_STACK("Out of range");
     }
 }
-const string& SQResultRow::operator[](const size_t& rowNum) const {
+const string SQResultRow::operator[](const size_t& rowNum) const {
     try {
-        return at(rowNum);
+        return data.at(rowNum);
     } catch (const out_of_range& e) {
         SINFO("SQResultRow::operator[] out of range", {{"rowNum", to_string(rowNum)}});
         STHROW_STACK("Out of range");
@@ -31,17 +64,17 @@ const string& SQResultRow::operator[](const size_t& rowNum) const {
 }
 
 SQResultRow& SQResultRow::operator=(const SQResultRow& other) {
-    vector<string>::operator=(other);
+    data = other.data;
     result = other.result;
     return *this;
 }
 
-string& SQResultRow::operator[](const string& key) {
+string SQResultRow::operator[](const string& key) {
     if (result) {
         for (size_t i = 0; i < result->headers.size(); i++) {
 
             // If the headers have more entries than the row (they really shouldn't), break early instead of segfaulting.
-            if (i >= size()) {
+            if (i >= data.size()) {
                 break;
             }
 
@@ -53,12 +86,12 @@ string& SQResultRow::operator[](const string& key) {
     STHROW_STACK("No column named " + key);
 }
 
-const string& SQResultRow::operator[](const string& key) const {
+const string SQResultRow::operator[](const string& key) const {
     if (result) {
         for (size_t i = 0; i < result->headers.size(); i++) {
 
             // If the headers have more entries than the row (they really shouldn't), break early instead of segfaulting.
-            if (i >= size()) {
+            if (i >= data.size()) {
                 break;
             }
 
@@ -68,6 +101,14 @@ const string& SQResultRow::operator[](const string& key) const {
         }
     }
     STHROW_STACK("No column named " + key);
+}
+
+SQResultRow::operator vector<string>() const {
+    vector<string> out(data.size());
+    for (size_t i = 0; i < data.size(); i++) {
+        out[i] = data[i];
+    }
+    return out;
 }
 
 string SQResult::serializeToJSON() const {
@@ -117,8 +158,10 @@ bool SQResult::deserialize(const string& json) {
             }
 
             // Insert the values
-            vector<string>& row = rows[rowIndex++];
-            row.insert(row.end(), jsonRow.begin(), jsonRow.end());
+            SQResultRow& row = rows[rowIndex++];
+            for (const string& s : jsonRow) {
+                row.push_back(s);
+            }
         }
 
         // Success!

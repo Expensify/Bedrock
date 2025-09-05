@@ -1,25 +1,37 @@
 #pragma once
-// Can't include libstuff.h here because it'd be circular.
 #include <string>
 #include <vector>
+#include <libstuff/SQValue.h>
 using namespace std;
+
 class SQResult;
 
-class SQResultRow : public vector<string> {
+class SQResultRow {
     friend class SQResult;
+
   public:
     SQResultRow();
     SQResultRow(SQResult& result, size_t count = 0);
     SQResultRow(SQResultRow const&) = default;
     void push_back(const string& s);
-    string& operator[](const size_t& key);
-    const string& operator[](const size_t& key) const;
-    string& operator[](const string& key);
-    const string& operator[](const string& key) const;
+    string operator[](const size_t& key);
+    const string operator[](const size_t& key) const;
+    string operator[](const string& key);
+    const string operator[](const string& key) const;
+    vector<SQValue>::const_iterator begin() const;
+    vector<SQValue>::iterator end();
+    vector<SQValue>::const_iterator end() const;
+    bool empty() const;
+    size_t size() const;
     SQResultRow& operator=(const SQResultRow& other);
+    string at(size_t index);
+    SQValue& get(size_t index);
+    const string at(size_t index) const;
+    operator vector<string>() const;
 
   private:
     SQResult* result = nullptr;
+    vector<SQValue> data;
 };
 
 class SQResult {
