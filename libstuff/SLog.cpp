@@ -57,6 +57,10 @@ static set<string> PARAMS_WHITELIST = {
     "topic",
     "userID",
     "what",
+    "lastReportActionID",
+    "parentReportAction",
+    "lastReportActionID",
+    "parentReportActionType",
 };
 
 string addLogParams(string&& message, const STable& params) {
