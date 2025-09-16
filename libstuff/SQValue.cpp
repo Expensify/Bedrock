@@ -101,8 +101,6 @@ bool operator==(const SQValue& a, const SQValue& b) {
         case SQValue::TYPE::BLOB:
             return a.text == b.text;
     }
-
-    return false;
 }
 
 bool operator!=(const SQValue& a, const SQValue& b) {
