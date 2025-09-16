@@ -1,3 +1,4 @@
+#include <cmath>
 #include <libstuff/SQValue.h>
 #include <libstuff/sqlite3.h>
 
@@ -80,28 +81,20 @@ bool operator==(const SQValue& a, const SQValue& b) {
 
         case SQValue::TYPE::REAL:
         {
-            // Floating point equality is fuzzy.
-            double aVal = a.real;
-            double bVal = b.real;
-            double difference = aVal - bVal;
-            if (difference < 0) {
-                difference = -difference;
-            }
-
-            const double absTol = 1e-12;
-            const double relTol = 1e-9;
-
-            double absA = aVal;
-            if (absA < 0) {
-                absA = -absA;
-            }
-            double absB = bVal;
-            if (absB < 0) {
-                absB = -absB;
-            }
-            double scaleFactor = (absA > absB) ? absA : absB;
-
-            return difference <= absTol + relTol * scaleFactor;
+            // Comparing floating-point values with strict equality is brittle because of tiny rounding differences,
+            // so we treat numbers as equal when they are "close enough".
+            // There's an annoyingly long detailed article here on why this is:
+            // https://randomascii.wordpress.com/2012/02/25/comparing-floating-point-numbers-2012-edition/
+            //
+            // Algorithm used here: |a - b| <= absTolerance + relTolerance * max(|a|, |b|)
+            //
+            // absTolerance = 1e-12 (0.000000000001): ignores tiny differences when values are close to zero.
+            // relTolerance = 1e-9 (one-in-a-billion): roughly requires 9 matching decimal digits. Because very large floating point values
+            // have the same amount of precision, very large values with the same amount of precision loss will scale to more that what
+            // we've set `absTolerance` to, and this accounts for that as well.
+            const double absTolerance = 1e-12;
+            const double relTolerance = 1e-9;
+            return fabs(a.real - b.real) <= absTolerance + relTolerance * max(fabs(a.real), fabs(b.real));
         }
 
         case SQValue::TYPE::TEXT:
