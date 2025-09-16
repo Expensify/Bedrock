@@ -2,7 +2,7 @@
 #include <libstuff/SQValue.h>
 #include <libstuff/sqlite3.h>
 
-// All of our connstructor bodies are emtpy, we just use member initializer lists.
+// All of our constructor bodies are empty, we just use member initializer lists.
 SQValue::SQValue() : type(SQValue::TYPE::NONE) {}
 SQValue::SQValue(int64_t val) : type(SQValue::TYPE::INTEGER), integer(val) {}
 SQValue::SQValue(double val) : type(SQValue::TYPE::REAL), real(val) {}
