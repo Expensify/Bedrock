@@ -39,14 +39,14 @@ public:
     friend string operator+(const SQValue& lhs, const SQValue& rhs);
 
     // Support comparison with strings.
-    friend bool operator==(const SQValue& a, const string& b);
-    friend bool operator==(const string& a, const SQValue& b);
-    friend bool operator==(const SQValue& a, const char* b);
-    friend bool operator==(const char* a, const SQValue& b);
+    friend bool operator==(const SQValue& lhs, const string& rhs);
+    friend bool operator==(const string& lhs, const SQValue& rhs);
+    friend bool operator==(const SQValue& lhs, const char* rhs);
+    friend bool operator==(const char* lhs, const SQValue& rhs);
 
     // Support comparison with another SQValue.
-    friend bool operator==(const SQValue& a, const SQValue& b);
-    friend bool operator!=(const SQValue& a, const SQValue& b);
+    friend bool operator==(const SQValue& lhs, const SQValue& rhs);
+    friend bool operator!=(const SQValue& lhs, const SQValue& rhs);
 
     // Calling either of these acts like the aame function call on `string`.
     bool empty() const;

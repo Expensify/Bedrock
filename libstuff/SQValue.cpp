@@ -49,35 +49,35 @@ string operator+(const SQValue& lhs, const SQValue& rhs) {
     return static_cast<string>(lhs) + static_cast<string>(rhs);
 }
 
-bool operator==(const SQValue& a, const string& b) {
-    return static_cast<string>(a) == b;
+bool operator==(const SQValue& lhs, const string& rhs) {
+    return static_cast<string>(lhs) == rhs;
 }
 
-bool operator==(const string& a, const SQValue& b) {
-    return a == static_cast<string>(b);
+bool operator==(const string& lhs, const SQValue& rhs) {
+    return lhs == static_cast<string>(rhs);
 }
 
-bool operator==(const SQValue& a, const char* b) {
-    return static_cast<string>(a) == string(b ? b : "");
+bool operator==(const SQValue& lhs, const char* rhs) {
+    return static_cast<string>(lhs) == string(rhs ? rhs : "");
 }
 
-bool operator==(const char* a, const SQValue& b) {
-    return string(a ? a : "") == static_cast<string>(b);
+bool operator==(const char* lhs, const SQValue& rhs) {
+    return string(lhs ? lhs : "") == static_cast<string>(rhs);
 }
 
-bool operator==(const SQValue& a, const SQValue& b) {
+bool operator==(const SQValue& lhs, const SQValue& rhs) {
     // Types must match
-    if (a.type != b.type) {
+    if (lhs.type != rhs.type) {
         return false;
     }
 
-    switch (a.type) {
+    switch (lhs.type) {
         case SQValue::TYPE::NONE:
             // Consider two NONEs equal
             return true;
 
         case SQValue::TYPE::INTEGER:
-            return a.integer == b.integer;
+            return lhs.integer == rhs.integer;
 
         case SQValue::TYPE::REAL:
         {
@@ -94,17 +94,17 @@ bool operator==(const SQValue& a, const SQValue& b) {
             // we've set `absTolerance` to, and this accounts for that as well.
             const double absTolerance = 1e-12;
             const double relTolerance = 1e-9;
-            return fabs(a.real - b.real) <= absTolerance + relTolerance * max(fabs(a.real), fabs(b.real));
+            return fabs(lhs.real - rhs.real) <= absTolerance + relTolerance * max(fabs(lhs.real), fabs(rhs.real));
         }
 
         case SQValue::TYPE::TEXT:
         case SQValue::TYPE::BLOB:
-            return a.text == b.text;
+            return lhs.text == rhs.text;
     }
 }
 
-bool operator!=(const SQValue& a, const SQValue& b) {
-    return !(a == b);
+bool operator!=(const SQValue& lhs, const SQValue& rhs) {
+    return !(lhs == rhs);
 }
 
 bool SQValue::empty() const {
