@@ -2692,7 +2692,11 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     }
 
     if (error == SQLITE_CORRUPT) {
-        SERROR("Database corruption was detected, cannot continue, bedrock will exit immediately.");
+        if (extErr == SQLITE_CORRUPT_INDEX) {
+            SALERT("Database index corruption was detected on query: " << sql);
+        } else {
+            SERROR("Database corruption was detected, cannot continue, bedrock will exit immediately.");
+        }
     }
 
     uint64_t elapsed = STimeNow() - startTime;
