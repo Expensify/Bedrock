@@ -28,7 +28,7 @@ void SSocketPool::_timeoutThreadFunc() {
         // Prune any sockets that expired already.
         auto now = chrono::steady_clock::now();
         auto last = _sockets.begin();
-        while (((last->first + timeout) < now) && last != _sockets.end()) {
+        while (last != _sockets.end() && ((last->first + timeout) < now)) {
             last++;
         }
 
