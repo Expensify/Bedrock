@@ -51,6 +51,7 @@ static set<string> PARAMS_WHITELIST = {
     "logParam",
     "message",
     "peer",
+    "query",
     "reason",
     "requestID",
     "status",
