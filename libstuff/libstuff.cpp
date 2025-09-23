@@ -2693,7 +2693,10 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 
     if (error == SQLITE_CORRUPT) {
         if (extErr == SQLITE_CORRUPT_INDEX) {
-            SALERT("ENSURE_BUGBOT Database index corruption was detected on query: " << sql);
+            // Avoid logging queries so long that we need dozens of lines to log them.
+            string sqlToLog = sql.substr(0, 40000);
+            SRedactSensitiveValues(sqlToLog);
+            SALERT("ENSURE_BUGBOT Database index corruption was detected.", {{"query", sqlToLog}});
         } else {
             SERROR("Database corruption was detected, cannot continue, bedrock will exit immediately.");
         }
