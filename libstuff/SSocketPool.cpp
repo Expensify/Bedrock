@@ -26,14 +26,16 @@ void SSocketPool::_timeoutThreadFunc() {
         }
 
         // Prune any sockets that expired already.
-        auto now = chrono::steady_clock::now();
-        auto last = _sockets.begin();
-        while (((last->first + timeout) < now) && last != _sockets.end()) {
-            last++;
-        }
+        if (_sockets.size()) {
+            auto now = chrono::steady_clock::now();
+            auto last = _sockets.begin();
+            while (last != _sockets.end() && ((last->first + timeout) < now)) {
+                last++;
+            }
 
-        // This calls the destructor for each item in the list, closing the sockets.
-        _sockets.erase(_sockets.begin(), last);
+            // This calls the destructor for each item in the list, closing the sockets.
+            _sockets.erase(_sockets.begin(), last);
+        }
 
         // If there are still sockets, the next wakeup is `timeout` after the first one.
         if (_sockets.size()) {
