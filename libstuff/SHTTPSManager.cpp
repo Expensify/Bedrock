@@ -107,10 +107,6 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         transaction.s->recvBuffer.consumeFront(size);
         transaction.finished = now;
 
-        // Finished with the socket, free it up.
-        delete transaction.s;
-        transaction.s = nullptr;
-
         // This is supposed to check for a "200" or "204 No Content"response, which it does very poorly. It also checks for message
         // content. Why this is the what constitutes a valid response is lost to time. Any well-formed response should
         // be valid here, and this should get cleaned up. However, this requires testing anything that might rely on
@@ -123,6 +119,10 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
             SWARN("Message failed: '" << transaction.fullResponse.methodLine << "'");
             transaction.response = 500;
         }
+
+        // Finished with the socket, free it up.
+        delete transaction.s;
+        transaction.s = nullptr;
     } else {
         // If we don't have a response, we need to check for a timeout, or a disconnection.
         // The disconnection check is straightforward, we just check the socket state.
