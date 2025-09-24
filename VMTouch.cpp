@@ -40,21 +40,24 @@ void VMTouch::do_nothing(unsigned int nothing) {
     return;
 }
 
-void VMTouch::check(const char* path, bool touch, bool verbose) {
-    int fd = -1;
-    void* mem = NULL;
-    struct stat sb;
-    int64_t len_of_file = 0;
-    int64_t pages_in_range;
-    int res;
-    int open_flags;
+void VMTouch::check(const char* path, bool verbose) {
+    return _check(path, false, verbose);
+}
 
-    open_flags = O_RDONLY;
-    open_flags |= O_NOATIME;
+void VMTouch::touch(const char* path, bool verbose) {
+    return _check(path, true, verbose);
+}
+
+void VMTouch::_check(const char* path, bool touch, bool verbose) {
+    int fd = -1;
+    void* mem = nullptr;
+    int64_t len_of_file = 0;
 
     try {
-        fd = open(path, open_flags, 0);
+        int res;
+        int open_flags = O_RDONLY | O_NOATIME;
 
+        fd = open(path, open_flags, 0);
         if (fd == -1 && errno == EPERM) {
             open_flags &= ~O_NOATIME;
             fd = open(path, open_flags, 0);
@@ -65,6 +68,7 @@ void VMTouch::check(const char* path, bool touch, bool verbose) {
             throw SException("Unable to open");
         }
 
+        struct stat sb;
         res = fstat(fd, &sb);
         if (res) {
             SWARN("unable to fstat " << path << " (" << strerror(errno) << "), skipping");
@@ -95,7 +99,7 @@ void VMTouch::check(const char* path, bool touch, bool verbose) {
             SERROR("mmap(" << path << ") wasn't page aligned");
         }
 
-        pages_in_range = bytes2pages(len_of_file);
+        int64_t pages_in_range = bytes2pages(len_of_file);
 
         char* mincore_array = (char*)malloc(pages_in_range);
         if (mincore_array == NULL) {
