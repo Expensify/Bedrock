@@ -129,6 +129,10 @@ $(INTERMEDIATEDIR)/plugins/MySQL.d $(INTERMEDIATEDIR)/plugins/MySQL.o: plugins/M
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/plugins/MySQL.d -MT $(INTERMEDIATEDIR)/plugins/MySQL.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/plugins/MySQL.o -c plugins/MySQL.cpp
 
+$(INTERMEDIATEDIR)/plugins/MySQLUtils.d $(INTERMEDIATEDIR)/plugins/MySQLUtils.o: plugins/MySQLUtils.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/plugins/MySQLUtils.d -MT $(INTERMEDIATEDIR)/plugins/MySQLUtils.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/plugins/MySQLUtils.o -c plugins/MySQLUtils.cpp
+
 # This builds both the dependencies and the object file from the cpp.
 # We include one of the mbedtls files as a dependency because building it will cause our header files to get created,
 # which many of our cpp files will reference.
