@@ -103,5 +103,7 @@ int main(int argc, char* argv[]) {
     // Tear down SSL configuration
     SSSLState::freeConfig();
 
+    SStopSignalThread();
+
     return retval;
 }

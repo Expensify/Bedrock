@@ -2648,21 +2648,19 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                         int colType = sqlite3_column_type(preparedStatement, i);
                         switch (colType) {
                             case SQLITE_INTEGER:
-                                row[i] = to_string(sqlite3_column_int64(preparedStatement, i));
+                                row.get(i) = (int64_t)sqlite3_column_int64(preparedStatement, i);
                                 break;
                             case SQLITE_FLOAT:
-                                char buf[64];
-                                sqlite3_snprintf(sizeof(buf), buf, "%!.15g", sqlite3_column_double(preparedStatement, i));
-                                row[i] = buf;
+                                row.get(i) = sqlite3_column_double(preparedStatement, i);
                                 break;
                             case SQLITE_TEXT:
-                                row[i] = reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i));
+                                row.get(i) = SQValue(SQValue::TYPE::TEXT, string(reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i))));
                                 break;
                             case SQLITE_BLOB:
-                                row[i] = string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i));
+                                row.get(i) = SQValue(SQValue::TYPE::BLOB, string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i)));
                                 break;
                             case SQLITE_NULL:
-                                // null string.
+                                row.get(i) = SQValue();
                                 break;
                         }
                     }
@@ -2694,13 +2692,20 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
     }
 
     if (error == SQLITE_CORRUPT) {
-        SERROR("Database corruption was detected, cannot continue, bedrock will exit immediately.");
+        if (extErr == SQLITE_CORRUPT_INDEX) {
+            // Avoid logging queries so long that we need dozens of lines to log them.
+            string sqlToLog = sql.substr(0, 40000);
+            SRedactSensitiveValues(sqlToLog);
+            SALERT("ENSURE_BUGBOT Database index corruption was detected.", {{"query", sqlToLog}});
+        } else {
+            SERROR("Database corruption was detected, cannot continue, bedrock will exit immediately.");
+        }
     }
 
     uint64_t elapsed = STimeNow() - startTime;
     if (!skipInfoWarn && ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000)) {
         // Avoid logging queries so long that we need dozens of lines to log them.
-        string sqlToLog = sql.substr(0, 20000);
+        string sqlToLog = sql.substr(0, 40000);
         SRedactSensitiveValues(sqlToLog);
 
         if ((int64_t)elapsed > warnThreshold) {
