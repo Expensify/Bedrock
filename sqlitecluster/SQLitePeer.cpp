@@ -1,5 +1,6 @@
 #include "SQLitePeer.h"
 #include "BedrockServer.h"
+#include "libstuff/STCPManager.h"
 #include "sqlitecluster/SQLiteNode.h"
 
 #include <libstuff/SData.h>
@@ -269,7 +270,7 @@ bool SQLitePeer::isPermafollower(const STable& params) {
 
 void SQLitePeer::sendMessage(const SData& message) {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
-    if (socket) {
+    if (socket && socket->state.load() < STCPManager::Socket::State::SHUTTINGDOWN) {
         size_t bytesSent = 0;
         if (!socket->send(message.serialize(), &bytesSent)) {
             SHMMM("Error sending " << message.methodLine << " to peer " << name << ".");
