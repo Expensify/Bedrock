@@ -53,6 +53,7 @@ static set<string> PARAMS_WHITELIST = {
     "peer",
     "reason",
     "requestID",
+    "rowNum",
     "status",
     "topic",
     "userID",
