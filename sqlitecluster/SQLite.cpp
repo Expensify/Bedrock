@@ -228,9 +228,9 @@ void SQLite::commonConstructorInitialization(bool hctree) {
     // Register application-defined deburr function.
     SDeburr::registerSQLite(_db);
 
-    // I tested and found that we could set about 10,000,000 and the number of steps to run and get a callback once a
-    // second. This is set to be a bit more granular than that, which is probably adequate.
-    sqlite3_progress_handler(_db, 1'000'000, _progressHandlerCallback, this);
+    // We saw queries where the progress counter never exceeds 551,000, so we're setting it to a lower number
+    // based on Richard Hipp's recommendation.
+    sqlite3_progress_handler(_db, 10'000, _progressHandlerCallback, this);
 
     // Setting a wal hook prevents auto-checkpointing.
     sqlite3_wal_hook(_db, _walHookCallback, this);
