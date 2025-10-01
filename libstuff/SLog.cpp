@@ -54,6 +54,7 @@ static set<string> PARAMS_WHITELIST = {
     "query",
     "reason",
     "requestID",
+    "rowNum",
     "status",
     "topic",
     "userID",
