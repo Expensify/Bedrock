@@ -1,6 +1,6 @@
 #include <test/lib/tpunit++.hpp>
 #include <libstuff/libstuff.h>
-#include <plugins/MySQLUtils.h>
+#include <plugins/MySQL.h>
 
 using namespace std;
 
