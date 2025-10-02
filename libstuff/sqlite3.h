@@ -148,10 +148,10 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.51.0"
 #define SQLITE_VERSION_NUMBER 3051000
-#define SQLITE_SOURCE_ID      "2025-09-30 19:45:46 399cada13519f6d8b6b445b625857a9a655fb15892678829d351d40c73953e40"
-#define SQLITE_SCM_BRANCH     "bedrock"
-#define SQLITE_SCM_TAGS       ""
-#define SQLITE_SCM_DATETIME   "2025-09-30T19:45:46.061Z"
+#define SQLITE_SOURCE_ID      "025-09-30 20:16:23 53c3ccab5fa62237196491cdc22771a874beef5d4cd85ab2de4-experimental"
+#define SQLITE_SCM_BRANCH     "unknown"
+#define SQLITE_SCM_TAGS       "unknown"
+#define SQLITE_SCM_DATETIME   "Mergestheslateststrunkschangessintostheshctree-bedrocksbranchZ"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -8602,7 +8602,8 @@ SQLITE_API int sqlite3_test_control(int op, ...);
 #define SQLITE_TESTCTRL_TUNE                    32
 #define SQLITE_TESTCTRL_LOGEST                  33
 #define SQLITE_TESTCTRL_USELONGDOUBLE           34  /* NOT USED */
-#define SQLITE_TESTCTRL_LAST                    34  /* Largest TESTCTRL */
+#define SQLITE_TESTCTRL_HCT_MTCOMMIT            35
+#define SQLITE_TESTCTRL_LAST                    35  /* Largest TESTCTRL */
 
 /*
 ** CAPI3REF: SQL Keyword Checking
