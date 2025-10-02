@@ -25,6 +25,14 @@ public:
     explicit SQValue(const string& val);
     explicit SQValue(TYPE t, const string& val);
 
+    // Check the type of an SQValue
+    const TYPE getType() const;
+
+    // All of these will throw SException if the types do not match.
+    const string& getString() const;
+    int64_t getInt() const;
+    double getReal() const;
+
     // We have a *whole bunch* of string utility functions for conferting typed data
     // back to strings. All existing code expects strings and so we allow this to work as a string everywhere.
 
