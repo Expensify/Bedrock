@@ -230,7 +230,7 @@ void SQLite::commonConstructorInitialization(bool hctree) {
 
     // We saw queries where the progress counter never exceeds 551,000, so we're setting it to a lower number
     // based on Richard Hipp's recommendation.
-    sqlite3_progress_handler(_db, 10'000, _progressHandlerCallback, this);
+    sqlite3_progress_handler(_db, 100'000, _progressHandlerCallback, this);
 
     // Setting a wal hook prevents auto-checkpointing.
     sqlite3_wal_hook(_db, _walHookCallback, this);
