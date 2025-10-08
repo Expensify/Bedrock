@@ -1,138 +1,133 @@
 #pragma once
 #include <libstuff/libstuff.h>
-#include "BedrockServer.h"
-#include "BedrockPlugin.h"
+#include <BedrockPlugin.h>
 
-#define MYSQL_NUM_VARIABLES 292
-extern const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2];
+// Forward declarations
+class SQResult;
+class BedrockServer;
+class BedrockCommand;
+class SQLiteCommand;
+struct STCPManager;
+struct SData;
 
 /**
-  * Simple convenience structure to construct MySQL packets
-  */
-struct MySQLPacket {
-    // Attributes
-    // MySQL sequenceID which is used by clients and servers to
-    // order packets and resets back to 0 when a new "command" starts.
-    uint8_t sequenceID;
-
-    // The packet payload
-    string payload;
+ * MySQL utility functions for parsing queries and extracting information.
+ * These functions are used by the MySQL plugin and are exposed for unit testing.
+ */
+namespace MySQLUtils {
+    /**
+     * Parses VERSION() queries and extracts alias information
+     * @param query The SQL query to parse
+     * @param matches [out] Vector to store regex matches (matches[1] will contain alias if present)
+     * @return true if the query matches VERSION() pattern, false otherwise
+     */
+    bool parseVersionQuery(const string& query, vector<string>& matches);
 
     /**
-     * Constructor
+     * Parses CONNECTION_ID() queries and extracts alias information
+     * @param query The SQL query to parse
+     * @param matches [out] Vector to store regex matches (matches[1] will contain alias if present)
+     * @return true if the query matches CONNECTION_ID() pattern, false otherwise
      */
+    bool parseConnectionIdQuery(const string& query, vector<string>& matches);
+
+    /**
+     * Extracts table name from information_schema.columns queries
+     * @param query The SQL query to parse
+     * @return The extracted table name, or empty string if not found
+     */
+    string extractTableNameFromColumnsQuery(const string& query);
+
+    /**
+     * Checks if a query is targeting information_schema.tables
+     * @param query The SQL query to check
+     * @return true if the query targets information_schema.tables
+     */
+    bool isInformationSchemaTablesQuery(const string& query);
+
+    /**
+     * Checks if a query is targeting information_schema.views
+     * @param query The SQL query to check
+     * @return true if the query targets information_schema.views
+     */
+    bool isInformationSchemaViewsQuery(const string& query);
+
+    /**
+     * Checks if a query is targeting information_schema.columns
+     * @param query The SQL query to check
+     * @return true if the query targets information_schema.columns
+     */
+    bool isInformationSchemaColumnsQuery(const string& query);
+
+    /**
+     * Checks if a query is a SHOW KEYS FROM query
+     * @param query The SQL query to check
+     * @return true if the query is a SHOW KEYS FROM query
+     */
+    bool isShowKeysQuery(const string& query);
+
+    /**
+     * Extracts table name from SHOW KEYS FROM queries
+     * @param query The SQL query to parse
+     * @return The extracted table name, or empty string if not found
+     */
+    string extractTableNameFromShowKeysQuery(const string& query);
+
+    /**
+     * Checks if a query is a foreign key constraint query (uses both KEY_COLUMN_USAGE and REFERENTIAL_CONSTRAINTS)
+     * @param query The SQL query to check
+     * @return true if the query is a foreign key constraint query
+     */
+    bool isForeignKeyConstraintQuery(const string& query);
+
+    /**
+     * Extracts table name from foreign key constraint queries
+     * @param query The SQL query to parse
+     * @return The extracted table name, or empty string if not found
+     */
+    string extractTableNameFromForeignKeyQuery(const string& query);
+}
+
+/**
+ * MySQL protocol packet handler
+ */
+class MySQLPacket {
+public:
     MySQLPacket();
 
-    /**
-     * Compose a MySQL packet ready for sending
-     *
-     * @return Binary packet in MySQL format
-     */
-    string serialize();
+    // Attributes
+    uint8_t sequenceID;
+    string payload;
 
-    /**
-     * Parse a MySQL packet from the wire
-     *
-     * @param packet Binary data received from the MySQL client
-     * @param size   length of packet
-     * @return       Number of bytes deserialized, or 0 on failure
-     */
+    // Methods
+    string serialize();
     int deserialize(const char* packet, const size_t size);
 
-    /**
-     * Creates a MySQL length-encoded integer
-     * See: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_basic_dt_integers.html
-     *
-     * @param val Integer value to be length-encoded
-     * @return    Lenght-encoded integer value
-     */
+    // Static helper methods
     static string lenEncInt(uint64_t val);
-
-    /**
-     * Creates a MySQL length-encoded string
-     * See: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_basic_dt_strings.htm
-     *
-     * @param str The string to be length-encoded
-     * @return    length-encoded string
-     */
     static string lenEncStr(const string& str);
-
-    /**
-     * Creates the packet sent from the server to new connections
-     * See: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_connection_phase_packets_protocol_handshake_v10.html
-     */
     static string serializeHandshake();
-
-    /**
-     * Creates the packet used to respond to a COM_QUERY request
-     * See: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_query_response.html
-     *
-     * @param sequenceID The sequenceID of the request we are responding to
-     * @param result     The results of the query we were asked to execte
-     * @return           A series of MySQL packets ready to be sent to the client
-     */
     static string serializeQueryResponse(int sequenceID, const SQResult& result);
-
-    /**
-     * Creatse a standard OK packet
-     * See: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_basic_ok_packet.html
-     *
-     * @param sequenceID The sequenceID of the request we are responding to
-     * @return           The OK packet to be sent to the client
-     */
     static string serializeOK(int sequenceID);
-
-    /**
-     * Sends ERR
-     * See: https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_basic_err_packet.html
-     *
-     * @param sequenceID The sequenceID of the request we are responding to
-     * @param code       The error code to show the user
-     * @param message    The error message to show the user
-     * @return           The ERR packet to be sent to the client
-     */
     static string serializeERR(int sequenceID, uint16_t code, const string& message);
 };
 
 /**
- * This plugin allows MySQL clients to connect to a bedrock instance. It requires the DB plugin
- * or some other plugin that can process "Query" commandsin order to actually work, in other
- * words this is essentially a network protocol wrapper aound the DB plugin.
+ * MySQL plugin for Bedrock
  */
 class BedrockPlugin_MySQL : public BedrockPlugin {
-  public:
+public:
     BedrockPlugin_MySQL(BedrockServer& s);
-    virtual const string& getName() const override;
-
-    // This is an empty implementation but I'm including it here to make it clear
-    // that this plugin does not support any commands on purpose.
-    virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand) override;
-
-    // This plugin listens on MySQL's port by default, but can be changed via CLI flag.
-    virtual string getPort() override;
-
-    // This function is called when bedrock accepts a new connection on a port owned
-    // by a given plugin. We use it to send the MySQL handshake.
-    virtual void onPortAccept(STCPManager::Socket* s) override;
-
-    // This function is called when bedrock receives data on a port owned by a given plugin.
-    // We do basically all query and processing in here.
-    virtual void onPortRecv(STCPManager::Socket* s, SData& request) override;
-
-    // This function is called when a requests completes, we use it to send OK and ERR Packets
-    // as appropriate based on the results of onPortRecv().
-    virtual void onPortRequestComplete(const BedrockCommand& command, STCPManager::Socket* s) override;
-
-    // Our fake mysql version. We don't necessarily
-    // conform to the same functionality or standards as this version, however
-    // some clients do version checking to see if they support connecting. We've
-    // set this to a major recent version so that modern clients can connect. In theory
-    // you can safely increment this to any valid future version unless there's breaking
-    // changes in the protocol.
-    static constexpr auto mysqlVersion = "8.0.35";
-
-  private:
-    // Attributes
     static const string name;
-    string commandName;
+    static constexpr const char* mysqlVersion = "5.1.73-log";
+    virtual const string& getName() const;
+    virtual string getPort();
+    virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
+    virtual void onPortAccept(STCPManager::Socket* s);
+    virtual void onPortRecv(STCPManager::Socket* s, SData& request);
+    virtual void onPortRequestComplete(const BedrockCommand& command, STCPManager::Socket* s);
 };
+
+// MySQL variables
+#define MYSQL_NUM_VARIABLES 292
+extern const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2];
