@@ -2391,8 +2391,19 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.
                         unique_lock<mutex> lock(m);
                         if (!finished && hasSocket) {
-                            // todo: interrupt, check for disconnect, resume.
-                            cv.wait(lock, [&]{return finished.load();});
+                            bool complete = false;
+                            while (!complete) {
+                                if (finished.load()) {
+                                    complete = true;
+                                }
+
+                                // TODO: Do a non-blocking poll and check if the remote end of the socket has disconnected. If so, set the command's timeout to 0.
+
+                                if (complete) {
+                                    break;
+                                }
+                                cv.wait_for(lock, chrono::seconds(1));
+                            }
                         }
 
                         commandThread.join();
