@@ -2222,7 +2222,12 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     }
 
     SDEBUG("Deserialized command " << command->request.methodLine);
-    command->socket = fireAndForget ? nullptr : &socket;
+    if (fireAndForget) {
+        command->socket = nullptr;
+    } else {
+        command->socket = &socket;
+        socket.currentCommand = command.get();
+    }
 
     if (command->writeConsistency != SQLiteNode::QUORUM && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
         command->writeConsistency = SQLiteNode::QUORUM;
