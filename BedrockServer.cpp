@@ -2376,6 +2376,9 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             command->destructionCallback = &callback;
                         }
 
+                        // So we can move `runCommand` into it's own thread.
+                        // The `wait` block below will still wait for it to finish. We can interrupt that block with `poll` logic to check for disconnect.
+                        // Maybe we don't need the extra mapping from socket->command.
                         runCommand(move(command));
 
                         // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
