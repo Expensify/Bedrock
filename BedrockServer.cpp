@@ -2259,7 +2259,8 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
     }
 
     // Initialize and get a unique thread ID.
-    SInitialize("socket" + to_string(_socketThreadNumber++));
+    string threadName = "socket" + to_string(_socketThreadNumber++);
+    SInitialize(threadName);
     SINFO("[performance] Socket thread starting");
 
     // This outer loop just runs until the entire socket life cycle is done, meaning it deserializes a command,
@@ -2379,12 +2380,18 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         // So we can move `runCommand` into it's own thread.
                         // The `wait` block below will still wait for it to finish. We can interrupt that block with `poll` logic to check for disconnect.
                         // Maybe we don't need the extra mapping from socket->command.
-                        runCommand(move(command));
+                        thread commandThread(
+                            [&](){
+                                SInitialize(threadName + "-cmd");
+                                runCommand(move(command));
+                            }
+                        );
 
                         // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
                         // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.
                         unique_lock<mutex> lock(m);
                         if (!finished && hasSocket) {
+                            // todo: interrupt, check for disconnect, resume.
                             cv.wait(lock, [&]{return finished.load();});
                         }
                     }
