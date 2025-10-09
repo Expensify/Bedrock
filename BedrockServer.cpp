@@ -2382,6 +2382,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                     }
                 }
             }
+
         } else if (socket.state == STCPManager::Socket::SHUTTINGDOWN || socket.state == STCPManager::Socket::CLOSED) {
             // Do nothing here except prevent the warning below from firing. This loop should exit on the next
             // iteration.
