@@ -2394,6 +2394,8 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             // todo: interrupt, check for disconnect, resume.
                             cv.wait(lock, [&]{return finished.load();});
                         }
+
+                        commandThread.join();
                     }
                 }
             }
