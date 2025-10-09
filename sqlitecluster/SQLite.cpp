@@ -283,7 +283,21 @@ int SQLite::_progressHandlerCallback(void* arg) {
         // Return non-zero causes sqlite to interrupt the operation.
         return 1;
     }
+
+    // This is all race-condition-y
+    if (sqlite->_shouldExitPtr && sqlite->_shouldExitPtr->load()) {
+        return 1;
+    }
+
     return 0;
+}
+
+void SQLite::setShouldExit(atomic<bool>* shouldExit) {
+    _shouldExitPtr = shouldExit;
+}
+
+void SQLite::clearShouldExit() {
+    _shouldExitPtr = nullptr;
 }
 
 int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize) {

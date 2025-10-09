@@ -124,6 +124,8 @@ class BedrockCommand : public SQLiteCommand {
     // Start recording time for a given action type.
     void startTiming(TIMING_INFO type);
 
+    atomic<bool>* shouldAbort();
+
     // Finish recording time for a given action type. `type` must match what was passed to the most recent call to
     // `startTiming`.
     void stopTiming(TIMING_INFO type);
@@ -307,6 +309,8 @@ class BedrockCommand : public SQLiteCommand {
 
     // Get the absolute timeout value for this command based on it's request. This is used to initialize _timeout.
     static int64_t _getTimeout(const SData& request, const uint64_t scheduledTime);
+
+    atomic<bool> _shouldAbort = false;
 
     // This is a timestamp in *microseconds* for when this command should timeout.
     uint64_t _timeout;

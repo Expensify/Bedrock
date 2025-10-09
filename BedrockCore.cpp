@@ -77,6 +77,7 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
             SDEBUG("prePeeking at '" << request.methodLine << "' with priority: " << command->priority);
             command->prePeekCount++;
             _db.setTimeout(_getRemainingTime(command, false));
+            _db.setShouldExit(command->shouldAbort());
 
             // Make sure no writes happen while in prePeek command
             _db.setQueryOnly(true);
@@ -118,6 +119,7 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
 
     }
     _db.clearTimeout();
+    _db.clearShouldExit();
 
     // Reset, we can write now.
     _db.setQueryOnly(false);
@@ -137,6 +139,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         command->peekCount++;
         // This doesn't change when we update the command. We need some way to update this.
         _db.setTimeout(_getRemainingTime(command, false));
+        _db.setShouldExit(command->shouldAbort());
 
         try {
             if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
@@ -162,6 +165,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             if (!completed) {
                 SDEBUG("Command '" << request.methodLine << "' not finished in peek, re-queuing.");
                 _db.clearTimeout();
+                _db.clearShouldExit();
                 _db.setQueryOnly(false);
                 return RESULT::SHOULD_PROCESS;
             }
@@ -211,6 +215,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     // Back out of the current transaction, it doesn't need to do anything.
     _db.rollback();
     _db.clearTimeout();
+    _db.clearShouldExit();
 
     // Reset, we can write now.
     _db.setQueryOnly(false);
@@ -231,6 +236,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         SDEBUG("Processing '" << request.methodLine << "'");
         command->processCount++;
         _db.setTimeout(_getRemainingTime(command, true));
+        _db.setShouldExit(command->shouldAbort());
         if (!_db.insideTransaction()) {
             // If a transaction was already begun in `peek`, then this won't run. We call it here to support the case where
             // peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete, in which
@@ -318,6 +324,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
 
     // We can reset the timing info for the next command.
     _db.clearTimeout();
+    _db.clearShouldExit();
 
     // Done, return whether or not we need the parent to commit our transaction.
     command->complete = !needsCommit;
@@ -339,6 +346,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
             SDEBUG("postProcessing at '" << request.methodLine << "' with priority: " << command->priority);
             command->postProcessCount++;
             _db.setTimeout(_getRemainingTime(command, false));
+            _db.setShouldExit(command->shouldAbort());
 
             // Make sure no writes happen while in postProcess command
             _db.setQueryOnly(true);
@@ -381,6 +389,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
     // The command is complete.
     command->complete = true;
     _db.clearTimeout();
+    _db.clearShouldExit();
 
     // Reset, we can write now.
     _db.setQueryOnly(false);
