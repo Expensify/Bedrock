@@ -488,7 +488,7 @@ class SQLite {
     // Registering this has the important side effect of preventing the DB from auto-checkpointing.
     static int _walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize);
 
-    mutable uint64_t _timeoutLimit;
+    mutable uint64_t _timeoutLimit = 0;
     mutable uint64_t _timeoutStart;
     mutable uint64_t _timeoutError;
     mutable atomic<bool>* _shouldExitPtr = nullptr;

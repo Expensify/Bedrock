@@ -182,12 +182,12 @@ void STCPManager::Socket::shutdown(Socket::State toState) {
 
 STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool https)
   : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), currentCommand(nullptr), https(https)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
 { }
 
 STCPManager::Socket::Socket(const string& host, bool https)
   : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), currentCommand(nullptr), https(https)
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
 {
     SASSERT(SHostIsValid(host));
     if (https) {
@@ -214,13 +214,11 @@ STCPManager::Socket::Socket(Socket&& from)
     ssl(from.ssl),
     data(from.data),
     id(from.id),
-    currentCommand(from.currentCommand),
     https(from.https)
 {
     from.s = -1;
     from.ssl = nullptr;
     from.data = nullptr;
-    from.currentCommand = nullptr;
 }
 
 STCPManager::Socket::~Socket() {

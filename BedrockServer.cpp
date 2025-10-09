@@ -2222,12 +2222,7 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     }
 
     SDEBUG("Deserialized command " << command->request.methodLine);
-    if (fireAndForget) {
-        command->socket = nullptr;
-    } else {
-        command->socket = &socket;
-        socket.currentCommand = command.get();
-    }
+    command->socket = fireAndForget ? nullptr : &socket;
 
     if (command->writeConsistency != SQLiteNode::QUORUM && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
         command->writeConsistency = SQLiteNode::QUORUM;
@@ -2381,7 +2376,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
                         // So we can move `runCommand` into it's own thread.
                         // The `wait` block below will still wait for it to finish. We can interrupt that block with `poll` logic to check for disconnect.
-                        // Maybe we don't need the extra mapping from socket->command.
                         thread commandThread(
                             [&](){
                                 SInitialize(threadName + "-cmd");

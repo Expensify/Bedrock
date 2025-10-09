@@ -10,7 +10,6 @@
 #include <libstuff/SFastBuffer.h>
 
 class SSSLState;
-class SQLiteCommand;
 
 using namespace std;
 
@@ -46,7 +45,6 @@ struct STCPManager {
         bool sendBufferEmpty();
         string sendBufferCopy();
         void setSendBuffer(const string& buffer);
-        SQLiteCommand* currentCommand = nullptr;
 
       protected:
         static atomic<uint64_t> socketCount;
