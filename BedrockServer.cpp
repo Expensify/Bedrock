@@ -2377,6 +2377,8 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             command->destructionCallback = &callback;
                         }
 
+                        BedrockCommand* commandPtr = hasSocket ? command.get() : nullptr;
+
                         // So we can move `runCommand` into it's own thread.
                         // The `wait` block below will still wait for it to finish. We can interrupt that block with `poll` logic to check for disconnect.
                         // Maybe we don't need the extra mapping from socket->command.
@@ -2397,7 +2399,21 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                                     complete = true;
                                 }
 
-                                // TODO: Do a non-blocking poll and check if the remote end of the socket has disconnected. If so, set the command's timeout to 0.
+                                if (!complete && hasSocket && commandPtr->timeout()) {
+                                    struct pollfd disconnectCheck = {
+                                        socket.s,
+                                        static_cast<short>(POLLIN | POLLHUP | POLLERR | POLLRDHUP),
+                                        0
+                                    };
+                                    int pollResult = poll(&disconnectCheck, 1, 0);
+                                    if (pollResult > 0) {
+                                        short disconnectEvents = POLLHUP | POLLERR | POLLNVAL | POLLRDHUP;
+                                        if ((disconnectCheck.revents & disconnectEvents) && !finished.load()) {
+                                            SINFO("Calling socket disconnected, timing out.");
+                                            commandPtr->setTimeout(0);
+                                        }
+                                    }
+                                }
 
                                 if (complete) {
                                     break;

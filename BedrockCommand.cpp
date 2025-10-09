@@ -411,6 +411,8 @@ void BedrockCommand::setTimeout(uint64_t timeoutDurationMS) {
     // Because _timeout is in microseconds.
     timeoutDurationMS *= 1'000;
     timeoutDurationMS += STimeNow();
+
+    // Is this threadsafe?
     _timeout = timeoutDurationMS;
 }
 
