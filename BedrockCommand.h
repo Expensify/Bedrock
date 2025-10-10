@@ -266,6 +266,8 @@ class BedrockCommand : public SQLiteCommand {
     // in `process` instead of peek, as it will always be escalated to leader
     const bool escalateImmediately;
 
+    // Setting this to `true` will cause this command to abort immediately, even in the middle of a slow database query.
+    // NOTE: currently, this will not abort from every case where a command could be stuck, but only in DB queries.
     atomic<bool> shouldAbort = false;
 
     // If someone is waiting for this command to complete, this will be called in the destructor.
