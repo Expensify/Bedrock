@@ -2254,7 +2254,8 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
     }
 
     // Initialize and get a unique thread ID.
-    SInitialize("socket" + to_string(_socketThreadNumber++));
+    string threadName = "socket" + to_string(_socketThreadNumber++);
+    SInitialize(threadName);
     SINFO("[performance] Socket thread starting");
 
     // This outer loop just runs until the entire socket life cycle is done, meaning it deserializes a command,
@@ -2371,14 +2372,31 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             command->destructionCallback = &callback;
                         }
 
-                        runCommand(move(command));
+                        // Running the command in a separate thread allows this thread to poll the client socket and if it is
+                        // disconnected, abort the command.
+                        atomic<bool>& commandShouldAbortFlag = command->shouldAbort;
+                        thread commandThread(
+                            [&](){
+                                SInitialize(threadName + "-cmd");
+                                runCommand(move(command));
+                            }
+                        );
 
-                        // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
+                        // Now that the command is running, we wait for it to complete (if it has a socket, and hasn't finished by the time we get to this point).
                         // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.
                         unique_lock<mutex> lock(m);
-                        if (!finished && hasSocket) {
-                            cv.wait(lock, [&]{return finished.load();});
+                        while (!finished && hasSocket) {
+                            struct pollfd disconnectCheck = {socket.s, (POLLIN | POLLRDHUP), 0};
+                            if (poll(&disconnectCheck, 1, 0) > 0) {
+                                if (disconnectCheck.revents & (POLLHUP | POLLERR | POLLNVAL | POLLRDHUP)) {
+                                    SINFO("Socket disconnected with command running, aborting.");
+                                    commandShouldAbortFlag = true;
+                                }
+                            }
+                            cv.wait_for(lock, chrono::seconds(1));
                         }
+
+                        commandThread.join();
                     }
                 }
             }
