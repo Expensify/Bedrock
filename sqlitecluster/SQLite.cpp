@@ -283,7 +283,7 @@ int SQLite::_progressHandlerCallback(void* arg) {
         return 1;
     }
 
-    // This has a known race condition, in that calling `setAbortRef` or `clearAbortRef` while this is would potentially
+    // This has a known race condition, in that calling `setAbortRef` or `clearAbortRef` while this is running would potentially
     // cause unexpected behavior (including a segfault), but this is avoided by calling those functions in accordance with
     // thier documentation and *not using them* in the middle of a running query.
     if (sqlite->_shouldAbortPtr && sqlite->_shouldAbortPtr->load()) {
