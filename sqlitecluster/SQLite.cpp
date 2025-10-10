@@ -284,19 +284,19 @@ int SQLite::_progressHandlerCallback(void* arg) {
     }
 
     // This is all race-condition-y
-    if (sqlite->_shouldExitPtr && sqlite->_shouldExitPtr->load()) {
+    if (sqlite->_shouldAbortPtr && sqlite->_shouldAbortPtr->load()) {
         return 1;
     }
 
     return 0;
 }
 
-void SQLite::setShouldExit(atomic<bool>* shouldExit) {
-    _shouldExitPtr = shouldExit;
+void SQLite::setAbortRef(atomic<bool>& abortVar) {
+    _shouldAbortPtr = &abortVar;
 }
 
-void SQLite::clearShouldExit() {
-    _shouldExitPtr = nullptr;
+void SQLite::clearAbortRef() {
+    _shouldAbortPtr = nullptr;
 }
 
 int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize) {

@@ -407,10 +407,6 @@ void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWa
     }
 }
 
-atomic<bool>* BedrockCommand::shouldAbort() {
-    return &_shouldAbort;
-}
-
 void BedrockCommand::setTimeout(uint64_t timeoutDurationMS) {
     // Because _timeout is in microseconds.
     timeoutDurationMS *= 1'000;

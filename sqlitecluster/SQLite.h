@@ -241,8 +241,8 @@ class SQLite {
     // Reset all timeout information to 0, to be ready for the next operation.
     void clearTimeout();
 
-    void setShouldExit(atomic<bool>* shouldExit);
-    void clearShouldExit();
+    void setAbortRef(atomic<bool>& abortVar);
+    void clearAbortRef();
 
     // This atomically removes and returns committed transactions from our internal list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to tuples of (query, hash, dbCountAtTransactionStart), so that those
@@ -491,7 +491,7 @@ class SQLite {
     mutable uint64_t _timeoutLimit = 0;
     mutable uint64_t _timeoutStart;
     mutable uint64_t _timeoutError;
-    mutable atomic<bool>* _shouldExitPtr = nullptr;
+    mutable atomic<bool>* _shouldAbortPtr = nullptr;
 
     // Check out various error cases that can interrupt a query.
     // We check them all together because we need to make sure we atomically pick a single one to handle.

@@ -2404,7 +2404,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                                         short disconnectEvents = POLLHUP | POLLERR | POLLNVAL | POLLRDHUP;
                                         if ((disconnectCheck.revents & disconnectEvents) && !finished.load()) {
                                             SINFO("Calling socket disconnected, timing out.");
-                                            *(commandPtr->shouldAbort()) = true;
+                                            commandPtr->shouldAbort = true;
                                         }
                                     }
                                 }
