@@ -2372,10 +2372,8 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             command->destructionCallback = &callback;
                         }
 
-                        BedrockCommand* commandPtr = hasSocket ? command.get() : nullptr;
-
-                        // So we can move `runCommand` into it's own thread.
-                        // The `wait` block below will still wait for it to finish. We can interrupt that block with `poll` logic to check for disconnect.
+                        // Running the command in a separate thread allows this thread to poll the client socket and if it is
+                        // disconnected, abort the command.
                         thread commandThread(
                             [&](){
                                 SInitialize(threadName + "-cmd");
@@ -2383,37 +2381,18 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             }
                         );
 
-                        // Now that the command is queued, we wait for it to complete (if it's has a socket, and hasn't finished by the time we get to this point).
+                        // Now that the command is running, we wait for it to complete (if it has a socket, and hasn't finished by the time we get to this point).
                         // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.
                         unique_lock<mutex> lock(m);
-                        if (!finished && hasSocket) {
-                            bool complete = false;
-                            while (!complete) {
-                                if (finished.load()) {
-                                    complete = true;
+                        while (!finished.load() && hasSocket) {
+                            struct pollfd disconnectCheck = {socket.s, (POLLIN | POLLHUP | POLLERR | POLLRDHUP), 0};
+                            if (poll(&disconnectCheck, 1, 0) > 0) {
+                                if (disconnectCheck.revents & (POLLHUP | POLLERR | POLLNVAL | POLLRDHUP)) {
+                                    SINFO("Socket disconnected with command running, aborting.");
+                                    command->shouldAbort = true;
                                 }
-
-                                if (!complete && hasSocket && commandPtr->timeout()) {
-                                    struct pollfd disconnectCheck = {
-                                        socket.s,
-                                        static_cast<short>(POLLIN | POLLHUP | POLLERR | POLLRDHUP),
-                                        0
-                                    };
-                                    int pollResult = poll(&disconnectCheck, 1, 0);
-                                    if (pollResult > 0) {
-                                        short disconnectEvents = POLLHUP | POLLERR | POLLNVAL | POLLRDHUP;
-                                        if ((disconnectCheck.revents & disconnectEvents) && !finished.load()) {
-                                            SINFO("Calling socket disconnected, timing out.");
-                                            commandPtr->shouldAbort = true;
-                                        }
-                                    }
-                                }
-
-                                if (complete) {
-                                    break;
-                                }
-                                cv.wait_for(lock, chrono::seconds(1));
                             }
+                            cv.wait_for(lock, chrono::seconds(1));
                         }
 
                         commandThread.join();
