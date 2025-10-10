@@ -137,7 +137,6 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     try {
         SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command->priority);
         command->peekCount++;
-        // This doesn't change when we update the command. We need some way to update this.
         _db.setTimeout(_getRemainingTime(command, false));
         _db.setAbortRef(command->shouldAbort);
 

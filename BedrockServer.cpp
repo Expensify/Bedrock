@@ -2384,7 +2384,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         // Now that the command is running, we wait for it to complete (if it has a socket, and hasn't finished by the time we get to this point).
                         // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.
                         unique_lock<mutex> lock(m);
-                        while (!finished.load() && hasSocket) {
+                        while (!finished && hasSocket) {
                             struct pollfd disconnectCheck = {socket.s, (POLLIN | POLLHUP | POLLERR | POLLRDHUP), 0};
                             if (poll(&disconnectCheck, 1, 0) > 0) {
                                 if (disconnectCheck.revents & (POLLHUP | POLLERR | POLLNVAL | POLLRDHUP)) {
