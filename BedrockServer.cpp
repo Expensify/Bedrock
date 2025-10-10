@@ -2374,6 +2374,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
                         // Running the command in a separate thread allows this thread to poll the client socket and if it is
                         // disconnected, abort the command.
+                        atomic<bool>& commandShouldAbortFlag = command->shouldAbort;
                         thread commandThread(
                             [&](){
                                 SInitialize(threadName + "-cmd");
@@ -2389,7 +2390,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             if (poll(&disconnectCheck, 1, 0) > 0) {
                                 if (disconnectCheck.revents & (POLLHUP | POLLERR | POLLNVAL | POLLRDHUP)) {
                                     SINFO("Socket disconnected with command running, aborting.");
-                                    command->shouldAbort = true;
+                                    commandShouldAbortFlag = true;
                                 }
                             }
                             cv.wait_for(lock, chrono::seconds(1));
