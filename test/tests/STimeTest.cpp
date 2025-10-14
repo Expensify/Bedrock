@@ -2,10 +2,10 @@
 #include <test/lib/BedrockTester.h>
 
 struct STimeTest : tpunit::TestFixture {
-    STimeTest() : tpunit::TestFixture("STimeTest",
-                                     TEST(STimeTest::testSTimestampToEpoch),
-                                     TEST(STimeTest::testSTimestampMSToEpoch)
-                                     )
+    STimeTest()
+        : tpunit::TestFixture("STime",
+                              TEST(STimeTest::testSTimestampToEpoch),
+                              TEST(STimeTest::testSTimestampMSToEpoch))
     { }
 
     /**
@@ -29,11 +29,10 @@ struct STimeTest : tpunit::TestFixture {
         uint64_t result = STimestampMSToEpoch("%Y-%m-%d %H:%M:%f", "2025-10-13 14:30:25.192");
         ASSERT_EQUAL(1760365825192, result);
 
-        result= STimestampMSToEpoch("%Y-%m-%d %H:%M:%f", "2021-06-15 09:15:30.5");
+        result = STimestampMSToEpoch("%Y-%m-%d %H:%M:%f", "2021-06-15 09:15:30.5");
         ASSERT_EQUAL(1623748530500, result);
 
         result = STimestampMSToEpoch("%Y-%m-%d %H:%M:%f", "2019-03-20 12:00:00.000");
         ASSERT_EQUAL(1553083200000, result);
     }
-
 } __STimeTest;

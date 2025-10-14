@@ -1,7 +1,6 @@
 #include "libstuff.h"
 
 #include <cstring>
-#include <iostream>
 #include <sys/time.h>
 
 uint64_t STimeNow() {
@@ -22,13 +21,13 @@ string SComposeTime(const string& format, uint64_t when) {
 }
 
 uint64_t STimestampToEpoch(const string& format, const string& timestamp) {
-    struct tm time{};
+    struct tm time = {0};
     strptime(timestamp.c_str(), format.c_str(), &time);
     return mktime(&time);
 }
 
 uint64_t STimestampMSToEpoch(const string& format, const string& timestamp) {
-    struct tm time{};
+    struct tm time = {0};
     string parsedFormat = format;
     double fractionalSeconds = 0.0;
 
