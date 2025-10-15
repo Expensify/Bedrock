@@ -282,7 +282,23 @@ int SQLite::_progressHandlerCallback(void* arg) {
         // Return non-zero causes sqlite to interrupt the operation.
         return 1;
     }
+
+    // This has a known race condition, in that calling `setAbortRef` or `clearAbortRef` while this is running would potentially
+    // cause unexpected behavior (including a segfault), but this is avoided by calling those functions in accordance with
+    // thier documentation and *not using them* in the middle of a running query.
+    if (sqlite->_shouldAbortPtr && sqlite->_shouldAbortPtr->load()) {
+        return 1;
+    }
+
     return 0;
+}
+
+void SQLite::setAbortRef(atomic<bool>& abortVar) {
+    _shouldAbortPtr = &abortVar;
+}
+
+void SQLite::clearAbortRef() {
+    _shouldAbortPtr = nullptr;
 }
 
 int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize) {
