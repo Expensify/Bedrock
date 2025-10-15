@@ -241,6 +241,14 @@ class SQLite {
     // Reset all timeout information to 0, to be ready for the next operation.
     void clearTimeout();
 
+    // These functions allow associating an atomic<bool> with this object that will cause a query to be interrupted if the
+    // bool is set to `true` by another thread while the query is running. Setting the reference bool is threadsafe,
+    // However, setting the reference itself (i.e., calling these two functions) *is not*. You must call `setAbortRef`
+    // before your query begins and `clearAbortRef` after your query ends. It is up to the caller to make sure that `abortVar`
+    // remains valid until `clearAbortRef` is called.
+    void setAbortRef(atomic<bool>& abortVar);
+    void clearAbortRef();
+
     // This atomically removes and returns committed transactions from our internal list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to tuples of (query, hash, dbCountAtTransactionStart), so that those
     // transactions can be replicated out to peers.
@@ -488,6 +496,9 @@ class SQLite {
     mutable uint64_t _timeoutLimit = 0;
     mutable uint64_t _timeoutStart;
     mutable uint64_t _timeoutError;
+
+    // Internal pointer to abortVar (see documentation above for `setAbortRef`)
+    mutable atomic<bool>* _shouldAbortPtr = nullptr;
 
     // Check out various error cases that can interrupt a query.
     // We check them all together because we need to make sure we atomically pick a single one to handle.
