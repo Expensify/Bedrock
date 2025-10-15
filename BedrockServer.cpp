@@ -2377,7 +2377,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         atomic<bool>& commandShouldAbortFlag = command->shouldAbort;
                         thread commandThread(
                             [&](){
-                                SInitialize(threadName + "-cmd");
+                                SInitialize(threadName + "_cmd");
                                 runCommand(move(command));
                             }
                         );
