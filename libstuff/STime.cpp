@@ -21,10 +21,29 @@ string SComposeTime(const string& format, uint64_t when) {
 }
 
 uint64_t STimestampToEpoch(const string& format, const string& timestamp) {
-    struct tm time;
-    memset(&time, 0, sizeof(struct tm));
+    struct tm time = {0};
     strptime(timestamp.c_str(), format.c_str(), &time);
     return mktime(&time);
+}
+
+uint64_t STimestampMSToEpoch(const string& format, const string& timestamp) {
+    struct tm time = {0};
+    string parsedFormat = format;
+    double fractionalSeconds = 0.0;
+
+    // If a timestamp format contains fractional second, then extract the fractional seconds to be added later,
+    // as strptime() method cannot handle fractional seconds
+    const size_t fractionalPosition = format.find("%f");
+    if (fractionalPosition != string::npos) {
+        // strptime() cannot parse fractional second part %f, so we need to replace it with seconds part (%S)
+        parsedFormat.replace(fractionalPosition, 2, "%S");
+        const size_t dotPosition = timestamp.find(".");
+        if (dotPosition != string::npos) {
+            fractionalSeconds = stod("0." + timestamp.substr(dotPosition + 1));
+        }
+    }
+    strptime(timestamp.c_str(), parsedFormat.c_str(), &time);
+    return static_cast<uint64_t>((mktime(&time) + fractionalSeconds) * 1000);
 }
 
 int SDaysInMonth(int year, int month) {
@@ -75,7 +94,7 @@ string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
     list<string> parts = SParseList(timeStamp, '-');
 
     // Initialize to all 0's
-    struct tm t = {0};  
+    struct tm t = {0};
     int64_t year;
 
     try {
@@ -103,7 +122,7 @@ string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
     }
 
     t.tm_mday = 1;
-    
+
     char buf[256] = {};
     size_t length = strftime(buf, sizeof(buf), "%Y-%m-%d", &t);
     return string(buf, length);
