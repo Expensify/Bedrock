@@ -3,25 +3,30 @@
 
 struct VersionMismatchTest : tpunit::TestFixture {
     VersionMismatchTest()
-        : tpunit::TestFixture("VersionMismatch", 
+        : tpunit::TestFixture("VersionMismatch",
             BEFORE_CLASS(VersionMismatchTest::setup),
-            TEST(VersionMismatchTest::testReadEscalation), 
+            TEST(VersionMismatchTest::testReadEscalation),
             TEST(VersionMismatchTest::testWriteEscalation),
             AFTER_CLASS(VersionMismatchTest::teardown)) { }
 
     BedrockClusterTester* tester = nullptr;
 
-    void setup() { 
+    void setup() {
         tester = new BedrockClusterTester(ClusterSize::FIVE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"});
-        // Restart one of the followers on a new version.
-        tester->getTester(2).stopServer();
-        tester->getTester(2).updateArgs({{"-versionOverride", "ABCDE"}});
-        tester->getTester(2).startServer();
 
-        // Restart one of the followers on a new version.
-        tester->getTester(4).stopServer();
-        tester->getTester(4).updateArgs({{"-versionOverride", "ABCDE"}});
-        tester->getTester(4).startServer();
+        // Restart two servers on a different version.
+        thread t1([&](){
+            tester->getTester(2).stopServer();
+            tester->getTester(2).updateArgs({{"-versionOverride", "ABCDE"}});
+            tester->getTester(2).startServer();
+        });
+        thread t2([&](){
+            tester->getTester(4).stopServer();
+            tester->getTester(4).updateArgs({{"-versionOverride", "ABCDE"}});
+            tester->getTester(4).startServer();
+        });
+        t1.join();
+        t2.join();
     }
 
     void teardown() {
@@ -30,8 +35,14 @@ struct VersionMismatchTest : tpunit::TestFixture {
 
     void testReadEscalation()
     {
-        // Send a query to all three and make sure the version-mismatched one escalates.
+        // Send a query to all five and make sure the version-mismatched ones escalates.
         for (size_t i = 0; i < 5; i++) {
+
+            bool stateIsOK = tester->getTester(i).waitForLeadingFollowing();
+            if (!stateIsOK) {
+                cout << "Node " << i << " failed to reach leading or following." << endl;
+            }
+
             SData command("testquery");
             command["Query"] = "SELECT 1;";
             auto result = tester->getTester(i).executeWaitMultipleData({command})[0];
@@ -39,6 +50,11 @@ struct VersionMismatchTest : tpunit::TestFixture {
             // For read commands sent directly to leader, or to a follower on the same version as leader, there
             // we don't care about how they are executed. However, on a follower on a different version to leader,
             // it should escalates even read commands to follower peers.
+            if (result["nodeRequestWasExecuted"].length() == 0) {
+                cout << "No nodeRequestWasExecuted from node " << i << endl;
+                cout << result.serialize() << endl;
+                cout << "DONE" << endl;
+            }
             ASSERT_TRUE(result["nodeRequestWasExecuted"].length() > 0);
             if (i == 2 || i == 4) {
                 // Confirm it didn't execute in leader

@@ -95,12 +95,14 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, const string& pe
 
     const SQLitePeer* peer = _node->getPeerByName(peerName);
     if (!peer) {
+        SWARN("TYLER Could not find a peer for name " << peerName);
         setErrorResponse(command);
         return false;
     }
 
     s = _getSocketForAddress(peer->commandAddress);
     if (!s) {
+        SWARN("TYLER Could not _getSocketForAddress for address " << peer->commandAddress.load());
         setErrorResponse(command);
         return false;
     }
@@ -113,6 +115,7 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, const string& pe
     // caller to runOnPeer determine how to handle the failed command.
     const bool result = _sendCommandOnSocket(*s, command);
     if (!result) {
+        SWARN("TYLER Could not _sendCommandOnSocket for address " << peer->commandAddress.load());
         setErrorResponse(command);
     }
 
@@ -181,6 +184,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
     char response[4096] = {0};
     while (true) {
         if (waitForReady(fdspec, command.timeout()) != WaitForReadyResult::OK) {
+            SWARN("TYLER  waitForReady failed ");
             setErrorResponse(command);
             return false;
         }
@@ -194,12 +198,12 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
                     SINFO("[HTTPESC] Got error (recv): " << errno << ", trying again.");
                     break;
                 default:
-                    SINFO("[HTTPESC] Got error (recv): " << errno << ", fatal.");
+                    SINFO("TYLER [HTTPESC] Got error (recv): " << errno << ", fatal.");
                     setErrorResponse(command);
                     return false;
             }
         } else if (bytesRead == 0) {
-            SINFO("[HTTPESC] disconnected.");
+            SINFO("TYLER [HTTPESC] disconnected.");
             setErrorResponse(command);
             return false;
         } else {
@@ -245,10 +249,12 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, bool runOnLeader
     string peerType = runOnLeader ? "leader" : "follower peer";
     size_t sleepsDueToFailures = 0;
     string peerAddress;
+    SINFO("Running on peer. Leader? " << runOnLeader);
 
     unique_ptr<SHTTPSManager::Socket> s;
     while (chrono::steady_clock::now() < (start + 5s) && !sent) {
         peerAddress = runOnLeader ? _node->leaderCommandAddress() : _node->getEligibleFollowerForForwardingAddress();
+        SINFO("Picked peed address: " << peerAddress);
         if (peerAddress.empty()) {
             // If there's no leader, it's possible we're supposed to be the leader. In this case, we can exit early.
             auto myState = _node->getState();
@@ -267,14 +273,17 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, bool runOnLeader
         // Start our escalation timing
         command.escalationTimeUS = STimeNow();
 
+        SINFO("Getting socket.");
         s = _getSocketForAddress(peerAddress);
         if (!s) {
             command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
             return false;
         }
 
+        SINFO("Sending on socket.");
         sent = _sendCommandOnSocket(*s, command);
         if (!sent) {
+            SINFO("Sending failed");
             command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
             return false;
         }

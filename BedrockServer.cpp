@@ -710,22 +710,24 @@ bool BedrockServer::isShuttingDown() {
 }
 
 void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlocking, bool hasDedicatedThread) {
-    // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
-    // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
-    // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
-    {
-        auto _syncNodeCopy = atomic_load(&_syncNode);
-        if (!_syncNodeCopy || _command->request.calcU64("commandExecuteTime") > STimeNow()) {
-            _commandQueue.push(move(_command));
-            return;
-        }
-    }
+    SAUTOPREFIX(_command->request);
 
     // This takes ownership of the passed command. By calling the move constructor, the caller's unique_ptr is now empty, and so when the one here goes out of scope (i.e., this function
     // returns), the command is destroyed.
     unique_ptr<BedrockCommand> command(move(_command));
 
-    SAUTOPREFIX(command->request);
+    // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
+    // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
+    // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
+    {
+        SINFO("Getting sync node copy");
+        auto _syncNodeCopy = atomic_load(&_syncNode);
+        if (!_syncNodeCopy || _command->request.calcU64("commandExecuteTime") > STimeNow()) {
+            SINFO("Queueing");
+            _commandQueue.push(move(command));
+            return;
+        }
+    }
 
     // Set the function that lets the signal handler know which command caused a problem, in case that happens.
     // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
@@ -739,6 +741,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     if (_handleIfStatusOrControlCommand(command)) {
         return;
     }
+    SINFO("Not _handleIfStatusOrControlCommand");
 
     // Check if this command would be likely to cause a crash
     if (_wouldCrash(command)) {
@@ -750,6 +753,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         return;
     }
 
+    SINFO("Not _wouldCrash");
+
     // If we're following, we will automatically escalate any command that's:
     // 1. Not already complete (complete commands are likely already returned from leader with legacy escalation)
     // and is marked as `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
@@ -757,6 +762,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // 2. Any commands if the current version of the code is not the same one as leader is executing.
     if (getState() == SQLiteNodeState::FOLLOWING && !command->complete && (command->escalateImmediately || _version != _leaderVersion.load())) {
         auto _clusterMessengerCopy = _clusterMessenger;
+        SINFO("Got Cluster Messenger");
+        if (command->escalateImmediately && _clusterMessengerCopy) {
+            SINFO("Will Run on peer");
+        }
         if (command->escalateImmediately && _clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
             // command->complete is now true for this command. It will get handled a few lines below.
             SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
@@ -2378,6 +2387,8 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         thread commandThread(
                             [&](){
                                 SInitialize(threadName + "_cmd");
+                                SAUTOPREFIX(command->request);
+                                SINFO("Calling runCommand.");
                                 runCommand(move(command));
                             }
                         );
