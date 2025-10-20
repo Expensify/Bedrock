@@ -1,6 +1,5 @@
 // Manages connections to a single instance of the bedrock server.
 #include "BedrockServer.h"
-#include "sqlitecluster/SQLite.h"
 #include "sqlitecluster/SQLiteNode.h"
 
 #include <arpa/inet.h>
@@ -146,8 +145,6 @@ void BedrockServer::sync()
             SAUTOPREFIX(command->request);
         }
 
-        SINFO("Main loop XX1");
-
         // If there were commands waiting on our commit count to come up-to-date, we'll move them back to the main
         // command queue here. There's no place in particular that's best to do this, so we do it at the top of this
         // main loop, as that prevents it from ever getting skipped in the event that we `continue` early from a loop
@@ -217,8 +214,6 @@ void BedrockServer::sync()
             }
         }
 
-        SINFO("passed futire commit commands XX1");
-
         // If we're in a state where we can initialize shutdown, then go ahead and do so.
         // Having responded to all clients means there are no *local* clients, but it doesn't mean there are no
         // escalated commands. This is fine though - if we're following, there can't be any escalated commands, and if
@@ -238,7 +233,6 @@ void BedrockServer::sync()
         fd_map fdm;
 
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
-        SINFO("prepoll XX1");
         _notifyDoneSync.prePoll(fdm);
         _syncNode->prePoll(fdm);
 
@@ -249,7 +243,6 @@ void BedrockServer::sync()
         const uint64_t now = STimeNow();
         {
             AutoTimerTime pollTime(pollTimer);
-        SINFO("poll XX1");
             S_poll(fdm, max(nextActivity, now) - now);
             if (SCheckSignal(SIGTERM)) {
                 _notifyDone.push(true);
@@ -259,17 +252,11 @@ void BedrockServer::sync()
         // And set our next timeout for 1 second from now.
         nextActivity = STimeNow() + STIME_US_PER_S;
 
-        // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
-        // state when it's finished.
-        SQLiteNodeState preUpdateState = _syncNode->getState();
-
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
         {
             // Set the default log prefix.
             SAUTOPREFIX(SData{});
-
-            SINFO("postpoll XX1");
 
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
@@ -278,6 +265,9 @@ void BedrockServer::sync()
             _notifyDoneSync.postPoll(fdm);
         }
 
+        // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
+        // state when it's finished.
+        SQLiteNodeState preUpdateState = _syncNode->getState();
         if(command && committingCommand) {
             void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
             bool enabled = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
@@ -289,10 +279,7 @@ void BedrockServer::sync()
             _syncNode->onPrepareHandlerEnabled = false;
             _syncNode->onPrepareHandler = nullptr;
         }
-        SINFO("preupdate state " << SQLiteNode::stateName(preUpdateState));
         while (_syncNode->update()) {}
-        SINFO("postupdate state " << SQLiteNode::stateName(_syncNode->getState()));
-
         _leaderVersion.store(_syncNode->getLeaderVersion());
 
         // If we're not leading, move any commands from the blocking queue back to the main queue.
@@ -304,19 +291,14 @@ void BedrockServer::sync()
             }
         }
 
-        SINFO("Checking if fell out of leading");
-
         // Reset some state on falling out of leading. This could be normal, if we're just shutting down, or it
         // could be exceptional, in the case we've lost connection to the cluster or some other problem.
         if ((preUpdateState == SQLiteNodeState::LEADING || preUpdateState == SQLiteNodeState::STANDINGDOWN) &&
             (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::STANDINGDOWN)) {
             shutdownTimer.safeNodeState = chrono::steady_clock::now();
 
-            SINFO("fell out of leading");
-
             // If we bailed out while doing a upgradeDB, clear state
             if (_upgradeInProgress) {
-                SINFO("Clearing _upgradeInProgress");
                 _upgradeInProgress = false;
                 if (committingCommand) {
                     db.rollback();
@@ -355,9 +337,6 @@ void BedrockServer::sync()
             }
         }
 
-        SINFO("Done checking fell out of leading");
-
-
         // Now that we've cleared any state associated with switching away from leading, we can bail out and try again
         // until we're either leading or following.
         if (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING && getState() != SQLiteNodeState::STANDINGDOWN) {
@@ -374,7 +353,6 @@ void BedrockServer::sync()
             (getState() == SQLiteNodeState::LEADING && _upgradeInProgress && !committingCommand)) {
             // Store this before we start writing to the DB, which can take a while depending on what changes were made
             // (for instance, adding an index).
-            SINFO("We switched to leading and set _upgradeInProgress");
             _upgradeInProgress = true;
             if (!_syncNode->hasQuorum()) {
                 // We are now "upgrading" but we won't actually start the commit until the cluster is sufficiently
@@ -732,24 +710,22 @@ bool BedrockServer::isShuttingDown() {
 }
 
 void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlocking, bool hasDedicatedThread) {
-    SAUTOPREFIX(_command->request);
+    // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
+    // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
+    // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
+    {
+        auto _syncNodeCopy = atomic_load(&_syncNode);
+        if (!_syncNodeCopy || _command->request.calcU64("commandExecuteTime") > STimeNow()) {
+            _commandQueue.push(move(_command));
+            return;
+        }
+    }
 
     // This takes ownership of the passed command. By calling the move constructor, the caller's unique_ptr is now empty, and so when the one here goes out of scope (i.e., this function
     // returns), the command is destroyed.
     unique_ptr<BedrockCommand> command(move(_command));
 
-    // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
-    // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
-    // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
-    {
-        SINFO("Getting sync node copy");
-        auto _syncNodeCopy = atomic_load(&_syncNode);
-        if (!_syncNodeCopy || command->request.calcU64("commandExecuteTime") > STimeNow()) {
-            SINFO("Queueing");
-            _commandQueue.push(move(command));
-            return;
-        }
-    }
+    SAUTOPREFIX(command->request);
 
     // Set the function that lets the signal handler know which command caused a problem, in case that happens.
     // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
@@ -763,7 +739,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     if (_handleIfStatusOrControlCommand(command)) {
         return;
     }
-    SINFO("Not _handleIfStatusOrControlCommand");
 
     // Check if this command would be likely to cause a crash
     if (_wouldCrash(command)) {
@@ -775,20 +750,13 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         return;
     }
 
-    SINFO("Not _wouldCrash");
-
     // If we're following, we will automatically escalate any command that's:
     // 1. Not already complete (complete commands are likely already returned from leader with legacy escalation)
     // and is marked as `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
     // for a previous commit to be delivered to this follower);
     // 2. Any commands if the current version of the code is not the same one as leader is executing.
-    SINFO("Checking cluster messenger");
     if (getState() == SQLiteNodeState::FOLLOWING && !command->complete && (command->escalateImmediately || _version != _leaderVersion.load())) {
         auto _clusterMessengerCopy = _clusterMessenger;
-        SINFO("Got Cluster Messenger");
-        if (command->escalateImmediately && _clusterMessengerCopy) {
-            SINFO("Will Run on peer");
-        }
         if (command->escalateImmediately && _clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
             // command->complete is now true for this command. It will get handled a few lines below.
             SINFO("Immediately escalated " << command->request.methodLine << " to leader.");
@@ -800,12 +768,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             return;
         }
     }
-    SINFO("Done checking cluster messenger");
 
     // If we happen to be synchronizing but the command port is open, which is an uncommon but possible scenario (i.e., we were momentarily disconnected from leader and need to catch back
     // up), we will forward commands to any other follower similar to if we were running as a different version from leader.
     if (getState() == SQLiteNodeState::SYNCHRONIZING) {
-        SINFO("SYNCHRONIZING");
         auto _clusterMessengerCopy = _clusterMessenger;
         bool result = _clusterMessengerCopy->runOnPeer(*command, false);
         if (result) {
@@ -814,8 +780,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             SHMMM("Synchronizing while accepting commands, but failed to forward the command to peer.", {{"command", command->request.methodLine}});
         }
     }
-
-    SINFO("past synchronizing");
 
     // If this command is already complete, then we should be a follower, and the sync node got a response back
     // from a command that had been escalated to leader, and queued it for a worker to respond to. We'll send
@@ -832,7 +796,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         // This command is done, move on to the next one.
         return;
     }
-    SINFO("Not complete");
 
     if (command->request.isSet("mockRequest")) {
         SINFO("mockRequest set for command '" << command->request.methodLine << "'.");
@@ -852,16 +815,13 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     string lastConflictTable;
     while (true) {
 
-        SINFO("Doing state check");
-
         // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
         size_t waitCount = 0;
         while (_upgradeInProgress || (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING)) {
-            SINFO("_upgradeInProgress? " << _upgradeInProgress << ", state: " << SQLiteNode::stateName(getState()) << ", checking timed out.");
+
             // It's feasible that our command times out in this loop. In this case, we do not have a DB object to pass.
             // The only implication of this is the response does not get the commitCount attached to it.
             if (BedrockCore::isTimedOut(command, nullptr, this)) {
-                SINFO("Timed out");
                 _reply(command);
                 return;
             }
@@ -2418,8 +2378,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         thread commandThread(
                             [&](){
                                 SInitialize(threadName + "_cmd");
-                                SAUTOPREFIX(command->request);
-                                SINFO("Calling runCommand.");
                                 runCommand(move(command));
                             }
                         );
