@@ -66,7 +66,6 @@ void SSSLState::freeConfig() {
     mbedtls_x509_crt_free(&_cacert);
 }
 
-SSSLState::SSSLState(const string& hostname) : SSSLState(hostname, -1) {}
 SSSLState::SSSLState(const string& hostname, int socket) {
     mbedtls_ssl_init(&ssl);
     mbedtls_net_init(&net_ctx);
@@ -88,6 +87,9 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     }
 
     // If no socket was supplied, create our own.
+    // Note that this provides no option to pass configuration to the socket. Particularly, we can't set it as
+    // non-blocking, meaning that if connections are slow, we block until they complete (or fail), which can
+    // hold database transactions open that should close.
     if (socket == -1) {
         lastResult = mbedtls_net_connect(&net_ctx, domain.c_str(),to_string(port).c_str(), MBEDTLS_NET_PROTO_TCP);
         if (lastResult) {

@@ -190,12 +190,11 @@ STCPManager::Socket::Socket(const string& host, bool https)
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
 {
     SASSERT(SHostIsValid(host));
+    s = S_socket(host, true, false, false);
     if (https) {
-        ssl = new SSSLState(host);
-        s = ssl->net_ctx.fd;
+        ssl = new SSSLState(host, s);
     } else {
         ssl = nullptr;
-        s = S_socket(host, true, false, false);
     }
 
     if (s < 0) {
