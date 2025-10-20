@@ -146,6 +146,8 @@ void BedrockServer::sync()
             SAUTOPREFIX(command->request);
         }
 
+        SINFO("Main loop XX1");
+
         // If there were commands waiting on our commit count to come up-to-date, we'll move them back to the main
         // command queue here. There's no place in particular that's best to do this, so we do it at the top of this
         // main loop, as that prevents it from ever getting skipped in the event that we `continue` early from a loop
@@ -215,6 +217,8 @@ void BedrockServer::sync()
             }
         }
 
+        SINFO("passed futire commit commands XX1");
+
         // If we're in a state where we can initialize shutdown, then go ahead and do so.
         // Having responded to all clients means there are no *local* clients, but it doesn't mean there are no
         // escalated commands. This is fine though - if we're following, there can't be any escalated commands, and if
@@ -234,6 +238,7 @@ void BedrockServer::sync()
         fd_map fdm;
 
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
+        SINFO("prepoll XX1");
         _notifyDoneSync.prePoll(fdm);
         _syncNode->prePoll(fdm);
 
@@ -244,6 +249,7 @@ void BedrockServer::sync()
         const uint64_t now = STimeNow();
         {
             AutoTimerTime pollTime(pollTimer);
+        SINFO("poll XX1");
             S_poll(fdm, max(nextActivity, now) - now);
             if (SCheckSignal(SIGTERM)) {
                 _notifyDone.push(true);
@@ -258,6 +264,8 @@ void BedrockServer::sync()
         {
             // Set the default log prefix.
             SAUTOPREFIX(SData{});
+
+            SINFO("postpoll XX1");
 
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
@@ -280,7 +288,10 @@ void BedrockServer::sync()
             _syncNode->onPrepareHandlerEnabled = false;
             _syncNode->onPrepareHandler = nullptr;
         }
+        SINFO("preupdate state " << SQLiteNode::stateName(preUpdateState));
         while (_syncNode->update()) {}
+        SINFO("postupdate state " << SQLiteNode::stateName(_syncNode->getState()));
+
         _leaderVersion.store(_syncNode->getLeaderVersion());
 
         // If we're not leading, move any commands from the blocking queue back to the main queue.
@@ -292,14 +303,19 @@ void BedrockServer::sync()
             }
         }
 
+        SINFO("Checking if fell out of leading");
+
         // Reset some state on falling out of leading. This could be normal, if we're just shutting down, or it
         // could be exceptional, in the case we've lost connection to the cluster or some other problem.
         if ((preUpdateState == SQLiteNodeState::LEADING || preUpdateState == SQLiteNodeState::STANDINGDOWN) &&
             (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::STANDINGDOWN)) {
             shutdownTimer.safeNodeState = chrono::steady_clock::now();
 
+            SINFO("fell out of leading");
+
             // If we bailed out while doing a upgradeDB, clear state
             if (_upgradeInProgress) {
+                SINFO("Clearing _upgradeInProgress");
                 _upgradeInProgress = false;
                 if (committingCommand) {
                     db.rollback();
@@ -338,6 +354,9 @@ void BedrockServer::sync()
             }
         }
 
+        SINFO("Done checking fell out of leading");
+
+
         // Now that we've cleared any state associated with switching away from leading, we can bail out and try again
         // until we're either leading or following.
         if (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING && getState() != SQLiteNodeState::STANDINGDOWN) {
@@ -354,6 +373,7 @@ void BedrockServer::sync()
             (getState() == SQLiteNodeState::LEADING && _upgradeInProgress && !committingCommand)) {
             // Store this before we start writing to the DB, which can take a while depending on what changes were made
             // (for instance, adding an index).
+            SINFO("We switched to leading and set _upgradeInProgress");
             _upgradeInProgress = true;
             if (!_syncNode->hasQuorum()) {
                 // We are now "upgrading" but we won't actually start the commit until the cluster is sufficiently
