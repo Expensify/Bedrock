@@ -1,5 +1,6 @@
 // Manages connections to a single instance of the bedrock server.
 #include "BedrockServer.h"
+#include "sqlitecluster/SQLite.h"
 #include "sqlitecluster/SQLiteNode.h"
 
 #include <arpa/inet.h>
@@ -760,6 +761,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // and is marked as `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
     // for a previous commit to be delivered to this follower);
     // 2. Any commands if the current version of the code is not the same one as leader is executing.
+    SINFO("Checking cluster messenger");
     if (getState() == SQLiteNodeState::FOLLOWING && !command->complete && (command->escalateImmediately || _version != _leaderVersion.load())) {
         auto _clusterMessengerCopy = _clusterMessenger;
         SINFO("Got Cluster Messenger");
@@ -777,10 +779,12 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             return;
         }
     }
+    SINFO("Done checking cluster messenger");
 
     // If we happen to be synchronizing but the command port is open, which is an uncommon but possible scenario (i.e., we were momentarily disconnected from leader and need to catch back
     // up), we will forward commands to any other follower similar to if we were running as a different version from leader.
     if (getState() == SQLiteNodeState::SYNCHRONIZING) {
+        SINFO("SYNCHRONIZING");
         auto _clusterMessengerCopy = _clusterMessenger;
         bool result = _clusterMessengerCopy->runOnPeer(*command, false);
         if (result) {
@@ -789,6 +793,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             SHMMM("Synchronizing while accepting commands, but failed to forward the command to peer.", {{"command", command->request.methodLine}});
         }
     }
+
+    SINFO("past synchronizing");
 
     // If this command is already complete, then we should be a follower, and the sync node got a response back
     // from a command that had been escalated to leader, and queued it for a worker to respond to. We'll send
@@ -805,6 +811,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         // This command is done, move on to the next one.
         return;
     }
+    SINFO("Not complete");
 
     if (command->request.isSet("mockRequest")) {
         SINFO("mockRequest set for command '" << command->request.methodLine << "'.");
@@ -824,13 +831,16 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     string lastConflictTable;
     while (true) {
 
+        SINFO("Doing state check");
+
         // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
         size_t waitCount = 0;
         while (_upgradeInProgress || (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING)) {
-
+            SINFO("_upgradeInProgress? " << _upgradeInProgress << ", state: " << SQLiteNode::stateName(getState()) << ", checking timed out.");
             // It's feasible that our command times out in this loop. In this case, we do not have a DB object to pass.
             // The only implication of this is the response does not get the commitCount attached to it.
             if (BedrockCore::isTimedOut(command, nullptr, this)) {
+                SINFO("Timed out");
                 _reply(command);
                 return;
             }
