@@ -259,6 +259,10 @@ void BedrockServer::sync()
         // And set our next timeout for 1 second from now.
         nextActivity = STimeNow() + STIME_US_PER_S;
 
+        // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
+        // state when it's finished.
+        SQLiteNodeState preUpdateState = _syncNode->getState();
+
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
         {
@@ -274,9 +278,6 @@ void BedrockServer::sync()
             _notifyDoneSync.postPoll(fdm);
         }
 
-        // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
-        // state when it's finished.
-        SQLiteNodeState preUpdateState = _syncNode->getState();
         if(command && committingCommand) {
             void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
             bool enabled = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
