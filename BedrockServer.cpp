@@ -722,7 +722,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     {
         SINFO("Getting sync node copy");
         auto _syncNodeCopy = atomic_load(&_syncNode);
-        if (!_syncNodeCopy || _command->request.calcU64("commandExecuteTime") > STimeNow()) {
+        if (!_syncNodeCopy || command->request.calcU64("commandExecuteTime") > STimeNow()) {
             SINFO("Queueing");
             _commandQueue.push(move(command));
             return;
