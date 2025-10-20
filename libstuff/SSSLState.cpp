@@ -66,7 +66,6 @@ void SSSLState::freeConfig() {
     mbedtls_x509_crt_free(&_cacert);
 }
 
-SSSLState::SSSLState(const string& hostname) : SSSLState(hostname, -1) {}
 SSSLState::SSSLState(const string& hostname, int socket) {
     mbedtls_ssl_init(&ssl);
     mbedtls_net_init(&net_ctx);
