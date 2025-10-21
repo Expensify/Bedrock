@@ -255,7 +255,7 @@ void BedrockServer::sync()
         // `preUpdateState` is the synchronization state (i.e., FOLLOWING, LEADING) of the node before allowing it to change.
         // We need to keep track of when this changes such that we can update our own state here (i.e., if we fall out of
         // leading, we will need to notice that and realize we can't attempt to to write to the database).
-        // The name of this variable it pre-update in the sense of `_syncNode->update()` which is called below, but we do not
+        // The name of this variable is pre-update in the sense of `_syncNode->update()` which is called below, but we do not
         // set it just before that call, because it is now also possible for the state to change in postPoll -- for example,
         // if we lose connection to a peer, and that peer was the last one that gave us quorum, then we can drop from
         // LEADING to SEARCHING. This transition triggers our "fall out of leading" logic.
