@@ -286,7 +286,7 @@ void BedrockServer::sync()
             _syncNode->onPrepareHandler = nullptr;
         }
 
-        // Ok, let the sync node to it's updating for as many iterations as it requires. We'll update the replication
+        // Ok, let the sync node update for as many iterations as it requires. We'll update the replication
         // state when it's finished.
         while (_syncNode->update()) {}
         _leaderVersion.store(_syncNode->getLeaderVersion());
