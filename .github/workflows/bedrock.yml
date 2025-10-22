@@ -51,7 +51,6 @@ jobs:
         path: |
           bedrock
           test/test
-          test/clustertest/testplugin.so
           test/clustertest/clustertest
           test/sample_data/lottoNumbers.json
         retention-days: 1
