@@ -16,10 +16,12 @@ mark_fold() {
 
 export ENABLE_HCTREE=${ENABLE_HCTREE:-"false"}
 
+cd test
 mark_fold start test_bedrock
 ./test -threads 64
 mark_fold end test_bedrock
 
+cd clustertest
 mark_fold start test_bedrock_cluster
 ./clustertest -threads 8
 mark_fold end test_bedrock_cluster
