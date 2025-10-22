@@ -42,7 +42,8 @@ jobs:
     - name: Mark failure if debugging
       if: runner.debug == '1'
       run: exit 1
-
+    - name: Build Bedrock
+      run: "./ci_build.sh"
     - name: Upload binaries
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
       with:
@@ -81,6 +82,8 @@ jobs:
       if: runner.debug == '1'
       run: exit 1
     - name: Run tests
+      env:
+        ENABLE_HCTREE: "false"
       run: "./ci_tests.sh"
   BedrockTestsWithHCTree:
     name: "Bedrock Tests with HCTree"
@@ -120,6 +123,8 @@ jobs:
     steps:
     - name: Download binaries
       uses: ./.github/actions/composite/download-binaries
+    - name: Strip bedrock binary
+      run: "strip bedrock"
     - name: Upload bedrock binary to release
       if: "${{ startsWith(github.ref, 'refs/tags/') }}"
       uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
