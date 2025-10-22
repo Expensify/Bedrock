@@ -122,7 +122,7 @@ test/clustertest/testplugin/testplugin.so : $(TESTPLUGINOBJ) $(TESTPLUGINCPP) $(
 $(INTERMEDIATEDIR)/BedrockServer.d $(INTERMEDIATEDIR)/BedrockServer.o: BedrockServer.cpp
 	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/BedrockServer.d -MT $(INTERMEDIATEDIR)/BedrockServer.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/BedrockServer.o -c BedrockServer.cpp
 
-$(INTERMEDIATEDIR)/main.d $(INTERMEDIATEDIR)/main.o: main.cpp $(INTERMEDIATEDIR)
+$(INTERMEDIATEDIR)/main.d $(INTERMEDIATEDIR)/main.o: main.cpp | $(INTERMEDIATEDIR)
 	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/main.d -MT $(INTERMEDIATEDIR)/main.o $(GIT_REVISION) -o $(INTERMEDIATEDIR)/main.o -c main.cpp
 
 $(INTERMEDIATEDIR)/plugins/MySQL.d $(INTERMEDIATEDIR)/plugins/MySQL.o: plugins/MySQL.cpp
