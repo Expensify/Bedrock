@@ -68,6 +68,12 @@ jobs:
     timeout-minutes: 30
     needs: Build_Bedrock
     steps:
+    - name: Checkout Bedrock
+      # v4.1.0
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      with:
+        repository: Expensify/Bedrock
+        path: .
     - name: Download binaries
       uses: ./.github/actions/composite/download-binaries
     - name: Setup tmate session
@@ -97,6 +103,12 @@ jobs:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     needs: Build_Bedrock
     steps:
+    - name: Checkout Bedrock
+      # v4.1.0
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      with:
+        repository: Expensify/Bedrock
+        path: .
     - name: Download binaries
       uses: ./.github/actions/composite/download-binaries
     - name: Setup tmate session
