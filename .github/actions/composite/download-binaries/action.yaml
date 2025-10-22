@@ -1,0 +1,15 @@
+name: Download Bedrock Binaries
+description: Download Bedrock Binaries
+
+runs:
+  using: composite
+  steps:
+    - name: Download binaries
+      uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
+      with:
+        name: bedrock-binaries
+
+    - name: Set permissions of the new binary files
+      run: |
+        sudo chmod +x bedrock test/test test/clustertest/testplugin.so test/clustertest/clustertest test/sample_data/lottoNumbers.json
+      shell: bash
