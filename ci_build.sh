@@ -36,6 +36,9 @@ export CXX="clang++-18"
 ${CC} --version
 ${CXX} --version
 
+LOCAL_PATH=$(pwd)
+git config --global --add safe.directory $LOCAL_PATH
+
 mark_fold start build_bedrock
 make -j64
 mark_fold end build_bedrock
