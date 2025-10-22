@@ -28,7 +28,6 @@ jobs:
       uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
       with:
         repository: Expensify/Bedrock
-        token: ${{ secrets.CODE_EXPENSIFY_TOKEN }}
         path: .
 
     - name: Setup tmate session
