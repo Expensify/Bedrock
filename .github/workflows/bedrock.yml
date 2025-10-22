@@ -56,18 +56,15 @@ jobs:
           test/sample_data/lottoNumbers.json
         retention-days: 1
         compression-level: 1
-    - name: Upload bedrock binary to release
-      if: "${{ startsWith(github.ref, 'refs/tags/') }}"
-      uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
-      env:
-        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-        GITHUB_REPOSITORY: "${{ github.repository }}"
-      with:
-        files: |-
-          ./bedrock
   BedrockTests:
     name: "Bedrock Tests"
     runs-on: ubuntu-24.04-v64
+    permissions:
+      packages: read
+    container:
+      image: ghcr.io/expensify/auth-test-build:pr-15 #Change to latest when PR is merged
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     timeout-minutes: 30
     needs: Build_Bedrock
     steps:
@@ -90,6 +87,12 @@ jobs:
     name: "Bedrock Tests with HCTree"
     runs-on: ubuntu-24.04-v64
     timeout-minutes: 30
+    permissions:
+      packages: read
+    container:
+      image: ghcr.io/expensify/auth-test-build:pr-15 #Change to latest when PR is merged
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     needs: Build_Bedrock
     steps:
     - name: Download binaries
@@ -109,3 +112,21 @@ jobs:
       env:
         ENABLE_HCTREE: "true"
       run: "./ci_tests.sh"
+  Upload_Bedrock_Binaries:
+    name: "Upload Bedrock Binaries"
+    if: "${{ startsWith(github.ref, 'refs/tags/') }}"
+    runs-on: ubuntu-24.04-v64
+    timeout-minutes: 30
+    needs: [BedrockTests,BedrockTestsWithHCTree]
+    steps:
+    - name: Download binaries
+      uses: ./.github/actions/composite/download-binaries
+    - name: Upload bedrock binary to release
+      if: "${{ startsWith(github.ref, 'refs/tags/') }}"
+      uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        GITHUB_REPOSITORY: "${{ github.repository }}"
+      with:
+        files: |-
+          ./bedrock
