@@ -17,8 +17,10 @@ mark_fold() {
 export ENABLE_HCTREE=${ENABLE_HCTREE:-"false"}
 export PATH=$PATH:`pwd`
 
+git config --global --add safe.directory `pwd`
+
 # Run squid in the background
-squid
+squid -sYC
 
 cd test
 mark_fold start test_bedrock
