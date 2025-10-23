@@ -14,8 +14,10 @@ mark_fold() {
   echo "::group::${name}"
 }
 
-export ENABLE_HCTREE=${ENABLE_HCTREE:-"false"}
-export PATH=$PATH:`pwd`
+# If ENABLE_HCTREE is set, add a flag to the test called -enableHctree
+if [ "$ENABLE_HCTREE" == "true" ]; then
+  ENABLE_HCTREE_FLAG="-enableHctree"
+fi
 
 git config --global --add safe.directory `pwd`
 
@@ -27,10 +29,10 @@ sleep 10
 
 cd test
 mark_fold start test_bedrock
-./test -threads 64
+./test -threads 64 $ENABLE_HCTREE_FLAG
 mark_fold end test_bedrock
 
 cd clustertest
 mark_fold start test_bedrock_cluster
-./clustertest -threads 8
+./clustertest -threads 8 $ENABLE_HCTREE_FLAG
 mark_fold end test_bedrock_cluster
