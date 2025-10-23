@@ -22,7 +22,7 @@ fi
 git config --global --add safe.directory `pwd`
 
 # Add bedrock binary to the path
-export PATH=$PATH: pwd"
+export PATH=$PATH:`pwd`
 
 # Run squid in the background
 squid -sYC
