@@ -68,6 +68,7 @@ jobs:
       uses: ./.github/actions/composite/download-binaries
     - name: Install rsyslog and squid
       run: |
+        sudo apt-get update -y
         sudo apt-get install -y rsyslog squid
         sudo service rsyslog start
         sudo service squid start
@@ -99,6 +100,7 @@ jobs:
       uses: ./.github/actions/composite/download-binaries
     - name: Install rsyslog and squid
       run: |
+        sudo apt-get update -y
         sudo apt-get install -y rsyslog squid
         sudo service rsyslog start
         sudo service squid start
