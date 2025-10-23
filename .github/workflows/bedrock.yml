@@ -52,6 +52,7 @@ jobs:
           bedrock
           test/test
           test/clustertest/clustertest
+          test/clustertest/testplugin/testplugin.so
           test/sample_data/lottoNumbers.json
         retention-days: 1
         compression-level: 1

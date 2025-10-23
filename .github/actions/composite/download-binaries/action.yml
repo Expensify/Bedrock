@@ -11,5 +11,5 @@ runs:
 
     - name: Set permissions of the new binary files
       run: |
-        sudo chmod +x bedrock test/test test/clustertest/clustertest test/sample_data/lottoNumbers.json
+        sudo chmod +x bedrock test/test test/clustertest/clustertest test/sample_data/lottoNumbers.json test/clustertest/testplugin/testplugin.so
       shell: bash
