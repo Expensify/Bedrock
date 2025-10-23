@@ -22,6 +22,9 @@ git config --global --add safe.directory `pwd`
 # Run squid in the background
 squid -sYC
 
+# Sleep for a few seconds to let squid start
+sleep 10
+
 cd test
 mark_fold start test_bedrock
 ./test -threads 64
