@@ -16,7 +16,6 @@ mark_fold() {
 
 export ENABLE_HCTREE=${ENABLE_HCTREE:-"false"}
 
-rsyslogd
 
 cd test
 mark_fold start test_bedrock
