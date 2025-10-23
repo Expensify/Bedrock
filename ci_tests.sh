@@ -18,7 +18,7 @@ export ENABLE_HCTREE=${ENABLE_HCTREE:-"false"}
 export PATH=$PATH:`pwd`
 
 # Run squid in the background
-/usr/sbin/squid --foreground -sYC
+squid
 
 cd test
 mark_fold start test_bedrock
