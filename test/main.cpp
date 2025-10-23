@@ -89,6 +89,7 @@ int main(int argc, char* argv[]) {
     // Enable HCTree for the tests
     if (args.isSet("-enableHctree")) {
         BedrockTester::ENABLE_HCTREE = true;
+        cout << "HCTree enabled" << endl;
     }
 
     int retval = 0;
