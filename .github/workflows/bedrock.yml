@@ -58,23 +58,19 @@ jobs:
   BedrockTests:
     name: "Bedrock Tests"
     runs-on: ubuntu-24.04-v64
-    permissions:
-      packages: read
-    container:
-      image: ghcr.io/expensify/auth-test-build:pr-15 #Change to latest when PR is merged
-      env:
-        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     timeout-minutes: 30
     needs: Build_Bedrock
     steps:
     - name: Checkout Bedrock
       # v4.1.0
       uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
-      with:
-        repository: Expensify/Bedrock
-        path: .
     - name: Download binaries
       uses: ./.github/actions/composite/download-binaries
+    - name: Install rsyslog and squid
+      run: |
+        sudo apt-get install -y rsyslog squid
+        sudo service rsyslog start
+        sudo service squid start
     - name: Setup tmate session
       if: runner.debug == '1'
       # v3
@@ -94,22 +90,18 @@ jobs:
     name: "Bedrock Tests with HCTree"
     runs-on: ubuntu-24.04-v64
     timeout-minutes: 30
-    permissions:
-      packages: read
-    container:
-      image: ghcr.io/expensify/auth-test-build:pr-15 #Change to latest when PR is merged
-      env:
-        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     needs: Build_Bedrock
     steps:
     - name: Checkout Bedrock
       # v4.1.0
       uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
-      with:
-        repository: Expensify/Bedrock
-        path: .
     - name: Download binaries
       uses: ./.github/actions/composite/download-binaries
+    - name: Install rsyslog and squid
+      run: |
+        sudo apt-get install -y rsyslog squid
+        sudo service rsyslog start
+        sudo service squid start
     - name: Setup tmate session
       if: runner.debug == '1'
       # v3
