@@ -123,9 +123,7 @@ jobs:
       if: runner.debug == '1'
       run: exit 1
     - name: Run tests
-      env:
-        ENABLE_HCTREE: "true"
-      run: "./ci_tests.sh"
+      run: "ENABLE_HCTREE=true ./ci_tests.sh"
   Upload_Bedrock_Binaries:
     name: "Upload Bedrock Binaries"
     if: "${{ startsWith(github.ref, 'refs/tags/') }}"
