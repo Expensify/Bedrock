@@ -1,21 +1,6 @@
 #!/bin/bash
 set -e
 
-# Add the current working directory to $PATH so that tests can find bedrock.
-export PATH=$PATH:`pwd`
-
-export CCACHE_COMPILERCHECK="mtime"
-
-# We have include_file_ctime and include_file_mtime since travis never modifies the header file during execution
-# and gh actions shouldn't care about ctime and mtime between new branches.
-export CCACHE_SLOPPINESS="pch_defines,time_macros,include_file_ctime,include_file_mtime"
-export CCACHE_MAXSIZE="1G"
-
-# ccache recommends a compression level of 5 or less for faster compilations.
-# Compression speeds up the tar and untar of the cache between travis runs.
-export CCACHE_COMPRESS="true"
-export CCACHE_COMPRESSLEVEL="1"
-
 mark_fold() {
   local action=$1
   local name=$2
@@ -29,27 +14,28 @@ mark_fold() {
   echo "::group::${name}"
 }
 
-export CC="clang-18"
-export CXX="clang++-18"
+# If ENABLE_HCTREE is set, add a flag to the test called -enableHctree
+if [ "$ENABLE_HCTREE" == "true" ]; then
+  ENABLE_HCTREE_FLAG="-enableHctree"
+fi
 
-# don't print out versions until after they are installed
-${CC} --version
-${CXX} --version
+git config --global --add safe.directory `pwd`
 
-mark_fold start build_bedrock
-make -j64
-mark_fold end build_bedrock
+# Add bedrock binary to the path
+export PATH=$PATH:`pwd`
 
-mark_fold start test_bedrock
+# Run squid in the background
+squid -sYC
+
+# Sleep for a few seconds to let squid start
+sleep 10
+
 cd test
-./test -threads 64
-cd ..
+mark_fold start test_bedrock
+./test -threads 64 $ENABLE_HCTREE_FLAG
 mark_fold end test_bedrock
 
+cd clustertest
 mark_fold start test_bedrock_cluster
-cd test/clustertest
-./clustertest -threads 8
-cd ../..
+./clustertest -threads 8 $ENABLE_HCTREE_FLAG
 mark_fold end test_bedrock_cluster
-
-strip bedrock
