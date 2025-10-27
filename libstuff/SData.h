@@ -55,10 +55,7 @@ struct SData {
     }
 
     // Specialized version for bool that converts to "true" or "false" strings.
-    void set(const string& key, const bool item)
-    {
-        nameValueMap[key] = item ? "true" : "false";
-    }
+    void set(const string& key, const bool item);
 
     // Mutators
     // Erase everything
