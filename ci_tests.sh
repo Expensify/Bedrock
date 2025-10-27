@@ -16,8 +16,21 @@ export PATH=$PATH:`pwd`
 # Run squid in the background
 squid -sYC
 
-# Sleep for a few seconds to let squid start
-sleep 10
+export https_proxy=http://127.0.0.1:3128
+
+# Run wget to example.com until it succeeds. Try ten times, else, fail.
+for i in {1..10}; do
+  if wget -q --spider https://example.com; then
+    echo "Squid started"
+    break
+  fi
+  if [ $i -eq 10 ]; then
+    echo "Squid failed to start"
+    exit 1
+  fi
+  echo "Waiting for squid to start..."
+  sleep 1
+done
 
 cd test
 mark_fold start test_bedrock
