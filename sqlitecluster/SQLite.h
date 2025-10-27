@@ -270,8 +270,13 @@ class SQLite {
 
     string getLastConflictTable() const;
 
+    string getLastConflictIndex() const;
+
     // This is the callback function we use to log SQLite's internal errors.
     static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
+
+    // Find the name of the table or index that caused a conflict from an SQLite log message.
+    static string _getConflictSchemaObjectName(const char* zMsg, const string& prefix);
 
     // If commits are disabled, calling commit() will return an error without committing. This can be used to guarantee
     // no commits can happen "late" from slow threads that could otherwise write to a DB being shutdown.
@@ -431,8 +436,10 @@ class SQLite {
 
     atomic<int64_t> _lastConflictPage = 0;
     atomic<string> _lastConflictTable;
+    atomic<string> _lastConflictIndex;
     static thread_local int64_t _conflictPage;
     static thread_local string _conflictTable;
+    static thread_local string _conflictIndex;
 
     bool _writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries = false);
 
