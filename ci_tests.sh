@@ -1,18 +1,7 @@
 #!/bin/bash
 set -e
 
-mark_fold() {
-  local action=$1
-  local name=$2
-
-  # if action == end, just print out ::endgroup::
-  if [[ "$action" == "end" ]]; then
-    echo ::endgroup::
-    return
-  fi
-
-  echo "::group::${name}"
-}
+source ./ci_utils.sh
 
 # If ENABLE_HCTREE is set, add a flag to the test called -enableHctree
 if [ "$ENABLE_HCTREE" == "true" ]; then

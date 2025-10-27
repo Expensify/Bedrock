@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+source ./ci_utils.sh
+
 # Add the current working directory to $PATH so that tests can find bedrock.
 export PATH=$PATH:`pwd`
 
@@ -15,19 +17,6 @@ export CCACHE_MAXSIZE="1G"
 # Compression speeds up the tar and untar of the cache between travis runs.
 export CCACHE_COMPRESS="true"
 export CCACHE_COMPRESSLEVEL="1"
-
-mark_fold() {
-  local action=$1
-  local name=$2
-
-  # if action == end, just print out ::endgroup::
-  if [[ "$action" == "end" ]]; then
-    echo ::endgroup::
-    return
-  fi
-
-  echo "::group::${name}"
-}
 
 export CC="clang-18"
 export CXX="clang++-18"
