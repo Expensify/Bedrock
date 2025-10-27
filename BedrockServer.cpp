@@ -822,6 +822,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
     int64_t lastConflictPage = 0;
     string lastConflictTable;
+    string lastConflictIndex;
     while (true) {
 
         // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
@@ -1026,12 +1027,13 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             SINFO("Conflict or state change committing " << command->request.methodLine);
                             if (_enableConflictPageLocks) {
                                 lastConflictTable = db.getLastConflictTable();
+                                lastConflictIndex = db.getLastConflictIndex();
 
                                 // Journals are always chosen at the time of commit. So in case there was a conflict on the journal in
                                 // the previous commit, the chances are very low that we'll choose the same journal, thus, we
                                 // don't need to lock our next commit on this page conflict.
                                 // Plugins may define other tables on which we should not lock our next commit.
-                                if (!SStartsWith(lastConflictTable, "journal") && (command->getPlugin() == nullptr || command->getPlugin()->shouldLockCommitPageOnTableConflict(lastConflictTable))) {
+                                if (!SStartsWith(lastConflictTable, "journal") && (command->getPlugin() == nullptr || command->getPlugin()->shouldLockCommitPageOnConflict(lastConflictTable, lastConflictIndex))) {
                                     lastConflictPage = db.getLastConflictPage();
                                 }
                             }

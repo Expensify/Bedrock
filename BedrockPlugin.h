@@ -78,8 +78,8 @@ class BedrockPlugin {
     // Called when the sync thread is finishing, before destroying DB handles.
     virtual void serverStopping() {}
 
-    // Should a conflict on the given tableName result in locking the associated database page when we try to commit again?
-    virtual bool shouldLockCommitPageOnTableConflict(const string& tableName) const;
+    // Should a conflict on the given tableName/indexName result in locking the associated database page when we try to commit again?
+    virtual bool shouldLockCommitPageOnConflict(const string& tableName, const string& indexName) const;
 
     // Map of plugin names to functions that will return a new plugin of the given type.
     static map<string, function<BedrockPlugin*(BedrockServer&)>> g_registeredPluginList;

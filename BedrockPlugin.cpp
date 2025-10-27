@@ -70,6 +70,6 @@ void BedrockPlugin::timerFired(SStopwatch* timer) {}
 
 void BedrockPlugin::upgradeDatabase(SQLite& db) {}
 
-bool BedrockPlugin::shouldLockCommitPageOnTableConflict(const string& tableName) const {
+bool BedrockPlugin::shouldLockCommitPageOnConflict(const string& tableName, const string& indexName) const {
     return true;
 }
