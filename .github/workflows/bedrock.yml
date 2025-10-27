@@ -19,7 +19,7 @@ jobs:
     permissions:
       packages: read
     container:
-      image: ghcr.io/expensify/auth-test-build:pr-15 #Change to latest when PR is merged
+      image: ghcr.io/expensify/auth-test-build:latest #Change to latest when PR is merged
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     steps:
@@ -62,7 +62,7 @@ jobs:
     permissions:
       packages: read
     container:
-      image: ghcr.io/expensify/auth-test-build:pr-15 #Change to latest when PR is merged
+      image: ghcr.io/expensify/auth-test-build:latest #Change to latest when PR is merged
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     timeout-minutes: 30
@@ -98,7 +98,7 @@ jobs:
     permissions:
       packages: read
     container:
-      image: ghcr.io/expensify/auth-test-build:pr-15 #Change to latest when PR is merged
+      image: ghcr.io/expensify/auth-test-build:latest #Change to latest when PR is merged
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     needs: Build_Bedrock
@@ -136,7 +136,6 @@ jobs:
     - name: Strip bedrock binary
       run: "strip bedrock"
     - name: Upload bedrock binary to release
-      if: "${{ startsWith(github.ref, 'refs/tags/') }}"
       uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
