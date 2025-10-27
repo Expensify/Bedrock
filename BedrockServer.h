@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLiteServer.h>
@@ -465,6 +466,8 @@ class BedrockServer : public SQLiteServer {
     // syncNode while the sync thread exists, it's a shared pointer to allow for the last socket thread using it to
     // destroy the pool at shutdown.
     shared_ptr<SQLitePool> _dbPool;
+
+    atomic<chrono::time_point<chrono::steady_clock>> _shutdownTime{};
 
     // We call this method whenever a node changes state
     void notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState) override;
