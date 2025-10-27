@@ -31,6 +31,11 @@ const string& SData::operator[](const string& name) const {
     }
 }
 
+void SData::set(const string& key, const bool item)
+{
+    nameValueMap[key] = item ? "true" : "false";
+}
+
 void SData::clear() {
     methodLine.clear();
     nameValueMap.clear();

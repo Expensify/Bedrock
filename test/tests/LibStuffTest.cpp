@@ -153,15 +153,15 @@ struct LibStuff : tpunit::TestFixture {
         // Test SComposeJSONObject with problematic values
         STable nanTest;
         nanTest["note"] = "nan";
-        nanTest["value"] = "inf"; 
+        nanTest["value"] = "inf";
         nanTest["negative"] = "-inf";
         string nanJSON = SComposeJSONObject(nanTest);
-        
+
         // Verify the JSON is valid and contains quoted strings
         ASSERT_TRUE(nanJSON.find("\"nan\"") != string::npos);
         ASSERT_TRUE(nanJSON.find("\"inf\"") != string::npos);
         ASSERT_TRUE(nanJSON.find("\"-inf\"") != string::npos);
-        
+
         // Verify round-trip parsing works
         STable nanParsed = SParseJSONObject(nanJSON);
         ASSERT_EQUAL(nanParsed["note"], "nan");
@@ -406,6 +406,8 @@ struct LibStuff : tpunit::TestFixture {
         c.set("e", "char*");
         c.set("f", string("string"));
         c.set("g", 'a'); // char, get's converted to number, not string!
+        c.set("h", true);
+        c.set("i", false);
 
         ASSERT_EQUAL(c["a"], "1");
         ASSERT_EQUAL(SToFloat(c["b"]), 2.5);
@@ -414,6 +416,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(c["e"], "char*");
         ASSERT_EQUAL(c["f"], "string");
         ASSERT_EQUAL(SToInt(c["g"]), 97);
+        ASSERT_EQUAL(c["h"], "true");
+        ASSERT_EQUAL(c["i"], "false");
     }
 
     void testSTable() {
