@@ -18,7 +18,7 @@ sqlite3* SQLite::getDBHandle() {
 
 thread_local string SQLite::_mostRecentSQLiteErrorLog;
 thread_local int64_t SQLite::_conflictPage;
-thread_local string SQLite::_conflict;
+thread_local string SQLite::_conflictLocation;
 
 const string SQLite::getMostRecentSQLiteErrorLog() const {
     return _mostRecentSQLiteErrorLog;
@@ -322,9 +322,9 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
         // Sample conflict log lines:
         // {SQLITE} Code: 0, Message: cannot commit CONCURRENT transaction - conflict at page 1854553 (read/write page; part of db table reports; content=0D00000009007100...)
         // {SQLITE} Code: 0, Message: cannot commit CONCURRENT transaction - conflict at page 1594810 (read/write page; part of db index reportActions.reportActionsAccountIDCreatedComment; content=0A045B006A00EB00...)
-        const string conflictName = SREReplace("^.*part of db (table|index) (.*?);.*$", zMsg, "$2");
-        if (!conflictName.empty()) {
-            _conflict = conflictName;
+        const string tableOrIndexName = SREReplace("^.*part of db (table|index) (.*?);.*$", zMsg, "$2");
+        if (!tableOrIndexName.empty()) {
+            _conflictLocation = tableOrIndexName;
         }
     }
 }
@@ -462,7 +462,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
     _commitElapsed = 0;
     _rollbackElapsed = 0;
     _lastConflictPage = 0;
-    _lastConflict = "";
+    _lastConflictLocation = "";
     return _insideTransaction;
 }
 
@@ -811,7 +811,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &startPages, &dummy, 0);
 
     _conflictPage = 0;
-    _conflict = "";
+    _conflictLocation = "";
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
@@ -833,7 +833,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     }
 
     _lastConflictPage = _conflictPage;
-    _lastConflict = _conflict;
+    _lastConflictLocation = _conflictLocation;
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
@@ -892,7 +892,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _cacheHits = 0;
         _dbCountAtStart = 0;
         _lastConflictPage = 0;
-        _lastConflict = "";
+        _lastConflictLocation = "";
     } else {
         // The commit failed, we will rollback.
     }
@@ -1267,8 +1267,8 @@ int64_t SQLite::getLastConflictPage() const {
     return _lastConflictPage;
 }
 
-string SQLite::getLastConflict() const {
-    return _lastConflict;
+string SQLite::getLastConflictLocation() const {
+    return _lastConflictLocation;
 }
 
 SQLite::SharedData::SharedData() :

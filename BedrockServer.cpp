@@ -1025,7 +1025,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         } else {
                             SINFO("Conflict or state change committing " << command->request.methodLine);
                             if (_enableConflictPageLocks) {
-                                lastConflict = db.getLastConflict();
+                                lastConflict = db.getLastConflictLocation();
 
                                 // Journals are always chosen at the time of commit. So in case there was a conflict on the journal in
                                 // the previous commit, the chances are very low that we'll choose the same journal, thus, we
