@@ -1209,6 +1209,8 @@ void BedrockServer::_resetServer() {
     _commandPortPrivate = nullptr;
     _pluginsDetached = false;
     _upgradeCompleted = false;
+    _shutdownTime = chrono::time_point<std::chrono::steady_clock>{};
+
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {
@@ -2018,7 +2020,10 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach) {
             currentState = syncNodeCopy->getState();
             syncNodeCopy->setShutdownPriority();
         }
-        SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Commands queued: " << _commandQueue.size()
+
+        // Set a 10 second DB timeout for all remaining queries.
+        _shutdownTime.store(chrono::steady_clock::now() + chrono::seconds{10});
+        SINFO("START_SHUTDOWN. Ports shutdown, will perform final socket read. Queries will time out in 10s. Commands queued: " << _commandQueue.size()
               << ", blocking commands queued: " << _blockingCommandQueue.size() << ", total commands: " << BedrockCommand::getCommandCount()
               << ", state: " << SQLiteNode::stateName(currentState));
     }
@@ -2401,6 +2406,13 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                                     SINFO("Socket disconnected with command running, aborting.");
                                     commandShouldAbortFlag = true;
                                 }
+                            }
+
+                            // We also force an abort if we're shutting down.
+                            auto shutdownTime = _shutdownTime.load();
+                            if (shutdownTime != chrono::time_point<chrono::steady_clock>{} && chrono::steady_clock::now() >= shutdownTime) {
+                                SINFO("Aborting command past shutdown timeout limit.");
+                                commandShouldAbortFlag = true;
                             }
                             cv.wait_for(lock, chrono::seconds(1));
                         }
