@@ -172,9 +172,9 @@ void BedrockCommand::_waitForHTTPSRequests() {
         S_poll(fdm, maxWaitUs);
         uint64_t ignore{0};
 
-        // The 3rd parameter to `postPoll` here is the total allowed idle time on this connection. We will kill connections that do nothing at all after 5 minutes normally,
+        // The 3rd parameter to `postPoll` here is the total allowed idle time on this connection. We will kill connections that do nothing at all after BedrockCommand::DEFAULT_TIMEOUT normally,
         // or after only 5 seconds when we're shutting down so that we can clean up and move along.
-        postPoll(fdm, ignore, _plugin->server.isShuttingDown() ? 5'000 : 300'000);
+        postPoll(fdm, ignore, _plugin->server.isShuttingDown() ? 5'000 : BedrockCommand::DEFAULT_TIMEOUT);
     }
 
     if (startTime) {
