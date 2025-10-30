@@ -268,7 +268,7 @@ class SQLite {
 
     int64_t getLastConflictPage() const;
 
-    string getLastConflictTable() const;
+    string getLastConflictLocation() const;
 
     // This is the callback function we use to log SQLite's internal errors.
     static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
@@ -430,9 +430,9 @@ class SQLite {
     bool _mutexLocked = false;
 
     atomic<int64_t> _lastConflictPage = 0;
-    atomic<string> _lastConflictTable;
+    atomic<string> _lastConflictLocation;
     static thread_local int64_t _conflictPage;
-    static thread_local string _conflictTable;
+    static thread_local string _conflictLocation;
 
     bool _writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries = false);
 
