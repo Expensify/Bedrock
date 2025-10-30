@@ -18,7 +18,7 @@ sqlite3* SQLite::getDBHandle() {
 
 thread_local string SQLite::_mostRecentSQLiteErrorLog;
 thread_local int64_t SQLite::_conflictPage;
-thread_local string SQLite::_conflictLocation;
+thread_local string SQLite::_conflictTable;
 
 const string SQLite::getMostRecentSQLiteErrorLog() const {
     return _mostRecentSQLiteErrorLog;
@@ -319,12 +319,23 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
         const char* pageOffset = strstr(zMsg, "conflict at page") + 17;
         _conflictPage = atol(pageOffset);
 
-        // Sample conflict log lines:
-        // {SQLITE} Code: 0, Message: cannot commit CONCURRENT transaction - conflict at page 1854553 (read/write page; part of db table reports; content=0D00000009007100...)
-        // {SQLITE} Code: 0, Message: cannot commit CONCURRENT transaction - conflict at page 1594810 (read/write page; part of db index reportActions.reportActionsAccountIDCreatedComment; content=0A045B006A00EB00...)
-        const string tableOrIndexName = SREReplace("^.*part of db (table|index) (.*?);.*$", zMsg, "$2");
-        if (!tableOrIndexName.empty()) {
-            _conflictLocation = tableOrIndexName;
+        // Check if the tableOffset exists since not all conflicts are on tables
+        const char* tableOffset = strstr(pageOffset, "part of db table");
+        if (tableOffset) {
+            // 17 is the length of "part of db table" and the following space.
+            tableOffset += 17;
+
+            // Based on the SQLite log line, we should always have ';' after the table name,
+            // so let's find it and use it to limit the size of the substring we need
+            const char* semicolonOffset = strstr(tableOffset, ";");
+
+            // Let's add this check in case the SQLite log changes and we don't notice it
+            // since this would generate a runtime error.
+            if (semicolonOffset) {
+                _conflictTable = string(tableOffset, semicolonOffset - tableOffset);
+            } else {
+                _conflictTable = string(tableOffset);
+            }
         }
     }
 }
@@ -462,7 +473,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
     _commitElapsed = 0;
     _rollbackElapsed = 0;
     _lastConflictPage = 0;
-    _lastConflictLocation = "";
+    _lastConflictTable = "";
     return _insideTransaction;
 }
 
@@ -811,7 +822,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &startPages, &dummy, 0);
 
     _conflictPage = 0;
-    _conflictLocation = "";
+    _conflictTable = "";
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
     result = SQuery(_db, "committing db transaction", "COMMIT");
@@ -833,7 +844,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     }
 
     _lastConflictPage = _conflictPage;
-    _lastConflictLocation = _conflictLocation;
+    _lastConflictTable = _conflictTable;
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
@@ -892,7 +903,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         _cacheHits = 0;
         _dbCountAtStart = 0;
         _lastConflictPage = 0;
-        _lastConflictLocation = "";
+        _lastConflictTable = "";
     } else {
         // The commit failed, we will rollback.
     }
@@ -1267,8 +1278,8 @@ int64_t SQLite::getLastConflictPage() const {
     return _lastConflictPage;
 }
 
-string SQLite::getLastConflictLocation() const {
-    return _lastConflictLocation;
+string SQLite::getLastConflictTable() const {
+    return _lastConflictTable;
 }
 
 SQLite::SharedData::SharedData() :
