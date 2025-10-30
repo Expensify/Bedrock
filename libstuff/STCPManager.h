@@ -64,9 +64,9 @@ struct STCPManager {
         ~Port();
 
         void close();
+        int getSocket();
 
         // Attributes
-        int getSocket();
         const string host;
       private:
         int s;
