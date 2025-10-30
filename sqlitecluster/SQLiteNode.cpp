@@ -2441,7 +2441,7 @@ bool SQLiteNode::hasQuorum() const {
 void SQLiteNode::prePoll(fd_map& fdm) const {
     shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
     if (_port) {
-        SFDset(fdm, _port->s, SREADEVTS);
+        SFDset(fdm, _port->getSocket(), SREADEVTS);
     }
     for (SQLitePeer* peer : _peerList) {
         peer->prePoll(fdm);
@@ -2458,7 +2458,7 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 
     // Try to accept on the port and wrap in a socket
     sockaddr_in addr;
-    int s = S_accept(_port->s, addr, false);
+    int s = S_accept(_port->getSocket(), addr, false);
     if (s > 0) {
         // Received a socket, wrap
         SDEBUG("Accepting socket from '" << addr << "' on port '" << _port->host << "'");
@@ -2684,6 +2684,8 @@ void SQLiteNode::kill() {
         SWARN("Killing peer: " << peer->name);
         peer->reset();
     }
+    SWARN("Closing SQLiteNode port");
+    _port->close();
 }
 
 string SQLiteNode::_getLostQuorumLogMessage() const {

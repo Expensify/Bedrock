@@ -1377,16 +1377,16 @@ void BedrockServer::prePoll(fd_map& fdm) {
 
     // Add all our ports. There are no sockets directly managed here.
     if (_commandPortPublic) {
-        SFDset(fdm, _commandPortPublic->s, SREADEVTS);
+        SFDset(fdm, _commandPortPublic->getSocket(), SREADEVTS);
     }
     if (_commandPortPrivate) {
-        SFDset(fdm, _commandPortPrivate->s, SREADEVTS);
+        SFDset(fdm, _commandPortPrivate->getSocket(), SREADEVTS);
     }
     if (_controlPort) {
-        SFDset(fdm, _controlPort->s, SREADEVTS);
+        SFDset(fdm, _controlPort->getSocket(), SREADEVTS);
     }
     for (const auto& p : _portPluginMap) {
-        SFDset(fdm, p.first->s, SREADEVTS);
+        SFDset(fdm, p.first->getSocket(), SREADEVTS);
     }
 }
 
@@ -2113,7 +2113,7 @@ void BedrockServer::_acceptSockets() {
                 }
 
                 sockaddr_in addr;
-                int s = S_accept(port->s, addr, true); // Note that this sets the newly accepted socket to be blocking.
+                int s = S_accept(port->getSocket(), addr, true); // Note that this sets the newly accepted socket to be blocking.
 
                 // If we got an error or no socket, done accepting for now.
                 if (s <= 0) {
