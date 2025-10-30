@@ -21,12 +21,10 @@ bool BedrockTester::ENABLE_HCTREE{false};
 
 string BedrockTester::getTempFileName(const string& prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
-    char buffer[100];
-    memset(buffer, 0, 100);
-    strcpy(buffer, templateStr.c_str());
-    int filedes = mkstemps(buffer, 3);
+    // The final templateStr needs to be creatable, mkstemps ensure it
+    const int filedes = mkstemps(templateStr.data(), 3);
     close(filedes);
-    return buffer;
+    return templateStr;
 }
 
 void BedrockTester::stopAll() {
@@ -248,10 +246,10 @@ string BedrockTester::startServer(bool wait) {
         // Convert our c++ strings to old-school C strings for exec.
         char** cargs = (char**)malloc((args.size() + 1) * sizeof(char*));
         int count = 0;
-        for(string arg : args) {
-            char* newstr = (char*)malloc(arg.size() + 1);
-            strcpy(newstr, arg.c_str());
-            cargs[count] = newstr;
+        for(const string& arg : args) {
+            const size_t argSize = arg.size() + 1;
+            cargs[count] = (char*)malloc(argSize);
+            strlcpy(cargs[count], arg.c_str(), argSize);
             count++;
         }
         cargs[count] = 0;
