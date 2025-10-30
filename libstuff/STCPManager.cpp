@@ -330,6 +330,10 @@ STCPManager::Port::Port(int _s, const string& _host) : host(_host), s(_s)
 {
 }
 
+int STCPManager::Port::getSocket() {
+    return s;
+}
+
 void STCPManager::Port::close() {
     if (s != -1) {
         ::shutdown(s, SHUT_RDWR);
