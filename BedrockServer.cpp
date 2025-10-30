@@ -78,6 +78,14 @@ shared_ptr<SQLitePool> BedrockServer::getDBPool() {
     return _dbPool;
 }
 
+void BedrockServer::recordMetric(const Metric& metric)
+{
+    for (auto& p : metricPlugins) {
+        Metric m = metric;
+        p.second->enqueue(std::move(m));
+    }
+}
+
 void BedrockServer::sync()
 {
     // Parse out the number of worker threads we'll use. The DB needs to know this because it will expect a
@@ -1266,6 +1274,28 @@ BedrockServer::BedrockServer(const SData& args_)
     }
     SINFO("Creating BedrockServer with plugins: " << SComposeList(pluginString));
 
+    // Load metric plugins
+    list<string> metricPluginNameList = SParseList(args["-metricPlugins"]);
+    if (!metricPluginNameList.empty()) {
+        SINFO("Loading metric plugins: " << args["-metricPlugins"]);
+        for (string& pluginName : metricPluginNameList) {
+            auto it = BedrockMetricPlugin::g_registeredMetricPluginList.find(SToUpper(pluginName));
+            if (it == BedrockMetricPlugin::g_registeredMetricPluginList.end()) {
+                SERROR("Cannot find metric plugin '" << pluginName << "', aborting.");
+            }
+            unique_ptr<BedrockMetricPlugin> metricPlugin(it->second(args));
+            const string nameUpper = SToUpper(metricPlugin->getName());
+            metricPlugins.emplace(nameUpper, std::move(metricPlugin));
+        }
+        list<string> metricNames;
+        for (auto& p : metricPlugins) {
+            metricNames.emplace_back(p.first);
+        }
+        SINFO("Metric plugins enabled: " << SComposeList(metricNames));
+    } else {
+        SINFO("No metric plugins configured.");
+    }
+
     // If `versionOverride` is set, we throw away what we just did and use the overridden value.
     // We'll destruct, sort, and then reconstruct the version string passed in so we aren't relying
     // on the operator to know that they must be sorted.
@@ -1336,6 +1366,11 @@ BedrockServer::BedrockServer(const SData& args_)
 }
 
 BedrockServer::~BedrockServer() {
+    // Stop metric plugins first to allow their threads to exit promptly.
+    for (auto& p : metricPlugins) {
+        p.second->stop();
+    }
+
     // Shut down the sync thread, (which will shut down worker threads in turn).
     SINFO("Closing sync thread '" << _syncThreadName << "'");
     if (_syncThread.joinable()) {
