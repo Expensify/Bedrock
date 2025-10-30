@@ -21,13 +21,10 @@ bool BedrockTester::ENABLE_HCTREE{false};
 
 string BedrockTester::getTempFileName(const string& prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
-    constexpr size_t BUFFER_SIZE = 100;
-    char buffer[BUFFER_SIZE];
-    memset(buffer, 0, BUFFER_SIZE);
-    strlcpy(buffer, templateStr.c_str(), BUFFER_SIZE);
-    int filedes = mkstemps(buffer, 3);
+    // The final templateStr needs to be creatable, mkstemps ensure it
+    const int filedes = mkstemps(templateStr.data(), 3);
     close(filedes);
-    return buffer;
+    return templateStr;
 }
 
 void BedrockTester::stopAll() {
