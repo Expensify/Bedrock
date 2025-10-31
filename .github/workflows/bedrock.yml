@@ -131,6 +131,8 @@ jobs:
     timeout-minutes: 30
     needs: [BedrockTests,BedrockTestsWithHCTree]
     steps:
+    - name: Checkout Bedrock
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
     - name: Download binaries
       uses: ./.github/actions/composite/download-binaries
     - name: Strip bedrock binary
