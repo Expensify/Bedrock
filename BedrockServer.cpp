@@ -759,6 +759,27 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         return;
     }
 
+    // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
+    size_t waitCount = 0;
+    while (_upgradeInProgress || (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING)) {
+
+        // It's feasible that our command times out in this loop. In this case, we do not have a DB object to pass.
+        // The only implication of this is the response does not get the commitCount attached to it.
+        if (BedrockCore::isTimedOut(command, nullptr, this)) {
+            _reply(command);
+            return;
+        }
+
+        // This sleep call is pretty ugly, but it should almost never happen. We're accepting the potential
+        // looping sleep call for the general case where we just check some bools and continue, instead of
+        // avoiding the sleep call but having every thread lock a mutex here on every loop.
+        usleep(10000);
+        waitCount++;
+    }
+    if (waitCount) {
+        SINFO("Waited for " << waitCount << " loops for node to be ready.");
+    }
+
     // If we're following, we will automatically escalate any command that's:
     // 1. Not already complete (complete commands are likely already returned from leader with legacy escalation)
     // and is marked as `escalateImmediately` (which lets them skip the queue, which is particularly useful if they're waiting
@@ -823,28 +844,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     int64_t lastConflictPage = 0;
     string lastConflictLocation;
     while (true) {
-
-        // We just spin until the node looks ready to go. Typically, this doesn't happen expect briefly at startup.
-        size_t waitCount = 0;
-        while (_upgradeInProgress || (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::FOLLOWING)) {
-
-            // It's feasible that our command times out in this loop. In this case, we do not have a DB object to pass.
-            // The only implication of this is the response does not get the commitCount attached to it.
-            if (BedrockCore::isTimedOut(command, nullptr, this)) {
-                _reply(command);
-                return;
-            }
-
-            // This sleep call is pretty ugly, but it should almost never happen. We're accepting the potential
-            // looping sleep call for the general case where we just check some bools and continue, instead of
-            // avoiding the sleep call but having every thread lock a mutex here on every loop.
-            usleep(10000);
-            waitCount++;
-        }
-        if (waitCount) {
-            SINFO("Waited for " << waitCount << " loops for node to be ready.");
-        }
-
         // More checks for parallel writing.
         canWriteParallel = canWriteParallel && (getState() == SQLiteNodeState::LEADING);
         canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);

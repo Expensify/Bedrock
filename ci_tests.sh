@@ -1,55 +1,43 @@
 #!/bin/bash
 set -e
 
-# Add the current working directory to $PATH so that tests can find bedrock.
+source ./ci_utils.sh
+
+# If ENABLE_HCTREE is set, add a flag to the test called -enableHctree
+if [ "$ENABLE_HCTREE" == "true" ]; then
+  ENABLE_HCTREE_FLAG="-enableHctree"
+fi
+
+git config --global --add safe.directory `pwd`
+
+# Add bedrock binary to the path
 export PATH=$PATH:`pwd`
 
-export CCACHE_COMPILERCHECK="mtime"
+# Run squid in the background
+squid -sYC
 
-# We have include_file_ctime and include_file_mtime since travis never modifies the header file during execution
-# and gh actions shouldn't care about ctime and mtime between new branches.
-export CCACHE_SLOPPINESS="pch_defines,time_macros,include_file_ctime,include_file_mtime"
-export CCACHE_MAXSIZE="1G"
+export https_proxy=http://127.0.0.1:3128
 
-# ccache recommends a compression level of 5 or less for faster compilations.
-# Compression speeds up the tar and untar of the cache between travis runs.
-export CCACHE_COMPRESS="true"
-export CCACHE_COMPRESSLEVEL="1"
-
-mark_fold() {
-  local action=$1
-  local name=$2
-
-  # if action == end, just print out ::endgroup::
-  if [[ "$action" == "end" ]]; then
-    echo ::endgroup::
-    return
+# Run wget to example.com until it succeeds. Try ten times, else, fail.
+for i in {1..10}; do
+  if wget -q --spider https://example.com; then
+    echo "Squid started"
+    break
   fi
+  if [ $i -eq 10 ]; then
+    echo "Squid failed to start"
+    exit 1
+  fi
+  echo "Waiting for squid to start..."
+  sleep 1
+done
 
-  echo "::group::${name}"
-}
-
-export CC="clang-18"
-export CXX="clang++-18"
-
-# don't print out versions until after they are installed
-${CC} --version
-${CXX} --version
-
-mark_fold start build_bedrock
-make -j64
-mark_fold end build_bedrock
-
-mark_fold start test_bedrock
 cd test
-./test -threads 64
-cd ..
+mark_fold start test_bedrock
+./test -threads 64 $ENABLE_HCTREE_FLAG
 mark_fold end test_bedrock
 
+cd clustertest
 mark_fold start test_bedrock_cluster
-cd test/clustertest
-./clustertest -threads 8
-cd ../..
+./clustertest -threads 8 $ENABLE_HCTREE_FLAG
 mark_fold end test_bedrock_cluster
-
-strip bedrock
