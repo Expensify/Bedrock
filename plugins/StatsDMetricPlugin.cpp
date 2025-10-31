@@ -1,14 +1,23 @@
 #include "plugins/StatsDMetricPlugin.h"
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
+#include "libstuff/SFastBuffer.h"
+#include <unistd.h>
+
+#undef SLOGPREFIX
+#define SLOGPREFIX "{" << getName() << "} "
+
+const string StatsDMetricPlugin::name("StatsD");
+
+extern "C" BedrockMetricPlugin* BEDROCK_METRIC_PLUGIN_REGISTER_STATSD(const SData& args)
+{
+    return new StatsDMetricPlugin(args);
+}
 
 StatsDMetricPlugin::StatsDMetricPlugin(const SData& args)
   : BedrockMetricPlugin(args)
 {
-    _destHostPort = _args["-statsdServer"];
-    if (_args.isSet("-statsdMaxDatagramBytes")) {
-        _maxDatagramBytes = max<size_t>(512, _args.calcU64("-statsdMaxDatagramBytes"));
+    _destHostPort = args["-statsdServer"];
+    if (args.isSet("-statsdMaxDatagramBytes")) {
+        _maxDatagramBytes = max<size_t>(512, args.calcU64("-statsdMaxDatagramBytes"));
     }
     // Start worker
     _worker = thread(&StatsDMetricPlugin::_networkLoop, this);
@@ -24,43 +33,7 @@ StatsDMetricPlugin::~StatsDMetricPlugin()
 
 const string& StatsDMetricPlugin::getName() const
 {
-    return _name;
-}
-
-bool StatsDMetricPlugin::_resolveDestination()
-{
-    if (_destResolved) {
-        return true;
-    }
-    if (_destHostPort.empty()) {
-        SWARN("StatsD destination '-statsdServer' is not set; dropping metrics.");
-        return false;
-    }
-
-    string host;
-    string portStr;
-    size_t colon = _destHostPort.rfind(':');
-    if (colon == string::npos) {
-        SWARN("StatsD destination missing port: '" << _destHostPort << "'");
-        return false;
-    }
-    host = _destHostPort.substr(0, colon);
-    portStr = _destHostPort.substr(colon + 1);
-
-    addrinfo hints{};
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_DGRAM;
-    addrinfo* result = nullptr;
-    int rc = getaddrinfo(host.c_str(), portStr.c_str(), &hints, &result);
-    if (rc != 0 || !result) {
-        SWARN("getaddrinfo failed for StatsD server '" << _destHostPort << "': " << gai_strerror(rc));
-        return false;
-    }
-    // Take first IPv4 result
-    memcpy(&_dest, result->ai_addr, sizeof(sockaddr_in));
-    freeaddrinfo(result);
-    _destResolved = true;
-    return true;
+    return name;
 }
 
 string StatsDMetricPlugin::_sanitizeName(const string& name)
@@ -132,25 +105,28 @@ void StatsDMetricPlugin::_sendBatch(vector<string>& lines)
     if (lines.empty()) {
         return;
     }
-    if (!_resolveDestination()) {
-        return;
-    }
 
     // Build datagrams up to _maxDatagramBytes and send each via a fresh socket
-    string buffer;
-    buffer.reserve(min<size_t>(_maxDatagramBytes, 4096));
-    auto flush = [&](const string& payload){
-        if (payload.empty()) return;
-        int s = socket(AF_INET, SOCK_DGRAM, 0);
-        if (s < 0) {
-            SWARN("StatsD: failed to create UDP socket, dropping batch");
+    SFastBuffer buffer;
+
+    // Flushing is fire and forget, we don't check for a return from statsd
+    auto flush = [&](SFastBuffer& payload){
+        if (payload.empty()) {
             return;
         }
-        ssize_t sent = sendto(s, payload.data(), payload.size(), 0, (sockaddr*)&_dest, sizeof(_dest));
-        if (sent < 0 || (size_t)sent != payload.size()) {
-            SWARN("StatsD: sendto failed or partial, dropped: " << errno);
+        int s = S_socket(_destHostPort, false, false, false);
+        if (s < 0) {
+            SWARN("Failed to create socket to " << _destHostPort << ", dropping batch");
+            return;
+        }
+        bool result = S_sendconsume(s, payload);
+        if (!result) {
+            SWARN("Failed to send to " << _destHostPort << ", dropping batch");
+            close(s);
+            return;
         }
         close(s);
+        return;
     };
 
     for (const string& line : lines) {
@@ -159,9 +135,14 @@ void StatsDMetricPlugin::_sendBatch(vector<string>& lines)
             flush(buffer);
             buffer.clear();
         }
-        if (!buffer.empty()) buffer.push_back('\n');
+
+        if (!buffer.empty()) {
+            buffer.append("\n", 1);
+        }
+
         if (line.size() > _maxDatagramBytes) {
             // If a single line is larger than the datagram size, drop it.
+            SWARN("Dropping line larger than datagram size: " << line.size());
             continue;
         }
         buffer += line;
@@ -184,10 +165,3 @@ void StatsDMetricPlugin::_networkLoop()
         _sendBatch(lines);
     }
 }
-
-extern "C" BedrockMetricPlugin* BEDROCK_METRIC_PLUGIN_REGISTER_STATSD(const SData& args)
-{
-    return new StatsDMetricPlugin(args);
-}
-
-

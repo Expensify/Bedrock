@@ -1,6 +1,7 @@
 #pragma once
 #include "libstuff/libstuff.h"
 #include "BedrockMetricPlugin.h"
+#include <thread>
 
 class StatsDMetricPlugin : public BedrockMetricPlugin {
   public:
@@ -29,15 +30,14 @@ class StatsDMetricPlugin : public BedrockMetricPlugin {
 
     // Destination and config
     string _destHostPort;              // from -statsdServer
-    sockaddr_in _dest{};               // resolved destination
-    bool _destResolved{false};
 
     size_t _maxDatagramBytes{1400};    // from -statsdMaxDatagramBytes (default 1400)
     size_t _maxBatch{512};             // per drain
     uint64_t _maxWaitMs{50};           // wait for batch accumulation
 
     thread _worker;
-    string _name{"STATSD"};
+
+    static const string name;
 };
 
 // Dynamic loader entry point for .so usage.
