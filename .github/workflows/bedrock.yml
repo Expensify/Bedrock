@@ -13,70 +13,22 @@ env:
   # Use mirror.bastion1.sjc if running locally
   APT_MIRROR_URL: "apt-mirror.expensify.com:843"
 jobs:
-  Run_Bedrock_Tests:
+  Build_Bedrock:
     name: "Create Bedrock and Test"
     runs-on: ubuntu-24.04-v64 # The biggest and best for my baby
-    timeout-minutes: 30
+    permissions:
+      packages: read
+    container:
+      image: ghcr.io/expensify/auth-test-build:latest #Change to latest when PR is merged
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     steps:
-
-    - name: Install the Mold Linker
-      # v1
-      uses: rui314/setup-mold@f80524ca6eeaa76759b57fb78ddce5d87a20c720
-
     - name: Checkout Bedrock
       # v4.1.0
       uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
-
-    - name: Get Date for cache
-      id: get-date
-      run: |
-        echo "date=$(/bin/date -u "+%Y%m%d")" >> "$GITHUB_OUTPUT"
-      shell: bash
-
-    - name: Set up cache
-      # v4.2.0
-      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
       with:
-        path: |-
-          ${{ env.CCACHE_BASEDIR }}
-        key: "${{ runner.os }}-compilation-${{ github.ref_name }}-${{ github.sha }}"
-        restore-keys: |
-          ${{ runner.os }}-compilation-${{ github.ref_name }}-
-          ${{ runner.os }}-compilation-
-
-    - name: Setup Mirror Certificates
-      uses: ./.github/actions/composite/setup-certificate-1p
-      env:
-        OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-
-    - name: Install packages
-      run: |
-        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys BA9EF27F
-        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 4F4EA0AAE5267A6C
-        wget -qO - https://package.perforce.com/perforce.pubkey --no-check-certificate | sudo apt-key add -
-        echo "deb [arch=amd64] https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu noble main" | sudo tee -a /etc/apt/sources.list.d/ubuntu-toolchain.list
-
-        # For clang.
-        wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        echo "deb [arch=amd64] https://travis:${{ secrets.TRAVIS_APT_PASSWORD }}@$APT_MIRROR_URL/mirror/apt.llvm.org/noble/ llvm-toolchain-noble-18 main" | sudo tee -a /etc/apt/sources.list.d/llvm-toolchain.list
-
-        sudo apt-get update -y
-        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install rsyslog cmake libpcre2-dev libsodium-dev libgpgme11-dev libstdc++-14-dev squid
-
-        # Install clang.
-        sudo -E apt-get -yq --no-install-suggests --no-install-recommends --force-yes install clang-18 lldb-18 lld-18 clangd-18 clang-tidy-18 clang-format-18 clang-tools-18 llvm-18-dev lld-18 lldb-18 llvm-18-tools libomp-18-dev libc++-18-dev libc++abi-18-dev libclang-common-18-dev libclang-18-dev libclang-cpp18-dev libunwind-18-dev
-
-        sudo locale-gen "en_US.UTF-8"
-        sudo service rsyslog start
-
-    - name: Use updated ccache
-      run: |
-        wget https://github.com/ccache/ccache/releases/download/v4.8.3/ccache-4.8.3-linux-x86_64.tar.xz
-        tar -xf ccache-4.8.3-linux-x86_64.tar.xz
-        sudo cp ccache-4.8.3-linux-x86_64/ccache /usr/local/bin/ccache
-        ccache -V
-        ln -s /usr/local/bin/ccache /usr/local/bin/clang-18
-        ln -s /usr/local/bin/ccache /usr/local/bin/clang++-18
+        repository: Expensify/Bedrock
+        path: .
 
     - name: Setup tmate session
       if: runner.debug == '1'
@@ -86,16 +38,106 @@ jobs:
       with:
         limit-access-to-actor: true
 
-    # If tmate was run, we want to mark this step as failed so bedrock   tests don't look like they're passing
+    # If tmate was run, we want to mark this step as failed
     - name: Mark failure if debugging
       if: runner.debug == '1'
       run: exit 1
-
+    - name: Build Bedrock
+      run: "./ci_build.sh"
+    - name: Upload binaries
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      with:
+        name: bedrock-binaries
+        path: |
+          bedrock
+          test/test
+          test/clustertest/clustertest
+          test/clustertest/testplugin/testplugin.so
+          test/sample_data/lottoNumbers.json
+        retention-days: 1
+        compression-level: 1
+  BedrockTests:
+    name: "Bedrock Tests"
+    runs-on: ubuntu-24.04-v64
+    permissions:
+      packages: read
+    container:
+      image: ghcr.io/expensify/auth-test-build:latest #Change to latest when PR is merged
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+    timeout-minutes: 30
+    needs: Build_Bedrock
+    steps:
+    - name: Checkout Bedrock
+      # v4.1.0
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      with:
+        repository: Expensify/Bedrock
+        path: .
+    - name: Download binaries
+      uses: ./.github/actions/composite/download-binaries
+    - name: Setup tmate session
+      if: runner.debug == '1'
+      # v3
+      uses: mxschmitt/action-tmate@e5c7151931ca95bad1c6f4190c730ecf8c7dde48
+      timeout-minutes: 60
+      with:
+        limit-access-to-actor: true
+    # If tmate was run, we want to mark this step as failed so bedrock tests don't look like they're passing
+    - name: Mark failure if debugging
+      if: runner.debug == '1'
+      run: exit 1
     - name: Run tests
+      env:
+        ENABLE_HCTREE: "false"
       run: "./ci_tests.sh"
-
+  BedrockTestsWithHCTree:
+    name: "Bedrock Tests with HCTree"
+    runs-on: ubuntu-24.04-v64
+    timeout-minutes: 30
+    permissions:
+      packages: read
+    container:
+      image: ghcr.io/expensify/auth-test-build:latest #Change to latest when PR is merged
+      env:
+        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+    needs: Build_Bedrock
+    steps:
+    - name: Checkout Bedrock
+      # v4.1.0
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+      with:
+        repository: Expensify/Bedrock
+        path: .
+    - name: Download binaries
+      uses: ./.github/actions/composite/download-binaries
+    - name: Setup tmate session
+      if: runner.debug == '1'
+      # v3
+      uses: mxschmitt/action-tmate@e5c7151931ca95bad1c6f4190c730ecf8c7dde48
+      timeout-minutes: 60
+      with:
+        limit-access-to-actor: true
+    # If tmate was run, we want to mark this step as failed so bedrock tests don't look like they're passing
+    - name: Mark failure if debugging
+      if: runner.debug == '1'
+      run: exit 1
+    - name: Run tests
+      run: "ENABLE_HCTREE=true ./ci_tests.sh"
+  Upload_Bedrock_Binaries:
+    name: "Upload Bedrock Binaries"
+    if: "${{ startsWith(github.ref, 'refs/tags/') }}"
+    runs-on: ubuntu-24.04-v64
+    timeout-minutes: 30
+    needs: [BedrockTests,BedrockTestsWithHCTree]
+    steps:
+    - name: Checkout Bedrock
+      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+    - name: Download binaries
+      uses: ./.github/actions/composite/download-binaries
+    - name: Strip bedrock binary
+      run: "strip bedrock"
     - name: Upload bedrock binary to release
-      if: "${{ startsWith(github.ref, 'refs/tags/') }}"
       uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
