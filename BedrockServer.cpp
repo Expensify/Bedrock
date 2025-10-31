@@ -1366,10 +1366,7 @@ BedrockServer::BedrockServer(const SData& args_)
 }
 
 BedrockServer::~BedrockServer() {
-    // Stop metric plugins first to allow their threads to exit promptly.
-    for (auto& p : metricPlugins) {
-        p.second->stop();
-    }
+
 
     // Shut down the sync thread, (which will shut down worker threads in turn).
     SINFO("Closing sync thread '" << _syncThreadName << "'");
@@ -1385,6 +1382,11 @@ BedrockServer::~BedrockServer() {
     // Delete our plugins.
     for (auto& p : plugins) {
         delete p.second;
+    }
+
+    // Stop metric plugins to allow their threads to exit promptly.
+    for (auto& p : metricPlugins) {
+        p.second->stop();
     }
 
     shutdownTimer.serverDestructor = chrono::steady_clock::now();
