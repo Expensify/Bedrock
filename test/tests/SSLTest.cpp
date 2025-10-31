@@ -99,7 +99,19 @@ struct SSLTest : tpunit::TestFixture {
 
         // Create a transaction with a socket, send the above request.
         SStandaloneHTTPSManager::Transaction* transaction = new SStandaloneHTTPSManager::Transaction(manager);
-        transaction->s = new STCPManager::Socket(host, true);
+        // We are attempting to test a ertificate mismatch, but occasionally, we fail to connect at all, which is not the
+        // case we care about here. We allow several retries when that happens.
+        // If this failure continues past 5 tries, the test will still end up failing as the socket is not connected.
+        for (int i = 0; i < 5; i++) {
+            try {
+                transaction->s = new STCPManager::Socket(host, true);
+                break;
+            } catch (SException e) {
+                // Try again in a second.
+                sleep (1);
+            }
+        }
+
         transaction->timeoutAt = STimeNow() + 10'000'000;
         transaction->s->send(request.serialize());
 
