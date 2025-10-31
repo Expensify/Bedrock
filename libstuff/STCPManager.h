@@ -63,13 +63,9 @@ struct STCPManager {
         Port(int _s, const string& _host);
         ~Port();
 
-        void close();
-        int getSocket();
-
         // Attributes
+        const int s;
         const string host;
-      private:
-        int s;
     };
 
     // Updates all managed sockets
