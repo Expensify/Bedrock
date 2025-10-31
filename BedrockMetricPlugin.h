@@ -15,7 +15,7 @@ enum class MetricType {
 struct Metric {
     string name;
     MetricType type{MetricType::Counter};
-    double value{0.0};
+    uint64_t value{0};
     vector<pair<string, string>> tags;
     uint64_t timestampUnixMs{0};
     double sampleRate{1.0};

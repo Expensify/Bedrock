@@ -15,6 +15,7 @@
 #include <plugins/DB.h>
 #include <plugins/Jobs.h>
 #include <plugins/MySQL.h>
+#include <plugins/StatsDMetricPlugin.h>
 #include <BedrockMetricPlugin.h>
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
@@ -55,6 +56,9 @@ set<string> loadMetricPlugins(SData& args) {
 
     // Register built-in metric plugins here if any (none by default)
     // Example: BedrockMetricPlugin::g_registeredMetricPluginList.emplace(make_pair("STATSD", [](const SData& a){return new StatsDMetricPlugin(a);}));
+
+    BedrockMetricPlugin::g_registeredMetricPluginList.emplace(make_pair("STATSD", [](const SData& a){return new StatsDMetricPlugin(a);}));
+
 
     for (string pluginName : plugins) {
         if (BedrockMetricPlugin::g_registeredMetricPluginList.find(SToUpper(pluginName)) != BedrockMetricPlugin::g_registeredMetricPluginList.end()) {
