@@ -91,8 +91,6 @@ bool BedrockDBCommand::peek(SQLite& db) {
         query = "SELECT sql FROM sqlite_schema WHERE tbl_name LIKE " + SQ(matches[1]) + ";";
         formatOptions.header = false;
         format = SQResultFormatter::FORMAT::COLUMN;
-    } else if (!SEndsWith(query, ";")) {
-        query += ";";
     }
 
     if (!SEndsWith(query, ";")) {
