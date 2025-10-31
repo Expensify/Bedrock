@@ -1,5 +1,6 @@
 #include "plugins/StatsDMetricPlugin.h"
 #include "libstuff/SFastBuffer.h"
+#include "libstuff/SData.h"
 #include <unistd.h>
 
 #undef SLOGPREFIX
@@ -15,9 +16,10 @@ extern "C" BedrockMetricPlugin* BEDROCK_METRIC_PLUGIN_REGISTER_STATSD(const SDat
 StatsDMetricPlugin::StatsDMetricPlugin(const SData& args)
   : BedrockMetricPlugin(args)
 {
+    SDEBUG("Loaded StatsD metric plugin");
     _destHostPort = args["-statsdServer"];
     if (args.isSet("-statsdMaxDatagramBytes")) {
-        _maxDatagramBytes = max<size_t>(512, args.calcU64("-statsdMaxDatagramBytes"));
+        _maxDatagramBytes = max<size_t>(1400, args.calcU64("-statsdMaxDatagramBytes"));
     }
     // Start worker
     _worker = thread(&StatsDMetricPlugin::_networkLoop, this);
@@ -70,7 +72,8 @@ string StatsDMetricPlugin::_sanitizeTagValue(const string& value)
 
 string StatsDMetricPlugin::_formatLine(const Metric& m) const
 {
-    const string name = _sanitizeName(m.name);
+    const string hostname = SGetHostName();
+    const string name = _sanitizeName(hostname + "." + m.name);
     string line = name + ":" + SToStr(m.value) + "|";
     switch (m.type) {
         case MetricType::Counter: line += "c"; break;
@@ -122,10 +125,10 @@ void StatsDMetricPlugin::_sendBatch(vector<string>& lines)
         bool result = S_sendconsume(s, payload);
         if (!result) {
             SWARN("Failed to send to " << _destHostPort << ", dropping batch");
-            close(s);
+            ::close(s);
             return;
         }
-        close(s);
+        ::close(s);
         return;
     };
 
@@ -148,11 +151,13 @@ void StatsDMetricPlugin::_sendBatch(vector<string>& lines)
         buffer += line;
     }
     flush(buffer);
+    SDEBUG("Flushed " << lines.size() << " lines to " << _destHostPort);
 }
 
 void StatsDMetricPlugin::_networkLoop()
 {
     while (!isStopping()) {
+        SDEBUG("Waiting for batch");
         vector<Metric> batch = waitAndDrain(_maxBatch, _maxWaitMs);
         if (batch.empty()) {
             continue;
