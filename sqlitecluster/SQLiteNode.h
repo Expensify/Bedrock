@@ -308,7 +308,7 @@ class SQLiteNode : public STCPManager {
     bool _haveBeenWAITING = false;
 
     // A string representing an address (i.e., `127.0.0.1:80`) where this server accepts commands. I.e., "the command port".
-    const unique_ptr<Port> _port;
+    unique_ptr<Port> _port;
 
     // Our version string. Supplied by constructor.
     const string _version;
