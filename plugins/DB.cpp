@@ -82,6 +82,19 @@ bool BedrockDBCommand::peek(SQLite& db) {
         }
     }
 
+        // The `.schema` command (and other dot commands) isn't part of sqlite itself, but a convenience function built into the sqlite3 CLI.
+    // This re-writes this into the internal query that does the same thing, and sets the format options to match the CLI.
+    vector<string> matches;
+    bool isSchema = SREMatch("\\s*\\.schema\\s+(.*?)\\s*", query, false, false, &matches);
+    if (isSchema) {
+        SINFO("Re-writing schema query for " + matches[1]);
+        query = "SELECT sql FROM sqlite_schema WHERE tbl_name LIKE " + SQ(matches[1]) + ";";
+        formatOptions.header = false;
+        format = SQResultFormatter::FORMAT::COLUMN;
+    } else if (!SEndsWith(query, ";")) {
+        query += ";";
+    }
+
     if (!SEndsWith(query, ";")) {
         SALERT("Query aborted, query must end in ';'");
         STHROW("502 Query Missing Semicolon");

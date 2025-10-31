@@ -17,5 +17,5 @@ class BedrockDBCommand : public BedrockCommand {
     virtual void process(SQLite& db);
 
   private:
-    const string query;
+    string query;
 };
