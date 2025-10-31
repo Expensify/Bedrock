@@ -10,7 +10,6 @@
 #include "BedrockBlockingCommandQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
 #include "BedrockMetricPlugin.h"
-#include "BedrockMetric.h"
 
 class SQLitePeer;
 class BedrockCore;

@@ -1,7 +1,7 @@
 #include "BedrockMetricPlugin.h"
 #include "libstuff/libstuff.h"
 
-std::map<std::string, std::function<BedrockMetricPlugin*(const SData& args)>> BedrockMetricPlugin::g_registeredMetricPluginList;
+map<string, function<BedrockMetricPlugin*(const SData& args)>> BedrockMetricPlugin::g_registeredMetricPluginList;
 
 BedrockMetricPlugin::BedrockMetricPlugin(const SData& args, size_t maxQueueSize)
   : _args(args), _maxQueueSize(maxQueueSize)
@@ -20,9 +20,9 @@ bool BedrockMetricPlugin::enqueue(Metric metric)
     }
 
     {
-        std::unique_lock<std::mutex> lock(_mutex);
+        unique_lock<mutex> lock(_mutex);
         if (_queue.size() >= _maxQueueSize) {
-            _dropped.fetch_add(1, std::memory_order_relaxed);
+            _dropped.fetch_add(1, memory_order_relaxed);
             return false;
         }
         _queue.emplace_back(std::move(metric));
@@ -33,13 +33,13 @@ bool BedrockMetricPlugin::enqueue(Metric metric)
 
 size_t BedrockMetricPlugin::queueSize() const
 {
-    std::unique_lock<std::mutex> lock(_mutex);
+    unique_lock<mutex> lock(_mutex);
     return _queue.size();
 }
 
 uint64_t BedrockMetricPlugin::droppedCount() const
 {
-    return _dropped.load(std::memory_order_relaxed);
+    return _dropped.load(memory_order_relaxed);
 }
 
 void BedrockMetricPlugin::stop()
@@ -57,7 +57,7 @@ bool BedrockMetricPlugin::isStopping() const
 
 bool BedrockMetricPlugin::tryDequeue(Metric& out)
 {
-    std::unique_lock<std::mutex> lock(_mutex);
+    unique_lock<mutex> lock(_mutex);
     if (_queue.empty()) {
         return false;
     }
@@ -68,12 +68,12 @@ bool BedrockMetricPlugin::tryDequeue(Metric& out)
 
 bool BedrockMetricPlugin::waitDequeue(Metric& out, uint64_t timeoutMs)
 {
-    std::unique_lock<std::mutex> lock(_mutex);
+    unique_lock<mutex> lock(_mutex);
     if (_queue.empty()) {
         if (_stopping.load()) {
             return false;
         }
-        _cv.wait_for(lock, std::chrono::milliseconds(timeoutMs), [&]{ return _stopping.load() || !_queue.empty(); });
+        _cv.wait_for(lock, chrono::milliseconds(timeoutMs), [&]{ return _stopping.load() || !_queue.empty(); });
     }
     if (_queue.empty()) {
         return false;
@@ -83,11 +83,11 @@ bool BedrockMetricPlugin::waitDequeue(Metric& out, uint64_t timeoutMs)
     return true;
 }
 
-std::vector<Metric> BedrockMetricPlugin::drainUpTo(size_t maxItems)
+vector<Metric> BedrockMetricPlugin::drainUpTo(size_t maxItems)
 {
-    std::vector<Metric> batch;
+    vector<Metric> batch;
     batch.reserve(maxItems);
-    std::unique_lock<std::mutex> lock(_mutex);
+    unique_lock<mutex> lock(_mutex);
     while (!_queue.empty() && batch.size() < maxItems) {
         batch.emplace_back(std::move(_queue.front()));
         _queue.pop_front();
@@ -95,16 +95,16 @@ std::vector<Metric> BedrockMetricPlugin::drainUpTo(size_t maxItems)
     return batch;
 }
 
-std::vector<Metric> BedrockMetricPlugin::waitAndDrain(size_t maxItems, uint64_t maxWaitMs)
+vector<Metric> BedrockMetricPlugin::waitAndDrain(size_t maxItems, uint64_t maxWaitMs)
 {
-    std::unique_lock<std::mutex> lock(_mutex);
+    unique_lock<mutex> lock(_mutex);
     if (_queue.empty()) {
         if (_stopping.load()) {
             return {};
         }
-        _cv.wait_for(lock, std::chrono::milliseconds(maxWaitMs), [&]{ return _stopping.load() || !_queue.empty(); });
+        _cv.wait_for(lock, chrono::milliseconds(maxWaitMs), [&]{ return _stopping.load() || !_queue.empty(); });
     }
-    std::vector<Metric> batch;
+    vector<Metric> batch;
     batch.reserve(maxItems);
     while (!_queue.empty() && batch.size() < maxItems) {
         batch.emplace_back(std::move(_queue.front()));
