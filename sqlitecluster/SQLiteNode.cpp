@@ -2684,6 +2684,9 @@ void SQLiteNode::kill() {
         SWARN("Killing peer: " << peer->name);
         peer->reset();
     }
+    // Free the port when killing the node connections. That way we'll be
+    // able to reuse the port immediately if we need to restart the node.
+    _port = nullptr;
 }
 
 string SQLiteNode::_getLostQuorumLogMessage() const {
