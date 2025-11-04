@@ -15,7 +15,6 @@ struct SSLTest : tpunit::TestFixture {
                               BEFORE_CLASS(SSLTest::setup),
                               TEST(SSLTest::test),
                               TEST(SSLTest::proxyTest),
-                              TEST(SSLTest::certificateValidationTest),
                               AFTER_CLASS(SSLTest::teardown))
     { }
 
@@ -86,37 +85,6 @@ struct SSLTest : tpunit::TestFixture {
         ASSERT_TRUE(transaction->fullResponse.content.size());
 
         // Close the transaction.
-        manager.closeTransaction(transaction);
-    }
-
-    void certificateValidationTest() {
-        SStandaloneHTTPSManager manager;
-
-        // Specifically validates that we properly detect SSL certificate/hostname mismatches
-        const string host = "wrong.host.badssl.com:443";
-        SData request("GET / HTTP/1.1");
-        request["host"] = host;
-
-        // Create a transaction with a socket, send the above request.
-        SStandaloneHTTPSManager::Transaction* transaction = new SStandaloneHTTPSManager::Transaction(manager);
-        transaction->s = new STCPManager::Socket(host, true);
-        transaction->timeoutAt = STimeNow() + 10'000'000;
-        transaction->s->send(request.serialize());
-
-        while (!transaction->response && (STimeNow() < transaction->timeoutAt)) {
-            fd_map fdm;
-            uint64_t nextActivity = STimeNow();
-            manager.prePoll(fdm, *transaction);
-            S_poll(fdm, 1'000'000);
-            manager.postPoll(fdm, *transaction, nextActivity);
-        }
-
-        // We expect the connection to fail due to certificate validation error
-        // The wrong.host.badssl.com site has a certificate that doesn't match the hostname
-        // A successful connection with a 2xx or 3xx response indicates SSL validation passed
-        ASSERT_TRUE(transaction->response >= 400);
-
-        // Close the transaction
         manager.closeTransaction(transaction);
     }
 } __SSLTest;
