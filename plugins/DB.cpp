@@ -1,5 +1,4 @@
 #include "DB.h"
-#include "libstuff/SQResultFormatter.h"
 #include "libstuff/libstuff.h"
 
 #include <string.h>

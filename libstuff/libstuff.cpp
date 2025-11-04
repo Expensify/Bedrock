@@ -3213,6 +3213,15 @@ int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec) {
     return SQuery(db, sql, ignore, 0, true, spec);
 }
 
+int SQuery(sqlite3* db, const char* ignore, const string& sql, int64_t warnThreshold, bool skipInfoWarn) {
+    SQResult ignoreResult;
+    return SQuery(db, sql, ignoreResult, warnThreshold, skipInfoWarn);
+}
+
+int SQuery(sqlite3* db, const char* ignore, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn) {
+    return SQuery(db, sql, result, warnThreshold, skipInfoWarn);
+}
+
 string SUNQUOTED_TIMESTAMP(uint64_t when) {
     return SComposeTime("%Y-%m-%d %H:%M:%S", when);
 }

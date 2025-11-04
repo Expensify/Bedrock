@@ -628,6 +628,11 @@ void SQueryLogClose();
 int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr);
 int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
 int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec);
+
+// Compatibility functions: Remove when nothing calls these.
+int SQuery(sqlite3* db, const char* ignore, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
+int SQuery(sqlite3* db, const char* ignore, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
+
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
 bool SQVerifyTableExists(sqlite3* db, const string& tableName);
 

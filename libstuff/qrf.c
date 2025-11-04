@@ -858,7 +858,7 @@ static void qrfWidthPrint(Qrf *p, sqlite3_str *pOut, int w, const char *zUtf){
       i += len;
       n += x;
     }else if( c==0x1b && (k = qrfIsVt100(&a[i]))>0 ){
-      i += k;       
+      i += k;
     }else if( n>=aw ){
       break;
     }else{
@@ -1052,7 +1052,7 @@ static void qrfColumnar(Qrf *p){
         char **azNewData;
         char *abNewDiv;
         int *aiNewWidth;
-        
+
         nAlloc *= 2;
         azNewData = sqlite3_realloc64(azData, nAlloc*sizeof(char*));
         if( azNewData==0 ){ qrfOom(p); goto qrf_column_end; }
@@ -1222,7 +1222,7 @@ qrf_column_end:
     sqlite3_free(azData[i]);
   }
   sqlite3_free(azData);
-  
+
   return;
 }
 
@@ -1367,11 +1367,11 @@ static void qrfExplain(Qrf *p){
           }
         }
       }
-  
+
       for(i=0; i<nArg; i++){
         const char *zSep = "  ";
         int w = aWidth[i];
-        const char *zVal = sqlite3_column_text(p->pStmt, aMap[i]);
+        const char *zVal = (const char*)sqlite3_column_text(p->pStmt, aMap[i]);
         int len;
         if( i==nArg-1 ) w = 0;
         if( zVal==0 ) zVal = "";
@@ -1696,7 +1696,7 @@ int sqlite3_format_query_result(
   switch( qrf.spec.eFormat ){
     case QRF_MODE_Box:
     case QRF_MODE_Column:
-    case QRF_MODE_Markdown: 
+    case QRF_MODE_Markdown:
     case QRF_MODE_Table: {
       /* Columnar modes require that the entire query be evaluated and the
       ** results stored in memory, so that we can compute column widths */

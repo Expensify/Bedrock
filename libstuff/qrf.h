@@ -13,7 +13,12 @@
 ** See the resfmt.md documentation for additional information.
 */
 #include <stdlib.h>
+#include <sys/types.h>
 #include "sqlite3.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*
 ** Specification used by clients to define the output format they want
@@ -107,3 +112,7 @@ int sqlite3_format_query_result(
 #define QRF_ESC_Off     0 /* Do not escape control characters */
 #define QRF_ESC_Ascii   1 /* Unix-style escapes.  Ex: U+0007 shows ^G */
 #define QRF_ESC_Symbol  2 /* Unicode escapes. Ex: U+0007 shows U+2407 */
+
+#ifdef __cplusplus
+}  /* end of the 'extern "C"' block */
+#endif
