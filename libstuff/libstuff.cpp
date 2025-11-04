@@ -2564,7 +2564,7 @@ void SQueryLogClose() {
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn) {
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn) {
 #define MAX_TRIES 3
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
@@ -2748,9 +2748,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         // This prevents creating bugbot issues for the allowed cases. We still log as INFO though so we can diagnose the query with the problem.
         // We also don't warn for `interrupt` because it generally means a timeout which is handled separately.
         if (error == SQLITE_CONSTRAINT || error == SQLITE_INTERRUPT) {
-            SINFO("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
+            SINFO("query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         } else {
-            SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
+            SWARN("query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         }
     }
 
@@ -2766,11 +2766,11 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
     // First, see if it's there
     SQResult result;
-    SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
+    SASSERT(!SQuery(db, "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
     if (result.empty()) {
         // Table doesn't already exist, create it
         SINFO("Creating '" << tableName << "'");
-        SASSERT(!SQuery(db, "SQVerifyTable", sql));
+        SASSERT(!SQuery(db, sql));
         return true; // Created new table
     } else {
         // Table exists, verify it's correct
@@ -2782,7 +2782,7 @@ bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
 
 bool SQVerifyTableExists(sqlite3* db, const string& tableName) {
     SQResult result;
-    SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
+    SASSERT(!SQuery(db, "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
     return !result.empty();
 }
 
@@ -3190,9 +3190,9 @@ string SQ(double val) {
     return SToStr(val);
 }
 
-int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipInfoWarn) {
+int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold, bool skipInfoWarn) {
     SQResult ignore;
-    return SQuery(db, e, sql, ignore, warnThreshold, skipInfoWarn);
+    return SQuery(db, sql, ignore, warnThreshold, skipInfoWarn);
 }
 
 string SUNQUOTED_TIMESTAMP(uint64_t when) {
