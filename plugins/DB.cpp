@@ -41,6 +41,11 @@ unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseComm
     return nullptr;
 }
 
+ssize_t SQLiteFormatAppend(void* destString, const unsigned char* appendString, size_t length) {
+
+    return 0;
+}
+
 bool BedrockDBCommand::peek(SQLite& db) {
     if (query.size() < 1 || query.size() > BedrockPlugin::MAX_SIZE_QUERY) {
         STHROW("402 Missing query");
@@ -52,33 +57,56 @@ bool BedrockDBCommand::peek(SQLite& db) {
         readDBFlags = SParseList(request["ReadDBFlags"], ' ');
     }
 
+    string output;
+    sqlite3_qrf_spec spec;
+    spec.iVersion = 1;     /* Version number of this structure */
+    spec.eFormat = QRF_MODE_List;      /* Output format */
+    spec.bShowCNames = 1;  /* True to show column names */
+    spec.eEscape = 0;      /* How to deal with control characters */
+    spec.eQuote = 0;       /* Quoting style for text */
+    spec.eBlob = 0;        /* Quoting style for BLOBs */
+    spec.bWordWrap = 1;    /* Try to wrap on word boundaries */
+    spec.mxWidth = 0;      /* Maximum width of any column */
+    spec.nWidth = 0;       /* Number of column width parameters */
+    spec.aWidth = 0;       /* Column widths */
+    spec.zColumnSep = 0;   /* Alternative column separator */
+    spec.zRowSep = 0;      /* Alternative row separator */
+    spec.zTableName = 0;   /* Output table name */
+    spec.zNull = 0;        /* Rendering of NULL */
+    spec.xRender = nullptr;    /* Render a value */
+    spec.xWrite = &SQLiteFormatAppend; /* Write callback */
+    spec.pRenderArg = nullptr;   /* First argument to the xRender callback */
+    spec.pWriteArg = &output;    /* First argument to the xWrite callback */
+    spec.pzOutput = nullptr;     /* Storage location for output string */
+
     // Set the format. Allow the legacy behavior for `format: json` if supplied.
-    SQResultFormatter::FORMAT format = SQResultFormatter::FORMAT::LIST;
-    SQResultFormatter::FORMAT_OPTIONS formatOptions;
     if (SIEquals(request["Format"], "json")) {
-        format = SQResultFormatter::FORMAT::JSON;
+        spec.eFormat = QRF_MODE_Json;
     }
     for (auto flag : readDBFlags) {
         if (flag == "-column") {
-            format = SQResultFormatter::FORMAT::COLUMN;
+            spec.eFormat = QRF_MODE_Column;
         }
         if (flag == "-csv") {
-            format = SQResultFormatter::FORMAT::CSV;
+            spec.eQuote = QRF_TXT_Csv;
+            spec.eFormat = QRF_MODE_Csv;
         }
         if (flag == "-tsv") {
-            format = SQResultFormatter::FORMAT::TABS;
+            // TODO: Not yet implemented.
+            //format = SQResultFormatter::FORMAT::TABS;
         }
         if (flag == "-json") {
-            format = SQResultFormatter::FORMAT::JSON;
+            spec.eQuote = QRF_TXT_Json;
+            spec.eFormat = QRF_MODE_Json;
         }
         if (flag == "-quote") {
-            format = SQResultFormatter::FORMAT::QUOTE;
+            spec.eFormat = QRF_MODE_Quote;
         }
         if (flag == "-header") {
-            formatOptions.header = true;
+            spec.bShowCNames = 1;
         }
         if (flag == "-noheader") {
-            formatOptions.header = false;
+            spec.bShowCNames = 0;
         }
     }
 
@@ -89,8 +117,8 @@ bool BedrockDBCommand::peek(SQLite& db) {
     if (isSchema) {
         SINFO("Re-writing schema query for " + matches[1]);
         query = "SELECT sql FROM sqlite_schema WHERE tbl_name LIKE " + SQ(matches[1]) + ";";
-        formatOptions.header = false;
-        format = SQResultFormatter::FORMAT::COLUMN;
+        spec.bShowCNames = 0;
+        spec.eFormat = QRF_MODE_Column;
     }
 
     if (!SEndsWith(query, ";")) {
@@ -134,7 +162,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
     }
 
     // Worked! Set the output and return.
-    response.content = SQResultFormatter::format(result, format, formatOptions);
+    response.content = output;
 
     return true;
 }
