@@ -2620,6 +2620,18 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                 error = SQLITE_OK;
                 break;
             }
+
+            // This block will handle running formatted queries. If it executes, nothing else is currently checked, we're just done.
+            if (spec) {
+                char* errorMsg = nullptr;
+                error = sqlite3_format_query_result(preparedStatement, spec, &errorMsg);
+                if (error) {
+                    SWARN("Error running formatted query: " << errorMsg);
+                    sqlite3_free(errorMsg);
+                }
+                return error;
+            }
+
             int numColumns = sqlite3_column_count(preparedStatement);
             result.headers.resize(numColumns);
 
