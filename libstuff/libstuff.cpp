@@ -2564,7 +2564,7 @@ void SQueryLogClose() {
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn) {
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec) {
 #define MAX_TRIES 3
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
@@ -3193,6 +3193,12 @@ string SQ(double val) {
 int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold, bool skipInfoWarn) {
     SQResult ignore;
     return SQuery(db, sql, ignore, warnThreshold, skipInfoWarn);
+}
+
+int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec) {
+    SQResult ignore;
+    // Warn threshold doesn't matter if skipInfoWarn is set.
+    return SQuery(db, sql, ignore, 0, true, spec);
 }
 
 string SUNQUOTED_TIMESTAMP(uint64_t when) {
