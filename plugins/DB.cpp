@@ -82,7 +82,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
         }
     }
 
-        // The `.schema` command (and other dot commands) isn't part of sqlite itself, but a convenience function built into the sqlite3 CLI.
+    // The `.schema` command (and other dot commands) isn't part of sqlite itself, but a convenience function built into the sqlite3 CLI.
     // This re-writes this into the internal query that does the same thing, and sets the format options to match the CLI.
     vector<string> matches;
     bool isSchema = SREMatch("\\s*\\.schema\\s+(.*?)\\s*", query, false, false, &matches);
