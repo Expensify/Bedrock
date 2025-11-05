@@ -126,13 +126,10 @@ string SQResult::serialize(const string& format) const {
     else
         return serializeToText();
 }
-#include <iostream>
+
 bool SQResult::deserialize(const string& json) {
     // Reset ourselves to start
     clear();
-
-    cout << "Deserialize!" << endl;
-    cout << json << endl;
 
     // Is it an array (SQLite style) or object (old Bedrock style) response?
     size_t pos = json.find_first_of("[{");
@@ -190,7 +187,26 @@ bool SQResult::deserialize(const string& json) {
 
             // We need to preserve the *order* of the headers of the first row, which is not actually in the JSON spec but
             // is important here.
-            return false;
+            SParseJSONObject(array.front(), [&](const string& key){headers.push_back(key);});
+
+            // Now we need to parse each row.
+            for (auto& jsonRow : array) {
+                // Add a blank row to the bottom of the results
+                rows.resize(rows.size() + 1);
+
+                // Now we grab a reference to our new blank row.
+                SQResultRow& row = rows[rows.size() - 1];
+
+                // And get the data that will fit in this row.
+                STable rowTable = SParseJSONObject(jsonRow);
+
+                // And push it into the row in the order the keys exist in the headers.
+                for (auto& header : headers) {
+                    row.push_back(rowTable[header]);
+                }
+            }
+
+            return true;
         }
     } catch (const SException& e) {
         SDEBUG("Failed to deserialize JSON-encoded SQResult (" << e.what() << "): " << json);
