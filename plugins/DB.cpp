@@ -42,6 +42,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseComm
 
 ssize_t SQLiteFormatAppend(void* destString, const unsigned char* appendString, size_t length) {
 
+    string* output = static_cast<string*>(destString);
+    output->append(reinterpret_cast<const char*>(appendString), length);
     return 0;
 }
 
@@ -155,7 +157,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
 
     // Attempt the read-only query
     SQResult result;
-    if (!db.read(query, result)) {
+    if (!db.read(query, &spec)) {
         response["error"] = db.getLastError();
         STHROW("402 Bad query");
     }

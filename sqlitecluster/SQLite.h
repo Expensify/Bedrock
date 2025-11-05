@@ -80,7 +80,7 @@ class SQLite {
     string read(const string& query) const;
 
     // Performs a read-only query (eg, SELECT) that returns a formatted output string.
-    void read(const string& query, sqlite3_qrf_spec* spec) const;
+    bool read(const string& query, sqlite3_qrf_spec* spec) const;
 
     // Types of transactions that we can begin.
     enum class TRANSACTION_TYPE {
