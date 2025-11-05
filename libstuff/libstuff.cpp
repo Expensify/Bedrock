@@ -1660,7 +1660,7 @@ list<string> SParseJSONArray(const string& array, const string& nullValue) {
     const char* ptr = array.c_str();
     const char* end = ptr + array.size();
     const char* parseEnd = _SParseJSONArray(ptr, end, out, true, nullValue);
-    while(isspace(*parseEnd)) {
+    while(parseEnd && isspace(*parseEnd)) {
         // Skip trailing whitespace.
         parseEnd++;
     }
