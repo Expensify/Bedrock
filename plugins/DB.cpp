@@ -2,7 +2,7 @@
 #include "libstuff/libstuff.h"
 
 #include <string.h>
-
+#include "libstuff/SQResultFormatter.h"
 #include <BedrockServer.h>
 #include <libstuff/SQResult.h>
 
@@ -151,19 +151,28 @@ bool BedrockDBCommand::peek(SQLite& db) {
         return false;
     }
 
-    // We rollback here because if we are in a transaction and the querytakes long (which the queries in this command can)
+    // We rollback here because if we are in a transaction and the query takes long (which the queries in this command can)
     // it prevents sqlite from checkpointing and if we accumulate a lot of things to checkpoint, things become slow
     ((SQLite&) db).rollback();
 
     // Attempt the read-only query
-    SQResult result;
-    if (!db.read(query, &spec)) {
-        response["error"] = db.getLastError();
-        STHROW("402 Bad query");
-    }
+    if (SIEquals(request["Format"], "json")) {
+        SQResult result;
+        if (!db.read(query, result)) {
+            response["error"] = db.getLastError();
+            STHROW("402 Bad query");
+        }
 
-    // Worked! Set the output and return.
-    response.content = output;
+        response.content = SQResultFormatter::format(result, SQResultFormatter::FORMAT::JSON);
+    } else {
+        if (!db.read(query, &spec)) {
+            response["error"] = db.getLastError();
+            STHROW("402 Bad query");
+        }
+
+        // Worked! Set the output and return.
+        response.content = output;
+    }
 
     return true;
 }
