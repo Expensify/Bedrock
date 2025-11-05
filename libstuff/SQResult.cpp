@@ -126,7 +126,7 @@ string SQResult::serialize(const string& format) const {
     else
         return serializeToText();
 }
-#include <iostream>
+
 bool SQResult::deserialize(const string& json) {
     // Reset ourselves to start
     clear();
