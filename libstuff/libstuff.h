@@ -525,8 +525,8 @@ string SComposeJSONObject(const STable& nameValueMap, const bool forceString = f
 
 // The optional keyCallback, if provided, will be called with the name of each new key in the object found as it's parsed.
 // this is useful for determining the order of supplied keys.
-STable SParseJSONObject(const string& object, const function<void(const string&)>& keyCallback = [](const string&){});
-list<string> SParseJSONArray(const string& array);
+STable SParseJSONObject(const string& object, const string& nullValue = "null", const function<void(const string&)>& keyCallback = [](const string&){});
+list<string> SParseJSONArray(const string& array, const string& nullValue = "null");
 string SGetJSONArrayFront(const string& jsonArray);
 
 // --------------------------------------------------------------------------

@@ -126,7 +126,7 @@ string SQResult::serialize(const string& format) const {
     else
         return serializeToText();
 }
-
+#include <iostream>
 bool SQResult::deserialize(const string& json) {
     // Reset ourselves to start
     clear();
@@ -187,7 +187,7 @@ bool SQResult::deserialize(const string& json) {
 
             // We need to preserve the *order* of the headers of the first row, which is not actually in the JSON spec but
             // is important here.
-            SParseJSONObject(array.front(), [&](const string& key){headers.push_back(key);});
+            SParseJSONObject(array.front(), "", [&](const string& key){headers.push_back(key);});
 
             // Now we need to parse each row.
             for (auto& jsonRow : array) {
@@ -198,7 +198,9 @@ bool SQResult::deserialize(const string& json) {
                 SQResultRow& row = rows[rows.size() - 1];
 
                 // And get the data that will fit in this row.
-                STable rowTable = SParseJSONObject(jsonRow);
+                // We pass the empty string here for how we deserialize `null` from JSON becuase historically we have no way to
+                // differentiate these values in an SQResult.
+                STable rowTable = SParseJSONObject(jsonRow, "");
 
                 // And push it into the row in the order the keys exist in the headers.
                 for (auto& header : headers) {

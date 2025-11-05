@@ -1343,7 +1343,7 @@ string SDecodeURIComponent(const char* buffer, int length) {
 }
 
 // --------------------------------------------------------------------------
-extern const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue);
+const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue, const string& nullValue);
 
 string SToJSON(const int64_t value, const bool forceString) {
     return SToJSON(to_string(value), forceString);
@@ -1377,7 +1377,7 @@ string SToJSON(const string& value, const bool forceString) {
         string ignore;
         const char* ptr = value.c_str();
         const char* end = ptr + value.size();
-        const char* parseEnd = _SParseJSONValue(ptr, end, ignore, false);
+        const char* parseEnd = _SParseJSONValue(ptr, end, ignore, false, "null");
         if (parseEnd == end) // Parsed it all.
             return value;
     }
@@ -1459,7 +1459,7 @@ const char* _SParseJSONString(const char* ptr, const char* end, string& out, boo
 }
 
 // --------------------------------------------------------------------------
-const char* _SParseJSONArray(const char* ptr, const char* end, list<string>& out, bool populateOut) {
+const char* _SParseJSONArray(const char* ptr, const char* end, list<string>& out, bool populateOut, const string& nullValue) {
     SASSERT(ptr && end);
     SASSERT(*ptr);
     _JSONLOG();
@@ -1473,7 +1473,7 @@ const char* _SParseJSONArray(const char* ptr, const char* end, list<string>& out
         // Find the value
         _JSONWS();
         string value;
-        ptr = _SParseJSONValue(ptr, end, value, populateOut);
+        ptr = _SParseJSONValue(ptr, end, value, populateOut, nullValue);
         _JSONASSERTPTR(); // Make sure no parse error.
         if (populateOut)
             out.push_back(value);
@@ -1488,7 +1488,7 @@ const char* _SParseJSONArray(const char* ptr, const char* end, list<string>& out
 }
 
 // --------------------------------------------------------------------------
-const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, bool populateOut, const function<void(const string&)>& keyCallback = [](const string&){}) {
+const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, bool populateOut, const string& nullValue, const function<void(const string&)>& keyCallback = [](const string&){}) {
     SASSERT(ptr && end);
     SASSERT(*ptr);
     _JSONLOG();
@@ -1510,7 +1510,7 @@ const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, boo
         // Find the value
         _JSONWS();
         string value;
-        ptr = _SParseJSONValue(ptr, end, value, populateOut);
+        ptr = _SParseJSONValue(ptr, end, value, populateOut, nullValue);
         _JSONASSERTPTR(); // Make sure no parse error.
         if (populateOut) {
             // Got one more
@@ -1528,7 +1528,7 @@ const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, boo
 }
 
 // --------------------------------------------------------------------------
-const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue) {
+const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue, const string& nullValue) {
     _JSONLOG();
     // Classify based on the first character
     _JSONWS();
@@ -1544,7 +1544,7 @@ const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bo
         // Object -- just grab the string representation.
         STable ignore;
         const char* valueStart = ptr;
-        ptr = _SParseJSONObject(ptr, end, ignore, false);
+        ptr = _SParseJSONObject(ptr, end, ignore, false, nullValue);
         _JSONASSERTPTR(); // Make sure no parse error.
         if (populateValue) {
             value.resize(ptr - valueStart);
@@ -1557,7 +1557,7 @@ const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bo
         // Array -- just grab the string representation.
         list<string> ignore;
         const char* valueStart = ptr;
-        ptr = _SParseJSONArray(ptr, end, ignore, false);
+        ptr = _SParseJSONArray(ptr, end, ignore, false, nullValue);
         _JSONASSERTPTR(); // Make sure no parse error.
         if (populateValue) {
             value.resize(ptr - valueStart);
@@ -1610,8 +1610,9 @@ const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bo
             ptr += 5; // strlen(false)
         } else if (!strncmp(ptr, "null", 4)) {
             // Found null
-            if (populateValue)
-                value = "null";
+            if (populateValue) {
+                value = nullValue;
+            }
             ptr += 4; // strlen(null)
         }
         // else unsupported, ignore
@@ -1623,14 +1624,14 @@ const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bo
     return ptr;
 }
 
-STable SParseJSONObject(const string& object, const function<void(const string&)>& keyCallback) {
+STable SParseJSONObject(const string& object, const string& nullValue, const function<void(const string&)>& keyCallback) {
     // Assume it's an object
     STable out;
     if (object.size() < 2)
         return out;
     const char* ptr = object.c_str();
     const char* end = ptr + object.size();
-    const char* parseEnd = _SParseJSONObject(ptr, end, out, true, keyCallback);
+    const char* parseEnd = _SParseJSONObject(ptr, end, out, true, nullValue, keyCallback);
 
     // Trim trailing whitespace
     while (parseEnd && parseEnd < end && *parseEnd && isspace(*parseEnd))
@@ -1651,14 +1652,14 @@ STable SParseJSONObject(const string& object, const function<void(const string&)
 }
 
 // --------------------------------------------------------------------------
-list<string> SParseJSONArray(const string& array) {
+list<string> SParseJSONArray(const string& array, const string& nullValue) {
     // Assume it's an array
     list<string> out;
     if (array.size() < 2)
         return out;
     const char* ptr = array.c_str();
     const char* end = ptr + array.size();
-    const char* parseEnd = _SParseJSONArray(ptr, end, out, true);
+    const char* parseEnd = _SParseJSONArray(ptr, end, out, true, nullValue);
     while(isspace(*parseEnd)) {
         // Skip trailing whitespace.
         parseEnd++;
