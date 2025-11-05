@@ -121,7 +121,6 @@ By default, Bedrock optimizes the output for human consumption.  If you are a ro
     $ nc localhost 8888
     Query
     query: SELECT 1 AS foo, 2 AS bar;
-    format: json
 
     200 OK
     Content-Length: 40
