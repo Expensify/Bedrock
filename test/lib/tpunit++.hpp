@@ -332,6 +332,7 @@ namespace tpunit {
 
          bool _parallel = false;
 
+         static std::list<_TestFixture*>* tpunit_detail_fixture_list();
       private:
 
          static void tpunit_run_test_class(_TestFixture*);
@@ -343,9 +344,6 @@ namespace tpunit {
          static void tpunit_detail_do_tests(_TestFixture* f);
 
          static stats& tpunit_detail_stats();
-
-         static std::list<_TestFixture*>* tpunit_detail_fixture_list();
-
          /**
           * Takes the test buffer and outputs it to cout
           */
