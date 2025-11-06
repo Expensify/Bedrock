@@ -40,6 +40,41 @@ void SLogStackTrace(int level) {
     }
 }
 
+void SLogStackTraceJson(int level) {
+    // If the level isn't set in the log mask, nothing more to do
+    if (!(_g_SLogMask & (1 << level))) {
+        return;
+    }
+    // Output the symbols to the log
+    void* callstack[100];
+    int depth = backtrace(callstack, 100);
+    vector<string> stack = SGetCallstack(depth, callstack);
+    for (const auto& frame : stack) {
+        switch (level) {
+        case LOG_DEBUG:
+            SDEBUG(frame);
+            break;
+        case LOG_INFO:
+            SINFO(frame);
+            break;
+        case LOG_NOTICE:
+            SHMMM(frame);
+            break;
+        case LOG_WARNING:
+            SWARN(frame);
+            break;
+        case LOG_ALERT:
+            SALERT(frame);
+            break;
+        case LOG_ERR:
+            SERROR(frame);
+            break;
+        default:
+            break;
+        }
+    }
+}
+
 // If the param name is not in this whitelist, we will log <REDACTED> in addLogParams.
 static set<string> PARAMS_WHITELIST = {
     "command",
@@ -61,12 +96,13 @@ static set<string> PARAMS_WHITELIST = {
     "what",
 };
 
-string addLogParams(string&& message, const STable& params) {
+string addLogParams(string&& message, const STable& params, bool isJson) {
     if (params.empty()) {
         return message;
     }
 
     message += " ~~";
+    STable paramsToLog = params;
     for (const auto& [key, value] : params) {
         message += " ";
         string valueToLog = value;
@@ -76,7 +112,12 @@ string addLogParams(string&& message, const STable& params) {
             }
             valueToLog = "<REDACTED>";
         }
+        paramsToLog[key] = valueToLog;
         message += key + ": '" + valueToLog + "'";
+    }
+
+    if (isJson) {
+        return SComposeJSONObject(paramsToLog);
     }
 
     return message;

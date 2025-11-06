@@ -13,6 +13,8 @@
 #include <sys/ioctl.h>
 #include <cmath>
 #include <iostream>
+#include <chrono>
+#include <format>
 
 #include <thread>
 
@@ -102,6 +104,7 @@ mutex SLogSocketMutex[S_LOG_SOCKET_MAX];
 atomic<size_t> SLogSocketCurrentOffset(0);
 struct sockaddr_un SLogSocketAddr;
 atomic_flag SLogSocketsInitialized = ATOMIC_FLAG_INIT;
+mutex SLogJsonMutex;
 
 // Set to `syslog` or `SSyslogSocketDirect`.
 atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc = &syslog;
@@ -266,6 +269,49 @@ void SSyslogSocketDirect(int priority, const char *format, ...) {
         vsyslog(priority, format, argptr);
         va_end(argptr);
     }
+}
+
+void SLogJson(int priority, const string& prefix, const string& file, int line, const string& function, const string& name, const string& message, const STable& params) {
+    const auto now{std::chrono::system_clock::now()};
+    string timestamp = format("{0:%F}T{0:%T%Ez}", now);
+    STable log = SParseJSONObject(addLogParams("", params, true));
+
+    switch (priority) {
+        case LOG_DEBUG:
+            log["level"] = "dbug";
+            break;
+        case LOG_INFO:
+            log["level"] = "info";
+            break;
+        case LOG_WARNING:
+            log["level"] = "warn";
+            break;
+        case LOG_ERR:
+            log["level"] = "eror";
+            break;
+        case LOG_ALERT:
+            log["level"] = "alrt";
+            break;
+        case LOG_NOTICE:
+            log["level"] = "hmmm";
+            break;
+        default:
+            log["level"] = "unkn";
+            break;
+    }
+
+    log["prefix"] = prefix;
+    log["file"] = file;
+    log["line"] = line;
+    log["function"] = function;
+    log["thread"] = name;
+    log["timestamp"] = timestamp;
+    log["message"] = message;
+    log["process"] = SProcessName;
+    string json = SComposeJSONObject(log);
+    json += "\n";
+    lock_guard<mutex> lock(SLogJsonMutex);
+    SFileSave("/var/log/expensify.bedrock.json", json, true);
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -2292,9 +2338,9 @@ string SFileLoad(const string& path) {
 }
 
 // --------------------------------------------------------------------------
-bool SFileSave(const string& path, const string& buffer) {
+bool SFileSave(const string& path, const string& buffer, bool append) {
     // Try to open the file
-    FILE* fp = fopen(path.c_str(), "wb");
+    FILE* fp = fopen(path.c_str(), append ? "ab" : "wb");
     if (!fp)
         return false; // Couldn't open
 

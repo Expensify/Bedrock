@@ -243,10 +243,39 @@ void SWhitelistLogParams(const set<string>& params);
 // This is a drop-in replacement for syslog that directly logs to `/run/systemd/journal/syslog` bypassing journald.
 void SSyslogSocketDirect(int priority, const char* format, ...);
 
+// Wrapper that allows for logging to a json file instead of syslog.
+void SLogJson(int priority, const string& prefix, const string& file, int line, const string& function, const string& name, const string& message, const STable& params = STable{});
+
 // Atomic pointer to the syslog function that we'll actually use. Easy to change to `syslog` or `SSyslogSocketDirect`.
 extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
 
-string addLogParams(string&& message, const STable& params = {});
+string addLogParams(string&& message, const STable& params = {}, bool isJson = false);
+
+#define SLOGPREFIX ""
+
+#if defined(SLOG_JSON_ENABLED)
+#define SSYSLOG(_PRI_, _MSG_, ...)                                                                                     \
+    do {                                                                                                               \
+        if (_g_SLogMask & (1 << _PRI_)) {                                                                             \
+            ostringstream __out;                                                                                       \
+            __out << _MSG_;                                                                                            \
+            const string __msg = __out.str();                                                                          \
+            SLogJson(_PRI_, SThreadLogPrefix, basename((char*)__FILE__), __LINE__, __FUNCTION__, SThreadLogName, __msg, ##__VA_ARGS__);                                                                            \
+        }                                                                                                              \
+    } while (false)
+
+#define SDEBUG(_MSG_, ...) SSYSLOG(LOG_DEBUG, SLOGPREFIX << _MSG_, ##__VA_ARGS__)
+#define SINFO(_MSG_, ...) SSYSLOG(LOG_INFO, SLOGPREFIX << _MSG_, ##__VA_ARGS__)
+#define SHMMM(_MSG_, ...) SSYSLOG(LOG_NOTICE, SLOGPREFIX << _MSG_, ##__VA_ARGS__)
+#define SWARN(_MSG_, ...) SSYSLOG(LOG_WARNING, SLOGPREFIX << _MSG_, ##__VA_ARGS__)
+#define SALERT(_MSG_, ...) SSYSLOG(LOG_ALERT, SLOGPREFIX << _MSG_, ##__VA_ARGS__)
+#define SERROR(_MSG_, ...)                                                                                             \
+    do {                                                                                                               \
+        SSYSLOG(LOG_ERR, SLOGPREFIX << _MSG_, ##__VA_ARGS__);                                                                                                 \
+        SLogStackTrace();                                                                                              \
+        abort();                                                                                                       \
+    } while (false)
+#else
 
 // **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
 #define SWHEREAMI SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
@@ -263,7 +292,6 @@ string addLogParams(string&& message, const STable& params = {});
         }                                                                       \
     } while (false)
 
-#define SLOGPREFIX ""
 #define SDEBUG(_MSG_, ...) SSYSLOG(LOG_DEBUG, "[dbug] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
 #define SINFO(_MSG_, ...) SSYSLOG(LOG_INFO, "[info] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
 #define SHMMM(_MSG_, ...) SSYSLOG(LOG_NOTICE, "[hmmm] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
@@ -275,7 +303,7 @@ string addLogParams(string&& message, const STable& params = {});
         SLogStackTrace();                                   \
         abort();                                            \
     } while (false)
-
+#endif
 // --------------------------------------------------------------------------
 // Thread stuff
 // --------------------------------------------------------------------------
@@ -568,7 +596,7 @@ bool SCheckNetworkErrorType(const string& logPrefix, const string& peer, int err
 bool SFileExists(const string& path);
 bool SFileLoad(const string& path, string& buffer);
 string SFileLoad(const string& path);
-bool SFileSave(const string& path, const string& buffer);
+bool SFileSave(const string& path, const string& buffer, bool append = false);
 bool SFileDelete(const string& path);
 bool SFileCopy(const string& fromPath, const string& toPath);
 uint64_t SFileSize(const string& path);
