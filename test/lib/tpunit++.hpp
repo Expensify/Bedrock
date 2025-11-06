@@ -310,6 +310,7 @@ namespace tpunit {
             return _name;
          }
 
+         static std::list<_TestFixture*>* tpunit_detail_fixture_list();
       protected:
 
          /**
@@ -332,7 +333,6 @@ namespace tpunit {
 
          bool _parallel = false;
 
-         static std::list<_TestFixture*>* tpunit_detail_fixture_list();
       private:
 
          static void tpunit_run_test_class(_TestFixture*);
