@@ -18,6 +18,8 @@ PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
 bool BedrockTester::ENABLE_HCTREE{false};
+bool BedrockTester::VERBOSE_LOGGING{false};
+bool BedrockTester::QUIET_LOGGING{false};
 
 string BedrockTester::getTempFileName(const string& prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
@@ -91,6 +93,12 @@ BedrockTester::BedrockTester(const map<string, string>& args,
 
     if (ENABLE_HCTREE) {
         defaultArgs["-newDBsUseHctree"] = "";
+    }
+    if (VERBOSE_LOGGING) {
+        defaultArgs["-v"] = "";
+    }
+    if (QUIET_LOGGING) {
+        defaultArgs["-q"] = "";
     }
 
     // Set defaults.
