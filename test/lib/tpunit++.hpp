@@ -310,6 +310,7 @@ namespace tpunit {
             return _name;
          }
 
+         static std::list<_TestFixture*>* tpunit_detail_fixture_list();
       protected:
 
          /**
@@ -343,9 +344,6 @@ namespace tpunit {
          static void tpunit_detail_do_tests(_TestFixture* f);
 
          static stats& tpunit_detail_stats();
-
-         static std::list<_TestFixture*>* tpunit_detail_fixture_list();
-
          /**
           * Takes the test buffer and outputs it to cout
           */
