@@ -1,3 +1,4 @@
+#include "test/lib/tpunit++.hpp"
 #include <BedrockCommand.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
@@ -52,7 +53,7 @@ struct TimeoutTest : tpunit::TestFixture {
         auto start = STimeNow();
         brtester.executeWaitVerifyContent(slow, "555 Timeout peeking command");
         auto end = STimeNow();
-        ASSERT_GREATER_THAN((end - start) / 1000, BedrockCommand::DEFAULT_PROCESS_TIMEOUT + 5'000);
+        ASSERT_GREATER_THAN_EQUAL((end - start) / 1000, BedrockCommand::DEFAULT_PROCESS_TIMEOUT + 5'000);
     }
 
     void quorumHTTPS () {

@@ -92,13 +92,22 @@ int main(int argc, char* argv[]) {
         cout << "HCTree enabled" << endl;
     }
 
+    SLogLevel(LOG_INFO);
+    if (args.isSet("-v")) {
+        BedrockTester::VERBOSE_LOGGING = true;
+        SLogLevel(LOG_DEBUG);
+    }
+    if (args.isSet("-q")) {
+        BedrockTester::QUIET_LOGGING = true;
+        SLogLevel(LOG_WARNING);
+    }
+
     int retval = 0;
     for (int i = 0; i < repeatCount; i++) {
         try {
             retval = tpunit::Tests::run(include, exclude, before, after, threads, [](){
                 SLogSetThreadName("");
                 SLogSetThreadPrefix("");
-                SLogLevel(LOG_DEBUG);
             });
         } catch (...) {
             cout << "Unhandled exception running tests!" << endl;

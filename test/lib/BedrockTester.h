@@ -9,6 +9,8 @@ class SQLite;
 class BedrockTester {
   public:
     static bool ENABLE_HCTREE;
+    static bool VERBOSE_LOGGING;
+    static bool QUIET_LOGGING;
 
     // This is an allocator for TCP ports, new servers can get new port numbers from this object and return them when
     // they're done.
