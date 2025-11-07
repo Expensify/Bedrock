@@ -1343,7 +1343,7 @@ string SDecodeURIComponent(const char* buffer, int length) {
 }
 
 // --------------------------------------------------------------------------
-extern const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue);
+const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue, const string& nullValue);
 
 string SToJSON(const int64_t value, const bool forceString) {
     return SToJSON(to_string(value), forceString);
@@ -1377,7 +1377,7 @@ string SToJSON(const string& value, const bool forceString) {
         string ignore;
         const char* ptr = value.c_str();
         const char* end = ptr + value.size();
-        const char* parseEnd = _SParseJSONValue(ptr, end, ignore, false);
+        const char* parseEnd = _SParseJSONValue(ptr, end, ignore, false, "null");
         if (parseEnd == end) // Parsed it all.
             return value;
     }
@@ -1459,7 +1459,7 @@ const char* _SParseJSONString(const char* ptr, const char* end, string& out, boo
 }
 
 // --------------------------------------------------------------------------
-const char* _SParseJSONArray(const char* ptr, const char* end, list<string>& out, bool populateOut) {
+const char* _SParseJSONArray(const char* ptr, const char* end, list<string>& out, bool populateOut, const string& nullValue) {
     SASSERT(ptr && end);
     SASSERT(*ptr);
     _JSONLOG();
@@ -1473,7 +1473,7 @@ const char* _SParseJSONArray(const char* ptr, const char* end, list<string>& out
         // Find the value
         _JSONWS();
         string value;
-        ptr = _SParseJSONValue(ptr, end, value, populateOut);
+        ptr = _SParseJSONValue(ptr, end, value, populateOut, nullValue);
         _JSONASSERTPTR(); // Make sure no parse error.
         if (populateOut)
             out.push_back(value);
@@ -1488,7 +1488,7 @@ const char* _SParseJSONArray(const char* ptr, const char* end, list<string>& out
 }
 
 // --------------------------------------------------------------------------
-const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, bool populateOut) {
+const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, bool populateOut, const string& nullValue, const function<void(const string&)>& keyCallback = [](const string&){}) {
     SASSERT(ptr && end);
     SASSERT(*ptr);
     _JSONLOG();
@@ -1510,11 +1510,12 @@ const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, boo
         // Find the value
         _JSONWS();
         string value;
-        ptr = _SParseJSONValue(ptr, end, value, populateOut);
+        ptr = _SParseJSONValue(ptr, end, value, populateOut, nullValue);
         _JSONASSERTPTR(); // Make sure no parse error.
         if (populateOut) {
             // Got one more
             out[name] = value;
+            keyCallback(name);
         }
         _JSONLOG();
 
@@ -1527,7 +1528,7 @@ const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, boo
 }
 
 // --------------------------------------------------------------------------
-const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue) {
+const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bool populateValue, const string& nullValue) {
     _JSONLOG();
     // Classify based on the first character
     _JSONWS();
@@ -1543,7 +1544,7 @@ const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bo
         // Object -- just grab the string representation.
         STable ignore;
         const char* valueStart = ptr;
-        ptr = _SParseJSONObject(ptr, end, ignore, false);
+        ptr = _SParseJSONObject(ptr, end, ignore, false, nullValue);
         _JSONASSERTPTR(); // Make sure no parse error.
         if (populateValue) {
             value.resize(ptr - valueStart);
@@ -1556,7 +1557,7 @@ const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bo
         // Array -- just grab the string representation.
         list<string> ignore;
         const char* valueStart = ptr;
-        ptr = _SParseJSONArray(ptr, end, ignore, false);
+        ptr = _SParseJSONArray(ptr, end, ignore, false, nullValue);
         _JSONASSERTPTR(); // Make sure no parse error.
         if (populateValue) {
             value.resize(ptr - valueStart);
@@ -1609,8 +1610,9 @@ const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bo
             ptr += 5; // strlen(false)
         } else if (!strncmp(ptr, "null", 4)) {
             // Found null
-            if (populateValue)
-                value = "null";
+            if (populateValue) {
+                value = nullValue;
+            }
             ptr += 4; // strlen(null)
         }
         // else unsupported, ignore
@@ -1622,14 +1624,14 @@ const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bo
     return ptr;
 }
 
-STable SParseJSONObject(const string& object) {
+STable SParseJSONObject(const string& object, const string& nullValue, const function<void(const string&)>& keyCallback) {
     // Assume it's an object
     STable out;
     if (object.size() < 2)
         return out;
     const char* ptr = object.c_str();
     const char* end = ptr + object.size();
-    const char* parseEnd = _SParseJSONObject(ptr, end, out, true);
+    const char* parseEnd = _SParseJSONObject(ptr, end, out, true, nullValue, keyCallback);
 
     // Trim trailing whitespace
     while (parseEnd && parseEnd < end && *parseEnd && isspace(*parseEnd))
@@ -1650,16 +1652,22 @@ STable SParseJSONObject(const string& object) {
 }
 
 // --------------------------------------------------------------------------
-list<string> SParseJSONArray(const string& array) {
+list<string> SParseJSONArray(const string& array, const string& nullValue) {
     // Assume it's an array
     list<string> out;
     if (array.size() < 2)
         return out;
     const char* ptr = array.c_str();
     const char* end = ptr + array.size();
-    const char* parseEnd = _SParseJSONArray(ptr, end, out, true);
-    if (parseEnd != end) // Did not parse it all.
+    const char* parseEnd = _SParseJSONArray(ptr, end, out, true, nullValue);
+    while(parseEnd && isspace(*parseEnd)) {
+        // Skip trailing whitespace.
+        parseEnd++;
+    }
+    if (parseEnd != end) {
+        // Did not parse it all.
         return list<string>();
+    }
     return out;
 }
 
@@ -2564,7 +2572,7 @@ void SQueryLogClose() {
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn) {
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec) {
 #define MAX_TRIES 3
     // Execute the query and get the results
     uint64_t startTime = STimeNow();
@@ -2620,6 +2628,18 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
                 error = SQLITE_OK;
                 break;
             }
+
+            // This block will handle running formatted queries. If it executes, nothing else is currently checked, we're just done.
+            if (spec) {
+                char* errorMsg = nullptr;
+                error = sqlite3_format_query_result(preparedStatement, spec, &errorMsg);
+                if (error) {
+                    SWARN("Error running formatted query: " << errorMsg);
+                    sqlite3_free(errorMsg);
+                }
+                return error;
+            }
+
             int numColumns = sqlite3_column_count(preparedStatement);
             result.headers.resize(numColumns);
 
@@ -2748,9 +2768,9 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
         // This prevents creating bugbot issues for the allowed cases. We still log as INFO though so we can diagnose the query with the problem.
         // We also don't warn for `interrupt` because it generally means a timeout which is handled separately.
         if (error == SQLITE_CONSTRAINT || error == SQLITE_INTERRUPT) {
-            SINFO("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
+            SINFO("query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         } else {
-            SWARN("'" << e << "', query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
+            SWARN("query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         }
     }
 
@@ -2766,11 +2786,11 @@ int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int6
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
     // First, see if it's there
     SQResult result;
-    SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
+    SASSERT(!SQuery(db, "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
     if (result.empty()) {
         // Table doesn't already exist, create it
         SINFO("Creating '" << tableName << "'");
-        SASSERT(!SQuery(db, "SQVerifyTable", sql));
+        SASSERT(!SQuery(db, sql));
         return true; // Created new table
     } else {
         // Table exists, verify it's correct
@@ -2782,7 +2802,7 @@ bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql) {
 
 bool SQVerifyTableExists(sqlite3* db, const string& tableName) {
     SQResult result;
-    SASSERT(!SQuery(db, "SQVerifyTable", "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
+    SASSERT(!SQuery(db, "SELECT * FROM sqlite_master WHERE tbl_name=" + SQ(tableName), result));
     return !result.empty();
 }
 
@@ -3190,9 +3210,24 @@ string SQ(double val) {
     return SToStr(val);
 }
 
-int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold, bool skipInfoWarn) {
+int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold, bool skipInfoWarn) {
     SQResult ignore;
-    return SQuery(db, e, sql, ignore, warnThreshold, skipInfoWarn);
+    return SQuery(db, sql, ignore, warnThreshold, skipInfoWarn);
+}
+
+int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec) {
+    SQResult ignore;
+    // Warn threshold doesn't matter if skipInfoWarn is set.
+    return SQuery(db, sql, ignore, 0, true, spec);
+}
+
+int SQuery(sqlite3* db, const char* ignore, const string& sql, int64_t warnThreshold, bool skipInfoWarn) {
+    SQResult ignoreResult;
+    return SQuery(db, sql, ignoreResult, warnThreshold, skipInfoWarn);
+}
+
+int SQuery(sqlite3* db, const char* ignore, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn) {
+    return SQuery(db, sql, result, warnThreshold, skipInfoWarn);
 }
 
 string SUNQUOTED_TIMESTAMP(uint64_t when) {

@@ -26,7 +26,7 @@ namespace MySQLUtils {
     string extractTableNameFromColumnsQuery(const string& query) {
         string tableName;
         string upperQuery = SToUpper(query);
-        
+
         // Find "TABLE_NAME = '" pattern
         size_t pos = upperQuery.find("TABLE_NAME");
         if (pos != string::npos) {
@@ -67,7 +67,7 @@ namespace MySQLUtils {
     string extractTableNameFromShowKeysQuery(const string& query) {
         string upperQuery = SToUpper(query);
         string tableName;
-        
+
         // Look for patterns like "FROM `tablename`" or "FROM tablename"
         size_t fromPos = upperQuery.find("FROM");
         if (fromPos != string::npos) {
@@ -83,7 +83,7 @@ namespace MySQLUtils {
                     tableEnd = query.find_first_of(" \t;", tableStart);
                     if (tableEnd == string::npos) tableEnd = query.length();
                 }
-                
+
                 if (tableEnd != string::npos && tableEnd > tableStart) {
                     tableName = query.substr(tableStart, tableEnd - tableStart);
                 }
@@ -94,7 +94,7 @@ namespace MySQLUtils {
 
     bool isForeignKeyConstraintQuery(const string& query) {
         string upperQuery = SToUpper(query);
-        return SContains(upperQuery, "INFORMATION_SCHEMA.KEY_COLUMN_USAGE") && 
+        return SContains(upperQuery, "INFORMATION_SCHEMA.KEY_COLUMN_USAGE") &&
                SContains(upperQuery, "INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS");
     }
 
@@ -428,7 +428,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
 
                 // Transform this into an internal request
                 request.methodLine = "Query";
-                request["format"] = "json";
+                request["ReadDBFlags"] = "-json";
                 request["sequenceID"] = SToStr(packet.sequenceID);
                 request["query"] =
                     "SELECT "
@@ -451,7 +451,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
 
                 // Transform this into an internal request
                 request.methodLine = "Query";
-                request["format"] = "json";
+                request["ReadDBFlags"] = "-json";
                 request["sequenceID"] = SToStr(packet.sequenceID);
                 request["query"] =
                     "SELECT "
@@ -465,12 +465,12 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
             } else if (MySQLUtils::isInformationSchemaTablesQuery(query)) {
                 // Handle information_schema.tables queries for table listing
                 SINFO("Processing information_schema.tables query for table listing");
-                
+
                 // Transform this into an internal request to get table names from sqlite_master
                 request.methodLine = "Query";
-                request["format"] = "json";
+                request["ReadDBFlags"] = "-json";
                 request["sequenceID"] = SToStr(packet.sequenceID);
-                request["query"] = 
+                request["query"] =
                     "SELECT name as name "
                     "FROM sqlite_master "
                     "WHERE type = 'table' "
@@ -478,12 +478,12 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
             } else if (MySQLUtils::isInformationSchemaViewsQuery(query)) {
                 // Handle information_schema.views queries for view listing
                 SINFO("Processing information_schema.views query for view listing");
-                
+
                 // Transform this into an internal request to get view names from sqlite_master
                 request.methodLine = "Query";
-                request["format"] = "json";
+                request["ReadDBFlags"] = "-json";
                 request["sequenceID"] = SToStr(packet.sequenceID);
-                request["query"] = 
+                request["query"] =
                     "SELECT name as name "
                     "FROM sqlite_master "
                     "WHERE type = 'view' "
@@ -491,18 +491,18 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
             } else if (MySQLUtils::isInformationSchemaColumnsQuery(query)) {
                 // Handle information_schema.columns queries for column listing
                 SINFO("Processing information_schema.columns query for column listing");
-                
+
                 // Extract table name from the query
                 string tableName = MySQLUtils::extractTableNameFromColumnsQuery(query);
-                
+
                 if (!tableName.empty()) {
                     SDEBUG("Extracted table name: '" << tableName << "'");
-                    
+
                     // Transform this into an internal request to get column info using PRAGMA table_info
                     request.methodLine = "Query";
-                    request["format"] = "json";
+                    request["ReadDBFlags"] = "-json";
                     request["sequenceID"] = SToStr(packet.sequenceID);
-                    request["query"] = 
+                    request["query"] =
                         "SELECT "
                             + SQ(tableName) + " as table_name, "
                             "name as column_name, "
@@ -542,13 +542,13 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 SQResultRow row;
                 row.push_back(BedrockPlugin_MySQL::mysqlVersion);
                 vector<SQResultRow> rows = {row};
-                
+
                 // Extract the alias if present, otherwise use default column name
                 string columnName = "version()";
                 if (matches.size() > 1) {
                     columnName = SToLower(matches[1]); // Use the alias if provided
                 }
-                
+
                 vector<string> headers = {columnName};
                 SQResult result(move(rows), move(headers));
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
@@ -558,31 +558,31 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                 SQResultRow row;
                 row.push_back("1"); // Return a simple connection ID
                 vector<SQResultRow> rows = {row};
-                
+
                 // Extract the alias if present, otherwise use default column name
                 string columnName = "connection_id()";
                 if (matches.size() > 1) {
                     columnName = SToLower(matches[1]); // Use the alias if provided
                 }
-                
+
                 vector<string> headers = {columnName};
                 SQResult result(move(rows), move(headers));
                 s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
             } else if (MySQLUtils::isShowKeysQuery(query)) {
                 // Handle SHOW KEYS FROM table queries
                 SINFO("Processing SHOW KEYS query for table indexes");
-                
+
                 // Extract table name from SHOW KEYS FROM query
                 string tableName = MySQLUtils::extractTableNameFromShowKeysQuery(query);
-                
+
                 if (!tableName.empty()) {
                     SINFO("Extracted table name for SHOW KEYS: '" << tableName << "'");
-                    
+
                     // Transform this into an internal request to get primary key info
                     request.methodLine = "Query";
-                    request["format"] = "json";
+                    request["ReadDBFlags"] = "-json";
                     request["sequenceID"] = SToStr(packet.sequenceID);
-                    request["query"] = 
+                    request["query"] =
                         "SELECT "
                             + SQ(tableName) + " as Table_name, "
                             "0 as Non_unique, "
@@ -609,18 +609,18 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
             } else if (MySQLUtils::isForeignKeyConstraintQuery(query)) {
                 // Handle foreign key constraint queries
                 SINFO("Processing information_schema foreign key constraints query");
-                
+
                 // Extract table name from the query
                 string tableName = MySQLUtils::extractTableNameFromForeignKeyQuery(query);
-                
+
                 if (!tableName.empty()) {
                     SINFO("Extracted table name for foreign key query: '" << tableName << "'");
-                    
+
                     // Transform this into an internal request to get foreign key info using PRAGMA foreign_key_list
                     request.methodLine = "Query";
-                    request["format"] = "json";
+                    request["ReadDBFlags"] = "-json";
                     request["sequenceID"] = SToStr(packet.sequenceID);
-                    request["query"] = 
+                    request["query"] =
                         "SELECT "
                             "'fk_' || \"table\" || '_' || \"from\" as constraint_name, "
                             "\"from\" as column_name, "
@@ -643,7 +643,7 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
             } else {
                 // Transform this into an internal request
                 request.methodLine = "Query";
-                request["format"] = "json";
+                request["ReadDBFlags"] = "-json";
                 request["sequenceID"] = SToStr(packet.sequenceID);
                 request["query"] = query;
             }
