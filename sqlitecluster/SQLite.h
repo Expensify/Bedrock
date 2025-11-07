@@ -79,7 +79,7 @@ class SQLite {
     // Performs a read-only query (eg, SELECT) that returns a single value.
     string read(const string& query) const;
 
-    // Performs a read-only query (eg, SELECT) that returns a formatted output string.
+    // Performs a read-only query (eg, SELECT) that uses a query result formatter to format the response.
     bool read(const string& query, sqlite3_qrf_spec* spec) const;
 
     // Types of transactions that we can begin.

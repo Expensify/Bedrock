@@ -40,8 +40,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseComm
     return nullptr;
 }
 
-ssize_t SQLiteFormatAppend(void* destString, const unsigned char* appendString, size_t length) {
-
+ssize_t BedrockDBCommand::SQLiteFormatAppend(void* destString, const unsigned char* appendString, size_t length) {
     string* output = static_cast<string*>(destString);
     output->append(reinterpret_cast<const char*>(appendString), length);
     return 0;
@@ -60,25 +59,25 @@ bool BedrockDBCommand::peek(SQLite& db) {
 
     string output;
     sqlite3_qrf_spec spec;
-    spec.iVersion = 1;     /* Version number of this structure */
+    spec.iVersion = 1;                 /* Version number of this structure */
     spec.eFormat = QRF_MODE_List;      /* Output format */
-    spec.bShowCNames = 1;  /* True to show column names */
-    spec.eEscape = 0;      /* How to deal with control characters */
-    spec.eQuote = 0;       /* Quoting style for text */
-    spec.eBlob = 0;        /* Quoting style for BLOBs */
-    spec.bWordWrap = 1;    /* Try to wrap on word boundaries */
-    spec.mxWidth = 0;      /* Maximum width of any column */
-    spec.nWidth = 0;       /* Number of column width parameters */
-    spec.aWidth = 0;       /* Column widths */
-    spec.zColumnSep = 0;   /* Alternative column separator */
-    spec.zRowSep = 0;      /* Alternative row separator */
-    spec.zTableName = 0;   /* Output table name */
-    spec.zNull = 0;        /* Rendering of NULL */
-    spec.xRender = nullptr;    /* Render a value */
+    spec.bShowCNames = 1;              /* True to show column names */
+    spec.eEscape = 0;                  /* How to deal with control characters */
+    spec.eQuote = 0;                   /* Quoting style for text */
+    spec.eBlob = 0;                    /* Quoting style for BLOBs */
+    spec.bWordWrap = 1;                /* Try to wrap on word boundaries */
+    spec.mxWidth = 0;                  /* Maximum width of any column */
+    spec.nWidth = 0;                   /* Number of column width parameters */
+    spec.aWidth = 0;                   /* Column widths */
+    spec.zColumnSep = 0;               /* Alternative column separator */
+    spec.zRowSep = 0;                  /* Alternative row separator */
+    spec.zTableName = 0;               /* Output table name */
+    spec.zNull = 0;                    /* Rendering of NULL */
+    spec.xRender = nullptr;            /* Render a value */
     spec.xWrite = &SQLiteFormatAppend; /* Write callback */
-    spec.pRenderArg = nullptr;   /* First argument to the xRender callback */
-    spec.pWriteArg = &output;    /* First argument to the xWrite callback */
-    spec.pzOutput = nullptr;     /* Storage location for output string */
+    spec.pRenderArg = nullptr;         /* First argument to the xRender callback */
+    spec.pWriteArg = &output;          /* First argument to the xWrite callback */
+    spec.pzOutput = nullptr;           /* Storage location for output string */
 
     // Set the format. Allow the legacy behavior for `format: json` if supplied.
     if (SIEquals(request["Format"], "json")) {

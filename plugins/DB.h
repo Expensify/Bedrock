@@ -18,4 +18,7 @@ class BedrockDBCommand : public BedrockCommand {
 
   private:
     string query;
+
+    // Callback for SQLite output formatter.
+    static ssize_t SQLiteFormatAppend(void* destString, const unsigned char* appendString, size_t length);
 };
