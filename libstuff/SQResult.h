@@ -58,6 +58,7 @@ class SQResult {
     SQResult& operator=(const SQResult& other);
 
     // Serializers
+    // TODO: Remove when not used in Auth, deprecated.
     string serializeToJSON() const;
     string serializeToText() const;
     string serialize(const string& format) const;

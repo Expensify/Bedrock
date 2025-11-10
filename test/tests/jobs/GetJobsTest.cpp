@@ -20,7 +20,7 @@ SQResult getAllJobData(BedrockTester& tester) {
     request.methodLine = "Query";
     request["query"] = "SELECT jobID, state, lastRun, nextRun FROM jobs;";
     request["nowhere"] = "true";
-    request["format"] = "json";
+    request["ReadDBFlags"] = "-json";
     auto jobJSON = tester.executeWaitMultipleData({request});
     SQResult jobData;
     jobData.deserialize(jobJSON[0].content);

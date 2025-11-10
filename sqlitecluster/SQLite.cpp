@@ -67,18 +67,18 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
 
         // Look up the existing wal setting for this DB.
         SQResult result;
-        SQuery(db, "", "PRAGMA journal_mode;", result);
+        SQuery(db, "PRAGMA journal_mode;", result);
         bool isDBCurrentlyUsingWAL2 = result.size() && result[0][0] == "wal2";
 
         // If the intended wal setting doesn't match the existing wal setting, change it.
         if (!hctree && !isDBCurrentlyUsingWAL2) {
-            SASSERT(!SQuery(db, "", "PRAGMA journal_mode = delete;", result));
-            SASSERT(!SQuery(db, "", "PRAGMA journal_mode = WAL2;", result));
+            SASSERT(!SQuery(db, "PRAGMA journal_mode = delete;", result));
+            SASSERT(!SQuery(db, "PRAGMA journal_mode = WAL2;", result));
         }
 
         // Read the highest commit count from the database, and store it in commitCount.
         string query = "SELECT MAX(maxIDs) FROM (" + _getJournalQuery(journalNames, {"SELECT MAX(id) as maxIDs FROM"}, true) + ")";
-        SASSERT(!SQuery(db, "getting commit count", query, result));
+        SASSERT(!SQuery(db, query, result));
         uint64_t commitCount = result.empty() ? 0 : SToUInt64(result[0][0]);
         sharedData->commitCount = commitCount;
 
@@ -153,7 +153,7 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool h
 
     // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
     // any tables to be effective.
-    SASSERT(!SQuery(db, "new file format for DESC indexes", "PRAGMA legacy_file_format = OFF"));
+    SASSERT(!SQuery(db, "PRAGMA legacy_file_format = OFF"));
 
     return db;
 }
@@ -206,11 +206,11 @@ void SQLite::commonConstructorInitialization(bool hctree) {
 
     // WAL is what allows simultaneous read/writing.
     if (!hctree) {
-        SASSERT(!SQuery(_db, "enabling write ahead logging (wal2)", "PRAGMA journal_mode = wal2;"));
+        SASSERT(!SQuery(_db, "PRAGMA journal_mode = wal2;"));
     }
 
     if (_mmapSizeGB) {
-        SASSERT(!SQuery(_db, "enabling memory-mapped I/O", "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
+        SASSERT(!SQuery(_db, "PRAGMA mmap_size=" + to_string(_mmapSizeGB * 1024 * 1024 * 1024) + ";"));
     }
 
     // Enable tracing for performance analysis.
@@ -219,7 +219,7 @@ void SQLite::commonConstructorInitialization(bool hctree) {
     // Update the cache. -size means KB; +size means pages
     if (_cacheSize) {
         SINFO("Setting cache_size to " << _cacheSize << "KB");
-        SQuery(_db, "increasing cache size", "PRAGMA cache_size = -" + SQ(_cacheSize) + ";");
+        SQuery(_db, "PRAGMA cache_size = -" + SQ(_cacheSize) + ";");
     }
 
     // Register the authorizer callback which allows callers to whitelist particular data in the DB.
@@ -442,7 +442,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
 
     SINFO("Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
     uint64_t before = STimeNow();
-    _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
+    _insideTransaction = !SQuery(_db, "BEGIN CONCURRENT");
 
     // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
     // where we're actually able to start such that we know we shouldn't get a conflict if this commits successfully on
@@ -546,6 +546,15 @@ string SQLite::read(const string& query) const {
     return result[0][0];
 }
 
+bool SQLite::read(const string& query, sqlite3_qrf_spec* spec) const {
+    // Execute the read-only query. Skips caching.
+    uint64_t before = STimeNow();
+    bool queryResult = !SQuery(_db, query, spec);
+    _checkInterruptErrors("SQLite::read"s);
+    _readElapsed += STimeNow() - before;
+    return queryResult;
+}
+
 bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) const {
     uint64_t before = STimeNow();
     bool queryResult = false;
@@ -557,7 +566,7 @@ bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) cons
         queryResult = true;
     } else {
         _isDeterministicQuery = true;
-        queryResult = !SQuery(_db, "read only query", query, result, 2000 * STIME_US_PER_MS, skipInfoWarn);
+        queryResult = !SQuery(_db, query, result, 2000 * STIME_US_PER_MS, skipInfoWarn);
         if (_isDeterministicQuery && queryResult && insideTransaction()) {
             _queryCache.emplace(make_pair(query, result));
         }
@@ -647,7 +656,7 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
 
     // First, check our current state
     SQResult results;
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+    SASSERT(!SQuery(_db, "PRAGMA schema_version;", results));
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaBefore = SToUInt64(results[0][0]);
     uint64_t changesBefore = sqlite3_total_changes(_db);
@@ -660,17 +669,17 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
     {
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         if (_enableRewrite) {
-            resultCode = SQuery(_db, "read/write transaction", query, result, 2'000'000, true);
+            resultCode = SQuery(_db, query, result, 2'000'000, true);
             if (resultCode == SQLITE_AUTH) {
                 // Run re-written query.
                 _currentlyRunningRewritten = true;
                 SASSERT(SEndsWith(_rewrittenQuery, ";"));
-                resultCode = SQuery(_db, "read/write transaction", _rewrittenQuery);
+                resultCode = SQuery(_db, _rewrittenQuery);
                 usedRewrittenQuery = true;
                 _currentlyRunningRewritten = false;
             }
         } else {
-            resultCode = SQuery(_db, "read/write transaction", query, result);
+            resultCode = SQuery(_db, query, result);
         }
     }
 
@@ -688,7 +697,7 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
     }
 
     // See if the query changed anything
-    SASSERT(!SQuery(_db, "looking up schema version", "PRAGMA schema_version;", results));
+    SASSERT(!SQuery(_db, "PRAGMA schema_version;", results));
     SASSERT(!results.empty() && !results[0].empty());
     uint64_t schemaAfter = SToUInt64(results[0][0]);
     uint64_t changesAfter = sqlite3_total_changes(_db);
@@ -711,7 +720,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
 
     // Look up the oldest commit in our chosen journal, and compute the oldest commit we intend to keep.
     SQResult journalLookupResult;
-    SASSERT(!SQuery(_db, "getting commit min", "SELECT MIN(id) FROM " + _journalName, journalLookupResult));
+    SASSERT(!SQuery(_db, "SELECT MIN(id) FROM " + _journalName, journalLookupResult));
     uint64_t minJournalEntry = journalLookupResult.size() ? SToUInt64(journalLookupResult[0][0]) : 0;
 
     // Note that this can change before we hold the lock on _sharedData.commitLock, but it doesn't matter yet, as we're only
@@ -729,7 +738,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     if (minJournalEntry < oldestCommitToKeep) {
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         string query = "DELETE FROM " + _journalName + " WHERE id < " + SQ(oldestCommitToKeep) + " LIMIT " + SQ(deleteLimit);
-        SASSERT(!SQuery(_db, "Deleting oldest journal rows", query));
+        SASSERT(!SQuery(_db, query));
     }
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
@@ -777,7 +786,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
         SINFO("Will commmit blank query");
     }
 
-    int result = SQuery(_db, "updating journal", query);
+    int result = SQuery(_db, query);
     _prepareElapsed += STimeNow() - before;
     if (result) {
         // Couldn't insert into the journal; roll back the original commit
@@ -814,7 +823,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
     _conflictLocation = "";
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
-    result = SQuery(_db, "committing db transaction", "COMMIT");
+    result = SQuery(_db, "COMMIT");
 
     // In HCTree mode, we log extra info for slow commits.
     if (_hctree) {
@@ -822,7 +831,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         // log for any commit over 1 second.
         if ((afterCommit - beforeCommit) > 1'000'000) {
             SQResult slowCommitResult;
-            SQuery(_db, "Slow commit logging", "SELECT * FROM hctvalid", slowCommitResult);
+            SQuery(_db, "SELECT * FROM hctvalid", slowCommitResult);
             SINFO("SLOW HCTREE COMMIT " << (slowCommitResult.size() + 1) << " lines to follow");
             string headers = SComposeList(slowCommitResult.headers);
             SINFO("SLOW HCTREE COMMIT HEADERS: " << headers);
@@ -934,7 +943,7 @@ void SQLite::rollback() {
                 SINFO("Rolling back transaction: " << _uncommittedQuery.substr(0, 100));
             }
             uint64_t before = STimeNow();
-            SASSERT(!SQuery(_db, "rolling back db transaction", "ROLLBACK"));
+            SASSERT(!SQuery(_db, "ROLLBACK"));
             _rollbackElapsed += STimeNow() - before;
         }
 
@@ -985,7 +994,7 @@ bool SQLite::getCommit(sqlite3* db, const vector<string>& journalNames, uint64_t
     // Look up the query and hash for the given commit
     string internalQuery = _getJournalQuery(journalNames, {"SELECT query, hash FROM", "WHERE id = " + SQ(id)});
     SQResult result;
-    SASSERT(!SQuery(db, "getting commit", internalQuery, result));
+    SASSERT(!SQuery(db, internalQuery, result));
     if (!result.empty()) {
         query = result[0][0];
         hash = result[0][1];
@@ -1016,7 +1025,7 @@ int SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, u
     if (timeoutLimitUS) {
         setTimeout(timeoutLimitUS);
     }
-    int queryResult = SQuery(_db, "getting commits", query, result);
+    int queryResult = SQuery(_db, query, result);
     clearTimeout();
     return queryResult;
 }
@@ -1207,7 +1216,7 @@ void SQLite::setUpdateNoopMode(bool enabled) {
 
     // Enable or disable this query.
     string query = "PRAGMA noop_update="s + (enabled ? "ON" : "OFF") + ";";
-    SQuery(_db, "setting noop-update mode", query);
+    SQuery(_db, query);
     _noopUpdateMode = enabled;
 
     // If we're inside a transaction, make sure this gets saved so it can be replicated.
@@ -1260,7 +1269,7 @@ int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& stat
 void SQLite::setQueryOnly(bool enabled) {
     SQResult result;
     string query = "PRAGMA query_only = "s + (enabled ? "true" : "false") + ";";
-    SQuery(_db, "set query_only", query, result);
+    SQuery(_db, query, result);
 }
 
 int64_t SQLite::getLastConflictPage() const {

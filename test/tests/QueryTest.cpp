@@ -1,3 +1,4 @@
+#include "libstuff/libstuff.h"
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
@@ -28,61 +29,57 @@ struct QueryTest : tpunit::TestFixture {
 
     void testMissing() {
         SData query("Query");
-        query["Format"] = "json";
+        query["ReadDBFlags"] = "-json";
         query["query"] = "";
         tester->executeWaitVerifyContent(query, "402 Missing query");
     }
 
     void testNoSemicolon() {
         SData query("Query");
-        query["Format"] = "json";
         query["query"] = "SELECT MAX(key) FROM queryTest";
         tester->executeWaitVerifyContent(query, "502 Query Missing Semicolon");
     }
 
     void testBad() {
         SData query("Query");
-        query["Format"] = "json";
         query["query"] = "this is a garbage query;";
         tester->executeWaitVerifyContent(query, "402 Bad query");
     }
 
     void testOK() {
         SData query("Query");
-        query["Format"] = "json";
         query["query"] = "SELECT 1;";
         tester->executeWaitVerifyContent(query, "200 OK");
     }
 
     void testWrite() {
         SData query("Query");
-        query["Format"] = "json";
+        query["ReadDBFlags"] = "-json";
         query["query"] = "INSERT INTO queryTest VALUES(1, 'first value');";
         tester->executeWaitVerifyContent(query);
 
         query["query"] = "SELECT value FROM queryTest WHERE key = 1;";
-        STable result = tester->executeWaitVerifyContentTable(query);
+        string resultJSON = tester->executeWaitMultipleData({query})[0].content;
 
         // Parse the first item in the first row of results and check that.
-        ASSERT_EQUAL(SParseJSONArray(SParseJSONArray(result["rows"]).front()).front(), "first value");
+        ASSERT_EQUAL(SParseJSONObject(SParseJSONArray(resultJSON).front())["value"], "first value");
     }
 
     void testWriteInSecondStatement() {
         SData query("Query");
-        query["Format"] = "json";
+        query["ReadDBFlags"] = "-json";
         query["query"] = "SELECT 1; INSERT INTO queryTest VALUES(2, 'second value');";
         tester->executeWaitVerifyContent(query);
 
         query["query"] = "SELECT value FROM queryTest WHERE key = 2;";
-        STable result = tester->executeWaitVerifyContentTable(query);
+        string resultJSON = tester->executeWaitMultipleData({query})[0].content;
 
         // Parse the first item in the first row of results and check that.
-        ASSERT_EQUAL(SParseJSONArray(SParseJSONArray(result["rows"]).front()).front(), "second value");
+        ASSERT_EQUAL(SParseJSONObject(SParseJSONArray(resultJSON).front())["value"], "second value");
     }
 
     void testNoWhere() {
         SData query("Query");
-        query["Format"] = "json";
         query["query"] = "DELETE FROM queryTest;";
         tester->executeWaitVerifyContent(query, "502 Query aborted");
     }

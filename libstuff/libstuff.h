@@ -1,5 +1,6 @@
 #ifndef LIBSTUFF_H
 #define LIBSTUFF_H
+#include "libstuff/qrf.h"
 
 #include <poll.h>
 #include <libgen.h>
@@ -521,8 +522,11 @@ string SComposeJSONArray(const T& valueList) {
 }
 
 string SComposeJSONObject(const STable& nameValueMap, const bool forceString = false);
-STable SParseJSONObject(const string& object);
-list<string> SParseJSONArray(const string& array);
+
+// The optional keyCallback, if provided, will be called with the name of each new key in the object found as it's parsed.
+// this is useful for determining the order of supplied keys.
+STable SParseJSONObject(const string& object, const string& nullValue = "null", const function<void(const string&)>& keyCallback = [](const string&){});
+list<string> SParseJSONArray(const string& array, const string& nullValue = "null");
 string SGetJSONArrayFront(const string& jsonArray);
 
 // --------------------------------------------------------------------------
@@ -624,8 +628,14 @@ void SQueryLogOpen(const string& logFilename);
 void SQueryLogClose();
 
 // Returns an SQLite result code.
-int SQuery(sqlite3* db, const char* e, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
-int SQuery(sqlite3* db, const char* e, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr);
+int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
+int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec);
+
+// Compatibility functions: Remove when nothing calls these.
+int SQuery(sqlite3* db, const char* ignore, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
+int SQuery(sqlite3* db, const char* ignore, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
+
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
 bool SQVerifyTableExists(sqlite3* db, const string& tableName);
 
