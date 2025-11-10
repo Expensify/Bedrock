@@ -227,9 +227,9 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
     spec.spec.eText = QRF_TEXT_Auto;
     spec.spec.eTitle = QRF_TEXT_Auto;
     spec.spec.eBlob = QRF_TEXT_Auto;
-    spec.spec.bColumnNames = 1;
-    spec.spec.bWordWrap = 1;
-    spec.spec.bTextJsonb = 1;
+    spec.spec.bColumnNames = QRF_SW_On;
+    spec.spec.bWordWrap = QRF_SW_On;
+    spec.spec.bTextJsonb = QRF_SW_On;
     spec.spec.bTextNull = 0;
     spec.spec.eDfltAlign = 0;
     spec.spec.eTitleAlign = 0;
@@ -277,9 +277,9 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
             } else if (*it == "-csv" || *it == "--csv") {
                 spec.spec.eStyle = QRF_STYLE_Csv;
             } else if (*it == "-header" || *it == "--header") {
-                spec.spec.bColumnNames = 1;
+                spec.spec.bColumnNames = QRF_SW_On;
             } else if (*it == "-noheader" || *it == "--noheader") {
-                spec.spec.bColumnNames = 0;
+                spec.spec.bColumnNames = QRF_SW_Off;
             } else if (*it == "-html" || *it == "--html") {
                 spec.spec.eStyle = QRF_STYLE_Html;
             } else if (*it == "-json" || *it == "--json") {
