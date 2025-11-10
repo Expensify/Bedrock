@@ -68,6 +68,18 @@ bool BedrockDBCommand::peek(SQLite& db) {
     wrapper.spec.xWrite = &SQLiteFormatAppend;
     wrapper.spec.pWriteArg = &output;
 
+    // We support two extra flags.
+    if (request.isSet("MYSQLFlags")) {
+        wrapper.spec.bColumnNames = QRF_SW_Off;
+        wrapper.zColumnSep = " ";
+        wrapper.zColumnSep[0] = 0x1E;
+        wrapper.zNull = "\n";
+    }
+
+    if (request.isSet("SuppressResult")) {
+        wrapper.spec.eStyle = QRF_STYLE_Off;
+    }
+
     // The `.schema` command (and other dot commands) isn't part of sqlite itself, but a convenience function built into the sqlite3 CLI.
     // This re-writes this into the internal query that does the same thing, and sets the format options to match the CLI.
     vector<string> matches;
