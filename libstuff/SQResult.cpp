@@ -131,41 +131,85 @@ bool SQResult::deserialize(const string& json) {
     // Reset ourselves to start
     clear();
 
+    // Is it an array (SQLite style) or object (old Bedrock style) response?
+    size_t pos = json.find_first_of("[{");
+    if (pos == string::npos) {
+        return false;
+    }
+    bool isObject = true;
+    if (json[pos] == '[') {
+        isObject = false;
+    }
+
     // If there are any problems, clean up whatever we've parsed
     try {
-        // Verify we have the basic components
-        STable content = SParseJSONObject(json);
-        if (!SContains(content, "headers")) {
-            STHROW("Missing 'headers'");
-        }
-        if (!SContains(content, "rows")) {
-            STHROW("Missing 'rows'");
-        }
-
-        // Add the headers
-        list<string> jsonHeaders = SParseJSONArray(content["headers"]);
-        headers.insert(headers.end(), jsonHeaders.begin(), jsonHeaders.end());
-
-        // Add the rows
-        list<string> jsonRows = SParseJSONArray(content["rows"]);
-        rows.resize(jsonRows.size());
-        int rowIndex = 0;
-        for (string& jsonRowStr : jsonRows) {
-            // Get the row and make sure it has the right number of columns
-            list<string> jsonRow = SParseJSONArray(jsonRowStr);
-            if (jsonRow.size() != headers.size()) {
-                STHROW("Incorrect number of columns in row");
+        if (isObject) {
+            // Verify we have the basic components
+            STable content = SParseJSONObject(json);
+            if (!SContains(content, "headers")) {
+                STHROW("Missing 'headers'");
+            }
+            if (!SContains(content, "rows")) {
+                STHROW("Missing 'rows'");
             }
 
-            // Insert the values
-            SQResultRow& row = rows[rowIndex++];
-            for (const string& s : jsonRow) {
-                row.push_back(s);
-            }
-        }
+            // Add the headers
+            list<string> jsonHeaders = SParseJSONArray(content["headers"]);
+            headers.insert(headers.end(), jsonHeaders.begin(), jsonHeaders.end());
 
-        // Success!
-        return true;
+            // Add the rows
+            list<string> jsonRows = SParseJSONArray(content["rows"]);
+            rows.resize(jsonRows.size());
+            int rowIndex = 0;
+            for (string& jsonRowStr : jsonRows) {
+                // Get the row and make sure it has the right number of columns
+                list<string> jsonRow = SParseJSONArray(jsonRowStr);
+                if (jsonRow.size() != headers.size()) {
+                    STHROW("Incorrect number of columns in row");
+                }
+
+                // Insert the values
+                SQResultRow& row = rows[rowIndex++];
+                for (const string& s : jsonRow) {
+                    row.push_back(s);
+                }
+            }
+
+            // Success!
+            return true;
+        } else {
+            // Parse an array-style response.
+            auto array = SParseJSONArray(json);
+            if (array.empty()) {
+                // Nothing here.
+                return true;
+            }
+
+            // We need to preserve the *order* of the headers of the first row, which is not actually in the JSON spec but
+            // is important here.
+            SParseJSONObject(array.front(), "", [&](const string& key){headers.push_back(key);});
+
+            // Now we need to parse each row.
+            for (auto& jsonRow : array) {
+                // Add a blank row to the bottom of the results
+                rows.resize(rows.size() + 1);
+
+                // Now we grab a reference to our new blank row.
+                SQResultRow& row = rows[rows.size() - 1];
+
+                // And get the data that will fit in this row.
+                // We pass the empty string here for how we deserialize `null` from JSON becuase historically we have no way to
+                // differentiate these values in an SQResult.
+                STable rowTable = SParseJSONObject(jsonRow, "");
+
+                // And push it into the row in the order the keys exist in the headers.
+                for (auto& header : headers) {
+                    row.push_back(rowTable[header]);
+                }
+            }
+
+            return true;
+        }
     } catch (const SException& e) {
         SDEBUG("Failed to deserialize JSON-encoded SQResult (" << e.what() << "): " << json);
     }

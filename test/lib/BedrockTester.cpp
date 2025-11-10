@@ -18,6 +18,8 @@ PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
 bool BedrockTester::ENABLE_HCTREE{false};
+bool BedrockTester::VERBOSE_LOGGING{false};
+bool BedrockTester::QUIET_LOGGING{false};
 
 string BedrockTester::getTempFileName(const string& prefix) {
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
@@ -78,7 +80,6 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-workerThreads", "8"},
         {"-mmapSizeGB", "1"},
         {"-maxJournalSize", "25000"},
-        {"-v", ""},
         {"-extraExceptionLogging", ""},
         {"-enableMultiWrite", "true"},
         {"-escalateOverHTTP", "true"},
@@ -91,6 +92,12 @@ BedrockTester::BedrockTester(const map<string, string>& args,
 
     if (ENABLE_HCTREE) {
         defaultArgs["-newDBsUseHctree"] = "";
+    }
+    if (VERBOSE_LOGGING) {
+        defaultArgs["-v"] = "";
+    }
+    if (QUIET_LOGGING) {
+        defaultArgs["-q"] = "";
     }
 
     // Set defaults.
@@ -606,28 +613,13 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
         result.clear();
         SData command("Query");
         command["Query"] = fixedQuery;
-        command["Format"] = "JSON";
+        command["ReadDBFlags"] = "-json";
         if (timeoutMS) {
             command["timeout"] = to_string(timeoutMS);
         }
         auto commandResult = executeWaitMultipleData({command}, 1);
-        auto row0 = SParseJSONObject(commandResult[0].content)["rows"];
-        auto headerString = SParseJSONObject(commandResult[0].content)["headers"];
+        result.deserialize(commandResult[0].content);
 
-        list<string> headers = SParseJSONArray(headerString);
-        for (const auto& h : headers) {
-            result.headers.push_back(h);
-        }
-
-        list<string> rows = SParseJSONArray(row0);
-        for (const string& rowStr : rows) {
-            list<string> vals = SParseJSONArray(rowStr);
-            SQResultRow row(result);
-            for (auto& v : vals) {
-                row.push_back(v);
-            }
-            result.emplace_back(move(row));
-        }
         return true;
     } else {
         SQLite& db = getSQLiteDB();

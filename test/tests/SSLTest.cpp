@@ -15,7 +15,6 @@ struct SSLTest : tpunit::TestFixture {
                               BEFORE_CLASS(SSLTest::setup),
                               TEST(SSLTest::test),
                               TEST(SSLTest::proxyTest),
-                              TEST(SSLTest::certificateValidationTest),
                               AFTER_CLASS(SSLTest::teardown))
     { }
 

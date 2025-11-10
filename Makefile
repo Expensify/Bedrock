@@ -57,10 +57,10 @@ mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/lib
 	# Build mbedtls (skip tests).
 	cd mbedtls && $(MAKE) lib
 
-# We select all of the cpp files (and manually add sqlite3.c) that will be in libstuff.
+# We select all of the cpp files (and manually add sqlite3.c and qrf.c) that will be in libstuff.
 # We then transform those file names into a list of object file name and dependency file names.
 STUFFCPP = $(shell find libstuff -name '*.cpp')
-STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(INTERMEDIATEDIR)/libstuff/sqlite3.o
+STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(INTERMEDIATEDIR)/libstuff/qrf.o $(INTERMEDIATEDIR)/libstuff/sqlite3.o
 STUFFDEP = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
 # The same for libbedrock.
