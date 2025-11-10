@@ -17,6 +17,10 @@
 #include <stdlib.h>
 #include "sqlite3.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
 ** Specification used by clients to define the output format they want
 */
@@ -178,7 +182,8 @@ int sqlite3_format_query_result(
 */
 int sqlite3_qrf_wcwidth(int c);
 
-
-
+#ifdef __cplusplus
+}  /* end of the 'extern "C"' block */
+#endif
 
 #endif /* !defined(SQLITE_QRF_H) */
