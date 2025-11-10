@@ -71,9 +71,11 @@ bool BedrockDBCommand::peek(SQLite& db) {
     // We support two extra flags.
     if (request.isSet("MYSQLFlags")) {
         wrapper.spec.bColumnNames = QRF_SW_Off;
-        wrapper.zColumnSep = " ";
-        wrapper.zColumnSep[0] = 0x1E;
-        wrapper.zNull = "\n";
+        wrapper.zColumnSep->assign(" ");
+        wrapper.zColumnSep->data()[0] = 0x1E;
+        wrapper.zNull->assign("\n");
+        wrapper.spec.zColumnSep = wrapper.zColumnSep->c_str();
+        wrapper.spec.zNull = wrapper.zNull->c_str();
     }
 
     if (request.isSet("SuppressResult")) {
@@ -269,11 +271,11 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
         if (previous != "") {
             // handle argument values.
             if (previous == "-nullvalue" || previous == "--nullvalue") {
-                spec.zNull = *it;
-                spec.spec.zNull = spec.zNull.c_str();
+                spec.zNull->assign(*it);
+                spec.spec.zNull = spec.zNull->c_str();
             } else if (previous == "-separator" || previous == "--separator") {
-                spec.zColumnSep = *it;
-                spec.spec.zColumnSep = spec.zColumnSep.c_str();
+                spec.zColumnSep->assign(*it);
+                spec.spec.zColumnSep = spec.zColumnSep->c_str();
             } else {
                 // Ignore.
             }
@@ -318,4 +320,38 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
 
     // At this point, we've filled out the spec struct as much as we can.
     return spec;
+}
+
+BedrockPlugin_DB::Sqlite3QRFSpecWrapper::Sqlite3QRFSpecWrapper()
+    : zColumnSep(new string),
+      zNull(new string)
+{
+}
+
+BedrockPlugin_DB::Sqlite3QRFSpecWrapper::~Sqlite3QRFSpecWrapper() {
+    delete zColumnSep;
+    delete zNull;
+}
+
+BedrockPlugin_DB::Sqlite3QRFSpecWrapper::Sqlite3QRFSpecWrapper(Sqlite3QRFSpecWrapper&& other) noexcept
+    : spec(other.spec),
+      zColumnSep(other.zColumnSep),
+      zNull(other.zNull) {
+    other.spec = sqlite3_qrf_spec{};
+    other.zColumnSep = nullptr;
+    other.zNull = nullptr;
+}
+
+BedrockPlugin_DB::Sqlite3QRFSpecWrapper& BedrockPlugin_DB::Sqlite3QRFSpecWrapper::operator=(BedrockPlugin_DB::Sqlite3QRFSpecWrapper&& other) noexcept {
+    if (this != &other) {
+        delete zColumnSep;
+        delete zNull;
+        spec = other.spec;
+        zColumnSep = other.zColumnSep;
+        zNull = other.zNull;
+        other.spec = sqlite3_qrf_spec{};
+        other.zColumnSep = nullptr;
+        other.zNull = nullptr;
+    }
+    return *this;
 }
