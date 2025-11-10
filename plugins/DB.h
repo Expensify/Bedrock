@@ -8,6 +8,15 @@ class BedrockPlugin_DB : public BedrockPlugin {
     virtual const string& getName() const;
     virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
     static const string name;
+
+    class Sqlite3QRFSpecWrapper {
+      public:
+        sqlite3_qrf_spec spec{0};
+        string zColumnSep;
+        string zNull;
+    };
+
+    static Sqlite3QRFSpecWrapper parseSQLite3Args(const string& argsToParse);
 };
 
 class BedrockDBCommand : public BedrockCommand {
@@ -20,5 +29,5 @@ class BedrockDBCommand : public BedrockCommand {
     string query;
 
     // Callback for SQLite output formatter.
-    static ssize_t SQLiteFormatAppend(void* destString, const unsigned char* appendString, size_t length);
+    static int SQLiteFormatAppend(void* destString, const char* appendString, sqlite3_int64 length);
 };

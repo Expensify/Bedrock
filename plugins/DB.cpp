@@ -1,6 +1,7 @@
 #include "DB.h"
 #include "libstuff/libstuff.h"
 
+#include <cctype>
 #include <string.h>
 #include "libstuff/SQResultFormatter.h"
 #include <BedrockServer.h>
@@ -40,7 +41,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseComm
     return nullptr;
 }
 
-ssize_t BedrockDBCommand::SQLiteFormatAppend(void* destString, const unsigned char* appendString, size_t length) {
+int BedrockDBCommand::SQLiteFormatAppend(void* destString, const char* appendString, sqlite3_int64 length) {
+
     string* output = static_cast<string*>(destString);
     output->append(reinterpret_cast<const char*>(appendString), length);
     return 0;
@@ -51,64 +53,20 @@ bool BedrockDBCommand::peek(SQLite& db) {
         STHROW("402 Missing query");
     }
 
-    // Read the flags that the readdb tool supports.
-    list<string> readDBFlags;
+    // We build a set of render options from either `readDBFlags` or `SQLiteArgs`.
+    // The first name is a legacy Expensify-internal name, and combined sqlite arguments with expensify tooling arguments.
+    // The second is a more sqlite general name
+    BedrockPlugin_DB::Sqlite3QRFSpecWrapper wrapper = BedrockPlugin_DB::parseSQLite3Args("");
     if (request.isSet("ReadDBFlags")) {
-        readDBFlags = SParseList(request["ReadDBFlags"], ' ');
+        wrapper = BedrockPlugin_DB::parseSQLite3Args(request["ReadDBFlags"]);
+    }
+    if (request.isSet("SQLiteArgs")) {
+        wrapper = BedrockPlugin_DB::parseSQLite3Args(request["SQLiteArgs"]);
     }
 
     string output;
-    sqlite3_qrf_spec spec;
-    spec.iVersion = 1;                 /* Version number of this structure */
-    spec.eFormat = QRF_MODE_List;      /* Output format */
-    spec.bShowCNames = 1;              /* True to show column names */
-    spec.eEscape = 0;                  /* How to deal with control characters */
-    spec.eQuote = 0;                   /* Quoting style for text */
-    spec.eBlob = 0;                    /* Quoting style for BLOBs */
-    spec.bWordWrap = 1;                /* Try to wrap on word boundaries */
-    spec.mxWidth = 0;                  /* Maximum width of any column */
-    spec.nWidth = 0;                   /* Number of column width parameters */
-    spec.aWidth = 0;                   /* Column widths */
-    spec.zColumnSep = 0;               /* Alternative column separator */
-    spec.zRowSep = 0;                  /* Alternative row separator */
-    spec.zTableName = 0;               /* Output table name */
-    spec.zNull = 0;                    /* Rendering of NULL */
-    spec.xRender = nullptr;            /* Render a value */
-    spec.xWrite = &SQLiteFormatAppend; /* Write callback */
-    spec.pRenderArg = nullptr;         /* First argument to the xRender callback */
-    spec.pWriteArg = &output;          /* First argument to the xWrite callback */
-    spec.pzOutput = nullptr;           /* Storage location for output string */
-
-    // Set the format. Allow the legacy behavior for `format: json` if supplied.
-    if (SIEquals(request["Format"], "json")) {
-        spec.eFormat = QRF_MODE_Json;
-    }
-    for (auto flag : readDBFlags) {
-        if (flag == "-column") {
-            spec.eFormat = QRF_MODE_Column;
-        }
-        if (flag == "-csv") {
-            spec.eQuote = QRF_TXT_Csv;
-            spec.eFormat = QRF_MODE_Csv;
-        }
-        if (flag == "-tsv") {
-            // TODO: Not yet implemented.
-            //format = SQResultFormatter::FORMAT::TABS;
-        }
-        if (flag == "-json") {
-            spec.eQuote = QRF_TXT_Json;
-            spec.eFormat = QRF_MODE_Json;
-        }
-        if (flag == "-quote") {
-            spec.eFormat = QRF_MODE_Quote;
-        }
-        if (flag == "-header") {
-            spec.bShowCNames = 1;
-        }
-        if (flag == "-noheader") {
-            spec.bShowCNames = 0;
-        }
-    }
+    wrapper.spec.xWrite = &SQLiteFormatAppend;
+    wrapper.spec.pWriteArg = &output;
 
     // The `.schema` command (and other dot commands) isn't part of sqlite itself, but a convenience function built into the sqlite3 CLI.
     // This re-writes this into the internal query that does the same thing, and sets the format options to match the CLI.
@@ -117,8 +75,8 @@ bool BedrockDBCommand::peek(SQLite& db) {
     if (isSchema) {
         SINFO("Re-writing schema query for " + matches[1]);
         query = "SELECT sql FROM sqlite_schema WHERE tbl_name LIKE " + SQ(matches[1]) + ";";
-        spec.bShowCNames = 0;
-        spec.eFormat = QRF_MODE_Column;
+        wrapper.spec.bColumnNames = 0;
+        wrapper.spec.eStyle = QRF_STYLE_Column;
     }
 
     if (!SEndsWith(query, ";")) {
@@ -164,7 +122,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
 
         response.content = SQResultFormatter::format(result, SQResultFormatter::FORMAT::JSON);
     } else {
-        if (!db.read(query, &spec)) {
+        if (!db.read(query, &wrapper.spec)) {
             response["error"] = db.getLastError();
             STHROW("402 Bad query");
         }
@@ -206,4 +164,146 @@ void BedrockDBCommand::process(SQLite& db) {
 
     // Successfully processed
     return;
+}
+
+BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const string& argsToParse) {
+    // Parse this into a map corresponding to the allowed options specified here:
+    // https://sqlite.org/cli.html#command_line_options
+    // Note that just because we parse all of these doesn't mean we support them.
+    char quoteChar = 0;
+    bool escaped = false;
+    string currentArg;
+    list<string> splitArgs;
+    for (size_t currentOffset = 0; currentOffset < argsToParse.size(); currentOffset++) {
+        if (escaped) {
+            // Note that this is checked *before* `quoteChar`, meaning that escaped quotes inside
+            // of quotes don't end the quoted string.
+            currentArg += argsToParse[currentOffset];
+            escaped = false;
+        } else if (quoteChar) {
+            // If we found the match to our quote char, we're no longer in quotes.
+            if (argsToParse[currentOffset] == quoteChar) {
+                quoteChar = 0;
+            } else {
+                // for any other character, we simply append it to the current string.
+                currentArg += argsToParse[currentOffset];
+            }
+        }else {
+            // If we're not in quotes, then a space signals the end of the current string.
+            if (isspace(argsToParse[currentOffset])) {
+                // Finish this string and move to the next, unless it's empty.
+                if (currentArg.length()) {
+                    splitArgs.push_back(currentArg);
+                    currentArg = "";
+                }
+            } else {
+                // Ok, so if it's not a space, then we care if it's a quote or escape character.
+                if (argsToParse[currentOffset] == '\'' || argsToParse[currentOffset] == '"') {
+                    // Start a quoted string.
+                    quoteChar = argsToParse[currentOffset];
+                }
+                else if (argsToParse[currentOffset] == '\\') {
+                    // Start an escape sequence.
+                    escaped = true;
+                } else {
+                    // Any other character is part of the actual argument.
+                    currentArg += argsToParse[currentOffset];
+                }
+            }
+        }
+    }
+
+    // If we got to the end with data accumulated, we use that as the last argument. We don't bother validating for matched
+    // quotes or unfinished escape sequences.
+    if (!currentArg.empty()) {
+        splitArgs.push_back(currentArg);
+    }
+
+    // Set all the defaults for our render spec.
+    Sqlite3QRFSpecWrapper spec;
+    spec.spec.iVersion = 1;
+    spec.spec.eStyle = QRF_STYLE_List;
+    spec.spec.eEsc = QRF_ESC_Auto;
+    spec.spec.eText = QRF_TEXT_Auto;
+    spec.spec.eTitle = QRF_TEXT_Auto;
+    spec.spec.eBlob = QRF_TEXT_Auto;
+    spec.spec.bColumnNames = 1;
+    spec.spec.bWordWrap = 1;
+    spec.spec.bTextJsonb = 1;
+    spec.spec.bTextNull = 0;
+    spec.spec.eDfltAlign = 0;
+    spec.spec.eTitleAlign = 0;
+    spec.spec.mxColWidth = 10000;
+    spec.spec.nScreenWidth = 10000;
+    spec.spec.mxRowHeight = 1;
+    spec.spec.mxLength = 10000;
+    spec.spec.nWidth = 0;
+    spec.spec.nAlign = 0;
+    spec.spec.aWidth = 0;
+    spec.spec.aAlign = 0;
+    spec.spec.zColumnSep = 0;
+    spec.spec.zRowSep = 0;
+    spec.spec.zTableName = 0;
+    spec.spec.zNull = 0;
+    spec.spec.xRender = 0;
+    spec.spec.xWrite = 0;
+    spec.spec.pRenderArg = 0;
+    spec.spec.pWriteArg = 0;
+    spec.spec.pzOutput = 0;
+
+    // Now we should have a list of strings we can parse into actual usable data.
+    string previous = "";
+    for (auto it = splitArgs.begin(); it != splitArgs.end(); it++) {
+        if (previous != "") {
+            // handle argument values.
+            if (previous == "-nullvalue" || previous == "--nullvalue") {
+                spec.zNull = *it;
+                spec.spec.zNull = spec.zNull.c_str();
+            } else if (previous == "-separator" || previous == "--separator") {
+                spec.zColumnSep = *it;
+                spec.spec.zColumnSep = spec.zColumnSep.c_str();
+            } else {
+                // Ignore.
+            }
+            previous = "";
+        } else {
+            // Handle argument names.
+            if (*it == "-ascii" || *it == "--ascii") {
+                // Nothing to set.
+            } else if (*it == "-box" || *it == "--box") {
+                spec.spec.eStyle = QRF_STYLE_Box;
+            } else if (*it == "-column" || *it == "--column") {
+                spec.spec.eStyle = QRF_STYLE_Column;
+            } else if (*it == "-csv" || *it == "--csv") {
+                spec.spec.eStyle = QRF_STYLE_Csv;
+            } else if (*it == "-header" || *it == "--header") {
+                spec.spec.bColumnNames = 1;
+            } else if (*it == "-noheader" || *it == "--noheader") {
+                spec.spec.bColumnNames = 0;
+            } else if (*it == "-html" || *it == "--html") {
+                spec.spec.eStyle = QRF_STYLE_Html;
+            } else if (*it == "-json" || *it == "--json") {
+                spec.spec.eStyle = QRF_STYLE_Json;
+            } else if (*it == "-line" || *it == "--line") {
+                spec.spec.eStyle = QRF_STYLE_Line;
+            } else if (*it == "-list" || *it == "--list") {
+                spec.spec.eStyle = QRF_STYLE_List;
+            } else if (*it == "-markdown" || *it == "--markdown") {
+                spec.spec.eStyle = QRF_STYLE_Markdown;
+            } else if (*it == "-nullvalue" || *it == "--nullvalue") {
+                previous = *it;
+            } else if (*it == "-quote" || *it == "--quote") {
+                spec.spec.eStyle = QRF_STYLE_Quote;
+            } else if (*it == "-separator" || *it == "--separator") {
+                previous = *it;
+            } else if (*it == "-table" || *it == "--table") {
+                spec.spec.eStyle = QRF_STYLE_Table;
+            } else if (*it == "-tabs" || *it == "--tabs") {
+                // Nothing to set.
+            }
+        }
+    }
+
+    // At this point, we've filled out the spec struct as much as we can.
+    return spec;
 }
