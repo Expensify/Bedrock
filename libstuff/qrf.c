@@ -972,7 +972,7 @@ static void qrfWidthPrint(Qrf *p, sqlite3_str *pOut, int w, const char *zUtf){
       i += len;
       n += x;
     }else if( c==0x1b && (k = qrfIsVt100(&a[i]))>0 ){
-      i += k;       
+      i += k;
     }else if( n>=aw ){
       break;
     }else{
@@ -1692,7 +1692,7 @@ static void qrfExplain(Qrf *p){
           }
         }
       }
-  
+
       for(i=0; i<nArg; i++){
         const char *zSep = "  ";
         int w = aWidth[i];
@@ -1784,10 +1784,11 @@ static int qrf_need_quote(const char *zName){
 ** has been output.  Now output all the content.
 */
 static void qrfOneJsonRow(Qrf *p){
-  int i, nItem; 
+  int i, nItem;
   for(nItem=i=0; i<p->nCol; i++){
     const char *zCName;
-    if( sqlite3_column_type(p->pStmt,i)==SQLITE_NULL ) continue;
+    // Don't skip NULL *EXPENSIFY*
+    // if( sqlite3_column_type(p->pStmt,i)==SQLITE_NULL ) continue;
     zCName = sqlite3_column_name(p->pStmt, i);
     if( nItem>0 ) sqlite3_str_append(p->pOut, ",", 1);
     nItem++;
@@ -2201,7 +2202,7 @@ int sqlite3_format_query_result(
   switch( qrf.spec.eStyle ){
     case QRF_STYLE_Box:
     case QRF_STYLE_Column:
-    case QRF_STYLE_Markdown: 
+    case QRF_STYLE_Markdown:
     case QRF_STYLE_Table: {
       /* Columnar modes require that the entire query be evaluated and the
       ** results stored in memory, so that we can compute column widths */
