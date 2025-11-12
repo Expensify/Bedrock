@@ -202,12 +202,11 @@ bool SQResult::deserialize(const string& json) {
                 // And get the data that will fit in this row.
                 // We pass the empty string here for how we deserialize `null` from JSON becuase historically we have no way to
                 // differentiate these values in an SQResult.
-                STable rowTable = SParseJSONObject(jsonRow, "");
-
-                // And push it into the row in the order the keys exist in the headers.
-                for (auto& header : headers) {
-                    row.push_back(rowTable[header]);
-                }
+                // These are done *in order* rather than by key, which is strictly for JSON.
+                // However, that's what SQLite returns.
+                SParseJSONObject(jsonRow, "", [&](const string& key, const string& value){
+                    row.push_back(value);
+                });
             }
 
             return true;
