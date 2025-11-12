@@ -2637,6 +2637,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                     SWARN("Error running formatted query: " << errorMsg);
                     sqlite3_free(errorMsg);
                 }
+                sqlite3_finalize(preparedStatement);
                 return error;
             }
 
