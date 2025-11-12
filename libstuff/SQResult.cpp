@@ -170,6 +170,7 @@ bool SQResult::deserialize(const string& json) {
 
                 // Insert the values
                 SQResultRow& row = rows[rowIndex++];
+                row.result = this;
                 for (const string& s : jsonRow) {
                     row.push_back(s);
                 }
@@ -196,6 +197,7 @@ bool SQResult::deserialize(const string& json) {
 
                 // Now we grab a reference to our new blank row.
                 SQResultRow& row = rows[rows.size() - 1];
+                row.result = this;
 
                 // And get the data that will fit in this row.
                 // We pass the empty string here for how we deserialize `null` from JSON becuase historically we have no way to
