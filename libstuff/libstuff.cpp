@@ -1488,7 +1488,7 @@ const char* _SParseJSONArray(const char* ptr, const char* end, list<string>& out
 }
 
 // --------------------------------------------------------------------------
-const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, bool populateOut, const string& nullValue, const function<void(const string&)>& keyCallback = [](const string&){}) {
+const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, bool populateOut, const string& nullValue, const function<void(const string&, const string&)>& callback = [](const string&, const string&){}) {
     SASSERT(ptr && end);
     SASSERT(*ptr);
     _JSONLOG();
@@ -1515,7 +1515,7 @@ const char* _SParseJSONObject(const char* ptr, const char* end, STable& out, boo
         if (populateOut) {
             // Got one more
             out[name] = value;
-            keyCallback(name);
+            callback(name, value);
         }
         _JSONLOG();
 
@@ -1624,14 +1624,14 @@ const char* _SParseJSONValue(const char* ptr, const char* end, string& value, bo
     return ptr;
 }
 
-STable SParseJSONObject(const string& object, const string& nullValue, const function<void(const string&)>& keyCallback) {
+STable SParseJSONObject(const string& object, const string& nullValue, const function<void(const string&, const string&)>& callback) {
     // Assume it's an object
     STable out;
     if (object.size() < 2)
         return out;
     const char* ptr = object.c_str();
     const char* end = ptr + object.size();
-    const char* parseEnd = _SParseJSONObject(ptr, end, out, true, nullValue, keyCallback);
+    const char* parseEnd = _SParseJSONObject(ptr, end, out, true, nullValue, callback);
 
     // Trim trailing whitespace
     while (parseEnd && parseEnd < end && *parseEnd && isspace(*parseEnd))

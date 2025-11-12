@@ -188,7 +188,7 @@ bool SQResult::deserialize(const string& json) {
 
             // We need to preserve the *order* of the headers of the first row, which is not actually in the JSON spec but
             // is important here.
-            SParseJSONObject(array.front(), "", [&](const string& key){headers.push_back(key);});
+            SParseJSONObject(array.front(), "", [&](const string& key, const string& value){headers.push_back(key);});
 
             // Now we need to parse each row.
             for (auto& jsonRow : array) {
