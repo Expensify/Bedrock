@@ -44,6 +44,6 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
     return true;
 }
 
-void SQLiteCore::rollback() {
-    _db.rollback();
+void SQLiteCore::rollback(const string& commandName) {
+    _db.rollback(commandName);
 }

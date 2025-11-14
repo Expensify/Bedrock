@@ -134,6 +134,9 @@ class BedrockCommand : public SQLiteCommand {
     // Returns true if all of the httpsRequests for this command are complete (or if it has none).
     bool areHttpsRequestsComplete() const;
 
+    // Returns the method name of this command, appending the return value list if it exists.
+    string getMethodName() const;
+
     // If the `peek` portion of this command needs to make an HTTPS request, this is where we store it.
     template <typename T>
     class GrowOnlyList {
