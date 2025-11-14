@@ -85,6 +85,8 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         {"-escalateOverHTTP", "true"},
         {"-cacheSize", "1000"},
         {"-parallelReplication", "true"},
+        {"-metricPlugins", "STATSD"},
+        {"-statsdServer", "10.0.130.11:9125"},
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?
         //{"-logDirectlyToSyslogSocket", ""},
         {"-testName", currentTestName},

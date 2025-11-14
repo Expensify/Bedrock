@@ -9,6 +9,7 @@
 #include "BedrockConflictManager.h"
 #include "BedrockBlockingCommandQueue.h"
 #include "BedrockTimeoutCommandQueue.h"
+#include "BedrockMetricPlugin.h"
 
 class SQLitePeer;
 class BedrockCore;
@@ -242,6 +243,9 @@ class BedrockServer : public SQLiteServer {
     // Expose the DB pool to plugins.
     shared_ptr<SQLitePool> getDBPool();
 
+    // Record a metric in all registered metric plugins.
+    void recordMetric(const Metric& metric);
+
   private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
@@ -333,6 +337,9 @@ class BedrockServer : public SQLiteServer {
     // SStandaloneHTTPSManager for communication between SQLiteNodes for anything other than cluster state and
     // synchronization.
     shared_ptr<SQLiteClusterMessenger> _clusterMessenger;
+
+    // Metrics plugins registry
+    map<string, unique_ptr<BedrockMetricPlugin>> metricPlugins;
 
     // Functions for checking for and responding to status and control commands.
     bool _isStatusCommand(const unique_ptr<BedrockCommand>& command);
