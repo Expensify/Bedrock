@@ -1263,8 +1263,19 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
                 STHROW("you're *not* supposed to be a 0-priority permafollower");
             }
 
-            // It's an error to have to peers configured with the same priority, except 0 and -1
-            SASSERT(_priority == -1 || _priority == 0 || message.calc("Priority") != _priority);
+            // It's an error to have two peers configured with the same priority, except 0 and -1
+            // Priority -1 is the special case "we are starting up and haven't set priority yet"
+            // Priority 0 is the special case permafollower priority
+            // Priority 1 is the special case "We're shutting down and shouldn't be leading"
+            // It's probably possible to collapse the `0` and `1` cases into one, but that requires a careful review
+            // of where each is used and how they interact and if that conflicts with any other priority checks.
+            if (_priority != -1 && _priority != 0 && _priority != 1) {
+                if (message.calc("Priority") == _priority) {
+                    SWARN("Peer has indicated it has same priority as me (" << _priority << ")! Reconnecting.");
+                    _reconnectPeer(peer);
+                    return;
+                }
+            }
             peer->priority = message.calc("Priority");
             peer->version = message["Version"];
             peer->state = stateFromName(message["State"]);
