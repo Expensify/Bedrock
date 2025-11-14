@@ -802,7 +802,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     return true;
 }
 
-int SQLite::commit(const string& description, function<void()>* preCheckpointCallback) {
+int SQLite::commit(const string& description, const string& commandName, function<void()>* preCheckpointCallback) {
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
         return COMMIT_DISABLED;

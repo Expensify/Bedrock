@@ -7,7 +7,7 @@
 SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 { }
 
-bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID)) noexcept {
+bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, const string& commandName, bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID)) noexcept {
 
     // This handler only needs to exist in prepare so we scope it here to automatically unset
     // the handler function once we are done with prepare.
@@ -20,7 +20,7 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
     // Check for any state other than leading and refuse.
     if (node.getState() != SQLiteNodeState::LEADING) {
         SINFO("No longer leading, rolling back.");
-        _db.rollback();
+        _db.rollback(commandName);
         return false;
     }
 
@@ -31,7 +31,7 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
     }
 
     // Perform the actual commit, rollback if it fails.
-    int errorCode = _db.commit(SQLiteNode::stateName(node.getState()));
+    int errorCode = _db.commit(SQLiteNode::stateName(node.getState()), commandName);
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
         _db.rollback();
         return false;

@@ -547,7 +547,7 @@ void BedrockServer::sync()
                             command->response.methodLine = "500 Refused";
                             command->complete = true;
                             _reply(command);
-                            core.rollback();
+                            core.rollback(command->getMethodName());
                             break;
                         }
                     }
@@ -999,7 +999,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             BedrockCore::AutoTimer timer(command, isBlocking ? BedrockCommand::BLOCKING_COMMIT_WORKER : BedrockCommand::COMMIT_WORKER);
                             void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
                             bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
-                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, enableOnPrepareNotifications, onPrepareHandler);
+                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler);
 
                             if (getState() != SQLiteNodeState::LEADING) {
                                 SINFO("Stopped leading while trying to commit, will retry.");
