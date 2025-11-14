@@ -38,6 +38,7 @@ class BedrockCommand : public SQLiteCommand {
     };
 
     enum class STAGE {
+        NONE,
         PREPEEK,
         PEEK,
         PROCESS,
@@ -296,7 +297,7 @@ class BedrockCommand : public SQLiteCommand {
   private:
 
     // The stage of the command that we are currently in. We'll use this to track the stage of the command for timing purposes.
-    STAGE _stage;
+    STAGE _stage = STAGE::NONE;
 
     // Set to true when we are in `peek`, `prePeek`, or `postProcess`.
     bool _inDBReadOperation = false;
