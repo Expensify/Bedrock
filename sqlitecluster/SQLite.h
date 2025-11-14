@@ -185,7 +185,7 @@ class SQLite {
     int commit(const string& description = "UNSPECIFIED", function<void()>* preCheckpointCallback = nullptr);
 
     // Cancels the current transaction and rolls it back.
-    void rollback();
+    void rollback(const string& commandName);
 
     // Returns the total number of changes on this database
     int getChangeCount() { return sqlite3_total_changes(_db); }

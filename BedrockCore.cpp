@@ -351,7 +351,6 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
             _db.setQueryOnly(true);
 
             // postProcess.
-            command->reset(BedrockCommand::STAGE::POSTPROCESS);
             command->_inDBReadOperation = true;
             command->postProcess(_db);
             command->_inDBReadOperation = false;

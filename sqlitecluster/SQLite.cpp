@@ -931,7 +931,11 @@ map<uint64_t, tuple<string, string, uint64_t>> SQLite::popCommittedTransactions(
     return _sharedData.popCommittedTransactions();
 }
 
-void SQLite::rollback() {
+void SQLite::rollback(const string& commandName = "NONE") {
+    // Get the timing spent in this db handle
+    uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
+    uint64_t totalElapsed = getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed);
+
     // Make sure we're actually inside a transaction
     if (_insideTransaction) {
         // Cancel this transaction
@@ -961,8 +965,9 @@ void SQLite::rollback() {
             _sharedData._commitLockTimer.stop();
             _sharedData.commitLock.unlock();
         }
+        SINFO("Transaction was rolled back. CommandName: " << commandName << ", TotalTime: " << totalElapsed / 1000 << "ms, ReadTime: " << readElapsed / 1000 << "ms, WriteTime: " << writeElapsed / 1000 << "ms, PrepareTime: " << prepareElapsed / 1000 << "ms, CommitTime: " << commitElapsed / 1000 << "ms, RollbackTime: " << rollbackElapsed / 1000 << "ms");
     } else {
-        SINFO("Rolling back but not inside transaction, ignoring.");
+        SINFO("Rolling back but not inside transaction, ignoring. CommandName: " << commandName << ", TotalTime: " << totalElapsed / 1000 << "ms, ReadTime: " << readElapsed / 1000 << "ms, WriteTime: " << writeElapsed / 1000 << "ms, PrepareTime: " << prepareElapsed / 1000 << "ms, CommitTime: " << commitElapsed / 1000 << "ms, RollbackTime: " << rollbackElapsed / 1000 << "ms");
     }
     _queryCache.clear();
     SINFO("Transaction rollback with " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits << " served from cache.");

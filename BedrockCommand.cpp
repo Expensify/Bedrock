@@ -137,8 +137,6 @@ void BedrockCommand::_waitForHTTPSRequests() {
         uint64_t maxWaitUs = 0;
         uint64_t now = STimeNow();
         if (!startTime) {
-            // We only allow https requests in peek or prepeek, so those are the only stages we need to track timing for.
-            startTiming(_stage == STAGE::PREPEEK ? HTTPS_REQUESTS_PREPEEK : HTTPS_REQUESTS_PEEK);
             startTime = now;
         }
         if (now < timeout()) {
@@ -180,7 +178,6 @@ void BedrockCommand::_waitForHTTPSRequests() {
     }
 
     if (startTime) {
-        stopTiming(_stage == STAGE::PREPEEK ? HTTPS_REQUESTS_PREPEEK : HTTPS_REQUESTS_PEEK);
         SINFO("Waited " << ((STimeNow() - startTime) / 1000) << "ms for network requests.");
     }
 }
@@ -211,7 +208,6 @@ void BedrockCommand::waitForHTTPSRequests(SQLite& db) {
 }
 
 void BedrockCommand::reset(BedrockCommand::STAGE stage) {
-    _stage = stage;
     if (stage == STAGE::PEEK && !shouldPrePeek()) {
         jsonContent.clear();
         response.clear();
@@ -234,8 +230,6 @@ void BedrockCommand::finalizeTimingInfo() {
     uint64_t queueSyncTotal = 0;
     uint64_t queueBlockingTotal = 0;
     uint64_t queuePageLockTotal = 0;
-    uint64_t httpsRequestsPrePeekTotal = 0;
-    uint64_t httpsRequestsPeekTotal = 0;
     for (const auto& entry: timingInfo) {
         if (get<0>(entry) == PREPEEK) {
             prePeekTotal += get<2>(entry) - get<1>(entry);
@@ -272,24 +266,15 @@ void BedrockCommand::finalizeTimingInfo() {
             queueSyncTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == QUEUE_PAGE_LOCK) {
             queuePageLockTotal += get<2>(entry) - get<1>(entry);
-        } else if (get<0>(entry) == HTTPS_REQUESTS_PREPEEK) {
-            httpsRequestsPrePeekTotal += get<2>(entry) - get<1>(entry);
-        } else if (get<0>(entry) == HTTPS_REQUESTS_PEEK) {
-            httpsRequestsPeekTotal += get<2>(entry) - get<1>(entry);
         }
     }
-
-    // Remove the time spent in https requests from the time spent in peek and prepeek.
-    prePeekTotal -= httpsRequestsPrePeekTotal;
-    peekTotal -= httpsRequestsPeekTotal;
 
     // The lifespan of the object up until now.
     uint64_t totalTime = STimeNow() - creationTime;
 
     // Time that wasn't accounted for in all the other metrics.
     uint64_t unaccountedTime = totalTime - (prePeekTotal + peekTotal + processTotal + postProcessTotal + commitWorkerTotal + commitSyncTotal +
-                                            escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal + queuePageLockTotal + 
-                                            httpsRequestsPrePeekTotal + httpsRequestsPeekTotal);
+                                            escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal + queuePageLockTotal);
 
     uint64_t exclusiveTransactionLockTime = blockingPeekTotal + blockingProcessTotal + blockingCommitWorkerTotal;
     uint64_t blockingCommitThreadTime = exclusiveTransactionLockTime + blockingPrePeekTotal + blockingPostProcessTotal;
@@ -355,8 +340,6 @@ void BedrockCommand::finalizeTimingInfo() {
           "process:" << processTotal/1000 << " (count:" << processCount << "), "
           "postProcess:" << postProcessTotal/1000 << " (count:" << postProcessCount << "), "
           "total:" << totalTime/1000 << ", "
-          "httpsRequestsPrePeek:" << httpsRequestsPrePeekTotal/1000 << ", "
-          "httpsRequestsPeek:" << httpsRequestsPeekTotal/1000 << ", "
           "unaccounted:" << unaccountedTime/1000 << ", "
           "blockingCommitThreadTime:" << blockingCommitThreadTime/1000 << ", "
           "exclusiveTransactionLockTime:" << exclusiveTransactionLockTime/1000 <<

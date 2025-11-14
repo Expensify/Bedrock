@@ -27,8 +27,7 @@ class BedrockCommand : public SQLiteCommand {
         QUEUE_SYNC,
         QUEUE_BLOCKING,
         QUEUE_PAGE_LOCK,
-        HTTPS_REQUESTS_PREPEEK,
-        HTTPS_REQUESTS_PEEK,
+
         // Time spent in the blockingCommit thread (not the same as "commit lock time")
         BLOCKING_PREPEEK,
         BLOCKING_PEEK,
@@ -38,7 +37,6 @@ class BedrockCommand : public SQLiteCommand {
     };
 
     enum class STAGE {
-        NONE,
         PREPEEK,
         PEEK,
         PROCESS,
@@ -295,9 +293,6 @@ class BedrockCommand : public SQLiteCommand {
     bool _commitEmptyTransactions;
 
   private:
-
-    // The stage of the command that we are currently in. We'll use this to track the stage of the command for timing purposes.
-    STAGE _stage = STAGE::NONE;
 
     // Set to true when we are in `peek`, `prePeek`, or `postProcess`.
     bool _inDBReadOperation = false;
