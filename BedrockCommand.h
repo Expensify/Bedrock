@@ -27,7 +27,7 @@ class BedrockCommand : public SQLiteCommand {
         QUEUE_SYNC,
         QUEUE_BLOCKING,
         QUEUE_PAGE_LOCK,
-
+        HTTPS_REQUESTS,
         // Time spent in the blockingCommit thread (not the same as "commit lock time")
         BLOCKING_PREPEEK,
         BLOCKING_PEEK,
