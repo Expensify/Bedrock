@@ -182,17 +182,16 @@ class SQLite {
     // Commits the current transaction to disk. Returns an sqlite3 result code.
     // preCheckpointCallback is an optional callback that will be called before the checkpoint code runs, after the commit has completed. Note that if the commit fails, this is not called.
     // The main purpose of this is to allow replications in SQLiteNode to notify other waiting threads that the commit has finished even before the checkpoint is done.
-    int commit(const string& description = "UNSPECIFIED", const string& commandName = "NONE", function<void()>* preCheckpointCallback = nullptr);
+    int commit(const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
 
     // Cancels the current transaction and rolls it back.
-    void rollback(const string& commandName = "NONE");
+    void rollback(const string& commandName = "");
 
     // Returns the total number of changes on this database
     int getChangeCount() { return sqlite3_total_changes(_db); }
 
     // Returns the timing of the last command
-    uint64_t getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
-                                      uint64_t& commit, uint64_t& rollback);
+    void logLastTransactionTiming(const string& message, const string& commandName = "NONE");
 
     TRANSACTION_TYPE getLastTransactionType();
 

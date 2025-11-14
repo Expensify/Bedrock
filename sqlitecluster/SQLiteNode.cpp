@@ -963,18 +963,18 @@ bool SQLiteNode::update() {
                     _commitState = CommitState::FAILED;
                 } else {
                     // Hey, our commit succeeded! Record how long it took.
-                    uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
-                    uint64_t totalElapsed = _db.getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed,
-                                                                         prepareElapsed, commitElapsed, rollbackElapsed);
-                    SINFO("Committed leader transaction for '"
-                          << (_lastSentTransactionID + 1) << " (" << _db.getCommittedHash() << "). "
-                          << " (consistencyRequired=" << CONSISTENCY_LEVEL_NAMES[_commitConsistency] << "), "
-                          << numFullApproved << " of " << numFullPeers << " approved (" << _peerList.size() << " total) in "
-                          << totalElapsed / 1000 << " ms ("
-                          << beginElapsed / 1000 << "+" << readElapsed / 1000 << "+"
-                          << writeElapsed / 1000 << "+" << prepareElapsed / 1000 << "+"
-                          << commitElapsed / 1000 << "+" << rollbackElapsed / 1000 << "ms)");
-
+                    _db.logLastTransactionTiming(
+                        format(
+                            "Committed leader transaction for '{} ({}). (consistencyRequired={}), {} of {} approved ({} total).", 
+                            _lastSentTransactionID + 1, 
+                            _db.getCommittedHash(), 
+                            CONSISTENCY_LEVEL_NAMES[_commitConsistency], 
+                            numFullApproved, 
+                            numFullPeers, 
+                            _peerList.size()
+                        ), 
+                        "SQLiteNode::update"
+                    );
                     SINFO("[performance] Successfully committed " << CONSISTENCY_LEVEL_NAMES[_commitConsistency]
                           << " transaction. Sending COMMIT_TRANSACTION to peers.");
 

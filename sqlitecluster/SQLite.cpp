@@ -932,10 +932,6 @@ map<uint64_t, tuple<string, string, uint64_t>> SQLite::popCommittedTransactions(
 }
 
 void SQLite::rollback(const string& commandName) {
-    // Get the timing spent in this db handle
-    uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
-    uint64_t totalElapsed = getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed);
-
     // Make sure we're actually inside a transaction
     if (_insideTransaction) {
         // Cancel this transaction
@@ -965,9 +961,9 @@ void SQLite::rollback(const string& commandName) {
             _sharedData._commitLockTimer.stop();
             _sharedData.commitLock.unlock();
         }
-        SINFO("Transaction was rolled back. CommandName: " << commandName << ", TotalTime: " << totalElapsed / 1000 << "ms, ReadTime: " << readElapsed / 1000 << "ms, WriteTime: " << writeElapsed / 1000 << "ms, PrepareTime: " << prepareElapsed / 1000 << "ms, CommitTime: " << commitElapsed / 1000 << "ms, RollbackTime: " << rollbackElapsed / 1000 << "ms");
+        logLastTransactionTiming("Transaction was rolled back.", commandName);
     } else {
-        SINFO("Rolling back but not inside transaction, ignoring. CommandName: " << commandName << ", TotalTime: " << totalElapsed / 1000 << "ms, ReadTime: " << readElapsed / 1000 << "ms, WriteTime: " << writeElapsed / 1000 << "ms, PrepareTime: " << prepareElapsed / 1000 << "ms, CommitTime: " << commitElapsed / 1000 << "ms, RollbackTime: " << rollbackElapsed / 1000 << "ms");
+        logLastTransactionTiming("Rolling back but not inside transaction, ignoring.", commandName);
     }
     _queryCache.clear();
     SINFO("Transaction rollback with " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits << " served from cache.");
@@ -977,16 +973,9 @@ void SQLite::rollback(const string& commandName) {
     _dbCountAtStart = 0;
 }
 
-uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
-                                          uint64_t& commit, uint64_t& rollback) {
-    // Just populate and return
-    begin = _beginElapsed;
-    read = _readElapsed;
-    write = _writeElapsed;
-    prepare = _prepareElapsed;
-    commit = _commitElapsed;
-    rollback = _rollbackElapsed;
-    return begin + read + write + prepare + commit + rollback;
+void SQLite::logLastTransactionTiming(const string& message, const string& commandName) {
+    uint64_t totalElapsed = _beginElapsed + _readElapsed + _writeElapsed + _prepareElapsed + _commitElapsed + _rollbackElapsed;
+    SINFO(message, {{"commandName", commandName}, {"totalElapsed", totalElapsed}, {"readElapsed", _readElapsed}, {"writeElapsed", _writeElapsed}, {"prepareElapsed", _prepareElapsed}, {"commitElapsed", _commitElapsed}, {"rollbackElapsed", _rollbackElapsed}});
 }
 
 bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
