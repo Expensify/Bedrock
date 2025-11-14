@@ -59,6 +59,12 @@ static set<string> PARAMS_WHITELIST = {
     "topic",
     "userID",
     "what",
+    "totalElapsed",
+    "readElapsed",
+    "writeElapsed",
+    "prepareElapsed",
+    "commitElapsed",
+    "rollbackElapsed",
 };
 
 string addLogParams(string&& message, const STable& params) {
