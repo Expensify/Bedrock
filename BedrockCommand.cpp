@@ -195,7 +195,7 @@ void BedrockCommand::waitForHTTPSRequests(SQLite& db) {
         if (!_inDBReadOperation) {
             STHROW("500 Can only wait for transaction in peek/prepeek");
         }
-        db.rollback();
+        db.rollback(getMethodName());
     }
 
     _waitForHTTPSRequests();
@@ -321,11 +321,7 @@ void BedrockCommand::finalizeTimingInfo() {
         }
     }
 
-    // This is a hack to support Auth's old `Get` format where we have a `returnValueList` of items to return rather
-    // than a specific name. The timing profile of every version of this command is wildly different and it's impossible
-    // to reason about which ones cause performance issues when they're all globbed together.
-    // In the future, let's find a better way to do this. For now, this gets us the data we need.
-    string methodName = request.methodLine + (request.isSet("returnValueList") ? "_" + request["returnValueList"] : ""s);
+    string methodName = getMethodName();
 
     // This makes these look like valid command names given all our existing log handling.
     for (size_t i = 0; i < methodName.size(); i++) {
@@ -472,4 +468,12 @@ string BedrockCommand::serializeData() const {
 }
 
 void BedrockCommand::deserializeData(const string& data) {
+}
+
+string BedrockCommand::getMethodName() const {
+    // This is a hack to support Auth's old `Get` format where we have a `returnValueList` of items to return rather
+    // than a specific name. The timing profile of every version of this command is wildly different and it's impossible
+    // to reason about which ones cause performance issues when they're all globbed together.
+    // In the future, let's find a better way to do this. For now, this gets us the data we need.
+    return request.methodLine + (request.isSet("returnValueList") ? "_" + request["returnValueList"] : ""s);
 }
