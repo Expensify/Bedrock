@@ -931,7 +931,7 @@ map<uint64_t, tuple<string, string, uint64_t>> SQLite::popCommittedTransactions(
     return _sharedData.popCommittedTransactions();
 }
 
-void SQLite::rollback(const string& commandName = "NONE") {
+void SQLite::rollback(const string& commandName) {
     // Get the timing spent in this db handle
     uint64_t beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed;
     uint64_t totalElapsed = getLastTransactionTiming(beginElapsed, readElapsed, writeElapsed, prepareElapsed, commitElapsed, rollbackElapsed);
