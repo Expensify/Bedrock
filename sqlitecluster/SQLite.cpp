@@ -975,7 +975,7 @@ void SQLite::rollback(const string& commandName) {
 
 void SQLite::logLastTransactionTiming(const string message, const string& commandName) {
     uint64_t totalElapsed = _beginElapsed + _readElapsed + _writeElapsed + _prepareElapsed + _commitElapsed + _rollbackElapsed;
-    SINFO(message, {{"command", commandName}, {"totalElapsed", totalElapsed}, {"readElapsed", _readElapsed}, {"writeElapsed", _writeElapsed}, {"prepareElapsed", _prepareElapsed}, {"commitElapsed", _commitElapsed}, {"rollbackElapsed", _rollbackElapsed}});
+    SINFO(message, {{"command", commandName}, {"totalElapsed", to_string(totalElapsed)}, {"readElapsed", to_string(_readElapsed)}, {"writeElapsed", to_string(_writeElapsed)}, {"prepareElapsed", to_string(_prepareElapsed)}, {"commitElapsed", to_string(_commitElapsed)}, {"rollbackElapsed", to_string(_rollbackElapsed)}});
 }
 
 bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
