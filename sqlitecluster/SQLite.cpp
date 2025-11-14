@@ -973,7 +973,7 @@ void SQLite::rollback(const string& commandName) {
     _dbCountAtStart = 0;
 }
 
-void SQLite::logLastTransactionTiming(const string& message, const string& commandName) {
+void SQLite::logLastTransactionTiming(const string message, const string& commandName) {
     uint64_t totalElapsed = _beginElapsed + _readElapsed + _writeElapsed + _prepareElapsed + _commitElapsed + _rollbackElapsed;
     SINFO(message, {{"command", commandName}, {"totalElapsed", totalElapsed}, {"readElapsed", _readElapsed}, {"writeElapsed", _writeElapsed}, {"prepareElapsed", _prepareElapsed}, {"commitElapsed", _commitElapsed}, {"rollbackElapsed", _rollbackElapsed}});
 }
