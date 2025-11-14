@@ -137,6 +137,7 @@ void BedrockCommand::_waitForHTTPSRequests() {
         uint64_t maxWaitUs = 0;
         uint64_t now = STimeNow();
         if (!startTime) {
+            startTiming(HTTPS_REQUESTS);
             startTime = now;
         }
         if (now < timeout()) {
@@ -178,6 +179,7 @@ void BedrockCommand::_waitForHTTPSRequests() {
     }
 
     if (startTime) {
+        stopTiming(HTTPS_REQUESTS);
         SINFO("Waited " << ((STimeNow() - startTime) / 1000) << "ms for network requests.");
     }
 }
@@ -277,7 +279,7 @@ void BedrockCommand::finalizeTimingInfo() {
 
     // Time that wasn't accounted for in all the other metrics.
     uint64_t unaccountedTime = totalTime - (prePeekTotal + peekTotal + processTotal + postProcessTotal + commitWorkerTotal + commitSyncTotal +
-                                            escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal + queuePageLockTotal);
+                                            escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal + queuePageLockTotal + httpsRequestsTotal);
 
     uint64_t exclusiveTransactionLockTime = blockingPeekTotal + blockingProcessTotal + blockingCommitWorkerTotal;
     uint64_t blockingCommitThreadTime = exclusiveTransactionLockTime + blockingPrePeekTotal + blockingPostProcessTotal;
