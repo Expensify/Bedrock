@@ -170,6 +170,7 @@ bool SQResult::deserialize(const string& json) {
 
                 // Insert the values
                 SQResultRow& row = rows[rowIndex++];
+                row.result = this;
                 for (const string& s : jsonRow) {
                     row.push_back(s);
                 }
@@ -187,7 +188,7 @@ bool SQResult::deserialize(const string& json) {
 
             // We need to preserve the *order* of the headers of the first row, which is not actually in the JSON spec but
             // is important here.
-            SParseJSONObject(array.front(), "", [&](const string& key){headers.push_back(key);});
+            SParseJSONObject(array.front(), "", [&](const string& key, const string& value){headers.push_back(key);});
 
             // Now we need to parse each row.
             for (auto& jsonRow : array) {
@@ -196,16 +197,16 @@ bool SQResult::deserialize(const string& json) {
 
                 // Now we grab a reference to our new blank row.
                 SQResultRow& row = rows[rows.size() - 1];
+                row.result = this;
 
                 // And get the data that will fit in this row.
                 // We pass the empty string here for how we deserialize `null` from JSON becuase historically we have no way to
                 // differentiate these values in an SQResult.
-                STable rowTable = SParseJSONObject(jsonRow, "");
-
-                // And push it into the row in the order the keys exist in the headers.
-                for (auto& header : headers) {
-                    row.push_back(rowTable[header]);
-                }
+                // These are done *in order* rather than by key, which is strictly for JSON.
+                // However, that's what SQLite returns.
+                SParseJSONObject(jsonRow, "", [&](const string& key, const string& value){
+                    row.push_back(value);
+                });
             }
 
             return true;
