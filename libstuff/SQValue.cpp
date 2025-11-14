@@ -1,6 +1,8 @@
+#include "libstuff/libstuff.h"
 #include <cmath>
 #include <libstuff/SQValue.h>
 #include <libstuff/sqlite3.h>
+#include <string>
 
 // All of our constructor bodies are empty, we just use member initializer lists.
 SQValue::SQValue() : type(SQValue::TYPE::NONE) {}
@@ -9,6 +11,34 @@ SQValue::SQValue(double val) : type(SQValue::TYPE::REAL), real(val) {}
 SQValue::SQValue(const char* val) : type(SQValue::TYPE::TEXT), text(val ? val : "") {}
 SQValue::SQValue(const string& val) : type(SQValue::TYPE::TEXT), text(val) {}
 SQValue::SQValue(TYPE t, const string& val) : type(t), text(val) {}
+
+const SQValue::TYPE SQValue::getType() const {
+    return type;
+}
+
+const string& SQValue::getString() const {
+    if (type != TYPE::TEXT && type != TYPE::BLOB) {
+        STHROW("Requested SQValue as string but is type: " + to_string((int)type));
+    }
+
+    return text;
+}
+
+int64_t SQValue::getInt() const {
+    if (type != TYPE::INTEGER) {
+        STHROW("Requested SQValue as integer but is type: " + to_string((int)type));
+    }
+
+    return integer;
+}
+
+double SQValue::getReal() const {
+    if (type != TYPE::REAL) {
+        STHROW("Requested SQValue as real but is type: " + to_string((int)type));
+    }
+
+    return real;
+}
 
 SQValue::operator string() const {
     switch (type) {
