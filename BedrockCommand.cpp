@@ -345,6 +345,7 @@ void BedrockCommand::finalizeTimingInfo() {
           "process:" << processTotal/1000 << " (count:" << processCount << "), "
           "postProcess:" << postProcessTotal/1000 << " (count:" << postProcessCount << "), "
           "total:" << totalTime/1000 << ", "
+          "httpsRequests:" << httpsRequestsTotal/1000 << ", "
           "unaccounted:" << unaccountedTime/1000 << ", "
           "blockingCommitThreadTime:" << blockingCommitThreadTime/1000 << ", "
           "exclusiveTransactionLockTime:" << exclusiveTransactionLockTime/1000 <<
