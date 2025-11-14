@@ -893,6 +893,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
             }
             _sharedData.checkpointInProgress.clear();
         }
+        logLastTransactionTiming("Commit succeeded.", commandName);
         SINFO(description << " COMMIT " << SToStr(_sharedData.commitCount) << " complete in " << time << ". Wrote " << (endPages - startPages)
               << " pages. WAL file size is " << sz << " bytes. " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits
               << " served from cache. Used journal " << _journalName);
