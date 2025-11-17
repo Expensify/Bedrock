@@ -212,7 +212,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     command->complete = returnValue == RESULT::COMPLETE;
 
     // Back out of the current transaction, it doesn't need to do anything.
-    _db.rollback();
+    _db.rollback(command->getMethodName());
     _db.clearTimeout();
     _db.clearAbortRef();
 
@@ -275,7 +275,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
 
         // If we have no uncommitted query, just rollback the empty transaction. Otherwise, we need to commit.
         if (_db.getUncommittedQuery().empty() && !command->shouldCommitEmptyTransactions()) {
-            _db.rollback();
+            _db.rollback(command->getMethodName());
         } else {
             needsCommit = true;
         }
@@ -301,19 +301,19 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         }
     } catch (const SException& e) {
         _handleCommandException(command, e, &_db, &_server);
-        _db.rollback();
+        _db.rollback(command->getMethodName());
         needsCommit = false;
         command->_inDBWriteOperation = false;
     } catch (const SQLite::constraint_error& e) {
         SWARN("Unique Constraints Violation, command: " << request.methodLine);
         command->response.methodLine = "400 Unique Constraints Violation";
-        _db.rollback();
+        _db.rollback(command->getMethodName());
         needsCommit = false;
         command->_inDBWriteOperation = false;
     } catch(...) {
         SALERT("Unhandled exception typename: " << SGetCurrentExceptionName() << ", command: " << request.methodLine);
         command->response.methodLine = "500 Unhandled Exception";
-        _db.rollback();
+        _db.rollback(command->getMethodName());
         needsCommit = false;
         command->_inDBWriteOperation = false;
     }
