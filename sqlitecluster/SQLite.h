@@ -191,7 +191,7 @@ class SQLite {
     int getChangeCount() { return sqlite3_total_changes(_db); }
 
     // Returns the timing of the last command
-    void logLastTransactionTiming(const string message, const string& commandName = "NONE");
+    virtual void logLastTransactionTiming(const string& message, const string& commandName = "NONE");
 
     TRANSACTION_TYPE getLastTransactionType();
 
