@@ -135,7 +135,7 @@ class BedrockCommand : public SQLiteCommand {
     bool areHttpsRequestsComplete() const;
 
     // Returns the method name of this command, appending the return value list if it exists.
-    string getMethodName() const;
+    virtual string getMethodName() const;
 
     // If the `peek` portion of this command needs to make an HTTPS request, this is where we store it.
     template <typename T>
