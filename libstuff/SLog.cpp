@@ -43,6 +43,7 @@ void SLogStackTrace(int level) {
 // If the param name is not in this whitelist, we will log <REDACTED> in addLogParams.
 static set<string> PARAMS_WHITELIST = {
     "command",
+    "commitElapsed",
     "Connection",
     "Content-Length",
     "count",
@@ -51,14 +52,19 @@ static set<string> PARAMS_WHITELIST = {
     "logParam",
     "message",
     "peer",
+    "prepareElapsed",
     "query",
+    "readElapsed",
     "reason",
     "requestID",
+    "rollbackElapsed",
     "rowNum",
     "status",
     "topic",
+    "totalElapsed",
     "userID",
     "what",
+    "writeElapsed",
 };
 
 string addLogParams(string&& message, const STable& params) {

@@ -802,7 +802,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     return true;
 }
 
-int SQLite::commit(const string& description, function<void()>* preCheckpointCallback) {
+int SQLite::commit(const string& description, const string& commandName, function<void()>* preCheckpointCallback) {
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
         return COMMIT_DISABLED;
@@ -893,6 +893,7 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
             }
             _sharedData.checkpointInProgress.clear();
         }
+        logLastTransactionTiming("Commit succeeded.", commandName);
         SINFO(description << " COMMIT " << SToStr(_sharedData.commitCount) << " complete in " << time << ". Wrote " << (endPages - startPages)
               << " pages. WAL file size is " << sz << " bytes. " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits
               << " served from cache. Used journal " << _journalName);
@@ -931,7 +932,7 @@ map<uint64_t, tuple<string, string, uint64_t>> SQLite::popCommittedTransactions(
     return _sharedData.popCommittedTransactions();
 }
 
-void SQLite::rollback() {
+void SQLite::rollback(const string& commandName) {
     // Make sure we're actually inside a transaction
     if (_insideTransaction) {
         // Cancel this transaction
@@ -961,8 +962,9 @@ void SQLite::rollback() {
             _sharedData._commitLockTimer.stop();
             _sharedData.commitLock.unlock();
         }
+        logLastTransactionTiming("Transaction was rolled back.", commandName);
     } else {
-        SINFO("Rolling back but not inside transaction, ignoring.");
+        logLastTransactionTiming("Rolling back but not inside transaction, ignoring.", commandName);
     }
     _queryCache.clear();
     SINFO("Transaction rollback with " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits << " served from cache.");
@@ -972,16 +974,9 @@ void SQLite::rollback() {
     _dbCountAtStart = 0;
 }
 
-uint64_t SQLite::getLastTransactionTiming(uint64_t& begin, uint64_t& read, uint64_t& write, uint64_t& prepare,
-                                          uint64_t& commit, uint64_t& rollback) {
-    // Just populate and return
-    begin = _beginElapsed;
-    read = _readElapsed;
-    write = _writeElapsed;
-    prepare = _prepareElapsed;
-    commit = _commitElapsed;
-    rollback = _rollbackElapsed;
-    return begin + read + write + prepare + commit + rollback;
+void SQLite::logLastTransactionTiming(const string& message, const string& commandName) {
+    uint64_t totalElapsed = _beginElapsed + _readElapsed + _writeElapsed + _prepareElapsed + _commitElapsed + _rollbackElapsed;
+    SINFO(message, {{"command", commandName}, {"totalElapsed", to_string(totalElapsed/1000)}, {"readElapsed", to_string(_readElapsed/1000)}, {"writeElapsed", to_string(_writeElapsed/1000)}, {"prepareElapsed", to_string(_prepareElapsed/1000)}, {"commitElapsed", to_string(_commitElapsed/1000)}, {"rollbackElapsed", to_string(_rollbackElapsed/1000)}});
 }
 
 bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
