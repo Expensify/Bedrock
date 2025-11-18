@@ -16,7 +16,7 @@ if [[ "$TRAVIS_BRANCH" == pull/* ]]; then
     # even if head is already pointing to it.
     git fetch origin "${TRAVIS_BRANCH}":"${TRAVIS_BRANCH}" --update-head-ok
 
-    # IF this failed, exit early
+    # If this failed, exit early
     if [[ $? -ne 0 ]]; then
         exit 1
     fi
