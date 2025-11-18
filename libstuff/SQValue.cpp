@@ -3,69 +3,100 @@
 #include <libstuff/sqlite3.h>
 
 // All of our constructor bodies are empty, we just use member initializer lists.
-SQValue::SQValue() : type(SQValue::TYPE::NONE) {}
-SQValue::SQValue(int64_t val) : type(SQValue::TYPE::INTEGER), integer(val) {}
-SQValue::SQValue(double val) : type(SQValue::TYPE::REAL), real(val) {}
-SQValue::SQValue(const char* val) : type(SQValue::TYPE::TEXT), text(val ? val : "") {}
-SQValue::SQValue(const string& val) : type(SQValue::TYPE::TEXT), text(val) {}
-SQValue::SQValue(TYPE t, const string& val) : type(t), text(val) {}
+SQValue::SQValue() : type(SQValue::TYPE::NONE)
+{
+}
 
-SQValue::operator string() const {
+SQValue::SQValue(int64_t val) : type(SQValue::TYPE::INTEGER), integer(val)
+{
+}
+
+SQValue::SQValue(double val) : type(SQValue::TYPE::REAL), real(val)
+{
+}
+
+SQValue::SQValue(const char* val) : type(SQValue::TYPE::TEXT), text(val ? val : "")
+{
+}
+
+SQValue::SQValue(const string& val) : type(SQValue::TYPE::TEXT), text(val)
+{
+}
+
+SQValue::SQValue(TYPE t, const string& val) : type(t), text(val)
+{
+}
+
+SQValue::operator string() const
+{
     switch (type) {
         case TYPE::TEXT:
         case TYPE::BLOB:
             return text;
+
         case TYPE::INTEGER:
-            return std::to_string(integer);
+            return to_string(integer);
+
         case TYPE::REAL:
             // This is the same format that the sqlite3 shell uses internally.
             char buf[64];
             sqlite3_snprintf(sizeof(buf), buf, "%!.15g", real);
             return string(buf);
+
         case TYPE::NONE:
         default:
             return "";
     }
 }
 
-string operator+(string lhs, const SQValue& rhs) {
+string operator+(string lhs, const SQValue& rhs)
+{
     lhs += static_cast<string>(rhs);
     return lhs;
 }
 
-string operator+(const SQValue& lhs, const string& rhs) {
+string operator+(const SQValue& lhs, const string& rhs)
+{
     return static_cast<string>(lhs) + rhs;
 }
 
-string operator+(const char* lhs, const SQValue& rhs) {
+string operator+(const char* lhs, const SQValue& rhs)
+{
     return string(lhs) + static_cast<string>(rhs);
 }
 
-string operator+(const SQValue& lhs, const char* rhs) {
+string operator+(const SQValue& lhs, const char* rhs)
+{
     return static_cast<string>(lhs) + string(rhs);
 }
 
-string operator+(const SQValue& lhs, const SQValue& rhs) {
+string operator+(const SQValue& lhs, const SQValue& rhs)
+{
     return static_cast<string>(lhs) + static_cast<string>(rhs);
 }
 
-bool operator==(const SQValue& lhs, const string& rhs) {
+bool operator==(const SQValue& lhs, const string& rhs)
+{
     return static_cast<string>(lhs) == rhs;
 }
 
-bool operator==(const string& lhs, const SQValue& rhs) {
+bool operator==(const string& lhs, const SQValue& rhs)
+{
     return lhs == static_cast<string>(rhs);
 }
 
-bool operator==(const SQValue& lhs, const char* rhs) {
+bool operator==(const SQValue& lhs, const char* rhs)
+{
     return static_cast<string>(lhs) == string(rhs ? rhs : "");
 }
 
-bool operator==(const char* lhs, const SQValue& rhs) {
+bool operator==(const char* lhs, const SQValue& rhs)
+{
     return string(lhs ? lhs : "") == static_cast<string>(rhs);
 }
 
-bool operator==(const SQValue& lhs, const SQValue& rhs) {
+bool operator==(const SQValue& lhs, const SQValue& rhs)
+{
     // Types must match
     if (lhs.type != rhs.type) {
         return false;
@@ -103,11 +134,13 @@ bool operator==(const SQValue& lhs, const SQValue& rhs) {
     }
 }
 
-bool operator!=(const SQValue& lhs, const SQValue& rhs) {
+bool operator!=(const SQValue& lhs, const SQValue& rhs)
+{
     return !(lhs == rhs);
 }
 
-bool SQValue::empty() const {
+bool SQValue::empty() const
+{
     if (type == TYPE::NONE) {
         return true;
     }
@@ -117,11 +150,13 @@ bool SQValue::empty() const {
     return false;
 }
 
-size_t SQValue::size() const {
+size_t SQValue::size() const
+{
     return static_cast<string>(*this).size();
 }
 
-ostream& operator<<(ostream& os, const SQValue& v) {
+ostream& operator<<(ostream& os, const SQValue& v)
+{
     os << static_cast<string>(v);
     return os;
 }

@@ -5,7 +5,8 @@ list<int64_t> PageLockGuard::mutexOrder;
 map<int64_t, list<int64_t>::iterator> PageLockGuard::mutexOrderFastLookup;
 map<int64_t, int64_t> PageLockGuard::mutexCounts;
 
-PageLockGuard::PageLockGuard(int64_t pageNumber) : _pageNumber(pageNumber) {
+PageLockGuard::PageLockGuard(int64_t pageNumber) : _pageNumber(pageNumber)
+{
     if (_pageNumber == 0) {
         return;
     }
@@ -88,7 +89,8 @@ PageLockGuard::PageLockGuard(int64_t pageNumber) : _pageNumber(pageNumber) {
     m->lock();
 }
 
-PageLockGuard::~PageLockGuard() {
+PageLockGuard::~PageLockGuard()
+{
     if (_pageNumber == 0) {
         return;
     }

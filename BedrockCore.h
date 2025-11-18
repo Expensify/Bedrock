@@ -4,11 +4,12 @@
 class BedrockServer;
 
 class BedrockCore : public SQLiteCore {
-  public:
+public:
     BedrockCore(SQLite& db, const BedrockServer& server);
 
     // Possible result values for `peekCommand` and `processCommand`
-    enum class RESULT {
+    enum class RESULT
+    {
         INVALID = 0,
         COMPLETE = 1,
         SHOULD_PROCESS = 2,
@@ -19,13 +20,18 @@ class BedrockCore : public SQLiteCore {
 
     // Automatic timing class that records an entry corresponding to its lifespan.
     class AutoTimer {
-      public:
+public:
         AutoTimer(unique_ptr<BedrockCommand>& command, BedrockCommand::TIMING_INFO type) :
-        _command(command), _type(type), _start(STimeNow()) { }
-        ~AutoTimer() {
-          _command->timingInfo.emplace_back(make_tuple(_type, _start, STimeNow()));
+            _command(command), _type(type), _start(STimeNow())
+        {
         }
-      private:
+
+        ~AutoTimer()
+        {
+            _command->timingInfo.emplace_back(make_tuple(_type, _start, STimeNow()));
+        }
+
+private:
         unique_ptr<BedrockCommand>& _command;
         BedrockCommand::TIMING_INFO _type;
         uint64_t _start;
@@ -64,7 +70,8 @@ class BedrockCore : public SQLiteCore {
     // If the remaining time until timeout is greater than timeoutMS, then the command timeout will be decreased to timeoutMS,
     // otherwise, nothing happens
     void decreaseCommandTimeout(unique_ptr<BedrockCommand>& command, uint64_t timeoutMS);
-  private:
+
+private:
     // When called in the context of handling an exception, returns the demangled (if possible) name of the exception.
     string _getExceptionName();
 
@@ -74,5 +81,6 @@ class BedrockCore : public SQLiteCore {
     static uint64_t _getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing);
 
     static void _handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db = nullptr, const BedrockServer* server = nullptr);
+
     const BedrockServer& _server;
 };

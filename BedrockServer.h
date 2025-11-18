@@ -14,7 +14,7 @@ class SQLitePeer;
 class BedrockCore;
 
 class BedrockServer : public SQLiteServer {
-  public:
+public:
 
     // Shutting Down and Standing Down a BedrockServer.
     //
@@ -145,7 +145,8 @@ class BedrockServer : public SQLiteServer {
     // our failures should be limited to individual commands rather than the entire server shutting down.
 
     // Shutdown states.
-    enum SHUTDOWN_STATE {
+    enum SHUTDOWN_STATE
+    {
         RUNNING,
         START_SHUTDOWN,
         COMMANDS_FINISHED,
@@ -242,7 +243,7 @@ class BedrockServer : public SQLiteServer {
     // Expose the DB pool to plugins.
     shared_ptr<SQLitePool> getDBPool();
 
-  private:
+private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
 
@@ -316,12 +317,12 @@ class BedrockServer : public SQLiteServer {
     void _reply(unique_ptr<BedrockCommand>& command);
 
     // The following are constants used as methodlines by status command requests.
-    static constexpr auto STATUS_IS_FOLLOWER       = "GET /status/isFollower HTTP/1.1";
+    static constexpr auto STATUS_IS_FOLLOWER = "GET /status/isFollower HTTP/1.1";
     static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
-    static constexpr auto STATUS_PING              = "Ping";
-    static constexpr auto STATUS_STATUS            = "Status";
-    static constexpr auto STATUS_BLACKLIST         = "SetParallelCommandBlacklist";
-    static constexpr auto STATUS_MULTIWRITE        = "EnableMultiWrite";
+    static constexpr auto STATUS_PING = "Ping";
+    static constexpr auto STATUS_STATUS = "Status";
+    static constexpr auto STATUS_BLACKLIST = "SetParallelCommandBlacklist";
+    static constexpr auto STATUS_MULTIWRITE = "EnableMultiWrite";
 
     // This makes the sync node available to worker threads, so that they can write to it's sockets, and query it for
     // data (such as in the Status command). Because this is a shared pointer, the underlying object can't be deleted

@@ -1,9 +1,15 @@
 #include "SMultiHostSocketPool.h"
 
-SMultiHostSocketPool::SMultiHostSocketPool() {}
-SMultiHostSocketPool::~SMultiHostSocketPool() {}
+SMultiHostSocketPool::SMultiHostSocketPool()
+{
+}
 
-unique_ptr<STCPManager::Socket> SMultiHostSocketPool::getSocket(const string& host) {
+SMultiHostSocketPool::~SMultiHostSocketPool()
+{
+}
+
+unique_ptr<STCPManager::Socket> SMultiHostSocketPool::getSocket(const string& host)
+{
     lock_guard<mutex> lock(_poolMutex);
     auto pool = _pools.find(host);
     if (pool == _pools.end()) {
@@ -13,7 +19,8 @@ unique_ptr<STCPManager::Socket> SMultiHostSocketPool::getSocket(const string& ho
     return pool->second.getSocket();
 }
 
-void SMultiHostSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s, const string& host) {
+void SMultiHostSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s, const string& host)
+{
     lock_guard<mutex> lock(_poolMutex);
     auto pool = _pools.find(host);
     if (pool != _pools.end()) {

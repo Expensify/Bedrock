@@ -24,7 +24,7 @@
 // Items scheduled in the future are never returned (unless they've timed out).
 template<typename T>
 class SScheduledPriorityQueue {
-  public:
+public:
 
     // Typedefs are here for legibility's sake.
     typedef int Priority;
@@ -33,16 +33,19 @@ class SScheduledPriorityQueue {
 
     // If nothing becomes available to dequeue while waiting, a timeout_error exception is thrown.
     class timeout_error : exception {
-      public:
-        const char* what() const noexcept {
+public:
+        const char* what() const noexcept
+        {
             return "timeout";
         }
     };
 
     // By default, the start and end functions are No-ops.
-    SScheduledPriorityQueue(function<void(T& item)> startFunction = [](T& item){},
-                            function<void(T& item)> endFunction = [](T& item){})
-      : _startFunction(startFunction), _endFunction(endFunction) {};
+    SScheduledPriorityQueue(function<void(T& item)> startFunction = [] (T & item){},
+                            function<void(T& item)> endFunction = [] (T & item){})
+        : _startFunction(startFunction), _endFunction(endFunction)
+    {
+    };
 
     // Remove all items from the queue.
     void clear();
@@ -64,12 +67,16 @@ class SScheduledPriorityQueue {
     // Add an item to the queue. The queue takes ownership of the item and the caller's copy is invalidated.
     void push(T&& item, Priority priority, Scheduled scheduled, Timeout timeout);
 
-  protected:
+protected:
 
     // Associate the item with it's timeout so that when we dequeue an item to return, we can also remove it's entry
     // in our set of timeouts.
-    struct ItemTimeoutPair {
-        ItemTimeoutPair(T&& _item, Timeout _timeout) : item(move(_item)), timeout(_timeout) {}
+    struct ItemTimeoutPair
+    {
+        ItemTimeoutPair(T&& _item, Timeout _timeout) : item(move(_item)), timeout(_timeout)
+        {
+        }
+
         T item;
         Timeout timeout;
     };
@@ -94,20 +101,23 @@ class SScheduledPriorityQueue {
 };
 
 template<typename T>
-void SScheduledPriorityQueue<T>::clear()  {
+void SScheduledPriorityQueue<T>::clear()
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     _queue.clear();
     _lookupByTimeout.clear();
 }
 
 template<typename T>
-bool SScheduledPriorityQueue<T>::empty()  {
+bool SScheduledPriorityQueue<T>::empty()
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     return _queue.empty();
 }
 
 template<typename T>
-size_t SScheduledPriorityQueue<T>::size()  {
+size_t SScheduledPriorityQueue<T>::size()
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     size_t size = 0;
     for (const auto& queue : _queue) {
@@ -117,7 +127,8 @@ size_t SScheduledPriorityQueue<T>::size()  {
 }
 
 template<typename T>
-T SScheduledPriorityQueue<T>::get(uint64_t waitUS, bool loggingEnabled) {
+T SScheduledPriorityQueue<T>::get(uint64_t waitUS, bool loggingEnabled)
+{
     unique_lock<mutex> queueLock(_queueMutex);
 
     // NOTE:
@@ -181,7 +192,8 @@ T SScheduledPriorityQueue<T>::get(uint64_t waitUS, bool loggingEnabled) {
 }
 
 template<typename T>
-void SScheduledPriorityQueue<T>::push(T&& item, Priority priority, Scheduled scheduled, Timeout timeout) {
+void SScheduledPriorityQueue<T>::push(T&& item, Priority priority, Scheduled scheduled, Timeout timeout)
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     auto& queue = _queue[priority];
     _startFunction(item);
@@ -191,7 +203,8 @@ void SScheduledPriorityQueue<T>::push(T&& item, Priority priority, Scheduled sch
 }
 
 template<typename T>
-T SScheduledPriorityQueue<T>::_dequeue() {
+T SScheduledPriorityQueue<T>::_dequeue()
+{
     // NOTE: We don't grab a mutex here on purpose - we use a non-recursive mutex to work with condition_variable, so
     // we need to only lock it once, which we've already done in whichever function is calling this one (since this is
     // private).
@@ -201,7 +214,6 @@ T SScheduledPriorityQueue<T>::_dequeue() {
 
     // If anything has timed out, pull that out of the queue, and return that first.
     if (_lookupByTimeout.size()) {
-
         // Get the first item in the timeout map (they're in order).
         auto timeoutIt = _lookupByTimeout.begin();
 
@@ -212,11 +224,9 @@ T SScheduledPriorityQueue<T>::_dequeue() {
 
         // Has this timed out? If so, this is the item we'll return (regardless of which priority it had).
         if (itemTimeout <= now) {
-
             // Find the correct priority queue for this item.
             auto priorityQueueIt = _queue.find(itemPriority);
             if (priorityQueueIt != _queue.end()) {
-
                 // Find all the items in this priority queue scheduled at this particular moment.
                 auto matchingItemIterators = priorityQueueIt->second.equal_range(itemScheduled);
 
@@ -230,7 +240,6 @@ T SScheduledPriorityQueue<T>::_dequeue() {
 
                     // Is this the one that timed out?
                     if (thisItemTimeoutPair.timeout == itemTimeout) {
-
                         // Yep, this one timed out. Pull it out of the queue.
                         T item = move(thisItemTimeoutPair.item);
 
@@ -268,7 +277,6 @@ T SScheduledPriorityQueue<T>::_dequeue() {
     // Ok, if we got here nothing has timed out, so we'll just look at each queue, in priority order, to see if any
     // items are ready to return.
     for (auto queueIt = _queue.rbegin(); queueIt != _queue.rend(); ++queueIt) {
-
         // Record the priority of the queue we're currently looking at.
         Priority queuePriority = queueIt->first;
 
@@ -283,7 +291,6 @@ T SScheduledPriorityQueue<T>::_dequeue() {
         // If the item is scheduled before now, we can return it. Otherwise, since these are in scheduled order, there
         // are no usable items in this queue, and we can go on to the next one.
         if (thisItemScheduled <= now) {
-
             // Pull out the item we want to return.
             T item = move(thisItemTimeoutPair.item);
 
@@ -299,7 +306,6 @@ T SScheduledPriorityQueue<T>::_dequeue() {
             // Remove from the timeout map, as well.
             auto matchingTimeoutIterators = _lookupByTimeout.equal_range(thisItemTimeout);
             for (auto it = matchingTimeoutIterators.first; it != matchingTimeoutIterators.second; it++) {
-
                 // Convenience names for legibility.
                 auto& timeoutPair = it->second;
                 Priority& thisTimeoutPriority = timeoutPair.first;
@@ -327,7 +333,8 @@ T SScheduledPriorityQueue<T>::_dequeue() {
 }
 
 template<typename T>
-list<T> SScheduledPriorityQueue<T>::getAll() {
+list<T> SScheduledPriorityQueue<T>::getAll()
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     list<T> items;
 

@@ -11,7 +11,7 @@ using namespace std;
 class SFastBuffer;
 
 class SSSLState {
-  public:
+public:
     SSSLState(const string& hostname, int socket);
     ~SSSLState();
 
@@ -27,7 +27,7 @@ class SSSLState {
     mbedtls_ssl_context ssl;
     mbedtls_net_context net_ctx;
 
-  private:
+private:
     static mbedtls_entropy_context _ec;
     static mbedtls_ctr_drbg_context _ctr_drbg;
     static mbedtls_ssl_config _conf;

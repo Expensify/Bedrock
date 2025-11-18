@@ -9,18 +9,21 @@
 #include <test/lib/BedrockTester.h>
 #include <libstuff/SHTTPSProxySocket.h>
 
-struct SSLTest : tpunit::TestFixture {
+struct SSLTest : tpunit::TestFixture
+{
     SSLTest()
         : tpunit::TestFixture("SSL",
                               BEFORE_CLASS(SSLTest::setup),
                               TEST(SSLTest::test),
                               TEST(SSLTest::proxyTest),
                               AFTER_CLASS(SSLTest::teardown))
-    { }
+    {
+    }
 
     BedrockTester* tester;
 
-    void setup() {
+    void setup()
+    {
         char cwd[1024];
         if (!getcwd(cwd, sizeof(cwd))) {
             STHROW("Couldn't get CWD");
@@ -31,11 +34,13 @@ struct SSLTest : tpunit::TestFixture {
         });
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
-    void test() {
+    void test()
+    {
         for (auto& url : (map<string, string>){
             // Verify we get some HTTP response from google. We don't care what it is, just that it's valid
             // HTTP. We want to notice that our fake URL, fails, though.
@@ -51,7 +56,8 @@ struct SSLTest : tpunit::TestFixture {
         }
     }
 
-    void proxyTest() {
+    void proxyTest()
+    {
         // This is a generic HTTPS manager.
         SStandaloneHTTPSManager manager;
 
