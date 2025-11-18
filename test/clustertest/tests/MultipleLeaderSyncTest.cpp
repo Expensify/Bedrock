@@ -1,14 +1,18 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct MultipleLeaderSyncTest : tpunit::TestFixture {
+struct MultipleLeaderSyncTest : tpunit::TestFixture
+{
     MultipleLeaderSyncTest()
         : tpunit::TestFixture("MultipleLeaderSync",
                               TEST(MultipleLeaderSyncTest::test)
-                             ) { }
+        )
+    {
+    }
 
     // Create a bunch of trivial write commands.
-    void runTrivialWrites(int writeCount, BedrockTester& node) {
+    void runTrivialWrites(int writeCount, BedrockTester& node)
+    {
         int count = 0;
 
         SData genericRequest("Query");
@@ -34,7 +38,8 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         }
     }
 
-    bool waitForCommit(BedrockTester& node, uint64_t minCommitCount, uint64_t timeoutUS = 60'000'000) {
+    bool waitForCommit(BedrockTester& node, uint64_t minCommitCount, uint64_t timeoutUS = 60'000'000)
+    {
         uint64_t start = STimeNow();
         while (STimeNow() < start + timeoutUS) {
             try {
@@ -52,7 +57,8 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         return false;
     }
 
-    void test() {
+    void test()
+    {
         // create a 5 node cluster
         BedrockClusterTester tester = BedrockClusterTester(ClusterSize::FIVE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"});
 
@@ -103,64 +109,67 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
 
         // Start up both servers.
         thread starter([&]() {
-            tester.startNodeDontWait(1);
-            tester.startNodeDontWait(0);
-        });
+                       tester.startNodeDontWait(1);
+                       tester.startNodeDontWait(0);
+            });
 
         // Make sure we see node 2 leading.
         thread node2checker([&]() {
-            uint64_t start = STimeNow();
-            while (STimeNow() < start + 60'000'000) {
-                try {
-                    STable response = SParseJSONObject(node2.executeWaitVerifyContent(SData("Status"), "200", true));
-                    if (response["state"] == "LEADING") {
-                        node2Leading = true;
-                        return;
-                    }
-                } catch (const SException& e) {}
-                usleep(10'000);
-            }
-        });
+                            uint64_t start = STimeNow();
+                            while (STimeNow() < start + 60'000'000) {
+                                try {
+                                    STable response = SParseJSONObject(node2.executeWaitVerifyContent(SData("Status"), "200", true));
+                                    if (response["state"] == "LEADING") {
+                                        node2Leading = true;
+                                        return;
+                                    }
+                                } catch (const SException& e) {
+                                }
+                                usleep(10'000);
+                            }
+            });
 
         // Make sure we see node 1 synchronize and then lead.
         thread node1checker([&]() {
-            uint64_t start = STimeNow();
-            while (STimeNow() < start + 60'000'000) {
-                try {
-                    STable response = SParseJSONObject(node1.executeWaitVerifyContent(SData("Status"), "200", true));
-                    if (response["state"] == "SYNCHRONIZING") {
-                        node1Synchronizing = true;
-                    }
-                    if (response["state"] == "LEADING") {
-                        node1Leading = true;
-                    }
-                    if (node1Synchronizing && node1Leading) {
-                        return;
-                    }
-                } catch (const SException& e) {}
-                usleep(10'000);
-            }
-        });
+                            uint64_t start = STimeNow();
+                            while (STimeNow() < start + 60'000'000) {
+                                try {
+                                    STable response = SParseJSONObject(node1.executeWaitVerifyContent(SData("Status"), "200", true));
+                                    if (response["state"] == "SYNCHRONIZING") {
+                                        node1Synchronizing = true;
+                                    }
+                                    if (response["state"] == "LEADING") {
+                                        node1Leading = true;
+                                    }
+                                    if (node1Synchronizing && node1Leading) {
+                                        return;
+                                    }
+                                } catch (const SException& e) {
+                                }
+                                usleep(10'000);
+                            }
+            });
 
         // Make sure we see node 0 synchronize and then lead.
         thread node0checker([&]() {
-            uint64_t start = STimeNow();
-            while (STimeNow() < start + 60'000'000) {
-                try {
-                    STable response = SParseJSONObject(node0.executeWaitVerifyContent(SData("Status"), "200", true));
-                    if (response["state"] == "SYNCHRONIZING") {
-                        node0Synchronizing = true;
-                    }
-                    if (response["state"] == "LEADING") {
-                        node0Leading = true;
-                    }
-                    if (node0Synchronizing && node0Leading) {
-                        return;
-                    }
-                } catch (const SException& e) {}
-                usleep(10'000);
-            }
-        });
+                            uint64_t start = STimeNow();
+                            while (STimeNow() < start + 60'000'000) {
+                                try {
+                                    STable response = SParseJSONObject(node0.executeWaitVerifyContent(SData("Status"), "200", true));
+                                    if (response["state"] == "SYNCHRONIZING") {
+                                        node0Synchronizing = true;
+                                    }
+                                    if (response["state"] == "LEADING") {
+                                        node0Leading = true;
+                                    }
+                                    if (node0Synchronizing && node0Leading) {
+                                        return;
+                                    }
+                                } catch (const SException& e) {
+                                }
+                                usleep(10'000);
+                            }
+            });
 
         // Threads are done.
         starter.join();

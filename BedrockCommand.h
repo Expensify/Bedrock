@@ -5,9 +5,10 @@
 class BedrockPlugin;
 
 class BedrockCommand : public SQLiteCommand {
-  friend class BedrockCore;
-  public:
-    enum Priority {
+    friend class BedrockCore;
+public:
+    enum Priority
+    {
         PRIORITY_MIN = 0,
         PRIORITY_LOW = 250,
         PRIORITY_NORMAL = 500,
@@ -15,7 +16,8 @@ class BedrockCommand : public SQLiteCommand {
         PRIORITY_MAX = 1000
     };
 
-    enum TIMING_INFO {
+    enum TIMING_INFO
+    {
         INVALID,
         PREPEEK,
         PEEK,
@@ -36,7 +38,8 @@ class BedrockCommand : public SQLiteCommand {
         BLOCKING_COMMIT_WORKER,
     };
 
-    enum class STAGE {
+    enum class STAGE
+    {
         PREPEEK,
         PEEK,
         PROCESS,
@@ -58,22 +61,34 @@ class BedrockCommand : public SQLiteCommand {
     // Optionally called to execute read-only operations for a command in a separate transaction than the transaction
     // that can execute write operations for a command (i.e. the transaction that runs peek and process). This must be
     // called before the transaction that executes write operations.
-    virtual void prePeek(SQLite& db) { STHROW("500 Base class prePeek called"); }
+    virtual void prePeek(SQLite& db)
+    {
+        STHROW("500 Base class prePeek called");
+    }
 
     // Called to attempt to handle a command in a read-only fashion. Should return true if the command has been
     // completely handled and a response has been written into `command.response`, which can be returned to the client.
     // Should return `false` if the command needs to write to the database or otherwise could not be finished in a
     // read-only fashion (i.e., it opened an HTTPS request and is waiting for the response).
-    virtual bool peek(SQLite& db) { STHROW("430 Unrecognized command"); }
+    virtual bool peek(SQLite& db)
+    {
+        STHROW("430 Unrecognized command");
+    }
 
     // Called after a command has returned `false` to peek, and will attempt to commit and distribute a transaction
     // with any changes to the DB made by this plugin.
-    virtual void process(SQLite& db) { STHROW("500 Base class process called"); }
+    virtual void process(SQLite& db)
+    {
+        STHROW("500 Base class process called");
+    }
 
     // Optionally called to execute read-only operations for a command in a separate transaction than the transaction
     // that can execute write operations for a command (i.e. the transaction that runs peek and process). This must be
     // called after the transaction that executes write operations.
-    virtual void postProcess(SQLite& db) { STHROW("500 Base class postProcess called"); }
+    virtual void postProcess(SQLite& db)
+    {
+        STHROW("500 Base class postProcess called");
+    }
 
     // Reset the command after a commit conflict. This is called both before `peek` and `process`. Typically, we don't
     // want to reset anything in `process`, because we may have specifically stored values there in `peek` that we want
@@ -110,14 +125,16 @@ class BedrockCommand : public SQLiteCommand {
     // Bedrock will call this before each `processCommand` (note: not `peekCommand`) for each plugin to allow it to
     // enable query rewriting. If a plugin would like to enable query rewriting, this should return true, and it should
     // set the rewriteHandler it would like to use.
-    virtual bool shouldEnableQueryRewriting(const SQLite& db, bool (**rewriteHandler)(int, const char*, string&)) {
+    virtual bool shouldEnableQueryRewriting(const SQLite& db, bool(**rewriteHandler)(int, const char*, string&))
+    {
         return false;
     }
 
     // Bedrock will call this before writing to the database after it has prepared a transaction for each plugin to allow it to
     // enable a handler function for prepare If a plugin would like to perform operations after prepare but before commit, this should
     // return true, and it should set the prepareHandler it would like to use.
-    virtual bool shouldEnableOnPrepareNotification(const SQLite& db, void (**onPrepareHandler)(SQLite& _db, int64_t tableID)) {
+    virtual bool shouldEnableOnPrepareNotification(const SQLite& db, void(**onPrepareHandler)(SQLite & _db, int64_t tableID))
+    {
         return false;
     }
 
@@ -138,50 +155,60 @@ class BedrockCommand : public SQLiteCommand {
     virtual string getMethodName() const;
 
     // If the `peek` portion of this command needs to make an HTTPS request, this is where we store it.
-    template <typename T>
+    template<typename T>
     class GrowOnlyList {
-    public:
-        auto front() const {
+public:
+        auto front() const
+        {
             return _list.front();
         }
 
-        auto back() const {
+        auto back() const
+        {
             return _list.back();
         }
 
-        auto size() const {
+        auto size() const
+        {
             return _list.size();
         }
 
-        auto begin() const {
+        auto begin() const
+        {
             return _list.begin();
         }
 
-          auto rbegin() const {
+        auto rbegin() const
+        {
             return _list.rbegin();
         }
 
-        auto end() const {
+        auto end() const
+        {
             return _list.end();
         }
 
-        auto rend() const {
+        auto rend() const
+        {
             return _list.rend();
         }
 
-        auto empty() const {
+        auto empty() const
+        {
             return _list.empty();
         }
 
-        auto push_back(const T& i)  {
+        auto push_back(const T& i)
+        {
             return _list.push_back(i);
         }
 
-        auto push_back(T&& i)  {
+        auto push_back(T&& i)
+        {
             return _list.push_back(move(i));
         }
 
-    private:
+private:
         list<T> _list;
     };
 
@@ -198,16 +225,26 @@ class BedrockCommand : public SQLiteCommand {
 
     // A plugin can optionally handle a command for which the reply to the caller was undeliverable.
     // Note that it gets no reference to the DB, this happens after the transaction is already complete.
-    virtual void handleFailedReply() {
+    virtual void handleFailedReply()
+    {
         // Default implementation does nothing.
     }
 
     // Set to true if we don't want to log timeout alerts, and let the caller deal with it.
-    virtual bool shouldSuppressTimeoutWarnings() { return false; }
+    virtual bool shouldSuppressTimeoutWarnings()
+    {
+        return false;
+    }
 
-    virtual bool shouldPrePeek() { return false; }
+    virtual bool shouldPrePeek()
+    {
+        return false;
+    }
 
-    virtual bool shouldPostProcess() { return false; }
+    virtual bool shouldPostProcess()
+    {
+        return false;
+    }
 
     // A command can set this to true to indicate it would like to have `peek` called again after completing a HTTPS
     // request. This allows a single command to make multiple serial HTTPS requests. The command should clear this when
@@ -230,21 +267,30 @@ class BedrockCommand : public SQLiteCommand {
     // command, then any other command with the same methodLine, userID, and reportList will be flagged as likely to
     // cause a crash, and not processed.
     class CrashMap : public map<string, SString> {
-      public:
-        pair<CrashMap::iterator, bool> insert(const string& key) {
+public:
+        pair<CrashMap::iterator, bool> insert(const string& key)
+        {
             if (cmd.request.isSet(key)) {
                 return map<string, SString>::insert(make_pair(key, cmd.request.nameValueMap.at(key)));
             }
             return make_pair(end(), false);
         }
 
-      private:
+private:
         // We make BedrockCommand a friend so it can call our private constructors/assignment operators.
         friend class BedrockCommand;
-        CrashMap(BedrockCommand& _cmd) : cmd(_cmd) { }
-        CrashMap(BedrockCommand& _cmd, CrashMap&& other) : map<string, SString>(move(other)), cmd(_cmd) { }
-        CrashMap& operator=(CrashMap&& other) {
+        CrashMap(BedrockCommand& _cmd) : cmd(_cmd)
+        {
+        }
+
+        CrashMap(BedrockCommand& _cmd, CrashMap&& other) : map<string, SString>(move(other)), cmd(_cmd)
+        {
+        }
+
+        CrashMap& operator=(CrashMap&& other)
+        {
             map<string, SString>::operator=(move(other));
+
             return *this;
         }
 
@@ -254,13 +300,19 @@ class BedrockCommand : public SQLiteCommand {
     CrashMap crashIdentifyingValues;
 
     // Return the timestamp by which this command must finish executing.
-    uint64_t timeout() const { return _timeout; }
+    uint64_t timeout() const
+    {
+        return _timeout;
+    }
 
     // This updates the timeout for this command to the specified number of milliseconds from the current time.
     void setTimeout(uint64_t timeoutDurationMS);
 
     // Return the number of commands in existence.
-    static size_t getCommandCount() { return _commandCount.load(); }
+    static size_t getCommandCount()
+    {
+        return _commandCount.load();
+    }
 
     virtual string serializeData() const;
     virtual void deserializeData(const string& data);
@@ -287,7 +339,7 @@ class BedrockCommand : public SQLiteCommand {
     // Returns _commitEmptyTransactions.
     bool shouldCommitEmptyTransactions() const;
 
-  protected:
+protected:
     // The plugin that owns this command.
     BedrockPlugin* _plugin;
 
@@ -295,7 +347,7 @@ class BedrockCommand : public SQLiteCommand {
     // The main use of this is to cause commands that use SQLite::onPrepareHandler to do additional writing to run these final writes.
     bool _commitEmptyTransactions;
 
-  private:
+private:
 
     // Set to true when we are in `peek`, `prePeek`, or `postProcess`.
     bool _inDBReadOperation = false;

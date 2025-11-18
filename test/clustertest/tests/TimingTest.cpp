@@ -1,15 +1,18 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct TimingTest : tpunit::TestFixture {
+struct TimingTest : tpunit::TestFixture
+{
     TimingTest()
-        : tpunit::TestFixture("Timing", TEST(TimingTest::test)) { }
+        : tpunit::TestFixture("Timing", TEST(TimingTest::test))
+    {
+    }
 
     void test()
     {
         BedrockClusterTester tester;
         // Test write commands.
-        for (auto i : {0,1,2}) {
+        for (auto i : {0, 1, 2}) {
             BedrockTester& brtester = tester.getTester(i);
 
             // This just verifies that the dbupgrade table was created by TestPlugin.
@@ -29,12 +32,13 @@ struct TimingTest : tpunit::TestFixture {
                     continue;
                 }
             }
+
             /* Uncomment for inspection.
-            for (const auto& row : result.nameValueMap) {
-                cout << "[TimingTest] " << row.first << ":" << row.second << endl;
-            }
-            cout << "[TimingTest] " << endl;
-            */
+             * for (const auto& row : result.nameValueMap) {
+             *  cout << "[TimingTest] " << row.first << ":" << row.second << endl;
+             * }
+             * cout << "[TimingTest] " << endl;
+             */
 
             uint64_t peekTime = SToUInt64(result["peekTime"]);
             uint64_t processTime = SToUInt64(result["processTime"]);
@@ -80,7 +84,7 @@ struct TimingTest : tpunit::TestFixture {
         }
 
         // Test read commands
-        for (auto i : {0,1,2}) {
+        for (auto i : {0, 1, 2}) {
             BedrockTester& brtester = tester.getTester(i);
 
             // This just verifies that the dbupgrade table was created by TestPlugin.
@@ -88,12 +92,13 @@ struct TimingTest : tpunit::TestFixture {
             query["query"] = "SELECT * FROM test;";
             auto results = brtester.executeWaitMultipleData({query});
             auto result = results[0];
+
             /* Uncomment for inspection.
-            for (const auto& row : result.nameValueMap) {
-                cout << "[TimingTest] " << row.first << ":" << row.second << endl;
-            }
-            cout << "[TimingTest.cpp]" << endl;
-            */
+             * for (const auto& row : result.nameValueMap) {
+             *  cout << "[TimingTest] " << row.first << ":" << row.second << endl;
+             * }
+             * cout << "[TimingTest.cpp]" << endl;
+             */
 
             uint64_t peekTime = SToUInt64(result["peekTime"]);
             uint64_t processTime = SToUInt64(result["processTime"]);
@@ -105,4 +110,3 @@ struct TimingTest : tpunit::TestFixture {
         }
     }
 } __TimingTest;
-

@@ -7,10 +7,12 @@
 #include <fcntl.h>
 
 SQLiteClusterMessenger::SQLiteClusterMessenger(const shared_ptr<const SQLiteNode>& node)
- : _node(node), _socketPool()
-{ }
+    : _node(node), _socketPool()
+{
+}
 
-void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command) {
+void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command)
+{
     command.response.methodLine = "500 Internal Server Error";
     command.response.nameValueMap.clear();
     command.response.content.clear();
@@ -18,15 +20,17 @@ void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command) {
 }
 
 // Returns true on ready or false on error or timeout.
-SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) const {
-    static const map <int, string> labels = {
+SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) const
+{
+    static const map<int, string> labels = {
         {POLLOUT, "send"},
         {POLLIN, "recv"},
     };
     string type = "UNKNOWN";
     try {
         type = labels.at(fdspec.events);
-    } catch (const out_of_range& e) {}
+    } catch (const out_of_range& e) {
+    }
 
     // If we're trying to send, we need to also check that the socket is not disconnected by the other end.
     // We don't check this when receiving because it's possible the other end of the socket is closed but we still have
@@ -68,7 +72,8 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
     }
 }
 
-vector<SData> SQLiteClusterMessenger::runOnAll(const SData& cmd) {
+vector<SData> SQLiteClusterMessenger::runOnAll(const SData& cmd)
+{
     list<thread> threads;
     const list<STable> peerInfo = _node->getPeerInfo();
     vector<SData> results(peerInfo.size());
@@ -90,7 +95,8 @@ vector<SData> SQLiteClusterMessenger::runOnAll(const SData& cmd) {
     return results;
 }
 
-bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, const string& peerName) {
+bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, const string& peerName)
+{
     unique_ptr<SHTTPSManager::Socket> s;
 
     const SQLitePeer* peer = _node->getPeerByName(peerName);
@@ -119,7 +125,8 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, const string& pe
     return result;
 }
 
-bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command) const {
+bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket, BedrockCommand& command) const
+{
     bool sent = false;
 
     // This is what we need to send.
@@ -154,6 +161,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
                     // these are ok. try again.
                     SINFO("[HTTPESC] Got error (send): " << errno << ", trying again.");
                     break;
+
                 default:
                     SINFO("[HTTPESC] Got error (send): " << errno << ", fatal.");
                     return false;
@@ -193,6 +201,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
                     // these are ok. try again.
                     SINFO("[HTTPESC] Got error (recv): " << errno << ", trying again.");
                     break;
+
                 default:
                     SINFO("[HTTPESC] Got error (recv): " << errno << ", fatal.");
                     setErrorResponse(command);
@@ -220,7 +229,8 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
     return true;
 }
 
-unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(const string& address) {
+unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(const string& address)
+{
     unique_ptr<SHTTPSManager::Socket> s;
 
     // SParseURI expects a typical http or https scheme.
@@ -239,7 +249,8 @@ unique_ptr<SHTTPSManager::Socket> SQLiteClusterMessenger::_getSocketForAddress(c
     return s;
 }
 
-bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, bool runOnLeader) {
+bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, bool runOnLeader)
+{
     auto start = chrono::steady_clock::now();
     bool sent = false;
     string peerType = runOnLeader ? "leader" : "follower peer";
@@ -306,7 +317,8 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, bool runOnLeader
     return true;
 }
 
-bool SQLiteClusterMessenger::commandWillCloseSocket(BedrockCommand& command) {
+bool SQLiteClusterMessenger::commandWillCloseSocket(BedrockCommand& command)
+{
     // See if either the client or the leader specified `Connection: close`.
     // Technically, we shouldn't need to care if the client wants to close the connection, we could still re-use the connection from this server to leader, except that we've already sent
     // it a command with `Connection: close` on this socket so we should expect that it will honor that and close this socket.

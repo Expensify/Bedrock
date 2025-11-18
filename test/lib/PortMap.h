@@ -3,7 +3,7 @@
 
 // Track TCP ports to use with the tester.
 class PortMap {
-  public:
+public:
 
     static const int64_t START_PORT = 10000;
     static const int64_t MAX_PORT = 20000;
@@ -22,7 +22,7 @@ class PortMap {
     // it takes the OS a few seconds to make the port available again.
     int waitForPort(uint16_t port);
 
-  private:
+private:
     uint16_t _from;
     set<uint16_t> _returned;
     mutex _m;

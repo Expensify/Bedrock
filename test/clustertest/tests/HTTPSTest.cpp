@@ -17,26 +17,32 @@
  * Feb 22 00:32:16 vagrant-ubuntu-trusty-64 bedrock: brcluster_node_0 (SQLiteNode.cpp:1298) update [sync] [warn]
  *     {brcluster_node_0/LEADING} ROLLBACK, conflicted on sync: brcluster_node_0#109 : sendrequest
  */
-struct HTTPSTest : tpunit::TestFixture {
+struct HTTPSTest : tpunit::TestFixture
+{
     HTTPSTest()
         : tpunit::TestFixture("HTTPS",
                               BEFORE_CLASS(HTTPSTest::setup),
                               AFTER_CLASS(HTTPSTest::teardown),
                               TEST(HTTPSTest::testMultipleRequests),
                               TEST(HTTPSTest::testWaitForHTTPSRequests),
-                              TEST(HTTPSTest::test)) { }
+                              TEST(HTTPSTest::test))
+    {
+    }
 
     BedrockClusterTester* tester;
 
-    void setup () {
+    void setup()
+    {
         tester = new BedrockClusterTester();
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
-    void testMultipleRequests() {
+    void testMultipleRequests()
+    {
         BedrockTester& brtester = tester->getTester(1);
         SData request("sendrequest");
         request["httpsRequestCount"] = to_string(3);
@@ -45,14 +51,16 @@ struct HTTPSTest : tpunit::TestFixture {
         ASSERT_EQUAL(lines.size(), 3);
     }
 
-    void testWaitForHTTPSRequests() {
+    void testWaitForHTTPSRequests()
+    {
         BedrockTester& brtester = tester->getTester(1);
         SData request("httpswait");
         auto result = brtester.executeWaitMultipleData({request});
         ASSERT_TRUE(SStartsWith(result[0].methodLine, "200"));
     }
 
-    void test() {
+    void test()
+    {
         // Send one request to verify that it works.
         BedrockTester& brtester = tester->getTester(1);
 

@@ -3,21 +3,26 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct BroadcastCommandTest : tpunit::TestFixture {
+struct BroadcastCommandTest : tpunit::TestFixture
+{
     BroadcastCommandTest()
         : tpunit::TestFixture("BroadcastCommand",
                               BEFORE_CLASS(BroadcastCommandTest::setup),
                               AFTER_CLASS(BroadcastCommandTest::teardown),
                               TEST(BroadcastCommandTest::test)
-                             ) { }
+        )
+    {
+    }
 
     BedrockClusterTester* tester;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockClusterTester();
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
@@ -70,5 +75,4 @@ struct BroadcastCommandTest : tpunit::TestFixture {
         ASSERT_EQUAL(5002, stoll(results2[0]["stored_timeout"]));
         ASSERT_EQUAL("whatever", results2[0]["stored_not_special"]);
     }
-
 } __BroadcastCommandTest;

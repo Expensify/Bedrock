@@ -2,7 +2,8 @@
 #include <libstuff/SRandom.h>
 #include <test/lib/BedrockTester.h>
 
-struct WriteTest : tpunit::TestFixture {
+struct WriteTest : tpunit::TestFixture
+{
     WriteTest()
         : tpunit::TestFixture("Write",
                               BEFORE_CLASS(WriteTest::setup),
@@ -20,22 +21,27 @@ struct WriteTest : tpunit::TestFixture {
                               TEST(WriteTest::shortHandSyntax),
                               TEST(WriteTest::keywordsAsValue),
                               TEST(WriteTest::blockNonDeterministicFunctions),
-                              AFTER_CLASS(WriteTest::tearDown)) { }
+                              AFTER_CLASS(WriteTest::tearDown))
+    {
+    }
 
     BedrockTester* tester;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockTester({}, {
             "CREATE TABLE foo (bar INTEGER);",
             "CREATE TABLE stuff (id INTEGER PRIMARY KEY, value INTEGER, info TEXT);",
         });
     }
 
-    void tearDown() {
+    void tearDown()
+    {
         delete tester;
     }
 
-    void insert() {
+    void insert()
+    {
         for (int i = 0; i < 50; i++) {
             SData query("Query");
             query["writeConsistency"] = "ASYNC";
@@ -53,7 +59,8 @@ struct WriteTest : tpunit::TestFixture {
         ASSERT_EQUAL(val, 50);
     }
 
-    void parallelInsert() {
+    void parallelInsert()
+    {
         vector<SData> requests;
         int numCommands = 50;
         for (int i = 0; i < numCommands; i++) {
@@ -85,14 +92,16 @@ struct WriteTest : tpunit::TestFixture {
         ASSERT_EQUAL(val, numCommands);
     }
 
-    void failedDeleteNoWhere() {
+    void failedDeleteNoWhere()
+    {
         SData query("Query");
         query["writeConsistency"] = "ASYNC";
         query["query"] = "DELETE FROM foo;";
         tester->executeWaitVerifyContent(query, "502 Query aborted");
     }
 
-    void deleteNoWhereFalse() {
+    void deleteNoWhereFalse()
+    {
         SData query("Query");
         query["writeConsistency"] = "ASYNC";
         query["query"] = "DELETE FROM foo;";
@@ -100,7 +109,8 @@ struct WriteTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(query, "502 Query aborted");
     }
 
-    void deleteNoWhereTrue() {
+    void deleteNoWhereTrue()
+    {
         SData query("Query");
         query["writeConsistency"] = "ASYNC";
         query["query"] = "DELETE FROM foo;";
@@ -108,7 +118,8 @@ struct WriteTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(query);
     }
 
-    void deleteWithWhere() {
+    void deleteWithWhere()
+    {
         SData query("Query");
         query["writeConsistency"] = "ASYNC";
         query["query"] = "INSERT INTO foo VALUES ( 666 );";
@@ -118,7 +129,8 @@ struct WriteTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(query);
     }
 
-    void update() {
+    void update()
+    {
         SData query("Query");
         query["writeConsistency"] = "ASYNC";
         query["query"] = "INSERT INTO foo VALUES ( 666 );";
@@ -128,14 +140,16 @@ struct WriteTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(query);
     }
 
-    void failedUpdateNoWhere() {
+    void failedUpdateNoWhere()
+    {
         SData query("Query");
         query["writeConsistency"] = "ASYNC";
         query["query"] = "UPDATE foo SET bar = 0;";
         tester->executeWaitVerifyContent(query, "502 Query aborted");
     }
 
-    void failedUpdateNoWhereFalse() {
+    void failedUpdateNoWhereFalse()
+    {
         SData query("Query");
         query["writeConsistency"] = "ASYNC";
         query["query"] = "UPDATE foo SET bar = 0;";
@@ -143,7 +157,8 @@ struct WriteTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(query, "502 Query aborted");
     }
 
-    void failedUpdateNoWhereTrue() {
+    void failedUpdateNoWhereTrue()
+    {
         SData query("Query");
         query["writeConsistency"] = "ASYNC";
         query["query"] = "UPDATE foo SET bar = 0;";
@@ -151,7 +166,8 @@ struct WriteTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(query);
     }
 
-    void updateAndInsertWithHttp() {
+    void updateAndInsertWithHttp()
+    {
         SData query("Query / HTTP/1.1");
         query["writeConsistency"] = "ASYNC";
         query["query"] = "INSERT INTO foo VALUES ( 666 );";
@@ -161,7 +177,8 @@ struct WriteTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(query);
     }
 
-    void shortHandSyntax() {
+    void shortHandSyntax()
+    {
         SData query("query: UPDATE stuff SET value = 2 WHERE id = 1;");
         tester->executeWaitVerifyContent(query);
 
@@ -169,7 +186,8 @@ struct WriteTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(query2);
     }
 
-    void keywordsAsValue() {
+    void keywordsAsValue()
+    {
         SData query("query: INSERT INTO stuff VALUES ( NULL, 11, 'Please update the test' );");
         tester->executeWaitVerifyContent(query);
 
@@ -183,7 +201,8 @@ struct WriteTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(query3);
     }
 
-    void blockNonDeterministicFunctions() {
+    void blockNonDeterministicFunctions()
+    {
         // Verify writing the string 'CURRENT_TIMESTAMP' is fine.
         SData query("query: INSERT INTO stuff VALUES ( NULL, 11, 'CURRENT_TIMESTAMP' );");
         tester->executeWaitVerifyContent(query);
@@ -208,5 +227,4 @@ struct WriteTest : tpunit::TestFixture {
         query.methodLine = "query: SELECT random();";
         tester->executeWaitVerifyContent(query);
     }
-
 } __WriteTest;
