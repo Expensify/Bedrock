@@ -1,3 +1,4 @@
+#include "libstuff/libstuff.h"
 #include <BedrockCommand.h>
 #include <sqlitecluster/SQLiteClusterMessenger.h>
 #include <sqlitecluster/SQLiteNode.h>
@@ -124,6 +125,10 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
 
     // This is what we need to send.
     SData request = command.request;
+
+    // Compute the remaining time left before timeout, and set the timeout for the escalated command to match.
+    // Note that internally this is stored in microseconds, but over the wire is sent in milliseconds.
+    request["timeout"] = to_string((command.timeout() - STimeNow()) / 1000);
 
     // If the command has https requests, we serialize them to escalate. In this case we also check if the command has data
     // that needs serialization, and if so, we serialize that as well.

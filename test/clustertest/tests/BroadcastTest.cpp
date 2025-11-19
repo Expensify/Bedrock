@@ -1,3 +1,4 @@
+#include "test/lib/tpunit++.hpp"
 #include <iostream>
 
 #include <libstuff/SData.h>
@@ -60,14 +61,22 @@ struct BroadcastCommandTest : tpunit::TestFixture {
 
         // Other values should just match what's in the testplugin code.
         ASSERT_EQUAL(5001, stoll(results[0]["stored_processTimeout"]));
-        ASSERT_EQUAL(5002, stoll(results[0]["stored_timeout"]));
+
+        // We set this to 6000, it could be slightly less than that because timeouts are adjusted to allow for time elapsed when sending.
+        // so, 5999 or something like that is reasonable to see.
+        ASSERT_LESS_THAN(5000, stoll(results2[0]["stored_timeout"]));
+        ASSERT_GREATER_THAN_EQUAL(6000, stoll(results2[0]["stored_timeout"]));
         ASSERT_EQUAL("whatever", results[0]["stored_not_special"]);
 
         // Verify the results were received on cluster node 3 (follower 2) as well
         ASSERT_GREATER_THAN(now + 3'000'000, stoull(results2[0]["stored_peekedAt"]));
         ASSERT_LESS_THAN(now, stoull(results2[0]["stored_peekedAt"]));
         ASSERT_EQUAL(5001, stoll(results2[0]["stored_processTimeout"]));
-        ASSERT_EQUAL(5002, stoll(results2[0]["stored_timeout"]));
+
+        // We set this to 6000, it could be slightly less than that because timeouts are adjusted to allow for time elapsed when sending.
+        // so, 5999 or something like that is reasonable to see.
+        ASSERT_LESS_THAN(5000, stoll(results2[0]["stored_timeout"]));
+        ASSERT_GREATER_THAN_EQUAL(6000, stoll(results2[0]["stored_timeout"]));
         ASSERT_EQUAL("whatever", results2[0]["stored_not_special"]);
     }
 
