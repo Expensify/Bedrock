@@ -2,12 +2,14 @@
 #include "BedrockPlugin.h"
 #include "BedrockServer.h"
 
-map<string, function<BedrockPlugin*(BedrockServer&)>> BedrockPlugin::g_registeredPluginList;
+map<string, function<BedrockPlugin* (BedrockServer&)>> BedrockPlugin::g_registeredPluginList;
 
-BedrockPlugin::BedrockPlugin(BedrockServer& s) : server(s) {
+BedrockPlugin::BedrockPlugin(BedrockServer& s) : server(s)
+{
 }
 
-BedrockPlugin::~BedrockPlugin() {
+BedrockPlugin::~BedrockPlugin()
+{
 }
 
 bool BedrockPlugin::isValidDate(const string& date)
@@ -15,7 +17,8 @@ bool BedrockPlugin::isValidDate(const string& date)
     return SREMatch("^(19|2[0-9])\\d\\d-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])( \\d{2}:\\d{2}:\\d{2})?$", date);
 }
 
-void BedrockPlugin::verifyAttributeInt64(const SData& request, const string& name, size_t minSize) {
+void BedrockPlugin::verifyAttributeInt64(const SData& request, const string& name, size_t minSize)
+{
     if (request[name].size() < minSize) {
         STHROW("402 Missing " + name);
     }
@@ -24,7 +27,8 @@ void BedrockPlugin::verifyAttributeInt64(const SData& request, const string& nam
     }
 }
 
-void BedrockPlugin::verifyAttributeSize(const SData& request, const string& name, size_t minSize, size_t maxSize) {
+void BedrockPlugin::verifyAttributeSize(const SData& request, const string& name, size_t minSize, size_t maxSize)
+{
     if (request[name].size() < minSize) {
         STHROW("402 Missing " + name);
     }
@@ -54,22 +58,30 @@ void BedrockPlugin::verifyAttributeDate(const SData& request, const char* key, b
     }
 }
 
-STable BedrockPlugin::getInfo() {
+STable BedrockPlugin::getInfo()
+{
     return STable();
 }
 
-const string& BedrockPlugin::getName() const {
+const string& BedrockPlugin::getName() const
+{
     SERROR("No name defined by this plugin, aborting.");
 }
 
-bool BedrockPlugin::preventAttach() {
+bool BedrockPlugin::preventAttach()
+{
     return false;
 }
 
-void BedrockPlugin::timerFired(SStopwatch* timer) {}
+void BedrockPlugin::timerFired(SStopwatch* timer)
+{
+}
 
-void BedrockPlugin::upgradeDatabase(SQLite& db) {}
+void BedrockPlugin::upgradeDatabase(SQLite& db)
+{
+}
 
-bool BedrockPlugin::shouldLockCommitPageOnConflict(const string& conflictLocation) const {
+bool BedrockPlugin::shouldLockCommitPageOnConflict(const string& conflictLocation) const
+{
     return true;
 }

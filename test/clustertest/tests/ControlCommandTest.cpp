@@ -3,20 +3,25 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct ControlCommandTest : tpunit::TestFixture {
+struct ControlCommandTest : tpunit::TestFixture
+{
     ControlCommandTest()
         : tpunit::TestFixture("ControlCommand",
                               BEFORE_CLASS(ControlCommandTest::setup),
                               AFTER_CLASS(ControlCommandTest::teardown),
-                              TEST(ControlCommandTest::testPreventAttach)) { }
+                              TEST(ControlCommandTest::testPreventAttach))
+    {
+    }
 
     BedrockClusterTester* tester;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockClusterTester();
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
@@ -45,5 +50,4 @@ struct ControlCommandTest : tpunit::TestFixture {
         // has passed.
         follower.executeWaitVerifyContent(attachCommand, "204", true);
     }
-
 } __ControlCommandTest;

@@ -1,10 +1,12 @@
 #include "BedrockConflictManager.h"
 #include <libstuff/libstuff.h>
 
-BedrockConflictManager::BedrockConflictManager() {
+BedrockConflictManager::BedrockConflictManager()
+{
 }
 
-void BedrockConflictManager::recordTables(const string& commandName, const set<string>& tables) {
+void BedrockConflictManager::recordTables(const string& commandName, const set<string>& tables)
+{
     {
         lock_guard<mutex> lock(m);
         auto commandInfoIt = _commandInfo.find(commandName);
@@ -40,7 +42,8 @@ void BedrockConflictManager::recordTables(const string& commandName, const set<s
     }
 }
 
-string BedrockConflictManager::generateReport() {
+string BedrockConflictManager::generateReport()
+{
     stringstream out;
     {
         lock_guard<mutex> lock(m);

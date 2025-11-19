@@ -10,13 +10,14 @@ SQLitePool::SQLitePool(size_t maxDBs,
                        int64_t mmapSizeGB,
                        bool hctree,
                        const string& checkpointMode)
-: _maxDBs(max(maxDBs, 1ul)),
-  _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, mmapSizeGB, hctree, checkpointMode),
-  _objects(_maxDBs, nullptr)
+    : _maxDBs(max(maxDBs, 1ul)),
+    _baseDB(filename, cacheSize, maxJournalSize, minJournalTables, mmapSizeGB, hctree, checkpointMode),
+    _objects(_maxDBs, nullptr)
 {
 }
 
-SQLitePool::~SQLitePool() {
+SQLitePool::~SQLitePool()
+{
     lock_guard<mutex> lock(_sync);
     if (_inUseHandles.size()) {
         SWARN("Destroying SQLitePool with DBs in use.");
@@ -31,11 +32,13 @@ SQLitePool::~SQLitePool() {
     }
 }
 
-SQLite& SQLitePool::getBase() {
+SQLite& SQLitePool::getBase()
+{
     return _baseDB;
 }
 
-size_t SQLitePool::getIndex(bool createHandle) {
+size_t SQLitePool::getIndex(bool createHandle)
+{
     while (true) {
         unique_lock<mutex> lock(_sync);
         if (_availableHandles.size()) {
@@ -66,7 +69,8 @@ size_t SQLitePool::getIndex(bool createHandle) {
     }
 }
 
-SQLite& SQLitePool::initializeIndex(size_t index) {
+SQLite& SQLitePool::initializeIndex(size_t index)
+{
     // We don't lock here on purpose. Because these indexes are handed out individually, no two threads should have the
     // same one, and thus they should independently be able to update the addresses in this vector, as neither will
     // change the allocation of the vector itself.
@@ -77,7 +81,8 @@ SQLite& SQLitePool::initializeIndex(size_t index) {
     return *_objects[index];
 }
 
-void SQLitePool::returnToPool(size_t index) {
+void SQLitePool::returnToPool(size_t index)
+{
     {
         lock_guard<mutex> lock(_sync);
         _availableHandles.insert(index);
@@ -88,19 +93,23 @@ void SQLitePool::returnToPool(size_t index) {
 }
 
 SQLiteScopedHandle::SQLiteScopedHandle(SQLitePool& pool, size_t index) : _pool(pool), _index(index), _released(false)
-{}
+{
+}
 
-void SQLiteScopedHandle::release() {
+void SQLiteScopedHandle::release()
+{
     if (!_released) {
         _pool.returnToPool(_index);
         _released = true;
     }
 }
 
-SQLiteScopedHandle::~SQLiteScopedHandle() {
+SQLiteScopedHandle::~SQLiteScopedHandle()
+{
     release();
 }
 
-SQLite& SQLiteScopedHandle::db() {
+SQLite& SQLiteScopedHandle::db()
+{
     return _pool.initializeIndex(_index);
 }

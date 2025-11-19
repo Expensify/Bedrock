@@ -3,7 +3,8 @@
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
 
-struct FailJobTest : tpunit::TestFixture {
+struct FailJobTest : tpunit::TestFixture
+{
     FailJobTest()
         : tpunit::TestFixture("FailJob",
                               BEFORE_CLASS(FailJobTest::setupClass),
@@ -12,30 +13,41 @@ struct FailJobTest : tpunit::TestFixture {
                               TEST(FailJobTest::failJobInRunningState),
                               TEST(FailJobTest::failJobInRunqueuedState),
                               AFTER(FailJobTest::tearDown),
-                              AFTER_CLASS(FailJobTest::tearDownClass)) { }
+                              AFTER_CLASS(FailJobTest::tearDownClass))
+    {
+    }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass()
+    {
+        tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
+    }
 
     // Reset the jobs table
-    void tearDown() {
+    void tearDown()
+    {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
     }
 
-    void tearDownClass() { delete tester; }
+    void tearDownClass()
+    {
+        delete tester;
+    }
 
     // Throw an error if the job doesn't exist
-    void nonExistentJob() {
+    void nonExistentJob()
+    {
         SData command("FailJob");
         command["jobID"] = "1";
         tester->executeWaitVerifyContent(command, "404 No job with this jobID");
     }
 
     // Throw an error if the job is not in RUNNING or REQUEUED state
-    void notInRunningRunqueuedState() {
+    void notInRunningRunqueuedState()
+    {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
@@ -50,7 +62,8 @@ struct FailJobTest : tpunit::TestFixture {
     }
 
     // Fail job in RUNNING state
-    void failJobInRunningState() {
+    void failJobInRunningState()
+    {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
@@ -75,12 +88,13 @@ struct FailJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Failing the job should succeed and set it as FAILED
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "FAILED");
     }
 
     // Fail job in RUNQUEUED state
-    void failJobInRunqueuedState() {
+    void failJobInRunqueuedState()
+    {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
@@ -96,7 +110,7 @@ struct FailJobTest : tpunit::TestFixture {
 
         // Confirm the job is in RUNQUEUED state
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
 
         // Fail it
@@ -106,7 +120,7 @@ struct FailJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Failing the job should succeed and set it as FAILED
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "FAILED");
     }
 } __FailJobTest;

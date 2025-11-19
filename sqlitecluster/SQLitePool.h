@@ -4,7 +4,7 @@
 #include <condition_variable>
 
 class SQLitePool {
-  public:
+public:
     // Create a pool of DB handles.
     SQLitePool(size_t maxDBs, const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
                int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE");
@@ -28,7 +28,7 @@ class SQLitePool {
     // Return an object to the pool.
     void returnToPool(size_t index);
 
-  private:
+private:
     // Synchronization variables.
     mutex _sync;
     condition_variable _wait;
@@ -49,13 +49,13 @@ class SQLitePool {
 };
 
 class SQLiteScopedHandle {
-  public:
+public:
     SQLiteScopedHandle(SQLitePool& pool, size_t index);
     ~SQLiteScopedHandle();
     SQLite& db();
     void release();
 
-  private:
+private:
     SQLitePool& _pool;
     size_t _index;
     bool _released;

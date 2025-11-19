@@ -1,20 +1,25 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct StatusTest : tpunit::TestFixture {
+struct StatusTest : tpunit::TestFixture
+{
     StatusTest()
         : tpunit::TestFixture("Status",
                               BEFORE_CLASS(StatusTest::setup),
                               AFTER_CLASS(StatusTest::teardown),
-                              TEST(StatusTest::status)) { }
+                              TEST(StatusTest::status))
+    {
+    }
 
     BedrockClusterTester* tester;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockClusterTester();
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 

@@ -10,7 +10,8 @@ mbedtls_ctr_drbg_context SSSLState::_ctr_drbg;
 mbedtls_ssl_config SSSLState::_conf;
 mbedtls_x509_crt SSSLState::_cacert;
 
-void SSSLState::initConfig() {
+void SSSLState::initConfig()
+{
     mbedtls_entropy_init(&_ec);
     mbedtls_x509_crt_init(&_cacert);
     mbedtls_ctr_drbg_init(&_ctr_drbg);
@@ -30,7 +31,6 @@ void SSSLState::initConfig() {
     lastResult = mbedtls_x509_crt_parse_path(&_cacert, certPath.c_str());
     bool successfullyLoadedCACerts = false;
     if (lastResult < 0) {
-
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
         SWARN("Failed to load CA certificates from " + certPath + " directory. Error: " + to_string(lastResult) + ": " + errorBuffer);
 
@@ -59,14 +59,16 @@ void SSSLState::initConfig() {
     }
 }
 
-void SSSLState::freeConfig() {
+void SSSLState::freeConfig()
+{
     mbedtls_ssl_config_free(&_conf);
     mbedtls_ctr_drbg_free(&_ctr_drbg);
     mbedtls_entropy_free(&_ec);
     mbedtls_x509_crt_free(&_cacert);
 }
 
-SSSLState::SSSLState(const string& hostname, int socket) {
+SSSLState::SSSLState(const string& hostname, int socket)
+{
     mbedtls_ssl_init(&ssl);
     mbedtls_net_init(&net_ctx);
 
@@ -91,7 +93,7 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     // non-blocking, meaning that if connections are slow, we block until they complete (or fail), which can
     // hold database transactions open that should close.
     if (socket == -1) {
-        lastResult = mbedtls_net_connect(&net_ctx, domain.c_str(),to_string(port).c_str(), MBEDTLS_NET_PROTO_TCP);
+        lastResult = mbedtls_net_connect(&net_ctx, domain.c_str(), to_string(port).c_str(), MBEDTLS_NET_PROTO_TCP);
         if (lastResult) {
             mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
             STHROW("mbedtls_net_connect failed with error (" + domain + ":" + to_string(port) + "): " + to_string(lastResult) + ": " + errorBuffer);
@@ -115,76 +117,81 @@ SSSLState::SSSLState(const string& hostname, int socket) {
     mbedtls_ssl_set_bio(&ssl, &net_ctx, mbedtls_net_send, mbedtls_net_recv, nullptr);
 }
 
-SSSLState::~SSSLState() {
+SSSLState::~SSSLState()
+{
     // Note that this closes the socket if one is set, so there is no need (and in fact it is a bug) to close it otherwise.
     mbedtls_net_free(&net_ctx);
     mbedtls_ssl_free(&ssl);
 }
 
-int SSSLState::send(const char* buffer, int length) {
+int SSSLState::send(const char* buffer, int length)
+{
     // Send as much as possible and report what happened
     SASSERT(buffer);
-    const int numSent = mbedtls_ssl_write(&ssl, (unsigned char*)buffer, length);
+    const int numSent = mbedtls_ssl_write(&ssl, (unsigned char*) buffer, length);
     if (numSent > 0) {
         return numSent;
     }
 
     // Handle the result
     switch (numSent) {
-    case MBEDTLS_ERR_SSL_WANT_READ:
-    case MBEDTLS_ERR_SSL_WANT_WRITE:
-    case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
-        return 0; // retry
+        case MBEDTLS_ERR_SSL_WANT_READ:
+        case MBEDTLS_ERR_SSL_WANT_WRITE:
+        case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
+            return 0; // retry
 
-    default:
-        // Error
-        char errStr[100];
-        mbedtls_strerror(numSent, errStr, 100);
-        SINFO("SSL reports send error #" << numSent << " (" << errStr << ")");
-        return -1;
+        default:
+            // Error
+            char errStr[100];
+            mbedtls_strerror(numSent, errStr, 100);
+            SINFO("SSL reports send error #" << numSent << " (" << errStr << ")");
+            return -1;
     }
 }
 
-int SSSLState::recv(char* buffer, int length) {
+int SSSLState::recv(char* buffer, int length)
+{
     // Receive as much as we can and report what happened
     SASSERT(buffer);
-    const int numRecv = mbedtls_ssl_read(&ssl, (unsigned char*)buffer, length);
+    const int numRecv = mbedtls_ssl_read(&ssl, (unsigned char*) buffer, length);
     if (numRecv > 0) {
         return numRecv;
     }
 
     // Handle the response
     switch (numRecv) {
-    case MBEDTLS_ERR_SSL_WANT_READ:
-    case MBEDTLS_ERR_SSL_WANT_WRITE:
-        // retry
-        return 0;
+        case MBEDTLS_ERR_SSL_WANT_READ:
+        case MBEDTLS_ERR_SSL_WANT_WRITE:
+            // retry
+            return 0;
 
-    case MBEDTLS_ERR_NET_CONN_RESET:
-        // connection reset by peer
-        SINFO("SSL reports MBEDTLS_ERR_NET_CONN_RESET");
-        return -1;
+        case MBEDTLS_ERR_NET_CONN_RESET:
+            // connection reset by peer
+            SINFO("SSL reports MBEDTLS_ERR_NET_CONN_RESET");
+            return -1;
 
-    case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
-        // the connection is about to be closed
-        SINFO("SSL reports MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY");
-        return -1;
+        case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
+            // the connection is about to be closed
+            SINFO("SSL reports MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY");
+            return -1;
 
-    default:
-        // Error
-        char errStr[100];
-        mbedtls_strerror(numRecv, errStr, 100);
-        SINFO("SSL reports recv error #" << numRecv << " (" << errStr << ")");
-        return -1;
+        default:
+            // Error
+            char errStr[100];
+            mbedtls_strerror(numRecv, errStr, 100);
+            SINFO("SSL reports recv error #" << numRecv << " (" << errStr << ")");
+            return -1;
     }
 }
 
-int SSSLState::send(const SFastBuffer& buffer) {
+int SSSLState::send(const SFastBuffer& buffer)
+{
     // Unwind the buffer
-    return send(buffer.c_str(), (int)buffer.size());
+    return send(buffer.c_str(), (int) buffer.size());
 }
 
-bool SSSLState::sendConsume(SFastBuffer& sendBuffer) {
+bool SSSLState::sendConsume(SFastBuffer& sendBuffer)
+{
     // Send as much as we can and return whether the socket is still alive
     if (sendBuffer.empty()) {
         return true;
@@ -197,10 +204,11 @@ bool SSSLState::sendConsume(SFastBuffer& sendBuffer) {
     }
 
     // Done!
-    return (numSent != -1);
+    return numSent != -1;
 }
 
-bool SSSLState::recvAppend(SFastBuffer& recvBuffer) {
+bool SSSLState::recvAppend(SFastBuffer& recvBuffer)
+{
     char buffer[1024 * 16];
     int numRecv = 0;
     while ((numRecv = recv(buffer, sizeof(buffer))) > 0) {
@@ -209,5 +217,5 @@ bool SSSLState::recvAppend(SFastBuffer& recvBuffer) {
     }
 
     // Return whether or not the socket is still alive
-    return (numRecv != -1);
+    return numRecv != -1;
 }

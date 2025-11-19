@@ -22,7 +22,8 @@
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
-void RetrySystem(const string& command) {
+void RetrySystem(const string& command)
+{
     // We might be waiting for some threads to unlink, so retry a few times
     int numRetries = 3;
     SINFO("Trying to run '" << command << "' up to " << numRetries << " times...");
@@ -32,11 +33,9 @@ void RetrySystem(const string& command) {
         if (returnCode) {
             // Didn't work
             SWARN("'" << command << "' failed with return code " << returnCode << ", waiting 5s and retrying "
-                      << numRetries << " more times");
+                  << numRetries << " more times");
             this_thread::sleep_for(chrono::seconds(5));
-        } else
-
-        {
+        } else {
             // Done!
             SINFO("Successfully ran '" << command << "'");
             return;
@@ -50,14 +49,18 @@ void RetrySystem(const string& command) {
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 
-void VacuumDB(const string& db) { RetrySystem("sqlite3 " + db + " 'VACUUM;'"); }
+void VacuumDB(const string& db)
+{
+    RetrySystem("sqlite3 " + db + " 'VACUUM;'");
+}
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 
 #define BACKUP_DIR "/var/tmp/"
-void BackupDB(const string& dbPath) {
-    const string& dbFile = string(basename((char*)dbPath.c_str()));
+void BackupDB(const string& dbPath)
+{
+    const string& dbFile = string(basename((char*) dbPath.c_str()));
     SINFO("Starting " << dbFile << " database backup.");
     SASSERT(SFileCopy(dbPath, BACKUP_DIR + dbFile));
     SINFO("Finished " << dbFile << " database backup.");
@@ -66,7 +69,7 @@ void BackupDB(const string& dbPath) {
     SINFO("Checking for existence of " << dbWalPath);
     if (SFileExists(dbWalPath)) {
         SALERT("WAL file exists for " << dbFile << ". Backing up");
-        SASSERT(SFileCopy(dbWalPath, BACKUP_DIR + string(basename((char*)dbWalPath.c_str()))));
+        SASSERT(SFileCopy(dbWalPath, BACKUP_DIR + string(basename((char*) dbWalPath.c_str()))));
         SINFO("Finished " << dbFile << "-wal database backup.");
     }
 
@@ -74,24 +77,32 @@ void BackupDB(const string& dbPath) {
     SINFO("Checking for existence of " << dbShmPath);
     if (SFileExists(dbShmPath)) {
         SALERT("SHM file exists for " << dbFile << ". Backing up");
-        SASSERT(SFileCopy(dbShmPath, BACKUP_DIR + string(basename((char*)dbShmPath.c_str()))));
+        SASSERT(SFileCopy(dbShmPath, BACKUP_DIR + string(basename((char*) dbShmPath.c_str()))));
         SINFO("Finished " << dbFile << "-shm database backup.");
     }
 }
 
-
-set<string> loadPlugins(SData& args) {
+set<string> loadPlugins(SData& args)
+{
     list<string> plugins = SParseList(args["-plugins"]);
 
     // We'll return the names of the plugins we've loaded, which don't necessarily match the file names we're passed.
     // Those are stored here.
-    set <string> postProcessedNames;
+    set<string> postProcessedNames;
 
     // Register all of our built-in plugins.
-    BedrockPlugin::g_registeredPluginList.emplace(make_pair("DB", [](BedrockServer& s){return new BedrockPlugin_DB(s);}));
-    BedrockPlugin::g_registeredPluginList.emplace(make_pair("JOBS", [](BedrockServer& s){return new BedrockPlugin_Jobs(s);}));
-    BedrockPlugin::g_registeredPluginList.emplace(make_pair("CACHE", [](BedrockServer& s){return new BedrockPlugin_Cache(s);}));
-    BedrockPlugin::g_registeredPluginList.emplace(make_pair("MYSQL", [](BedrockServer& s){return new BedrockPlugin_MySQL(s);}));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("DB", [](BedrockServer& s){
+        return new BedrockPlugin_DB(s);
+                                                                                                                      }));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("JOBS", [](BedrockServer& s){
+        return new BedrockPlugin_Jobs(s);
+                                                                                                                          }));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("CACHE", [](BedrockServer& s){
+        return new BedrockPlugin_Cache(s);
+                                                                                                                            }));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("MYSQL", [](BedrockServer& s){
+        return new BedrockPlugin_MySQL(s);
+                                                                                                                            }));
 
     for (string pluginName : plugins) {
         // If it's one of our standard plugins, just move on to the next one.
@@ -112,7 +123,7 @@ set<string> loadPlugins(SData& args) {
         string symbolName = "BEDROCK_PLUGIN_REGISTER_" + SToUpper(name);
 
         // Save the base name of the plugin.
-        if(postProcessedNames.find(SToUpper(name)) != postProcessedNames.end()) {
+        if (postProcessedNames.find(SToUpper(name)) != postProcessedNames.end()) {
             SWARN("Duplicate entry for plugin " << name << ", skipping.");
             continue;
         }
@@ -125,7 +136,7 @@ set<string> loadPlugins(SData& args) {
 
         // Open the library.
         void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
-        if(!lib) {
+        if (!lib) {
             SWARN("Error loading bedrock plugin " << pluginName << ": " << dlerror());
         } else {
             void* sym = dlsym(lib, symbolName.c_str());
@@ -133,7 +144,7 @@ set<string> loadPlugins(SData& args) {
                 SWARN("Couldn't find symbol " << symbolName);
             } else {
                 // Call the plugin registration function with the same name.
-                BedrockPlugin::g_registeredPluginList.emplace(make_pair(SToUpper(name), (BedrockPlugin*(*)(BedrockServer&))sym));
+                BedrockPlugin::g_registeredPluginList.emplace(make_pair(SToUpper(name), (BedrockPlugin * (*)(BedrockServer&)) sym));
             }
         }
     }
@@ -142,7 +153,8 @@ set<string> loadPlugins(SData& args) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[])
+{
     // Process the command line
     SData args = SParseCommandLine(argc, argv);
     if (args.empty()) {
@@ -178,8 +190,9 @@ int main(int argc, char* argv[]) {
         SASSERT(pid >= 0);
         if (pid > 0) {
             // Successful fork -- write the pidfile (if requested) and exit
-            if (args.isSet("-pidfile"))
+            if (args.isSet("-pidfile")) {
                 SASSERT(SFileSave(args["-pidfile"], SToStr(pid)));
+            }
             return 0;
         }
 
@@ -208,9 +221,9 @@ int main(int argc, char* argv[]) {
         cout << "bedrock [-? | -h | -help]" << endl;
         cout << "bedrock -version" << endl;
         cout << "bedrock [-clean] [-v] [-db <filename>] [-serverHost <host:port>] [-nodeHost <host:port>] [-nodeName "
-                "<name>] [-peerList <list>] [-priority <value>] [-plugins <list>] [-cacheSize <kb>] [-workerThreads <#>] "
-                "[-versionOverride <version>]"
-             << endl;
+        "<name>] [-peerList <list>] [-priority <value>] [-plugins <list>] [-cacheSize <kb>] [-workerThreads <#>] "
+        "[-versionOverride <version>]"
+        << endl;
         cout << endl;
         cout << "Common Commands:" << endl;
         cout << "----------------" << endl;
@@ -223,10 +236,10 @@ int main(int argc, char* argv[]) {
         cout << "-versionOverride <version>  Pretends to be a different version when talking to peers" << endl;
         cout << "-db             <filename>  Use a database with the given name (default 'bedrock.db')" << endl;
         cout
-            << "-serverHost     <host:port> Listen on this host:port for cluster connections (default 'localhost:8888')"
-            << endl;
+        << "-serverHost     <host:port> Listen on this host:port for cluster connections (default 'localhost:8888')"
+        << endl;
         cout << "-nodeName       <name>      Name this specfic node in the cluster as indicated (defaults to '"
-             << SGetHostName() << "')" << endl;
+        << SGetHostName() << "')" << endl;
         cout << "-nodeHost       <host:port> Listen on this host:port for connections from other nodes" << endl;
         cout << "-peerList       <list>      See below" << endl;
         cout << "-priority       <value>     See '-peerList Details' below (defaults to 100)" << endl;
@@ -234,19 +247,19 @@ int main(int argc, char* argv[]) {
         cout << "-cacheSize      <kb>        number of KB to allocate for a page cache (defaults to 1GB)" << endl;
         cout << "-workerThreads  <#>         Number of worker threads to start (min 1, defaults to # of cores)" << endl;
         cout << "-queryLog       <filename>  Set the query log filename (default 'queryLog.csv', SIGUSR2/SIGQUIT to "
-                "enable/disable)"
-             << endl;
+        "enable/disable)"
+        << endl;
         cout << "-maxJournalSize <#commits>  Number of commits to retain in the historical journal (default 1000000)"
-             << endl;
+        << endl;
         cout << "-checkpointMode <mode>      Accepts PASSIVE|FULL|RESTART|TRUNCATE, which is the value passed to https://www.sqlite.org/c3ref/wal_checkpoint_v2.html" << endl;
         cout << endl;
         cout << "Quick Start Tips:" << endl;
         cout << "-----------------" << endl;
         cout << "In a hurry?  Just run 'bedrock -clean' the first time, and it'll create a new database called "
-                "'bedrock.db', then use all the defaults listed above.  (After the first time, leave out the '-clean' "
-                "to reuse the same database.)  Once running, you can verify it's working using NetCat to manualy send "
-                "a Ping request as follows:"
-             << endl;
+        "'bedrock.db', then use all the defaults listed above.  (After the first time, leave out the '-clean' "
+        "to reuse the same database.)  Once running, you can verify it's working using NetCat to manualy send "
+        "a Ping request as follows:"
+        << endl;
         cout << endl;
         cout << "$ bedrock -clean &" << endl;
         cout << "$ nc local 8888" << endl;
@@ -257,15 +270,15 @@ int main(int argc, char* argv[]) {
         cout << "-peerList Details:" << endl;
         cout << "------------------" << endl;
         cout << "The -peerList parameter enables you to configure multiple Bedrock nodes into a redundant cluster.  "
-                "Bedrock supports any number of nodes: simply start each node with a comma-separated list of the "
-                "'-nodeHost' of all other nodes.  You can safely send any command to any node.  Some best practices:"
-             << endl;
+        "Bedrock supports any number of nodes: simply start each node with a comma-separated list of the "
+        "'-nodeHost' of all other nodes.  You can safely send any command to any node.  Some best practices:"
+        << endl;
         cout << endl;
         cout << "- Put each Bedrock node on a different server." << endl;
         cout << endl;
         cout << "- Assign each node a different priority (greater than 0).  The highest priority node will be the "
-                "'leader', which will coordinate distributed transactions."
-             << endl;
+        "'leader', which will coordinate distributed transactions."
+        << endl;
         cout << endl;
         return 1;
     }
@@ -286,10 +299,10 @@ int main(int argc, char* argv[]) {
 
 // Set the defaults
 #define SETDEFAULT(_NAME_, _VAL_)                                                                                      \
-    do {                                                                                                               \
-        if (!args.isSet(_NAME_))                                                                                       \
+        do {                                                                                                               \
+            if (!args.isSet(_NAME_))                                                                                       \
             args[_NAME_] = _VAL_;                                                                                      \
-    } while (false)
+        } while (false)
     SETDEFAULT("-db", "bedrock.db");
     SETDEFAULT("-serverHost", "localhost:8888");
     SETDEFAULT("-nodeHost", "localhost:8889");
@@ -307,7 +320,7 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-checkpointMode", "PASSIVE");
 
     // Reset the database if requested
-    if (args.isSet("-clean") || args.isSet("-bootstrap") ) {
+    if (args.isSet("-clean") || args.isSet("-bootstrap")) {
         // Remove it
         SINFO("Resetting database");
         string db = args["-db"];

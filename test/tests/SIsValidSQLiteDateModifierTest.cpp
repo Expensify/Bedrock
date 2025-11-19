@@ -1,10 +1,14 @@
 #include <libstuff/libstuff.h>
 #include <test/lib/tpunit++.hpp>
 
-struct SIsValidSQLiteDateModifierTest : tpunit::TestFixture {
+struct SIsValidSQLiteDateModifierTest : tpunit::TestFixture
+{
     SIsValidSQLiteDateModifierTest()
-    : tpunit::TestFixture("SIsValidSQLiteDateModifier",
-                          TEST(SIsValidSQLiteDateModifierTest::test)) { }
+        : tpunit::TestFixture("SIsValidSQLiteDateModifier",
+                              TEST(SIsValidSQLiteDateModifierTest::test))
+    {
+    }
+
     void test()
     {
         // +1 for every timeframe
@@ -46,7 +50,7 @@ struct SIsValidSQLiteDateModifierTest : tpunit::TestFixture {
         EXPECT_TRUE(SIsValidSQLiteDateModifier("+999 DAYS"));
         EXPECT_TRUE(SIsValidSQLiteDateModifier("+999 MONTHS"));
         EXPECT_TRUE(SIsValidSQLiteDateModifier("+999 YEARS"));
-        
+
         // -999 for every timeframe (plural)
         EXPECT_TRUE(SIsValidSQLiteDateModifier("-999 SECONDS"));
         EXPECT_TRUE(SIsValidSQLiteDateModifier("-999 MINUTES"));

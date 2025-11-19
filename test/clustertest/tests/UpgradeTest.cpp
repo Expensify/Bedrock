@@ -1,15 +1,18 @@
-
 #include <libstuff/SData.h>
 #include <libstuff/SRandom.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct UpgradeTest : tpunit::TestFixture {
+struct UpgradeTest : tpunit::TestFixture
+{
     UpgradeTest()
-    : tpunit::TestFixture("Upgrade",
-                          TEST(UpgradeTest::mismatchedFollowerSendMultipleCommands)
-                         ) { }
+        : tpunit::TestFixture("Upgrade",
+                              TEST(UpgradeTest::mismatchedFollowerSendMultipleCommands)
+        )
+    {
+    }
 
-    void mismatchedFollowerSendMultipleCommands() {
+    void mismatchedFollowerSendMultipleCommands()
+    {
         BedrockClusterTester tester;
 
         // Cluster is up, shut down follower 2.
@@ -45,5 +48,4 @@ struct UpgradeTest : tpunit::TestFixture {
         ASSERT_EQUAL(results[0].methodLine, "200 OK");
         ASSERT_EQUAL(results[1].methodLine, "200 OK");
     }
-
 } __UpgradeTest;

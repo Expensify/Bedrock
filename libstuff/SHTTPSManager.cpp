@@ -9,7 +9,8 @@
 
 const string SStandaloneHTTPSManager::proxyAddressHTTPS = initProxyAddressHTTPS();
 
-string SStandaloneHTTPSManager::initProxyAddressHTTPS() {
+string SStandaloneHTTPSManager::initProxyAddressHTTPS()
+{
     const char* proxyString = getenv("HTTPS_PROXY");
     if (proxyString != nullptr) {
         return proxyString;
@@ -22,7 +23,7 @@ SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_) : plugin(plugin_)
 }
 
 SHTTPSManager::SHTTPSManager(BedrockPlugin& plugin_, const string& pem, const string& srvCrt, const string& caCrt)
-  : SStandaloneHTTPSManager(pem, srvCrt, caCrt), plugin(plugin_)
+    : SStandaloneHTTPSManager(pem, srvCrt, caCrt), plugin(plugin_)
 {
 }
 
@@ -31,14 +32,16 @@ SStandaloneHTTPSManager::SStandaloneHTTPSManager()
 }
 
 SStandaloneHTTPSManager::SStandaloneHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt)
-  : _pem(pem), _srvCrt(srvCrt), _caCrt(caCrt)
+    : _pem(pem), _srvCrt(srvCrt), _caCrt(caCrt)
 {
 }
 
-SStandaloneHTTPSManager::~SStandaloneHTTPSManager() {
+SStandaloneHTTPSManager::~SStandaloneHTTPSManager()
+{
 }
 
-void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction) {
+void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction)
+{
     if (transaction == nullptr) {
         return;
     }
@@ -48,7 +51,8 @@ void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction) {
     delete transaction;
 }
 
-int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine) {
+int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine)
+{
     // This code looks for the first space in the methodLine, and then for the first non-space
     // after that, and *then* parses the response code. If we fail to find such a code, or can't parse it as an
     // integer, we default to 400.
@@ -65,7 +69,8 @@ int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine) {
     return 400;
 }
 
-void SStandaloneHTTPSManager::prePoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction) {
+void SStandaloneHTTPSManager::prePoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction)
+{
     if (!transaction.s || transaction.finished) {
         // If there's no socket, or we're done, skip.
         return;
@@ -73,7 +78,8 @@ void SStandaloneHTTPSManager::prePoll(fd_map& fdm, SStandaloneHTTPSManager::Tran
     STCPManager::prePoll(fdm, *transaction.s);
 }
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS) {
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS)
+{
     if (!transaction.s || transaction.finished) {
         // If there's no socket, or we're done, skip. Because we call poll on commands, we may poll transactions that
         // have finished (because commands may finish one transaction but not another), or transactions that have not
@@ -158,11 +164,13 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
 {
 }
 
-SStandaloneHTTPSManager::Transaction::~Transaction() {
+SStandaloneHTTPSManager::Transaction::~Transaction()
+{
     SASSERT(!s);
 }
 
-SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTransaction() {
+SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTransaction()
+{
     // Sometimes we have to create transactions without an attempted connect. This could happen if we don't have the
     // host or service id yet.
     SHMMM("We had to create an error transaction instead of attempting a real one.");
@@ -172,7 +180,8 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTrans
     return transaction;
 }
 
-SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy) {
+SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy)
+{
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
     string host, path;

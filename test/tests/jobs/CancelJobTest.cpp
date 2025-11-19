@@ -2,7 +2,8 @@
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
-struct CancelJobTest : tpunit::TestFixture {
+struct CancelJobTest : tpunit::TestFixture
+{
     CancelJobTest()
         : tpunit::TestFixture("CancelJob",
                               BEFORE_CLASS(CancelJobTest::setupClass),
@@ -15,30 +16,41 @@ struct CancelJobTest : tpunit::TestFixture {
                               TEST(CancelJobTest::cancelJobWithoutParent),
                               TEST(CancelJobTest::cancelJobWithSiblings),
                               AFTER(CancelJobTest::tearDown),
-                              AFTER_CLASS(CancelJobTest::tearDownClass)) { }
+                              AFTER_CLASS(CancelJobTest::tearDownClass))
+    {
+    }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass()
+    {
+        tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
+    }
 
     // Reset the jobs table
-    void tearDown() {
+    void tearDown()
+    {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
     }
 
-    void tearDownClass() { delete tester; }
+    void tearDownClass()
+    {
+        delete tester;
+    }
 
     // Cannot cancel a job that doesn't exist
-    void cancelNonExistentJob() {
+    void cancelNonExistentJob()
+    {
         SData command("CancelJob");
         command["jobID"] = "1";
         tester->executeWaitVerifyContent(command, "404 No job with this jobID");
     }
 
     // Cannot cancel a job with children
-    void cancelJobWithChild() {
+    void cancelJobWithChild()
+    {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -96,7 +108,8 @@ struct CancelJobTest : tpunit::TestFixture {
     }
 
     // Ignore canceljob for RUNNING jobs
-    void cancelRunningJob() {
+    void cancelRunningJob()
+    {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -122,7 +135,7 @@ struct CancelJobTest : tpunit::TestFixture {
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
-        
+
         // Get the child job
         command.clear();
         command.methodLine = "GetJob";
@@ -146,7 +159,8 @@ struct CancelJobTest : tpunit::TestFixture {
     }
 
     // Ignore canceljob for FINISHED jobs
-    void cancelFinishedJob() {
+    void cancelFinishedJob()
+    {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -200,7 +214,8 @@ struct CancelJobTest : tpunit::TestFixture {
     }
 
     // Ignore canceljob for PAUSED jobs
-    void cancelPausedJob() {
+    void cancelPausedJob()
+    {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -238,7 +253,8 @@ struct CancelJobTest : tpunit::TestFixture {
     }
 
     // Cancel a child job
-    void cancelChildJob() {
+    void cancelChildJob()
+    {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -286,7 +302,7 @@ struct CancelJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Assert job state is cancelled, but sibling is still running
-        SQResult result;        
+        SQResult result;
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + childID + ";", result);
         ASSERT_EQUAL(result[0][0], "CANCELLED");
 
@@ -295,7 +311,8 @@ struct CancelJobTest : tpunit::TestFixture {
     }
 
     // Cancel a child job that doesn't have a parent
-    void cancelJobWithoutParent() {
+    void cancelJobWithoutParent()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "orphanChild";
@@ -310,7 +327,8 @@ struct CancelJobTest : tpunit::TestFixture {
     }
 
     // Cancel a child job that's the last child job of the parent
-    void cancelJobWithSiblings() {
+    void cancelJobWithSiblings()
+    {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";

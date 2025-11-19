@@ -7,7 +7,7 @@
 class SQLite;
 
 class BedrockTester {
-  public:
+public:
     static bool ENABLE_HCTREE;
     static bool VERBOSE_LOGGING;
     static bool QUIET_LOGGING;
@@ -104,7 +104,7 @@ class BedrockTester {
 
     string serverName;
 
-  protected:
+protected:
     // Returns an SQLite object attached to the same DB file as the bedrock server. Writing to this is dangerous and
     // should not be done!
     SQLite& getSQLiteDB();
@@ -141,4 +141,3 @@ class BedrockTester {
     atomic<uint64_t> _commitCountBase = 0;
     atomic<uint64_t>& _commitCount;
 };
-

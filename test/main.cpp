@@ -13,14 +13,16 @@
  * -wait            : Waits before running tests, in case you want to connect with the debugger.
  */
 
-void sigclean(int sig) {
+void sigclean(int sig)
+{
     cout << "Got SIGINT, cleaning up." << endl;
     BedrockTester::stopAll();
     cout << "Done." << endl;
     exit(1);
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[])
+{
     SData args = SParseCommandLine(argc, argv);
 
     // Catch sigint.

@@ -7,12 +7,16 @@
 #include <sqlitecluster/SQLiteNode.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct ForkCheckTest : tpunit::TestFixture {
+struct ForkCheckTest : tpunit::TestFixture
+{
     ForkCheckTest()
         : tpunit::TestFixture("ForkCheck",
-          TEST(ForkCheckTest::forkAtShutDown)) {}
+                              TEST(ForkCheckTest::forkAtShutDown))
+    {
+    }
 
-    pair<uint64_t, string> getMaxJournalCommit(BedrockTester& tester, bool online = true) {
+    pair<uint64_t, string> getMaxJournalCommit(BedrockTester& tester, bool online = true)
+    {
         SQResult journals;
         tester.readDB("SELECT name FROM sqlite_schema WHERE type ='table' AND name LIKE 'journal%';", journals, online);
         uint64_t maxJournalCommit = 0;
@@ -33,7 +37,8 @@ struct ForkCheckTest : tpunit::TestFixture {
         return make_pair(maxJournalCommit, maxJournalTable);
     }
 
-    vector<thread> createThreads(size_t num, BedrockClusterTester& tester, atomic<bool>& stop, atomic<bool>& leaderIsUp) {
+    vector<thread> createThreads(size_t num, BedrockClusterTester& tester, atomic<bool>& stop, atomic<bool>& leaderIsUp)
+    {
         // Just use a bunch of copies of the same command.
         vector<thread> threads;
         for (size_t num = 0; num < 9; num++) {
@@ -56,7 +61,8 @@ struct ForkCheckTest : tpunit::TestFixture {
 
     // This primary test here checks that a node that is forked will not be able to rejoin the cluster when reconnecting.
     // This is a reasonable test for a fork that happens at shutdown.
-    void forkAtShutDown() {
+    void forkAtShutDown()
+    {
         // Create a cluster, wait for it to come up.
         BedrockClusterTester tester(ClusterSize::FIVE_NODE_CLUSTER);
 

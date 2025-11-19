@@ -3,7 +3,8 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 
-SData SQLiteCommand::preprocessRequest(SData&& request) {
+SData SQLiteCommand::preprocessRequest(SData&& request)
+{
     // If the request doesn't specify an execution time, default to right now.
     if (request.isSet("commandExecuteTime")) {
         // We are deprecating `commandExecuteTime` so need to figure out where it's used.
@@ -47,6 +48,7 @@ SQLiteCommand::SQLiteCommand(SData&& _request) :
             case SQLiteNode::QUORUM:
                 writeConsistency = static_cast<SQLiteNode::ConsistencyLevel>(tempConsistency);
                 break;
+
             default:
                 // But an invalid case gets set to ASYNC, and a warning is thrown.
                 SWARN("'" << request.methodLine << "' requested invalid consistency: " << writeConsistency);
@@ -71,7 +73,8 @@ SQLiteCommand::SQLiteCommand(SQLiteCommand&& from) :
 {
 }
 
-SQLiteCommand& SQLiteCommand::operator=(SQLiteCommand&& from) noexcept {
+SQLiteCommand& SQLiteCommand::operator=(SQLiteCommand&& from) noexcept
+{
     privateRequest = move(from.privateRequest);
     const_cast<SData&>(request) = privateRequest;
     initiatingClientID = from.initiatingClientID;
@@ -96,4 +99,5 @@ SQLiteCommand::SQLiteCommand() :
     escalationTimeUS(0),
     creationTime(STimeNow()),
     escalated(false)
-{ }
+{
+}

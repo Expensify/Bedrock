@@ -3,24 +3,31 @@
 
 SQResultFormatter::FORMAT_OPTIONS SQResultFormatter::defaultOptions{};
 
-string SQResultFormatter::format(const SQResult& result, SQResultFormatter::FORMAT format, const SQResultFormatter::FORMAT_OPTIONS& options) {
+string SQResultFormatter::format(const SQResult& result, SQResultFormatter::FORMAT format, const SQResultFormatter::FORMAT_OPTIONS& options)
+{
     switch (format) {
         case FORMAT::COLUMN:
             return formatColumn(result, options);
+
         case FORMAT::CSV:
             return formatCSV(result, options);
+
         case FORMAT::TABS:
             return formatTabs(result, options);
+
         case FORMAT::JSON:
             return formatJSON(result, options);
+
         case FORMAT::QUOTE:
             return formatQuote(result, options);
+
         case FORMAT::LIST:
             return formatList(result, options);
     }
 }
 
-string SQResultFormatter::formatJSON(const SQResult& result, const FORMAT_OPTIONS& options) {
+string SQResultFormatter::formatJSON(const SQResult& result, const FORMAT_OPTIONS& options)
+{
     // Just output as a simple object
     // This probably isn't super fast, but could be easily optimized if it ever became necessary.
     STable output;
@@ -35,158 +42,159 @@ string SQResultFormatter::formatJSON(const SQResult& result, const FORMAT_OPTION
     return SComposeJSONObject(output);
 }
 
-string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTIONS& options) {
+string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTIONS& options)
+{
     // Match the native format of sqlite3 and handle embedded newlines by
     // splitting cells into physical lines and aligning continuation lines
     // under their respective columns.
 
     // --- Unicode-aware width helpers ---
     auto utf8Next = [](const string& input, size_t& byteIndex) -> uint32_t {
-        unsigned char firstByte = static_cast<unsigned char>(input[byteIndex]);
-        byteIndex += 1;
-
-        if (firstByte < 0x80) {
-            return firstByte;
-        }
-
-        uint32_t codePoint = 0;
-        int continuationBytesRemaining = 0;
-
-        if ((firstByte & 0xE0) == 0xC0) {
-            codePoint = firstByte & 0x1F;
-            continuationBytesRemaining = 1;
-        } else if ((firstByte & 0xF0) == 0xE0) {
-            codePoint = firstByte & 0x0F;
-            continuationBytesRemaining = 2;
-        } else if ((firstByte & 0xF8) == 0xF0) {
-            codePoint = firstByte & 0x07;
-            continuationBytesRemaining = 3;
-        } else {
-            return 0xFFFD;
-        }
-
-        while (continuationBytesRemaining > 0 && byteIndex < input.size()) {
-            unsigned char trailByte = static_cast<unsigned char>(input[byteIndex]);
-            if ((trailByte & 0xC0) != 0x80) {
-                break;
-            }
-            codePoint = (codePoint << 6) | (trailByte & 0x3F);
+            unsigned char firstByte = static_cast<unsigned char>(input[byteIndex]);
             byteIndex += 1;
-            continuationBytesRemaining -= 1;
-        }
 
-        return codePoint;
-    };
+            if (firstByte < 0x80) {
+                return firstByte;
+            }
+
+            uint32_t codePoint = 0;
+            int continuationBytesRemaining = 0;
+
+            if ((firstByte & 0xE0) == 0xC0) {
+                codePoint = firstByte & 0x1F;
+                continuationBytesRemaining = 1;
+            } else if ((firstByte & 0xF0) == 0xE0) {
+                codePoint = firstByte & 0x0F;
+                continuationBytesRemaining = 2;
+            } else if ((firstByte & 0xF8) == 0xF0) {
+                codePoint = firstByte & 0x07;
+                continuationBytesRemaining = 3;
+            } else {
+                return 0xFFFD;
+            }
+
+            while (continuationBytesRemaining > 0 && byteIndex < input.size()) {
+                unsigned char trailByte = static_cast<unsigned char>(input[byteIndex]);
+                if ((trailByte & 0xC0) != 0x80) {
+                    break;
+                }
+                codePoint = (codePoint << 6) | (trailByte & 0x3F);
+                byteIndex += 1;
+                continuationBytesRemaining -= 1;
+            }
+
+            return codePoint;
+        };
 
     auto isCombining = [](uint32_t cp) -> bool {
-        // Common zero-width: combining marks, variation selectors, ZWJ/ZWNJ
-        if ((cp >= 0x0300 && cp <= 0x036F) ||
-            (cp >= 0x1AB0 && cp <= 0x1AFF) ||
-            (cp >= 0x1DC0 && cp <= 0x1DFF) ||
-            (cp >= 0x20D0 && cp <= 0x20FF) ||
-            (cp >= 0xFE20 && cp <= 0xFE2F) ||
-            cp == 0x200D || cp == 0x200C ||
-            (cp >= 0xFE00 && cp <= 0xFE0F)) {
-            return true;
-        }
-        return false;
-    };
+            // Common zero-width: combining marks, variation selectors, ZWJ/ZWNJ
+            if ((cp >= 0x0300 && cp <= 0x036F) ||
+                (cp >= 0x1AB0 && cp <= 0x1AFF) ||
+                (cp >= 0x1DC0 && cp <= 0x1DFF) ||
+                (cp >= 0x20D0 && cp <= 0x20FF) ||
+                (cp >= 0xFE20 && cp <= 0xFE2F) ||
+                cp == 0x200D || cp == 0x200C ||
+                (cp >= 0xFE00 && cp <= 0xFE0F)) {
+                return true;
+            }
+            return false;
+        };
 
     auto isWide = [](uint32_t cp) -> bool {
-        // Treat most CJK and emoji as double-width for terminal-like alignment
-        if ((cp >= 0x1100 && cp <= 0x115F) ||
-            (cp >= 0x2329 && cp <= 0x232A) ||
-            (cp >= 0x2E80 && cp <= 0xA4CF) ||
-            (cp >= 0xAC00 && cp <= 0xD7A3) ||
-            (cp >= 0xF900 && cp <= 0xFAFF) ||
-            (cp >= 0xFE10 && cp <= 0xFE19) ||
-            (cp >= 0xFE30 && cp <= 0xFE6F) ||
-            (cp >= 0xFF00 && cp <= 0xFF60) ||
-            (cp >= 0xFFE0 && cp <= 0xFFE6) ||
-            // Emoji blocks
-            (cp >= 0x1F300 && cp <= 0x1FAFF) ||
-            (cp >= 0x1F900 && cp <= 0x1F9FF) ||
-            (cp >= 0x2600 && cp <= 0x26FF) ||
-            (cp >= 0x2700 && cp <= 0x27BF)) {
-            return true;
-        }
-        return false;
-    };
+            // Treat most CJK and emoji as double-width for terminal-like alignment
+            if ((cp >= 0x1100 && cp <= 0x115F) ||
+                (cp >= 0x2329 && cp <= 0x232A) ||
+                (cp >= 0x2E80 && cp <= 0xA4CF) ||
+                (cp >= 0xAC00 && cp <= 0xD7A3) ||
+                (cp >= 0xF900 && cp <= 0xFAFF) ||
+                (cp >= 0xFE10 && cp <= 0xFE19) ||
+                (cp >= 0xFE30 && cp <= 0xFE6F) ||
+                (cp >= 0xFF00 && cp <= 0xFF60) ||
+                (cp >= 0xFFE0 && cp <= 0xFFE6) ||
+                // Emoji blocks
+                (cp >= 0x1F300 && cp <= 0x1FAFF) ||
+                (cp >= 0x1F900 && cp <= 0x1F9FF) ||
+                (cp >= 0x2600 && cp <= 0x26FF) ||
+                (cp >= 0x2700 && cp <= 0x27BF)) {
+                return true;
+            }
+            return false;
+        };
 
     auto displayWidth = [&](const string& input) -> size_t {
-        size_t displayWidthCount = 0;
-        size_t byteIndex = 0;
-        while (byteIndex < input.size()) {
-            uint32_t codePoint = utf8Next(input, byteIndex);
-            if (codePoint == 0) {
-                continue; // safety
+            size_t displayWidthCount = 0;
+            size_t byteIndex = 0;
+            while (byteIndex < input.size()) {
+                uint32_t codePoint = utf8Next(input, byteIndex);
+                if (codePoint == 0) {
+                    continue; // safety
+                }
+                if (codePoint < 0x20 || codePoint == 0x7F) {
+                    continue; // control -> width 0
+                }
+                if (isCombining(codePoint)) {
+                    continue; // zero-width combining
+                }
+                if (isWide(codePoint)) {
+                    displayWidthCount += 2;
+                } else {
+                    displayWidthCount += 1;
+                }
             }
-            if (codePoint < 0x20 || codePoint == 0x7F) {
-                continue; // control -> width 0
-            }
-            if (isCombining(codePoint)) {
-                continue; // zero-width combining
-            }
-            if (isWide(codePoint)) {
-                displayWidthCount += 2;
-            } else {
-                displayWidthCount += 1;
-            }
-        }
-        return displayWidthCount;
-    };
+            return displayWidthCount;
+        };
 
     auto padToWidth = [&](string& input, size_t targetWidth) {
-        size_t currentWidth = displayWidth(input);
-        if (currentWidth < targetWidth) {
-            input.append(targetWidth - currentWidth, ' ');
-        }
-    };
+            size_t currentWidth = displayWidth(input);
+            if (currentWidth < targetWidth) {
+                input.append(targetWidth - currentWidth, ' ');
+            }
+        };
 
     auto expandTabs = [&](const string& input) -> string {
-        string expandedOutput;
-        expandedOutput.reserve(input.size());
-        size_t byteIndex = 0;
-        size_t visualColumn = 0; // visual column within the cell
-        while (byteIndex < input.size()) {
-            size_t codePointStart = byteIndex;
-            uint32_t codePoint = utf8Next(input, byteIndex);
-            if (codePoint == '\t') {
-                size_t spacesToInsert = 8 - (visualColumn % 8);
-                expandedOutput.append(spacesToInsert, ' ');
-                visualColumn += spacesToInsert;
-            } else {
-                expandedOutput.append(input, codePointStart, byteIndex - codePointStart);
-                if (codePoint >= 0x20 && codePoint != 0x7F && !isCombining(codePoint)) {
-                    if (isWide(codePoint)) {
-                        visualColumn += 2;
-                    } else {
-                        visualColumn += 1;
+            string expandedOutput;
+            expandedOutput.reserve(input.size());
+            size_t byteIndex = 0;
+            size_t visualColumn = 0; // visual column within the cell
+            while (byteIndex < input.size()) {
+                size_t codePointStart = byteIndex;
+                uint32_t codePoint = utf8Next(input, byteIndex);
+                if (codePoint == '\t') {
+                    size_t spacesToInsert = 8 - (visualColumn % 8);
+                    expandedOutput.append(spacesToInsert, ' ');
+                    visualColumn += spacesToInsert;
+                } else {
+                    expandedOutput.append(input, codePointStart, byteIndex - codePointStart);
+                    if (codePoint >= 0x20 && codePoint != 0x7F && !isCombining(codePoint)) {
+                        if (isWide(codePoint)) {
+                            visualColumn += 2;
+                        } else {
+                            visualColumn += 1;
+                        }
                     }
                 }
             }
-        }
-        return expandedOutput;
-    };
+            return expandedOutput;
+        };
 
     auto splitLines = [](const string& input) -> vector<string> {
-        vector<string> lines;
-        size_t lineStart = 0;
-        for (size_t i = 0; i <= input.size(); i++) {
-            if (i == input.size() || input[i] == '\n') {
-                string line = input.substr(lineStart, i - lineStart);
-                if (!line.empty() && line.back() == '\r') {
-                    line.pop_back();
+            vector<string> lines;
+            size_t lineStart = 0;
+            for (size_t i = 0; i <= input.size(); i++) {
+                if (i == input.size() || input[i] == '\n') {
+                    string line = input.substr(lineStart, i - lineStart);
+                    if (!line.empty() && line.back() == '\r') {
+                        line.pop_back();
+                    }
+                    lines.push_back(line);
+                    lineStart = i + 1;
                 }
-                lines.push_back(line);
-                lineStart = i + 1;
             }
-        }
-        if (lines.empty()) {
-            lines.emplace_back();
-        }
-        return lines;
-    };
+            if (lines.empty()) {
+                lines.emplace_back();
+            }
+            return lines;
+        };
 
     // Determine column widths: maximum subline length across header and all rows
     vector<size_t> maxColumnDisplayWidths(result.headers.size());
@@ -280,70 +288,71 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
     return output;
 }
 
-string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIONS& options) {
+string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIONS& options)
+{
     auto isNumeric = [](const string& input) -> bool {
-        if (input.empty()) {
-            return false;
-        }
-        size_t i = 0;
-        // optional sign
-        if (input[i] == '+' || input[i] == '-') {
-            i += 1;
-            if (i >= input.size()) {
+            if (input.empty()) {
                 return false;
             }
-        }
-        bool hasDigits = false;
-        // integer part
-        while (i < input.size() && isdigit(static_cast<unsigned char>(input[i]))) {
-            hasDigits = true;
-            i += 1;
-        }
-        // decimal part
-        if (i < input.size() && input[i] == '.') {
-            i += 1;
+            size_t i = 0;
+            // optional sign
+            if (input[i] == '+' || input[i] == '-') {
+                i += 1;
+                if (i >= input.size()) {
+                    return false;
+                }
+            }
+            bool hasDigits = false;
+            // integer part
             while (i < input.size() && isdigit(static_cast<unsigned char>(input[i]))) {
                 hasDigits = true;
                 i += 1;
             }
-        }
-        if (!hasDigits) {
-            return false;
-        }
-        // exponent part
-        if (i < input.size() && (input[i] == 'e' || input[i] == 'E')) {
-            i += 1;
-            if (i < input.size() && (input[i] == '+' || input[i] == '-')) {
+            // decimal part
+            if (i < input.size() && input[i] == '.') {
                 i += 1;
+                while (i < input.size() && isdigit(static_cast<unsigned char>(input[i]))) {
+                    hasDigits = true;
+                    i += 1;
+                }
             }
-            bool exponentHasDigits = false;
-            while (i < input.size() && isdigit(static_cast<unsigned char>(input[i]))) {
-                exponentHasDigits = true;
-                i += 1;
-            }
-            if (!exponentHasDigits) {
+            if (!hasDigits) {
                 return false;
             }
-        }
-        return i == input.size();
-    };
+            // exponent part
+            if (i < input.size() && (input[i] == 'e' || input[i] == 'E')) {
+                i += 1;
+                if (i < input.size() && (input[i] == '+' || input[i] == '-')) {
+                    i += 1;
+                }
+                bool exponentHasDigits = false;
+                while (i < input.size() && isdigit(static_cast<unsigned char>(input[i]))) {
+                    exponentHasDigits = true;
+                    i += 1;
+                }
+                if (!exponentHasDigits) {
+                    return false;
+                }
+            }
+            return i == input.size();
+        };
 
     auto quoteSQL = [](const string& input) -> string {
-        string quotedOutput;
-        quotedOutput.reserve(input.size() + 2);
-        quotedOutput.push_back('\'');
-        for (char c : input) {
-            if (c == '\'') {
-                // SQL escape by doubling the quote
-                quotedOutput.push_back('\'');
-                quotedOutput.push_back('\'');
-            } else {
-                quotedOutput.push_back(c);
+            string quotedOutput;
+            quotedOutput.reserve(input.size() + 2);
+            quotedOutput.push_back('\'');
+            for (char c : input) {
+                if (c == '\'') {
+                    // SQL escape by doubling the quote
+                    quotedOutput.push_back('\'');
+                    quotedOutput.push_back('\'');
+                } else {
+                    quotedOutput.push_back(c);
+                }
             }
-        }
-        quotedOutput.push_back('\'');
-        return quotedOutput;
-    };
+            quotedOutput.push_back('\'');
+            return quotedOutput;
+        };
 
     const char delimiter = ','; // sqlite default separator (respects our CSV/TSV pattern)
     string output;
@@ -381,7 +390,8 @@ string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIO
     return output;
 }
 
-string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS& options) {
+string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS& options)
+{
     // Standard CSV + sqlite3 shell defaults:
     //  - Separator: comma
     //  - Quote a field if it contains comma, double-quote, CR, LF, any ASCII whitespace/control, or any non-ASCII byte
@@ -390,44 +400,44 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
     //  - Emit a header row if headers exist (matches our TSV/QUOTE behavior)
 
     auto needsQuoting = [](const string& input) -> bool {
-        if (input.empty()) {
-            return true; // sqlite shell prints "" for empty strings
-        }
-        for (unsigned char byte : input) {
-            if (byte == ',' || byte == '"' || byte == '\n' || byte == '\r') {
-                return true;
+            if (input.empty()) {
+                return true; // sqlite shell prints "" for empty strings
             }
-            if (byte <= ' ') {
-                return true;     // spaces, tabs, other ASCII whitespace/control
+            for (unsigned char byte : input) {
+                if (byte == ',' || byte == '"' || byte == '\n' || byte == '\r') {
+                    return true;
+                }
+                if (byte <= ' ') {
+                    return true; // spaces, tabs, other ASCII whitespace/control
+                }
+                if (byte >= 0x80) {
+                    return true; // non-ASCII bytes (e.g., accented chars, emoji bytes)
+                }
             }
-            if (byte >= 0x80) {
-                return true;    // non-ASCII bytes (e.g., accented chars, emoji bytes)
-            }
-        }
-        return false;
-    };
+            return false;
+        };
 
     auto quoteCSV = [&](const string& input) -> string {
-        if (input.empty()) {
-            return "\"\""; // empty string becomes ""
-        }
-        if (!needsQuoting(input)) {
-            return input;
-        }
-        string quoted;
-        quoted.reserve(input.size() + 2);
-        quoted.push_back('"');
-        for (char c : input) {
-            if (c == '"') {
-                quoted.push_back('"');
-                quoted.push_back('"');
-            } else {
-                quoted.push_back(c);
+            if (input.empty()) {
+                return "\"\""; // empty string becomes ""
             }
-        }
-        quoted.push_back('"');
-        return quoted;
-    };
+            if (!needsQuoting(input)) {
+                return input;
+            }
+            string quoted;
+            quoted.reserve(input.size() + 2);
+            quoted.push_back('"');
+            for (char c : input) {
+                if (c == '"') {
+                    quoted.push_back('"');
+                    quoted.push_back('"');
+                } else {
+                    quoted.push_back(c);
+                }
+            }
+            quoted.push_back('"');
+            return quoted;
+        };
 
     const char delimiter = ',';
     string output;
@@ -460,7 +470,8 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
     return output;
 }
 
-string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTIONS& options) {
+string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTIONS& options)
+{
     // Mimic sqlite3 shell `.mode tabs`:
     //  - Separator is a single TAB character
     //  - No field quoting/escaping; fields are written verbatim
@@ -505,7 +516,8 @@ string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTION
     return output;
 }
 
-string SQResultFormatter::formatList(const SQResult& result, const FORMAT_OPTIONS& options) {
+string SQResultFormatter::formatList(const SQResult& result, const FORMAT_OPTIONS& options)
+{
     // Mimic sqlite3 shell `.mode list`:
     //  - Columns separated by a pipe ("|")
     //  - Each row on a single line

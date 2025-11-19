@@ -3,20 +3,25 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct DoubleDetachTest : tpunit::TestFixture {
+struct DoubleDetachTest : tpunit::TestFixture
+{
     DoubleDetachTest()
         : tpunit::TestFixture("DoubleDetach",
                               BEFORE_CLASS(DoubleDetachTest::setup),
                               AFTER_CLASS(DoubleDetachTest::teardown),
-                              TEST(DoubleDetachTest::testDoubleDetach)) { }
+                              TEST(DoubleDetachTest::testDoubleDetach))
+    {
+    }
 
     BedrockClusterTester* tester;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockClusterTester();
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
@@ -38,5 +43,4 @@ struct DoubleDetachTest : tpunit::TestFixture {
         SData attachCommand("Attach");
         follower.executeWaitVerifyContent(attachCommand, "204 ATTACHING", true);
     }
-
 } __DoubleDetachTest;
