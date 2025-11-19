@@ -148,9 +148,9 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.51.0"
 #define SQLITE_VERSION_NUMBER 3051000
-#define SQLITE_SOURCE_ID      "025-10-08 19:26:53 4979dbd384a6862fe76193f9843b19404b19a2529652a179b9a-experimental"
-#define SQLITE_SCM_BRANCH     "unknown"
-#define SQLITE_SCM_TAGS       "unknown"
+#define SQLITE_SOURCE_ID      "2025-10-08 19:26:53 4979dbd384a6862fe76193f9843b19404b19a2529652a179b9aaf1d5935c13bd"
+#define SQLITE_SCM_BRANCH     "hctree-bedrock"
+#define SQLITE_SCM_TAGS       ""
 #define SQLITE_SCM_DATETIME   "2025-10-08T19:26:53.601Z"
 
 /*
