@@ -4,12 +4,13 @@
 #include <libstuff/SQResult.h>
 
 const string BedrockPlugin_Cache::name("Cache");
-const string& BedrockPlugin_Cache::getName() const {
+const string& BedrockPlugin_Cache::getName() const
+{
     return name;
 }
 
 BedrockCacheCommand::BedrockCacheCommand(SQLiteCommand&& baseCommand, BedrockPlugin_Cache* plugin) :
-  BedrockCommand(move(baseCommand), plugin)
+    BedrockCommand(move(baseCommand), plugin)
 {
 }
 
@@ -18,18 +19,21 @@ const set<string, STableComp> BedrockPlugin_Cache::supportedRequestVerbs = {
     "WriteCache",
 };
 
-unique_ptr<BedrockCommand> BedrockPlugin_Cache::getCommand(SQLiteCommand&& baseCommand) {
+unique_ptr<BedrockCommand> BedrockPlugin_Cache::getCommand(SQLiteCommand&& baseCommand)
+{
     if (supportedRequestVerbs.count(baseCommand.request.getVerb())) {
         return make_unique<BedrockCacheCommand>(move(baseCommand), this);
     }
     return nullptr;
 }
 
-BedrockPlugin_Cache::LRUMap::LRUMap() {
+BedrockPlugin_Cache::LRUMap::LRUMap()
+{
     // Initialize
 }
 
-BedrockPlugin_Cache::LRUMap::~LRUMap() {
+BedrockPlugin_Cache::LRUMap::~LRUMap()
+{
     // Just delete all the entries
     while (!empty()) {
         // Pop it off
@@ -37,13 +41,15 @@ BedrockPlugin_Cache::LRUMap::~LRUMap() {
     }
 }
 
-bool BedrockPlugin_Cache::LRUMap::empty() {
+bool BedrockPlugin_Cache::LRUMap::empty()
+{
     // Both the map and list are the same size, so check either
     lock_guard<decltype(_mutex)> lock(_mutex);
     return _lruList.empty();
 }
 
-void BedrockPlugin_Cache::LRUMap::pushMRU(const string& name) {
+void BedrockPlugin_Cache::LRUMap::pushMRU(const string& name)
+{
     // See if if it's already there
     lock_guard<decltype(_mutex)> lock(_mutex);
     map<string, Entry*>::iterator mapIt = _lruMap.find(name);
@@ -53,7 +59,7 @@ void BedrockPlugin_Cache::LRUMap::pushMRU(const string& name) {
         entry->name = name;
 
         // Insert into the map and list, retaining iterators to both
-        entry->mapIt = _lruMap.insert(std::pair<string, Entry*>(name, entry)).first;
+        entry->mapIt = _lruMap.insert(pair<string, Entry*>(name, entry)).first;
         entry->listIt = _lruList.insert(_lruList.end(), entry);
     } else {
         // Already in the map, just move to the end of the list
@@ -67,7 +73,8 @@ void BedrockPlugin_Cache::LRUMap::pushMRU(const string& name) {
 // This returns a pair which is made of up of the LRU item in the cache and
 // a bool of whether or not the cache was empty when we tried to pop. If the
 // cache is empty, the LRU item will be an empty string and the bool will be false.
-pair<string, bool> BedrockPlugin_Cache::LRUMap::popLRU() {
+pair<string, bool> BedrockPlugin_Cache::LRUMap::popLRU()
+{
     // Make sure we're not empty
     lock_guard<decltype(_mutex)> lock(_mutex);
     if (empty()) {
@@ -82,20 +89,24 @@ pair<string, bool> BedrockPlugin_Cache::LRUMap::popLRU() {
     return make_pair(nameCopy, true);
 }
 
-int64_t BedrockPlugin_Cache::initCacheSize(const string& cacheString) {
+int64_t BedrockPlugin_Cache::initCacheSize(const string& cacheString)
+{
     // Check the configuration
     const string& maxCache = SToUpper(cacheString);
     int64_t maxCacheSize = SToInt64(maxCache);
-    if (SEndsWith(maxCache, "KB"))
+    if (SEndsWith(maxCache, "KB")) {
         maxCacheSize *= 1024;
-    if (SEndsWith(maxCache, "MB"))
+    }
+    if (SEndsWith(maxCache, "MB")) {
         maxCacheSize *= 1024 * 1024;
-    if (SEndsWith(maxCache, "GB"))
+    }
+    if (SEndsWith(maxCache, "GB")) {
         maxCacheSize *= 1024 * 1024 * 1024;
+    }
     if (!maxCacheSize) {
         // Provide a default
         SINFO("No -cache.max specified, defaulting to 16GB");
-        maxCacheSize = (int64_t)16 * 1024 * 1024 * 1024;
+        maxCacheSize = (int64_t) 16 * 1024 * 1024 * 1024;
     }
     SASSERT(maxCacheSize > 0);
     SINFO("Initializing cache with maximum size of " << maxCacheSize << " bytes");
@@ -107,14 +118,16 @@ BedrockPlugin_Cache::BedrockPlugin_Cache(BedrockServer& s)
 {
 }
 
-BedrockPlugin_Cache::~BedrockPlugin_Cache() {
+BedrockPlugin_Cache::~BedrockPlugin_Cache()
+{
     // Nothing to clean up
 }
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
 
-void BedrockPlugin_Cache::upgradeDatabase(SQLite& db) {
+void BedrockPlugin_Cache::upgradeDatabase(SQLite& db)
+{
     // Create or verify the cache table
     bool ignore;
     while (!db.verifyTable("cache", "CREATE TABLE cache ( "
@@ -151,7 +164,8 @@ void BedrockPlugin_Cache::upgradeDatabase(SQLite& db) {
                      "END;"));
 }
 
-bool BedrockCacheCommand::peek(SQLite& db) {
+bool BedrockCacheCommand::peek(SQLite& db)
+{
     if (SIEquals(request.getVerb(), "ReadCache")) {
         // - ReadCache( name )
         //
@@ -202,7 +216,8 @@ bool BedrockCacheCommand::peek(SQLite& db) {
     return false;
 }
 
-void BedrockCacheCommand::process(SQLite& db) {
+void BedrockCacheCommand::process(SQLite& db)
+{
     if (SIEquals(request.getVerb(), "WriteCache")) {
         // - WriteCache( name, value, [invalidateName] )
         //
@@ -251,8 +266,9 @@ void BedrockCacheCommand::process(SQLite& db) {
         // Note that we will leave these items in the lruMap in memory, but
         // that's non-harmful.
         if (!request["invalidateName"].empty()) {
-            if (!db.write("DELETE FROM cache WHERE name GLOB " + SQ(request["invalidateName"]) + ";"))
+            if (!db.write("DELETE FROM cache WHERE name GLOB " + SQ(request["invalidateName"]) + ";")) {
                 STHROW("502 Query failed (invalidating)");
+            }
         }
 
         // Clear out room for the new object
@@ -275,8 +291,8 @@ void BedrockCacheCommand::process(SQLite& db) {
         if (!db.write("INSERT OR REPLACE INTO cache ( name, value ) "
                       "VALUES( " +
                       SQ(name) + ", " + safeValue + " );")) {
-                          STHROW("502 Query failed (inserting)");
-                      }
+            STHROW("502 Query failed (inserting)");
+        }
 
         // Writing is a form of "use", so this is the new MRU.  Note that we're
         // adding it to the MRU, even before we commit.  So if this transaction

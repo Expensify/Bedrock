@@ -3,25 +3,31 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct FutureExecutionTest : tpunit::TestFixture {
+struct FutureExecutionTest : tpunit::TestFixture
+{
     FutureExecutionTest()
         : tpunit::TestFixture("FutureExecution",
                               BEFORE_CLASS(FutureExecutionTest::setup),
                               AFTER_CLASS(FutureExecutionTest::teardown),
                               TEST(FutureExecutionTest::FutureExecution),
-                              TEST(FutureExecutionTest::FutureExecutionTimeout)) { }
+                              TEST(FutureExecutionTest::FutureExecutionTimeout))
+    {
+    }
 
     BedrockClusterTester* tester;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockClusterTester();
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
-    void FutureExecution() {
+    void FutureExecution()
+    {
         // We only care about leader because future execution only works on leader.
         BedrockTester& brtester = tester->getTester(0);
 
@@ -31,7 +37,7 @@ struct FutureExecutionTest : tpunit::TestFixture {
         // Three seconds from now.
         query["commandExecuteTime"] = to_string(STimeNow() + 3000000);
         query["Query"] = "INSERT INTO test VALUES(" + SQ(50011) + ", " + SQ("sent_by_leader") + ");";
-        string result = brtester.executeWaitVerifyContent(query, "202"); 
+        string result = brtester.executeWaitVerifyContent(query, "202");
 
         // Ok, Now let's wait a second
         sleep(1);
@@ -62,7 +68,8 @@ struct FutureExecutionTest : tpunit::TestFixture {
         ASSERT_TRUE(success);
     }
 
-    void FutureExecutionTimeout() {
+    void FutureExecutionTimeout()
+    {
         // We only care about leader because future execution only works on leader.
         BedrockTester& brtester = tester->getTester(0);
 
@@ -77,5 +84,4 @@ struct FutureExecutionTest : tpunit::TestFixture {
         query["Query"] = "SELECT 1;";
         string result = brtester.executeWaitVerifyContent(query, "555 Timeout");
     }
-
 } __FutureExecutionTest;

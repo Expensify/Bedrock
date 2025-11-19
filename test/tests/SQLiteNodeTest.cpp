@@ -9,33 +9,54 @@
 #include <cstring>
 
 class SQLiteNodeTester {
-  public:
-    static SQLitePeer* getSyncPeer(SQLiteNode& node) {
+public:
+    static SQLitePeer* getSyncPeer(SQLiteNode& node)
+    {
         return node._syncPeer;
     }
 
-    static void updateSyncPeer(SQLiteNode& node) {
+    static void updateSyncPeer(SQLiteNode& node)
+    {
         node._updateSyncPeer();
     }
 };
 
 class TestServer : public SQLiteServer {
-  public:
-    TestServer() : SQLiteServer() { }
+public:
+    TestServer() : SQLiteServer()
+    {
+    }
 
-    virtual bool canStandDown() { return true; }
-    virtual void onNodeLogin(SQLitePeer* peer) { }
-    virtual void notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState) {}
-    virtual void blockCommandPort(const string& reason) { };
-    virtual void unblockCommandPort(const string& reason) { };
+    virtual bool canStandDown()
+    {
+        return true;
+    }
+
+    virtual void onNodeLogin(SQLitePeer* peer)
+    {
+    }
+
+    virtual void notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState)
+    {
+    }
+
+    virtual void blockCommandPort(const string& reason)
+    {
+    };
+    virtual void unblockCommandPort(const string& reason)
+    {
+    };
 };
 
-struct SQLiteNodeTest : tpunit::TestFixture {
+struct SQLiteNodeTest : tpunit::TestFixture
+{
     SQLiteNodeTest() : tpunit::TestFixture("SQLiteNode",
                                            BEFORE_CLASS(SQLiteNodeTest::setup),
                                            AFTER_CLASS(SQLiteNodeTest::teardown),
                                            TEST(SQLiteNodeTest::testFindSyncPeer),
-                                           TEST(SQLiteNodeTest::testGetPeerByName)) { }
+                                           TEST(SQLiteNodeTest::testGetPeerByName))
+    {
+    }
 
     // Filename for temp DB.
     char filenameTemplate[17] = "br_sync_dbXXXXXX";
@@ -45,7 +66,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
     string peerList = "host1.fake:15555?nodeName=peer1,host2.fake:16666?nodeName=peer2,host3.fake:17777?nodeName=peer3,host4.fake:18888?nodeName=peer4";
     shared_ptr<SQLitePool> dbPool;
 
-    void setup() {
+    void setup()
+    {
         // This exposes just enough to test the peer selection logic.
         strcpy(filename, filenameTemplate);
         int fd = mkstemp(filename);
@@ -53,11 +75,13 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0);
     }
 
-    void teardown() {
+    void teardown()
+    {
         unlink(filename);
     }
 
-    void testFindSyncPeer() {
+    void testFindSyncPeer()
+    {
         SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, 1, 1000000000, "1.0");
 
         // Do a base test, with one peer with no latency.
@@ -128,7 +152,8 @@ struct SQLiteNodeTest : tpunit::TestFixture {
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
     }
 
-    void testGetPeerByName() {
+    void testGetPeerByName()
+    {
         {
             SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, 1, 1000000000, "1.0");
             ASSERT_EQUAL(testNode.getPeerByName("peer3")->name, "peer3");
@@ -143,5 +168,4 @@ struct SQLiteNodeTest : tpunit::TestFixture {
             ASSERT_EQUAL(testNode.getPeerByName("peer9"), nullptr);
         }
     }
-
 } __SQLiteNodeTest;

@@ -1,20 +1,24 @@
 #include <sys/stat.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct ClusterUpgradeTest : tpunit::TestFixture {
+struct ClusterUpgradeTest : tpunit::TestFixture
+{
     ClusterUpgradeTest()
         : tpunit::TestFixture("ClusterUpgrade",
                               BEFORE_CLASS(ClusterUpgradeTest::setup),
                               AFTER_CLASS(ClusterUpgradeTest::teardown),
                               TEST(ClusterUpgradeTest::test)
-                             ) { }
+        )
+    {
+    }
 
     BedrockClusterTester* tester;
     string prodBedrockName;
     string prodBedrockPluginName;
     string newTestPlugin;
 
-    void setup() {
+    void setup()
+    {
         // Get the most recent releases.
         const size_t RECENT_RELEASES_TO_CHECK = 5;
 
@@ -91,11 +95,13 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         tester = new BedrockClusterTester(prodBedrockPluginName, prodBedrockName);
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
-    vector<string> getVersions() {
+    vector<string> getVersions()
+    {
         SData status("Status");
         vector<string> versions(3);
         for (auto i: {0, 1, 2}) {
@@ -105,7 +111,8 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         return versions;
     }
 
-    void test() {
+    void test()
+    {
         // Let the entire cluster come up on the production version.
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
         ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
@@ -178,5 +185,4 @@ struct ClusterUpgradeTest : tpunit::TestFixture {
         ASSERT_EQUAL(versions[1], devVersion);
         ASSERT_EQUAL(versions[2], devVersion);
     }
-
 } __ClusterUpgradeTest;

@@ -12,114 +12,127 @@
 // MySQL utility functions for query parsing and extraction
 // These functions are used by the MySQL plugin and are exposed for unit testing
 namespace MySQLUtils {
+bool parseVersionQuery(const string& query, vector<string>& matches)
+{
+    string upperQuery = SToUpper(query);
+    return SREMatch("^SELECT\\s+VERSION\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", upperQuery, false, false, &matches);
+}
 
-    bool parseVersionQuery(const string& query, vector<string>& matches) {
-        string upperQuery = SToUpper(query);
-        return SREMatch("^SELECT\\s+VERSION\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", upperQuery, false, false, &matches);
-    }
+bool parseConnectionIdQuery(const string& query, vector<string>& matches)
+{
+    string upperQuery = SToUpper(query);
+    return SREMatch("^SELECT\\s+CONNECTION_ID\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", upperQuery, false, false, &matches);
+}
 
-    bool parseConnectionIdQuery(const string& query, vector<string>& matches) {
-        string upperQuery = SToUpper(query);
-        return SREMatch("^SELECT\\s+CONNECTION_ID\\(\\s*\\)(?:\\s+AS\\s+(\\w+))?\\s*;?$", upperQuery, false, false, &matches);
-    }
+string extractTableNameFromColumnsQuery(const string& query)
+{
+    string tableName;
+    string upperQuery = SToUpper(query);
 
-    string extractTableNameFromColumnsQuery(const string& query) {
-        string tableName;
-        string upperQuery = SToUpper(query);
-
-        // Find "TABLE_NAME = '" pattern
-        size_t pos = upperQuery.find("TABLE_NAME");
-        if (pos != string::npos) {
-            // Find the equals sign
-            size_t equalsPos = upperQuery.find("=", pos);
-            if (equalsPos != string::npos) {
-                // Find the opening quote after the equals
-                size_t quoteStart = query.find_first_of("'\"", equalsPos);
-                if (quoteStart != string::npos) {
-                    char quoteChar = query[quoteStart];
-                    // Find the closing quote
-                    size_t quoteEnd = query.find(quoteChar, quoteStart + 1);
-                    if (quoteEnd != string::npos) {
-                        tableName = query.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
-                    }
+    // Find "TABLE_NAME = '" pattern
+    size_t pos = upperQuery.find("TABLE_NAME");
+    if (pos != string::npos) {
+        // Find the equals sign
+        size_t equalsPos = upperQuery.find("=", pos);
+        if (equalsPos != string::npos) {
+            // Find the opening quote after the equals
+            size_t quoteStart = query.find_first_of("'\"", equalsPos);
+            if (quoteStart != string::npos) {
+                char quoteChar = query[quoteStart];
+                // Find the closing quote
+                size_t quoteEnd = query.find(quoteChar, quoteStart + 1);
+                if (quoteEnd != string::npos) {
+                    tableName = query.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
                 }
             }
         }
-        return tableName;
     }
+    return tableName;
+}
 
-    bool isInformationSchemaTablesQuery(const string& query) {
-        return SContains(SToUpper(query), "INFORMATION_SCHEMA.TABLES");
-    }
+bool isInformationSchemaTablesQuery(const string& query)
+{
+    return SContains(SToUpper(query), "INFORMATION_SCHEMA.TABLES");
+}
 
-    bool isInformationSchemaViewsQuery(const string& query) {
-        return SContains(SToUpper(query), "INFORMATION_SCHEMA.VIEWS");
-    }
+bool isInformationSchemaViewsQuery(const string& query)
+{
+    return SContains(SToUpper(query), "INFORMATION_SCHEMA.VIEWS");
+}
 
-    bool isInformationSchemaColumnsQuery(const string& query) {
-        return SContains(SToUpper(query), "INFORMATION_SCHEMA.COLUMNS");
-    }
+bool isInformationSchemaColumnsQuery(const string& query)
+{
+    return SContains(SToUpper(query), "INFORMATION_SCHEMA.COLUMNS");
+}
 
-    bool isShowKeysQuery(const string& query) {
-        return SContains(SToUpper(query), "SHOW KEYS FROM");
-    }
+bool isShowKeysQuery(const string& query)
+{
+    return SContains(SToUpper(query), "SHOW KEYS FROM");
+}
 
-    string extractTableNameFromShowKeysQuery(const string& query) {
-        string upperQuery = SToUpper(query);
-        string tableName;
+string extractTableNameFromShowKeysQuery(const string& query)
+{
+    string upperQuery = SToUpper(query);
+    string tableName;
 
-        // Look for patterns like "FROM `tablename`" or "FROM tablename"
-        size_t fromPos = upperQuery.find("FROM");
-        if (fromPos != string::npos) {
-            size_t tableStart = query.find_first_not_of(" \t", fromPos + 4);
-            if (tableStart != string::npos) {
-                size_t tableEnd;
-                if (query[tableStart] == '`') {
-                    // Handle backtick-quoted table names like `bankAccounts`
-                    tableStart++; // Skip opening backtick
-                    tableEnd = query.find('`', tableStart);
-                } else {
-                    // Handle unquoted table names
-                    tableEnd = query.find_first_of(" \t;", tableStart);
-                    if (tableEnd == string::npos) tableEnd = query.length();
-                }
-
-                if (tableEnd != string::npos && tableEnd > tableStart) {
-                    tableName = query.substr(tableStart, tableEnd - tableStart);
+    // Look for patterns like "FROM `tablename`" or "FROM tablename"
+    size_t fromPos = upperQuery.find("FROM");
+    if (fromPos != string::npos) {
+        size_t tableStart = query.find_first_not_of(" \t", fromPos + 4);
+        if (tableStart != string::npos) {
+            size_t tableEnd;
+            if (query[tableStart] == '`') {
+                // Handle backtick-quoted table names like `bankAccounts`
+                tableStart++;     // Skip opening backtick
+                tableEnd = query.find('`', tableStart);
+            } else {
+                // Handle unquoted table names
+                tableEnd = query.find_first_of(" \t;", tableStart);
+                if (tableEnd == string::npos) {
+                    tableEnd = query.length();
                 }
             }
+
+            if (tableEnd != string::npos && tableEnd > tableStart) {
+                tableName = query.substr(tableStart, tableEnd - tableStart);
+            }
         }
-        return tableName;
     }
+    return tableName;
+}
 
-    bool isForeignKeyConstraintQuery(const string& query) {
-        string upperQuery = SToUpper(query);
-        return SContains(upperQuery, "INFORMATION_SCHEMA.KEY_COLUMN_USAGE") &&
-               SContains(upperQuery, "INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS");
+bool isForeignKeyConstraintQuery(const string& query)
+{
+    string upperQuery = SToUpper(query);
+    return SContains(upperQuery, "INFORMATION_SCHEMA.KEY_COLUMN_USAGE") &&
+           SContains(upperQuery, "INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS");
+}
+
+string extractTableNameFromForeignKeyQuery(const string& query)
+{
+    vector<string> matches;
+    // Look for pattern "table_name = 'value'" or "cu.table_name = 'value'" (with optional table alias)
+    if (SREMatch("(?:\\w+\\.)?table_name\\s*=\\s*['\"]([^'\"]+)['\"]", query, false, true, &matches) && matches.size() > 1) {
+        return matches[1];     // matches[1] is the captured group, matches[0] is the entire match
     }
-
-    string extractTableNameFromForeignKeyQuery(const string& query) {
-        vector<string> matches;
-        // Look for pattern "table_name = 'value'" or "cu.table_name = 'value'" (with optional table alias)
-        if (SREMatch("(?:\\w+\\.)?table_name\\s*=\\s*['\"]([^'\"]+)['\"]", query, false, true, &matches) && matches.size() > 1) {
-            return matches[1]; // matches[1] is the captured group, matches[0] is the entire match
-        }
-        return "";
-    }
-
+    return "";
+}
 } // namespace MySQLUtils
 
 const string BedrockPlugin_MySQL::name("MySQL");
-const string& BedrockPlugin_MySQL::getName() const {
+const string& BedrockPlugin_MySQL::getName() const
+{
     return name;
 }
 
-MySQLPacket::MySQLPacket() {
+MySQLPacket::MySQLPacket()
+{
     // Initialize
     sequenceID = 0;
 }
 
-string MySQLPacket::serialize() {
+string MySQLPacket::serialize()
+{
     // Wrap in a 3-byte header
     uint32_t payloadLength = payload.size();
     string header;
@@ -129,15 +142,16 @@ string MySQLPacket::serialize() {
     return header + payload;
 }
 
-int MySQLPacket::deserialize(const char* packet, const size_t size) {
+int MySQLPacket::deserialize(const char* packet, const size_t size)
+{
     // Does it have a header?
     if (size < 4) {
         return 0;
     }
 
     // Has a header, parse it out
-    uint32_t payloadLength = (*(uint32_t*)&packet[0]) & 0x00FFFFFF; // 3 bytes
-    sequenceID = (uint8_t)packet[3];
+    uint32_t payloadLength = (*(uint32_t*) &packet[0]) & 0x00FFFFFF; // 3 bytes
+    sequenceID = (uint8_t) packet[3];
 
     // Do we have enough data for the full payload?
     if (size < (4 + payloadLength)) {
@@ -151,7 +165,8 @@ int MySQLPacket::deserialize(const char* packet, const size_t size) {
     return 4 + payloadLength;
 }
 
-string MySQLPacket::lenEncInt(uint64_t val) {
+string MySQLPacket::lenEncInt(uint64_t val)
+{
     // Encode based on the length.
     // **NOTE: The below assume this is running on a "little-endian"
     //         machine, which means the least significant byte comes first
@@ -176,12 +191,14 @@ string MySQLPacket::lenEncInt(uint64_t val) {
     return out;
 }
 
-string MySQLPacket::lenEncStr(const string& str) {
+string MySQLPacket::lenEncStr(const string& str)
+{
     // Add the length, and then the string
     return lenEncInt(str.size()) + str;
 }
 
-string MySQLPacket::serializeHandshake() {
+string MySQLPacket::serializeHandshake()
+{
     // Protocol described here:
     // https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::Handshake
 
@@ -196,12 +213,12 @@ string MySQLPacket::serializeHandshake() {
     handshake.payload += lenEncInt(0);            // filler
 
     uint32_t CLIENT_LONG_PASSWORD = 0x00000001;
-    uint32_t CLIENT_PROTOCOL_41   = 0x00000200;
-    uint32_t CLIENT_PLUGIN_AUTH   = 0x00080000;
+    uint32_t CLIENT_PROTOCOL_41 = 0x00000200;
+    uint32_t CLIENT_PLUGIN_AUTH = 0x00080000;
     uint32_t capability_flags = CLIENT_LONG_PASSWORD | CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH;
 
-    uint16_t capability_flags_1 = (const unsigned short)(capability_flags);
-    uint16_t capability_flags_2 = (const unsigned short)(capability_flags >> 16);
+    uint16_t capability_flags_1 = (const unsigned short) (capability_flags);
+    uint16_t capability_flags_2 = (const unsigned short) (capability_flags >> 16);
     SAppend(handshake.payload, &capability_flags_1, 2); // capability_flags_1 (low 2 bytes)
 
     uint8_t latin1_swedish_ci = 0x08;
@@ -219,7 +236,7 @@ string MySQLPacket::serializeHandshake() {
     // (Initial Handshake Packet)
     uint8_t auth_plugin_data[] = {
         0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00 };
+        0x00, 0x00, 0x00};
 
     SAppend(handshake.payload, auth_plugin_data, sizeof(auth_plugin_data));
 
@@ -228,7 +245,8 @@ string MySQLPacket::serializeHandshake() {
     return handshake.serialize();
 }
 
-string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& result) {
+string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& result)
+{
     // Add the response
     string sendBuffer;
 
@@ -303,7 +321,8 @@ string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& resul
     return sendBuffer;
 }
 
-string MySQLPacket::serializeOK(int sequenceID) {
+string MySQLPacket::serializeOK(int sequenceID)
+{
     // Just fill out the packet
     MySQLPacket ok;
     ok.sequenceID = sequenceID + 1;
@@ -320,7 +339,8 @@ string MySQLPacket::serializeOK(int sequenceID) {
     return ok.serialize();
 }
 
-string MySQLPacket::serializeERR(int sequenceID, uint16_t code, const string& message) {
+string MySQLPacket::serializeERR(int sequenceID, uint16_t code, const string& message)
+{
     // Fill it with our custom error message
     MySQLPacket err;
     err.sequenceID = sequenceID + 1;
@@ -334,176 +354,180 @@ BedrockPlugin_MySQL::BedrockPlugin_MySQL(BedrockServer& s) : BedrockPlugin(s)
 {
 }
 
-string BedrockPlugin_MySQL::getPort() {
+string BedrockPlugin_MySQL::getPort()
+{
     return server.args.isSet("-mysql.host") ? server.args["-mysql.host"] : "localhost:3306";
 }
 
 // This plugin supports no commands.
-unique_ptr<BedrockCommand> BedrockPlugin_MySQL::getCommand(SQLiteCommand&& baseCommand) {
+unique_ptr<BedrockCommand> BedrockPlugin_MySQL::getCommand(SQLiteCommand&& baseCommand)
+{
     return nullptr;
 }
 
-void BedrockPlugin_MySQL::onPortAccept(STCPManager::Socket* s) {
+void BedrockPlugin_MySQL::onPortAccept(STCPManager::Socket* s)
+{
     // Send Protocol::HandshakeV10
     SINFO("Accepted MySQL request from '" << s->addr << "'");
     s->send(MySQLPacket::serializeHandshake());
 }
 
-void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
+void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request)
+{
     // Get any new MySQL requests
     int packetSize = 0;
     MySQLPacket packet;
     while ((packetSize = packet.deserialize(s->recvBuffer.c_str(), s->recvBuffer.size()))) {
         // Got a packet, process it
-        SDEBUG("Received command #" << packet.payload[0] << ", sequenceID #" << (int)packet.sequenceID << " : '" << SToHex(packet.serialize()) << "'");
+        SDEBUG("Received command #" << packet.payload[0] << ", sequenceID #" << (int) packet.sequenceID << " : '" << SToHex(packet.serialize()) << "'");
         s->recvBuffer.consumeFront(packetSize);
         SDEBUG("Packet payload " + packet.payload);
         switch (packet.payload[0]) {
-        case 3: { // COM_QUERY
-            // Decode the query
-            string query = STrim(packet.payload.substr(1, packet.payload.size() - 1));
-            if (!SEndsWith(query, ";")) {
-                // We translate our query to one we can pass to `DB`, for which this is mandatory.
-                query += ";";
-            }
-            // JDBC Does this.
-            if (SStartsWith(query, "/*")) {
-                auto index = query.find("*/");
-                if (index != query.npos) {
-                    query = query.substr(index + 2);
+            case 3: { // COM_QUERY
+                // Decode the query
+                string query = STrim(packet.payload.substr(1, packet.payload.size() - 1));
+                if (!SEndsWith(query, ";")) {
+                    // We translate our query to one we can pass to `DB`, for which this is mandatory.
+                    query += ";";
                 }
-            }
-            SINFO("Processing query '" << query << "'");
-
-            // See if it's asking for a global variable
-            string regExp = "^(?:(?:SELECT\\s+)?@@(?:\\w+\\.)?|SHOW VARIABLES LIKE ')(\\w+).*$";
-            vector<string> matches;
-            if (SREMatch(regExp, query, false, false, &matches)) {
-                string varName = matches[0];
-                // Loop across and look for it
-                vector<SQResultRow> rows;
-                for (int c = 0; c < MYSQL_NUM_VARIABLES; ++c) {
-                    if (SIEquals(g_MySQLVariables[c][0], varName)) {
-                        // Found it!
-                        SINFO("Returning variable '" << varName << "'='" << g_MySQLVariables[c][1] << "'");
-                        SQResultRow row;
-                        row.push_back(g_MySQLVariables[c][1]);
-                        rows.push_back(row);
-                        break;
+                // JDBC Does this.
+                if (SStartsWith(query, "/*")) {
+                    auto index = query.find("*/");
+                    if (index != query.npos) {
+                        query = query.substr(index + 2);
                     }
                 }
-                if (rows.empty()) {
-                    SHMMM("Couldn't find variable '" << varName << "', returning empty.");
-                }
-                vector<string> headers = {varName};
-                SQResult result(move(rows), move(headers));
-                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW VARIABLES;")) {
-                // Return the variable list
-                SINFO("Responding with fake variable list");
-                vector<SQResultRow> rows;
-                for (int c = 0; c < MYSQL_NUM_VARIABLES; ++c) {
+                SINFO("Processing query '" << query << "'");
+
+                // See if it's asking for a global variable
+                string regExp = "^(?:(?:SELECT\\s+)?@@(?:\\w+\\.)?|SHOW VARIABLES LIKE ')(\\w+).*$";
+                vector<string> matches;
+                if (SREMatch(regExp, query, false, false, &matches)) {
+                    string varName = matches[0];
+                    // Loop across and look for it
+                    vector<SQResultRow> rows;
+                    for (int c = 0; c < MYSQL_NUM_VARIABLES; ++c) {
+                        if (SIEquals(g_MySQLVariables[c][0], varName)) {
+                            // Found it!
+                            SINFO("Returning variable '" << varName << "'='" << g_MySQLVariables[c][1] << "'");
+                            SQResultRow row;
+                            row.push_back(g_MySQLVariables[c][1]);
+                            rows.push_back(row);
+                            break;
+                        }
+                    }
+                    if (rows.empty()) {
+                        SHMMM("Couldn't find variable '" << varName << "', returning empty.");
+                    }
+                    vector<string> headers = {varName};
+                    SQResult result(move(rows), move(headers));
+                    s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                } else if (SIEquals(query, "SHOW VARIABLES;")) {
+                    // Return the variable list
+                    SINFO("Responding with fake variable list");
+                    vector<SQResultRow> rows;
+                    for (int c = 0; c < MYSQL_NUM_VARIABLES; ++c) {
+                        SQResultRow row;
+                        row.push_back(g_MySQLVariables[c][0]);
+                        row.push_back(g_MySQLVariables[c][1]);
+                        rows.push_back(row);
+                    }
+                    vector<string> headers = {"Variable Name", "Value"};
+                    SQResult result(move(rows), move(headers));
+                    s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                } else if (SIEquals(query, "SHOW DATABASES;") ||
+                           SIEquals(SToUpper(query), "SELECT DATABASE();") ||
+                           SIEquals(SToUpper(query), "SELECT * FROM (SELECT DATABASE() AS DATABASE_NAME) A WHERE A.DATABASE_NAME IS NOT NULL;")) {
+                    // Return a fake "main" database
+                    SINFO("Responding with fake database list");
                     SQResultRow row;
-                    row.push_back(g_MySQLVariables[c][0]);
-                    row.push_back(g_MySQLVariables[c][1]);
-                    rows.push_back(row);
-                }
-                vector<string> headers = {"Variable Name", "Value"};
-                SQResult result(move(rows), move(headers));
-                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(query, "SHOW DATABASES;") ||
-                       SIEquals(SToUpper(query), "SELECT DATABASE();") ||
-                       SIEquals(SToUpper(query), "SELECT * FROM (SELECT DATABASE() AS DATABASE_NAME) A WHERE A.DATABASE_NAME IS NOT NULL;")) {
-                // Return a fake "main" database
-                SINFO("Responding with fake database list");
-                SQResultRow row;
-                row.push_back("main");
-                vector<SQResultRow> rows = {row};
-                vector<string> headers = {"Database"};
-                SQResult result(move(rows), move(headers));
-                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SIEquals(SToUpper(query), "SHOW /*!50002 FULL*/ TABLES;") ||
-                       SIEquals(SToUpper(query), "SHOW FULL TABLES;")) {
-                SINFO("Getting table list");
+                    row.push_back("main");
+                    vector<SQResultRow> rows = {row};
+                    vector<string> headers = {"Database"};
+                    SQResult result(move(rows), move(headers));
+                    s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                } else if (SIEquals(SToUpper(query), "SHOW /*!50002 FULL*/ TABLES;") ||
+                           SIEquals(SToUpper(query), "SHOW FULL TABLES;")) {
+                    SINFO("Getting table list");
 
-                // Transform this into an internal request
-                request.methodLine = "Query";
-                request["ReadDBFlags"] = "-json";
-                request["sequenceID"] = SToStr(packet.sequenceID);
-                request["query"] =
-                    "SELECT "
-                        "name as Tables_in_main, "
-                        "CASE type "
-                            "WHEN 'table' THEN 'BASE TABLE' "
-                            "WHEN 'view' THEN 'VIEW' "
-                        "END as Table_type "
-                    "FROM sqlite_master "
-                    "WHERE type IN ('table', 'view');";
-            } else if (SIEquals(SToUpper(query),
-                                "SELECT TABLE_NAME,TABLE_COMMENT,IF(TABLE_TYPE='BASE TABLE', 'TABLE', "
-                                "TABLE_TYPE),TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=DATABASE() "
-                                "AND ( TABLE_TYPE='BASE TABLE' OR TABLE_TYPE='VIEW' ) AND TABLE_NAME LIKE '%' ORDER BY "
-                                "TABLE_SCHEMA, TABLE_NAME;")) {
-                // This is the query Alteryx uses to get Table information to display in the GUI, so let's support it.
-                // This likely isn't restricted to just Alteryx, becuase it uses a generic ODBC connector from MySQL,
-                // but that is the only client we have tested that has sent this query.
-                SINFO("Getting table list");
-
-                // Transform this into an internal request
-                request.methodLine = "Query";
-                request["ReadDBFlags"] = "-json";
-                request["sequenceID"] = SToStr(packet.sequenceID);
-                request["query"] =
-                    "SELECT "
-                        "name as TABLE_NAME, "
-                        "'' as TABLE_COMMENT, "
-                        "UPPER(type) as TABLE_TYPE, "
-                        "'main' as TABLE_SCHEMA "
-                    "FROM sqlite_master "
-                    "WHERE type IN ('table', 'view') "
-                    "ORDER BY TABLE_SCHEMA, TABLE_NAME;";
-            } else if (MySQLUtils::isInformationSchemaTablesQuery(query)) {
-                // Handle information_schema.tables queries for table listing
-                SINFO("Processing information_schema.tables query for table listing");
-
-                // Transform this into an internal request to get table names from sqlite_master
-                request.methodLine = "Query";
-                request["ReadDBFlags"] = "-json";
-                request["sequenceID"] = SToStr(packet.sequenceID);
-                request["query"] =
-                    "SELECT name as name "
-                    "FROM sqlite_master "
-                    "WHERE type = 'table' "
-                    "ORDER BY name;";
-            } else if (MySQLUtils::isInformationSchemaViewsQuery(query)) {
-                // Handle information_schema.views queries for view listing
-                SINFO("Processing information_schema.views query for view listing");
-
-                // Transform this into an internal request to get view names from sqlite_master
-                request.methodLine = "Query";
-                request["ReadDBFlags"] = "-json";
-                request["sequenceID"] = SToStr(packet.sequenceID);
-                request["query"] =
-                    "SELECT name as name "
-                    "FROM sqlite_master "
-                    "WHERE type = 'view' "
-                    "ORDER BY name;";
-            } else if (MySQLUtils::isInformationSchemaColumnsQuery(query)) {
-                // Handle information_schema.columns queries for column listing
-                SINFO("Processing information_schema.columns query for column listing");
-
-                // Extract table name from the query
-                string tableName = MySQLUtils::extractTableNameFromColumnsQuery(query);
-
-                if (!tableName.empty()) {
-                    SDEBUG("Extracted table name: '" << tableName << "'");
-
-                    // Transform this into an internal request to get column info using PRAGMA table_info
+                    // Transform this into an internal request
                     request.methodLine = "Query";
                     request["ReadDBFlags"] = "-json";
                     request["sequenceID"] = SToStr(packet.sequenceID);
                     request["query"] =
                         "SELECT "
+                        "name as Tables_in_main, "
+                        "CASE type "
+                        "WHEN 'table' THEN 'BASE TABLE' "
+                        "WHEN 'view' THEN 'VIEW' "
+                        "END as Table_type "
+                        "FROM sqlite_master "
+                        "WHERE type IN ('table', 'view');";
+                } else if (SIEquals(SToUpper(query),
+                                "SELECT TABLE_NAME,TABLE_COMMENT,IF(TABLE_TYPE='BASE TABLE', 'TABLE', "
+                                "TABLE_TYPE),TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=DATABASE() "
+                                "AND ( TABLE_TYPE='BASE TABLE' OR TABLE_TYPE='VIEW' ) AND TABLE_NAME LIKE '%' ORDER BY "
+                                "TABLE_SCHEMA, TABLE_NAME;")) {
+                    // This is the query Alteryx uses to get Table information to display in the GUI, so let's support it.
+                    // This likely isn't restricted to just Alteryx, becuase it uses a generic ODBC connector from MySQL,
+                    // but that is the only client we have tested that has sent this query.
+                    SINFO("Getting table list");
+
+                    // Transform this into an internal request
+                    request.methodLine = "Query";
+                    request["ReadDBFlags"] = "-json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] =
+                        "SELECT "
+                        "name as TABLE_NAME, "
+                        "'' as TABLE_COMMENT, "
+                        "UPPER(type) as TABLE_TYPE, "
+                        "'main' as TABLE_SCHEMA "
+                        "FROM sqlite_master "
+                        "WHERE type IN ('table', 'view') "
+                        "ORDER BY TABLE_SCHEMA, TABLE_NAME;";
+                } else if (MySQLUtils::isInformationSchemaTablesQuery(query)) {
+                    // Handle information_schema.tables queries for table listing
+                    SINFO("Processing information_schema.tables query for table listing");
+
+                    // Transform this into an internal request to get table names from sqlite_master
+                    request.methodLine = "Query";
+                    request["ReadDBFlags"] = "-json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] =
+                        "SELECT name as name "
+                        "FROM sqlite_master "
+                        "WHERE type = 'table' "
+                        "ORDER BY name;";
+                } else if (MySQLUtils::isInformationSchemaViewsQuery(query)) {
+                    // Handle information_schema.views queries for view listing
+                    SINFO("Processing information_schema.views query for view listing");
+
+                    // Transform this into an internal request to get view names from sqlite_master
+                    request.methodLine = "Query";
+                    request["ReadDBFlags"] = "-json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] =
+                        "SELECT name as name "
+                        "FROM sqlite_master "
+                        "WHERE type = 'view' "
+                        "ORDER BY name;";
+                } else if (MySQLUtils::isInformationSchemaColumnsQuery(query)) {
+                    // Handle information_schema.columns queries for column listing
+                    SINFO("Processing information_schema.columns query for column listing");
+
+                    // Extract table name from the query
+                    string tableName = MySQLUtils::extractTableNameFromColumnsQuery(query);
+
+                    if (!tableName.empty()) {
+                        SDEBUG("Extracted table name: '" << tableName << "'");
+
+                        // Transform this into an internal request to get column info using PRAGMA table_info
+                        request.methodLine = "Query";
+                        request["ReadDBFlags"] = "-json";
+                        request["sequenceID"] = SToStr(packet.sequenceID);
+                        request["query"] =
+                            "SELECT "
                             + SQ(tableName) + " as table_name, "
                             "name as column_name, "
                             "type as column_type, "
@@ -513,77 +537,77 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                             "(cid + 1) as ordinal_position, "
                             "NULL as column_comment, "
                             "CASE WHEN pk = 1 THEN 'auto_increment' ELSE NULL END as extra "
-                        "FROM pragma_table_info(" + SQ(tableName) + ") "
-                        "ORDER BY cid;";
-                } else {
-                    // If we can't extract table name, return empty result
-                    SWARN("Could not extract table name from columns query, returning empty result", {{"query", query}});
+                            "FROM pragma_table_info(" + SQ(tableName) + ") "
+                            "ORDER BY cid;";
+                    } else {
+                        // If we can't extract table name, return empty result
+                        SWARN("Could not extract table name from columns query, returning empty result", {{"query", query}});
+                        SQResult result;
+                        s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Could not extract table name from columns query"));
+                    }
+                } else if (SContains(query, "information_schema")) {
+                    // Return an empty set for other information_schema queries
+                    SINFO("Responding with empty result for information_schema query");
                     SQResult result;
-                    s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Could not extract table name from columns query"));
-                }
-            } else if (SContains(query, "information_schema")) {
-                // Return an empty set for other information_schema queries
-                SINFO("Responding with empty result for information_schema query");
-                SQResult result;
-                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ") ||
-                       SIEquals(query, "ROLLBACK;")) {
-                // Ignore
-                SINFO("Responding OK to SET/USE/ROLLBACK query.");
-                s->send(MySQLPacket::serializeOK(packet.sequenceID));
-            } else if (SIEquals(SToUpper(query), "SELECT $$;")) {
-                // Some new clients send this through and expect an OK, non-empty string
-                // response or else the client will hang.
-                SINFO("Responding OK to $$ query.");
-                s->send(MySQLPacket::serializeOK(packet.sequenceID));
-            } else if (MySQLUtils::parseVersionQuery(query, matches)) {
-                // Return our fake version - handles SELECT VERSION(); and SELECT VERSION() AS alias;
-                SINFO("Responding fake version string");
-                SQResultRow row;
-                row.push_back(BedrockPlugin_MySQL::mysqlVersion);
-                vector<SQResultRow> rows = {row};
+                    s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                } else if (SStartsWith(SToUpper(query), "SET ") || SStartsWith(SToUpper(query), "USE ") ||
+                           SIEquals(query, "ROLLBACK;")) {
+                    // Ignore
+                    SINFO("Responding OK to SET/USE/ROLLBACK query.");
+                    s->send(MySQLPacket::serializeOK(packet.sequenceID));
+                } else if (SIEquals(SToUpper(query), "SELECT $$;")) {
+                    // Some new clients send this through and expect an OK, non-empty string
+                    // response or else the client will hang.
+                    SINFO("Responding OK to $$ query.");
+                    s->send(MySQLPacket::serializeOK(packet.sequenceID));
+                } else if (MySQLUtils::parseVersionQuery(query, matches)) {
+                    // Return our fake version - handles SELECT VERSION(); and SELECT VERSION() AS alias;
+                    SINFO("Responding fake version string");
+                    SQResultRow row;
+                    row.push_back(BedrockPlugin_MySQL::mysqlVersion);
+                    vector<SQResultRow> rows = {row};
 
-                // Extract the alias if present, otherwise use default column name
-                string columnName = "version()";
-                if (matches.size() > 1) {
-                    columnName = SToLower(matches[1]); // Use the alias if provided
-                }
+                    // Extract the alias if present, otherwise use default column name
+                    string columnName = "version()";
+                    if (matches.size() > 1) {
+                        columnName = SToLower(matches[1]); // Use the alias if provided
+                    }
 
-                vector<string> headers = {columnName};
-                SQResult result(move(rows), move(headers));
-                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (MySQLUtils::parseConnectionIdQuery(query, matches)) {
-                // Return connection ID - handles SELECT connection_id(); and SELECT connection_id() AS alias;
-                SINFO("Responding with connection ID");
-                SQResultRow row;
-                row.push_back("1"); // Return a simple connection ID
-                vector<SQResultRow> rows = {row};
+                    vector<string> headers = {columnName};
+                    SQResult result(move(rows), move(headers));
+                    s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                } else if (MySQLUtils::parseConnectionIdQuery(query, matches)) {
+                    // Return connection ID - handles SELECT connection_id(); and SELECT connection_id() AS alias;
+                    SINFO("Responding with connection ID");
+                    SQResultRow row;
+                    row.push_back("1"); // Return a simple connection ID
+                    vector<SQResultRow> rows = {row};
 
-                // Extract the alias if present, otherwise use default column name
-                string columnName = "connection_id()";
-                if (matches.size() > 1) {
-                    columnName = SToLower(matches[1]); // Use the alias if provided
-                }
+                    // Extract the alias if present, otherwise use default column name
+                    string columnName = "connection_id()";
+                    if (matches.size() > 1) {
+                        columnName = SToLower(matches[1]); // Use the alias if provided
+                    }
 
-                vector<string> headers = {columnName};
-                SQResult result(move(rows), move(headers));
-                s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
-            } else if (MySQLUtils::isShowKeysQuery(query)) {
-                // Handle SHOW KEYS FROM table queries
-                SINFO("Processing SHOW KEYS query for table indexes");
+                    vector<string> headers = {columnName};
+                    SQResult result(move(rows), move(headers));
+                    s->send(MySQLPacket::serializeQueryResponse(packet.sequenceID, result));
+                } else if (MySQLUtils::isShowKeysQuery(query)) {
+                    // Handle SHOW KEYS FROM table queries
+                    SINFO("Processing SHOW KEYS query for table indexes");
 
-                // Extract table name from SHOW KEYS FROM query
-                string tableName = MySQLUtils::extractTableNameFromShowKeysQuery(query);
+                    // Extract table name from SHOW KEYS FROM query
+                    string tableName = MySQLUtils::extractTableNameFromShowKeysQuery(query);
 
-                if (!tableName.empty()) {
-                    SINFO("Extracted table name for SHOW KEYS: '" << tableName << "'");
+                    if (!tableName.empty()) {
+                        SINFO("Extracted table name for SHOW KEYS: '" << tableName << "'");
 
-                    // Transform this into an internal request to get primary key info
-                    request.methodLine = "Query";
-                    request["ReadDBFlags"] = "-json";
-                    request["sequenceID"] = SToStr(packet.sequenceID);
-                    request["query"] =
-                        "SELECT "
+                        // Transform this into an internal request to get primary key info
+                        request.methodLine = "Query";
+                        request["ReadDBFlags"] = "-json";
+                        request["sequenceID"] = SToStr(packet.sequenceID);
+                        request["query"] =
+                            "SELECT "
                             + SQ(tableName) + " as Table_name, "
                             "0 as Non_unique, "
                             "'PRIMARY' as Key_name, "
@@ -597,31 +621,31 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                             "'BTREE' as Index_type, "
                             "'' as Comment, "
                             "'' as Index_comment "
-                        "FROM pragma_table_info(" + SQ(tableName) + ") "
-                        "WHERE pk = 1 "
-                        "ORDER BY cid;";
-                } else {
-                    // If we can't extract table name, return empty result
-                    SWARN("Could not extract table name from SHOW KEYS query, returning empty result", {{"query", query}});
-                    SQResult result;
-                    s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Could not extract table name from SHOW KEYS query"));
-                }
-            } else if (MySQLUtils::isForeignKeyConstraintQuery(query)) {
-                // Handle foreign key constraint queries
-                SINFO("Processing information_schema foreign key constraints query");
+                            "FROM pragma_table_info(" + SQ(tableName) + ") "
+                            "WHERE pk = 1 "
+                            "ORDER BY cid;";
+                    } else {
+                        // If we can't extract table name, return empty result
+                        SWARN("Could not extract table name from SHOW KEYS query, returning empty result", {{"query", query}});
+                        SQResult result;
+                        s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Could not extract table name from SHOW KEYS query"));
+                    }
+                } else if (MySQLUtils::isForeignKeyConstraintQuery(query)) {
+                    // Handle foreign key constraint queries
+                    SINFO("Processing information_schema foreign key constraints query");
 
-                // Extract table name from the query
-                string tableName = MySQLUtils::extractTableNameFromForeignKeyQuery(query);
+                    // Extract table name from the query
+                    string tableName = MySQLUtils::extractTableNameFromForeignKeyQuery(query);
 
-                if (!tableName.empty()) {
-                    SINFO("Extracted table name for foreign key query: '" << tableName << "'");
+                    if (!tableName.empty()) {
+                        SINFO("Extracted table name for foreign key query: '" << tableName << "'");
 
-                    // Transform this into an internal request to get foreign key info using PRAGMA foreign_key_list
-                    request.methodLine = "Query";
-                    request["ReadDBFlags"] = "-json";
-                    request["sequenceID"] = SToStr(packet.sequenceID);
-                    request["query"] =
-                        "SELECT "
+                        // Transform this into an internal request to get foreign key info using PRAGMA foreign_key_list
+                        request.methodLine = "Query";
+                        request["ReadDBFlags"] = "-json";
+                        request["sequenceID"] = SToStr(packet.sequenceID);
+                        request["query"] =
+                            "SELECT "
                             "'fk_' || \"table\" || '_' || \"from\" as constraint_name, "
                             "\"from\" as column_name, "
                             "\"table\" as referenced_table_name, "
@@ -632,35 +656,36 @@ void BedrockPlugin_MySQL::onPortRecv(STCPManager::Socket* s, SData& request) {
                             "CASE WHEN on_delete = 'NO ACTION' THEN 'RESTRICT' ELSE on_delete END as on_delete, "
                             "'fk_' || \"table\" || '_' || \"from\" as rc_constraint_name, "
                             "(seq + 1) as ordinal_position "
-                        "FROM pragma_foreign_key_list(" + SQ(tableName) + ") "
-                        "ORDER BY \"table\", seq;";
+                            "FROM pragma_foreign_key_list(" + SQ(tableName) + ") "
+                            "ORDER BY \"table\", seq;";
+                    } else {
+                        // If we can't extract table name, return empty result
+                        SWARN("Could not extract table name from foreign key query, returning empty result", {{"query", query}});
+                        SQResult result;
+                        s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Could not extract table name from foreign key query"));
+                    }
                 } else {
-                    // If we can't extract table name, return empty result
-                    SWARN("Could not extract table name from foreign key query, returning empty result", {{"query", query}});
-                    SQResult result;
-                    s->send(MySQLPacket::serializeERR(packet.sequenceID, 1046, "Could not extract table name from foreign key query"));
+                    // Transform this into an internal request
+                    request.methodLine = "Query";
+                    request["ReadDBFlags"] = "-json";
+                    request["sequenceID"] = SToStr(packet.sequenceID);
+                    request["query"] = query;
                 }
-            } else {
-                // Transform this into an internal request
-                request.methodLine = "Query";
-                request["ReadDBFlags"] = "-json";
-                request["sequenceID"] = SToStr(packet.sequenceID);
-                request["query"] = query;
+                break;
             }
-            break;
-        }
 
-        default: { // Say OK to everything else
-            // Send OK
-            SINFO("Sending OK");
-            s->send(MySQLPacket::serializeOK(packet.sequenceID));
-            break;
-        }
+            default: { // Say OK to everything else
+                // Send OK
+                SINFO("Sending OK");
+                s->send(MySQLPacket::serializeOK(packet.sequenceID));
+                break;
+            }
         }
     }
 }
 
-void BedrockPlugin_MySQL::onPortRequestComplete(const BedrockCommand& command, STCPManager::Socket* s) {
+void BedrockPlugin_MySQL::onPortRequestComplete(const BedrockCommand& command, STCPManager::Socket* s)
+{
     // Only one request supported: Query.
     SASSERT(SIEquals(command.request.methodLine, "Query"));
     SASSERT(command.request.isSet("sequenceID"));
@@ -728,7 +753,7 @@ const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2] = {
     {"flush_time", "0"},
     {"foreign_key_checks", "ON"},
     {"ft_boolean_syntax", "+ -><()~*:"
-                          "&|"},
+     "&|"},
     {"ft_max_word_len", "84"},
     {"ft_min_word_len", "4"},
     {"ft_query_expansion_limit", "20"},
@@ -950,14 +975,14 @@ const char* g_MySQLVariables[MYSQL_NUM_VARIABLES][2] = {
     {"ssl_capath", ""},
     {"ssl_cert", "/rdsdbdata/rds-metadata/server-cert.pem"},
     {"ssl_cipher", "EXP1024-RC4-SHA:EXP1024-DES-CBC-SHA:AES256-SHA:AES128-SHA:DES-CBC3-SHA:DES-CBC-SHA:EXP-DES-CBC-SHA:"
-                   "EXP-RC2-CBC-MD5:RC4-SHA:RC4-MD5:EXP-RC4-MD5:NULL-SHA:NULL-MD5:DES-CBC3-MD5:DES-CBC-MD5:EXP-RC2-CBC-"
-                   "MD5:RC2-CBC-MD5:EXP-RC4-MD5:RC4-MD5:KRB5-DES-CBC3-MD5:KRB5-DES-CBC3-SHA:ADH-DES-CBC3-SHA:EDH-RSA-"
-                   "DES-CBC3-SHA:EDH-DSS-DES-CBC3-SHA:ADH-AES256-SHA:DHE-RSA-AES256-SHA:DHE-DSS-AES256-SHA:ADH-AES128-"
-                   "SHA:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA:EXP-KRB5-RC4-MD5:EXP-KRB5-RC2-CBC-MD5:EXP-KRB5-DES-CBC-"
-                   "MD5:KRB5-RC4-MD5:KRB5-DES-CBC-MD5:ADH-RC4-MD5:EXP-ADH-RC4-MD5:DHE-DSS-RC4-SHA:EXP1024-DHE-DSS-RC4-"
-                   "SHA:EXP1024-DHE-DSS-DES-CBC-SHA:EXP-KRB5-RC4-SHA:EXP-KRB5-RC2-CBC-SHA:EXP-KRB5-DES-CBC-SHA:KRB5-"
-                   "RC4-SHA:KRB5-DES-CBC-SHA:ADH-DES-CBC-SHA:EXP-ADH-DES-CBC-SHA:EDH-RSA-DES-CBC-SHA:EXP-EDH-RSA-DES-"
-                   "CBC-SHA:EDH-DSS-DES-CBC-SHA:EXP-EDH-DSS-DES-CBC-SHA"},
+     "EXP-RC2-CBC-MD5:RC4-SHA:RC4-MD5:EXP-RC4-MD5:NULL-SHA:NULL-MD5:DES-CBC3-MD5:DES-CBC-MD5:EXP-RC2-CBC-"
+     "MD5:RC2-CBC-MD5:EXP-RC4-MD5:RC4-MD5:KRB5-DES-CBC3-MD5:KRB5-DES-CBC3-SHA:ADH-DES-CBC3-SHA:EDH-RSA-"
+     "DES-CBC3-SHA:EDH-DSS-DES-CBC3-SHA:ADH-AES256-SHA:DHE-RSA-AES256-SHA:DHE-DSS-AES256-SHA:ADH-AES128-"
+     "SHA:DHE-RSA-AES128-SHA:DHE-DSS-AES128-SHA:EXP-KRB5-RC4-MD5:EXP-KRB5-RC2-CBC-MD5:EXP-KRB5-DES-CBC-"
+     "MD5:KRB5-RC4-MD5:KRB5-DES-CBC-MD5:ADH-RC4-MD5:EXP-ADH-RC4-MD5:DHE-DSS-RC4-SHA:EXP1024-DHE-DSS-RC4-"
+     "SHA:EXP1024-DHE-DSS-DES-CBC-SHA:EXP-KRB5-RC4-SHA:EXP-KRB5-RC2-CBC-SHA:EXP-KRB5-DES-CBC-SHA:KRB5-"
+     "RC4-SHA:KRB5-DES-CBC-SHA:ADH-DES-CBC-SHA:EXP-ADH-DES-CBC-SHA:EDH-RSA-DES-CBC-SHA:EXP-EDH-RSA-DES-"
+     "CBC-SHA:EDH-DSS-DES-CBC-SHA:EXP-EDH-DSS-DES-CBC-SHA"},
     {"ssl_key", "/rdsdbdata/rds-metadata/server-key.pem"},
     {"storage_engine", "InnoDB"},
     {"sync_binlog", "0"},

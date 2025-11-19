@@ -1,13 +1,16 @@
 #include "SFastBuffer.h"
 #include <cstring>
 
-SFastBuffer::SFastBuffer() : front(0) {
+SFastBuffer::SFastBuffer() : front(0)
+{
 }
 
-SFastBuffer::SFastBuffer(const string& str) : front(0), data(str) {
+SFastBuffer::SFastBuffer(const string& str) : front(0), data(str)
+{
 }
 
-bool SFastBuffer::startsWithHTTPRequest() {
+bool SFastBuffer::startsWithHTTPRequest()
+{
     // No HTTP request is less than 4 bytes. Strictly, an HTTP request is longer than this, but this is all we need to care about.
     if (size() < 4) {
         return false;
@@ -30,7 +33,7 @@ bool SFastBuffer::startsWithHTTPRequest() {
             // We support both `\r\n\r\n` and `\n\n` as valid seperators. Only the first is real HTTP, but the second is easier to use in many command-line tools (i.e., netcat).
             // This means there's at least one byte after this one. If it's also a `\n`, then this is a good sequence.
             if (next < data.size() - 1) {
-                if(data[next + 1] == '\n') {
+                if (data[next + 1] == '\n') {
                     headerLength = next - front;
                 }
             }
@@ -59,19 +62,23 @@ bool SFastBuffer::startsWithHTTPRequest() {
     return headerLength;
 }
 
-bool SFastBuffer::empty() const {
+bool SFastBuffer::empty() const
+{
     return size() == 0;
 }
 
-size_t SFastBuffer::size() const {
+size_t SFastBuffer::size() const
+{
     return data.size() - front;
 }
 
-const char* SFastBuffer::c_str() const {
+const char* SFastBuffer::c_str() const
+{
     return data.data() + front;
 }
 
-void SFastBuffer::clear() {
+void SFastBuffer::clear()
+{
     front = 0;
     nextToCheck = 0;
     headerLength = 0;
@@ -79,7 +86,8 @@ void SFastBuffer::clear() {
     data.clear();
 }
 
-void SFastBuffer::consumeFront(size_t bytes) {
+void SFastBuffer::consumeFront(size_t bytes)
+{
     front += bytes;
 
     nextToCheck = front;
@@ -92,7 +100,8 @@ void SFastBuffer::consumeFront(size_t bytes) {
     }
 }
 
-void SFastBuffer::append(const char* buffer, size_t bytes) {
+void SFastBuffer::append(const char* buffer, size_t bytes)
+{
     // When will we condense everything to the front of the buffer?
     // When:
     // 1. We're not already at the front of the buffer (this implies there's data in the buffer).
@@ -117,12 +126,14 @@ void SFastBuffer::append(const char* buffer, size_t bytes) {
     data.append(buffer, bytes);
 }
 
-SFastBuffer& SFastBuffer::operator+=(const string& rhs) {
+SFastBuffer& SFastBuffer::operator+=(const string& rhs)
+{
     append(rhs.c_str(), rhs.size());
     return *this;
 }
 
-SFastBuffer& SFastBuffer::operator=(const string& rhs) {
+SFastBuffer& SFastBuffer::operator=(const string& rhs)
+{
     front = 0;
     nextToCheck = 0;
     headerLength = 0;

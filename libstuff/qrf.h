@@ -25,46 +25,47 @@ extern "C" {
 ** Specification used by clients to define the output format they want
 */
 typedef struct sqlite3_qrf_spec sqlite3_qrf_spec;
-struct sqlite3_qrf_spec {
-  unsigned char iVersion;     /* Version number of this structure */
-  unsigned char eStyle;       /* Formatting style.  "box", "csv", etc... */
-  unsigned char eEsc;         /* How to escape control characters in text */
-  unsigned char eText;        /* Quoting style for text */
-  unsigned char eTitle;       /* Quating style for the text of column names */
-  unsigned char eBlob;        /* Quoting style for BLOBs */
-  unsigned char bColumnNames; /* True to show column names */
-  unsigned char bWordWrap;    /* Try to wrap on word boundaries */
-  unsigned char bTextJsonb;   /* Render JSONB blobs as JSON text */
-  unsigned char bTextNull;    /* Apply eText encoding to zNull[] */
-  unsigned char eDfltAlign;   /* Default alignment, no covered by aAlignment */
-  unsigned char eTitleAlign;  /* Alignment for column headers */
-  short int mxColWidth;       /* Maximum width of any individual column */
-  short int nScreenWidth;     /* Maximum overall table width */
-  short int mxRowHeight;      /* Maximum number of lines for any row */
-  int mxLength;               /* Maximum content to display per element */
-  int nWidth;                 /* Number of entries in aWidth[] */
-  int nAlign;                 /* Number of entries in aAlignment[] */
-  short int *aWidth;          /* Column widths */
-  unsigned char *aAlign;      /* Column alignments */
-  const char *zColumnSep;     /* Alternative column separator */
-  const char *zRowSep;        /* Alternative row separator */
-  const char *zTableName;     /* Output table name */
-  const char *zNull;          /* Rendering of NULL */
-  char *(*xRender)(void*,sqlite3_value*);           /* Render a value */
-  int (*xWrite)(void*,const char*,sqlite3_int64);   /* Write output */
-  void *pRenderArg;           /* First argument to the xRender callback */
-  void *pWriteArg;            /* First argument to the xWrite callback */
-  char **pzOutput;            /* Storage location for output string */
-  /* Additional fields may be added in the future */
+struct sqlite3_qrf_spec
+{
+    unsigned char iVersion;   /* Version number of this structure */
+    unsigned char eStyle;     /* Formatting style.  "box", "csv", etc... */
+    unsigned char eEsc;       /* How to escape control characters in text */
+    unsigned char eText;      /* Quoting style for text */
+    unsigned char eTitle;     /* Quating style for the text of column names */
+    unsigned char eBlob;      /* Quoting style for BLOBs */
+    unsigned char bColumnNames; /* True to show column names */
+    unsigned char bWordWrap;  /* Try to wrap on word boundaries */
+    unsigned char bTextJsonb; /* Render JSONB blobs as JSON text */
+    unsigned char bTextNull;  /* Apply eText encoding to zNull[] */
+    unsigned char eDfltAlign; /* Default alignment, no covered by aAlignment */
+    unsigned char eTitleAlign; /* Alignment for column headers */
+    short int mxColWidth;     /* Maximum width of any individual column */
+    short int nScreenWidth;   /* Maximum overall table width */
+    short int mxRowHeight;    /* Maximum number of lines for any row */
+    int mxLength;             /* Maximum content to display per element */
+    int nWidth;               /* Number of entries in aWidth[] */
+    int nAlign;               /* Number of entries in aAlignment[] */
+    short int* aWidth;        /* Column widths */
+    unsigned char* aAlign;    /* Column alignments */
+    const char* zColumnSep;   /* Alternative column separator */
+    const char* zRowSep;      /* Alternative row separator */
+    const char* zTableName;   /* Output table name */
+    const char* zNull;        /* Rendering of NULL */
+    char*(*xRender)(void*, sqlite3_value*);         /* Render a value */
+    int (*xWrite)(void*, const char*, sqlite3_int64); /* Write output */
+    void* pRenderArg;         /* First argument to the xRender callback */
+    void* pWriteArg;          /* First argument to the xWrite callback */
+    char** pzOutput;          /* Storage location for output string */
+    /* Additional fields may be added in the future */
 };
 
 /*
 ** Interfaces
 */
 int sqlite3_format_query_result(
-  sqlite3_stmt *pStmt,             /* SQL statement to run */
-  const sqlite3_qrf_spec *pSpec,   /* Result format specification */
-  char **pzErr                     /* OUT: Write error message here */
+    sqlite3_stmt* pStmt,           /* SQL statement to run */
+    const sqlite3_qrf_spec* pSpec, /* Result format specification */
+    char** pzErr                   /* OUT: Write error message here */
 );
 
 /*

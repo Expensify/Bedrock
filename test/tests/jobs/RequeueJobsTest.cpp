@@ -5,7 +5,8 @@
 
 #include <unistd.h>
 
-struct RequeueJobsTest : tpunit::TestFixture {
+struct RequeueJobsTest : tpunit::TestFixture
+{
     RequeueJobsTest()
         : tpunit::TestFixture("RequeueJobs",
                               BEFORE_CLASS(RequeueJobsTest::setupClass),
@@ -16,28 +17,38 @@ struct RequeueJobsTest : tpunit::TestFixture {
                               TEST(RequeueJobsTest::changeMultipleJobNames),
                               TEST(RequeueJobsTest::testNextRunTime),
                               AFTER(RequeueJobsTest::tearDown),
-                              AFTER_CLASS(RequeueJobsTest::tearDownClass)) { }
+                              AFTER_CLASS(RequeueJobsTest::tearDownClass))
+    {
+    }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass()
+    {
+        tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
+    }
 
     // Reset the jobs table
-    void tearDown() {
+    void tearDown()
+    {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
     }
 
-    void tearDownClass() { delete tester; }
+    void tearDownClass()
+    {
+        delete tester;
+    }
 
-    void requeueRunningJob() {
+    void requeueRunningJob()
+    {
         SData command("CreateJob");
         command["name"] = "job";
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
-        // Get the job, 
+        // Get the job,
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job";
@@ -45,7 +56,7 @@ struct RequeueJobsTest : tpunit::TestFixture {
 
         // Confirm the job is in RUNNING
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNNING");
 
         // Retry it
@@ -55,18 +66,19 @@ struct RequeueJobsTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Confrim the job is back in the QUEUED state
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
     }
 
-    void requeueRunqueuedJob() {
+    void requeueRunqueuedJob()
+    {
         SData command("CreateJob");
         command["name"] = "job";
         command["retryAfter"] = "+1 MINUTE";
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
-        // Get the job, 
+        // Get the job,
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job";
@@ -74,7 +86,7 @@ struct RequeueJobsTest : tpunit::TestFixture {
 
         // Confirm the job is in RUNQUEUED
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
 
         // Retry it
@@ -84,11 +96,12 @@ struct RequeueJobsTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Confrim the job is back in the QUEUED state
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
     }
 
-    void autoRequeue() {
+    void autoRequeue()
+    {
         SData command("CreateJob");
         command["name"] = "autoRequeue";
         command["retryAfter"] = "+0 SECOND";
@@ -109,7 +122,7 @@ struct RequeueJobsTest : tpunit::TestFixture {
 
         // Confirm the job is not FAILED
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_NOT_EQUAL(result[0][0], "FAILED");
 
         // Retry it, but get the response.
@@ -120,11 +133,12 @@ struct RequeueJobsTest : tpunit::TestFixture {
         ASSERT_EQUAL(jobID, response["jobID"]);
 
         // Confirm the job is back in the RUNQUEUED state
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
     }
 
-    void requeueMultipleJobs() {
+    void requeueMultipleJobs()
+    {
         SData command("CreateJob");
         command["name"] = "job1";
         STable response = tester->executeWaitVerifyContentTable(command);
@@ -139,13 +153,13 @@ struct RequeueJobsTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
         string jobID3 = response["jobID"];
 
-        // Get the first job, 
+        // Get the first job,
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job1";
         tester->executeWaitVerifyContent(command);
 
-        // Get the second job, 
+        // Get the second job,
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job2";
@@ -153,15 +167,15 @@ struct RequeueJobsTest : tpunit::TestFixture {
 
         // Confirm the first job is RUNNING
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID1+ ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID1 + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNNING");
 
         // Confirm the first job is RUNQUEUED
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID2 + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID2 + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
 
         // Confirm the third job is QUEUED
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID3 + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID3 + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
 
         // Requeue the jobs
@@ -171,15 +185,16 @@ struct RequeueJobsTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Confirm all the jobs are QUEUED
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID1 + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID1 + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID2 + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID2 + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID3 + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID3 + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
     }
 
-    void changeMultipleJobNames() {
+    void changeMultipleJobNames()
+    {
         SData command("CreateJob");
         command["name"] = "job1";
         STable response = tester->executeWaitVerifyContentTable(command);
@@ -194,13 +209,13 @@ struct RequeueJobsTest : tpunit::TestFixture {
         response = tester->executeWaitVerifyContentTable(command);
         string jobID3 = response["jobID"];
 
-        // Get the first job, 
+        // Get the first job,
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job1";
         tester->executeWaitVerifyContent(command);
 
-        // Get the second job, 
+        // Get the second job,
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "job2";
@@ -208,15 +223,15 @@ struct RequeueJobsTest : tpunit::TestFixture {
 
         // Confirm the first job is RUNNING
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID1+ ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID1 + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNNING");
 
         // Confirm the first job is RUNQUEUED
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID2 + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID2 + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
 
         // Confirm the third job is QUEUED
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID3 + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID3 + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
 
         // Requeue the jobs with a new name
@@ -227,18 +242,19 @@ struct RequeueJobsTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Confirm all the jobs are QUEUED with a different name
-        tester->readDB("SELECT state, name FROM jobs WHERE jobID = " + jobID1 + ";",  result);
+        tester->readDB("SELECT state, name FROM jobs WHERE jobID = " + jobID1 + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
         ASSERT_EQUAL(result[0][1], "newJobName");
-        tester->readDB("SELECT state, name FROM jobs WHERE jobID = " + jobID2 + ";",  result);
+        tester->readDB("SELECT state, name FROM jobs WHERE jobID = " + jobID2 + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
         ASSERT_EQUAL(result[0][1], "newJobName");
-        tester->readDB("SELECT state, name FROM jobs WHERE jobID = " + jobID3 + ";",  result);
+        tester->readDB("SELECT state, name FROM jobs WHERE jobID = " + jobID3 + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
         ASSERT_EQUAL(result[0][1], "newJobName");
     }
 
-    void testNextRunTime() {
+    void testNextRunTime()
+    {
         // Some time setup
         const uint64_t time = STimeNow();
         string oldTime = SComposeTime("%Y-%m-%d %H:%M:%S", time - 10'000'000);
@@ -260,8 +276,7 @@ struct RequeueJobsTest : tpunit::TestFixture {
 
         // Verify that nextRun = created
         SQResult result;
-        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tester->readDB("SELECT created, nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], result[0][1]);
     }
-
 } __RequeueJobsTest;

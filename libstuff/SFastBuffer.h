@@ -6,7 +6,7 @@
 using namespace std;
 
 class SFastBuffer {
-  public:
+public:
     SFastBuffer();
     SFastBuffer(const string& str);
     bool empty() const;
@@ -19,7 +19,7 @@ class SFastBuffer {
     SFastBuffer& operator+=(const string& rhs);
     SFastBuffer& operator=(const string& rhs);
 
-  private:
+private:
     size_t front;
     string data;
 

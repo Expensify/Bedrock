@@ -4,7 +4,7 @@
 #include <condition_variable>
 
 class SSocketPool {
-  public:
+public:
     SSocketPool(const string& host);
     ~SSocketPool();
 
@@ -19,8 +19,9 @@ class SSocketPool {
 
     // The timeout after which a socket is closed if not used.
     const chrono::steady_clock::duration timeout = 10s;
-  private:
+private:
     void _timeoutThreadFunc();
+
     bool _exit = false;
     mutex _poolMutex;
     condition_variable _poolCV;

@@ -2,7 +2,7 @@
 #include <libstuff/STCPManager.h>
 
 class SHTTPSProxySocket : public STCPManager::Socket {
-  public:
+public:
     // Implement all the same constructors as the base class.
     SHTTPSProxySocket(const string& proxyAddress, const string& host);
     SHTTPSProxySocket(SHTTPSProxySocket&& from);
@@ -14,7 +14,7 @@ class SHTTPSProxySocket : public STCPManager::Socket {
     virtual bool send(const string& buffer, size_t* bytesSentCount = nullptr) override;
     virtual bool recv() override;
 
-    private:
+private:
 
     // These should contain the address and port, i.e.:
     // www.proxy.com:443

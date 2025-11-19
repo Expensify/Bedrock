@@ -3,16 +3,18 @@
 #include <cstring>
 #include <sys/time.h>
 
-uint64_t STimeNow() {
+uint64_t STimeNow()
+{
     // Get the time = microseconds since 00:00:00 UTC, January 1, 1970
     timeval time;
     gettimeofday(&time, 0);
-    return ((uint64_t)time.tv_sec * 1000000 + (uint64_t)time.tv_usec);
+    return (uint64_t) time.tv_sec * 1000000 + (uint64_t) time.tv_usec;
 }
 
-string SComposeTime(const string& format, uint64_t when) {
+string SComposeTime(const string& format, uint64_t when)
+{
     // Convert from high-precision time (usec) to standard low-precision time (sec), then format and return
-    const time_t loWhen = (time_t)(when / STIME_US_PER_S);
+    const time_t loWhen = (time_t) (when / STIME_US_PER_S);
     char buf[256] = {};
     struct tm result = {};
     gmtime_r(&loWhen, &result);
@@ -20,13 +22,15 @@ string SComposeTime(const string& format, uint64_t when) {
     return string(buf, length);
 }
 
-uint64_t STimestampToEpoch(const string& format, const string& timestamp) {
+uint64_t STimestampToEpoch(const string& format, const string& timestamp)
+{
     struct tm time = {0};
     strptime(timestamp.c_str(), format.c_str(), &time);
     return mktime(&time);
 }
 
-uint64_t STimestampMSToEpoch(const string& format, const string& timestamp) {
+uint64_t STimestampMSToEpoch(const string& format, const string& timestamp)
+{
     struct tm time = {0};
     string parsedFormat = format;
     double fractionalSeconds = 0.0;
@@ -46,7 +50,8 @@ uint64_t STimestampMSToEpoch(const string& format, const string& timestamp) {
     return static_cast<uint64_t>((mktime(&time) + fractionalSeconds) * 1000);
 }
 
-int SDaysInMonth(int year, int month) {
+int SDaysInMonth(int year, int month)
+{
     // 30 days hath September...
     if (month == 4 || month == 6 || month == 9 || month == 11) {
         return 30;
@@ -57,7 +62,8 @@ int SDaysInMonth(int year, int month) {
     }
 }
 
-uint64_t STimeThisMorning() {
+uint64_t STimeThisMorning()
+{
     // Get today's date in GMT, zero out the hour, convert into a Unix
     // timestamp, and then into a libstuff timestamp.
     time_t loNow;
@@ -72,12 +78,14 @@ uint64_t STimeThisMorning() {
     return gmtTime * STIME_US_PER_S + hiLoDelta;
 }
 
-timeval SToTimeval(uint64_t when) {
+timeval SToTimeval(uint64_t when)
+{
     // Just split by high and low bits
-    return {(time_t)(when / STIME_US_PER_S), (suseconds_t)(when % STIME_US_PER_S)};
+    return {(time_t) (when / STIME_US_PER_S), (suseconds_t) (when % STIME_US_PER_S)};
 }
 
-string STIMESTAMP_MS(uint64_t time) {
+string STIMESTAMP_MS(uint64_t time)
+{
     uint64_t ms = (time % 1'000'000) / 1'000;
     string timestamp = SUNQUOTED_TIMESTAMP(time);
     char msString[5] = {0};
@@ -85,12 +93,13 @@ string STIMESTAMP_MS(uint64_t time) {
     return timestamp + "." + msString;
 }
 
-string SCURRENT_TIMESTAMP_MS() {
+string SCURRENT_TIMESTAMP_MS()
+{
     return STIMESTAMP_MS(STimeNow());
 }
 
-string SFirstOfMonth(const string& timeStamp, const int64_t& offset) {
-
+string SFirstOfMonth(const string& timeStamp, const int64_t& offset)
+{
     list<string> parts = SParseList(timeStamp, '-');
 
     // Initialize to all 0's

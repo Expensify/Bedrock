@@ -2,25 +2,31 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-void checkWithoutThis() {
+void checkWithoutThis()
+{
     ASSERT_EQUAL(1, 1);
 }
 
-struct PrePeekPostProcessTest : tpunit::TestFixture {
+struct PrePeekPostProcessTest : tpunit::TestFixture
+{
     PrePeekPostProcessTest() : tpunit::TestFixture("PrePeekPostProcess", BEFORE_CLASS(PrePeekPostProcessTest::setup),
-                                                                         AFTER_CLASS(PrePeekPostProcessTest::teardown),
-                                                                         TEST(PrePeekPostProcessTest::prePeek),
-                                                                         TEST(PrePeekPostProcessTest::prePeekThrow),
-                                                                         TEST(PrePeekPostProcessTest::postProcess),
-                                                                         TEST(PrePeekPostProcessTest::prePeekPostProcess)) { }
+                                                   AFTER_CLASS(PrePeekPostProcessTest::teardown),
+                                                   TEST(PrePeekPostProcessTest::prePeek),
+                                                   TEST(PrePeekPostProcessTest::prePeekThrow),
+                                                   TEST(PrePeekPostProcessTest::postProcess),
+                                                   TEST(PrePeekPostProcessTest::prePeekPostProcess))
+    {
+    }
 
     BedrockClusterTester* tester;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockClusterTester();
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
@@ -40,7 +46,8 @@ struct PrePeekPostProcessTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["peekCount"], "0");
     }
 
-    void prePeekThrow() {
+    void prePeekThrow()
+    {
         BedrockTester& brtester = tester->getTester(1);
         SData cmd("prepeekcommand");
         cmd["shouldThrow"] = "true";
@@ -64,7 +71,7 @@ struct PrePeekPostProcessTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["postProcessCount"], "1");
     }
 
-    void prePeekPostProcess ()
+    void prePeekPostProcess()
     {
         BedrockTester& brtester = tester->getTester(1);
         SData cmd("prepeekpostprocesscommand");
@@ -81,6 +88,4 @@ struct PrePeekPostProcessTest : tpunit::TestFixture {
         ASSERT_EQUAL(response["peekCount"], "1");
         ASSERT_EQUAL(response["postProcessCount"], "0");
     }
-
 } __PrePeekPostProcessTest;
-

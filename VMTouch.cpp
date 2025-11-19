@@ -18,7 +18,8 @@
 
 long VMTouch::pagesize = sysconf(_SC_PAGESIZE);
 
-int64_t VMTouch::bytes2pages(int64_t bytes) {
+int64_t VMTouch::bytes2pages(int64_t bytes)
+{
     int64_t pages = bytes / pagesize;
     if (bytes % pagesize) {
         pages++;
@@ -26,21 +27,24 @@ int64_t VMTouch::bytes2pages(int64_t bytes) {
     return pages;
 }
 
-bool VMTouch::isPageAligned(void* p) {
-    return 0 == ((long)p & (pagesize - 1));
+bool VMTouch::isPageAligned(void* p)
+{
+    return 0 == ((long) p & (pagesize - 1));
 }
 
-
-bool VMTouch::is_mincore_page_resident(char page) {
+bool VMTouch::is_mincore_page_resident(char page)
+{
     // The least significant bit (0x1) indicates if the corresponding page is currently resident (present in physical memory).
     return page & 0x1;
 }
 
-void VMTouch::do_nothing(unsigned int nothing) {
+void VMTouch::do_nothing(unsigned int nothing)
+{
     return;
 }
 
-void VMTouch::check(const char* path, bool touch, bool verbose) {
+void VMTouch::check(const char* path, bool touch, bool verbose)
+{
     int fd = -1;
     void* mem = NULL;
     struct stat sb;
@@ -97,12 +101,12 @@ void VMTouch::check(const char* path, bool touch, bool verbose) {
 
         pages_in_range = bytes2pages(len_of_file);
 
-        char* mincore_array = (char*)malloc(pages_in_range);
+        char* mincore_array = (char*) malloc(pages_in_range);
         if (mincore_array == NULL) {
             SWARN("Failed to allocate memory for mincore array (" << strerror(errno) << ")");
         }
 
-        if (mincore(mem, len_of_file, (unsigned char*)mincore_array)) {
+        if (mincore(mem, len_of_file, (unsigned char*) mincore_array)) {
             SERROR("mincore " << path << " (" << strerror(errno) << ")");
         }
 
@@ -120,7 +124,7 @@ void VMTouch::check(const char* path, bool touch, bool verbose) {
                     int64_t last_page = min(first_page + pages_per_thread, pages_in_range - 1);
                     for (int64_t j = first_page; j < last_page; j++) {
                         if (!is_mincore_page_resident(mincore_array[j])) {
-                            junk_counter += ((char*)mem)[j * pagesize];
+                            junk_counter += ((char*) mem)[j * pagesize];
                         }
                     }
 
@@ -132,7 +136,7 @@ void VMTouch::check(const char* path, bool touch, bool verbose) {
                 t.join();
             }
             cout << "Reloading map." << endl;
-            if (mincore(mem, len_of_file, (unsigned char*)mincore_array)) {
+            if (mincore(mem, len_of_file, (unsigned char*) mincore_array)) {
                 SERROR("mincore " << path << " (" << strerror(errno) << ")");
             }
             if (verbose) {
@@ -166,7 +170,7 @@ void VMTouch::check(const char* path, bool touch, bool verbose) {
             t.join();
         }
 
-        double percentage_resident = ((double)total_pages_resident / (double)pages_in_range) * 100.0;
+        double percentage_resident = ((double) total_pages_resident / (double) pages_in_range) * 100.0;
         if (verbose) {
             printf("Pages resident: %li (%.2f%%)\n", total_pages_resident.load(), percentage_resident);
         }

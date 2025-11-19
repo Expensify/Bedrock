@@ -8,7 +8,7 @@ class SQLitePeer;
 // This is an abstract class to define the interface for a "server" that a SQLiteNode can communicate with to process
 // commands it receives.
 class SQLiteServer : public STCPManager {
-  public:
+public:
     // When a node connects to the cluster, this function will be called on the sync thread.
     virtual void onNodeLogin(SQLitePeer* peer) = 0;
 

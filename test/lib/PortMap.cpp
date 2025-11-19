@@ -5,10 +5,12 @@
 #include <iostream>
 
 PortMap::PortMap(uint16_t from) : _from(from)
-    {}
+{
+}
 
 PortMap::~PortMap()
-    {}
+{
+}
 
 uint16_t PortMap::getPort()
 {
@@ -25,17 +27,18 @@ uint16_t PortMap::getPort()
     }
 
     // Otherwise, grab from the next port in our range.
-    do {
+    do
+    {
         port = _from;
         _from++;
         if (waitForPort(port) == 0) {
             return port;
         }
-    } while (port<=MAX_PORT);
+    } while (port <= MAX_PORT);
 
     // Should never reach this.
     cout << "Ran out of available ports after port " << port << endl;
-    SASSERT(port<MAX_PORT);
+    SASSERT(port < MAX_PORT);
     return 1;
 }
 
@@ -45,7 +48,8 @@ void PortMap::returnPort(uint16_t port)
     _returned.insert(port);
 }
 
-int PortMap::waitForPort(uint16_t port) {
+int PortMap::waitForPort(uint16_t port)
+{
     int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     int i = 1;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(i));
@@ -56,8 +60,9 @@ int PortMap::waitForPort(uint16_t port) {
 
     int result = 0;
     uint64_t start = STimeNow();
-    do {
-        result = ::bind(sock, (sockaddr*)&addr, sizeof(addr));
+    do
+    {
+        result = ::bind(sock, (sockaddr*) &addr, sizeof(addr));
         if (result) {
             usleep(100'000);
         } else {
@@ -65,10 +70,9 @@ int PortMap::waitForPort(uint16_t port) {
             close(sock);
             return 0;
         }
-    // Wait up to 5 seconds.
+        // Wait up to 5 seconds.
     } while (result && STimeNow() < start + 5'000'000);
 
     // Ran out of time, return 1 ("unsuccessful")
     return 1;
 }
-

@@ -48,62 +48,68 @@ void SSetSignalHandlerDieFunc(function<string()>&& func);
 // --------------------------------------------------------------------------
 // Test invariants and warns on failure
 #define SASSERT(_LHS_)                                                                                                 \
-    do {                                                                                                               \
-        if (!(_LHS_)) {                                                                                                \
-            SERROR("Assertion failed: (" << #_LHS_ << ") != true");                                                    \
-        }                                                                                                              \
-    } while (false)
+        do {                                                                                                               \
+            if (!(_LHS_)) {                                                                                                \
+                SERROR("Assertion failed: (" << #_LHS_ << ") != true");                                                    \
+            }                                                                                                              \
+        } while (false)
 #define SASSERTEQUALS(_LHS_, _RHS_)                                                                                    \
-    do {                                                                                                               \
-        if ((_LHS_) != (_RHS_)) {                                                                                      \
-            SERROR("Assertion failed: (" << #_LHS_ << ") != (" << #_RHS_ << "): (" << _LHS_ << ") != (" << _RHS_       \
-                                         << ")");                                                                      \
-        }                                                                                                              \
-    } while (false)
+        do {                                                                                                               \
+            if ((_LHS_) != (_RHS_)) {                                                                                      \
+                SERROR("Assertion failed: (" << #_LHS_ << ") != (" << #_RHS_ << "): (" << _LHS_ << ") != (" << _RHS_       \
+                       << ")");                                                                      \
+            }                                                                                                              \
+        } while (false)
 #define SASSERTWARN(_LHS_)                                                                                             \
-    do {                                                                                                               \
-        if (!(_LHS_)) {                                                                                                \
-            SWARN("Assertion failed: (" << #_LHS_ << ") != true");                                                     \
-        }                                                                                                              \
-    } while (false)
+        do {                                                                                                               \
+            if (!(_LHS_)) {                                                                                                \
+                SWARN("Assertion failed: (" << #_LHS_ << ") != true");                                                     \
+            }                                                                                                              \
+        } while (false)
 #define SASSERTWARNEQUALS(_LHS_, _RHS_)                                                                                \
-    do {                                                                                                               \
-        if ((_LHS_) != (_RHS_)) {                                                                                      \
-            SWARN("Assertion failed: (" << #_LHS_ << ") != (" << #_RHS_ << "): (" << _LHS_ << ") != (" << _RHS_        \
-                                        << ")");                                                                       \
-        }                                                                                                              \
-    } while (false)
+        do {                                                                                                               \
+            if ((_LHS_) != (_RHS_)) {                                                                                      \
+                SWARN("Assertion failed: (" << #_LHS_ << ") != (" << #_RHS_ << "): (" << _LHS_ << ") != (" << _RHS_        \
+                      << ")");                                                                       \
+            }                                                                                                              \
+        } while (false)
 
 // --------------------------------------------------------------------------
 // A very simple name/value pair table with case-insensitive name matching
 // --------------------------------------------------------------------------
 // See: http://stackoverflow.com/questions/1801892/making-mapfind-operation-case-insensitive
 class STableComp {
-  public:
-    struct nocase_compare {
-      bool operator() (const unsigned char& c1, const unsigned char& c2) const;
+public:
+    struct nocase_compare
+    {
+        bool operator()(const unsigned char& c1, const unsigned char& c2) const;
     };
-    bool operator() (const string& s1, const string& s2) const;
+    bool operator()(const string& s1, const string& s2) const;
 };
 
 // An SString is just a string with special assignment operators so that we get automatic conversion from arithmetic
 // types.
 class SString : public string {
-  public:
+public:
     // Templated assignment operator for arithmetic types.
-    template <typename T>
-    typename enable_if<is_arithmetic<T>::value, SString&>::type operator=(const T& from) {
+    template<typename T>
+    typename enable_if<is_arithmetic<T>::value, SString&>::type operator=(const T& from)
+    {
         string::operator=(to_string(from));
         return *this;
     }
 
-    template <typename T>
-    SString(const T& from) : string(from) {}
+    template<typename T>
+    SString(const T& from) : string(from)
+    {
+    }
+
     SString();
 
     // Templated assignment operator for non-arithmetic types.
-    template <typename T>
-    typename enable_if<!is_arithmetic<T>::value, SString&>::type operator=(const T& from) {
+    template<typename T>
+    typename enable_if<!is_arithmetic<T>::value, SString&>::type operator=(const T& from)
+    {
         string::operator=(from);
         return *this;
     }
@@ -124,21 +130,21 @@ typedef map<string, SString, STableComp> STable;
 // body. The STHROW and STHROW_STACK macros will create an SException that logs it's file, line of creation, and
 // (for DEBUG) a stack trace at the same time. They can take, 1, 2, or all 3 of the components of an HTTP response as arguments.
 #define STHROW(...)                                           \
-do {                                                          \
-    SLogStackTrace(LOG_DEBUG);                                \
-    throw SException(__FILE__, __LINE__, false, __VA_ARGS__); \
-} while (false)
+        do {                                                          \
+            SLogStackTrace(LOG_DEBUG);                                \
+            throw SException(__FILE__, __LINE__, false, __VA_ARGS__); \
+        } while (false)
 
 #define STHROW_STACK(...) throw SException(__FILE__, __LINE__, true, __VA_ARGS__)
 class SException : public exception {
-  private:
+private:
     static const int CALLSTACK_LIMIT = 100;
     const string _file;
     const int _line;
     void* _callstack[CALLSTACK_LIMIT];
     int _depth = 0;
 
-  public:
+public:
     SException(const string& file = "unknown",
                int line = 0,
                bool generateCallstack = false,
@@ -160,13 +166,13 @@ class SException : public exception {
 vector<string> SGetCallstack(int depth = 0, void* const* callstack = nullptr) noexcept;
 
 // --------------------------------------------------------------------------
-// Time stuff TODO: Replace with std::chrono
+// Time stuff TODO: Replace with chrono
 // --------------------------------------------------------------------------
-#define STIME_US_PER_MS ((uint64_t)1000)
-#define STIME_US_PER_S ((uint64_t)1000 * STIME_US_PER_MS)
-#define STIME_US_PER_M ((uint64_t)60 * STIME_US_PER_S)
-#define STIME_US_PER_H ((uint64_t)60 * STIME_US_PER_M)
-#define STIME_US_PER_D ((uint64_t)24 * STIME_US_PER_H)
+#define STIME_US_PER_MS ((uint64_t) 1000)
+#define STIME_US_PER_S ((uint64_t) 1000 * STIME_US_PER_MS)
+#define STIME_US_PER_M ((uint64_t) 60 * STIME_US_PER_S)
+#define STIME_US_PER_H ((uint64_t) 60 * STIME_US_PER_M)
+#define STIME_US_PER_D ((uint64_t) 24 * STIME_US_PER_H)
 #define STIME_HZ(_HZ_) (STIME_US_PER_S / (_HZ_))
 
 // Various helper time functions
@@ -180,7 +186,8 @@ timeval SToTimeval(uint64_t when);
 string SFirstOfMonth(const string& timeStamp, const int64_t& offset = 0);
 
 // Helpful class for timing
-struct SStopwatch {
+struct SStopwatch
+{
     // Attributes
     atomic<uint64_t> startTime;
     atomic<uint64_t> alarmDuration;
@@ -245,37 +252,37 @@ void SWhitelistLogParams(const set<string>& params);
 void SSyslogSocketDirect(int priority, const char* format, ...);
 
 // Atomic pointer to the syslog function that we'll actually use. Easy to change to `syslog` or `SSyslogSocketDirect`.
-extern atomic<void (*)(int priority, const char *format, ...)> SSyslogFunc;
+extern atomic<void (*)(int priority, const char* format, ...)> SSyslogFunc;
 
 string addLogParams(string&& message, const STable& params = {});
 
 // **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
-#define SWHEREAMI SThreadLogPrefix + "(" + basename((char*)__FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
+#define SWHEREAMI SThreadLogPrefix + "(" + basename((char*) __FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
 #define SSYSLOG(_PRI_, _MSG_, ...)                                              \
-    do {                                                                        \
-        if (_g_SLogMask & (1 << (_PRI_))) {                                     \
-            ostringstream __out;                                                \
-            __out << _MSG_;                                                     \
-            const string s = addLogParams(__out.str(), ##__VA_ARGS__);          \
-            const string prefix = SWHEREAMI;                                    \
-            for (size_t i = 0; i < s.size(); i += 7168) {                       \
-                (*SSyslogFunc)(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
-            }                                                                   \
-        }                                                                       \
-    } while (false)
+        do {                                                                        \
+            if (_g_SLogMask & (1 << (_PRI_))) {                                     \
+                ostringstream __out;                                                \
+                __out << _MSG_;                                                     \
+                const string s = addLogParams(__out.str(), ## __VA_ARGS__);          \
+                const string prefix = SWHEREAMI;                                    \
+                for (size_t i = 0; i < s.size(); i += 7168) {                       \
+                    (*SSyslogFunc)(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
+                }                                                                   \
+            }                                                                       \
+        } while (false)
 
 #define SLOGPREFIX ""
-#define SDEBUG(_MSG_, ...) SSYSLOG(LOG_DEBUG, "[dbug] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
-#define SINFO(_MSG_, ...) SSYSLOG(LOG_INFO, "[info] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
-#define SHMMM(_MSG_, ...) SSYSLOG(LOG_NOTICE, "[hmmm] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
-#define SWARN(_MSG_, ...) SSYSLOG(LOG_WARNING, "[warn] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
-#define SALERT(_MSG_, ...) SSYSLOG(LOG_ALERT, "[alrt] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__)
+#define SDEBUG(_MSG_, ...) SSYSLOG(LOG_DEBUG, "[dbug] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SINFO(_MSG_, ...) SSYSLOG(LOG_INFO, "[info] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SHMMM(_MSG_, ...) SSYSLOG(LOG_NOTICE, "[hmmm] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SWARN(_MSG_, ...) SSYSLOG(LOG_WARNING, "[warn] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SALERT(_MSG_, ...) SSYSLOG(LOG_ALERT, "[alrt] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
 #define SERROR(_MSG_, ...)                                  \
-    do {                                                    \
-        SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_, ##__VA_ARGS__); \
-        SLogStackTrace();                                   \
-        abort();                                            \
-    } while (false)
+        do {                                                    \
+            SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__); \
+            SLogStackTrace();                                   \
+            abort();                                            \
+        } while (false)
 
 // --------------------------------------------------------------------------
 // Thread stuff
@@ -291,20 +298,21 @@ extern thread_local bool isSyncThread;
 void SLogSetThreadPrefix(const string& logPrefix);
 void SLogSetThreadName(const string& name);
 
-struct SAutoThreadPrefix {
+struct SAutoThreadPrefix
+{
     // Set on construction; reset on destruction
     SAutoThreadPrefix(const SData& request);
     SAutoThreadPrefix(const string& rID);
     ~SAutoThreadPrefix();
 
-  private:
+private:
     // Attributes
     string oldPrefix;
 };
-#define SAUTOPREFIX(_PREFIX_) SAutoThreadPrefix __SAUTOPREFIX##__LINE__(_PREFIX_)
+#define SAUTOPREFIX(_PREFIX_) SAutoThreadPrefix __SAUTOPREFIX ## __LINE__(_PREFIX_)
 
 // Automatically locks/unlocks a mutex by scope
-#define SAUTOLOCK(_MUTEX_) lock_guard<decltype(_MUTEX_)> __SAUTOLOCK_##__LINE__(_MUTEX_);
+#define SAUTOLOCK(_MUTEX_) lock_guard<decltype(_MUTEX_)> __SAUTOLOCK_ ## __LINE__(_MUTEX_);
 
 // Template specialization for atomic strings.
 // As the standard library doesn't provide its own template specialization for atomic strings, we provide one here so
@@ -312,39 +320,49 @@ struct SAutoThreadPrefix {
 // with the same interface. Note that this is not a lock-free implementation, and thus may suffer worse performance
 // than many of the standard library specializations.
 namespace std {
-    template<>
-    struct atomic<string> {
-        string operator=(const string& desired) {
-            lock_guard<decltype(m)> l(m);
-            _string = desired;
-            return _string;
-        }
-        bool is_lock_free() const {
-            return false;
-        }
-        void store(const string& desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
-            lock_guard<decltype(m)> l(m);
-            _string = desired;
-        };
-        string load([[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) const {
-            lock_guard<decltype(m)> l(m);
-            return _string;
-        }
-        operator string() const {
-            lock_guard<decltype(m)> l(m);
-            return _string;
-        }
-        string exchange(const string& desired, [[maybe_unused]] std::memory_order order = std::memory_order_seq_cst) {
-            lock_guard<decltype(m)> l(m);
-            string existing = _string;
-            _string = desired;
-            return existing;
-        };
+template<>
+struct atomic<string>
+{
+    string operator=(const string& desired)
+    {
+        lock_guard<decltype(m)> l(m);
+        _string = desired;
+        return _string;
+    }
 
-      private:
-        string _string;
-        mutable recursive_mutex m;
+    bool is_lock_free() const
+    {
+        return false;
+    }
+
+    void store(const string& desired, [[maybe_unused]] memory_order order = memory_order_seq_cst)
+    {
+        lock_guard<decltype(m)> l(m);
+        _string = desired;
     };
+    string load([[maybe_unused]] memory_order order = memory_order_seq_cst) const
+    {
+        lock_guard<decltype(m)> l(m);
+        return _string;
+    }
+
+    operator string() const
+                                {
+            lock_guard<decltype(m)> l(m);
+        return _string;
+    }
+    string exchange(const string& desired, [[maybe_unused]] memory_order order = memory_order_seq_cst)
+    {
+        lock_guard<decltype(m)> l(m);
+        string existing = _string;
+        _string = desired;
+        return existing;
+    };
+
+private:
+    string _string;
+    mutable recursive_mutex m;
+};
 };
 
 // --------------------------------------------------------------------------
@@ -367,7 +385,8 @@ string SHexStringFromBase32(const string& buffer);
 // --------------------------------------------------------------------------
 // General utility to convert non-string input to string output
 // **NOTE: Use 'ostringstream' because 'stringstream' leaks on VS2005
-template <class T> inline string SToStr(const T& t) {
+template<class T> inline string SToStr(const T& t)
+{
     ostringstream ss;
     ss << fixed << showpoint << setprecision(6) << t;
     return ss.str();
@@ -380,13 +399,18 @@ int64_t SToInt64(const string& val);
 uint64_t SToUInt64(const string& val);
 
 // General utility for testing map containment
-template <class A, class B, class C> inline bool SContains(const map<A, B, C>& nameValueMap, const A& name) {
-    return (nameValueMap.find(name) != nameValueMap.end());
+template<class A, class B, class C> inline bool SContains(const map<A, B, C>& nameValueMap, const A& name)
+{
+    return nameValueMap.find(name) != nameValueMap.end();
 }
-template <class A> inline bool SContains(const list<A>& valueList, const A& value) {
+
+template<class A> inline bool SContains(const list<A>& valueList, const A& value)
+{
     return ::find(valueList.begin(), valueList.end(), value) != valueList.end();
 }
-template <class A> inline bool SContains(const set<A>& valueList, const A& value) {
+
+template<class A> inline bool SContains(const set<A>& valueList, const A& value)
+{
     return valueList.find(value) != valueList.end();
 }
 
@@ -419,7 +443,7 @@ bool SREMatch(const string& regExp, const string& input, bool caseSensitive = tr
 
 // Matches every instance of regExp in the input string. Returns a vector of vectors or strings.
 // The outer vector has one entry for each match found. The inner vectors contain first the entire matched substring, and following that, each match group
-vector<vector <string>> SREMatchAll(const string& regExp, const string& input, bool caseSensitive = true);
+vector<vector<string>> SREMatchAll(const string& regExp, const string& input, bool caseSensitive = true);
 
 // Replaces all instances of the matched `regExp` with `replacement` in `input`.
 string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive = true);
@@ -488,12 +512,13 @@ list<string> SParseList(const string& value, char separator = ',');
 
 // Concatenates things into a string. "Things" can mean essentially any
 // standard STL container of any type of object that "stringstream" can handle.
-template <typename T> string SComposeList(const T& valueList, const string& separator = ", ") {
+template<typename T> string SComposeList(const T& valueList, const string& separator = ", ")
+{
     if (valueList.empty()) {
         return "";
     }
     string working;
-    for(auto value : valueList) {
+    for (auto value : valueList) {
         working += SToStr(value);
         working += separator;
     }
@@ -507,8 +532,9 @@ template <typename T> string SComposeList(const T& valueList, const string& sepa
 string SToJSON(const string& value, const bool forceString = false);
 string SToJSON(const int64_t value, const bool forceString = false);
 
-template <typename T>
-string SComposeJSONArray(const T& valueList) {
+template<typename T>
+string SComposeJSONArray(const T& valueList)
+{
     if (valueList.empty()) {
         return "[]";
     }
@@ -525,7 +551,7 @@ string SComposeJSONObject(const STable& nameValueMap, const bool forceString = f
 
 // The optional keyCallback, if provided, will be called with the name of each new key in the object found as it's parsed.
 // this is useful for determining the order of supplied keys.
-STable SParseJSONObject(const string& object, const string& nullValue = "null", const function<void(const string&, const string&)>& callback = [](const string&, const string&){});
+STable SParseJSONObject(const string& object, const string& nullValue = "null", const function<void(const string&, const string&)>& callback = [] (const string&, const string&){});
 list<string> SParseJSONArray(const string& array, const string& nullValue = "null");
 string SGetJSONArrayFront(const string& jsonArray);
 
@@ -616,7 +642,8 @@ string SQ(int64_t val);
 string SQ(double val);
 string SQList(const string& val, bool integersOnly = true);
 
-template <typename Container> string SQList(const Container& valueList) {
+template<typename Container> string SQList(const Container& valueList)
+{
     list<string> safeValues;
     for (typename Container::const_iterator valueIt = valueList.begin(); valueIt != valueList.end(); ++valueIt) {
         safeValues.push_back(SQ(*valueIt));
@@ -628,13 +655,13 @@ void SQueryLogOpen(const string& logFilename);
 void SQueryLogClose();
 
 // Returns an SQLite result code.
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr);
-int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr);
+int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
 int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec);
 
 // Compatibility functions: Remove when nothing calls these.
-int SQuery(sqlite3* db, const char* ignore, const string& sql, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
-int SQuery(sqlite3* db, const char* ignore, const string& sql, SQResult& result, int64_t warnThreshold = 2000 * STIME_US_PER_MS, bool skipInfoWarn = false);
+int SQuery(sqlite3* db, const char* ignore, const string& sql, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
+int SQuery(sqlite3* db, const char* ignore, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
 
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
 bool SQVerifyTableExists(sqlite3* db, const string& tableName);
@@ -663,4 +690,4 @@ bool SExecShell(const string& cmd, string* output = nullptr);
 // Returns the CPU usage inside the current thread
 double SGetCPUUserTime();
 
-#endif	// LIBSTUFF_H
+#endif  // LIBSTUFF_H

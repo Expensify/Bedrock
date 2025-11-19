@@ -4,30 +4,40 @@
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
-struct FailedJobReplyTest : tpunit::TestFixture {
+struct FailedJobReplyTest : tpunit::TestFixture
+{
     FailedJobReplyTest()
         : tpunit::TestFixture("FailedJobReply",
                               BEFORE_CLASS(FailedJobReplyTest::setupClass),
                               TEST(FailedJobReplyTest::failSendingResponse),
                               AFTER(FailedJobReplyTest::tearDown),
-                              AFTER_CLASS(FailedJobReplyTest::tearDownClass)) { }
+                              AFTER_CLASS(FailedJobReplyTest::tearDownClass))
+    {
+    }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass()
+    {
+        tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
+    }
 
     // Reset the jobs table
-    void tearDown() {
+    void tearDown()
+    {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
     }
 
-    void tearDownClass() { delete tester; }
+    void tearDownClass()
+    {
+        delete tester;
+    }
 
     // Cannot cancel a job with children
-    void failSendingResponse() {
-
+    void failSendingResponse()
+    {
         // Here's a basic job.
         STable job;
         job["name"] = "willFailReply";
@@ -119,7 +129,7 @@ struct FailedJobReplyTest : tpunit::TestFixture {
                 } catch (const SException& e) {
                     // We'll retry 404s a few times waiting for the command to requeue.
                     auto it = e.headers.find("originalMethod");
-                    if (retries && it != e.headers.end() && it->second.substr(0,3) == "404") {
+                    if (retries && it != e.headers.end() && it->second.substr(0, 3) == "404") {
                         // Retry in a second.
                         retries--;
                         sleep(1);
@@ -157,7 +167,6 @@ struct FailedJobReplyTest : tpunit::TestFixture {
                     cout << "Failed on 'FinishJob'" << endl;
                     throw;
                 }
-
             }
         }
     }

@@ -4,14 +4,17 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{} "
 
-AutoTimer::AutoTimer(const string& name) : _name(name), _intervalStart(chrono::steady_clock::now()), _countedTime(0) {
+AutoTimer::AutoTimer(const string& name) : _name(name), _intervalStart(chrono::steady_clock::now()), _countedTime(0)
+{
 }
 
-void AutoTimer::start() {
+void AutoTimer::start()
+{
     _instanceStart = chrono::steady_clock::now();
 }
 
-void AutoTimer::stop() {
+void AutoTimer::stop()
+{
     auto stopped = chrono::steady_clock::now();
     _countedTime += stopped - _instanceStart;
     if (stopped > (_intervalStart + 10s)) {
@@ -25,10 +28,12 @@ void AutoTimer::stop() {
     }
 };
 
-AutoTimerTime::AutoTimerTime(AutoTimer& t) : _t(t) {
+AutoTimerTime::AutoTimerTime(AutoTimer& t) : _t(t)
+{
     _t.start();
 }
 
-AutoTimerTime::~AutoTimerTime() {
+AutoTimerTime::~AutoTimerTime()
+{
     _t.stop();
 }

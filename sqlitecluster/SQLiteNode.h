@@ -44,7 +44,8 @@ class SQLiteServer;
 class SQLitePeer;
 
 // Possible states of a node in a DB cluster
-enum class SQLiteNodeState {
+enum class SQLiteNodeState
+{
     UNKNOWN,
     SEARCHING,     // Searching for peers
     SYNCHRONIZING, // Synchronizing with highest priority peer
@@ -62,9 +63,10 @@ class SQLiteNode : public STCPManager {
     friend struct SQLiteNodeTest;
     friend class SQLiteNodeTester;
 
-  public:
+public:
     // These are the possible states a transaction can be in.
-    enum class CommitState {
+    enum class CommitState
+    {
         UNINITIALIZED,
         WAITING,
         COMMITTING,
@@ -73,7 +75,8 @@ class SQLiteNode : public STCPManager {
     };
 
     // Write consistencies available
-    enum ConsistencyLevel {
+    enum ConsistencyLevel
+    {
         ASYNC,  // Fully asynchronous write, no follower approval required.
         ONE,    // Require exactly one approval (likely from a peer on the same LAN)
         QUORUM, // Require majority approval
@@ -200,16 +203,21 @@ class SQLiteNode : public STCPManager {
     void (*onPrepareHandler)(SQLite& _db, int64_t tableID);
     bool onPrepareHandlerEnabled;
 
-  private:
+private:
     // Utility class that can decrement _replicationThreadCount when objects go out of scope.
-    template <typename CounterType>
+    template<typename CounterType>
     class ScopedDecrement {
-      public:
-        ScopedDecrement(CounterType& counter) : _counter(counter) {}
-        ~ScopedDecrement() {
+public:
+        ScopedDecrement(CounterType& counter) : _counter(counter)
+        {
+        }
+
+        ~ScopedDecrement()
+        {
             --_counter;
         }
-      private:
+
+private:
         CounterType& _counter;
     };
 

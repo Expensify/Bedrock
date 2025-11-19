@@ -6,9 +6,10 @@ class SQLiteNode;
 class BedrockCommand;
 
 class SQLiteClusterMessenger {
-  public:
+public:
 
-    enum class WaitForReadyResult {
+    enum class WaitForReadyResult
+    {
         OK,
         SHUTTING_DOWN,
         TIMEOUT,
@@ -44,7 +45,7 @@ class SQLiteClusterMessenger {
     // to handle the failure.
     bool runOnPeer(BedrockCommand& command, const string& peerName);
 
-  private:
+private:
     // This takes a pollfd with either POLLIN or POLLOUT set, and waits for the socket to be ready to read or write,
     // respectively. It returns true if ready, or false if error or timeout. The timeout is specified as a timestamp in
     // microseconds.
