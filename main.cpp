@@ -15,6 +15,8 @@
 #include <plugins/DB.h>
 #include <plugins/Jobs.h>
 #include <plugins/MySQL.h>
+#include <plugins/StatsDMetricPlugin.h>
+#include <BedrockMetricPlugin.h>
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
 #include <sqlitecluster/SQLite.h>
@@ -45,6 +47,54 @@ void RetrySystem(const string& command) {
 
     // Didn't work -- fatal error
     SERROR("Failed to run '" << command << "', aborting.");
+}
+
+set<string> loadMetricPlugins(SData& args) {
+    list<string> plugins = SParseList(args["-metricPlugins"]);
+
+    set<string> postProcessedNames;
+
+    // Register built-in metric plugins here if any (none by default)
+    // Example: BedrockMetricPlugin::g_registeredMetricPluginList.emplace(make_pair("STATSD", [](const SData& a){return new StatsDMetricPlugin(a);}));
+
+    BedrockMetricPlugin::g_registeredMetricPluginList.emplace(make_pair("STATSD", [](const SData& a){return new StatsDMetricPlugin(a);}));
+
+
+    for (string pluginName : plugins) {
+        if (BedrockMetricPlugin::g_registeredMetricPluginList.find(SToUpper(pluginName)) != BedrockMetricPlugin::g_registeredMetricPluginList.end()) {
+            postProcessedNames.emplace(SToUpper(pluginName));
+            continue;
+        }
+
+        size_t slash = pluginName.rfind('/');
+        size_t dot = pluginName.find('.', slash);
+        string name = pluginName.substr(slash + 1, dot - slash - 1);
+        string symbolName = "BEDROCK_METRIC_PLUGIN_REGISTER_" + SToUpper(name);
+
+        if(postProcessedNames.find(SToUpper(name)) != postProcessedNames.end()) {
+            SWARN("Duplicate entry for metric plugin " << name << ", skipping.");
+            continue;
+        }
+        postProcessedNames.insert(SToUpper(name));
+
+        if (!SEndsWith(pluginName, ".so")) {
+            pluginName += ".so";
+        }
+
+        void* lib = dlopen(pluginName.c_str(), RTLD_NOW);
+        if(!lib) {
+            SWARN("Error loading bedrock metric plugin " << pluginName << ": " << dlerror());
+        } else {
+            void* sym = dlsym(lib, symbolName.c_str());
+            if (!sym) {
+                SWARN("Couldn't find symbol " << symbolName);
+            } else {
+                BedrockMetricPlugin::g_registeredMetricPluginList.emplace(make_pair(SToUpper(name), (BedrockMetricPlugin*(*)(const SData&))sym));
+            }
+        }
+    }
+
+    return postProcessedNames;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -231,6 +281,7 @@ int main(int argc, char* argv[]) {
         cout << "-peerList       <list>      See below" << endl;
         cout << "-priority       <value>     See '-peerList Details' below (defaults to 100)" << endl;
         cout << "-plugins        <list>      Enable these plugins (defaults to 'db,jobs,cache,mysql')" << endl;
+        cout << "-metricPlugins  <list>      Enable metrics plugins (e.g., 'statsd,otel' or .so paths)" << endl;
         cout << "-cacheSize      <kb>        number of KB to allocate for a page cache (defaults to 1GB)" << endl;
         cout << "-workerThreads  <#>         Number of worker threads to start (min 1, defaults to # of cores)" << endl;
         cout << "-queryLog       <filename>  Set the query log filename (default 'queryLog.csv', SIGUSR2/SIGQUIT to "
@@ -298,6 +349,7 @@ int main(int argc, char* argv[]) {
     SETDEFAULT("-nodeName", SGetHostName());
     SETDEFAULT("-cacheSize", SToStr(0));
     SETDEFAULT("-plugins", "db,jobs,cache,mysql");
+    SETDEFAULT("-metricPlugins", "");
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
@@ -325,6 +377,7 @@ int main(int argc, char* argv[]) {
     }
 
     args["-plugins"] = SComposeList(loadPlugins(args));
+    args["-metricPlugins"] = SComposeList(loadMetricPlugins(args));
 
     // Set our soft limit to the same as our hard limit to allow for more file handles.
     struct rlimit limits;
