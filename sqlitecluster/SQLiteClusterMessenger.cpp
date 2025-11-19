@@ -128,7 +128,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
 
     // Compute the remaining time left before timeout, and set the timeout for the escalated command to match.
     // Note that internally this is stored in microseconds, but over the wire is sent in milliseconds.
-    request["timeout"] = ((command.timeout() - STimeNow()) / 1000);
+    request["timeout"] = to_string((command.timeout() - STimeNow()) / 1000);
 
     // If the command has https requests, we serialize them to escalate. In this case we also check if the command has data
     // that needs serialization, and if so, we serialize that as well.
