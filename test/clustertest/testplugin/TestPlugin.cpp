@@ -228,7 +228,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         // First, send a `broadcastwithtimeouts` which will generate a new command and broadcast that to peers.
         SData subCommand("storeboradcasttimeouts");
         subCommand["processTimeout"] = to_string(5001);
-        subCommand["timeout"] = to_string(5002);
+        subCommand["timeout"] = to_string(6000);
         subCommand["not_special"] = "whatever";
         plugin().server.broadcastCommand(subCommand);
         return true;
