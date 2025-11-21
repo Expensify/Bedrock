@@ -289,6 +289,19 @@ void BedrockCommand::finalizeTimingInfo() {
         {"unaccountedTime", unaccountedTime},
     };
 
+    // Also include commit and queue breakdowns so the reply contains everything needed for metrics.
+    valuePairs.emplace("commitWorkerTime", commitWorkerTotal);
+    valuePairs.emplace("commitSyncTime", commitSyncTotal);
+    valuePairs.emplace("queueWorkerTime", queueWorkerTotal);
+    valuePairs.emplace("queueSyncTime", queueSyncTotal);
+    valuePairs.emplace("queueBlockingTime", queueBlockingTotal);
+    valuePairs.emplace("queuePageLockTime", queuePageLockTotal);
+    valuePairs.emplace("blockingCommitPrePeekTime", blockingPrePeekTotal);
+    valuePairs.emplace("blockingCommitPeekTime", blockingPeekTotal);
+    valuePairs.emplace("blockingCommitProcessTime", blockingProcessTotal);
+    valuePairs.emplace("blockingCommitPostProcessTime", blockingPostProcessTotal);
+    valuePairs.emplace("blockingCommitCommitTime", blockingCommitWorkerTotal);
+
     // We also want to know what leader did if we're on a follower.
     uint64_t upstreamPeekTime = 0;
     uint64_t upstreamProcessTime = 0;

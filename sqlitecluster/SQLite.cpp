@@ -6,6 +6,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SDeburr.h>
 #include <libstuff/SQResult.h>
+#include "BedrockMetrics.h"
 
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
@@ -441,6 +442,9 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
     _sharedData.openTransactionCount++;
 
     SINFO("Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
+    // metrics: open DB transactions
+    GlobalRecordMetric(Metric{ .name = "bedrock.openDatabaseTransactions.enqueue", .type = MetricType::Counter, .value = 1 });
+    GlobalRecordMetric(Metric{ .name = "bedrock.openDatabaseTransactions.depth", .type = MetricType::Gauge, .value = (uint64_t)_sharedData.openTransactionCount });
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "starting db transaction", "BEGIN CONCURRENT");
 
@@ -739,6 +743,8 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
         auto end = STimeNow();
         if (end - start > 5'000) {
             SINFO("Waited " << (end - start) << "us for commit lock.");
+            // metrics: commit lock wait
+            GlobalRecordMetric(Metric{ .name = "bedrock.waitingCommitLock", .type = MetricType::Timing, .value = (uint64_t)((end - start)/1000) });
         }
         _sharedData._commitLockTimer.start("SHARED");
         _mutexLocked = true;
@@ -879,6 +885,10 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
                 auto end = STimeNow();
                 SINFO("Checkpoint with type=" << _checkpointMode << " complete with " << framesCheckpointed << " frames checkpointed of " << _sharedData.outstandingFramesToCheckpoint << " frames outstanding in " << (end - start) << "us.");
 
+                GlobalRecordMetric(Metric{ .name = "bedrock.checkpointedFrames", .type = MetricType::Gauge, .value = (uint64_t)framesCheckpointed });
+                GlobalRecordMetric(Metric{ .name = "bedrock.totalFrames", .type = MetricType::Gauge, .value = (uint64_t)_sharedData.outstandingFramesToCheckpoint });
+                GlobalRecordMetric(Metric{ .name = "bedrock.checkpointingTime", .type = MetricType::Timing, .value = (uint64_t)((end - start)/1000) });
+
                 // It might not actually be 0, but we'll just let sqlite tell us what it is next time _walHookCallback runs.
                 _sharedData.outstandingFramesToCheckpoint = 0;
             }
@@ -887,6 +897,13 @@ int SQLite::commit(const string& description, function<void()>* preCheckpointCal
         SINFO(description << " COMMIT " << SToStr(_sharedData.commitCount) << " complete in " << time << ". Wrote " << (endPages - startPages)
               << " pages. WAL file size is " << sz << " bytes. " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits
               << " served from cache. Used journal " << _journalName);
+
+
+        if (SContains(description, "LEADING")) {
+            GlobalRecordMetric(Metric{ .name = "bedrock.multiwrite.successful.anyCommand", .type = MetricType::Counter, .value = 1 });
+        }
+        GlobalRecordMetric(Metric{ .name = string("bedrock.commitedQueries.") + _journalName + ".read.enqueue", .type = MetricType::Counter, .value = (uint64_t)_readQueryCount });
+        GlobalRecordMetric(Metric{ .name = string("bedrock.commitedQueries.") + _journalName + ".write.enqueue", .type = MetricType::Counter, .value = (uint64_t)_writeQueryCount });
         _readQueryCount = 0;
         _writeQueryCount = 0;
         _cacheHits = 0;
@@ -957,6 +974,10 @@ void SQLite::rollback() {
     }
     _queryCache.clear();
     SINFO("[performance] Transaction rollback with " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits << " served from cache.");
+    GlobalRecordMetric(Metric{ .name = "bedrock.uncommitedQueries.read.enqueue", .type = MetricType::Counter, .value = (uint64_t)_readQueryCount });
+    GlobalRecordMetric(Metric{ .name = "bedrock.uncommitedQueries.write.enqueue", .type = MetricType::Counter, .value = (uint64_t)_writeQueryCount });
+    GlobalRecordMetric(Metric{ .name = "bedrock.uncommitedQueries.cacheHits.enqueue", .type = MetricType::Counter, .value = (uint64_t)_cacheHits });
+
     _readQueryCount = 0;
     _writeQueryCount = 0;
     _cacheHits = 0;

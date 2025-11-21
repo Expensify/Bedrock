@@ -2,6 +2,7 @@
 #include "BedrockCore.h"
 #include "BedrockPlugin.h"
 #include "BedrockServer.h"
+#include "BedrockMetrics.h"
 
 BedrockCore::BedrockCore(SQLite& db, const BedrockServer& server) :
 SQLiteCore(db),
@@ -45,6 +46,12 @@ uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& comman
     // Already expired.
     if (adjustedTimeout <= 0 || (isProcessing && processTimeout <= 0)) {
         SALERT("Command " << command->request.methodLine << " timed out.");
+        // metric: command timed out
+        GlobalRecordMetric(Metric{
+            .name = string("bedrock.commandTimedOut.") + command->request.methodLine,
+            .type = MetricType::Counter,
+            .value = 1
+        });
         STHROW("555 Timeout");
     }
 

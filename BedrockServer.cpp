@@ -18,6 +18,7 @@
 #include <libstuff/AutoTimer.h>
 #include <PageLockGuard.h>
 #include <sqlitecluster/SQLitePeer.h>
+#include "BedrockMetrics.h"
 
 set<string>BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
@@ -451,6 +452,9 @@ void BedrockServer::sync()
                           << " after failed sync commit. Sync thread has " << _syncNodeQueuedCommands.size()
                           << " queued commands.");
                     _syncNodeQueuedCommands.push(move(command));
+                    // metrics: sync thread queue
+                    recordMetric(Metric{ .name = "bedrock.syncThreadQueue.enqueue", .type = MetricType::Counter, .value = 1 });
+                    recordMetric(Metric{ .name = "bedrock.syncThreadQueue.depth", .type = MetricType::Gauge, .value = (uint64_t)_syncNodeQueuedCommands.size() });
                 } else {
                     SERROR("Unexpected sync thread commit state.");
                 }
@@ -715,8 +719,16 @@ void BedrockServer::worker(int threadId)
             command = commandQueue.get(100000);
 
             SAUTOPREFIX(command->request);
-            SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
-                  << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
+        SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
+              << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
+        // metrics: queue depths and blocking queue dequeues
+        if (threadId == 0) {
+            // blocking commit thread
+            recordMetric(Metric{ .name = "bedrock.blockingQueue.enqueue", .type = MetricType::Counter, .value = 1 });
+            recordMetric(Metric{ .name = "bedrock.blockingQueue.depth", .type = MetricType::Gauge, .value = (uint64_t)commandQueue.size() });
+        } else {
+            recordMetric(Metric{ .name = "bedrock.queue.worker", .type = MetricType::Gauge, .value = (uint64_t)commandQueue.size() });
+        }
 
             runCommand(move(command), threadId == 0, false);
         } catch (const BedrockCommandQueue::timeout_error& e) {
@@ -986,6 +998,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             SINFO("Sending non-parallel command " << command->request.methodLine
                                   << " to sync thread. Sync thread has " << _syncNodeQueuedCommands.size() << " queued commands.");
                             _syncNodeQueuedCommands.push(move(command));
+                            // metrics: sync thread queue
+                            recordMetric(Metric{ .name = "bedrock.syncThreadQueue.enqueue", .type = MetricType::Counter, .value = 1 });
+                            recordMetric(Metric{ .name = "bedrock.syncThreadQueue.depth", .type = MetricType::Gauge, .value = (uint64_t)_syncNodeQueuedCommands.size() });
                         } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
                             SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
                             _reply(command);
@@ -1044,6 +1059,12 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             command->complete = true;
                         } else {
                             SINFO("Conflict or state change committing " << command->request.methodLine);
+                            // metric: conflict committing <CommandName>
+                            recordMetric(Metric{
+                                .name = string("bedrock.multiwrite.conflict.") + command->request.methodLine,
+                                .type = MetricType::Counter,
+                                .value = 1
+                            });
                             if (_enableConflictPageLocks) {
                                 lastConflictLocation = db.getLastConflictLocation();
 
@@ -1305,8 +1326,12 @@ BedrockServer::BedrockServer(const SData& args_)
             metricNames.emplace_back(p.first);
         }
         SINFO("Metric plugins enabled: " << SComposeList(metricNames));
+        // Expose a global recorder for non-server code paths.
+        SetGlobalMetricRecorder([this](const Metric& m){ this->recordMetric(m); });
     } else {
         SINFO("No metric plugins configured.");
+        // Ensure the global recorder is cleared when metrics are disabled.
+        SetGlobalMetricRecorder(nullptr);
     }
 
     // If `versionOverride` is set, we throw away what we just did and use the overridden value.
@@ -1558,21 +1583,62 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command) {
     // Finalize timing info even for commands we won't respond to (this makes this data available in logs).
     command->finalizeTimingInfo();
 
-    recordMetric(Metric{
-        .name = "bedrock.requestTime." + command->request.methodLine + ".prePeekTotal",
-        .type = MetricType::Timing,
-        .value = command->response.calcU64("prePeekTotal")/1000
-    });
-    recordMetric(Metric{
-        .name = "bedrock.requestTime." + command->request.methodLine + ".peekTotal",
-        .type = MetricType::Timing,
-        .value = command->response.calcU64("peekTotal")/1000
-    });
-    recordMetric(Metric{
-        .name = "bedrock.requestTime." + command->request.methodLine + ".processTotal",
-        .type = MetricType::Timing,
-        .value = command->response.calcU64("processTotal")/1000
-    });
+    // Emit full timing metrics (ms) and counts.
+    auto metricNameBase = string("bedrock.requestTime.") + command->request.methodLine + ".";
+    auto emitTiming = [&](const string& suffix, uint64_t us){
+        if (us) {
+            recordMetric(Metric{
+                .name = metricNameBase + suffix,
+                .type = MetricType::Timing,
+                .value = us/1000
+            });
+        }
+    };
+    emitTiming("prePeekTime", command->response.calcU64("prePeekTime"));
+    emitTiming("peekTime", command->response.calcU64("peekTime"));
+    emitTiming("processTime", command->response.calcU64("processTime"));
+    emitTiming("postProcessTime", command->response.calcU64("postProcessTime"));
+    emitTiming("totalTime", command->response.calcU64("totalTime"));
+    emitTiming("unaccountedTime", command->response.calcU64("unaccountedTime"));
+    emitTiming("commitWorkerTime", command->response.calcU64("commitWorkerTime"));
+    emitTiming("commitSyncTime", command->response.calcU64("commitSyncTime"));
+    emitTiming("queueWorkerTime", command->response.calcU64("queueWorkerTime"));
+    emitTiming("queueSyncTime", command->response.calcU64("queueSyncTime"));
+    emitTiming("queueBlockingTime", command->response.calcU64("queueBlockingTime"));
+    emitTiming("queuePageLockTime", command->response.calcU64("queuePageLockTime"));
+    emitTiming("blockingCommitPrePeekTime", command->response.calcU64("blockingCommitPrePeekTime"));
+    emitTiming("blockingCommitPeekTime", command->response.calcU64("blockingCommitPeekTime"));
+    emitTiming("blockingCommitProcessTime", command->response.calcU64("blockingCommitProcessTime"));
+    emitTiming("blockingCommitPostProcessTime", command->response.calcU64("blockingCommitPostProcessTime"));
+    emitTiming("blockingCommitCommitTime", command->response.calcU64("blockingCommitCommitTime"));
+    emitTiming("upstreamPeekTime", command->response.calcU64("upstreamPeekTime"));
+    emitTiming("upstreamProcessTime", command->response.calcU64("upstreamProcessTime"));
+    emitTiming("upstreamTotalTime", command->response.calcU64("upstreamTotalTime"));
+    emitTiming("upstreamUnaccountedTime", command->response.calcU64("upstreamUnaccountedTime"));
+    emitTiming("escalationTime", command->response.calcU64("escalationTime"));
+
+    // Emit counts as counters.
+    if (command->prePeekCount) {
+        recordMetric(Metric{ .name = metricNameBase + "prePeekCount", .type = MetricType::Counter, .value = (uint64_t)command->prePeekCount });
+    }
+    if (command->peekCount) {
+        recordMetric(Metric{ .name = metricNameBase + "peekCount", .type = MetricType::Counter, .value = (uint64_t)command->peekCount });
+    }
+    if (command->processCount) {
+        recordMetric(Metric{ .name = metricNameBase + "processCount", .type = MetricType::Counter, .value = (uint64_t)command->processCount });
+    }
+    if (command->postProcessCount) {
+        recordMetric(Metric{ .name = metricNameBase + "postProcessCount", .type = MetricType::Counter, .value = (uint64_t)command->postProcessCount });
+    }
+
+    // Slow command special-case
+    if (command->response.calcU64("totalTime")/1000 > 30000) {
+        recordMetric(Metric{
+            .name = string("bedrock.slowCommand.") + command->request.methodLine + ".totalTime",
+            .type = MetricType::Timing,
+            .value = command->response.calcU64("totalTime")/1000
+        });
+    }
 
     // Don't reply to commands with pseudo-clients (i.e., commands that we generated by other commands, or using
     // `Connection: forget`.

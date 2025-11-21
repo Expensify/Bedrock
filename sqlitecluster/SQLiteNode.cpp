@@ -10,6 +10,7 @@
 #include <sqlitecluster/SQLiteCommand.h>
 #include <sqlitecluster/SQLitePeer.h>
 #include <sqlitecluster/SQLiteServer.h>
+#include "BedrockMetrics.h"
 
 // Convenience class for maintaining connections with a mesh of peers
 #define PDEBUG(_MSG_) SDEBUG("->{" << peer->name << "} " << _MSG_)
@@ -2329,6 +2330,9 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
     float applyTimeMS = (float)applyTimeUS / 1000.0;
     PINFO("[performance] Replicated transaction " << message.calcU64("NewCount") << ", sent by leader at " << leaderSentTimestamp
           << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
+
+    GlobalRecordMetric(Metric{ .name = "bedrock.replication.dequeueTime", .type = MetricType::Timing, .value = transitTimeUS/1000 });
+    GlobalRecordMetric(Metric{ .name = "bedrock.replication.queryTime", .type = MetricType::Timing, .value = applyTimeUS/1000 });
 }
 
 int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash) {
