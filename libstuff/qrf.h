@@ -14,12 +14,11 @@
 */
 #ifndef SQLITE_QRF_H
 #define SQLITE_QRF_H
-#include <stdlib.h>
-#include "sqlite3.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+#include <stdlib.h>
+#include "sqlite3.h"
 
 /*
 ** Specification used by clients to define the output format they want
@@ -32,24 +31,24 @@ struct sqlite3_qrf_spec {
   unsigned char eText;        /* Quoting style for text */
   unsigned char eTitle;       /* Quating style for the text of column names */
   unsigned char eBlob;        /* Quoting style for BLOBs */
-  unsigned char bColumnNames; /* True to show column names */
+  unsigned char bTitles;      /* True to show column names */
   unsigned char bWordWrap;    /* Try to wrap on word boundaries */
   unsigned char bTextJsonb;   /* Render JSONB blobs as JSON text */
   unsigned char bTextNull;    /* Apply eText encoding to zNull[] */
   unsigned char eDfltAlign;   /* Default alignment, no covered by aAlignment */
   unsigned char eTitleAlign;  /* Alignment for column headers */
-  short int mxColWidth;       /* Maximum width of any individual column */
+  short int nWrap;            /* Wrap columns wider than this */
   short int nScreenWidth;     /* Maximum overall table width */
-  short int mxRowHeight;      /* Maximum number of lines for any row */
-  int mxLength;               /* Maximum content to display per element */
+  short int nLineLimit;       /* Maximum number of lines for any row */
+  int nCharLimit;             /* Maximum number of characters in a cell */
   int nWidth;                 /* Number of entries in aWidth[] */
   int nAlign;                 /* Number of entries in aAlignment[] */
   short int *aWidth;          /* Column widths */
   unsigned char *aAlign;      /* Column alignments */
-  const char *zColumnSep;     /* Alternative column separator */
-  const char *zRowSep;        /* Alternative row separator */
-  const char *zTableName;     /* Output table name */
-  const char *zNull;          /* Rendering of NULL */
+  char *zColumnSep;           /* Alternative column separator */
+  char *zRowSep;              /* Alternative row separator */
+  char *zTableName;           /* Output table name */
+  char *zNull;                /* Rendering of NULL */
   char *(*xRender)(void*,sqlite3_value*);           /* Render a value */
   int (*xWrite)(void*,const char*,sqlite3_int64);   /* Write output */
   void *pRenderArg;           /* First argument to the xRender callback */
@@ -87,7 +86,7 @@ int sqlite3_format_query_result(
 #define QRF_STYLE_Html      7 /* Generate an XHTML table */
 #define QRF_STYLE_Insert    8 /* Generate SQL "insert" statements */
 #define QRF_STYLE_Json      9 /* Output is a list of JSON objects */
-#define QRF_STYLE_JsonLine 10 /* Independent JSON objects for each row */
+#define QRF_STYLE_JObject  10 /* Independent JSON objects for each row */
 #define QRF_STYLE_Line     11 /* One column per line. */
 #define QRF_STYLE_List     12 /* One record per line with a separator */
 #define QRF_STYLE_Markdown 13 /* Markdown formatting */
@@ -123,7 +122,7 @@ int sqlite3_format_query_result(
 
 /*
 ** Control-character escape modes.
-** Allowed values for sqlite3_qrf_spec.eEscape
+** Allowed values for sqlite3_qrf_spec.eEsc
 */
 #define QRF_ESC_Auto    0 /* Choose the ctrl-char escape automatically */
 #define QRF_ESC_Off     1 /* Do not escape control characters */
@@ -182,8 +181,8 @@ int sqlite3_format_query_result(
 */
 int sqlite3_qrf_wcwidth(int c);
 
-#ifdef __cplusplus
-}  /* end of the 'extern "C"' block */
-#endif
 
+#ifdef __cplusplus
+}
+#endif
 #endif /* !defined(SQLITE_QRF_H) */

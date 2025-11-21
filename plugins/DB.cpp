@@ -70,12 +70,12 @@ bool BedrockDBCommand::peek(SQLite& db) {
 
     // We support two extra flags.
     if (request.isSet("MYSQLFlags")) {
-        wrapper.spec.bColumnNames = QRF_SW_Off;
+        wrapper.spec.bTitles = QRF_SW_Off;
         wrapper.zColumnSep->assign(" ");
         wrapper.zColumnSep->data()[0] = 0x1E;
         wrapper.zNull->assign("\n");
-        wrapper.spec.zColumnSep = wrapper.zColumnSep->c_str();
-        wrapper.spec.zNull = wrapper.zNull->c_str();
+        wrapper.spec.zColumnSep = const_cast<char*>(wrapper.zColumnSep->c_str());
+        wrapper.spec.zNull = const_cast<char*>(wrapper.zNull->c_str());
     }
 
     if (request.isSet("SuppressResult")) {
@@ -89,7 +89,7 @@ bool BedrockDBCommand::peek(SQLite& db) {
     if (isSchema) {
         SINFO("Re-writing schema query for " + matches[1]);
         query = "SELECT sql FROM sqlite_schema WHERE tbl_name LIKE " + SQ(matches[1]) + ";";
-        wrapper.spec.bColumnNames = 0;
+        wrapper.spec.bTitles = 0;
         wrapper.spec.eStyle = QRF_STYLE_Column;
     }
 
@@ -241,16 +241,16 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
     spec.spec.eText = QRF_TEXT_Auto;
     spec.spec.eTitle = QRF_TEXT_Auto;
     spec.spec.eBlob = QRF_TEXT_Auto;
-    spec.spec.bColumnNames = QRF_SW_On;
+    spec.spec.bTitles = QRF_SW_On;
     spec.spec.bWordWrap = QRF_SW_On;
     spec.spec.bTextJsonb = QRF_SW_On;
     spec.spec.bTextNull = 0;
     spec.spec.eDfltAlign = 0;
     spec.spec.eTitleAlign = 0;
-    spec.spec.mxColWidth = 10000;
+    spec.spec.nWrap = 10000;
     spec.spec.nScreenWidth = 10000;
-    spec.spec.mxRowHeight = 1;
-    spec.spec.mxLength = 10000;
+    spec.spec.nLineLimit = 1;
+    spec.spec.nCharLimit = 10000;
     spec.spec.nWidth = 0;
     spec.spec.nAlign = 0;
     spec.spec.aWidth = 0;
@@ -272,10 +272,10 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
             // handle argument values.
             if (previous == "-nullvalue" || previous == "--nullvalue") {
                 spec.zNull->assign(*it);
-                spec.spec.zNull = spec.zNull->c_str();
+                spec.spec.zNull = const_cast<char*>(spec.zNull->c_str());
             } else if (previous == "-separator" || previous == "--separator") {
                 spec.zColumnSep->assign(*it);
-                spec.spec.zColumnSep = spec.zColumnSep->c_str();
+                spec.spec.zColumnSep = const_cast<char*>(spec.zColumnSep->c_str());
             } else {
                 // Ignore.
             }
@@ -291,9 +291,9 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
             } else if (*it == "-csv" || *it == "--csv") {
                 spec.spec.eStyle = QRF_STYLE_Csv;
             } else if (*it == "-header" || *it == "--header") {
-                spec.spec.bColumnNames = QRF_SW_On;
+                spec.spec.bTitles = QRF_SW_On;
             } else if (*it == "-noheader" || *it == "--noheader") {
-                spec.spec.bColumnNames = QRF_SW_Off;
+                spec.spec.bTitles = QRF_SW_Off;
             } else if (*it == "-html" || *it == "--html") {
                 spec.spec.eStyle = QRF_STYLE_Html;
             } else if (*it == "-json" || *it == "--json") {

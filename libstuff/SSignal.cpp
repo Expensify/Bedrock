@@ -257,7 +257,7 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
             }
             SSignalHandlerDieFunc = [](){ return ""; };
             SWARN("DIE function returned.");
-            
+
             // Finish writing the crash file with the request details if it exists
             if (fd != -1 && !logMessage.empty()) {
                 logMessage += "\n";
