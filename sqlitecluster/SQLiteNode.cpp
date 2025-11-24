@@ -113,9 +113,10 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
     : STCPManager(),
       _commandAddress(commandPort),
       _name(name),
+      _host(host),
       _peerList(_initPeers(peerList)),
       _originalPriority(priority),
-      _port(host.empty() ? nullptr : openPort(host)),
+      _port(_host.empty() ? nullptr : openPort(_host)),
       _version(version),
       _commitState(CommitState::UNINITIALIZED),
       _db(dbPool->getBase()),
@@ -494,7 +495,7 @@ bool SQLiteNode::update() {
 
     // If we failed to open the port at creation time, try again on each upate.
     if (_port == nullptr) {
-        _port = openPort("host"); // TODO: Host isn't stored/passed correctly for this.
+        _port = openPort(_host);
     }
 
     // Process the database state machine
