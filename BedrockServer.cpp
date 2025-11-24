@@ -1428,7 +1428,12 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                     // Open the port and associate it with the plugin
                     if (!alreadyOpened) {
                         SINFO("Opening port '" << portHost << "' for plugin '" << plugin.second->getName() << "'");
-                        _portPluginMap[openPort(portHost)] = plugin.second;
+                        auto port = openPort(portHost);
+                        if (port.get()) {
+                            _portPluginMap[port] = plugin.second;
+                        } else {
+                            SWARN("Failed opening port '" << portHost << "' for plugin '" << plugin.second->getName() << "'");
+                        }
                     }
                 }
             }
