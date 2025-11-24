@@ -492,6 +492,11 @@ bool SQLiteNode::update() {
     }
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
 
+    // If we failed to open the port at creation time, try again on each upate.
+    if (_port == nullptr) {
+        _port = openPort("host"); // TODO: Host isn't stored/passed correctly for this.
+    }
+
     // Process the database state machine
     switch (_state) {
     /// - SEARCHING: Wait for a period and try to connect to all known
@@ -2463,15 +2468,17 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 
     // Try to accept on the port and wrap in a socket
     sockaddr_in addr;
-    int s = S_accept(_port->s, addr, false);
-    if (s > 0) {
-        // Received a socket, wrap
-        SDEBUG("Accepting socket from '" << addr << "' on port '" << _port->host << "'");
-        socket = new Socket(s, Socket::CONNECTED);
-        socket->addr = addr;
+    if (_port) {
+        int s = S_accept(_port->s, addr, false);
+        if (s > 0) {
+            // Received a socket, wrap
+            SDEBUG("Accepting socket from '" << addr << "' on port '" << _port->host << "'");
+            socket = new Socket(s, Socket::CONNECTED);
+            socket->addr = addr;
 
-        // Try to read immediately
-        socket->recv();
+            // Try to read immediately
+            socket->recv();
+        }
     }
 
     return socket;
