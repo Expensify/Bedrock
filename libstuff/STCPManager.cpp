@@ -303,24 +303,10 @@ unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host, int rema
     // Open a port on the requested host
     SASSERT(SHostIsValid(host));
     int s;
-    while (remainingTries--) {
-        s = S_socket(host, true, true, false);
-        if (s == -1) {
-            SWARN("Couldn't open port " << host << " with " << remainingTries << " retries remaining.");
-
-            // If we have any tries left, sleep for a second. We skip the sleep after the last try.
-            if (remainingTries) {
-                sleep(1);
-            }
-        } else {
-            // Socket succeeded.
-            break;
-        }
-    }
-
+    s = S_socket(host, true, true, false);
     if (s == -1) {
-        // If we don't return in the while loop, we die.
-        SERROR("Failed to open port " << host << " and no more retries.");
+        SWARN("Couldn't open port " << host << " caller must retry.");
+        return nullptr;
     }
 
     return make_unique<Port>(s, host);
