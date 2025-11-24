@@ -1430,7 +1430,7 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
                         SINFO("Opening port '" << portHost << "' for plugin '" << plugin.second->getName() << "'");
                         auto port = openPort(portHost);
                         if (port.get()) {
-                            _portPluginMap[port] = plugin.second;
+                            _portPluginMap[move(port)] = plugin.second;
                         } else {
                             SWARN("Failed opening port '" << portHost << "' for plugin '" << plugin.second->getName() << "'");
                         }
