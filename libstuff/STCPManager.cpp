@@ -299,7 +299,7 @@ bool STCPManager::Socket::recv() {
     return result;
 }
 
-unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host, int remainingTries) {
+unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host) {
     // Open a port on the requested host
     SASSERT(SHostIsValid(host));
     int s;

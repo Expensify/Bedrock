@@ -115,7 +115,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
       _name(name),
       _peerList(_initPeers(peerList)),
       _originalPriority(priority),
-      _port(host.empty() ? nullptr : openPort(host, 30)),
+      _port(host.empty() ? nullptr : openPort(host)),
       _version(version),
       _commitState(CommitState::UNINITIALIZED),
       _db(dbPool->getBase()),
