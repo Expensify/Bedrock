@@ -1885,12 +1885,11 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
                 delete _replicateThread;
                 _replicateThread = nullptr;
             }
-            // This is an unsafe access to _replicateQueue, it needs to be gaurded by _replicateMutex.
-            if (_replicateQueue.size()) {
-                SWARN("Replicate queue contains " << _replicateQueue.size() << " messages at thread shutdown.");
-            }
             {
                 lock_guard<mutex> lock(_replicateMutex);
+                if (_replicateQueue.size()) {
+                    SWARN("Replicate queue contains " << _replicateQueue.size() << " messages at thread shutdown.");
+                }
                 _shouldReplicateThreadExit = false;
             }
 
