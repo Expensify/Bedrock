@@ -9,6 +9,13 @@ struct UpgradeTest : tpunit::TestFixture {
                           TEST(UpgradeTest::mismatchedFollowerSendMultipleCommands)
                          ) { }
 
+    // The explanation for what this test does is here:
+    // https://github.com/Expensify/Bedrock/pull/1293
+    //
+    // This test doesn't specifically exercise any existing code, it just gaurds against the reintroduction of an old bug
+    // where sending multiple commands on the same socket where the leader and follower are on different versions would cause
+    // the second command to hang.
+    // I'm not sure this test is worth keeping given the low likelihood of ever seeing this particular regression.
     void mismatchedFollowerSendMultipleCommands() {
         BedrockClusterTester tester;
 
@@ -20,7 +27,11 @@ struct UpgradeTest : tpunit::TestFixture {
 
         // Start it back up and let it go following.
         tester.startNode(2);
+        
+        // Make sure the entire cluster is in the expected state.
         ASSERT_TRUE(tester.getTester(2).waitForState("FOLLOWING"));
+        ASSERT_TRUE(tester.getTester(1).waitForState("FOLLOWING"));
+        ASSERT_TRUE(tester.getTester(0).waitForState("LEADING"));
 
         // Get status info from leader and follower.
         SData status("Status");
