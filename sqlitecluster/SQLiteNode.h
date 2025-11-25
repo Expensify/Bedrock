@@ -288,6 +288,7 @@ class SQLiteNode : public STCPManager {
 
     const string _commandAddress;
     const string _name;
+    const string _host;
     const vector<SQLitePeer*> _peerList;
 
     // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
