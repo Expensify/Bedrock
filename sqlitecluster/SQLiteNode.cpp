@@ -113,9 +113,10 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
     : STCPManager(),
       _commandAddress(commandPort),
       _name(name),
+      _host(host),
       _peerList(_initPeers(peerList)),
       _originalPriority(priority),
-      _port(host.empty() ? nullptr : openPort(host, 30)),
+      _port(_host.empty() ? nullptr : openPort(_host)),
       _version(version),
       _commitState(CommitState::UNINITIALIZED),
       _db(dbPool->getBase()),
@@ -491,6 +492,11 @@ bool SQLiteNode::update() {
         return false;
     }
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
+
+    // If we failed to open the port at creation time, try again on each upate.
+    if (_port == nullptr) {
+        _port = openPort(_host);
+    }
 
     // Process the database state machine
     switch (_state) {
@@ -2463,15 +2469,17 @@ STCPManager::Socket* SQLiteNode::_acceptSocket() {
 
     // Try to accept on the port and wrap in a socket
     sockaddr_in addr;
-    int s = S_accept(_port->s, addr, false);
-    if (s > 0) {
-        // Received a socket, wrap
-        SDEBUG("Accepting socket from '" << addr << "' on port '" << _port->host << "'");
-        socket = new Socket(s, Socket::CONNECTED);
-        socket->addr = addr;
+    if (_port) {
+        int s = S_accept(_port->s, addr, false);
+        if (s > 0) {
+            // Received a socket, wrap
+            SDEBUG("Accepting socket from '" << addr << "' on port '" << _port->host << "'");
+            socket = new Socket(s, Socket::CONNECTED);
+            socket->addr = addr;
 
-        // Try to read immediately
-        socket->recv();
+            // Try to read immediately
+            socket->recv();
+        }
     }
 
     return socket;
