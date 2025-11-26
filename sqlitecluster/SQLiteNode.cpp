@@ -1889,7 +1889,8 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             {
                 lock_guard<mutex> lock(_replicateMutex);
                 if (_replicateQueue.size()) {
-                    SWARN("Replicate queue contains " << _replicateQueue.size() << " messages at thread shutdown.");
+                    SWARN("Replicate queue contains " << _replicateQueue.size() << " messages at thread shutdown,  clearing.");
+                    _replicateQueue = queue<pair<SQLitePeer*, SData>>();
                 }
                 _replicateThreadShouldExitTime = 0;
             }
