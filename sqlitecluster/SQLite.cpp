@@ -802,7 +802,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     return true;
 }
 
-static atomic<bool> __SLOW_COMMIT_LOG{false};
 int SQLite::commit(const string& description, const string& commandName, function<void()>* preCheckpointCallback) {
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
@@ -827,13 +826,11 @@ int SQLite::commit(const string& description, const string& commandName, functio
     result = SQuery(_db, "COMMIT");
 
     // In HCTree mode, we log extra info for slow commits.
-    if (_hctree && !__SLOW_COMMIT_LOG) {
+    /* This is disabled because the diagnostic logging is unreasonably expensive (30+ seconds for the query).
+    if (_hctree) {
         uint64_t afterCommit = STimeNow();
         // log for any commit over 1 second.
         if ((afterCommit - beforeCommit) > 1'000'000) {
-            // We will log extra data about slow commits only once per invocation. This is enough to give us up-to-date
-            // diagnostic data, but mitigates the issue that this logging takes 30+ seconds blocking the replicaton thread.
-            __SLOW_COMMIT_LOG = true;
             SQResult slowCommitResult;
             SQuery(_db, "SELECT * FROM hctvalid", slowCommitResult);
             SINFO("SLOW HCTREE COMMIT " << (slowCommitResult.size() + 1) << " lines to follow");
@@ -844,6 +841,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
             }
         }
     }
+    */
 
     _lastConflictPage = _conflictPage;
     _lastConflictLocation = _conflictLocation;
