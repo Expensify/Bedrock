@@ -130,7 +130,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
       _stateChangeCount(0),
       _stateTimeout(STimeNow() + firstTimeout),
       _syncPeer(nullptr),
-      _shouldReplicateThreadExit(false)
+      _replicateThreadShouldExitTime(0)
 {
     KILLABLE_SQLITE_NODE = this;
     SASSERT(_originalPriority >= 0);
@@ -173,16 +173,16 @@ void SQLiteNode::_replicate() {
     SQLitePeer* peer = nullptr;
     SData command;
     while (true) {
-        bool shouldExitWhenQueueEmpty = false;
+        uint64_t shouldExit = 0;
         bool isQueueEmpty = false;
         uint64_t dequeueTime = 0;
         {
             unique_lock<mutex> lock(_replicateMutex);
-            while (!_shouldReplicateThreadExit && _replicateQueue.empty()) {
+            while (!_replicateThreadShouldExitTime && _replicateQueue.empty()) {
                 _replicateCV.wait(lock);
             }
 
-            shouldExitWhenQueueEmpty = _shouldReplicateThreadExit;
+            shouldExit = _replicateThreadShouldExitTime;
             isQueueEmpty = _replicateQueue.empty();
             if (!isQueueEmpty) {
                 peer = _replicateQueue.front().first;
@@ -193,9 +193,9 @@ void SQLiteNode::_replicate() {
         }
 
         // If there was no work, we either wait again, or we can exit.
-        if (isQueueEmpty) {
+        if (isQueueEmpty || (shouldExit && shouldExit < STimeNow())) {
             // There are no commands to process.
-            if (shouldExitWhenQueueEmpty) {
+            if (shouldExit) {
                 if (db.insideTransaction()) {
                     SINFO("Finished replication mid-transaction, missing COMMIT_TRANSACTION, rolling back.");
                     db.rollback();
@@ -1628,7 +1628,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message) {
             bool isReplicationRunning = false;
             {
                 lock_guard<mutex> lock(_replicateMutex);
-                if (!_shouldReplicateThreadExit) {
+                if (!_replicateThreadShouldExitTime) {
                     _replicateQueue.push(make_pair(peer, message));
                     isReplicationRunning = true;
                 }
@@ -1877,7 +1877,8 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
         if (_state == SQLiteNodeState::FOLLOWING) {
             {
                 lock_guard<mutex> lock(_replicateMutex);
-                _shouldReplicateThreadExit = true;
+                // Exit in 10 seconds.
+                _replicateThreadShouldExitTime = STimeNow() + 10'000'000;
             }
             if (_replicateThread) {
                 _replicateCV.notify_one();
@@ -1885,12 +1886,13 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
                 delete _replicateThread;
                 _replicateThread = nullptr;
             }
-            if (_replicateQueue.size()) {
-                SWARN("Replicate queue contains " << _replicateQueue.size() << " messages at thread shutdown.");
-            }
             {
                 lock_guard<mutex> lock(_replicateMutex);
-                _shouldReplicateThreadExit = false;
+                if (_replicateQueue.size()) {
+                    SWARN("Replicate queue contains " << _replicateQueue.size() << " messages at thread shutdown,  clearing.");
+                    _replicateQueue = queue<pair<SQLitePeer*, SData>>();
+                }
+                _replicateThreadShouldExitTime = 0;
             }
 
             // We have no leader anymore.
