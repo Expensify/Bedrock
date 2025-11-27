@@ -826,6 +826,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
     result = SQuery(_db, "COMMIT");
 
     // In HCTree mode, we log extra info for slow commits.
+    /* This is disabled because the diagnostic logging is unreasonably expensive (30+ seconds for the query).
     if (_hctree) {
         uint64_t afterCommit = STimeNow();
         // log for any commit over 1 second.
@@ -840,6 +841,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
             }
         }
     }
+    */
 
     _lastConflictPage = _conflictPage;
     _lastConflictLocation = _conflictLocation;
