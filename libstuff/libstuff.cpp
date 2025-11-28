@@ -1829,6 +1829,8 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         if (!s || s == -1)
             STHROW("couldn't open");
 
+        fcntl(s, F_SETFD, fcntl(s, F_GETFD) | FD_CLOEXEC);
+
         // Enable non-blocking, if requested
         if (!isBlocking) {
             // Set non-blocking
