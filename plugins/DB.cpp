@@ -244,7 +244,6 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
     spec.spec.bTitles = QRF_SW_On;
     spec.spec.bWordWrap = QRF_SW_On;
     spec.spec.bTextJsonb = QRF_SW_On;
-    spec.spec.bTextNull = 0;
     spec.spec.eDfltAlign = 0;
     spec.spec.eTitleAlign = 0;
     spec.spec.nWrap = 10000;

@@ -547,7 +547,7 @@ void BedrockServer::sync()
                             command->response.methodLine = "500 Refused";
                             command->complete = true;
                             _reply(command);
-                            core.rollback(command->getMethodName());
+                            core.rollback();
                             break;
                         }
                     }
@@ -935,7 +935,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         if (command->repeek || !command->areHttpsRequestsComplete()) {
                             // Roll back the existing transaction, but only if we are inside an transaction
                             if (calledPeek) {
-                                core.rollback(command->getMethodName());
+                                core.rollback();
                             }
 
                             // Jump back to the top of our main `while (true)` loop and run the network activity loop again.
@@ -955,7 +955,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     // Peek wasn't enough to handle this command. See if we think it should be writable in parallel.
                     if (!canWriteParallel) {
                         // Roll back the transaction, it'll get re-run in the sync thread.
-                        core.rollback(command->getMethodName());
+                        core.rollback();
                         dbScope.release();
                         auto _clusterMessengerCopy = _clusterMessenger;
                         if (getState() == SQLiteNodeState::LEADING) {
@@ -999,7 +999,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             BedrockCore::AutoTimer timer(command, isBlocking ? BedrockCommand::BLOCKING_COMMIT_WORKER : BedrockCommand::COMMIT_WORKER);
                             void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
                             bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
-                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler);
+                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, enableOnPrepareNotifications, onPrepareHandler);
 
                             if (getState() != SQLiteNodeState::LEADING) {
                                 SINFO("Stopped leading while trying to commit, will retry.");
@@ -1040,7 +1040,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         // of this block.
                     } else if (result == BedrockCore::RESULT::SERVER_NOT_LEADING) {
                         // We won't write regardless.
-                        core.rollback(command->getMethodName());
+                        core.rollback();
 
                         // If there are no HTTPS requests, we can just re-queue this command, otherwise, we will
                         // potentially run the same HTTPS requests twice.
