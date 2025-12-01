@@ -14,10 +14,10 @@ class SQLiteCore {
 
     // Commit the outstanding transaction on the DB.
     // Returns true on successful commit, false on conflict.
-    bool commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, const string& commandName, bool needsPluginNotifiation, void (*notificationHandler)(SQLite& _db, int64_t tableID) = nullptr) noexcept;
+    bool commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, bool needsPluginNotifiation, void (*notificationHandler)(SQLite& _db, int64_t tableID) = nullptr) noexcept;
 
     // Roll back a transaction if we've decided not to commit it.
-    void rollback(const string& commandName = "NONE");
+    void rollback();
 
   protected:
     SQLite& _db;
