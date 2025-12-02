@@ -142,7 +142,6 @@ void _SSignal_signalHandlerThreadFunc() {
     // Make a set of all signals.
     sigset_t signals;
     sigfillset(&signals);
-    // bool shouldForceTermination = false;
 
     // Now we wait for any signal to occur.
     while (true) {
@@ -174,13 +173,6 @@ void _SSignal_signalHandlerThreadFunc() {
 
                 if (signum == SIGTERM || signum == SIGINT) {
                     _SSignal_terminationCount.fetch_add(1);
-                    // if (shouldForceTermination) {
-                    //     SINFO("Got Signal again: " << strsignal(signum) << "(" << signum << "). Aborting.");
-                    //     abort();
-                    // } else {
-                    //     SINFO("Graceful termination will be tried. If the signal is received again a hard termination will be initiated.");
-                    //     shouldForceTermination = true;
-                    // }
                 }
             }
         }
