@@ -44,6 +44,12 @@ thread _SSignal_signalThread;
 // `abort()`, this records the original signal number until the signal handler for abort has a chance to log it.
 thread_local int _SSignal_threadCaughtSignalNumber = 0;
 
+// The number of termination signals received so far.
+atomic<uint64_t> _SSignal_terminationCount(0);
+uint64_t STerminationSignalCount() {
+    return _SSignal_terminationCount.load();
+}
+
 bool SCheckSignal(int signum) {
     uint64_t signals = _SSignal_pendingSignalBitMask.load();
     signals >>= signum;
@@ -136,6 +142,7 @@ void _SSignal_signalHandlerThreadFunc() {
     // Make a set of all signals.
     sigset_t signals;
     sigfillset(&signals);
+    // bool shouldForceTermination = false;
 
     // Now we wait for any signal to occur.
     while (true) {
@@ -164,6 +171,17 @@ void _SSignal_signalHandlerThreadFunc() {
                 // Handle every other signal just by setting the mask. Anyone that cares can look them up.
                 SINFO("Got Signal: " << strsignal(signum) << "(" << signum << ").");
                 _SSignal_pendingSignalBitMask.fetch_or(1 << signum);
+
+                if (signum == SIGTERM || signum == SIGINT) {
+                    _SSignal_terminationCount.fetch_add(1);
+                    // if (shouldForceTermination) {
+                    //     SINFO("Got Signal again: " << strsignal(signum) << "(" << signum << "). Aborting.");
+                    //     abort();
+                    // } else {
+                    //     SINFO("Graceful termination will be tried. If the signal is received again a hard termination will be initiated.");
+                    //     shouldForceTermination = true;
+                    // }
+                }
             }
         }
 
