@@ -363,7 +363,7 @@ int main(int argc, char* argv[]) {
         chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
         uint64_t nextActivity = STimeNow();
-        while (!server.shutdownComplete()) {
+        while (!(server.shutdownComplete() || STerminationSignalCount() >= 2)) {
             if (server.shouldBackup() && server.isDetached()) {
                 BackupDB(args["-db"]);
                 server.setDetach(false);
@@ -397,6 +397,17 @@ int main(int argc, char* argv[]) {
             // We need to actually shut down here.
             break;
         }
+    }
+
+    // If this was not a graceful termination we close the ports to avoid delays on kernel unmmapping and return without cleanup,
+    // otherwise we might continue getting stuck on things like thread.join on server destruction below. This should only happen
+    // on the rare cases when we can't graceful terminate and it is still slightly better than a simple `kill -9` since it would
+    // close ports and generate a stack trace for later inspection
+    if (STerminationSignalCount() >= 2) {
+        SINFO("Graceful process shutdown not achieved. Forcing process shutdown");
+
+        // We prefer an abort here so we can still get the handling from _SSignal_StackTrace (also includes port closing code)
+        abort();
     }
 
     SINFO("Deleting BedrockServer");

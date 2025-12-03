@@ -43,6 +43,10 @@ void SInitialize(const string& threadName = "", const char* processName = 0);
 // instantly available in the crash file instead of depending on rsyslog, which can be late.
 void SSetSignalHandlerDieFunc(function<string()>&& func);
 
+// Get the number of termination signals received so far. This allows simple checking for termination signals
+// making it easier to handle it correctly and forceful terminate the program if it's the case.
+uint64_t STerminationSignalCount();
+
 // --------------------------------------------------------------------------
 // Assertion stuff
 // --------------------------------------------------------------------------

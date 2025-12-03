@@ -1484,7 +1484,9 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
 
             // This interrupts the sync thread's poll() loop so it doesn't wait for up to an extra second to finish.
             // When it wakes up, it will begin its own shutdown.
-            _syncNode->notifyCommit();
+            if (_syncNode) {
+                _syncNode->notifyCommit();
+            }
         }
     }
 }
