@@ -1,8 +1,7 @@
 name: Bedrock Test Suite
 on:
-  push:
-    branches: # this ignores tag pushes, and only looks at branches.
-      - '**'
+  pull_request:
+    types: [opened, synchronize]
   release:
     types: [prereleased, published]
 concurrency:
