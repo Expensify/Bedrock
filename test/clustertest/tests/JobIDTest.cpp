@@ -53,7 +53,7 @@ struct JobIDTest : tpunit::TestFixture {
             sleep(1);
         }
 
-        // make sure it actually succeeded.
+        // Make sure it actually succeeded.
         ASSERT_TRUE(success);
 
         // Create a job in the follower
@@ -76,6 +76,9 @@ struct JobIDTest : tpunit::TestFixture {
             // Give it another second...
             sleep(1);
         }
+
+        // Make sure it also succeeded.
+        ASSERT_TRUE(success);
 
         // Create a new job in leader.
         response = leader.executeWaitVerifyContentTable(createCmd);
