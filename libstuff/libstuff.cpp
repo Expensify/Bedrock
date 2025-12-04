@@ -243,7 +243,7 @@ void SSyslogSocketDirect(int priority, const char *format, ...) {
         // and treats them as part of the message.
         string messageHeader = "<" + to_string(8 + priority) + ">" + SProcessName + ": ";
         thread_local char messageBuffer[MAX_MESSAGE_SIZE];
-        strcpy(messageBuffer, messageHeader.c_str());
+        memcpy(messageBuffer, messageHeader.c_str(), min(messageHeader.size(), (size_t) MAX_MESSAGE_SIZE));
         va_list argptr;
         va_start(argptr, format);
         int bytesWritten = vsnprintf(messageBuffer + messageHeader.size(), MAX_MESSAGE_SIZE - messageHeader.size(), format, argptr);
@@ -2946,15 +2946,23 @@ string SREReplace(const string& regExp, const string& input, const string& repla
             output = (char*)malloc(outSize);
         } else if (result < 0) {
             SHMMM("Regex replacement failed with result " << result << ", returning nothing.");
+            if (output) {
+                free(output);
+            }
             output = (char*)malloc(1);
             *output = 0;
             break;
         }
     }
-    string outputString(output);
+
+    string outputString;
+    if (output) {
+        outputString = output;
+        free(output);
+    }
+
     pcre2_code_free(re);
     pcre2_match_context_free(matchContext);
-    free(output);
 
     return outputString;
 }
