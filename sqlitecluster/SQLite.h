@@ -74,7 +74,8 @@ class SQLite {
 
     // Performs a read-only query (eg, SELECT). This can be done inside or outside a transaction. Returns true on
     // success, and fills the 'result' with the result of the query.
-    bool read(const string& query, SQResult& result, bool skipInfoWarn = false) const;
+    // If we reach maxQueries, then we throw, 0 means no limit
+    bool read(const string& query, SQResult& result, bool skipInfoWarn = false, int64_t maxQueries = 0) const;
 
     // Performs a read-only query (eg, SELECT) that returns a single value.
     string read(const string& query) const;
@@ -538,6 +539,9 @@ class SQLite {
 
     // Number of queries that have been attempted in this transaction (for metrics only).
     mutable int64_t _readQueryCount = 0;
+
+    // Did we already alert due to us doing too many queries?
+    mutable int64_t _alreadyAlertedOnManyQueries = false;
 
     mutable int64_t _writeQueryCount = 0;
 
