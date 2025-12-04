@@ -760,7 +760,7 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(result[2]["value"], "value3");
 
         // Validate our exception handling.
-        ASSERT_NO_THROW(result[0]["notacolumn"]);
+        ASSERT_ANY_THROW(result[0]["notacolumn"]);
 
         // Test aliased names.
         db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
