@@ -58,10 +58,13 @@ if (ENABLE_BUILD_PROFILING)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ftime-trace")
 endif()
 
-# There files need GIT_REVISION
+# These files need GIT_REVISION
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/BedrockServer.cpp PROPERTIES COMPILE_OPTIONS "-DGIT_REVISION=${GIT_REVISION}")
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/main.cpp PROPERTIES COMPILE_OPTIONS "-DGIT_REVISION=${GIT_REVISION}")
 set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/plugins/MySQL.cpp PROPERTIES COMPILE_OPTIONS "-DGIT_REVISION=${GIT_REVISION}")
+
+# These files are should ignore linting
+set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/test/lib/tpunit++.cpp PROPERTIES SKIP_LINTING ON)
 
 # Set our include paths. We need this for the pre-processor to use to generate dependencies.
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/mbedtls/include)
