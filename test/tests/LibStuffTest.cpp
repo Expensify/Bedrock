@@ -240,7 +240,7 @@ struct LibStuff : tpunit::TestFixture {
                      "Content-Length: 5\r"
                      "\r\n"
                      "too short"; // only 'too s' read.
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
+        SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "some method line");
         ASSERT_EQUAL(content, "too s");
 
@@ -253,7 +253,7 @@ struct LibStuff : tpunit::TestFixture {
                      "0123456789\r\n"
                      "0\r\n"
                      "\r\n";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
+        SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "some method line");
         ASSERT_EQUAL(content, "abcde0123456789");
 
@@ -262,7 +262,7 @@ struct LibStuff : tpunit::TestFixture {
                      "\r\n"
                      "6\r\n" // one too long.
                      "abcde";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
+        SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "");
         ASSERT_EQUAL(content, "");
 
@@ -271,7 +271,7 @@ struct LibStuff : tpunit::TestFixture {
                      "\r\n"
                      "5\r\n" // exact without end.
                      "abcde";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
+        SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "");
         ASSERT_EQUAL(content, "");
 
@@ -288,7 +288,7 @@ struct LibStuff : tpunit::TestFixture {
                      "header2: value2a\n"
                      "header3: value3\n"
                      "\r\n";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
+        SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "some method line");
         ASSERT_EQUAL(headers["header1"], "value1");
         ASSERT_EQUAL(headers["header2"], "value2a");
@@ -304,7 +304,7 @@ struct LibStuff : tpunit::TestFixture {
                      "0123456789\r\n"
                      "0\r\n"
                      "\r\n";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
+        SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "");
         ASSERT_EQUAL(content, "");
 
@@ -317,7 +317,7 @@ struct LibStuff : tpunit::TestFixture {
                      "0123456789\r\n"
                      "0\r\n"
                      "\r\n";
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
+        SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "some method line y");
         ASSERT_EQUAL(content, "abcde"); // partial fail.
 
@@ -330,7 +330,7 @@ struct LibStuff : tpunit::TestFixture {
                      "0123456789\r\n"
                      "0\r\n";
         // "\r\n"; // missing last new line.
-        processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
+        SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "");
         ASSERT_EQUAL(content, "");
     }
@@ -644,7 +644,6 @@ struct LibStuff : tpunit::TestFixture {
         string timeStamp3 = "2020-06-17";
         string timeStamp4 = "2020-07-07";
         string timeStamp5 = "2020-11-11";
-        string timeStamp6 = "2020-01-01";
         string octalTimestamp = "2019-09-03";
         string notATimeStamp = "this is not a timestamp";
 
@@ -761,13 +760,7 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(result[2]["value"], "value3");
 
         // Validate our exception handling.
-        bool threw = false;
-        try {
-            string s = result[0]["notacolumn"];
-        } catch (const SException& e) {
-            threw = true;
-        }
-        ASSERT_TRUE(threw);
+        ASSERT_ANY_THROW(result[0]["notacolumn"]);
 
         // Test aliased names.
         db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);

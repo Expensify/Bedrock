@@ -311,7 +311,7 @@ void BedrockServer::sync()
                 _upgradeInProgress = false;
                 if (committingCommand) {
                     db.rollback();
-                    committingCommand = false;
+                    committingCommand = false; //NOLINT
                 }
             }
 

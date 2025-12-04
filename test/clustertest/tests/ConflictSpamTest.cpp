@@ -40,7 +40,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 query["value"] = "sent-" + to_string(cmdNum);
 
                 // Ok, send.
-                string result = brtester.executeWaitVerifyContent(query);
+                brtester.executeWaitVerifyContent(query);
             }
         }
 
