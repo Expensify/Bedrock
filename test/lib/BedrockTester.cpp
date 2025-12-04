@@ -143,7 +143,8 @@ BedrockTester::~BedrockTester() {
         delete _db;
     }
     if (_serverPID) {
-        stopServer();
+        // Note that we cannot call the subclass override in destructors
+        BedrockTester::stopServer();
     }
 
     SFileExists(_args["-db"].c_str()) && unlink(_args["-db"].c_str());
@@ -304,7 +305,7 @@ string BedrockTester::startServer(bool wait) {
 
             // We've successfully opened a socket, so let's try and send a command.
             SData status("Status");
-            auto result = executeWaitMultipleData({status}, 1, !wait);
+            auto result = executeWaitMultipleData({status}, 1, !wait); //NOLINT(clang-analyzer-optin.cplusplus.VirtualCall)
             if (result[0].methodLine == "200 OK") {
                 return result[0].content;
             }
