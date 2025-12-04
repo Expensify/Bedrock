@@ -644,7 +644,6 @@ struct LibStuff : tpunit::TestFixture {
         string timeStamp3 = "2020-06-17";
         string timeStamp4 = "2020-07-07";
         string timeStamp5 = "2020-11-11";
-        string timeStamp6 = "2020-01-01";
         string octalTimestamp = "2019-09-03";
         string notATimeStamp = "this is not a timestamp";
 
@@ -761,13 +760,7 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(result[2]["value"], "value3");
 
         // Validate our exception handling.
-        bool threw = false;
-        try {
-            string s = result[0]["notacolumn"];
-        } catch (const SException& e) {
-            threw = true;
-        }
-        ASSERT_TRUE(threw);
+        ASSERT_NO_THROW(result[0]["notacolumn"]);
 
         // Test aliased names.
         db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);

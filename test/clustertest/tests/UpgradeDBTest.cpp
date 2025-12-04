@@ -26,7 +26,7 @@ struct UpgradeDBTest : tpunit::TestFixture {
             // This just verifies that the dbupgrade table was created by TestPlugin.
             SData query("Query");
             query["Query"] = "INSERT INTO dbupgrade VALUES(" + SQ(1 + i) + ", " + SQ("val") + ");";
-            string result = brtester.executeWaitVerifyContent(query, "200");
+            brtester.executeWaitVerifyContent(query, "200");
         }
     }
 } __UpgradeDBTest;
