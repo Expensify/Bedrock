@@ -124,18 +124,19 @@ target_link_libraries(libbedrock INTERFACE dl pcre2-8 pthread mbedtls mbedx509 m
 add_executable(bedrock "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp")
 target_link_libraries(bedrock PRIVATE libbedrock)
 
-# Common files for tests and cluster tests
+# Common files for tests and cluster tests (compile to object library and link after)
 file(GLOB_RECURSE LIBTEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/lib/*.cpp")
+add_library(libtest_objects OBJECT ${LIBTEST_SRC})
 
 # Test only include main, tests and lib (should not include clustertest)
 file(GLOB_RECURSE TESTS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/tests/*.cpp")
-add_executable(test "${LIBTEST_SRC}" "${TESTS_SRC}" "${CMAKE_CURRENT_SOURCE_DIR}/test/main.cpp")
-target_link_libraries(test PRIVATE libbedrock)
+add_executable(test "${TESTS_SRC}" "${CMAKE_CURRENT_SOURCE_DIR}/test/main.cpp")
+target_link_libraries(test PRIVATE libbedrock libtest_objects)
 
 # And the same for cluster tests minus the ordinary tests
 file(GLOB_RECURSE CLUSTERTEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/clustertest/*.cpp")
-add_executable(clustertest "${LIBTEST_SRC}" "${CLUSTERTEST_SRC}" "${CMAKE_CURRENT_SOURCE_DIR}/test/tests/jobs/JobTestHelper.cpp")
-target_link_libraries(clustertest PRIVATE libbedrock)
+add_executable(clustertest "${CLUSTERTEST_SRC}" "${CMAKE_CURRENT_SOURCE_DIR}/test/tests/jobs/JobTestHelper.cpp")
+target_link_libraries(clustertest PRIVATE libbedrock libtest_objects)
 
 # Benchmarks binary (separate from unit tests) under top-level benchmarks/
 file(GLOB_RECURSE BENCH_SRC "${CMAKE_CURRENT_SOURCE_DIR}/benchmarks/*.cpp")
