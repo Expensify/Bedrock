@@ -4,15 +4,6 @@ on:
     types: [opened, synchronize]
   release:
     types: [prereleased, published]
-  workflow_call:
-    inputs:
-      # We treat forks differently since any styler that checks the diff to find files to check MUST first process the
-      # fork as a branch, then it can work with it.
-      is_fork:
-        description: 'Is this PR coming from a forked repository?'
-        default: false
-        required: false
-        type: boolean
 concurrency:
   group: "${{ github.ref }}"
   cancel-in-progress: true
@@ -20,7 +11,7 @@ env:
   CCACHE_BASEDIR: "/home/runner/.cache/ccache"
   # Use mirror.bastion1.sjc if running locally
   APT_MIRROR_URL: "apt-mirror.expensify.com:843"
-  TRAVIS_BRANCH: ${{ inputs.is_fork && format('pull/{0}/head', github.event.pull_request.number) || github.ref_name }}
+  TRAVIS_BRANCH: ${{ (github.event.pull_request.head.repo.full_name != github.repository) && format('pull/{0}/head', github.event.pull_request.number) || github.ref_name }}
 jobs:
   Style_Check:
     name: "C++ Styler"
