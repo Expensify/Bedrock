@@ -1,6 +1,6 @@
 #pragma once
-#include <sqlitecluster/SQLiteCore.h>
 #include <BedrockCommand.h>
+#include <sqlitecluster/SQLiteCore.h>
 class BedrockServer;
 
 class BedrockCore : public SQLiteCore {
@@ -20,11 +20,10 @@ class BedrockCore : public SQLiteCore {
     // Automatic timing class that records an entry corresponding to its lifespan.
     class AutoTimer {
       public:
-        AutoTimer(unique_ptr<BedrockCommand>& command, BedrockCommand::TIMING_INFO type) :
-        _command(command), _type(type), _start(STimeNow()) { }
-        ~AutoTimer() {
-          _command->timingInfo.emplace_back(make_tuple(_type, _start, STimeNow()));
-        }
+        AutoTimer(unique_ptr<BedrockCommand>& command, BedrockCommand::TIMING_INFO type)
+            : _command(command), _type(type), _start(STimeNow()) {}
+        ~AutoTimer() { _command->timingInfo.emplace_back(make_tuple(_type, _start, STimeNow())); }
+
       private:
         unique_ptr<BedrockCommand>& _command;
         BedrockCommand::TIMING_INFO _type;
@@ -34,7 +33,8 @@ class BedrockCore : public SQLiteCore {
     // Checks if a command has already timed out. Like `peekCommand` without doing any work. Returns `true` and sets
     // the same command state as `peekCommand` would if the command has timed out. Returns `false` and does nothing if
     // the command hasn't timed out.
-    static bool isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db = nullptr, const BedrockServer* server = nullptr);
+    static bool isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db = nullptr,
+                           const BedrockServer* server = nullptr);
 
     void prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread);
 
@@ -61,6 +61,10 @@ class BedrockCore : public SQLiteCore {
 
     void postProcessCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread);
 
+    // If the remaining time until timeout is greater than timeoutMS, then the command timeout will be decreased to
+    // timeoutMS, otherwise, nothing happens
+    void decreaseCommandTimeout(unique_ptr<BedrockCommand>& command, uint64_t timeoutMS);
+
   private:
     // When called in the context of handling an exception, returns the demangled (if possible) name of the exception.
     string _getExceptionName();
@@ -70,6 +74,7 @@ class BedrockCore : public SQLiteCore {
     // this time is already expired, this throws `555 Timeout`
     static uint64_t _getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing);
 
-    static void _handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db = nullptr, const BedrockServer* server = nullptr);
+    static void _handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db = nullptr,
+                                        const BedrockServer* server = nullptr);
     const BedrockServer& _server;
 };
