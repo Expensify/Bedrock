@@ -8,20 +8,12 @@ class BedrockCore : public SQLiteCore {
     BedrockCore(SQLite& db, const BedrockServer& server);
 
     // Possible result values for `peekCommand` and `processCommand`
-    enum class RESULT {
-        INVALID = 0,
-        COMPLETE = 1,
-        SHOULD_PROCESS = 2,
-        NEEDS_COMMIT = 3,
-        NO_COMMIT_REQUIRED = 4,
-        SERVER_NOT_LEADING = 5
-    };
+    enum class RESULT { INVALID = 0, COMPLETE = 1, SHOULD_PROCESS = 2, NEEDS_COMMIT = 3, NO_COMMIT_REQUIRED = 4, SERVER_NOT_LEADING = 5 };
 
     // Automatic timing class that records an entry corresponding to its lifespan.
     class AutoTimer {
       public:
-        AutoTimer(unique_ptr<BedrockCommand>& command, BedrockCommand::TIMING_INFO type)
-            : _command(command), _type(type), _start(STimeNow()) {}
+        AutoTimer(unique_ptr<BedrockCommand>& command, BedrockCommand::TIMING_INFO type) : _command(command), _type(type), _start(STimeNow()) {}
         ~AutoTimer() { _command->timingInfo.emplace_back(make_tuple(_type, _start, STimeNow())); }
 
       private:
@@ -33,8 +25,7 @@ class BedrockCore : public SQLiteCore {
     // Checks if a command has already timed out. Like `peekCommand` without doing any work. Returns `true` and sets
     // the same command state as `peekCommand` would if the command has timed out. Returns `false` and does nothing if
     // the command hasn't timed out.
-    static bool isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db = nullptr,
-                           const BedrockServer* server = nullptr);
+    static bool isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db = nullptr, const BedrockServer* server = nullptr);
 
     void prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread);
 
@@ -74,7 +65,6 @@ class BedrockCore : public SQLiteCore {
     // this time is already expired, this throws `555 Timeout`
     static uint64_t _getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing);
 
-    static void _handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db = nullptr,
-                                        const BedrockServer* server = nullptr);
+    static void _handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db = nullptr, const BedrockServer* server = nullptr);
     const BedrockServer& _server;
 };
