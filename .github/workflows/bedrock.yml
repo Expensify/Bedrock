@@ -19,7 +19,7 @@ jobs:
     permissions:
       packages: read
     container:
-      image: ghcr.io/expensify/auth-test-build:latest #Change to latest when PR is merged
+      image: ghcr.io/expensify/auth-test-build:latest
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     steps:
