@@ -8,8 +8,7 @@ BedrockCore::BedrockCore(SQLite& db, const BedrockServer& server) : SQLiteCore(d
 // RAII-style mechanism for automatically setting and unsetting query rewriting
 class AutoScopeRewrite {
   public:
-    AutoScopeRewrite(bool enable, SQLite& db, bool (*handler)(int, const char*, string&))
-        : _enable(enable), _db(db), _handler(handler) {
+    AutoScopeRewrite(bool enable, SQLite& db, bool (*handler)(int, const char*, string&)) : _enable(enable), _db(db), _handler(handler) {
         if (_enable) {
             _db.setRewriteHandler(_handler);
             _db.enableRewrite(true);
@@ -36,8 +35,7 @@ uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& comman
     int64_t adjustedTimeout = timeout - now;
 
     // We also want to know the processTimeout, because we'll return early if we get stuck processing for too long.
-    int64_t processTimeout = command->request.isSet("processTimeout") ? command->request.calc("processTimeout")
-                                                                      : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
+    int64_t processTimeout = command->request.isSet("processTimeout") ? command->request.calc("processTimeout") : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
 
     // Since timeouts are specified in ms, we convert to us.
     processTimeout *= 1000;
@@ -140,8 +138,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
         _db.setAbortRef(command->shouldAbort);
 
         try {
-            if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE
-                                                : SQLite::TRANSACTION_TYPE::SHARED)) {
+            if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
 
@@ -241,8 +238,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             // If a transaction was already begun in `peek`, then this won't run. We call it here to support the case
             // where peek created a httpsRequest and closed it's first transaction until the httpsRequest was complete,
             // in which case we need to open a new transaction.
-            if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE
-                                                : SQLite::TRANSACTION_TYPE::SHARED)) {
+            if (!_db.beginTransaction(exclusive ? SQLite::TRANSACTION_TYPE::EXCLUSIVE : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
 
@@ -270,8 +266,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                 SDEBUG("Plugin '" << command->getName() << "' processed command '" << request.methodLine << "'");
             } catch (const SQLite::timeout_error& e) {
                 if (!command->shouldSuppressTimeoutWarnings()) {
-                    SALERT("Command " << command->request.methodLine << " timed out after " << e.time() / 1000
-                                      << "ms.");
+                    SALERT("Command " << command->request.methodLine << " timed out after " << e.time() / 1000 << "ms.");
                 }
                 STHROW("555 Timeout processing command");
             }
@@ -336,8 +331,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
 }
 
 void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread) {
-    AutoTimer timer(command,
-                    isBlockingCommitThread ? BedrockCommand::BLOCKING_POSTPROCESS : BedrockCommand::POSTPROCESS);
+    AutoTimer timer(command, isBlockingCommitThread ? BedrockCommand::BLOCKING_POSTPROCESS : BedrockCommand::POSTPROCESS);
 
     // Convenience references to commonly used properties.
     const SData& request = command->request;
@@ -399,8 +393,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
     _db.setQueryOnly(false);
 }
 
-void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db,
-                                          const BedrockServer* server) {
+void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db, const BedrockServer* server) {
     string msg = "Error processing command '" + command->request.methodLine + "' (" + e.what() + "), ignoring.";
     if (!e.body.empty()) {
         msg = msg + " Request body: " + e.body;
@@ -445,7 +438,6 @@ void BedrockCore::decreaseCommandTimeout(unique_ptr<BedrockCommand>& command, ui
         command->setTimeout(timeoutMS);
         const int64_t newRemainingTimeUS = _getRemainingTime(command, false);
         _db.setTimeout(newRemainingTimeUS);
-        SINFO("Decreased command timeout from " << STIMESTAMP(STimeNow() + remainingTimeUS) << " to "
-                                                << STIMESTAMP(STimeNow() + newRemainingTimeUS));
+        SINFO("Decreased command timeout from " << STIMESTAMP(STimeNow() + remainingTimeUS) << " to " << STIMESTAMP(STimeNow() + newRemainingTimeUS));
     }
 }
