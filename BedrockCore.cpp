@@ -245,10 +245,10 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                                                 : SQLite::TRANSACTION_TYPE::SHARED)) {
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
-        }
 
-        if (exclusive && command->writeConsistency != SQLiteNode::QUORUM) {
-            decreaseCommandTimeout(command, BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
+            if (exclusive && command->writeConsistency != SQLiteNode::QUORUM) {
+                decreaseCommandTimeout(command, BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
+            }
         }
 
         // We start the timer here to avoid including the time spent acquiring the lock _sharedData.commitLock
