@@ -59,8 +59,8 @@ class BedrockCore : public SQLiteCore {
 
     void postProcessCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread);
 
-    // If the remaining time until timeout is greater than timeoutMS, then the command timeout will be decreased to
-    // timeoutMS, otherwise, nothing happens
+    // If the remaining time until timeout is greater than timeoutMS, then the command timeout will be decreased to timeoutMS,
+    // otherwise, nothing happens
     void decreaseCommandTimeout(unique_ptr<BedrockCommand>& command, uint64_t timeoutMS);
 
   private:
