@@ -291,7 +291,7 @@ struct RetryJobTest : tpunit::TestFixture {
         // Get the nextRun value
         SQResult result;
         tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
-        string originalNextRun = result[0][0];
+        ASSERT_FALSE(result.empty());
 
         // Get the job
         command.clear();

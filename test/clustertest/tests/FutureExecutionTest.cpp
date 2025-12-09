@@ -31,7 +31,7 @@ struct FutureExecutionTest : tpunit::TestFixture {
         // Three seconds from now.
         query["commandExecuteTime"] = to_string(STimeNow() + 3000000);
         query["Query"] = "INSERT INTO test VALUES(" + SQ(50011) + ", " + SQ("sent_by_leader") + ");";
-        string result = brtester.executeWaitVerifyContent(query, "202"); 
+        string result = brtester.executeWaitVerifyContent(query, "202");
 
         // Ok, Now let's wait a second
         sleep(1);
@@ -75,7 +75,7 @@ struct FutureExecutionTest : tpunit::TestFixture {
 
         // And, there's a query to run, too, I guess.
         query["Query"] = "SELECT 1;";
-        string result = brtester.executeWaitVerifyContent(query, "555 Timeout");
+        brtester.executeWaitVerifyContent(query, "555 Timeout");
     }
 
 } __FutureExecutionTest;

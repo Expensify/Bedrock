@@ -53,7 +53,6 @@ struct DeleteJobTest : tpunit::TestFixture {
         command["name"] = "child";
         command["parentJobID"] = parentID;
         response = tester->executeWaitVerifyContentTable(command);
-        string childID = response["jobID"];
 
         // Finish the parent
         command.clear();

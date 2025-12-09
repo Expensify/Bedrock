@@ -38,8 +38,7 @@ struct SQLiteNodeTest : tpunit::TestFixture {
                                            TEST(SQLiteNodeTest::testGetPeerByName)) { }
 
     // Filename for temp DB.
-    char filenameTemplate[17] = "br_sync_dbXXXXXX";
-    char filename[17];
+    char filename[17] = "br_sync_dbXXXXXX";
 
     TestServer server;
     string peerList = "host1.fake:15555?nodeName=peer1,host2.fake:16666?nodeName=peer2,host3.fake:17777?nodeName=peer3,host4.fake:18888?nodeName=peer4";
@@ -47,7 +46,6 @@ struct SQLiteNodeTest : tpunit::TestFixture {
 
     void setup() {
         // This exposes just enough to test the peer selection logic.
-        strcpy(filename, filenameTemplate);
         int fd = mkstemp(filename);
         close(fd);
         dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0);
