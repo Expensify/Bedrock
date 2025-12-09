@@ -56,8 +56,8 @@ private:
     static constexpr array<const char*, 0x0180> UNICODE_TO_ASCII_MAP = []() constexpr {
         array<const char*, 0x0180> map = {};
 
-        auto mapCodePoints = [&map](const char* value, vector<char32_t> codePoints) {
-            for (auto codePoint : codePoints) {
+        auto mapCodePoints = [&map](const char* value, const vector<char32_t>& codePoints) {
+            for (const auto& codePoint : codePoints) {
                 map[codePoint] = value;
             }
         };

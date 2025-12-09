@@ -83,7 +83,7 @@ struct LeadingTest : tpunit::TestFixture {
         BedrockTester& newLeader = tester->getTester(1);
         SData cmd("httpstimeout");
         cmd["Connection"] = "forget";
-        auto result = newLeader.executeWaitVerifyContent(cmd, "202");
+        newLeader.executeWaitVerifyContent(cmd, "202");
     }
 
     void restoreLeader()
