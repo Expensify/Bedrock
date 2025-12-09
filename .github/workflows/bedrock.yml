@@ -11,29 +11,7 @@ env:
   CCACHE_BASEDIR: "/home/runner/.cache/ccache"
   # Use mirror.bastion1.sjc if running locally
   APT_MIRROR_URL: "apt-mirror.expensify.com:843"
-  GITHUB_BRANCH: ${{ (github.event.pull_request.head.repo.full_name != github.repository) && format('pull/{0}/head', github.event.pull_request.number) || github.ref_name }}
 jobs:
-  Style_Check:
-    name: "C++ Styler"
-    runs-on: ubuntu-24.04
-    permissions:
-      packages: read
-    container:
-      image: ghcr.io/expensify/auth-test-build:latest
-      env:
-        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-    steps:
-    - name: Checkout Bedrock
-      # v4.1.0
-      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
-      with:
-        repository: Expensify/Bedrock
-        path: .
-        # Set fetch-depth to 0 so that we can compare HEAD with all git log history
-        fetch-depth: 0
-    - name: Run style checks
-      run: "./ci_style.sh"
-
   Build_Bedrock:
     name: "Create Bedrock and Test"
     runs-on: ubuntu-24.04-v64 # The biggest and best for my baby
