@@ -11,7 +11,7 @@ env:
   CCACHE_BASEDIR: "/home/runner/.cache/ccache"
   # Use mirror.bastion1.sjc if running locally
   APT_MIRROR_URL: "apt-mirror.expensify.com:843"
-  GITHUB_BRANCH: ${{ (github.event.pull_request.head.repo.full_name != github.repository) && format('pull/{0}/head', github.event.pull_request.number) || github.ref_name }}
+  GITHUB_BRANCH: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && format('pull/{0}/head', github.event.pull_request.number) || github.ref_name }}
 jobs:
   Style_Check:
     name: "C++ Styler"
