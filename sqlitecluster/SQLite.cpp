@@ -309,6 +309,11 @@ int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, 
 }
 
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
+    // Skip logging this as it generates a lot of noise and we don't use it.
+    if (strstr(zMsg, "automatic index on")) {
+        return;
+    }
+
     _mostRecentSQLiteErrorLog = "{SQLITE} Code: "s + to_string(iErrCode) + ", Message: "s + zMsg;
     SRedactSensitiveValues(_mostRecentSQLiteErrorLog);
     SINFO(_mostRecentSQLiteErrorLog);
@@ -440,7 +445,9 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
     // We actively track transaction counts incrementing and decrementing to log the number of active open transactions at any given moment.
     _sharedData.openTransactionCount++;
 
-    SINFO("Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
+    if (_sharedData.openTransactionCount > 10) {
+        SINFO("Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
+    }
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "BEGIN CONCURRENT");
 
