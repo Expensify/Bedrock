@@ -356,7 +356,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
             SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
 
             // Success. If a command has set "content", encode it in the response.
-            SINFO("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
+            SDEBUG("Responding '" << response.methodLine << "' to read-only '" << request.methodLine << "'.");
             if (!content.empty()) {
                 // Make sure we're not overwriting anything different.
                 string newContent = SComposeJSONObject(content);
