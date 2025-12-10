@@ -440,7 +440,9 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
     // We actively track transaction counts incrementing and decrementing to log the number of active open transactions at any given moment.
     _sharedData.openTransactionCount++;
 
-    SINFO("Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
+    if (_sharedData.openTransactionCount > 10) {
+        SINFO("Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
+    }
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "BEGIN CONCURRENT");
 
