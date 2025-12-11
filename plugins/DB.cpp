@@ -129,8 +129,9 @@ bool BedrockDBCommand::peek(SQLite& db) {
     // Attempt the read-only query
     if (SIEquals(request["Format"], "json")) {
         SQResult result;
-        if (!db.read(query, result)) {
-            response["error"] = db.getLastError();
+        int queryResult = db.read(query, result);
+        if (queryResult) {
+            response["error"] = to_string(queryResult) + " " + sqlite3_errstr(queryResult);
             STHROW("402 Bad query");
         }
 
