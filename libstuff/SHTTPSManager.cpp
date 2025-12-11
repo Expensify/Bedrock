@@ -188,6 +188,7 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
     Socket* s = nullptr;
+    bool usingProxy = false;
     try {
         // If a proxy is set, and it's allowed to use it, go through the proxy.
         bool isHttps = SStartsWith(url, "https://");
@@ -196,6 +197,7 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
             SParseURI(proxyAddressHTTPS, proxyHost, path);
             SINFO("Proxying " << url << " through " << proxyHost);
             s = new SHTTPSProxySocket(proxyHost, host);
+            usingProxy = true;
         } else {
             s = new Socket(host, isHttps);
         }
@@ -204,11 +206,20 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
         return _createErrorTransaction();
     }
 
+    // When using a proxy with CONNECT tunnels, remove "Connection: close" header to prevent
+    // premature connection termination during TLS data transfer, which causes SSL EOF errors.
+    // HTTP CONNECT establishes a persistent tunnel that must remain open for the entire TLS session.
+    // HTTP/1.1 uses persistent connections by default, and letting the client/server negotiate
+    // keep-alive naturally is more robust.
+    SData modifiedRequest = request;
+    if (usingProxy) {
+        modifiedRequest.nameValueMap.erase("Connection");
+    }
     transaction->s = s;
-    transaction->fullRequest = request;
+    transaction->fullRequest = modifiedRequest;
 
     // Ship it.
-    transaction->s->send(request.serialize());
+    transaction->s->send(modifiedRequest.serialize());
 
     // Keep track of the transaction.
     return transaction;
