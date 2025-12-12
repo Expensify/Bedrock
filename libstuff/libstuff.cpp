@@ -2775,6 +2775,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
         } else {
             SWARN("query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         }
+        SLogStackTrace(LOG_INFO);
     }
 
     // But we log for commit conflicts as well, to keep track of how often this happens with this experimental feature.
