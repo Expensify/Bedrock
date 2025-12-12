@@ -553,10 +553,10 @@ string SQLite::read(const string& query) const {
     return result[0][0];
 }
 
-bool SQLite::read(const string& query, sqlite3_qrf_spec* spec) const {
+int SQLite::read(const string& query, sqlite3_qrf_spec* spec) const {
     // Execute the read-only query. Skips caching.
     uint64_t before = STimeNow();
-    bool queryResult = !SQuery(_db, query, spec);
+    int queryResult = SQuery(_db, query, spec);
     _checkInterruptErrors("SQLite::read"s);
     _readElapsed += STimeNow() - before;
     return queryResult;
