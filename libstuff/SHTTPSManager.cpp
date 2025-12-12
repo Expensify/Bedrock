@@ -135,8 +135,26 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         if ((transaction.s->state.load() > Socket::CONNECTED) ||
             (now > transaction.s->lastSendTime + timeoutMS * 1000) ||
             (now > transaction.timeoutAt)) {
-            SWARN("Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
-            transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
+            // Connection died or timed out. Check if we have any partial response data.
+            bool hasPartialResponse = !transaction.fullResponse.methodLine.empty() || size > 0;
+            if (hasPartialResponse) {
+                // We received some response data before connection closed. This is expected when
+                // server sends error response and closes (especially through proxies). Use the
+                // partial response we got.
+                SINFO("Connection closed after receiving partial response");
+                transaction.finished = now;
+                if (!transaction.fullResponse.methodLine.empty()) {
+                    _onRecv(&transaction);
+                }
+
+                // Clean up the socket
+                delete transaction.s;
+                transaction.s = nullptr;
+            } else {
+                // No response data at all - this is a genuine failure
+                SWARN("Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
+                transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
+            }
         } else {
             // No timeout yet, set nextActivity short enough that it'll catch the next timeout.
             uint64_t remainingUntilTimeoutMS = (timeoutMS * 1000) - (now - transaction.s->lastSendTime);

@@ -136,6 +136,12 @@ int SSSLState::send(const char* buffer, int length) {
     case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
         return 0; // retry
 
+    case MBEDTLS_ERR_SSL_CONN_EOF:
+        // Connection closed by peer. This can occur when trying to send after server has
+        // closed (e.g., after sending error response). Normal with proxies.
+        SDEBUG("SSL connection closed during send (EOF)");
+        return -1;
+
     default:
         // Error
         char errStr[100];
@@ -168,6 +174,13 @@ int SSSLState::recv(char* buffer, int length) {
     case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
         // the connection is about to be closed
         SINFO("SSL reports MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY");
+        return -1;
+
+    case MBEDTLS_ERR_SSL_CONN_EOF:
+        // Connection closed by peer (TCP FIN received). This is normal when server closes
+        // after sending response, especially through proxies where the proxy may tear down
+        // the CONNECT tunnel when target server closes. Don't log as error.
+        SDEBUG("SSL connection closed (EOF)");
         return -1;
 
     default:
