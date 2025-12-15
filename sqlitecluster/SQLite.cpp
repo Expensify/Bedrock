@@ -988,7 +988,8 @@ void SQLite::rollback(const string& commandName) {
 }
 
 void SQLite::logLastTransactionTiming(const string& message, const string& commandName) {
-    // We don't want to add commitLockElapsed and totalTransactionElapsed to the total elapsed time, as it's not part of the transaction.
+    // We don't want to add `commitLockElapsed` and `totalTransactionElapsed` to the total elapsed time since they overlap with parts of the transaction
+    // and that could double-count certain times (i.e. `commitElapsed` occurs simultaneously with `commitLockElapsed`)
     uint64_t totalElapsed = _beginElapsed + _readElapsed + _writeElapsed + _prepareElapsed + _commitElapsed + _rollbackElapsed;
     SINFO(message, {
         {"command", commandName}, 
