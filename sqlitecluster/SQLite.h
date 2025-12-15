@@ -425,6 +425,7 @@ class SQLite {
     uint64_t _prepareElapsed = 0;
     uint64_t _commitElapsed = 0;
     uint64_t _rollbackElapsed = 0;
+    uint64_t _commitLockElapsed = 0;
 
     // We keep track of whether we've locked the global mutex so that we know whether or not we need to unlock it when
     // we call `rollback`. Note that this indicates whether this object has locked the mutex, not whether the mutex is

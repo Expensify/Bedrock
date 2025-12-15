@@ -13,7 +13,7 @@ void SPerformanceTimer::start(const string& type) {
     _lastStart = chrono::steady_clock::now();
 }
 
-void SPerformanceTimer::stop() {
+uint64_t SPerformanceTimer::stop() {
     // Get the time, and the time since last start.
     auto now = chrono::steady_clock::now();
     auto duration = now - _lastStart;
@@ -34,6 +34,7 @@ void SPerformanceTimer::stop() {
         _lastLogStart = now;
         _totals = _defaults;
     }
+    return chrono::duration_cast<chrono::milliseconds>(duration).count();
 }
 
 void SPerformanceTimer::log(chrono::steady_clock::duration elapsed) {

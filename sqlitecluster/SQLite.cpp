@@ -467,6 +467,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
     _writeElapsed = 0;
     _prepareElapsed = 0;
     _commitElapsed = 0;
+    _commitLockElapsed = 0;
     _rollbackElapsed = 0;
     _lastConflictPage = 0;
     _lastConflictLocation = "";
@@ -877,7 +878,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
         _insideTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
-        _sharedData._commitLockTimer.stop();
+        _commitLockElapsed += _sharedData._commitLockTimer.stop();
         _sharedData.commitLock.unlock();
         _mutexLocked = false;
         _queryCache.clear();
@@ -967,7 +968,7 @@ void SQLite::rollback(const string& commandName) {
         // ever having called `prepare`, which would have locked our mutex.
         if (_mutexLocked) {
             _mutexLocked = false;
-            _sharedData._commitLockTimer.stop();
+            _commitLockElapsed += _sharedData._commitLockTimer.stop();
             _sharedData.commitLock.unlock();
         }
     } else {
