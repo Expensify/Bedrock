@@ -250,6 +250,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _db(initializeDB(_filename, mmapSizeGB, _hctree)),
     _journalNames(initializeJournal(_db, minJournalTables)),
     _sharedData(initializeSharedData(_db, _filename, _journalNames, _hctree)),
+    _transactionTimer("transaction timer"),
     _cacheSize(cacheSize),
     _mmapSizeGB(mmapSizeGB),
     _checkpointMode(getCheckpointModeFromString(checkpointMode))
@@ -264,6 +265,7 @@ SQLite::SQLite(const SQLite& from) :
     _db(initializeDB(_filename, from._mmapSizeGB, false)), // Create a *new* DB handle from the same filename, don't copy the existing handle.
     _journalNames(from._journalNames),
     _sharedData(from._sharedData),
+    _transactionTimer("transaction timer"),
     _cacheSize(from._cacheSize),
     _mmapSizeGB(from._mmapSizeGB),
     _checkpointMode(from._checkpointMode)
