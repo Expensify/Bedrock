@@ -2772,6 +2772,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
         // We also don't warn for `interrupt` because it generally means a timeout which is handled separately.
         if (error == SQLITE_CONSTRAINT || error == SQLITE_INTERRUPT) {
             SINFO("query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
+            SLogStackTrace(LOG_INFO);
         } else {
             SWARN("query failed with error #" << error << " (" << sqlite3_errmsg(db) << "): " << sqlToLog);
         }
