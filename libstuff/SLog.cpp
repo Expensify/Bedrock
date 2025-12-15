@@ -42,8 +42,10 @@ void SLogStackTrace(int level) {
 
 // If the param name is not in this whitelist, we will log <REDACTED> in addLogParams.
 static set<string> PARAMS_WHITELIST = {
+    "beginElapsed",
     "command",
     "commitElapsed",
+    "commitLockElapsed",
     "Connection",
     "Content-Length",
     "count",
@@ -62,6 +64,7 @@ static set<string> PARAMS_WHITELIST = {
     "status",
     "topic",
     "totalElapsed",
+    "totalTransactionElapsed",
     "userID",
     "what",
     "writeElapsed",
