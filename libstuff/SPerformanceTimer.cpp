@@ -1,3 +1,4 @@
+#include <chrono>
 #include <libstuff/libstuff.h>
 #include "SPerformanceTimer.h"
 
@@ -34,7 +35,7 @@ uint64_t SPerformanceTimer::stop() {
         _lastLogStart = now;
         _totals = _defaults;
     }
-    return chrono::duration_cast<chrono::milliseconds>(duration).count();
+    return chrono::duration_cast<chrono::microseconds>(duration).count();
 }
 
 void SPerformanceTimer::log(chrono::steady_clock::duration elapsed) {
