@@ -68,7 +68,9 @@ bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
         if (!filledPreSendBuffer) {
             SData connectMessage("CONNECT " + hostname + " HTTP/1.1");
             connectMessage["Host"] = hostname;
-            connectMessage["X-Request-ID"] = requestID;
+            if (!requestID.empty()) {
+                connectMessage["X-Request-ID"] = requestID;
+            }
 
             string serialized = connectMessage.serialize();
             preSendBuffer.append(serialized.c_str(), serialized.size());
