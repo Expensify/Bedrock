@@ -34,6 +34,9 @@ struct LibStuff : tpunit::TestFixture {
                                     TEST(LibStuff::testFirstOfMonth),
                                     TEST(LibStuff::SREMatchTest),
                                     TEST(LibStuff::SREReplaceTest),
+                                    TEST(LibStuff::testSReplace),
+                                    TEST(LibStuff::testSReplaceAll),
+                                    TEST(LibStuff::testSReplaceAllBut),
                                     TEST(LibStuff::SQResultTest),
                                     TEST(LibStuff::testReturningClause),
                                     TEST(LibStuff::SRedactSensitiveValuesTest)
@@ -732,6 +735,137 @@ struct LibStuff : tpunit::TestFixture {
         string from2 = "a cat did something to a dog";
         string result4 = SREReplace("cat(.*)dog", from2, "chicken$1horse");
         ASSERT_EQUAL(result4, "a chicken did something to a horse");
+    }
+
+    void testSReplace() {
+        // Test empty find string (should return original)
+        ASSERT_EQUAL(SReplace("hello", "", "x"), "hello");
+
+        // Test no matches found (should return original)
+        ASSERT_EQUAL(SReplace("hello world", "xyz", "abc"), "hello world");
+
+        // Test single match
+        ASSERT_EQUAL(SReplace("hello world", "world", "universe"), "hello universe");
+
+        // Test multiple matches
+        ASSERT_EQUAL(SReplace("cat cat cat", "cat", "dog"), "dog dog dog");
+
+        // Test replacing with longer string
+        ASSERT_EQUAL(SReplace("a b c", " ", " SPACE "), "a SPACE b SPACE c");
+
+        // Test replacing with shorter string
+        ASSERT_EQUAL(SReplace("LONGWORD test LONGWORD", "LONGWORD", "x"), "x test x");
+
+        // Test replacing with empty string
+        ASSERT_EQUAL(SReplace("remove this remove", "remove ", ""), "this remove");
+
+        // Test consecutive matches
+        ASSERT_EQUAL(SReplace("aaaa", "aa", "b"), "bb");
+
+        // Test overlapping patterns (non-overlapping replacement)
+        ASSERT_EQUAL(SReplace("ababab", "ab", "X"), "XXX");
+
+        // Test with special characters
+        ASSERT_EQUAL(SReplace("a.b.c", ".", "_"), "a_b_c");
+
+        // Test at beginning and end
+        ASSERT_EQUAL(SReplace("test middle test", "test", "X"), "X middle X");
+
+        // Test real-world use case from SQLite.cpp (removing spaces)
+        string sql1 = "CREATE INDEX idx ON table ( col )";
+        string sql2 = "CREATE  INDEX  idx  ON  table  (  col  )";
+        ASSERT_EQUAL(SReplace(sql1, " ", ""), SReplace(sql2, " ", ""));
+
+        // Test empty input
+        ASSERT_EQUAL(SReplace("", "x", "y"), "");
+
+        // Test single character replacements
+        ASSERT_EQUAL(SReplace("x", "x", "y"), "y");
+
+        // Test long strings
+        string longInput(1000, 'a');
+        string longOutput = SReplace(longInput, "a", "bb");
+        ASSERT_EQUAL(longOutput.size(), 2000);
+        ASSERT_EQUAL(longOutput, string(2000, 'b'));
+    }
+
+    void testSReplaceAll() {
+        // Test empty unsafe chars (should return original)
+        ASSERT_EQUAL(SReplaceAll("hello", "", '_'), "hello");
+
+        // Test no unsafe chars found (should return original)
+        ASSERT_EQUAL(SReplaceAll("hello", "xyz", '_'), "hello");
+
+        // Test single unsafe char
+        ASSERT_EQUAL(SReplaceAll("hello world", " ", '_'), "hello_world");
+
+        // Test multiple unsafe chars
+        ASSERT_EQUAL(SReplaceAll("a!b@c#d", "!@#", '_'), "a_b_c_d");
+
+        // Test all chars are unsafe
+        ASSERT_EQUAL(SReplaceAll("abc", "abc", 'X'), "XXX");
+
+        // Test consecutive unsafe chars
+        ASSERT_EQUAL(SReplaceAll("a!!!b", "!", '_'), "a___b");
+
+        // Test with special characters
+        ASSERT_EQUAL(SReplaceAll("path/to/file.txt", "/.", '_'), "path_to_file_txt");
+
+        // Test URL-like string
+        ASSERT_EQUAL(SReplaceAll("http://example.com/path?query=value", ":/?=", '_'),
+                     "http___example.com_path_query_value");
+
+        // Test empty input
+        ASSERT_EQUAL(SReplaceAll("", "xyz", '_'), "");
+
+        // Test single character input
+        ASSERT_EQUAL(SReplaceAll("a", "a", 'X'), "X");
+        ASSERT_EQUAL(SReplaceAll("a", "b", 'X'), "a");
+
+        // Test all ASCII special characters
+        string specialChars = "!@#$%^&*()_+-=[]{}|;:',.<>?/";
+        string result = SReplaceAll("test string", specialChars, '_');
+        ASSERT_EQUAL(result, "test string"); // No special chars in input
+
+        // Test long unsafe char list
+        string unsafeList = "!@#$%^&*()_+-=[]{}|;:',.<>?/`~\"\\";
+        ASSERT_EQUAL(SReplaceAll("hello!world@test#", unsafeList, '_'), "hello_world_test_");
+
+        // Test binary/high ASCII values
+        string withBinary = "test\x01\x02\x03test";
+        ASSERT_EQUAL(SReplaceAll(withBinary, "\x01\x02\x03", '_'), "test___test");
+    }
+
+    void testSReplaceAllBut() {
+        // Test empty safe chars (all chars become unsafe)
+        ASSERT_EQUAL(SReplaceAllBut("abc", "", '_'), "___");
+
+        // Test all chars are safe
+        ASSERT_EQUAL(SReplaceAllBut("abc", "abc", '_'), "abc");
+
+        // Test alphanumeric safe chars
+        ASSERT_EQUAL(SReplaceAllBut("hello123world!", "abcdefghijklmnopqrstuvwxyz0123456789", '_'),
+                     "hello123world_");
+
+        // Test keeping only letters
+        ASSERT_EQUAL(SReplaceAllBut("a1b2c3", "abc", '_'), "a_b_c_");
+
+        // Test with spaces as safe
+        ASSERT_EQUAL(SReplaceAllBut("hello world!", " hellow", '_'), "hello wo_l__");
+
+        // Test empty input
+        ASSERT_EQUAL(SReplaceAllBut("", "abc", '_'), "");
+
+        // Test single character
+        ASSERT_EQUAL(SReplaceAllBut("a", "a", 'X'), "a");
+        ASSERT_EQUAL(SReplaceAllBut("a", "b", 'X'), "X");
+
+        // Test real-world use case: sanitizing filenames (keeping alphanumeric and basic punctuation)
+        string filename = "My File (2024).txt";
+        string sanitized = SReplaceAllBut(filename,
+                                          "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.",
+                                          '_');
+        ASSERT_EQUAL(sanitized, "My_File__2024_.txt");
     }
 
     void SQResultTest() {
