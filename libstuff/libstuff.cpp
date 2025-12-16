@@ -619,11 +619,11 @@ string SReplaceAllBut(const string& value, const string& safeChars, char replace
         isSafe[c] = true;
     }
 
-    // Build output string, replacing characters not in the safe list
-    string out;
-    out.reserve(value.size());
-    for (unsigned char c : value) {
-        out += isSafe[c] ? static_cast<char>(c) : replaceChar;
+    // Pre-size output string and write directly (output size = input size)
+    string out(value.size(), '\0');
+    for (size_t i = 0; i < value.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(value[i]);
+        out[i] = isSafe[c] ? value[i] : replaceChar;
     }
     return out;
 }
@@ -636,11 +636,11 @@ string SReplaceAll(const string& value, const string& unsafeChars, char replaceC
         isUnsafe[c] = true;
     }
 
-    // Build output string, replacing unsafe characters
-    string out;
-    out.reserve(value.size());
-    for (unsigned char c : value) {
-        out += isUnsafe[c] ? replaceChar : static_cast<char>(c);
+    // Pre-size output string and write directly (output size = input size)
+    string out(value.size(), '\0');
+    for (size_t i = 0; i < value.size(); ++i) {
+        unsigned char c = static_cast<unsigned char>(value[i]);
+        out[i] = isUnsafe[c] ? replaceChar : value[i];
     }
     return out;
 }
