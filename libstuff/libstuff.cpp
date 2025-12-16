@@ -585,49 +585,63 @@ string SReplace(const string& value, const string& find, const string& replace) 
     if (find.empty())
         return value;
 
-    // Keep going until we find no more
-    string out;
-    out.reserve(value.size());
-    size_t skip = 0;
-    while (true) {
-        // Look for the next match
-        size_t pos = value.find(find, skip);
-        if (pos == string::npos) {
-            // Add the rest and done
-            out += value.substr(skip);
-            return out;
-        }
-
-        // Replace
-        out += value.substr(skip, pos - skip);
-        out += replace;
-        skip = pos + find.size();
+    // Look for first match
+    size_t pos = value.find(find);
+    if (pos == string::npos) {
+        // No matches, return original
+        return value;
     }
+
+    // Reserve a reasonable size (use value.size() as minimum, will grow if needed)
+    string out;
+    out.reserve(value.size() + (replace.size() > find.size() ? replace.size() - find.size() : 0));
+
+    // Build output string in single pass
+    size_t lastPos = 0;
+    do {
+        // Append text before match using pointers (avoids substr)
+        out.append(value.data() + lastPos, pos - lastPos);
+        out.append(replace);
+        lastPos = pos + find.size();
+        pos = value.find(find, lastPos);
+    } while (pos != string::npos);
+
+    // Append remaining text
+    out.append(value.data() + lastPos, value.size() - lastPos);
+    return out;
 }
 
 // --------------------------------------------------------------------------
 string SReplaceAllBut(const string& value, const string& safeChars, char replaceChar) {
-    // Loop across the string and replace any invalid character
+    // Build a lookup table for O(1) character checking
+    bool isSafe[256] = {false};
+    for (unsigned char c : safeChars) {
+        isSafe[c] = true;
+    }
+
+    // Build output string, replacing characters not in the safe list
     string out;
     out.reserve(value.size());
-    for (const char* c(value.data()); *c; ++c)
-        if (safeChars.find(*c) != string::npos)
-            out += *c;
-        else
-            out += replaceChar;
+    for (unsigned char c : value) {
+        out += isSafe[c] ? static_cast<char>(c) : replaceChar;
+    }
     return out;
 }
 
 // --------------------------------------------------------------------------
 string SReplaceAll(const string& value, const string& unsafeChars, char replaceChar) {
-    // Loop across the string and replace any invalid character
+    // Build a lookup table for O(1) character checking
+    bool isUnsafe[256] = {false};
+    for (unsigned char c : unsafeChars) {
+        isUnsafe[c] = true;
+    }
+
+    // Build output string, replacing unsafe characters
     string out;
     out.reserve(value.size());
-    for (const char* c(value.data()); *c; ++c)
-        if (unsafeChars.find(*c) == string::npos)
-            out += *c;
-        else
-            out += replaceChar;
+    for (unsigned char c : value) {
+        out += isUnsafe[c] ? replaceChar : static_cast<char>(c);
+    }
     return out;
 }
 
