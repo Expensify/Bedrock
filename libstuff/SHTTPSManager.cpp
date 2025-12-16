@@ -202,7 +202,7 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
     }
 
     // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
-    Transaction* transaction = new Transaction(*this);
+    Transaction* transaction = new Transaction(*this, request["requestID"]);
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
     Socket* s = nullptr;
