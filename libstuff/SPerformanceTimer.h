@@ -5,7 +5,7 @@ class SPerformanceTimer {
   public:
     SPerformanceTimer(const string& description, const map<string, chrono::steady_clock::duration>& defaults = {});
     void start(const string& type);
-    void stop();
+    uint64_t stop();
     void log(chrono::steady_clock::duration elapsed);
 
   protected:
