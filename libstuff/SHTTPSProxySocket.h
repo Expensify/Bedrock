@@ -4,7 +4,7 @@
 class SHTTPSProxySocket : public STCPManager::Socket {
   public:
     // Implement all the same constructors as the base class.
-    SHTTPSProxySocket(const string& proxyAddress, const string& host);
+    SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID);
     SHTTPSProxySocket(SHTTPSProxySocket&& from);
 
     ~SHTTPSProxySocket();
@@ -22,6 +22,7 @@ class SHTTPSProxySocket : public STCPManager::Socket {
     // 127.0.0.1:443
     string proxyAddress;
     string hostname;
+    string requestID;
 
     // Before we can send real HTTPS data, we need to establish the connecton to the proxy.
     bool proxyNegotiationComplete = false;
