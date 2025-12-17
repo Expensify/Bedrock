@@ -146,12 +146,12 @@ extern "C" {
 ** [sqlite3_libversion_number()], [sqlite3_sourceid()],
 ** [sqlite_version()] and [sqlite_source_id()].
 */
-#define SQLITE_VERSION        "3.51.0"
-#define SQLITE_VERSION_NUMBER 3051000
-#define SQLITE_SOURCE_ID      "2025-10-08 19:26:53 4979dbd384a6862fe76193f9843b19404b19a2529652a179b9aaf1d5935c13bd"
+#define SQLITE_VERSION        "3.52.0"
+#define SQLITE_VERSION_NUMBER 3052000
+#define SQLITE_SOURCE_ID      "2025-12-17 14:59:38 863533111cc0e50bc2055e3fc6744c2b42aab238d959955c10771df6f81062c3"
 #define SQLITE_SCM_BRANCH     "hctree-bedrock"
 #define SQLITE_SCM_TAGS       ""
-#define SQLITE_SCM_DATETIME   "2025-10-08T19:26:53.601Z"
+#define SQLITE_SCM_DATETIME   "2025-12-17T14:59:38.330Z"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -932,7 +932,7 @@ struct sqlite3_io_methods {
 ** connection.  See also [SQLITE_FCNTL_FILE_POINTER].
 **
 ** <li>[[SQLITE_FCNTL_SYNC_OMITTED]]
-** No longer in use.
+** The SQLITE_FCNTL_SYNC_OMITTED file-control is no longer used.
 **
 ** <li>[[SQLITE_FCNTL_SYNC]]
 ** The [SQLITE_FCNTL_SYNC] opcode is generated internally by SQLite and
@@ -1229,6 +1229,15 @@ struct sqlite3_io_methods {
 ** database is not a temp db, then the [SQLITE_FCNTL_RESET_CACHE] file-control
 ** purges the contents of the in-memory page cache. If there is an open
 ** transaction, or if the db is a temp-db, this opcode is a no-op, not an error.
+**
+** <li>[[SQLITE_FCNTL_FILESTAT]]
+** The [SQLITE_FCNTL_FILESTAT] opcode returns low-level diagnostic information
+** about the [sqlite3_file] objects used access the database and journal files
+** for the given schema.  The fourth parameter to [sqlite3_file_control()]
+** should be an initialized [sqlite3_str] pointer.  JSON text describing
+** various aspects of the sqlite3_file object is appended to the sqlite3_str.
+** The SQLITE_FCNTL_FILESTAT opcode is usually a no-op, unless compile-time
+** options are used to enable it.
 ** </ul>
 */
 #define SQLITE_FCNTL_LOCKSTATE               1
@@ -1274,6 +1283,7 @@ struct sqlite3_io_methods {
 #define SQLITE_FCNTL_RESET_CACHE            42
 #define SQLITE_FCNTL_NULL_IO                43
 #define SQLITE_FCNTL_BLOCK_ON_CONNECT       44
+#define SQLITE_FCNTL_FILESTAT               45
 
 /* deprecated names */
 #define SQLITE_GET_LOCKPROXYFILE      SQLITE_FCNTL_GET_LOCKPROXYFILE
@@ -2557,12 +2567,15 @@ struct sqlite3_mem_methods {
 ** [[SQLITE_DBCONFIG_STMT_SCANSTATUS]]
 ** <dt>SQLITE_DBCONFIG_STMT_SCANSTATUS</dt>
 ** <dd>The SQLITE_DBCONFIG_STMT_SCANSTATUS option is only useful in
-** SQLITE_ENABLE_STMT_SCANSTATUS builds. In this case, it sets or clears
-** a flag that enables collection of the sqlite3_stmt_scanstatus_v2()
-** statistics. For statistics to be collected, the flag must be set on
-** the database handle both when the SQL statement is prepared and when it
-** is stepped. The flag is set (collection of statistics is enabled)
-** by default. <p>This option takes two arguments: an integer and a pointer to
+** [SQLITE_ENABLE_STMT_SCANSTATUS] builds. In this case, it sets or clears
+** a flag that enables collection of run-time performance statistics
+** used by [sqlite3_stmt_scanstatus_v2()] and the [nexec and ncycle]
+** columns of the [bytecode virtual table].
+** For statistics to be collected, the flag must be set on
+** the database handle both when the SQL statement is
+** [sqlite3_prepare|prepared] and when it is [sqlite3_step|stepped].
+** The flag is set (collection of statistics is enabled) by default.
+** <p>This option takes two arguments: an integer and a pointer to
 ** an integer.  The first argument is 1, 0, or -1 to enable, disable, or
 ** leave unchanged the statement scanstatus option.  If the second argument
 ** is not NULL, then the value of the statement scanstatus setting after
@@ -4207,7 +4220,7 @@ SQLITE_API const char *sqlite3_errstr(int);
 SQLITE_API int sqlite3_error_offset(sqlite3 *db);
 
 /*
-** CAPI3REF: Set Error Codes And Message
+** CAPI3REF: Set Error Code And Message
 ** METHOD: sqlite3
 **
 ** Set the error code of the database handle passed as the first argument
@@ -4326,6 +4339,10 @@ SQLITE_API int sqlite3_limit(sqlite3*, int id, int newVal);
 ** [[SQLITE_LIMIT_EXPR_DEPTH]] ^(<dt>SQLITE_LIMIT_EXPR_DEPTH</dt>
 ** <dd>The maximum depth of the parse tree on any expression.</dd>)^
 **
+** [[SQLITE_LIMIT_PARSER_DEPTH]] ^(<dt>SQLITE_LIMIT_PARSER_DEPTH</dt>
+** <dd>The maximum depth of the LALR(1) parser stack used to analyze
+** input SQL statements.</dd>)^
+**
 ** [[SQLITE_LIMIT_COMPOUND_SELECT]] ^(<dt>SQLITE_LIMIT_COMPOUND_SELECT</dt>
 ** <dd>The maximum number of terms in a compound SELECT statement.</dd>)^
 **
@@ -4370,6 +4387,7 @@ SQLITE_API int sqlite3_limit(sqlite3*, int id, int newVal);
 #define SQLITE_LIMIT_VARIABLE_NUMBER           9
 #define SQLITE_LIMIT_TRIGGER_DEPTH            10
 #define SQLITE_LIMIT_WORKER_THREADS           11
+#define SQLITE_LIMIT_PARSER_DEPTH             12
 
 /*
 ** CAPI3REF: Prepare Flags
@@ -4907,9 +4925,11 @@ typedef struct sqlite3_context sqlite3_context;
 ** associated with the pointer P of type T.  ^D is either a NULL pointer or
 ** a pointer to a destructor function for P. ^SQLite will invoke the
 ** destructor D with a single argument of P when it is finished using
-** P.  The T parameter should be a static string, preferably a string
-** literal. The sqlite3_bind_pointer() routine is part of the
-** [pointer passing interface] added for SQLite 3.20.0.
+** P, even if the call to sqlite3_bind_pointer() fails.  Due to a
+** historical design quirk, results are undefined if D is
+** SQLITE_TRANSIENT. The T parameter should be a static string,
+** preferably a string literal. The sqlite3_bind_pointer() routine is
+** part of the [pointer passing interface] added for SQLite 3.20.0.
 **
 ** ^If any of the sqlite3_bind_*() routines are called with a NULL pointer
 ** for the [prepared statement] or with a prepared statement for which
@@ -8713,15 +8733,20 @@ SQLITE_API sqlite3_str *sqlite3_str_new(sqlite3*);
 ** errors were encountered during construction of the string.  ^The
 ** [sqlite3_str_finish(X)] interface will also return a NULL pointer if the
 ** string in [sqlite3_str] object X is zero bytes long.
+**
+** ^The [sqlite3_str_free(X)] interface destroys both the sqlite3_str object
+** X and the string content it contains.  Calling sqlite3_str_free(X) is
+** the equivalent of calling [sqlite3_free](sqlite3_str_finish(X)).
 */
 SQLITE_API char *sqlite3_str_finish(sqlite3_str*);
+SQLITE_API void sqlite3_str_free(sqlite3_str*);
 
 /*
 ** CAPI3REF: Add Content To A Dynamic String
 ** METHOD: sqlite3_str
 **
-** These interfaces add content to an sqlite3_str object previously obtained
-** from [sqlite3_str_new()].
+** These interfaces add or remove content to an sqlite3_str object
+** previously obtained from [sqlite3_str_new()].
 **
 ** ^The [sqlite3_str_appendf(X,F,...)] and
 ** [sqlite3_str_vappendf(X,F,V)] interfaces uses the [built-in printf]
@@ -8744,6 +8769,10 @@ SQLITE_API char *sqlite3_str_finish(sqlite3_str*);
 ** ^The [sqlite3_str_reset(X)] method resets the string under construction
 ** inside [sqlite3_str] object X back to zero bytes in length.
 **
+** ^The [sqlite3_str_truncate(X,N)] method changes the length of the string
+** under construction to be N bytes are less.  This routine is a no-op if
+** N is negative or if the string is already N bytes or smaller in size.
+**
 ** These methods do not return a result code.  ^If an error occurs, that fact
 ** is recorded in the [sqlite3_str] object and can be recovered by a
 ** subsequent call to [sqlite3_str_errcode(X)].
@@ -8754,6 +8783,7 @@ SQLITE_API void sqlite3_str_append(sqlite3_str*, const char *zIn, int N);
 SQLITE_API void sqlite3_str_appendall(sqlite3_str*, const char *zIn);
 SQLITE_API void sqlite3_str_appendchar(sqlite3_str*, int N, char C);
 SQLITE_API void sqlite3_str_reset(sqlite3_str*);
+SQLITE_API void sqlite3_str_truncate(sqlite3_str*,int N);
 
 /*
 ** CAPI3REF: Status Of A Dynamic String
@@ -8922,9 +8952,18 @@ SQLITE_API int sqlite3_status64(
 ** ^The sqlite3_db_status() routine returns SQLITE_OK on success and a
 ** non-zero [error code] on failure.
 **
+** ^The sqlite3_db_status64(D,O,C,H,R) routine works exactly the same
+** way as sqlite3_db_status(D,O,C,H,R) routine except that the C and H
+** parameters are pointer to 64-bit integers (type: sqlite3_int64) instead
+** of pointers to 32-bit integers, which allows larger status values
+** to be returned.  If a status value exceeds 2,147,483,647 then
+** sqlite3_db_status() will truncate the value whereas sqlite3_db_status64()
+** will return the full value.
+**
 ** See also: [sqlite3_status()] and [sqlite3_stmt_status()].
 */
 SQLITE_API int sqlite3_db_status(sqlite3*, int op, int *pCur, int *pHiwtr, int resetFlg);
+SQLITE_API int sqlite3_db_status64(sqlite3*,int,sqlite3_int64*,sqlite3_int64*,int);
 
 /*
 ** CAPI3REF: Status Parameters for database connections
@@ -9021,6 +9060,10 @@ SQLITE_API int sqlite3_db_status(sqlite3*, int op, int *pCur, int *pHiwtr, int r
 ** If an IO or other error occurs while writing a page to disk, the effect
 ** on subsequent SQLITE_DBSTATUS_CACHE_WRITE requests is undefined.)^ ^The
 ** highwater mark associated with SQLITE_DBSTATUS_CACHE_WRITE is always 0.
+** <p>
+** ^(There is overlap between the quantities measured by this parameter
+** (SQLITE_DBSTATUS_CACHE_WRITE) and SQLITE_DBSTATUS_TEMPBUF_SPILL.
+** Resetting one will reduce the other.)^
 ** </dd>
 **
 ** [[SQLITE_DBSTATUS_CACHE_SPILL]] ^(<dt>SQLITE_DBSTATUS_CACHE_SPILL</dt>
@@ -9036,6 +9079,18 @@ SQLITE_API int sqlite3_db_status(sqlite3*, int op, int *pCur, int *pHiwtr, int r
 ** <dd>This parameter returns zero for the current value if and only if
 ** all foreign key constraints (deferred or immediate) have been
 ** resolved.)^  ^The highwater mark is always 0.
+**
+** [[SQLITE_DBSTATUS_TEMPBUF_SPILL] ^(<dt>SQLITE_DBSTATUS_TEMPBUF_SPILL</dt>
+** <dd>^(This parameter returns the number of bytes written to temporary
+** files on disk that could have been kept in memory had sufficient memory
+** been available.  This value includes writes to intermediate tables that
+** are part of complex queries, external sorts that spill to disk, and
+** writes to TEMP tables.)^
+** ^The highwater mark is always 0.
+** <p>
+** ^(There is overlap between the quantities measured by this parameter
+** (SQLITE_DBSTATUS_TEMPBUF_SPILL) and SQLITE_DBSTATUS_CACHE_WRITE.
+** Resetting one will reduce the other.)^
 ** </dd>
 ** </dl>
 */
@@ -9052,7 +9107,8 @@ SQLITE_API int sqlite3_db_status(sqlite3*, int op, int *pCur, int *pHiwtr, int r
 #define SQLITE_DBSTATUS_DEFERRED_FKS        10
 #define SQLITE_DBSTATUS_CACHE_USED_SHARED   11
 #define SQLITE_DBSTATUS_CACHE_SPILL         12
-#define SQLITE_DBSTATUS_MAX                 12   /* Largest defined DBSTATUS */
+#define SQLITE_DBSTATUS_TEMPBUF_SPILL       13
+#define SQLITE_DBSTATUS_MAX                 13   /* Largest defined DBSTATUS */
 
 
 /*
@@ -10389,7 +10445,7 @@ SQLITE_API int sqlite3_vtab_in(sqlite3_index_info*, int iCons, int bHandle);
 ** &nbsp;  ){
 ** &nbsp;    // do something with pVal
 ** &nbsp;  }
-** &nbsp;  if( rc!=SQLITE_OK ){
+** &nbsp;  if( rc!=SQLITE_DONE ){
 ** &nbsp;    // an error has occurred
 ** &nbsp;  }
 ** </pre></blockquote>)^
@@ -10561,9 +10617,9 @@ SQLITE_API int sqlite3_vtab_rhs_value(sqlite3_index_info*, int, sqlite3_value **
 ** a variable pointed to by the "pOut" parameter.
 **
 ** The "flags" parameter must be passed a mask of flags. At present only
-** one flag is defined - SQLITE_SCANSTAT_COMPLEX. If SQLITE_SCANSTAT_COMPLEX
+** one flag is defined - [SQLITE_SCANSTAT_COMPLEX]. If SQLITE_SCANSTAT_COMPLEX
 ** is specified, then status information is available for all elements
-** of a query plan that are reported by "EXPLAIN QUERY PLAN" output. If
+** of a query plan that are reported by "[EXPLAIN QUERY PLAN]" output. If
 ** SQLITE_SCANSTAT_COMPLEX is not specified, then only query plan elements
 ** that correspond to query loops (the "SCAN..." and "SEARCH..." elements of
 ** the EXPLAIN QUERY PLAN output) are available. Invoking API
@@ -10577,7 +10633,8 @@ SQLITE_API int sqlite3_vtab_rhs_value(sqlite3_index_info*, int, sqlite3_value **
 ** elements used to implement the statement - a non-zero value is returned and
 ** the variable that pOut points to is unchanged.
 **
-** See also: [sqlite3_stmt_scanstatus_reset()]
+** See also: [sqlite3_stmt_scanstatus_reset()] and the
+** [nexec and ncycle] columnes of the [bytecode virtual table].
 */
 SQLITE_API int sqlite3_stmt_scanstatus(
   sqlite3_stmt *pStmt,      /* Prepared statement for which info desired */
@@ -11232,6 +11289,54 @@ SQLITE_API int sqlite3_commit_status(
 #define SQLITE_COMMIT_CONFLICT_FRAME 3
 #define SQLITE_COMMIT_CONFLICT_PGNO  4
 
+
+/*
+** CAPI3REF: Bind array values to the CARRAY table-valued function
+**
+** The sqlite3_carray_bind(S,I,P,N,F,X) interface binds an array value to
+** one of the first argument of the [carray() table-valued function].  The
+** S parameter is a pointer to the [prepared statement] that uses the carray()
+** functions.  I is the parameter index to be bound.  P is a pointer to the
+** array to be bound, and N is the number of eements in the array.  The
+** F argument is one of constants [SQLITE_CARRAY_INT32], [SQLITE_CARRAY_INT64],
+** [SQLITE_CARRAY_DOUBLE], [SQLITE_CARRAY_TEXT], or [SQLITE_CARRAY_BLOB] to
+** indicate the datatype of the array being bound.  The X argument is not a
+** NULL pointer, then SQLite will invoke the function X on the P parameter
+** after it has finished using P, even if the call to
+** sqlite3_carray_bind() fails. The special-case finalizer
+** SQLITE_TRANSIENT has no effect here.
+*/
+SQLITE_API int sqlite3_carray_bind(
+  sqlite3_stmt *pStmt,        /* Statement to be bound */
+  int i,                      /* Parameter index */
+  void *aData,                /* Pointer to array data */
+  int nData,                  /* Number of data elements */
+  int mFlags,                 /* CARRAY flags */
+  void (*xDel)(void*)         /* Destructor for aData */
+);
+
+/*
+** CAPI3REF: Datatypes for the CARRAY table-valued function
+**
+** The fifth argument to the [sqlite3_carray_bind()] interface musts be
+** one of the following constants, to specify the datatype of the array
+** that is being bound into the [carray table-valued function].
+*/
+#define SQLITE_CARRAY_INT32     0    /* Data is 32-bit signed integers */
+#define SQLITE_CARRAY_INT64     1    /* Data is 64-bit signed integers */
+#define SQLITE_CARRAY_DOUBLE    2    /* Data is doubles */
+#define SQLITE_CARRAY_TEXT      3    /* Data is char* */
+#define SQLITE_CARRAY_BLOB      4    /* Data is struct iovec */
+
+/*
+** Versions of the above #defines that omit the initial SQLITE_, for
+** legacy compatibility.
+*/
+#define CARRAY_INT32     0    /* Data is 32-bit signed integers */
+#define CARRAY_INT64     1    /* Data is 64-bit signed integers */
+#define CARRAY_DOUBLE    2    /* Data is doubles */
+#define CARRAY_TEXT      3    /* Data is char* */
+#define CARRAY_BLOB      4    /* Data is struct iovec */
 
 /*
 ** Undo the hack that converts floating point types to integer for
