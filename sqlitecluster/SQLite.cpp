@@ -455,7 +455,6 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "BEGIN CONCURRENT");
     if(_hctree) {
-        // In HCTree mode, we need to do a special commit command.
         SQResult pageCountResult;
         SQuery(_db, "PRAGMA page_count;", pageCountResult);
         if (!pageCountResult.empty()) {
@@ -844,7 +843,6 @@ int SQLite::commit(const string& description, const string& commandName, functio
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
     if(_hctree) {
-        // In HCTree mode, we need to do a special commit command.
         SQResult pageCountResult;
         SQuery(_db, "PRAGMA page_count;", pageCountResult);
         if (!pageCountResult.empty()) {
@@ -853,7 +851,6 @@ int SQLite::commit(const string& description, const string& commandName, functio
     }
     result = SQuery(_db, "COMMIT");
     if(_hctree) {
-        // In HCTree mode, we need to do a special commit command.
         SQResult pageCountResult;
         SQuery(_db, "PRAGMA page_count;", pageCountResult);
         if (!pageCountResult.empty()) {
