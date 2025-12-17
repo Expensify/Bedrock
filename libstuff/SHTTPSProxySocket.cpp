@@ -37,13 +37,23 @@ bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
     size_t oldSize = sendBuffer.size();
     size_t oldPreSendSize = preSendBuffer.size();
     if (oldPreSendSize) {
-        result = S_sendconsume(s, preSendBuffer);
-        size_t bytesSent = oldPreSendSize - preSendBuffer.size();
-        if (bytesSent) {
-            lastSendTime = STimeNow();
-            if (bytesSentCount) {
-                *bytesSentCount = bytesSent;
+        // Only attempt actual send if socket connection is established.
+        // If still CONNECTING, defer send until postPoll transitions state to CONNECTED.
+        // This prevents ENOTCONN errors when send() is called before TCP handshake completes.
+        if (state.load() >= Socket::State::CONNECTED) {
+            result = S_sendconsume(s, preSendBuffer);
+            size_t bytesSent = oldPreSendSize - preSendBuffer.size();
+            if (bytesSent) {
+                lastSendTime = STimeNow();
+                if (bytesSentCount) {
+                    *bytesSentCount = bytesSent;
+                }
             }
+        } else {
+            // Still connecting - defer send until TCP handshake completes.
+            // Return true (socket alive) rather than attempting send on CONNECTING socket, which
+            // would fail with ENOTCONN if connection hasn't completed yet.
+            return true;
         }
     } else if (proxyNegotiationComplete) {
         result = ssl->sendConsume(sendBuffer);
