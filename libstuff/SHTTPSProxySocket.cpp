@@ -5,10 +5,11 @@
 #include <libstuff/SSSLState.h>
 #include <mutex>
 
-SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host)
+SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID)
  : STCPManager::Socket::Socket(0, STCPManager::Socket::State::CONNECTING, true),
    proxyAddress(proxyAddress),
-   hostname(host)
+   hostname(host),
+   requestID(requestID)
 {
     SASSERT(SHostIsValid(proxyAddress));
     s = S_socket(proxyAddress, true, false, false);
@@ -22,6 +23,8 @@ SHTTPSProxySocket::SHTTPSProxySocket(SHTTPSProxySocket&& from)
 {
     proxyAddress = move(from.proxyAddress);
     from.proxyAddress = "";
+    requestID = move(from.requestID);
+    from.requestID = "";
 }
 
 SHTTPSProxySocket::~SHTTPSProxySocket() {
@@ -65,6 +68,9 @@ bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
         if (!filledPreSendBuffer) {
             SData connectMessage("CONNECT " + hostname + " HTTP/1.1");
             connectMessage["Host"] = hostname;
+            if (!requestID.empty()) {
+                connectMessage["X-Request-ID"] = requestID;
+            }
 
             string serialized = connectMessage.serialize();
             preSendBuffer.append(serialized.c_str(), serialized.size());

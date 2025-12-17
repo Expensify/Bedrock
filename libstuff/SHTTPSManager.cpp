@@ -214,7 +214,7 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
             string proxyHost, path;
             SParseURI(proxyAddressHTTPS, proxyHost, path);
             SINFO("Proxying " << url << " through " << proxyHost);
-            s = new SHTTPSProxySocket(proxyHost, host);
+            s = new SHTTPSProxySocket(proxyHost, host, transaction->requestID);
             usingProxy = true;
         } else {
             s = new Socket(host, isHttps);
