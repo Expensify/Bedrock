@@ -979,9 +979,11 @@ map<uint64_t, tuple<string, string, uint64_t>> SQLite::popCommittedTransactions(
 }
 
 void SQLite::rollback(const string& commandName) {
-    _totalTransactionElapsed = _transactionTimer.stop();
     // Make sure we're actually inside a transaction
     if (_insideTransaction) {
+        // Store the total transction time only if we were inside one.
+        _totalTransactionElapsed = _transactionTimer.stop();
+
         // Cancel this transaction
         if (_autoRolledBack) {
             SINFO("Transaction was automatically rolled back, not sending 'ROLLBACK'.");
@@ -1010,6 +1012,8 @@ void SQLite::rollback(const string& commandName) {
             _sharedData.commitLock.unlock();
         }
     } else {
+        // Stop the timer without storring the time spent since transaction as already rolled back.
+        _transactionTimer.stop();
         SINFO("Rolling back but not inside transaction, ignoring.");
     }
     _queryCache.clear();
