@@ -483,6 +483,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
     _rollbackElapsed = 0;
     _lastConflictPage = 0;
     _lastConflictLocation = "";
+    _totalTransactionElapsed = 0;
     return _insideTransaction;
 }
 
@@ -1014,6 +1015,7 @@ void SQLite::rollback(const string& commandName) {
     } else {
         // Stop the timer without storring the time spent since transaction as already rolled back.
         _transactionTimer.stop();
+        _totalTransactionElapsed = 0;
         SINFO("Rolling back but not inside transaction, ignoring.");
     }
     _queryCache.clear();
