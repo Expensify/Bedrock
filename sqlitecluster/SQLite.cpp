@@ -7,6 +7,7 @@
 #include <libstuff/SDeburr.h>
 #include <libstuff/SQResult.h>
 #include <string>
+#include <format>
 
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
