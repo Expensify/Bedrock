@@ -6,6 +6,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SDeburr.h>
 #include <libstuff/SQResult.h>
+#include <string>
 
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
@@ -453,6 +454,13 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
     }
     uint64_t before = STimeNow();
     _insideTransaction = !SQuery(_db, "BEGIN CONCURRENT");
+    if(_hctree) {
+        SQResult pageCountResult;
+        SQuery(_db, "PRAGMA page_count;", pageCountResult);
+        if (!pageCountResult.empty()) {
+            _pageCountDifference = SToUInt64(pageCountResult[0][0]) - _pageCountDifference;
+        }
+    }
 
     // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
     // where we're actually able to start such that we know we shouldn't get a conflict if this commits successfully on
@@ -834,7 +842,21 @@ int SQLite::commit(const string& description, const string& commandName, functio
     _conflictLocation = "";
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
+    if(_hctree) {
+        SQResult pageCountResult;
+        SQuery(_db, "PRAGMA page_count;", pageCountResult);
+        if (!pageCountResult.empty()) {
+            _pageCountDifference = SToInt64(pageCountResult[0][0]);
+        }
+    }
     result = SQuery(_db, "COMMIT");
+    if(_hctree) {
+        SQResult pageCountResult;
+        SQuery(_db, "PRAGMA page_count;", pageCountResult);
+        if (!pageCountResult.empty()) {
+            _pageCountDifference = SToUInt64(pageCountResult[0][0]) - _pageCountDifference;
+        }
+    }
 
     // In HCTree mode, we log extra info for slow commits.
     /* This is disabled because the diagnostic logging is unreasonably expensive (30+ seconds for the query).
@@ -907,18 +929,9 @@ int SQLite::commit(const string& description, const string& commandName, functio
             }
             _sharedData.checkpointInProgress.clear();
         }
-        logLastTransactionTiming(
-            format("{} COMMIT {} complete in {}. Wrote {} pages. WAL file size is {} bytes. {} read queries attempted, {} write queries attempted, {} served from cache. Used journal {}.",
-                description,
-                SToStr(_sharedData.commitCount),
-                time,
-                (endPages - startPages),
-                sz,
-                _readQueryCount,
-                _writeQueryCount,
-                _cacheHits,
-                _journalName), 
-            commandName);
+        SINFO(description << " COMMIT " << SToStr(_sharedData.commitCount) << " complete in " << time << ". Wrote " << (endPages - startPages)
+              << " pages. WAL file size is " << sz << " bytes. " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits
+              << " served from cache. Used journal " << _journalName << (_hctree ? ". HC-Tree pages added: " + to_string(_pageCountDifference) : ""));
         _readQueryCount = 0;
         _writeQueryCount = 0;
         _cacheHits = 0;
@@ -1004,12 +1017,12 @@ void SQLite::logLastTransactionTiming(const string& message, const string& comma
     // and that could double-count certain times (i.e. `commitElapsed` occurs simultaneously with `commitLockElapsed`)
     uint64_t totalElapsed = _beginElapsed + _readElapsed + _writeElapsed + _prepareElapsed + _commitElapsed + _rollbackElapsed;
     SINFO(message, {
-        {"command", commandName}, 
-        {"totalElapsed", to_string(totalElapsed/1000)}, 
-        {"readElapsed", to_string(_readElapsed/1000)}, 
-        {"writeElapsed", to_string(_writeElapsed/1000)}, 
-        {"prepareElapsed", to_string(_prepareElapsed/1000)}, 
-        {"commitElapsed", to_string(_commitElapsed/1000)}, 
+        {"command", commandName},
+        {"totalElapsed", to_string(totalElapsed/1000)},
+        {"readElapsed", to_string(_readElapsed/1000)},
+        {"writeElapsed", to_string(_writeElapsed/1000)},
+        {"prepareElapsed", to_string(_prepareElapsed/1000)},
+        {"commitElapsed", to_string(_commitElapsed/1000)},
         {"rollbackElapsed", to_string(_rollbackElapsed/1000)},
         {"totalTransactionElapsed", to_string(_totalTransactionElapsed/1000)},
         {"beginElapsed", to_string(_beginElapsed/1000)},

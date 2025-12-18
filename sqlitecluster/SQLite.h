@@ -565,4 +565,7 @@ class SQLite {
 
     // One of 0|1|2|3 (a.k.a. PASSIVE|FULL|RESTART|TRUNCATE), which is the value to be passed to sqlite3_wal_checkpoint_v2.
     int _checkpointMode;
+
+    // Difference in page count from the start to the end of the transaction. Only counted on HC-Tree databases.
+    int64_t _pageCountDifference = 0;
 };
