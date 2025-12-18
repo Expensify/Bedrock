@@ -907,9 +907,18 @@ int SQLite::commit(const string& description, const string& commandName, functio
             }
             _sharedData.checkpointInProgress.clear();
         }
-        SINFO(description << " COMMIT " << SToStr(_sharedData.commitCount) << " complete in " << time << ". Wrote " << (endPages - startPages)
-              << " pages. WAL file size is " << sz << " bytes. " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits
-              << " served from cache. Used journal " << _journalName);
+        logLastTransactionTiming(
+            format("{} COMMIT {} complete in {}. Wrote {} pages. WAL file size is {} bytes. {} read queries attempted, {} write queries attempted, {} served from cache. Used journal {}.",
+                description,
+                SToStr(_sharedData.commitCount),
+                time,
+                (endPages - startPages),
+                sz,
+                _readQueryCount,
+                _writeQueryCount,
+                _cacheHits,
+                _journalName), 
+            commandName);
         _readQueryCount = 0;
         _writeQueryCount = 0;
         _cacheHits = 0;
@@ -977,10 +986,13 @@ void SQLite::rollback(const string& commandName) {
             _sharedData.commitLock.unlock();
         }
     } else {
-        logLastTransactionTiming("Rolling back but not inside transaction, ignoring.", commandName);
+        SINFO("Rolling back but not inside transaction, ignoring.");
     }
     _queryCache.clear();
-    SINFO("Transaction rollback with " << _readQueryCount << " read queries attempted, " << _writeQueryCount << " write queries attempted, " << _cacheHits << " served from cache.");
+    logLastTransactionTiming(
+        format("Transaction rollback with {} read queries attempted, {} write queries attempted, {} served from cache.", _readQueryCount, _writeQueryCount, _cacheHits),
+        commandName
+    );
     _readQueryCount = 0;
     _writeQueryCount = 0;
     _cacheHits = 0;
