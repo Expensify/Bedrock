@@ -940,7 +940,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
                 _writeQueryCount,
                 _cacheHits,
                 _journalName,
-                (_hctree ? format(". HC-Tree pages added: {}", _pageCountDifference) : "")),
+                (_hctree ? format(" HC-Tree pages added: {}", _pageCountDifference) : "")),
             commandName);
         _readQueryCount = 0;
         _writeQueryCount = 0;
