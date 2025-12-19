@@ -2064,7 +2064,7 @@ void BedrockServer::broadcastCommand(const SData& command) {
 
 void BedrockServer::onNodeLogin(SQLitePeer* peer)
 {
-    list<BedrockCommand> crashCommandsToSend;
+    list<unique_ptr<BedrockCommand>> crashCommandsToSend;
     shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
     for (const auto& p : _crashCommands) {
         for (const auto& table : p.second) {
@@ -2076,16 +2076,16 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
             for (const auto& fields : table) {
                 crashCommand->crashIdentifyingValues.insert(fields.first);
             }
-            BedrockCommand peerCommand(_generateCrashMessage(crashCommand), nullptr);
-            crashCommandsToSend.push_back(move(peerCommand));
+            crashCommandsToSend.push_back(make_unique<BedrockCommand>(_generateCrashMessage(crashCommand), nullptr));
         }
     }
 
-    auto _clusterMessengerCopy = _clusterMessenger;
-    if (_clusterMessengerCopy) {
-        for (auto& peerCommand : crashCommandsToSend) {
-            thread([&](){
-                _clusterMessengerCopy->runOnPeer(peerCommand, peer->name);
+    for (auto& peerCommand : crashCommandsToSend) {
+        auto _clusterMessengerCopy = _clusterMessenger;
+        auto peerName = peer->name;
+        if (_clusterMessengerCopy) {
+            thread([command = move(peerCommand), _clusterMessengerCopy, peerName](){
+                        _clusterMessengerCopy->runOnPeer(*command, peerName);
             }).detach();
         }
     }
