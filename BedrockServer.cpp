@@ -2047,6 +2047,7 @@ SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& com
     for (auto& pair : command->crashIdentifyingValues) {
         subMessage.emplace(pair);
     }
+    message["timeout"] = "5000";
     message.content = subMessage.serialize();
     return message;
 }
@@ -2071,7 +2072,6 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
             SALERT("Sending crash command " << p.first << " to node " << peer->name << " on login");
             SData crashCommandSpec(p.first);
             crashCommandSpec.nameValueMap = table;
-            crashCommandSpec["timeout"] = "5000";
             unique_ptr<BedrockCommand> crashCommand = getCommandFromPlugins(move(crashCommandSpec));
             for (const auto& fields : table) {
                 crashCommand->crashIdentifyingValues.insert(fields.first);
