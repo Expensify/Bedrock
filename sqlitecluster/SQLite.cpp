@@ -483,6 +483,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
     _rollbackElapsed = 0;
     _lastConflictPage = 0;
     _lastConflictLocation = "";
+    _totalTransactionElapsed = 0;
     return _insideTransaction;
 }
 
@@ -979,9 +980,11 @@ map<uint64_t, tuple<string, string, uint64_t>> SQLite::popCommittedTransactions(
 }
 
 void SQLite::rollback(const string& commandName) {
-    _totalTransactionElapsed = _transactionTimer.stop();
     // Make sure we're actually inside a transaction
     if (_insideTransaction) {
+        // Store the total transaction time only if we were inside one.
+        _totalTransactionElapsed = _transactionTimer.stop();
+
         // Cancel this transaction
         if (_autoRolledBack) {
             SINFO("Transaction was automatically rolled back, not sending 'ROLLBACK'.");
@@ -1010,6 +1013,9 @@ void SQLite::rollback(const string& commandName) {
             _sharedData.commitLock.unlock();
         }
     } else {
+        // Stop the timer without storing the time spent since transaction as already rolled back.
+        _transactionTimer.stop();
+        _totalTransactionElapsed = 0;
         SINFO("Rolling back but not inside transaction, ignoring.");
     }
     _queryCache.clear();
