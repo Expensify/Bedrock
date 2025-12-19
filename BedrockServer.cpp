@@ -1,5 +1,6 @@
 // Manages connections to a single instance of the bedrock server.
 #include "BedrockServer.h"
+#include "BedrockCommand.h"
 #include "sqlitecluster/SQLiteNode.h"
 
 #include <arpa/inet.h>
@@ -2063,21 +2064,29 @@ void BedrockServer::broadcastCommand(const SData& command) {
 
 void BedrockServer::onNodeLogin(SQLitePeer* peer)
 {
+    list<BedrockCommand> crashCommandsToSend;
     shared_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
     for (const auto& p : _crashCommands) {
         for (const auto& table : p.second) {
             SALERT("Sending crash command " << p.first << " to node " << peer->name << " on login");
             SData crashCommandSpec(p.first);
             crashCommandSpec.nameValueMap = table;
+            crashCommandSpec["timeout"] = "5000";
             unique_ptr<BedrockCommand> crashCommand = getCommandFromPlugins(move(crashCommandSpec));
             for (const auto& fields : table) {
                 crashCommand->crashIdentifyingValues.insert(fields.first);
             }
-            auto _clusterMessengerCopy = _clusterMessenger;
-            if (_clusterMessengerCopy) {
-                BedrockCommand peerCommand(_generateCrashMessage(crashCommand), nullptr);
+            BedrockCommand peerCommand(_generateCrashMessage(crashCommand), nullptr);
+            crashCommandsToSend.push_back(move(peerCommand));
+        }
+    }
+
+    auto _clusterMessengerCopy = _clusterMessenger;
+    if (_clusterMessengerCopy) {
+        for (auto& peerCommand : crashCommandsToSend) {
+            thread([&](){
                 _clusterMessengerCopy->runOnPeer(peerCommand, peer->name);
-            }
+            }).detach();
         }
     }
 }
