@@ -2742,7 +2742,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
     uint64_t elapsed = STimeNow() - startTime;
     if (!skipInfoWarn && ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000)) {
         // Avoid logging queries so long that we need dozens of lines to log them.
-        string sqlToLog = sql.substr(0, 40000);
+        string sqlToLog = sql.substr(0, 200000);
         SRedactSensitiveValues(sqlToLog);
 
         if ((int64_t)elapsed > warnThreshold) {
