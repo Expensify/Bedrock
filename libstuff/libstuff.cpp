@@ -95,7 +95,7 @@ thread_local bool isSyncThread;
 thread_local string SProcessName;
 
 // We truncate the logged query size because a huge query once caused a fire: https://github.com/Expensify/Bedrock/pull/1476
-const size_t S_MAX_LOG_QUERY_SIZE = 400000;
+const size_t MAX_LOG_QUERY_SIZE = 200000;
 
 // This is a set of reusable sockets, each with an associated mutex, to allow for parallel logging directly to the
 // syslog socket, rather than going through the syslog() system call, which goes through journald.
@@ -2734,7 +2734,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
     if (error == SQLITE_CORRUPT) {
         if (extErr == SQLITE_CORRUPT_INDEX) {
             // Avoid logging queries so long that we need dozens of lines to log them.
-            string sqlToLog = sql.substr(0, S_MAX_LOG_QUERY_SIZE);
+            string sqlToLog = sql.substr(0, MAX_LOG_QUERY_SIZE);
             SRedactSensitiveValues(sqlToLog);
             SALERT("ENSURE_BUGBOT Database index corruption was detected.", {{"query", sqlToLog}});
         } else {
@@ -2745,7 +2745,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
     uint64_t elapsed = STimeNow() - startTime;
     if (!skipInfoWarn && ((int64_t)elapsed > warnThreshold || (int64_t)elapsed > 10000)) {
         // Avoid logging queries so long that we need dozens of lines to log them.
-        string sqlToLog = sql.substr(0, S_MAX_LOG_QUERY_SIZE);
+        string sqlToLog = sql.substr(0, MAX_LOG_QUERY_SIZE);
         SRedactSensitiveValues(sqlToLog);
 
         if ((int64_t)elapsed > warnThreshold) {
@@ -2769,7 +2769,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
 
     // Log this if enabled
     if (_g_sQueryLogFP) {
-        string sqlToLog = sql.substr(0, S_MAX_LOG_QUERY_SIZE);
+        string sqlToLog = sql.substr(0, MAX_LOG_QUERY_SIZE);
 
         // Log this query as an SQL statement ready for insertion
         const string& dbFilename = sqlite3_db_filename(db, "main");
@@ -2781,7 +2781,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
     // Only OK and commit conflicts are allowed without warning because they're the only "successful" results that we expect here.
     // OK means it succeeds, conflicts will get retried further up the call stack.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && !skipInfoWarn) {
-        string sqlToLog = sql.substr(0, S_MAX_LOG_QUERY_SIZE);
+        string sqlToLog = sql.substr(0, MAX_LOG_QUERY_SIZE);
         SRedactSensitiveValues(sqlToLog);
 
         // We don't warn for constraints errors because sometimes they're allowed, and BedrockCore.cpp will warn for the ones that aren't.
