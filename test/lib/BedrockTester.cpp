@@ -225,11 +225,6 @@ string BedrockTester::startServer(bool wait)
 #ifdef __linux__
         // Instruct the kernel to send SIGKILL to this child if the parent dies
         prctl(PR_SET_PDEATHSIG, SIGKILL);
-
-        // Safety check: if parent died before prctl was called
-        if (getppid() == 1) {
-            _exit(0);
-        }
 #endif
 
         list<string> args;
