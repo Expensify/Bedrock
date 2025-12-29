@@ -4,7 +4,6 @@
 #include <cstring>
 #include <iostream>
 #include <netinet/in.h>
-#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -14,6 +13,10 @@
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
 #include <test/lib/tpunit++.hpp>
+
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 
 PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
@@ -212,6 +215,7 @@ string BedrockTester::startServer(bool wait) {
     if (!childPID) {
         // We are the child!
 
+#ifdef __linux__
         // Instruct the kernel to send SIGKILL to this child if the parent dies
         prctl(PR_SET_PDEATHSIG, SIGKILL);
 
@@ -219,6 +223,7 @@ string BedrockTester::startServer(bool wait) {
         if (getppid() == 1) {
             _exit(0);
         }
+#endif
 
         list<string> args;
         // First arg is path to file.
