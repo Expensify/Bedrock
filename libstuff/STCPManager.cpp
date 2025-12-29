@@ -5,6 +5,8 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
 
+#include <mbedtls/error.h>
+
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
 void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
@@ -47,7 +49,9 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
                 } else if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
                     // This is expected, but is already set.
                 } else if (ret) {
-                    SWARN("SSL ERROR");
+                    char errorBuffer[100] = {0};
+                    mbedtls_strerror(ret, errorBuffer, sizeof(errorBuffer));
+                    SWARN("SSL handshake error #" << ret << " (" << errorBuffer << ")");
                 }
             }
         }
