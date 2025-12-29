@@ -4,6 +4,7 @@
 #include <cstring>
 #include <iostream>
 #include <netinet/in.h>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -210,6 +211,15 @@ string BedrockTester::startServer(bool wait) {
     }
     if (!childPID) {
         // We are the child!
+
+        // Instruct the kernel to send SIGKILL to this child if the parent dies
+        prctl(PR_SET_PDEATHSIG, SIGKILL);
+
+        // Safety check: if parent died before prctl was called
+        if (getppid() == 1) {
+            _exit(0);
+        }
+
         list<string> args;
         // First arg is path to file.
         args.push_front(serverName);
