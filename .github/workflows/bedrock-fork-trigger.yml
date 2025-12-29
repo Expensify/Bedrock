@@ -1,0 +1,18 @@
+# This is for all external BE contributors' test runs.
+# The goal is so that they cannot explicitly push changes to the workflow to print
+# sensitive information.
+name: Forked Test Suite
+on:
+  pull_request:
+    types: [opened, synchronize]
+    branches-ignore: [production]
+jobs:
+  Automated-Tests:
+    name: Automated Tests
+    # This shows that its a fork
+    if: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+    uses: ./.github/workflows/bedrock.yml
+    with:
+      is_fork: true
+    secrets: inherit
+
