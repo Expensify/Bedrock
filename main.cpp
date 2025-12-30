@@ -151,6 +151,18 @@ int main(int argc, char* argv[]) {
         cout << "Protip: check syslog for details, or run 'bedrock -?' for help" << endl;
     }
 
+    // This arg allow us to set an watchdog to capture parent death and not allow the server to be orphan
+    // It aims to avoid a range of issues when we have zombie/orphan forked processes around
+    if (args.isSet("-dieWithParent")) {
+        int fd = stoi(args["-dieWithParent"]); // The argument is the read fd inherited in the fork
+        thread([fd]() {
+            char buf;
+            read(fd, &buf, 1); // This will block until parent dies
+            sleep(3); // Allow some time for the server to shut down by itself (if stopServer was called)
+            _exit(0); // We only reach this point in case server hangs to shutdown (or never tried)
+        }).detach();
+    }
+
     GLOBAL_IS_LIVE = args.isSet("-live");
 
     // Initialize the sqlite library before any other code has a chance to do anything with it.
