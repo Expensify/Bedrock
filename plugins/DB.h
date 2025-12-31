@@ -26,6 +26,7 @@ class BedrockPlugin_DB : public BedrockPlugin {
     };
 
     static Sqlite3QRFSpecWrapper parseSQLite3Args(const string& argsToParse);
+    static string generateErrorContextMessage(const string& query, const string& errorMessage, int errorOffset);
 };
 
 class BedrockDBCommand : public BedrockCommand {
