@@ -13,7 +13,8 @@
  * bits of functionality.
  */
 
-void sigclean(int sig) {
+void sigclean(int sig)
+{
     cout << "Got SIGINT, cleaning up." << endl;
     BedrockTester::stopAll();
     cout << "Done." << endl;
@@ -21,14 +22,16 @@ void sigclean(int sig) {
 }
 
 // This is a bit of a hack and assumes various things about syslogd
-void log() {
+void log()
+{
     int pid = getpid();
     cout << "Starting log recording with pid: " << pid << endl;
     unlink("log.txt");
-    execl("/bin/bash", "/bin/bash", "-c", "tail -f /var/log/syslog | grep --line-buffered bedrock > log.txt", (char *)NULL);
+    execl("/bin/bash", "/bin/bash", "-c", "tail -f /var/log/syslog | grep --line-buffered bedrock > log.txt", (char*) NULL);
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[])
+{
     SData args = SParseCommandLine(argc, argv);
 
     // Catch sigint.

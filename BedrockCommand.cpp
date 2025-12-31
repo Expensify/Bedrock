@@ -43,6 +43,7 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
             case BedrockCommand::PRIORITY_MAX:
                 priority = static_cast<Priority>(tempPriority);
                 break;
+
             default:
                 // But an invalid case gets set to NORMAL, and a warning is logged.
                 SWARN("'" << request.methodLine << "' requested invalid priority: " << tempPriority);
@@ -53,20 +54,23 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
     _commandCount++;
 }
 
-const string& BedrockCommand::getName() const {
+const string& BedrockCommand::getName() const
+{
     if (_plugin) {
         return _plugin->getName();
     }
     return defaultPluginName;
 }
 
-const BedrockPlugin* BedrockCommand::getPlugin() const {
+const BedrockPlugin* BedrockCommand::getPlugin() const
+{
     return _plugin;
 }
 
-int64_t BedrockCommand::_getTimeout(const SData& request, const uint64_t scheduledTime) {
+int64_t BedrockCommand::_getTimeout(const SData& request, const uint64_t scheduledTime)
+{
     // Timeout is the default, unless explicitly supplied, or if Connection: forget is set.
-    int64_t timeout =  DEFAULT_TIMEOUT;
+    int64_t timeout = DEFAULT_TIMEOUT;
     if (request.isSet("timeout")) {
         timeout = request.calc("timeout");
     } else if (SIEquals(request["connection"], "forget")) {
@@ -79,7 +83,8 @@ int64_t BedrockCommand::_getTimeout(const SData& request, const uint64_t schedul
     return timeout + scheduledTime;
 }
 
-BedrockCommand::~BedrockCommand() {
+BedrockCommand::~BedrockCommand()
+{
     for (auto request : httpsRequests) {
         request->manager.closeTransaction(request);
     }
@@ -89,10 +94,11 @@ BedrockCommand::~BedrockCommand() {
     _commandCount--;
 }
 
-void BedrockCommand::startTiming(TIMING_INFO type) {
+void BedrockCommand::startTiming(TIMING_INFO type)
+{
     if (get<0>(_inProgressTiming) != INVALID ||
         get<1>(_inProgressTiming) != 0
-       ) {
+    ) {
         SWARN("Starting timing, but looks like it was already running.");
     }
     get<0>(_inProgressTiming) = type;
@@ -100,10 +106,11 @@ void BedrockCommand::startTiming(TIMING_INFO type) {
     get<2>(_inProgressTiming) = 0;
 }
 
-void BedrockCommand::stopTiming(TIMING_INFO type) {
+void BedrockCommand::stopTiming(TIMING_INFO type)
+{
     if (get<0>(_inProgressTiming) != type ||
         get<1>(_inProgressTiming) == 0
-       ) {
+    ) {
         SWARN("Stopping timing, but looks like it wasn't already running.");
     }
 
@@ -117,7 +124,8 @@ void BedrockCommand::stopTiming(TIMING_INFO type) {
     get<2>(_inProgressTiming) = 0;
 }
 
-bool BedrockCommand::areHttpsRequestsComplete() const {
+bool BedrockCommand::areHttpsRequestsComplete() const
+{
     auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
     while (requestIt != httpsRequests.end()) {
         if (!(*requestIt)->response) {
@@ -130,7 +138,8 @@ bool BedrockCommand::areHttpsRequestsComplete() const {
     return true;
 }
 
-void BedrockCommand::_waitForHTTPSRequests() {
+void BedrockCommand::_waitForHTTPSRequests()
+{
     uint64_t startTime = 0;
     while (!areHttpsRequestsComplete()) {
         // Wait until the command's timeout, or break early if the command has timed out.
@@ -182,14 +191,16 @@ void BedrockCommand::_waitForHTTPSRequests() {
     }
 }
 
-void BedrockCommand::waitForHTTPSRequests() {
+void BedrockCommand::waitForHTTPSRequests()
+{
     if (_inDBReadOperation || _inDBWriteOperation) {
         STHROW("500 Can not wait for transactions with DB assigned");
     }
     _waitForHTTPSRequests();
 }
 
-void BedrockCommand::waitForHTTPSRequests(SQLite& db) {
+void BedrockCommand::waitForHTTPSRequests(SQLite& db)
+{
     bool wasInTransaction = db.insideTransaction();
     if (wasInTransaction) {
         if (!_inDBReadOperation) {
@@ -207,14 +218,16 @@ void BedrockCommand::waitForHTTPSRequests(SQLite& db) {
     }
 }
 
-void BedrockCommand::reset(BedrockCommand::STAGE stage) {
+void BedrockCommand::reset(BedrockCommand::STAGE stage)
+{
     if (stage == STAGE::PEEK && !shouldPrePeek()) {
         jsonContent.clear();
         response.clear();
     }
 }
 
-void BedrockCommand::finalizeTimingInfo() {
+void BedrockCommand::finalizeTimingInfo()
+{
     uint64_t prePeekTotal = 0;
     uint64_t blockingPrePeekTotal = 0;
     uint64_t peekTotal = 0;
@@ -274,18 +287,18 @@ void BedrockCommand::finalizeTimingInfo() {
 
     // Time that wasn't accounted for in all the other metrics.
     uint64_t unaccountedTime = totalTime - (prePeekTotal + peekTotal + processTotal + postProcessTotal + commitWorkerTotal + commitSyncTotal +
-                                            escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal + queuePageLockTotal);
+        escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal + queuePageLockTotal);
 
     uint64_t exclusiveTransactionLockTime = blockingPeekTotal + blockingProcessTotal + blockingCommitWorkerTotal;
     uint64_t blockingCommitThreadTime = exclusiveTransactionLockTime + blockingPrePeekTotal + blockingPostProcessTotal;
 
     // Build a map of the values we care about.
     map<string, uint64_t> valuePairs = {
-        {"prePeekTime",     prePeekTotal},
-        {"peekTime",        peekTotal},
-        {"processTime",     processTotal},
+        {"prePeekTime", prePeekTotal},
+        {"peekTime", peekTotal},
+        {"processTime", processTotal},
         {"postProcessTime", postProcessTotal},
-        {"totalTime",       totalTime},
+        {"totalTime", totalTime},
         {"unaccountedTime", unaccountedTime},
     };
 
@@ -303,19 +316,16 @@ void BedrockCommand::finalizeTimingInfo() {
         if (it != response.nameValueMap.end()) {
             string temp = it->second;
             response.nameValueMap.erase(it);
-            response.nameValueMap[string("upstream") + (char)toupper(p.first[0]) + (p.first.substr(1))] = temp;
+            response.nameValueMap[string("upstream") + (char) toupper(p.first[0]) + (p.first.substr(1))] = temp;
 
             // Note the upstream times for our logline.
             if (p.first == "peekTime") {
                 upstreamPeekTime = SToUInt64(temp);
-            }
-            else if (p.first == "processTime") {
+            } else if (p.first == "processTime") {
                 upstreamProcessTime = SToUInt64(temp);
-            }
-            else if (p.first == "unaccountedTime") {
+            } else if (p.first == "unaccountedTime") {
                 upstreamUnaccountedTime = SToUInt64(temp);
-            }
-            else if (p.first == "totalTime") {
+            } else if (p.first == "totalTime") {
                 upstreamTotalTime = SToUInt64(temp);
             }
         }
@@ -331,34 +341,34 @@ void BedrockCommand::finalizeTimingInfo() {
     }
 
     SINFO("command '" << methodName << "' timing info (ms): "
-          "prePeek:" << prePeekTotal/1000 << " (count: " << prePeekCount << "), "
-          "peek:" << peekTotal/1000 << " (count:" << peekCount << "), "
-          "process:" << processTotal/1000 << " (count:" << processCount << "), "
-          "postProcess:" << postProcessTotal/1000 << " (count:" << postProcessCount << "), "
-          "total:" << totalTime/1000 << ", "
-          "unaccounted:" << unaccountedTime/1000 << ", "
-          "blockingCommitThreadTime:" << blockingCommitThreadTime/1000 << ", "
-          "exclusiveTransactionLockTime:" << exclusiveTransactionLockTime/1000 <<
+          "prePeek:" << prePeekTotal / 1000 << " (count: " << prePeekCount << "), "
+          "peek:" << peekTotal / 1000 << " (count:" << peekCount << "), "
+          "process:" << processTotal / 1000 << " (count:" << processCount << "), "
+          "postProcess:" << postProcessTotal / 1000 << " (count:" << postProcessCount << "), "
+          "total:" << totalTime / 1000 << ", "
+          "unaccounted:" << unaccountedTime / 1000 << ", "
+          "blockingCommitThreadTime:" << blockingCommitThreadTime / 1000 << ", "
+          "exclusiveTransactionLockTime:" << exclusiveTransactionLockTime / 1000 <<
           ". Commit: "
-          "worker:" << commitWorkerTotal/1000 << ", "
-          "sync:"<< commitSyncTotal/1000 <<
+          "worker:" << commitWorkerTotal / 1000 << ", "
+          "sync:" << commitSyncTotal / 1000 <<
           ". Queue: "
-          "worker:" << queueWorkerTotal/1000 << ", "
-          "sync:" << queueSyncTotal/1000 << ", "
-          "blocking:" << queueBlockingTotal/1000 << ", "
-          "pageLock:" << queuePageLockTotal/1000 << ", "
-          "escalation:" << escalationTimeUS/1000 <<
+          "worker:" << queueWorkerTotal / 1000 << ", "
+          "sync:" << queueSyncTotal / 1000 << ", "
+          "blocking:" << queueBlockingTotal / 1000 << ", "
+          "pageLock:" << queuePageLockTotal / 1000 << ", "
+          "escalation:" << escalationTimeUS / 1000 <<
           ". Blocking: "
-          "prePeek:" << blockingPrePeekTotal/1000 << ", "
-          "peek:" << blockingPeekTotal/1000 << ", "
-          "process:" << blockingProcessTotal/1000 << ", "
-          "postProcess:" << blockingPostProcessTotal/1000 << ", "
-          "commit:" << blockingCommitWorkerTotal/1000 <<
+          "prePeek:" << blockingPrePeekTotal / 1000 << ", "
+          "peek:" << blockingPeekTotal / 1000 << ", "
+          "process:" << blockingProcessTotal / 1000 << ", "
+          "postProcess:" << blockingPostProcessTotal / 1000 << ", "
+          "commit:" << blockingCommitWorkerTotal / 1000 <<
           ". Upstream: "
-          "peek:" << upstreamPeekTime/1000 << ", "
-          "process:"<< upstreamProcessTime/1000 << ", "
-          "total:" << upstreamTotalTime/1000 << ", "
-          "unaccounted:" << upstreamUnaccountedTime/1000 << "."
+          "peek:" << upstreamPeekTime / 1000 << ", "
+          "process:" << upstreamProcessTime / 1000 << ", "
+          "total:" << upstreamTotalTime / 1000 << ", "
+          "unaccounted:" << upstreamUnaccountedTime / 1000 << "."
     );
 
     // And here's where we set our own values.
@@ -403,18 +413,21 @@ void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWa
     }
 }
 
-void BedrockCommand::setTimeout(uint64_t timeoutDurationMS) {
+void BedrockCommand::setTimeout(uint64_t timeoutDurationMS)
+{
     // Because _timeout is in microseconds.
     timeoutDurationMS *= 1'000;
     timeoutDurationMS += STimeNow();
     _timeout = timeoutDurationMS;
 }
 
-bool BedrockCommand::shouldCommitEmptyTransactions() const {
+bool BedrockCommand::shouldCommitEmptyTransactions() const
+{
     return _commitEmptyTransactions;
 }
 
-void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSRequests) {
+void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSRequests)
+{
     if (serializedHTTPSRequests.empty()) {
         return;
     }
@@ -442,7 +455,8 @@ void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSReque
     }
 }
 
-string BedrockCommand::serializeHTTPSRequests() {
+string BedrockCommand::serializeHTTPSRequests()
+{
     if (!httpsRequests.size()) {
         return "";
     }
@@ -463,14 +477,17 @@ string BedrockCommand::serializeHTTPSRequests() {
     return SComposeJSONArray(requests);
 }
 
-string BedrockCommand::serializeData() const {
+string BedrockCommand::serializeData() const
+{
     return "";
 }
 
-void BedrockCommand::deserializeData(const string& data) {
+void BedrockCommand::deserializeData(const string& data)
+{
 }
 
-string BedrockCommand::getMethodName() const {
+string BedrockCommand::getMethodName() const
+{
     // This is a hack to support Auth's old `Get` format where we have a `returnValueList` of items to return rather
     // than a specific name. The timing profile of every version of this command is wildly different and it's impossible
     // to reason about which ones cause performance issues when they're all globbed together.

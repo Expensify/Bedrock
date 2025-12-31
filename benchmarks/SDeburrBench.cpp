@@ -6,7 +6,8 @@
 
 using namespace std;
 
-struct SDeburrBench : tpunit::TestFixture, BenchmarkBase {
+struct SDeburrBench : tpunit::TestFixture, BenchmarkBase
+{
     SDeburrBench() : tpunit::TestFixture(
         "SDeburr",
         TEST(SDeburrBench::benchShortASCII),
@@ -15,7 +16,9 @@ struct SDeburrBench : tpunit::TestFixture, BenchmarkBase {
         TEST(SDeburrBench::benchShortASCIIHigh),
         TEST(SDeburrBench::benchLatin1High),
         TEST(SDeburrBench::benchMixedLongHigh)
-    ), BenchmarkBase("SDeburr") {}
+        ), BenchmarkBase("SDeburr")
+    {
+    }
 
     void benchShortASCII()
     {
@@ -85,5 +88,3 @@ struct SDeburrBench : tpunit::TestFixture, BenchmarkBase {
         ASSERT_GREATER_THAN(us, 0);
     }
 } __SDeburrBench;
-
-

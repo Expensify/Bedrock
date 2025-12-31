@@ -3,7 +3,8 @@
 #include <test/clustertest/BedrockClusterTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
 
-struct FinishJobTest : tpunit::TestFixture {
+struct FinishJobTest : tpunit::TestFixture
+{
     FinishJobTest()
         : tpunit::TestFixture("FinishJob",
                               BEFORE_CLASS(FinishJobTest::setupClass),
@@ -23,36 +24,43 @@ struct FinishJobTest : tpunit::TestFixture {
                               TEST(FinishJobTest::hasNextRun),
                               TEST(FinishJobTest::simpleFinishJobWithHttp),
                               AFTER(FinishJobTest::tearDown),
-                              AFTER_CLASS(FinishJobTest::tearDownClass)) { }
+                              AFTER_CLASS(FinishJobTest::tearDownClass))
+    {
+    }
 
     BedrockClusterTester* clusterTester;
     BedrockTester* tester;
 
-    void setupClass() {
+    void setupClass()
+    {
         clusterTester = new BedrockClusterTester(ClusterSize::THREE_NODE_CLUSTER, {});
         tester = &(clusterTester->getTester(1));
     }
 
     // Reset the jobs table
-    void tearDown() {
+    void tearDown()
+    {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         clusterTester->getTester(0).executeWaitVerifyContent(command);
     }
 
-    void tearDownClass() {
+    void tearDownClass()
+    {
         delete clusterTester;
     }
 
     // Throw an error if the job doesn't exist
-    void nonExistentJob() {
+    void nonExistentJob()
+    {
         SData command("FinishJob");
         command["jobID"] = "1";
         tester->executeWaitVerifyContent(command, "404 No job with this jobID");
     }
 
     // Throw an error if the job is not in RUNNING state
-    void notInRunningState() {
+    void notInRunningState()
+    {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
@@ -67,7 +75,8 @@ struct FinishJobTest : tpunit::TestFixture {
     }
 
     // If job has a parentID, the parent should be paused
-    void parentIsNotPaused() {
+    void parentIsNotPaused()
+    {
         // Create the parent
         SData command("CreateJob");
         command["name"] = "parent";
@@ -105,7 +114,8 @@ struct FinishJobTest : tpunit::TestFixture {
     }
 
     // Child jobs that are in the FINISHED or CANCELLED state should be deleted when the parent is finished
-    void removeFinishedAndCancelledChildren() {
+    void removeFinishedAndCancelledChildren()
+    {
         // Create the parent
         SData command("CreateJob");
         command["name"] = "parent";
@@ -185,7 +195,8 @@ struct FinishJobTest : tpunit::TestFixture {
     }
 
     // Update the job data if new data is passed
-    void updateData() {
+    void updateData()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -215,7 +226,8 @@ struct FinishJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(result[0][0], SComposeJSONObject(data));
     }
 
-    void finishingParentUnPausesChildren() {
+    void finishingParentUnPausesChildren()
+    {
         // Create the parent
         SData command("CreateJob");
         command["name"] = "parent";
@@ -267,13 +279,14 @@ struct FinishJobTest : tpunit::TestFixture {
                 ASSERT_EQUAL(row[1], "QUEUED");
             } else if (row[0] == cancelledChildID) {
                 ASSERT_EQUAL(row[1], "QUEUED");
-            } else { 
+            } else {
                 ASSERT_TRUE(false);
             }
         }
     }
 
-    void deleteFinishedJobWithNoChildren() {
+    void deleteFinishedJobWithNoChildren()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -299,7 +312,8 @@ struct FinishJobTest : tpunit::TestFixture {
     }
 
     // Cannot retry with a negative delay
-    void negativeDelay() {
+    void negativeDelay()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -321,7 +335,8 @@ struct FinishJobTest : tpunit::TestFixture {
     }
 
     // Finish with a positive delay and confirm nextRun is updated appropriately
-    void positiveDelay() {
+    void positiveDelay()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -354,7 +369,8 @@ struct FinishJobTest : tpunit::TestFixture {
     }
 
     // Finish a job with a repeat
-    void hasRepeat() {
+    void hasRepeat()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -383,7 +399,8 @@ struct FinishJobTest : tpunit::TestFixture {
     }
 
     // Finish job in RUNQUEUED state
-    void inRunqueuedState() {
+    void inRunqueuedState()
+    {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
@@ -399,7 +416,7 @@ struct FinishJobTest : tpunit::TestFixture {
 
         // Confirm the job is in RUNQUEUED
         SQResult result;
-        clusterTester->getTester(0).readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        clusterTester->getTester(0).readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
 
         // Finish it
@@ -409,12 +426,13 @@ struct FinishJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Finishing the job should remove it from the table
-        clusterTester->getTester(0).readDB("SELECT * FROM jobs WHERE jobID = " + jobID + ";",  result);
+        clusterTester->getTester(0).readDB("SELECT * FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_TRUE(result.empty());
     }
 
     // FinishJob with repeat should ignore the 'delay' parameter
-    void hasRepeatWithDelay() {
+    void hasRepeatWithDelay()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -443,7 +461,8 @@ struct FinishJobTest : tpunit::TestFixture {
     }
 
     // FinishJob should ignore the 'delay' parameter
-    void hasDelay() {
+    void hasDelay()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -470,7 +489,8 @@ struct FinishJobTest : tpunit::TestFixture {
     }
 
     // FinishJob with repeat should ignore the 'nextRun' parameter
-    void hasRepeatWithNextRun() {
+    void hasRepeatWithNextRun()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -499,7 +519,8 @@ struct FinishJobTest : tpunit::TestFixture {
     }
 
     // FinishJob should delete any job with data.delete = true
-    void hasDataDelete() {
+    void hasDataDelete()
+    {
         // Create the recurring job
         SData command("CreateJob");
         command["name"] = "job";
@@ -529,7 +550,8 @@ struct FinishJobTest : tpunit::TestFixture {
     }
 
     // FinishJob should ignore the 'nextRun' parameter
-    void hasNextRun() {
+    void hasNextRun()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -549,14 +571,14 @@ struct FinishJobTest : tpunit::TestFixture {
         command["nextRun"] = "2017-09-07 23:11:11";
         tester->executeWaitVerifyContent(command);
 
-
         // Confirm the job was deleted instead of being rescheduled
         SQResult result;
         clusterTester->getTester(0).readDB("SELECT * FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_TRUE(result.empty());
     }
 
-    void simpleFinishJobWithHttp() {
+    void simpleFinishJobWithHttp()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";

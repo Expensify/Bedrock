@@ -2,7 +2,8 @@
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 
-struct CreateJobsTest : tpunit::TestFixture {
+struct CreateJobsTest : tpunit::TestFixture
+{
     CreateJobsTest()
         : tpunit::TestFixture("CreateJobs",
                               BEFORE_CLASS(CreateJobsTest::setupClass),
@@ -13,11 +14,14 @@ struct CreateJobsTest : tpunit::TestFixture {
                               TEST(CreateJobsTest::createWithParentMocked),
                               TEST(CreateJobsTest::createUniqueChildWithWrongParent),
                               AFTER(CreateJobsTest::tearDown),
-                              AFTER_CLASS(CreateJobsTest::tearDownClass)) { }
+                              AFTER_CLASS(CreateJobsTest::tearDownClass))
+    {
+    }
 
     BedrockTester* tester;
 
-    string _generateCreateJobContentJSON() {
+    string _generateCreateJobContentJSON()
+    {
         STable job1Content;
         STable data1;
         data1["blabla"] = "blabla";
@@ -38,18 +42,26 @@ struct CreateJobsTest : tpunit::TestFixture {
         return SComposeJSONArray(jobs);
     }
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass()
+    {
+        tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
+    }
 
     // Reset the jobs table
-    void tearDown() {
+    void tearDown()
+    {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
     }
 
-    void tearDownClass() { delete tester; }
+    void tearDownClass()
+    {
+        delete tester;
+    }
 
-    void create() {
+    void create()
+    {
         SData command("CreateJobs");
         command["jobs"] = _generateCreateJobContentJSON();
         STable response = tester->executeWaitVerifyContentTable(command);
@@ -60,7 +72,8 @@ struct CreateJobsTest : tpunit::TestFixture {
         ASSERT_NOT_EQUAL(jobID1, jobID2);
     }
 
-    void createWithHttp() {
+    void createWithHttp()
+    {
         SData command("CreateJobs / HTTP/1.1");
         command["jobs"] = _generateCreateJobContentJSON();
         STable response = tester->executeWaitVerifyContentTable(command);
@@ -71,13 +84,15 @@ struct CreateJobsTest : tpunit::TestFixture {
         ASSERT_NOT_EQUAL(jobID1, jobID2);
     }
 
-    void createWithInvalidJson() {
+    void createWithInvalidJson()
+    {
         SData command("CreateJobs");
         command["jobs"] = _generateCreateJobContentJSON() + "}";
         tester->executeWaitVerifyContent(command, "401 Invalid JSON");
     }
 
-    void createWithParentIDNotRunning() {
+    void createWithParentIDNotRunning()
+    {
         // First create parent job
         SData command("CreateJob");
         command["name"] = "blabla";
@@ -108,8 +123,8 @@ struct CreateJobsTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command, "405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
     }
 
-    void createWithParentMocked() {
-
+    void createWithParentMocked()
+    {
         // Create a mocked parent.
         SData command("CreateJob");
         command["name"] = "createWithParentMocked";
@@ -174,7 +189,6 @@ struct CreateJobsTest : tpunit::TestFixture {
         int64_t child2ID = stol(response2["jobID"]);
         responseJSON = SParseJSONObject(response2["data"]);
         ASSERT_TRUE(responseJSON.find("mockRequest") != responseJSON.end());
-
 
         // Finish the children.
         command.clear();
@@ -249,5 +263,4 @@ struct CreateJobsTest : tpunit::TestFixture {
         command["jobs"] = SComposeJSONArray(jobs);
         tester->executeWaitVerifyContent(command, "404 Trying to create a child that already exists, but it is tied to a different parent");
     }
-
 } __CreateJobsTest;

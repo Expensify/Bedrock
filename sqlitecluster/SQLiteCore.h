@@ -8,7 +8,7 @@ class SQLiteNode;
 using namespace std;
 
 class SQLiteCore {
-  public:
+public:
     // Constructor that stores the database object we'll be working on.
     SQLiteCore(SQLite& db);
 
@@ -19,6 +19,6 @@ class SQLiteCore {
     // Roll back a transaction if we've decided not to commit it.
     void rollback(const string& commandName = "NONE");
 
-  protected:
+protected:
     SQLite& _db;
 };

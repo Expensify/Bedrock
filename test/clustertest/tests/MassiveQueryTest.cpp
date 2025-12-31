@@ -1,9 +1,11 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct MassiveQueryTest : tpunit::TestFixture {
-
-    MassiveQueryTest() : tpunit::TestFixture("MassiveQuery", TEST(MassiveQueryTest::test)) { }
+struct MassiveQueryTest : tpunit::TestFixture
+{
+    MassiveQueryTest() : tpunit::TestFixture("MassiveQuery", TEST(MassiveQueryTest::test))
+    {
+    }
 
     void test()
     {
