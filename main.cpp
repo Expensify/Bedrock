@@ -168,10 +168,12 @@ int main(int argc, char* argv[])
     if (args.isSet("-dieWithParent")) {
         int fd = stoi(args["-dieWithParent"]); // The argument is the read fd inherited in the fork
         thread([fd]() {
+            SInitialize("watchdog");
             char buf;
-            read(fd, &buf, 1); // This will block until parent dies
-            sleep(3); // Allow some time for the server to shut down by itself (if stopServer was called)
-            _exit(0); // We only reach this point in case server hangs to shutdown (or never tried)
+            if (read(fd, &buf, 1) == 0) { // This will block until parent dies (receive EOF)
+                sleep(3); // Allow some time for the server to shut down by itself (if stopServer was called)
+                _exit(0); // We only reach this point in case server hangs to shutdown (or never tried)
+            }
         }).detach();
     }
 
