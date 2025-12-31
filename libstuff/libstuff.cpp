@@ -2697,7 +2697,11 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                                 row.get(i) = SQValue(SQValue::TYPE::TEXT, string(reinterpret_cast<const char*>(sqlite3_column_text(preparedStatement, i))));
                                 break;
                             case SQLITE_BLOB:
-                                row.get(i) = SQValue(SQValue::TYPE::BLOB, string(static_cast<const char*>(sqlite3_column_blob(preparedStatement, i)), sqlite3_column_bytes(preparedStatement, i)));
+                                {
+                                    const char* blobData = static_cast<const char*>(sqlite3_column_blob(preparedStatement, i));
+                                    const int blobSize = sqlite3_column_bytes(preparedStatement, i);
+                                    row.get(i) = SQValue(SQValue::TYPE::BLOB, blobData ? string(blobData, blobSize) : string());
+                                }
                                 break;
                             case SQLITE_NULL:
                                 row.get(i) = SQValue();
