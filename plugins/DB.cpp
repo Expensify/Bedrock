@@ -346,7 +346,7 @@ string BedrockPlugin_DB::generateErrorContextMessage(const string& query, const 
     size_t snippetByteLength = query.length() - sqlOffset;
     if (snippetByteLength > 78) {
         snippetByteLength = 78;
-        while (snippetByteLength > 0 && (query[snippetByteLength] & 0xc0) == 0x80) {
+        while (snippetByteLength > 0 && (query[sqlOffset + snippetByteLength - 1] & 0xc0) == 0x80) {
             snippetByteLength--;
         }
     }
