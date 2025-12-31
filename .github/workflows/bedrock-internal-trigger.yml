@@ -1,0 +1,15 @@
+# This is for all internal employees' test runs.
+# The goal is so that we can modify and change workflows without merging to main.
+name: Internal Suite
+on:
+  push:
+    branches: # this ignores tag pushes, and only looks at branches.
+      - '**'
+  release:
+    types: [prereleased, published]
+jobs:
+  Automated-Tests:
+    name: Automated Tests
+    uses: ./.github/workflows/bedrock.yml
+    secrets: inherit
+
