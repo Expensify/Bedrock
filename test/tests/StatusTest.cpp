@@ -1,11 +1,15 @@
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
-struct StatusTest : tpunit::TestFixture {
+struct StatusTest : tpunit::TestFixture
+{
     StatusTest()
-        : tpunit::TestFixture("Status", TEST(StatusTest::test)) { }
+        : tpunit::TestFixture("Status", TEST(StatusTest::test))
+    {
+    }
 
-    void test() {
+    void test()
+    {
         BedrockTester tester;
         SData status("Status");
         string response = tester.executeWaitMultipleData({status})[0].content;
@@ -13,5 +17,4 @@ struct StatusTest : tpunit::TestFixture {
         ASSERT_TRUE(SContains(response, "multiWriteManualBlacklist"));
         ASSERT_TRUE(SContains(response, "outstandingFramesToCheckpoint"));
     }
-
 } __StatusTest;

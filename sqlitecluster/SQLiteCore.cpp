@@ -5,10 +5,11 @@
 #include "SQLiteNode.h"
 
 SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
-{ }
+{
+}
 
-bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, const string& commandName, bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID)) noexcept {
-
+bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, const string& commandName, bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID)) noexcept
+{
     // This handler only needs to exist in prepare so we scope it here to automatically unset
     // the handler function once we are done with prepare.
     {
@@ -44,6 +45,7 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
     return true;
 }
 
-void SQLiteCore::rollback(const string& commandName) {
+void SQLiteCore::rollback(const string& commandName)
+{
     _db.rollback(commandName);
 }

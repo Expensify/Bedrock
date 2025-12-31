@@ -2,7 +2,8 @@
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 
-struct DeleteJobTest : tpunit::TestFixture {
+struct DeleteJobTest : tpunit::TestFixture
+{
     DeleteJobTest()
         : tpunit::TestFixture("DeleteJob",
                               BEFORE_CLASS(DeleteJobTest::setupClass),
@@ -11,30 +12,41 @@ struct DeleteJobTest : tpunit::TestFixture {
                               TEST(DeleteJobTest::deleteRunningJob),
                               TEST(DeleteJobTest::deleteFinishedJob),
                               AFTER(DeleteJobTest::tearDown),
-                              AFTER_CLASS(DeleteJobTest::tearDownClass)) { }
+                              AFTER_CLASS(DeleteJobTest::tearDownClass))
+    {
+    }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass()
+    {
+        tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
+    }
 
     // Reset the jobs table
-    void tearDown() {
+    void tearDown()
+    {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
     }
 
-    void tearDownClass() { delete tester; }
+    void tearDownClass()
+    {
+        delete tester;
+    }
 
     // Cannot delete a job that doesn't exist
-    void deleteNonExistentJob() {
+    void deleteNonExistentJob()
+    {
         SData command("DeleteJob");
         command["jobID"] = "1";
         tester->executeWaitVerifyContent(command, "404 No job with this jobID");
     }
 
     // Cannot delete a job with children
-    void deleteJobWithChild() {
+    void deleteJobWithChild()
+    {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -79,7 +91,8 @@ struct DeleteJobTest : tpunit::TestFixture {
     }
 
     // Ignore deletejob for RUNNING jobs
-    void deleteRunningJob() {
+    void deleteRunningJob()
+    {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -129,7 +142,8 @@ struct DeleteJobTest : tpunit::TestFixture {
     }
 
     // Delete finished jobs
-    void deleteFinishedJob() {
+    void deleteFinishedJob()
+    {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";

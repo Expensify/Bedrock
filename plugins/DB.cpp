@@ -11,7 +11,8 @@
 #define SLOGPREFIX "{" << getName() << "} "
 
 const string BedrockPlugin_DB::name("DB");
-const string& BedrockPlugin_DB::getName() const {
+const string& BedrockPlugin_DB::getName() const
+{
     return name;
 }
 
@@ -20,7 +21,7 @@ BedrockPlugin_DB::BedrockPlugin_DB(BedrockServer& s) : BedrockPlugin(s)
 }
 
 BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB* plugin) :
-  BedrockCommand(move(baseCommand), plugin),
+    BedrockCommand(move(baseCommand), plugin),
     // The "full" syntax of a query request is:
     //
     //      Query
@@ -30,25 +31,27 @@ BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB
     // in the method line as follows:
     //
     //      Query: ...sql...
-  query(STrim(SStartsWith(SToLower(request.methodLine), "query:") ? request.methodLine.substr(strlen("query:")) : request["query"]))
+    query(STrim(SStartsWith(SToLower(request.methodLine), "query:") ? request.methodLine.substr(strlen("query:")) : request["query"]))
 {
 }
 
-unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseCommand) {
+unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseCommand)
+{
     if (SStartsWith(SToLower(baseCommand.request.methodLine), "query:") || SIEquals(baseCommand.request.getVerb(), "Query")) {
         return make_unique<BedrockDBCommand>(move(baseCommand), this);
     }
     return nullptr;
 }
 
-int BedrockDBCommand::SQLiteFormatAppend(void* destString, const char* appendString, sqlite3_int64 length) {
-
+int BedrockDBCommand::SQLiteFormatAppend(void* destString, const char* appendString, sqlite3_int64 length)
+{
     string* output = static_cast<string*>(destString);
     output->append(reinterpret_cast<const char*>(appendString), length);
     return 0;
 }
 
-bool BedrockDBCommand::peek(SQLite& db) {
+bool BedrockDBCommand::peek(SQLite& db)
+{
     if (query.size() < 1 || query.size() > BedrockPlugin::MAX_SIZE_QUERY) {
         STHROW("402 Missing query");
     }
@@ -149,12 +152,13 @@ bool BedrockDBCommand::peek(SQLite& db) {
     return true;
 }
 
-void BedrockDBCommand::process(SQLite& db) {
+void BedrockDBCommand::process(SQLite& db)
+{
     if (db.getUpdateNoopMode()) {
         SINFO("Query run in mocked request, just ignoring.");
         return;
     }
-    BedrockPlugin::verifyAttributeBool(request, "nowhere",  false);
+    BedrockPlugin::verifyAttributeBool(request, "nowhere", false);
 
     const string upperQuery = SToUpper(query);
     if (!request.test("nowhere") &&
@@ -181,7 +185,8 @@ void BedrockDBCommand::process(SQLite& db) {
     return;
 }
 
-BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const string& argsToParse) {
+BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const string& argsToParse)
+{
     // Parse this into a map corresponding to the allowed options specified here:
     // https://sqlite.org/cli.html#command_line_options
     // Note that just because we parse all of these doesn't mean we support them.
@@ -203,7 +208,7 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
                 // for any other character, we simply append it to the current string.
                 currentArg += argsToParse[currentOffset];
             }
-        }else {
+        } else {
             // If we're not in quotes, then a space signals the end of the current string.
             if (isspace(argsToParse[currentOffset])) {
                 // Finish this string and move to the next, unless it's empty.
@@ -216,8 +221,7 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
                 if (argsToParse[currentOffset] == '\'' || argsToParse[currentOffset] == '"') {
                     // Start a quoted string.
                     quoteChar = argsToParse[currentOffset];
-                }
-                else if (argsToParse[currentOffset] == '\\') {
+                } else if (argsToParse[currentOffset] == '\\') {
                     // Start an escape sequence.
                     escaped = true;
                 } else {
@@ -324,25 +328,28 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
 
 BedrockPlugin_DB::Sqlite3QRFSpecWrapper::Sqlite3QRFSpecWrapper()
     : zColumnSep(new string),
-      zNull(new string)
+    zNull(new string)
 {
 }
 
-BedrockPlugin_DB::Sqlite3QRFSpecWrapper::~Sqlite3QRFSpecWrapper() {
+BedrockPlugin_DB::Sqlite3QRFSpecWrapper::~Sqlite3QRFSpecWrapper()
+{
     delete zColumnSep;
     delete zNull;
 }
 
 BedrockPlugin_DB::Sqlite3QRFSpecWrapper::Sqlite3QRFSpecWrapper(Sqlite3QRFSpecWrapper&& other) noexcept
     : spec(other.spec),
-      zColumnSep(other.zColumnSep),
-      zNull(other.zNull) {
+    zColumnSep(other.zColumnSep),
+    zNull(other.zNull)
+{
     other.spec = sqlite3_qrf_spec{};
     other.zColumnSep = nullptr;
     other.zNull = nullptr;
 }
 
-BedrockPlugin_DB::Sqlite3QRFSpecWrapper& BedrockPlugin_DB::Sqlite3QRFSpecWrapper::operator=(BedrockPlugin_DB::Sqlite3QRFSpecWrapper&& other) noexcept {
+BedrockPlugin_DB::Sqlite3QRFSpecWrapper& BedrockPlugin_DB::Sqlite3QRFSpecWrapper::operator=(BedrockPlugin_DB::Sqlite3QRFSpecWrapper&& other) noexcept
+{
     if (this != &other) {
         delete zColumnSep;
         delete zNull;

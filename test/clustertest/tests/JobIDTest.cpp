@@ -1,21 +1,26 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct JobIDTest : tpunit::TestFixture {
+struct JobIDTest : tpunit::TestFixture
+{
     JobIDTest()
         : tpunit::TestFixture("JobID",
                               BEFORE_CLASS(JobIDTest::setup),
                               AFTER_CLASS(JobIDTest::teardown),
                               TEST(JobIDTest::test)
-                             ) { }
+        )
+    {
+    }
 
     BedrockClusterTester* tester;
 
-    void setup () {
+    void setup()
+    {
         tester = new BedrockClusterTester();
     }
 
-    void teardown () {
+    void teardown()
+    {
         delete tester;
     }
 
@@ -89,5 +94,4 @@ struct JobIDTest : tpunit::TestFixture {
         getCmd["numResults"] = 3;
         follower.executeWaitVerifyContentTable(getCmd, "200");
     }
-
 } __JobIDTest;

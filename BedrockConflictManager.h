@@ -8,18 +8,18 @@
 using namespace std;
 
 class BedrockConflictManagerCommandInfo {
-  public:
+public:
     size_t count = 0;
     map<string, size_t> tableUseCounts;
 };
 
 class BedrockConflictManager {
-  public:
+public:
     BedrockConflictManager();
     void recordTables(const string& commandName, const set<string>& tables);
     string generateReport();
 
-  private:
+private:
     mutex m;
     map<string, BedrockConflictManagerCommandInfo> _commandInfo;
 };

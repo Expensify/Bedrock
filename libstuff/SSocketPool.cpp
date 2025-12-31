@@ -1,11 +1,13 @@
 #include "SSocketPool.h"
 
 SSocketPool::SSocketPool(const string& host)
-  : host(host),
-    _timeoutThread(&SSocketPool::_timeoutThreadFunc, this) {
+    : host(host),
+    _timeoutThread(&SSocketPool::_timeoutThreadFunc, this)
+{
 }
 
-SSocketPool::~SSocketPool() {
+SSocketPool::~SSocketPool()
+{
     {
         unique_lock<mutex> lock(_poolMutex);
         _exit = true;
@@ -14,7 +16,8 @@ SSocketPool::~SSocketPool() {
     _timeoutThread.join();
 }
 
-void SSocketPool::_timeoutThreadFunc() {
+void SSocketPool::_timeoutThreadFunc()
+{
     // NOTE: there's nothing preventing multiple threads with the same name.
     SInitialize("SocketPool");
     while (true) {
@@ -45,7 +48,8 @@ void SSocketPool::_timeoutThreadFunc() {
     }
 }
 
-unique_ptr<STCPManager::Socket> SSocketPool::getSocket() {
+unique_ptr<STCPManager::Socket> SSocketPool::getSocket()
+{
     {
         // If there's an existing socket, return it.
         lock_guard<mutex> lock(_poolMutex);
@@ -65,7 +69,8 @@ unique_ptr<STCPManager::Socket> SSocketPool::getSocket() {
     }
 }
 
-void SSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s) {
+void SSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s)
+{
     if (s == nullptr) {
         SWARN("[SOCKET] Trying to return a null socket to the pool, this should not happen.");
         return;

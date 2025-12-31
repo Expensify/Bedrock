@@ -5,7 +5,8 @@
 atomic<int> _g_SLogMask(LOG_INFO);
 atomic<bool> GLOBAL_IS_LIVE{true};
 
-void SLogStackTrace(int level) {
+void SLogStackTrace(int level)
+{
     // If the level isn't set in the log mask, nothing more to do
     if (!(_g_SLogMask & (1 << level))) {
         return;
@@ -16,26 +17,32 @@ void SLogStackTrace(int level) {
     vector<string> stack = SGetCallstack(depth, callstack);
     for (const auto& frame : stack) {
         switch (level) {
-        case LOG_DEBUG:
-            SDEBUG(frame);
-            break;
-        case LOG_INFO:
-            SINFO(frame);
-            break;
-        case LOG_NOTICE:
-            SHMMM(frame);
-            break;
-        case LOG_WARNING:
-            SWARN(frame);
-            break;
-        case LOG_ALERT:
-            SALERT(frame);
-            break;
-        case LOG_ERR:
-            SERROR(frame);
-            break;
-        default:
-            break;
+            case LOG_DEBUG:
+                SDEBUG(frame);
+                break;
+
+            case LOG_INFO:
+                SINFO(frame);
+                break;
+
+            case LOG_NOTICE:
+                SHMMM(frame);
+                break;
+
+            case LOG_WARNING:
+                SWARN(frame);
+                break;
+
+            case LOG_ALERT:
+                SALERT(frame);
+                break;
+
+            case LOG_ERR:
+                SERROR(frame);
+                break;
+
+            default:
+                break;
         }
     }
 }
@@ -70,7 +77,8 @@ static set<string> PARAMS_WHITELIST = {
     "writeElapsed",
 };
 
-string addLogParams(string&& message, const STable& params) {
+string addLogParams(string&& message, const STable& params)
+{
     if (params.empty()) {
         return message;
     }
@@ -91,6 +99,7 @@ string addLogParams(string&& message, const STable& params) {
     return message;
 }
 
-void SWhitelistLogParams(const set<string>& params) {
+void SWhitelistLogParams(const set<string>& params)
+{
     PARAMS_WHITELIST.insert(params.begin(), params.end());
 }

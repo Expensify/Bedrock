@@ -4,19 +4,22 @@
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 
-struct InfiniteRetryAfterJobTest : tpunit::TestFixture {
+struct InfiniteRetryAfterJobTest : tpunit::TestFixture
+{
     InfiniteRetryAfterJobTest()
         : tpunit::TestFixture("InfiniteRetryAfter",
                               TEST(InfiniteRetryAfterJobTest::testInfiniteTries),
                               TEST(InfiniteRetryAfterJobTest::testRepeatJobWithThreeTries)
-                              )
-    {}
+        )
+    {
+    }
 
     /**
      * This tests that a job with a retryAfter won't get requeued forever.
      * We want it to fail after 10 tries.
      */
-    void testInfiniteTries() {
+    void testInfiniteTries()
+    {
         BedrockTester tester = BedrockTester({{"-plugins", "Jobs,DB"}}, {});
 
         // Create a job
@@ -55,7 +58,8 @@ struct InfiniteRetryAfterJobTest : tpunit::TestFixture {
     /**
      * This tests that a job with a retryAfter finished after 5 tries will have its retryAfterCount unset.
      */
-    void testRepeatJobWithThreeTries() {
+    void testRepeatJobWithThreeTries()
+    {
         BedrockTester tester = BedrockTester({{"-plugins", "Jobs,DB"}}, {});
 
         // Create a job
@@ -90,7 +94,7 @@ struct InfiniteRetryAfterJobTest : tpunit::TestFixture {
         finishJob["jobID"] = jobID;
         tester.executeWaitVerifyContentTable(finishJob)["jobID"];
         SQResult result;
-        tester.readDB( "SELECT state, JSON_EXTRACT(data, '$.retryAfterCount') FROM jobs WHERE jobID = " + SQ(jobID) + ";", result);
+        tester.readDB("SELECT state, JSON_EXTRACT(data, '$.retryAfterCount') FROM jobs WHERE jobID = " + SQ(jobID) + ";", result);
         ASSERT_FALSE(result.empty());
 
         // State is QUEUED and retryAfterCount has been removed

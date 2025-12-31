@@ -29,6 +29,14 @@ RESET="\u001b[0m"
 
 while read STATUS FILENAME
 do
+    # Skip some files we don't want to style
+    case "$FILENAME" in
+        *tpunit++.cpp|*qrf.h|*sqlite3.h|*sqlite3ext.h)
+            # Match found: do nothing and continue the loop
+            continue
+            ;;
+    esac
+
     FAILED="false"
 
     # Allow failure so we can capture exit status

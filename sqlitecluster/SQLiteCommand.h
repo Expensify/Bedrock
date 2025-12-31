@@ -4,18 +4,18 @@
 #include <sqlitecluster/SQLiteNode.h>
 
 class SQLiteCommand {
-  // This is a little bit weird so let me explain. We have, and long have had, a publicly visible member
-  // `const SData request`. This is const because it prevents all sort of weird reply bugs that happen when commands
-  // get re-run due to database conflicts. This works great *except* that it was discovered that this breaks move
-  // semantics. Because the request object was const, it could not be moved-from. Instead, in places where the move
-  // constructor was called, it would be copied, which could be quite expensive for large requests.
-  // The solution was to add a private, non-const request variable that can be moved-from, and to make the existing
-  // `request` object a const reference to this internal object. This allows the move constructor to move-from the
-  // existing object's privateRequest, and then initialize `request` to refer to it.
-  private:
+    // This is a little bit weird so let me explain. We have, and long have had, a publicly visible member
+    // `const SData request`. This is const because it prevents all sort of weird reply bugs that happen when commands
+    // get re-run due to database conflicts. This works great *except* that it was discovered that this breaks move
+    // semantics. Because the request object was const, it could not be moved-from. Instead, in places where the move
+    // constructor was called, it would be copied, which could be quite expensive for large requests.
+    // The solution was to add a private, non-const request variable that can be moved-from, and to make the existing
+    // `request` object a const reference to this internal object. This allows the move constructor to move-from the
+    // existing object's privateRequest, and then initialize `request` to refer to it.
+private:
     SData privateRequest;
 
-  public:
+public:
     // Immutable reference handle to the original request.
     const SData& request;
 
@@ -70,5 +70,7 @@ class SQLiteCommand {
     SQLiteCommand& operator=(SQLiteCommand&& from) noexcept;
 
     // Destructor.
-    virtual ~SQLiteCommand() {}
+    virtual ~SQLiteCommand()
+    {
+    }
 };

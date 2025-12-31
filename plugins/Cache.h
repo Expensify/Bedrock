@@ -4,7 +4,7 @@
 
 // Declare the class we're going to implement below
 class BedrockPlugin_Cache : public BedrockPlugin {
-  public:
+public:
     // Constructor / Destructor
     BedrockPlugin_Cache(BedrockServer& s);
     ~BedrockPlugin_Cache();
@@ -13,11 +13,12 @@ class BedrockPlugin_Cache : public BedrockPlugin {
     virtual const string& getName() const;
     virtual void upgradeDatabase(SQLite& db);
     virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
+
     static const string name;
 
     // Bedrock Cache LRU map
     class LRUMap {
-      public:
+public:
         // Constructor / Destructor
         LRUMap();
         ~LRUMap();
@@ -31,9 +32,10 @@ class BedrockPlugin_Cache : public BedrockPlugin {
         // Remove the name that is the least recently used (LRU)
         pair<string, bool> popLRU();
 
-      private:
+private:
         // A single entry being tracked
-        struct Entry {
+        struct Entry
+        {
             // Attributes
             string name;
             list<Entry*>::iterator listIt;
@@ -55,11 +57,14 @@ class BedrockPlugin_Cache : public BedrockPlugin {
 };
 
 class BedrockCacheCommand : public BedrockCommand {
-  public:
+public:
     BedrockCacheCommand(SQLiteCommand&& baseCommand, BedrockPlugin_Cache* plugin);
     virtual bool peek(SQLite& db);
     virtual void process(SQLite& db);
 
-  private:
-    BedrockPlugin_Cache& plugin() { return static_cast<BedrockPlugin_Cache&>(*_plugin); }
+private:
+    BedrockPlugin_Cache& plugin()
+    {
+        return static_cast<BedrockPlugin_Cache&>(*_plugin);
+    }
 };

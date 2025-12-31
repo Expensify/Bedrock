@@ -2,13 +2,16 @@
 #include <libstuff/SRandom.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct GracefulFailoverTest : tpunit::TestFixture {
+struct GracefulFailoverTest : tpunit::TestFixture
+{
     GracefulFailoverTest()
         : tpunit::TestFixture("GracefulFailover",
                               BEFORE_CLASS(GracefulFailoverTest::setup),
                               AFTER_CLASS(GracefulFailoverTest::teardown),
                               TEST(GracefulFailoverTest::test)
-                             ) { }
+        )
+    {
+    }
 
     BedrockClusterTester* tester;
 
@@ -16,24 +19,27 @@ struct GracefulFailoverTest : tpunit::TestFixture {
     map<string, int> counts;
     vector<list<SData>> allresults;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockClusterTester();
         allresults.resize(60);
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
     void startClientThreads(list<thread>& threads, atomic<bool>& done, map<string, int>& counts,
-                            atomic<int>& commandID, mutex& mu, vector<list<SData>>& allresults) {
+                            atomic<int>& commandID, mutex& mu, vector<list<SData>>& allresults)
+    {
         // Ok, start up some clients.
         for (size_t i = 0; i < allresults.size(); i++) {
             // Start a thread.
             BedrockClusterTester* localTester = tester;
             threads.emplace_back([localTester, i, &mu, &done, &counts, &commandID]() {
                 int currentNodeIndex = i % 3;
-                while(!done.load()) {
+                while (!done.load()) {
                     // Send some read or some write commands.
                     vector<SData> requests;
                     size_t numCommands = 50;
@@ -106,7 +112,8 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         }
     }
 
-    void test() {
+    void test()
+    {
         ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
 
         // Step 1: everything is already up and running. Let's start spamming.
@@ -220,5 +227,4 @@ struct GracefulFailoverTest : tpunit::TestFixture {
         allresults.resize(60);
         done.store(false);
     }
-
 } __GracefulFailoverTest;

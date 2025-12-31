@@ -4,7 +4,7 @@
 class BedrockCommand;
 
 class BedrockBlockingCommandQueue : public BedrockCommandQueue {
-  public:
+public:
     BedrockBlockingCommandQueue();
 
     // Functions to start and stop timing on the commands when they're inserted/removed from the queue.

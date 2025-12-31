@@ -6,7 +6,8 @@
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
 
-struct CreateJobTest : tpunit::TestFixture {
+struct CreateJobTest : tpunit::TestFixture
+{
     CreateJobTest()
         : tpunit::TestFixture("CreateJob",
                               BEFORE_CLASS(CreateJobTest::setupClass),
@@ -28,22 +29,32 @@ struct CreateJobTest : tpunit::TestFixture {
                               TEST(CreateJobTest::retryWithChildren),
                               TEST(CreateJobTest::getManualJobWithRetryAfter),
                               AFTER(CreateJobTest::tearDown),
-                              AFTER_CLASS(CreateJobTest::tearDownClass)) { }
+                              AFTER_CLASS(CreateJobTest::tearDownClass))
+    {
+    }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass()
+    {
+        tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
+    }
 
     // Reset the jobs table
-    void tearDown() {
+    void tearDown()
+    {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
     }
 
-    void tearDownClass() { delete tester; }
+    void tearDownClass()
+    {
+        delete tester;
+    }
 
-    void create() {
+    void create()
+    {
         SData command("CreateJob");
         string jobName = "testCreate";
         command["name"] = jobName;
@@ -66,7 +77,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(stol(originalJob[0][9]), 0);
     }
 
-    void createWithHttp() {
+    void createWithHttp()
+    {
         SData command("CreateJob / HTTP/1.1");
         string jobName = "testCreate";
         command["name"] = jobName;
@@ -89,7 +101,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(stol(originalJob[0][9]), 0);
     }
 
-    void createWithPriority() {
+    void createWithPriority()
+    {
         SData command("CreateJob");
         string jobName = "testCreate";
         string priority = "1000";
@@ -114,7 +127,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(stol(originalJob[0][9]), 0);
     }
 
-    void createWithData() {
+    void createWithData()
+    {
         SData command("CreateJob");
         string jobName = "testCreate";
         string data = "{\"blabla\":\"blabla\"}";
@@ -141,7 +155,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(stol(originalJob[0][9]), 0);
     }
 
-    void createWithRepeat() {
+    void createWithRepeat()
+    {
         SData command("CreateJob");
         string jobName = "testCreate";
         string repeat = "SCHEDULED, +1 HOUR";
@@ -169,7 +184,8 @@ struct CreateJobTest : tpunit::TestFixture {
     // Create a unique job
     // Then try to recreate the job with the same data
     // Make sure the new data is saved
-    void uniqueJobMergeData() {
+    void uniqueJobMergeData()
+    {
         // Create a unique job
         SData command("CreateJob");
         string jobName = "blabla";
@@ -211,7 +227,8 @@ struct CreateJobTest : tpunit::TestFixture {
     // Create a unique job
     // Then try to recreate the job with the some data
     // Make sure the new data is saved
-    void uniqueJob() {
+    void uniqueJob()
+    {
         // Create a unique job
         SData command("CreateJob");
         string jobName = "blabla";
@@ -272,14 +289,16 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(nonoverwritenJob[0][9], updatedJob[0][9]);
     }
 
-    void createWithBadData() {
+    void createWithBadData()
+    {
         SData command("CreateJob");
         command["name"] = "blabla";
         command["data"] = "blabla";
         tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
     }
 
-    void createWithBadRepeat() {
+    void createWithBadRepeat()
+    {
         SData command("CreateJob");
         command["name"] = "blabla";
         command["repeat"] = "blabla";
@@ -287,7 +306,8 @@ struct CreateJobTest : tpunit::TestFixture {
     }
 
     // Cannot create a child job when parent is QUEUED
-    void createChildWithQueuedParent() {
+    void createChildWithQueuedParent()
+    {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -304,7 +324,8 @@ struct CreateJobTest : tpunit::TestFixture {
     }
 
     // Cannot create a job with a running grandparent
-    void createChildWithRunningGrandparent() {
+    void createChildWithRunningGrandparent()
+    {
         // Create a parent job
         SData command("CreateJob");
         command["name"] = "parent";
@@ -338,7 +359,8 @@ struct CreateJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command, "405 Cannot create grandchildren");
     }
 
-    void retryRecurringJobs() {
+    void retryRecurringJobs()
+    {
         // Create a job with both retry and repeat
         SData command("CreateJob");
         string jobName = "testRetryable";
@@ -437,14 +459,16 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_TRUE(9 <= difftime(nextRunTime, lastRunTime) && difftime(nextRunTime, lastRunTime) <= 11);
     }
 
-    void retryWithMalformedValue() {
+    void retryWithMalformedValue()
+    {
         SData command("CreateJob");
         command["name"] = "test";
         command["retryAfter"] = "10";
         tester->executeWaitVerifyContent(command, "402 Malformed retryAfter");
     }
 
-    void retryUnique() {
+    void retryUnique()
+    {
         SData command("CreateJob");
         command["name"] = "test";
         command["retryAfter"] = "+10 HOUR";
@@ -452,7 +476,8 @@ struct CreateJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command, "200 OK");
     }
 
-    void retryLifecycle() {
+    void retryLifecycle()
+    {
         // Create a retryable job
         SData command("CreateJob");
         string jobName = "testRetryable";
@@ -541,7 +566,8 @@ struct CreateJobTest : tpunit::TestFixture {
         ASSERT_TRUE(jobData.empty());
     }
 
-    void retryWithChildren() {
+    void retryWithChildren()
+    {
         SData command("CreateJob");
         string jobName = "testRetryable";
         string retryValue = "+5 SECONDS";
@@ -559,7 +585,8 @@ struct CreateJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command, "405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
     }
 
-    void getManualJobWithRetryAfter() {
+    void getManualJobWithRetryAfter()
+    {
         // Create a job with both retry and repeat
         SData command("CreateJob");
         string jobName = "manual/testRetryable";

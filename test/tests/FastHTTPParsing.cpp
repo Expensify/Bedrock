@@ -2,20 +2,23 @@
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
-struct FastHTTPParsing : tpunit::TestFixture {
+struct FastHTTPParsing : tpunit::TestFixture
+{
     FastHTTPParsing() : tpunit::TestFixture(true, "FastHTTPParsing",
-                                    TEST(FastHTTPParsing::simpleSuccess),
-                                    TEST(FastHTTPParsing::simpleFail),
-                                    TEST(FastHTTPParsing::blank),
-                                    TEST(FastHTTPParsing::noHeaders),
-                                    TEST(FastHTTPParsing::splitSeparators),
-                                    TEST(FastHTTPParsing::reset))
-    { }
+                                            TEST(FastHTTPParsing::simpleSuccess),
+                                            TEST(FastHTTPParsing::simpleFail),
+                                            TEST(FastHTTPParsing::blank),
+                                            TEST(FastHTTPParsing::noHeaders),
+                                            TEST(FastHTTPParsing::splitSeparators),
+                                            TEST(FastHTTPParsing::reset))
+    {
+    }
 
     // We test both supported line ends everywhere.
     list<string> lineEnds = {"\r\n", "\n"};
 
-    void simpleSuccess() {
+    void simpleSuccess()
+    {
         for (const auto& end : lineEnds) {
             SFastBuffer fb("GET / HTTP/1.1" + end +
                            "Content-Length: 0" + end +
@@ -24,7 +27,8 @@ struct FastHTTPParsing : tpunit::TestFixture {
         }
     }
 
-    void simpleFail() {
+    void simpleFail()
+    {
         for (const auto& end : lineEnds) {
             SFastBuffer fb("GET / HTTP/1.1" + end +
                            "Content-Length: 0" + end);
@@ -32,12 +36,14 @@ struct FastHTTPParsing : tpunit::TestFixture {
         }
     }
 
-    void blank() {
+    void blank()
+    {
         SFastBuffer fb;
         ASSERT_FALSE(fb.startsWithHTTPRequest());
     }
 
-    void noHeaders() {
+    void noHeaders()
+    {
         for (const auto& end : lineEnds) {
             SFastBuffer fb("GET / HTTP/1.1" + end +
                            end);
@@ -45,7 +51,8 @@ struct FastHTTPParsing : tpunit::TestFixture {
         }
     }
 
-    void splitSeparators() {
+    void splitSeparators()
+    {
         SFastBuffer fb;
         string start = "GET / HTTP/1.1\r\nContent-Length: 0";
         fb.append(start.c_str(), start.size());
@@ -68,7 +75,8 @@ struct FastHTTPParsing : tpunit::TestFixture {
         ASSERT_TRUE(fb.startsWithHTTPRequest());
     }
 
-    void reset() {
+    void reset()
+    {
         for (const auto& end : lineEnds) {
             SFastBuffer fb("GET / HTTP/1.1" + end +
                            "Content-Length: 0" + end +
@@ -77,19 +85,19 @@ struct FastHTTPParsing : tpunit::TestFixture {
 
             SData request;
             int requestSize = request.deserialize(fb);
-            fb.consumeFront(requestSize); 
+            fb.consumeFront(requestSize);
 
             ASSERT_EQUAL(string(fb.c_str()), string("GET"));
             ASSERT_FALSE(fb.startsWithHTTPRequest());
 
             string restOf2ndRequest = " / HTTP/1.1" + end +
-                                      "Content-Length: 1" + end +
-                                      end +
-                                      "A";
+                "Content-Length: 1" + end +
+                end +
+                "A";
             fb.append(restOf2ndRequest.c_str(), restOf2ndRequest.size());
             ASSERT_TRUE(fb.startsWithHTTPRequest());
             requestSize = request.deserialize(fb);
-            fb.consumeFront(requestSize); 
+            fb.consumeFront(requestSize);
             ASSERT_TRUE(fb.empty());
 
             ASSERT_EQUAL(request.content, "A");

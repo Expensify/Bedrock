@@ -1,4 +1,3 @@
-
 #pragma once
 #include <string>
 using namespace std;
@@ -7,7 +6,8 @@ class SQValue {
 public:
 
     // Each value is typed to one of SQLite's types.
-    enum class TYPE {
+    enum class TYPE
+    {
         NONE, // because NULL is overloaded.
         INTEGER,
         REAL,

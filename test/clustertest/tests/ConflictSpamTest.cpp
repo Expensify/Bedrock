@@ -1,13 +1,16 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct ConflictSpamTest : tpunit::TestFixture {
+struct ConflictSpamTest : tpunit::TestFixture
+{
     ConflictSpamTest()
         : tpunit::TestFixture("ConflictSpam",
                               BEFORE_CLASS(ConflictSpamTest::setup),
                               AFTER_CLASS(ConflictSpamTest::teardown),
                               TEST(ConflictSpamTest::slow),
-                              TEST(ConflictSpamTest::spam)) { }
+                              TEST(ConflictSpamTest::spam))
+    {
+    }
 
     /* What's a conflict spam test? The main point of this test is to make sure we have lots of conflicting commits
      * coming in to the whole cluster, so that we can make sure they all eventually get committed and replicated in a
@@ -18,12 +21,14 @@ struct ConflictSpamTest : tpunit::TestFixture {
     BedrockClusterTester* tester;
     atomic<int> cmdID;
 
-    void setup() {
+    void setup()
+    {
         cmdID.store(0);
         tester = new BedrockClusterTester();
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
@@ -112,7 +117,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         threads.clear();
 
         // Let's collect the names of the journal tables on each node.
-        vector <string> allResults(3);
+        vector<string> allResults(3);
         for (int i : {0, 1, 2}) {
             threads.emplace_back([this, i, &allResults, &m](){
                 BedrockTester& brtester = tester->getTester(i);
@@ -153,8 +158,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
         // We'll let this go a couple of times. It's feasible that these won't match if the whole journal hasn't
         // replicated yet.
         int tries = 0;
-        while(tries++ < 60) {
-
+        while (tries++ < 60) {
             // Now lets compose a query for the journal of each node.
             allResults.clear();
             allResults.resize(3);
@@ -163,7 +167,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
                     BedrockTester& brtester = tester->getTester(i);
 
                     auto journals = tables[i];
-                    list <string> queries;
+                    list<string> queries;
                     for (auto journal : journals) {
                         queries.push_back("SELECT MAX(id) as maxIDs FROM " + journal);
                     }
@@ -204,7 +208,7 @@ struct ConflictSpamTest : tpunit::TestFixture {
             BedrockTester& brtester = tester->getTester(0);
 
             auto journals = tables[0];
-            vector <SData> commands;
+            vector<SData> commands;
             for (auto journal : journals) {
                 string query = "SELECT COUNT(id) FROM " + journal + ";";
 
@@ -212,7 +216,6 @@ struct ConflictSpamTest : tpunit::TestFixture {
                 cmd["query"] = query;
                 commands.push_back(cmd);
             }
-
 
             // Ok, send them all!
             auto results = brtester.executeWaitMultipleData(commands);
@@ -292,5 +295,4 @@ struct ConflictSpamTest : tpunit::TestFixture {
         }
         ASSERT_EQUAL(fail, 0);
     }
-
 } __ConflictSpamTest;

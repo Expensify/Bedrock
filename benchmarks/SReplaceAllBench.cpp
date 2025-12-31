@@ -6,7 +6,8 @@
 
 using namespace std;
 
-struct SReplaceAllBench : tpunit::TestFixture, BenchmarkBase {
+struct SReplaceAllBench : tpunit::TestFixture, BenchmarkBase
+{
     SReplaceAllBench() : tpunit::TestFixture(
         "SReplaceAll",
         TEST(SReplaceAllBench::benchNoUnsafeChars),
@@ -15,7 +16,9 @@ struct SReplaceAllBench : tpunit::TestFixture, BenchmarkBase {
         TEST(SReplaceAllBench::benchLongUnsafeList),
         TEST(SReplaceAllBench::benchURLSafe),
         TEST(SReplaceAllBench::benchAlphanumeric)
-    ), BenchmarkBase("SReplaceAll") {}
+        ), BenchmarkBase("SReplaceAll")
+    {
+    }
 
     void benchNoUnsafeChars()
     {
@@ -95,4 +98,3 @@ struct SReplaceAllBench : tpunit::TestFixture, BenchmarkBase {
         ASSERT_GREATER_THAN(us, 0);
     }
 } __SReplaceAllBench;
-

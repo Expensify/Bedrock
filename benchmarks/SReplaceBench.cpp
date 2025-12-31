@@ -6,7 +6,8 @@
 
 using namespace std;
 
-struct SReplaceBench : tpunit::TestFixture, BenchmarkBase {
+struct SReplaceBench : tpunit::TestFixture, BenchmarkBase
+{
     SReplaceBench() : tpunit::TestFixture(
         "SReplace",
         TEST(SReplaceBench::benchNoMatches),
@@ -16,7 +17,9 @@ struct SReplaceBench : tpunit::TestFixture, BenchmarkBase {
         TEST(SReplaceBench::benchLongReplace),
         TEST(SReplaceBench::benchShortToLong),
         TEST(SReplaceBench::benchLongToShort)
-    ), BenchmarkBase("SReplace") {}
+        ), BenchmarkBase("SReplace")
+    {
+    }
 
     void benchNoMatches()
     {

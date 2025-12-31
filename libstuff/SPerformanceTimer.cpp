@@ -3,18 +3,21 @@
 #include "SPerformanceTimer.h"
 
 SPerformanceTimer::SPerformanceTimer(const string& description, const map<string, chrono::steady_clock::duration>& defaults)
-  : _description(description),
-  _lastLogStart(chrono::steady_clock::now()),
-  _defaults(defaults),
-  _totals(_defaults)
-{}
+    : _description(description),
+    _lastLogStart(chrono::steady_clock::now()),
+    _defaults(defaults),
+    _totals(_defaults)
+{
+}
 
-void SPerformanceTimer::start(const string& type) {
+void SPerformanceTimer::start(const string& type)
+{
     _lastType = type;
     _lastStart = chrono::steady_clock::now();
 }
 
-uint64_t SPerformanceTimer::stop() {
+uint64_t SPerformanceTimer::stop()
+{
     // Get the time, and the time since last start.
     auto now = chrono::steady_clock::now();
     auto duration = now - _lastStart;
@@ -38,7 +41,8 @@ uint64_t SPerformanceTimer::stop() {
     return chrono::duration_cast<chrono::microseconds>(duration).count();
 }
 
-void SPerformanceTimer::log(chrono::steady_clock::duration elapsed) {
+void SPerformanceTimer::log(chrono::steady_clock::duration elapsed)
+{
     auto elapsedUS = chrono::duration_cast<chrono::microseconds>(elapsed).count();
     chrono::steady_clock::duration accounted(chrono::steady_clock::duration::zero());
     list<string> results;
