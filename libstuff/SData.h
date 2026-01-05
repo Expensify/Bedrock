@@ -9,7 +9,8 @@ using namespace std;
 // A very simple HTTP-like structure consisting of a method line, a table,
 // and a content body.
 // --------------------------------------------------------------------------
-struct SData {
+struct SData
+{
     // Public attributes
     string methodLine;
     STable nameValueMap;
@@ -25,9 +26,10 @@ struct SData {
     // Allow conversion from STable.
     SData(const STable& from);
 
-    // Allow forwarding emplacements directly so SData can act like `std::map`.
-    template <typename... Ts>
-    pair<decltype(nameValueMap)::iterator, bool> emplace(Ts&&... args) {
+    // Allow forwarding emplacements directly so SData can act like `map`.
+    template<typename ... Ts>
+    pair<decltype(nameValueMap)::iterator, bool> emplace(Ts&&... args)
+    {
         return nameValueMap.emplace(forward<Ts>(args)...);
     }
 
@@ -43,12 +45,13 @@ struct SData {
     // SData.set("count", 7);
     // SData.set("name", "Tyler");
     // for all string and integer types.
-    template <typename T>
+    template<typename T>
     typename enable_if<is_arithmetic<T>::value, void>::type set(const string& key, const T item)
     {
         nameValueMap[key] = to_string(item);
     }
-    template <typename T>
+
+    template<typename T>
     typename enable_if<!is_arithmetic<T>::value, void>::type set(const string& key, const T item)
     {
         nameValueMap[key] = item;
@@ -112,6 +115,7 @@ struct SData {
     // then use whatever data remains in the string as the content
     // **DEPRECATED** Use the constructor that handles this instead.
     static SData create(const string& rhs);
+
     static const string placeholder;
 };
 

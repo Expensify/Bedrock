@@ -9,7 +9,8 @@
 
 atomic<uint64_t> STCPManager::Socket::socketCount(1);
 
-void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
+void STCPManager::prePoll(fd_map& fdm, Socket& socket)
+{
     // Make sure it's not closed
     if (socket.state.load() != Socket::CLOSED) {
         // Check and see if it looks like we're still valid.
@@ -58,139 +59,143 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket) {
     }
 }
 
-void STCPManager::postPoll(fd_map& fdm, Socket& socket) {
+void STCPManager::postPoll(fd_map& fdm, Socket& socket)
+{
     // Update this socket
     switch (socket.state.load()) {
-    case Socket::CONNECTING: {
-        // See if it connected or failed
-        if (!SFDAnySet(fdm, socket.s, SWRITEEVTS | POLLHUP | POLLERR)) {
-            // Keep waiting for asynchronous connect result
-            break;
-        }
-
-        // Mark any sockets that the other end disconnected as closed.
-        if (SFDAnySet(fdm, socket.s, POLLHUP)) {
-            socket.shutdown(Socket::CLOSED);
-        }
-
-        // Tagged as writable; check SO_ERROR to see if the connect failed
-        int result = 0;
-        socklen_t size = sizeof(result);
-        SASSERTWARN(!getsockopt(socket.s, SOL_SOCKET, SO_ERROR, &result, &size));
-        if (result) {
-            // Asynchronous connect failed; close socket
-            SDEBUG("Connect to '" << socket.addr << "' failed with SO_ERROR #" << result << ", closing.");
-            socket.state.store(Socket::CLOSED);
-            socket.connectFailure = true;
-            break;
-        }
-
-        // Asynchronous connect succeeded
-        SDEBUG("Connect to '" << socket.addr << "' succeeded.");
-        SASSERTWARN(SFDAnySet(fdm, socket.s, SWRITEEVTS));
-        socket.state.store(Socket::CONNECTED);
-        // **NOTE: Intentionally fall through to the connected state
-    }
-
-    case Socket::CONNECTED: {
-        // Connected -- see if we're ready to send
-        bool aliveAfterRecv = true;
-        bool aliveAfterSend = true;
-        if (socket.ssl) {
-            // If the socket is ready to send or receive, do both: SSL has its own internal traffic, so even if we
-            // only want to receive, SSL might need to send (and vice versa)
-            //
-            // **NOTE: SSL can receive data for a while before giving any back, so if this gets called many times
-            //         in a row it might just be filling an internal buffer (and not due to some busy loop)
-            if (SFDAnySet(fdm, socket.s, SREADEVTS | SWRITEEVTS)) {
-                // Do both
-                aliveAfterRecv = socket.recv();
-                aliveAfterSend = socket.send();
+        case Socket::CONNECTING: {
+            // See if it connected or failed
+            if (!SFDAnySet(fdm, socket.s, SWRITEEVTS | POLLHUP | POLLERR)) {
+                // Keep waiting for asynchronous connect result
+                break;
             }
-        } else {
-            // Only send/recv if the socket is ready
-            if (SFDAnySet(fdm, socket.s, SREADEVTS)) {
-                aliveAfterRecv = socket.recv();
-            }
-            if (SFDAnySet(fdm, socket.s, SWRITEEVTS)) {
-                aliveAfterSend = socket.send();
-            }
-        }
 
-        // If we died, update
-        if (!aliveAfterRecv || !aliveAfterSend) {
-            // How did we die?
-            SDEBUG("Connection to '" << socket.addr << "' died (recv=" << aliveAfterRecv << ", send="
-                   << aliveAfterSend << ")");
-            socket.state.store(Socket::CLOSED);
-        }
-        break;
-    }
-
-    case Socket::SHUTTINGDOWN:
-        // Is this a SSL socket?
-        if (socket.ssl) {
-            // Always send/recv (see Socket::CONNECTED, above)
-            // **FIXME: Add timeout.
-            bool aliveAfterRecv = socket.recv();
-            bool aliveAfterSend = socket.send();
-            if (!aliveAfterSend || (!aliveAfterRecv && socket.sendBufferEmpty())) {
-
-                // Did we send everything?  (Technically this the send buffer could be empty and we still haven't
-                // sent everything -- SSL buffers internally, so we should check that buffer.  But odds are it sent fine.)
-                if (socket.sendBufferEmpty()) {
-                    SDEBUG("Graceful shutdown of SSL socket '" << socket.addr << "'");
-                } else {
-                    SWARN("Dirty shutdown of SSL socket '" << socket.addr << "' (" << socket.sendBufferCopy().size()
-                                                           << " bytes remain)");
-                }
+            // Mark any sockets that the other end disconnected as closed.
+            if (SFDAnySet(fdm, socket.s, POLLHUP)) {
                 socket.shutdown(Socket::CLOSED);
             }
-        } else {
-            // Not SSL -- only send if we have something to send
-            if (!socket.sendBufferEmpty()) {
-                // Still have something to send -- try to send it.
-                if (!socket.send()) {
-                    // Done trying to send
-                    SHMMM("Unable to finish sending to '" << socket.addr << "' on shutdown, clearing.");
-                    socket.shutdown();
-                    socket.setSendBuffer("");
+
+            // Tagged as writable; check SO_ERROR to see if the connect failed
+            int result = 0;
+            socklen_t size = sizeof(result);
+            SASSERTWARN(!getsockopt(socket.s, SOL_SOCKET, SO_ERROR, &result, &size));
+            if (result) {
+                // Asynchronous connect failed; close socket
+                SDEBUG("Connect to '" << socket.addr << "' failed with SO_ERROR #" << result << ", closing.");
+                socket.state.store(Socket::CLOSED);
+                socket.connectFailure = true;
+                break;
+            }
+
+            // Asynchronous connect succeeded
+            SDEBUG("Connect to '" << socket.addr << "' succeeded.");
+            SASSERTWARN(SFDAnySet(fdm, socket.s, SWRITEEVTS));
+            socket.state.store(Socket::CONNECTED);
+            // **NOTE: Intentionally fall through to the connected state
+        }
+
+        case Socket::CONNECTED: {
+            // Connected -- see if we're ready to send
+            bool aliveAfterRecv = true;
+            bool aliveAfterSend = true;
+            if (socket.ssl) {
+                // If the socket is ready to send or receive, do both: SSL has its own internal traffic, so even if we
+                // only want to receive, SSL might need to send (and vice versa)
+                //
+                // **NOTE: SSL can receive data for a while before giving any back, so if this gets called many times
+                //         in a row it might just be filling an internal buffer (and not due to some busy loop)
+                if (SFDAnySet(fdm, socket.s, SREADEVTS | SWRITEEVTS)) {
+                    // Do both
+                    aliveAfterRecv = socket.recv();
+                    aliveAfterSend = socket.send();
+                }
+            } else {
+                // Only send/recv if the socket is ready
+                if (SFDAnySet(fdm, socket.s, SREADEVTS)) {
+                    aliveAfterRecv = socket.recv();
+                }
+                if (SFDAnySet(fdm, socket.s, SWRITEEVTS)) {
+                    aliveAfterSend = socket.send();
                 }
             }
 
-            // Are we done sending?
-            // **FIXME: Add timeout
-            if (socket.sendBufferEmpty()) {
-                // Wait for the other side to shut down
-                if (!socket.recv()) {
-                    // Done shutting down
-                    SDEBUG("Graceful shutdown of socket '" << socket.addr << "'");
+            // If we died, update
+            if (!aliveAfterRecv || !aliveAfterSend) {
+                // How did we die?
+                SDEBUG("Connection to '" << socket.addr << "' died (recv=" << aliveAfterRecv << ", send="
+                       << aliveAfterSend << ")");
+                socket.state.store(Socket::CLOSED);
+            }
+            break;
+        }
+
+        case Socket::SHUTTINGDOWN:
+            // Is this a SSL socket?
+            if (socket.ssl) {
+                // Always send/recv (see Socket::CONNECTED, above)
+                // **FIXME: Add timeout.
+                bool aliveAfterRecv = socket.recv();
+                bool aliveAfterSend = socket.send();
+                if (!aliveAfterSend || (!aliveAfterRecv && socket.sendBufferEmpty())) {
+                    // Did we send everything?  (Technically this the send buffer could be empty and we still haven't
+                    // sent everything -- SSL buffers internally, so we should check that buffer.  But odds are it sent fine.)
+                    if (socket.sendBufferEmpty()) {
+                        SDEBUG("Graceful shutdown of SSL socket '" << socket.addr << "'");
+                    } else {
+                        SWARN("Dirty shutdown of SSL socket '" << socket.addr << "' (" << socket.sendBufferCopy().size()
+                              << " bytes remain)");
+                    }
                     socket.shutdown(Socket::CLOSED);
                 }
+            } else {
+                // Not SSL -- only send if we have something to send
+                if (!socket.sendBufferEmpty()) {
+                    // Still have something to send -- try to send it.
+                    if (!socket.send()) {
+                        // Done trying to send
+                        SHMMM("Unable to finish sending to '" << socket.addr << "' on shutdown, clearing.");
+                        socket.shutdown();
+                        socket.setSendBuffer("");
+                    }
+                }
+
+                // Are we done sending?
+                // **FIXME: Add timeout
+                if (socket.sendBufferEmpty()) {
+                    // Wait for the other side to shut down
+                    if (!socket.recv()) {
+                        // Done shutting down
+                        SDEBUG("Graceful shutdown of socket '" << socket.addr << "'");
+                        socket.shutdown(Socket::CLOSED);
+                    }
+                }
             }
-        }
-        break;
-    case Socket::CLOSED:
-        // Ignore
-        break;
-    default:
-        SERROR("Unknown socket state");
+            break;
+
+        case Socket::CLOSED:
+            // Ignore
+            break;
+
+        default:
+            SERROR("Unknown socket state");
     }
 }
 
-void STCPManager::Socket::shutdown(Socket::State toState) {
+void STCPManager::Socket::shutdown(Socket::State toState)
+{
     SDEBUG("Shutting down socket '" << addr << "'");
     ::shutdown(s, SHUT_RDWR);
     state.store(toState);
 }
 
 STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool https)
-  : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+    : s(sock), addr{}, state(state_), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
-{ }
+{
+}
 
 STCPManager::Socket::Socket(const string& host, bool https)
-  : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+    : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
 {
     SASSERT(SHostIsValid(host));
@@ -207,7 +212,7 @@ STCPManager::Socket::Socket(const string& host, bool https)
 }
 
 STCPManager::Socket::Socket(Socket&& from)
-  : s(from.s),
+    : s(from.s),
     addr(from.addr),
     state(from.state.load()),
     connectFailure(from.connectFailure),
@@ -224,7 +229,8 @@ STCPManager::Socket::Socket(Socket&& from)
     from.data = nullptr;
 }
 
-STCPManager::Socket::~Socket() {
+STCPManager::Socket::~Socket()
+{
     if (ssl) {
         delete ssl;
     } else {
@@ -235,7 +241,8 @@ STCPManager::Socket::~Socket() {
     }
 }
 
-bool STCPManager::Socket::send(size_t* bytesSentCount) {
+bool STCPManager::Socket::send(size_t* bytesSentCount)
+{
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
     // Send data
     bool result = false;
@@ -255,7 +262,8 @@ bool STCPManager::Socket::send(size_t* bytesSentCount) {
     return result;
 }
 
-bool STCPManager::Socket::send(const string& buffer, size_t* bytesSentCount) {
+bool STCPManager::Socket::send(const string& buffer, size_t* bytesSentCount)
+{
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
 
     // If the socket's in a valid state for sending, append to the sendBuffer, otherwise warn
@@ -269,22 +277,26 @@ bool STCPManager::Socket::send(const string& buffer, size_t* bytesSentCount) {
     return send(bytesSentCount);
 }
 
-bool STCPManager::Socket::sendBufferEmpty() {
+bool STCPManager::Socket::sendBufferEmpty()
+{
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
     return sendBuffer.empty();
 }
 
-string STCPManager::Socket::sendBufferCopy() {
+string STCPManager::Socket::sendBufferCopy()
+{
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
     return string(sendBuffer.c_str(), sendBuffer.size());
 }
 
-void STCPManager::Socket::setSendBuffer(const string& buffer) {
+void STCPManager::Socket::setSendBuffer(const string& buffer)
+{
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
     sendBuffer = buffer;
 }
 
-bool STCPManager::Socket::recv() {
+bool STCPManager::Socket::recv()
+{
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
 
     // Read data
@@ -303,7 +315,8 @@ bool STCPManager::Socket::recv() {
     return result;
 }
 
-unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host) {
+unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host)
+{
     // Open a port on the requested host
     SASSERT(SHostIsValid(host));
     int s;

@@ -9,7 +9,7 @@ class SQResult;
 class SQResultRow {
     friend class SQResult;
 
-  public:
+public:
     SQResultRow();
     SQResultRow(SQResult& result, size_t count = 0);
     SQResultRow(SQResultRow const&) = default;
@@ -27,22 +27,24 @@ class SQResultRow {
     string at(size_t index);
     SQValue& get(size_t index);
     const string at(size_t index) const;
+
     operator vector<string>() const;
 
-  private:
+private:
     SQResult* result = nullptr;
     vector<SQValue> data;
 };
 
 class SQResult {
-  public:
+public:
     // Attributes
     vector<string> headers;
 
     SQResult() = default;
     SQResult(SQResult const&) = default;
     SQResult(vector<SQResultRow>&& rows, vector<string>&& headers)
-        : headers(move(headers)), rows(move(rows)) {
+        : headers(move(headers)), rows(move(rows))
+    {
     }
 
     // Accessors
@@ -72,6 +74,6 @@ class SQResult {
     vector<SQResultRow>::const_iterator cbegin() const;
     vector<SQResultRow>::const_iterator cend() const;
 
-  private:
+private:
     vector<SQResultRow> rows;
 };
