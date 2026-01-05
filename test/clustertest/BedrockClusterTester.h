@@ -5,16 +5,17 @@
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
-enum class ClusterSize {
+enum class ClusterSize
+{
     ONE_NODE_CLUSTER = 1,
     THREE_NODE_CLUSTER = 3,
     FIVE_NODE_CLUSTER = 5,
     SIX_NODE_CLUSTER = 6,
 };
 
-template <typename T>
+template<typename T>
 class ClusterTester {
-  public:
+public:
 
     // Creates a cluster of the given size and brings up all the nodes. The nodes will have priority in the order of
     // their creation (i.e., node 0 is highest priority and will become leader.
@@ -37,7 +38,7 @@ class ClusterTester {
 
     atomic<uint64_t> groupCommitCount{0};
 
-  private:
+private:
 
     // The number of nodes in the cluster.
     int _size;
@@ -48,7 +49,7 @@ class ClusterTester {
 
 typedef ClusterTester<BedrockTester> BedrockClusterTester;
 
-template <typename T>
+template<typename T>
 ClusterTester<T>::ClusterTester(const string& pluginString, const string& processPath) : ClusterTester<T>(
     ClusterSize::THREE_NODE_CLUSTER,
     {},
@@ -56,21 +57,22 @@ ClusterTester<T>::ClusterTester(const string& pluginString, const string& proces
     {},
     pluginString,
     processPath
-    )
-{}
+)
+{
+}
 
-template <typename T>
+template<typename T>
 ClusterTester<T>::ClusterTester(ClusterSize size,
                                 list<string> queries,
                                 map<string, string> _args,
                                 list<string> uniquePorts,
                                 string pluginsToLoad,
                                 const string& processPath)
-: _size((int)size)
+    : _size((int) size)
 {
     // Generate three ports for each node.
-    vector<vector<uint16_t>> ports((int)size);
-    for (size_t i = 0; i < (size_t)size; i++) {
+    vector<vector<uint16_t>> ports((int) size);
+    for (size_t i = 0; i < (size_t) size; i++) {
         const uint16_t serverPort = BedrockTester::ports.getPort();
         const uint16_t nodePort = BedrockTester::ports.getPort();
         const uint16_t controlPort = BedrockTester::ports.getPort();
@@ -92,15 +94,14 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
     }
 
     const string nodeNamePrefix = "cluster_node_";
-    for (size_t i = 0; i < (size_t)size; i++) {
-
+    for (size_t i = 0; i < (size_t) size; i++) {
         // We already allocated our own ports earlier.
         uint16_t serverPort = ports[i][0];
         uint16_t nodePort = ports[i][1];
         uint16_t controlPort = ports[i][2];
 
         // Construct all the arguments for each server.
-        string serverHost  = "127.0.0.1:" + to_string(serverPort);
+        string serverHost = "127.0.0.1:" + to_string(serverPort);
         string nodeHost = "127.0.0.1:" + to_string(nodePort);
         string controlHost = "127.0.0.1:" + to_string(controlPort);
         string nodeName = nodeNamePrefix + to_string(i);
@@ -120,7 +121,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
         string peerString = SComposeList(peerList, ",");
 
         // Ok, build a legit map out of these.
-        map <string, string> args = {
+        map<string, string> args = {
             {"-serverHost", serverHost},
             {"-nodeHost", nodeHost},
             {"-controlPort", controlHost},
@@ -187,7 +188,7 @@ ClusterTester<T>::ClusterTester(ClusterSize size,
     }
 }
 
-template <typename T>
+template<typename T>
 ClusterTester<T>::~ClusterTester()
 {
     auto start = STimeNow();
@@ -226,25 +227,25 @@ ClusterTester<T>::~ClusterTester()
     _cluster.clear();
 }
 
-template <typename T>
+template<typename T>
 T& ClusterTester<T>::getTester(size_t index)
 {
     return *next(_cluster.begin(), index);
 }
 
-template <typename T>
+template<typename T>
 void ClusterTester<T>::stopNode(size_t index)
 {
     next(_cluster.begin(), index)->stopServer();
 }
 
-template <typename T>
+template<typename T>
 string ClusterTester<T>::startNode(size_t index)
 {
     return next(_cluster.begin(), index)->startServer();
 }
 
-template <typename T>
+template<typename T>
 string ClusterTester<T>::startNodeDontWait(size_t index)
 {
     return next(_cluster.begin(), index)->startServer(false);

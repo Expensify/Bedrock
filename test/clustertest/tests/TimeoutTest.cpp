@@ -3,7 +3,8 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct TimeoutTest : tpunit::TestFixture {
+struct TimeoutTest : tpunit::TestFixture
+{
     TimeoutTest()
         : tpunit::TestFixture("Timeout",
                               BEFORE_CLASS(TimeoutTest::setup),
@@ -14,15 +15,19 @@ struct TimeoutTest : tpunit::TestFixture {
                               TEST(TimeoutTest::testPostProcess),
                               TEST(TimeoutTest::totalTimeout),
                               TEST(TimeoutTest::quorumHTTPS),
-                              TEST(TimeoutTest::futureCommitTimeout)) { }
+                              TEST(TimeoutTest::futureCommitTimeout))
+    {
+    }
 
     BedrockClusterTester* tester;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockClusterTester();
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
@@ -56,7 +61,8 @@ struct TimeoutTest : tpunit::TestFixture {
         ASSERT_GREATER_THAN_EQUAL((end - start) / 1000, BedrockCommand::DEFAULT_PROCESS_TIMEOUT + 5'000);
     }
 
-    void quorumHTTPS () {
+    void quorumHTTPS()
+    {
         BedrockTester& brtester = tester->getTester(0);
         SData request("httpstimeout");
         request["writeConsistency"] = "2"; // QUORUM.
@@ -82,14 +88,16 @@ struct TimeoutTest : tpunit::TestFixture {
         brtester.executeWaitVerifyContent(slow, "555 Timeout processing command");
     }
 
-    void testPostProcess() {
+    void testPostProcess()
+    {
         BedrockTester& brtester = tester->getTester(0);
         SData slow("testPostProcessTimeout");
         slow["timeout"] = "500"; // 0.5s
         brtester.executeWaitVerifyContent(slow, "555 Timeout postProcessing command");
     }
 
-    void totalTimeout() {
+    void totalTimeout()
+    {
         // Test total timeout, not process timeout.
         BedrockTester& brtester = tester->getTester(0);
 
@@ -99,7 +107,8 @@ struct TimeoutTest : tpunit::TestFixture {
         brtester.executeWaitVerifyContent(https, "555 Timeout");
     }
 
-    void futureCommitTimeout() {
+    void futureCommitTimeout()
+    {
         // Test total timeout, not process timeout.
         BedrockTester& brtester = tester->getTester(0);
 
@@ -108,6 +117,4 @@ struct TimeoutTest : tpunit::TestFixture {
         https["commitCount"] = "10000000000";
         brtester.executeWaitVerifyContent(https, "555 Timeout");
     }
-
 } __TimeoutTest;
-
