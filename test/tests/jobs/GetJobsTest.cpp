@@ -7,7 +7,8 @@
 #include <test/tests/jobs/JobTestHelper.h>
 
 // Get the difference in seconds between a and b
-uint64_t absoluteDiff(time_t a, time_t b) {
+uint64_t absoluteDiff(time_t a, time_t b)
+{
     if (a > b) {
         return a - b;
     }
@@ -15,7 +16,8 @@ uint64_t absoluteDiff(time_t a, time_t b) {
 }
 
 // Retrieve job data.
-SQResult getAllJobData(BedrockTester& tester) {
+SQResult getAllJobData(BedrockTester& tester)
+{
     SData request;
     request.methodLine = "Query";
     request["query"] = "SELECT jobID, state, lastRun, nextRun FROM jobs;";
@@ -27,13 +29,17 @@ SQResult getAllJobData(BedrockTester& tester) {
     return jobData;
 }
 
-struct GetJobsTest : tpunit::TestFixture {
+struct GetJobsTest : tpunit::TestFixture
+{
     GetJobsTest()
         : tpunit::TestFixture("GetJobs",
-                              TEST(GetJobsTest::getJobs)) { }
+                              TEST(GetJobsTest::getJobs))
+    {
+    }
 
     static constexpr auto jobName = "TestJobName";
-    void getJobs() {
+    void getJobs()
+    {
         // Create a tester.
         BedrockTester tester({{"-plugins", "Jobs,DB"}}, {});
 
