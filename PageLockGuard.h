@@ -6,11 +6,11 @@
 using namespace std;
 
 class PageLockGuard {
-  public:
+public:
     PageLockGuard(int64_t pageNumber);
     ~PageLockGuard();
 
-  private:
+private:
 
     // For controlling access to internals.
     static mutex controlMutex;
