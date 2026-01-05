@@ -21,14 +21,16 @@ const string BOLD = "\033[1m";
 
 const double SIGNIFICANT_CHANGE_THRESHOLD = 5.0;
 
-bool runBenchmarks(const set<string>& include, const set<string>& exclude) {
+bool runBenchmarks(const set<string>& include, const set<string>& exclude)
+{
     g_benchmarkResults.clear();
     int result = tpunit::Tests::run(include, exclude, {}, {}, 1);
     return result == 0;
 }
 
 void printComparison(const map<string, BenchmarkResult>& baseline,
-                     const map<string, BenchmarkResult>& current) {
+                     const map<string, BenchmarkResult>& current)
+{
     cout << "\n" << BOLD << "=== Benchmark Comparison Report ===" << RESET << "\n\n";
 
     // Find the longest benchmark name for formatting
@@ -40,10 +42,10 @@ void printComparison(const map<string, BenchmarkResult>& baseline,
 
     // Print header
     cout << left << setw(maxNameLen + 2) << "Benchmark"
-         << right << setw(15) << "Baseline MB/s"
-         << setw(15) << "Current MB/s"
-         << setw(12) << "Change %"
-         << setw(15) << "Status" << "\n";
+    << right << setw(15) << "Baseline MB/s"
+    << setw(15) << "Current MB/s"
+    << setw(12) << "Change %"
+    << setw(15) << "Status" << "\n";
     cout << string(maxNameLen + 57, '-') << "\n";
 
     // Compare results
@@ -52,14 +54,14 @@ void printComparison(const map<string, BenchmarkResult>& baseline,
         if (it == baseline.end()) {
             // New benchmark
             cout << left << setw(maxNameLen + 2) << name
-                 << right << setw(15) << "N/A"
-                 << setw(15) << fixed << setprecision(2) << currentResult.throughputMBps
-                 << setw(12) << "NEW"
-                 << setw(15) << "✨ NEW" << "\n";
+            << right << setw(15) << "N/A"
+            << setw(15) << fixed << setprecision(2) << currentResult.throughputMBps
+            << setw(12) << "NEW"
+            << setw(15) << "✨ NEW" << "\n";
         } else {
             const auto& baselineResult = it->second;
-            double changePercent = ((currentResult.throughputMBps - baselineResult.throughputMBps) 
-                                   / baselineResult.throughputMBps) * 100.0;
+            double changePercent = ((currentResult.throughputMBps - baselineResult.throughputMBps)
+                / baselineResult.throughputMBps) * 100.0;
 
             // Use colors for significant changes (>5% difference)
             string color = "";
@@ -75,10 +77,10 @@ void printComparison(const map<string, BenchmarkResult>& baseline,
             }
 
             cout << left << setw(maxNameLen + 2) << name
-                 << right << setw(15) << fixed << setprecision(2) << baselineResult.throughputMBps
-                 << setw(15) << currentResult.throughputMBps
-                 << color << setw(12) << showpos << setprecision(1) << changePercent << "%" << RESET
-                 << noshowpos << setw(15) << status << "\n";
+            << right << setw(15) << fixed << setprecision(2) << baselineResult.throughputMBps
+            << setw(15) << currentResult.throughputMBps
+            << color << setw(12) << showpos << setprecision(1) << changePercent << "%" << RESET
+            << noshowpos << setw(15) << status << "\n";
         }
     }
 
@@ -86,17 +88,18 @@ void printComparison(const map<string, BenchmarkResult>& baseline,
     for (const auto& [name, baselineResult] : baseline) {
         if (current.find(name) == current.end()) {
             cout << left << setw(maxNameLen + 2) << name
-                 << right << setw(15) << fixed << setprecision(2) << baselineResult.throughputMBps
-                 << setw(15) << "N/A"
-                 << setw(12) << "N/A"
-                 << setw(15) << "❌ REMOVED" << "\n";
+            << right << setw(15) << fixed << setprecision(2) << baselineResult.throughputMBps
+            << setw(15) << "N/A"
+            << setw(12) << "N/A"
+            << setw(15) << "❌ REMOVED" << "\n";
         }
     }
 
     cout << "\n";
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[])
+{
     set<string> include;
     set<string> exclude;
     string baselineRef;
@@ -107,11 +110,11 @@ int main(int argc, char* argv[]) {
     // Check for help
     if (args.contains("--help") || args.contains("-h")) {
         cout << "Usage: " << argv[0] << " [options]\n"
-             << "Options:\n"
-             << "  --baseline <ref>  Compare against a git ref (branch, tag, or commit)\n"
-             << "  -only <test>      Run only specified test\n"
-             << "  -except <test>    Run all tests except specified\n"
-             << "  --help            Show this help message\n";
+        << "Options:\n"
+        << "  --baseline <ref>  Compare against a git ref (branch, tag, or commit)\n"
+        << "  -only <test>      Run only specified test\n"
+        << "  -except <test>    Run all tests except specified\n"
+        << "  --help            Show this help message\n";
         return 0;
     }
 
@@ -239,8 +242,8 @@ int main(int argc, char* argv[]) {
     for (const auto& [name, currentResult] : currentResults) {
         auto it = baselineResults.find(name);
         if (it != baselineResults.end()) {
-            double changePercent = ((currentResult.throughputMBps - it->second.throughputMBps) 
-                                   / it->second.throughputMBps) * 100.0;
+            double changePercent = ((currentResult.throughputMBps - it->second.throughputMBps)
+                / it->second.throughputMBps) * 100.0;
             if (changePercent > SIGNIFICANT_CHANGE_THRESHOLD) {
                 improved++;
             } else if (changePercent < (-1 * SIGNIFICANT_CHANGE_THRESHOLD)) {
@@ -252,9 +255,9 @@ int main(int argc, char* argv[]) {
     }
 
     cout << BOLD << "Summary: " << RESET
-              << GREEN << improved << " improved" << RESET << ", "
-              << RED << regressed << " regressed" << RESET << ", "
-              << unchanged << " unchanged\n\n";
-    
+    << GREEN << improved << " improved" << RESET << ", "
+    << RED << regressed << " regressed" << RESET << ", "
+    << unchanged << " unchanged\n\n";
+
     return 0;
 }
