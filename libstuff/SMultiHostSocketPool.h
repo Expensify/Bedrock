@@ -3,7 +3,7 @@
 #include <libstuff/SSocketPool.h>
 
 class SMultiHostSocketPool {
-  public:
+public:
     SMultiHostSocketPool();
     ~SMultiHostSocketPool();
 
@@ -13,7 +13,7 @@ class SMultiHostSocketPool {
     // Makes an existing socket available to be used again.
     void returnSocket(unique_ptr<STCPManager::Socket>&& s, const string& host);
 
-  private:
+private:
     mutex _poolMutex;
     map<string, SSocketPool> _pools;
 };
