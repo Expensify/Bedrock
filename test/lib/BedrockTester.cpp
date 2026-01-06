@@ -292,14 +292,12 @@ string BedrockTester::startServer(bool wait) {
                 break;
             }
             if (needSocket) {
-                int socket = 0;
-                socket = S_socket(wait ? _args["-serverHost"] : _args["-controlPort"], true, false, true);
+                int socket = S_socket(wait ? _args["-serverHost"] : _args["-controlPort"], true, false, true);
                 if (socket == -1) {
                     usleep(100000); // 0.1 seconds.
                     continue;
                 }
-                ::shutdown(socket, SHUT_RDWR);
-                ::close(socket);
+                S_close(&socket);
                 needSocket = false;
             }
 
@@ -380,7 +378,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
     // Spawn a thread for each connection.
     for (int i = 0; i < connections; i++) {
         threads.emplace_back([&](){
-            int socket = 0;
+            int socket = -1;
 
             // This continues until there are no more requests to process.
             bool timedOut = false;
@@ -393,7 +391,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                 uint64_t sendStart = STimeNow();
                 while (true) {
                     // If there's no socket, create a socket.
-                    if (socket <= 0) {
+                    if (socket == -1) {
                         socket = S_socket((control ? _args["-controlPort"] : _args["-serverHost"]), true, false, true);
                     }
 
@@ -453,9 +451,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     bool result = S_sendconsume(socket, sendBuffer);
                     if (!result) {
                         cout << "Failed to send! Probably disconnected. Should we reconnect?" << endl;
-                        ::shutdown(socket, SHUT_RDWR);
-                        ::close(socket);
-                        socket = -1;
+                        S_close(&socket);
                         if (returnOnDisconnect) {
                             if (errorCode) {
                                 *errorCode = 3;
@@ -484,9 +480,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                     if (readSock.revents & POLLIN) {
                         bool result = S_recvappend(socket, recvBuffer);
                         if (!result) {
-                            ::shutdown(socket, SHUT_RDWR);
-                            ::close(socket);
-                            socket = -1;
+                            S_close(&socket);
                             if (errorCode) {
                                 *errorCode = 4;
                             }
@@ -497,9 +491,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         }
                     } else if (readSock.revents & POLLHUP) {
                         cout << "Failure in readSock.revents & POLLHUP" << endl;
-                        ::shutdown(socket, SHUT_RDWR);
-                        ::close(socket);
-                        socket = -1;
+                        S_close(&socket);
                         if (errorCode) {
                             *errorCode = 5;
                         }
@@ -525,9 +517,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         responseData.methodLine = "000 Timeout";
                         responseData.content = content;
                         results[myIndex] = move(responseData);
-                        ::shutdown(socket, SHUT_RDWR);
-                        ::close(socket);
-                        socket = 0;
+                        S_close(&socket);
                         break;
                     } else if (!timedOut) {
                         // Ok, done, let's lock again and insert this in the results.
@@ -543,9 +533,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                         responseData.content = content;
                         results[myIndex] = move(responseData);
                         if (headers["Connection"] == "close") {
-                            ::shutdown(socket, SHUT_RDWR);
-                            ::close(socket);
-                            socket = 0;
+                            S_close(&socket);
                             break;
                         }
                     }
@@ -553,10 +541,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
             }
 
             // Close our socket if it's not already an error code.
-            if (socket != -1) {
-                ::shutdown(socket, SHUT_RDWR);
-                ::close(socket);
-            }
+            S_close(&socket);
         });
     }
 
