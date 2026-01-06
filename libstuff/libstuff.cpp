@@ -1910,10 +1910,10 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
     }
 }
 
-int S_close(int *sockfd, int how) {
+int S_close(int *sockfd) {
     int status = 0;
     if (*sockfd != -1) {
-        ::shutdown(*sockfd, how);
+        ::shutdown(*sockfd, SHUT_RDWR);
         status = ::close(*sockfd);
         *sockfd = -1;
     }
