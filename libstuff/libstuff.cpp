@@ -1794,7 +1794,7 @@ string SGUnzip (const string& content) {
 // --------------------------------------------------------------------------
 int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
     // Try to set up the socket
-    int s = 0;
+    int s = -1;
     try {
         // First, just parse the host
         string domain;
@@ -1843,7 +1843,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
             s = (int)socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         else
             s = (int)socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        if (!s || s == -1)
+        if (s == -1)
             STHROW("couldn't open");
 
         fcntl(s, F_SETFD, fcntl(s, F_GETFD) | FD_CLOEXEC);
@@ -1904,8 +1904,8 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
         // Failed to open
         SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << host
                                 << "': " << e.what() << "(errno=" << S_errno << " '" << strerror(S_errno) << "')");
-        if (s > 0)
-            close(s);
+        if (s != -1)
+            S_close(&s);
         return -1;
     }
 }
