@@ -1910,6 +1910,16 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking) {
     }
 }
 
+int S_close(int *sockfd, int how) {
+    int status = 0;
+    if (*sockfd != -1) {
+        ::shutdown(*sockfd, how);
+        status = ::close(*sockfd);
+        *sockfd = -1;
+    }
+    return status;
+}
+
 // --------------------------------------------------------------------------
 ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fromAddr) {
     SASSERT(s);
