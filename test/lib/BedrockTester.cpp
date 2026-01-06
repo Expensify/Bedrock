@@ -21,7 +21,8 @@ bool BedrockTester::ENABLE_HCTREE{false};
 bool BedrockTester::VERBOSE_LOGGING{false};
 bool BedrockTester::QUIET_LOGGING{false};
 
-string BedrockTester::getTempFileName(const string& prefix) {
+string BedrockTester::getTempFileName(const string& prefix)
+{
     string templateStr = "/tmp/" + prefix + "bedrocktest_XXXXXX.db";
     // The final templateStr needs to be creatable, mkstemps ensure it
     const int filedes = mkstemps(templateStr.data(), 3);
@@ -29,7 +30,8 @@ string BedrockTester::getTempFileName(const string& prefix) {
     return templateStr;
 }
 
-void BedrockTester::stopAll() {
+void BedrockTester::stopAll()
+{
     lock_guard<decltype(_testersMutex)> lock(_testersMutex);
     for (auto p : _testers) {
         p->stopServer(SIGKILL);
@@ -68,7 +70,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
     }
 
     string dbFileName = getTempFileName();
-    map <string, string> defaultArgs = {
+    map<string, string> defaultArgs = {
         {"-db", dbFileName},
         {"-serverHost", "127.0.0.1:" + to_string(_serverPort)},
         {"-nodeName", "bedrock_test"},
@@ -138,7 +140,8 @@ BedrockTester::BedrockTester(const map<string, string>& args,
     }
 }
 
-BedrockTester::~BedrockTester() {
+BedrockTester::~BedrockTester()
+{
     if (_db) {
         delete _db;
     }
@@ -160,20 +163,23 @@ BedrockTester::~BedrockTester() {
     _testers.erase(this);
 }
 
-void BedrockTester::updateArgs(const map<string, string>& args) {
+void BedrockTester::updateArgs(const map<string, string>& args)
+{
     for (auto& row : args) {
         _args[row.first] = row.second;
     }
 }
 
-string BedrockTester::getArg(const string& arg) const {
+string BedrockTester::getArg(const string& arg) const
+{
     if (_args.find(arg) != _args.end()) {
         return _args.at(arg);
     }
     return "";
 }
 
-void BedrockTester::autoAttachDebugger() {
+void BedrockTester::autoAttachDebugger()
+{
     const char* autoAttachConfigFile = getenv("BEDROCK_AUTO_ATTACH_DEBUGGER_CONFIG");
     if (!autoAttachConfigFile || !SFileExists(autoAttachConfigFile)) {
         return;
@@ -202,7 +208,8 @@ void BedrockTester::autoAttachDebugger() {
     ::close(socket);
 }
 
-string BedrockTester::startServer(bool wait) {
+string BedrockTester::startServer(bool wait)
+{
     int childPID = fork();
     if (childPID == -1) {
         cout << "Fork failed, acting like server died." << endl;
@@ -220,8 +227,6 @@ string BedrockTester::startServer(bool wait) {
             }
         }
 
-
-
         // Make sure the ports we need are free.
         int portsFree = 0;
         portsFree |= ports.waitForPort(_serverPort);
@@ -230,7 +235,7 @@ string BedrockTester::startServer(bool wait) {
 
         if (portsFree) {
             cout << "At least one port wasn't free (of: " << _serverPort << ", " << _nodePort << ", "
-                 << _controlPort << ") to start server, things will probably fail." << endl;
+            << _controlPort << ") to start server, things will probably fail." << endl;
         }
 
 #ifdef VALGRIND
@@ -252,11 +257,11 @@ string BedrockTester::startServer(bool wait) {
 #endif
 
         // Convert our c++ strings to old-school C strings for exec.
-        char** cargs = (char**)malloc((args.size() + 1) * sizeof(char*));
+        char** cargs = (char**) malloc((args.size() + 1) * sizeof(char*));
         int count = 0;
-        for(const string& arg : args) {
+        for (const string& arg : args) {
             const size_t argSize = arg.size() + 1;
-            cargs[count] = (char*)malloc(argSize);
+            cargs[count] = (char*) malloc(argSize);
             strlcpy(cargs[count], arg.c_str(), argSize);
             count++;
         }
@@ -315,7 +320,8 @@ string BedrockTester::startServer(bool wait) {
     return "";
 }
 
-void BedrockTester::stopServer(int signal) {
+void BedrockTester::stopServer(int signal)
+{
     if (_serverPID) {
         kill(_serverPID, signal);
         int status;
@@ -324,10 +330,12 @@ void BedrockTester::stopServer(int signal) {
     }
 }
 
-string BedrockTester::executeWaitVerifyContent(const SData& request, const string& expectedResult, bool control, uint64_t retryTimeoutUS) {
+string BedrockTester::executeWaitVerifyContent(const SData& request, const string& expectedResult, bool control, uint64_t retryTimeoutUS)
+{
     uint64_t start = STimeNow();
     vector<SData> results;
-    do {
+    do
+    {
         results = BedrockTester::executeWaitMultipleData({request}, 1, control);
 
         if (results.size() > 0 && SStartsWith(results[0].methodLine, expectedResult)) {
@@ -335,8 +343,7 @@ string BedrockTester::executeWaitVerifyContent(const SData& request, const strin
             break;
         }
         usleep(100'000);
-
-    } while(STimeNow() < start + retryTimeoutUS);
+    } while (STimeNow() < start + retryTimeoutUS);
 
     if (results.size() == 0) {
         STHROW("No result.");
@@ -351,12 +358,14 @@ string BedrockTester::executeWaitVerifyContent(const SData& request, const strin
     return results[0].content;
 }
 
-STable BedrockTester::executeWaitVerifyContentTable(const SData& request, const string& expectedResult) {
+STable BedrockTester::executeWaitVerifyContentTable(const SData& request, const string& expectedResult)
+{
     string result = executeWaitVerifyContent(request, expectedResult);
     return SParseJSONObject(result);
 }
 
-vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect, int* errorCode) {
+vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int connections, bool control, bool returnOnDisconnect, int* errorCode)
+{
     // Synchronize dequeuing requests, and saving results.
     recursive_mutex listLock;
 
@@ -368,7 +377,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
     int currentIndex = 0;
 
     // This is the list of threads that we'll use for each connection.
-    list <thread> threads;
+    list<thread> threads;
 
     //reset the error code.
     if (errorCode) {
@@ -386,7 +395,6 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
             size_t myIndex = 0;
             SData myRequest;
             while (true) {
-
                 // This tries to create a socket to Bedrock on the correct port.
                 uint64_t sendStart = STimeNow();
                 while (true) {
@@ -546,7 +554,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
     }
 
     // Wait for our threads to finish.
-    for (thread& t : threads) {
+    for (thread & t : threads) {
         t.join();
     }
 
@@ -564,7 +572,8 @@ SQLite& BedrockTester::getSQLiteDB()
     return *_db;
 }
 
-void BedrockTester::freeDB() {
+void BedrockTester::freeDB()
+{
     lock_guard<decltype(_dbMutex)> lock(_dbMutex);
     delete _db;
     _db = nullptr;
@@ -616,7 +625,8 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
     }
 }
 
-bool BedrockTester::waitForStatusTerm(const string& term, const string& testValue, uint64_t timeoutUS) {
+bool BedrockTester::waitForStatusTerm(const string& term, const string& testValue, uint64_t timeoutUS)
+{
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
@@ -634,7 +644,8 @@ bool BedrockTester::waitForStatusTerm(const string& term, const string& testValu
     return false;
 }
 
-bool BedrockTester::waitForLeadingFollowing(uint64_t timeoutUS) {
+bool BedrockTester::waitForLeadingFollowing(uint64_t timeoutUS)
+{
     uint64_t start = STimeNow();
     while (STimeNow() < start + timeoutUS) {
         try {
@@ -662,6 +673,7 @@ int BedrockTester::getPID() const
     return _serverPID;
 }
 
-void BedrockTester::setEnforceCommandOrder(bool enforce) {
+void BedrockTester::setEnforceCommandOrder(bool enforce)
+{
     _enforceCommandOrder = enforce;
 }
