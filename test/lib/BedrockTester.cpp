@@ -567,16 +567,24 @@ SQLite& BedrockTester::getSQLiteDB()
     lock_guard<decltype(_dbMutex)> lock(_dbMutex);
     if (!_db) {
         // Assumes wal2 mode.
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
+        if (!ENABLE_HCTREE) {
+            _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, false);
+        } else {
+            // We wont use the database, instead we will forward queries to server. We want the _db instance to exist tho
+            _db = new SQLite(":memory:", 1, 1, -1, 0, false);
+            _db->setTester(static_cast<void*>(this)); // We will set the tester data for later access
+        }
     }
     return *_db;
 }
 
 void BedrockTester::freeDB()
 {
-    lock_guard<decltype(_dbMutex)> lock(_dbMutex);
-    delete _db;
-    _db = nullptr;
+    if (!ENABLE_HCTREE) {
+        lock_guard<decltype(_dbMutex)> lock(_dbMutex);
+        delete _db;
+        _db = nullptr;
+    }
 }
 
 string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS)
@@ -613,9 +621,9 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
             command["timeout"] = to_string(timeoutMS);
         }
         auto commandResult = executeWaitMultipleData({command}, 1);
-        result.deserialize(commandResult[0].content);
-
-        return true;
+        if (commandResult[0].content.empty()) return true;
+        bool success = result.deserialize(commandResult[0].content) ;
+        return success;
     } else {
         SQLite& db = getSQLiteDB();
         db.beginTransaction();
