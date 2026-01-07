@@ -1,5 +1,6 @@
 #include "DB.h"
 #include "libstuff/libstuff.h"
+#include "libstuff/sqlite3.h"
 
 #include <cctype>
 #include <string.h>
@@ -113,7 +114,10 @@ bool BedrockDBCommand::peek(SQLite& db) {
 
     // If we got any errors while preparing, we're calling this a bad command.
     if (prepareResult != SQLITE_OK) {
-        response["error"] = db.getLastError();
+        string errorMessage = db.getLastError();
+        int errorOffset = sqlite3_error_offset(db.getDBHandle());
+        response["error"] = errorMessage;
+        response.content = BedrockPlugin_DB::generateErrorContextMessage(query, errorMessage, errorOffset);
         STHROW("402 Bad query");
     }
 
@@ -321,6 +325,59 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
     // At this point, we've filled out the spec struct as much as we can.
     return spec;
 }
+
+string BedrockPlugin_DB::generateErrorContextMessage(const string& query, const string& errorMessage, int errorOffset) {
+    if (errorOffset < 0) {
+        return errorMessage;
+    }
+
+    // Move the snippet window forward until the error is within ~50 bytes of the start, taking care not to split UTF-8 continuation bytes.
+    size_t sqlOffset = 0;
+    while (errorOffset > 50) {
+        errorOffset--;
+        sqlOffset++;
+        while ((query[sqlOffset] & 0xc0) == 0x80) {
+            sqlOffset++;
+            errorOffset--;
+        }
+    }
+
+    // Determine how much of sqlText to show (cap at 78 bytes), again not splitting UTF-8 continuation bytes at the end.
+    size_t snippetByteLength = query.length() - sqlOffset;
+    if (snippetByteLength > 78) {
+        snippetByteLength = 78;
+        while (snippetByteLength > 0 && (query[sqlOffset + snippetByteLength - 1] & 0xc0) == 0x80) {
+            snippetByteLength--;
+        }
+    }
+    string sqlSnippet = query.substr(sqlOffset, snippetByteLength);
+
+    // Replace any whitespace in the displayed snippet with spaces so the caret alignment is stable.
+    for (char& c : sqlSnippet) {
+        if (isspace(c)) {
+            c = ' ';
+        }
+    }
+
+    // Build the final two-line context message with a caret marker.
+    string contextMessage = sqlSnippet + "\n";
+    string spaces = "";
+    if (errorOffset < 25) {
+        for (int i = 0; i < errorOffset; i++) {
+            spaces += " ";
+        }
+        contextMessage += spaces + "^--- error here";
+    } else {
+        for (int i = 0; i < errorOffset - 14; i++) {
+            spaces += " ";
+        }
+        contextMessage += spaces + "error here ---^";
+    }
+
+    return errorMessage + "\n" + contextMessage + "\n";
+}
+
+
 
 BedrockPlugin_DB::Sqlite3QRFSpecWrapper::Sqlite3QRFSpecWrapper()
     : zColumnSep(new string),
