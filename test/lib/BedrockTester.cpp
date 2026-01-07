@@ -47,6 +47,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
                              bool startImmediately,
                              const string& bedrockBinary,
                              atomic<uint64_t>* alternateCounter) :
+    hctreeBridgeMode(ENABLE_HCTREE_BRIDGE),
     _serverPort(serverPort ?: ports.getPort()),
     _nodePort(nodePort ?: ports.getPort()),
     _controlPort(controlPort ?: ports.getPort()),
@@ -568,7 +569,7 @@ SQLite& BedrockTester::getSQLiteDB()
     lock_guard<decltype(_dbMutex)> lock(_dbMutex);
     if (!_db) {
         // Assumes wal2 mode.
-        if (!ENABLE_HCTREE_BRIDGE) {
+        if (!hctreeBridgeMode) {
             _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
         } else {
             // We wont use the database, instead we will forward queries to server. We want the _db instance to exist tho
@@ -581,7 +582,7 @@ SQLite& BedrockTester::getSQLiteDB()
 
 void BedrockTester::freeDB()
 {
-    if (!ENABLE_HCTREE_BRIDGE) {
+    if (!hctreeBridgeMode) {
         lock_guard<decltype(_dbMutex)> lock(_dbMutex);
         delete _db;
         _db = nullptr;
