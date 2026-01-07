@@ -622,9 +622,9 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
             command["timeout"] = to_string(timeoutMS);
         }
         auto commandResult = executeWaitMultipleData({command}, 1);
-        if (commandResult[0].content.empty()) return true;
-        bool success = result.deserialize(commandResult[0].content) ;
-        return success;
+        result.deserialize(commandResult[0].content);
+
+        return true;
     } else {
         SQLite& db = getSQLiteDB();
         db.beginTransaction();
