@@ -18,6 +18,7 @@ PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
 bool BedrockTester::ENABLE_HCTREE{false};
+bool BedrockTester::ENABLE_HCTREE_BRIDGE{false};
 bool BedrockTester::VERBOSE_LOGGING{false};
 bool BedrockTester::QUIET_LOGGING{false};
 
@@ -567,11 +568,11 @@ SQLite& BedrockTester::getSQLiteDB()
     lock_guard<decltype(_dbMutex)> lock(_dbMutex);
     if (!_db) {
         // Assumes wal2 mode.
-        if (!ENABLE_HCTREE) {
-            _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, false);
+        if (!ENABLE_HCTREE_BRIDGE) {
+            _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
         } else {
             // We wont use the database, instead we will forward queries to server. We want the _db instance to exist tho
-            _db = new SQLite(":memory:", 1, 1, -1, 0, false);
+            _db = new SQLite(":memory:", 1000, 1000, -1, 0, false);
             _db->setTester(static_cast<void*>(this)); // We will set the tester data for later access
         }
     }
@@ -580,7 +581,7 @@ SQLite& BedrockTester::getSQLiteDB()
 
 void BedrockTester::freeDB()
 {
-    if (!ENABLE_HCTREE) {
+    if (!ENABLE_HCTREE_BRIDGE) {
         lock_guard<decltype(_dbMutex)> lock(_dbMutex);
         delete _db;
         _db = nullptr;
