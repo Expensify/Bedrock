@@ -1,28 +1,39 @@
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
-struct QueryJobTest : tpunit::TestFixture {
+struct QueryJobTest : tpunit::TestFixture
+{
     QueryJobTest()
         : tpunit::TestFixture("QueryJob",
                               BEFORE_CLASS(QueryJobTest::setupClass),
                               TEST(QueryJobTest::queryJob),
                               AFTER(QueryJobTest::tearDown),
-                              AFTER_CLASS(QueryJobTest::tearDownClass)) { }
+                              AFTER_CLASS(QueryJobTest::tearDownClass))
+    {
+    }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass()
+    {
+        tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
+    }
 
     // Reset the jobs table
-    void tearDown() {
+    void tearDown()
+    {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
     }
 
-    void tearDownClass() { delete tester; }
+    void tearDownClass()
+    {
+        delete tester;
+    }
 
-    void queryJob() {
+    void queryJob()
+    {
         // Create the job
         SData command("CreateJob");
         string jobName = "job";
@@ -49,4 +60,3 @@ struct QueryJobTest : tpunit::TestFixture {
         SASSERT(!response["created"].empty());
     }
 } __QueryJobTest;
-
