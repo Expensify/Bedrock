@@ -1,17 +1,20 @@
 #include <libstuff/libstuff.h>
 #include <test/lib/BedrockTester.h>
 
-struct STimeTest : tpunit::TestFixture {
+struct STimeTest : tpunit::TestFixture
+{
     STimeTest()
         : tpunit::TestFixture("STime",
                               TEST(STimeTest::testSTimestampToEpoch),
                               TEST(STimeTest::testSTimestampMSToEpoch))
-    { }
+    {
+    }
 
     /**
      * Test STimestampToEpoch with regular format (no fractional seconds)
      */
-    void testSTimestampToEpoch() {
+    void testSTimestampToEpoch()
+    {
         uint64_t result = STimestampToEpoch("%Y-%m-%d %H:%M:%S", "2025-10-13 14:30:25");
         ASSERT_EQUAL(1760365825, result);
 
@@ -25,7 +28,8 @@ struct STimeTest : tpunit::TestFixture {
     /**
      * Test STimestampMSToEpoch with fractional seconds format
      */
-    void testSTimestampMSToEpoch() {
+    void testSTimestampMSToEpoch()
+    {
         uint64_t result = STimestampMSToEpoch("%Y-%m-%d %H:%M:%f", "2025-10-13 14:30:25.192");
         ASSERT_EQUAL(1760365825192, result);
 

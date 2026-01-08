@@ -1,5 +1,6 @@
 #include "DB.h"
 #include "libstuff/libstuff.h"
+#include "libstuff/sqlite3.h"
 
 #include <cctype>
 #include <string.h>
@@ -11,7 +12,8 @@
 #define SLOGPREFIX "{" << getName() << "} "
 
 const string BedrockPlugin_DB::name("DB");
-const string& BedrockPlugin_DB::getName() const {
+const string& BedrockPlugin_DB::getName() const
+{
     return name;
 }
 
@@ -20,7 +22,7 @@ BedrockPlugin_DB::BedrockPlugin_DB(BedrockServer& s) : BedrockPlugin(s)
 }
 
 BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB* plugin) :
-  BedrockCommand(move(baseCommand), plugin),
+    BedrockCommand(move(baseCommand), plugin),
     // The "full" syntax of a query request is:
     //
     //      Query
@@ -30,25 +32,27 @@ BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB
     // in the method line as follows:
     //
     //      Query: ...sql...
-  query(STrim(SStartsWith(SToLower(request.methodLine), "query:") ? request.methodLine.substr(strlen("query:")) : request["query"]))
+    query(STrim(SStartsWith(SToLower(request.methodLine), "query:") ? request.methodLine.substr(strlen("query:")) : request["query"]))
 {
 }
 
-unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseCommand) {
+unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseCommand)
+{
     if (SStartsWith(SToLower(baseCommand.request.methodLine), "query:") || SIEquals(baseCommand.request.getVerb(), "Query")) {
         return make_unique<BedrockDBCommand>(move(baseCommand), this);
     }
     return nullptr;
 }
 
-int BedrockDBCommand::SQLiteFormatAppend(void* destString, const char* appendString, sqlite3_int64 length) {
-
+int BedrockDBCommand::SQLiteFormatAppend(void* destString, const char* appendString, sqlite3_int64 length)
+{
     string* output = static_cast<string*>(destString);
     output->append(reinterpret_cast<const char*>(appendString), length);
     return 0;
 }
 
-bool BedrockDBCommand::peek(SQLite& db) {
+bool BedrockDBCommand::peek(SQLite& db)
+{
     if (query.size() < 1 || query.size() > BedrockPlugin::MAX_SIZE_QUERY) {
         STHROW("402 Missing query");
     }
@@ -113,7 +117,10 @@ bool BedrockDBCommand::peek(SQLite& db) {
 
     // If we got any errors while preparing, we're calling this a bad command.
     if (prepareResult != SQLITE_OK) {
-        response["error"] = db.getLastError();
+        string errorMessage = db.getLastError();
+        int errorOffset = sqlite3_error_offset(db.getDBHandle());
+        response["error"] = errorMessage;
+        response.content = BedrockPlugin_DB::generateErrorContextMessage(query, errorMessage, errorOffset);
         STHROW("402 Bad query");
     }
 
@@ -149,12 +156,13 @@ bool BedrockDBCommand::peek(SQLite& db) {
     return true;
 }
 
-void BedrockDBCommand::process(SQLite& db) {
+void BedrockDBCommand::process(SQLite& db)
+{
     if (db.getUpdateNoopMode()) {
         SINFO("Query run in mocked request, just ignoring.");
         return;
     }
-    BedrockPlugin::verifyAttributeBool(request, "nowhere",  false);
+    BedrockPlugin::verifyAttributeBool(request, "nowhere", false);
 
     const string upperQuery = SToUpper(query);
     if (!request.test("nowhere") &&
@@ -181,7 +189,8 @@ void BedrockDBCommand::process(SQLite& db) {
     return;
 }
 
-BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const string& argsToParse) {
+BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const string& argsToParse)
+{
     // Parse this into a map corresponding to the allowed options specified here:
     // https://sqlite.org/cli.html#command_line_options
     // Note that just because we parse all of these doesn't mean we support them.
@@ -203,7 +212,7 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
                 // for any other character, we simply append it to the current string.
                 currentArg += argsToParse[currentOffset];
             }
-        }else {
+        } else {
             // If we're not in quotes, then a space signals the end of the current string.
             if (isspace(argsToParse[currentOffset])) {
                 // Finish this string and move to the next, unless it's empty.
@@ -216,8 +225,7 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
                 if (argsToParse[currentOffset] == '\'' || argsToParse[currentOffset] == '"') {
                     // Start a quoted string.
                     quoteChar = argsToParse[currentOffset];
-                }
-                else if (argsToParse[currentOffset] == '\\') {
+                } else if (argsToParse[currentOffset] == '\\') {
                     // Start an escape sequence.
                     escaped = true;
                 } else {
@@ -322,27 +330,83 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
     return spec;
 }
 
+string BedrockPlugin_DB::generateErrorContextMessage(const string& query, const string& errorMessage, int errorOffset) {
+    if (errorOffset < 0) {
+        return errorMessage;
+    }
+
+    // Move the snippet window forward until the error is within ~50 bytes of the start, taking care not to split UTF-8 continuation bytes.
+    size_t sqlOffset = 0;
+    while (errorOffset > 50) {
+        errorOffset--;
+        sqlOffset++;
+        while ((query[sqlOffset] & 0xc0) == 0x80) {
+            sqlOffset++;
+            errorOffset--;
+        }
+    }
+
+    // Determine how much of sqlText to show (cap at 78 bytes), again not splitting UTF-8 continuation bytes at the end.
+    size_t snippetByteLength = query.length() - sqlOffset;
+    if (snippetByteLength > 78) {
+        snippetByteLength = 78;
+        while (snippetByteLength > 0 && (query[sqlOffset + snippetByteLength - 1] & 0xc0) == 0x80) {
+            snippetByteLength--;
+        }
+    }
+    string sqlSnippet = query.substr(sqlOffset, snippetByteLength);
+
+    // Replace any whitespace in the displayed snippet with spaces so the caret alignment is stable.
+    for (char& c : sqlSnippet) {
+        if (isspace(c)) {
+            c = ' ';
+        }
+    }
+
+    // Build the final two-line context message with a caret marker.
+    string contextMessage = sqlSnippet + "\n";
+    string spaces = "";
+    if (errorOffset < 25) {
+        for (int i = 0; i < errorOffset; i++) {
+            spaces += " ";
+        }
+        contextMessage += spaces + "^--- error here";
+    } else {
+        for (int i = 0; i < errorOffset - 14; i++) {
+            spaces += " ";
+        }
+        contextMessage += spaces + "error here ---^";
+    }
+
+    return errorMessage + "\n" + contextMessage + "\n";
+}
+
+
+
 BedrockPlugin_DB::Sqlite3QRFSpecWrapper::Sqlite3QRFSpecWrapper()
     : zColumnSep(new string),
-      zNull(new string)
+    zNull(new string)
 {
 }
 
-BedrockPlugin_DB::Sqlite3QRFSpecWrapper::~Sqlite3QRFSpecWrapper() {
+BedrockPlugin_DB::Sqlite3QRFSpecWrapper::~Sqlite3QRFSpecWrapper()
+{
     delete zColumnSep;
     delete zNull;
 }
 
 BedrockPlugin_DB::Sqlite3QRFSpecWrapper::Sqlite3QRFSpecWrapper(Sqlite3QRFSpecWrapper&& other) noexcept
     : spec(other.spec),
-      zColumnSep(other.zColumnSep),
-      zNull(other.zNull) {
+    zColumnSep(other.zColumnSep),
+    zNull(other.zNull)
+{
     other.spec = sqlite3_qrf_spec{};
     other.zColumnSep = nullptr;
     other.zNull = nullptr;
 }
 
-BedrockPlugin_DB::Sqlite3QRFSpecWrapper& BedrockPlugin_DB::Sqlite3QRFSpecWrapper::operator=(BedrockPlugin_DB::Sqlite3QRFSpecWrapper&& other) noexcept {
+BedrockPlugin_DB::Sqlite3QRFSpecWrapper& BedrockPlugin_DB::Sqlite3QRFSpecWrapper::operator=(BedrockPlugin_DB::Sqlite3QRFSpecWrapper&& other) noexcept
+{
     if (this != &other) {
         delete zColumnSep;
         delete zNull;
