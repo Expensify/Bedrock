@@ -1,6 +1,7 @@
 #include <BedrockTimeoutCommandQueue.h>
 
-const unique_ptr<BedrockCommand>& BedrockTimeoutCommandQueue::front() const {
+const unique_ptr<BedrockCommand>& BedrockTimeoutCommandQueue::front() const
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     if (_queue.empty()) {
         throw out_of_range("No commands");
@@ -14,7 +15,8 @@ const unique_ptr<BedrockCommand>& BedrockTimeoutCommandQueue::front() const {
     return _queue.front();
 }
 
-void BedrockTimeoutCommandQueue::push(unique_ptr<BedrockCommand>&& rhs) {
+void BedrockTimeoutCommandQueue::push(unique_ptr<BedrockCommand>&& rhs)
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
 
     // Add to the queue and timeout map.
@@ -31,7 +33,8 @@ void BedrockTimeoutCommandQueue::push(unique_ptr<BedrockCommand>&& rhs) {
     SASSERT(write(_pipeFD[1], "A", 1));
 }
 
-unique_ptr<BedrockCommand> BedrockTimeoutCommandQueue::pop() {
+unique_ptr<BedrockCommand> BedrockTimeoutCommandQueue::pop()
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     if (_queue.empty()) {
         throw out_of_range("No commands");
