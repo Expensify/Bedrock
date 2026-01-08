@@ -295,6 +295,10 @@ class SQLite {
     void exclusiveLockDB();
     void exclusiveUnlockDB();
 
+    // Store tester so it allows us to bridge db call when using hctree on tests
+    void setTester(void* data) { tester = data; }
+    void* getTester() const { return tester; }
+
   private:
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
@@ -568,4 +572,7 @@ class SQLite {
 
     // Difference in page count from the start to the end of the transaction. Only counted on HC-Tree databases.
     int64_t _pageCountDifference = 0;
+
+    // Allow to store tester so it allows us to bridge db call when using hctree on tests
+    mutable void* tester{nullptr};
 };

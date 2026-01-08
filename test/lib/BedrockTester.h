@@ -9,6 +9,7 @@ class SQLite;
 class BedrockTester {
 public:
     static bool ENABLE_HCTREE;
+    static bool ENABLE_HCTREE_BRIDGE;
     static bool VERBOSE_LOGGING;
     static bool QUIET_LOGGING;
 
@@ -103,6 +104,7 @@ public:
     void autoAttachDebugger();
 
     string serverName;
+    bool hctreeBridgeMode;
 
 protected:
     // Returns an SQLite object attached to the same DB file as the bedrock server. Writing to this is dangerous and

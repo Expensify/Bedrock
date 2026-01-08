@@ -18,6 +18,7 @@ PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
 set<BedrockTester*> BedrockTester::_testers;
 bool BedrockTester::ENABLE_HCTREE{false};
+bool BedrockTester::ENABLE_HCTREE_BRIDGE{false};
 bool BedrockTester::VERBOSE_LOGGING{false};
 bool BedrockTester::QUIET_LOGGING{false};
 
@@ -46,6 +47,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
                              bool startImmediately,
                              const string& bedrockBinary,
                              atomic<uint64_t>* alternateCounter) :
+    hctreeBridgeMode(ENABLE_HCTREE_BRIDGE),
     _serverPort(serverPort ?: ports.getPort()),
     _nodePort(nodePort ?: ports.getPort()),
     _controlPort(controlPort ?: ports.getPort()),
@@ -567,16 +569,24 @@ SQLite& BedrockTester::getSQLiteDB()
     lock_guard<decltype(_dbMutex)> lock(_dbMutex);
     if (!_db) {
         // Assumes wal2 mode.
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
+        if (!hctreeBridgeMode) {
+            _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
+        } else {
+            // We wont use the database, instead we will forward queries to server. We want the _db instance to exist tho
+            _db = new SQLite(":memory:", 1000, 1000, -1, 0, false);
+            _db->setTester(static_cast<void*>(this)); // We will set the tester data for later access
+        }
     }
     return *_db;
 }
 
 void BedrockTester::freeDB()
 {
-    lock_guard<decltype(_dbMutex)> lock(_dbMutex);
-    delete _db;
-    _db = nullptr;
+    if (!hctreeBridgeMode) {
+        lock_guard<decltype(_dbMutex)> lock(_dbMutex);
+        delete _db;
+        _db = nullptr;
+    }
 }
 
 string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS)
