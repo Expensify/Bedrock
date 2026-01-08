@@ -101,12 +101,6 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         bool node0Synchronizing = false;
         bool node0Leading = false;
 
-        // Start up both servers.
-        thread starter([&]() {
-            tester.startNodeDontWait(1);
-            tester.startNodeDontWait(0);
-        });
-
         // Make sure we see node 2 leading.
         thread node2checker([&]() {
             uint64_t start = STimeNow();
@@ -160,6 +154,13 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
                 } catch (const SException& e) {}
                 usleep(10'000);
             }
+        });
+
+        // Start up both servers.
+        thread starter([&]() {
+            tester.startNodeDontWait(1);
+            sleep(2);
+            tester.startNodeDontWait(0);
         });
 
         // Threads are done.
