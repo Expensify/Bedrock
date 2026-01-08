@@ -238,7 +238,7 @@ string BedrockTester::startServer(bool wait)
         }
 
         // The server will use the read end to receive an EOF when this process dies
-        args.push_back("-dieWithParent");
+        args.push_back("-parentDeathMonitorFD");
         args.push_back(to_string(deathPipe[0]));
 
         // Make sure the ports we need are free.

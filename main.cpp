@@ -165,12 +165,12 @@ int main(int argc, char* argv[])
 
     // This arg allow us to set an watchdog to capture parent death and not allow the server to be orphan
     // It aims to avoid a range of issues when we have zombie/orphan forked processes around
-    if (!args.isSet("-fork") && args.isSet("-dieWithParent")) {
-        int fd = stoi(args["-dieWithParent"]); // The argument is the read fd inherited in the fork
-        thread([fd]() {
+    if (!args.isSet("-fork") && args.isSet("-parentDeathMonitorFD")) {
+        int parentDeathMonitorFD = stoi(args["-parentDeathMonitorFD"]); // The argument is the read pipe inherited in the fork
+        thread([parentDeathMonitorFD]() {
             SInitialize("watchdog");
             char buf;
-            if (read(fd, &buf, 1) == 0) { // This will block until parent dies (receive EOF)
+            if (read(parentDeathMonitorFD, &buf, 1) == 0) { // This will block until parent dies (receive EOF)
                 sleep(3); // Allow some time for the server to shut down by itself (if stopServer was called)
                 _exit(0); // We only reach this point in case server hangs to shutdown (or never tried)
             }
