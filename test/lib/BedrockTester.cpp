@@ -210,6 +210,12 @@ void BedrockTester::autoAttachDebugger()
 
 string BedrockTester::startServer(bool wait)
 {
+    // Set up a pipe to avoid orphan child processes when this process dies
+    static int deathPipe[2] = {-1, -1};
+    if (deathPipe[0] == -1) {
+        pipe(deathPipe);
+    }
+
     int childPID = fork();
     if (childPID == -1) {
         cout << "Fork failed, acting like server died." << endl;
@@ -217,6 +223,10 @@ string BedrockTester::startServer(bool wait)
     }
     if (!childPID) {
         // We are the child!
+
+        // Close the write end of death pipe for child asap
+        close(deathPipe[1]);
+
         list<string> args;
         // First arg is path to file.
         args.push_front(serverName);
@@ -226,6 +236,10 @@ string BedrockTester::startServer(bool wait)
                 args.push_back(row.second);
             }
         }
+
+        // The server will use the read end to receive an EOF when this process dies
+        args.push_back("-parentDeathMonitorFD");
+        args.push_back(to_string(deathPipe[0]));
 
         // Make sure the ports we need are free.
         int portsFree = 0;
