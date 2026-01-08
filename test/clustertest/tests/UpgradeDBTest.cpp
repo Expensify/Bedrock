@@ -1,26 +1,31 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct UpgradeDBTest : tpunit::TestFixture {
+struct UpgradeDBTest : tpunit::TestFixture
+{
     UpgradeDBTest()
         : tpunit::TestFixture("UpgradeDB",
                               BEFORE_CLASS(UpgradeDBTest::setup),
                               AFTER_CLASS(UpgradeDBTest::teardown),
-                              TEST(UpgradeDBTest::test)) { }
+                              TEST(UpgradeDBTest::test))
+    {
+    }
 
     BedrockClusterTester* tester;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockClusterTester();
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
     void test()
     {
-        for (auto i : {0,1,2}) {
+        for (auto i : {0, 1, 2}) {
             BedrockTester& brtester = tester->getTester(i);
 
             // This just verifies that the dbupgrade table was created by TestPlugin.
@@ -30,4 +35,3 @@ struct UpgradeDBTest : tpunit::TestFixture {
         }
     }
 } __UpgradeDBTest;
-

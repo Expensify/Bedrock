@@ -2,12 +2,15 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct EscalateTest : tpunit::TestFixture {
+struct EscalateTest : tpunit::TestFixture
+{
     EscalateTest() : tpunit::TestFixture("Escalate", BEFORE_CLASS(EscalateTest::setup),
-                                                     AFTER_CLASS(EscalateTest::teardown),
-                                                     TEST(EscalateTest::test),
-                                                     TEST(EscalateTest::testSerializedData),
-                                                     TEST(EscalateTest::socketReuse)) { }
+                                         AFTER_CLASS(EscalateTest::teardown),
+                                         TEST(EscalateTest::test),
+                                         TEST(EscalateTest::testSerializedData),
+                                         TEST(EscalateTest::socketReuse))
+    {
+    }
 
     BedrockClusterTester* tester = nullptr;
 
@@ -27,7 +30,6 @@ struct EscalateTest : tpunit::TestFixture {
     // add some sort of file locking to the reading/writing from this file.
     void test()
     {
-
         // We're going to send a command to a follower.
         BedrockTester& brtester = tester->getTester(1);
         SData cmd("testescalate");

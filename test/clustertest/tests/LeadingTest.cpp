@@ -2,7 +2,8 @@
 #include <libstuff/SRandom.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct LeadingTest : tpunit::TestFixture {
+struct LeadingTest : tpunit::TestFixture
+{
     LeadingTest()
         : tpunit::TestFixture("Leading",
                               BEFORE_CLASS(LeadingTest::setup),
@@ -13,15 +14,19 @@ struct LeadingTest : tpunit::TestFixture {
                               // TEST(LeadingTest::standDownTimeout),
                               TEST(LeadingTest::restoreLeader),
                               TEST(LeadingTest::synchronizing)
-                             ) { }
+        )
+    {
+    }
 
     BedrockClusterTester* tester;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockClusterTester();
     }
 
-    void teardown () {
+    void teardown()
+    {
         delete tester;
     }
 
@@ -44,8 +49,7 @@ struct LeadingTest : tpunit::TestFixture {
 
             if (results[0] == "LEADING" &&
                 results[1] == "FOLLOWING" &&
-                results[2] == "FOLLOWING")
-            {
+                results[2] == "FOLLOWING") {
                 success = true;
                 break;
             }
@@ -79,7 +83,8 @@ struct LeadingTest : tpunit::TestFixture {
 
     // The only point of this test is to verify that a new leader comes up even if the old one has a stuck HTTPS
     // request. It's slow so is disabled.
-    void standDownTimeout() {
+    void standDownTimeout()
+    {
         BedrockTester& newLeader = tester->getTester(1);
         SData cmd("httpstimeout");
         cmd["Connection"] = "forget";
@@ -121,7 +126,6 @@ struct LeadingTest : tpunit::TestFixture {
             if (json0["state"] == "LEADING" &&
                 json1["state"] == "FOLLOWING" &&
                 json2["state"] == "FOLLOWING") {
-
                 break;
             }
             sleep(1);
@@ -130,7 +134,8 @@ struct LeadingTest : tpunit::TestFixture {
         ASSERT_TRUE(count <= 10);
     }
 
-    void synchronizing() {
+    void synchronizing()
+    {
         // Stop a follower.
         tester->stopNode(1);
 
@@ -164,12 +169,12 @@ struct LeadingTest : tpunit::TestFixture {
             STable json = SParseJSONObject(result);
 
             if (!wasSynchronizing) {
-                if(json["state"] == "SYNCHRONIZING") {
+                if (json["state"] == "SYNCHRONIZING") {
                     wasSynchronizing = true;
                     continue;
                 }
             }
-            if(json["state"] == "FOLLOWING") {
+            if (json["state"] == "FOLLOWING") {
                 // Make sure it was following before it was synchronizing.
                 ASSERT_TRUE(wasSynchronizing);
                 wasFollowing = true;
@@ -184,5 +189,4 @@ struct LeadingTest : tpunit::TestFixture {
         ASSERT_TRUE(wasSynchronizing);
         ASSERT_TRUE(wasFollowing);
     }
-
 } __LeadingTest;
