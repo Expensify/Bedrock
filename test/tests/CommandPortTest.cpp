@@ -1,11 +1,15 @@
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
-struct CommandPortTest : tpunit::TestFixture {
+struct CommandPortTest : tpunit::TestFixture
+{
     CommandPortTest()
-        : tpunit::TestFixture("CommandPort", TEST(CommandPortTest::test)) { }
+        : tpunit::TestFixture("CommandPort", TEST(CommandPortTest::test))
+    {
+    }
 
-    void test() {
+    void test()
+    {
         BedrockTester tester;
 
         // When we close the command port with a reason
@@ -35,5 +39,4 @@ struct CommandPortTest : tpunit::TestFixture {
         response = SParseJSONObject(tester.executeWaitMultipleData({status})[0].content);
         ASSERT_EQUAL(SParseJSONArray(response["commandPortBlockReasons"]), list<string>{});
     }
-
 } __CommandPortTest;

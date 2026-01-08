@@ -5,13 +5,16 @@
 #include <sqlitecluster/SQLiteNode.h>
 #include <test/lib/BedrockTester.h>
 
-struct ChainedHTTPTest : tpunit::TestFixture {
+struct ChainedHTTPTest : tpunit::TestFixture
+{
     ChainedHTTPTest()
         : tpunit::TestFixture("ChainedHTTP",
                               TEST(ChainedHTTPTest::test))
-    { }
+    {
+    }
 
-    void test() {
+    void test()
+    {
         // Load the clustertest testplugin that implements our chained command.
         char cwd[1024];
         if (!getcwd(cwd, sizeof(cwd))) {
@@ -39,7 +42,7 @@ struct ChainedHTTPTest : tpunit::TestFixture {
         // Then parse and verify the response.
         list<string> results = SParseList(result[0].content, '\n');
         map<string, int64_t> resultMap;
-        for(auto& site : urls) {
+        for (auto& site : urls) {
             resultMap.emplace(make_pair(site, -1));
         }
         for (auto& r : results) {

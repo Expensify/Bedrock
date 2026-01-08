@@ -3,14 +3,15 @@
 #include "../BedrockPlugin.h"
 
 class BedrockPlugin_DB : public BedrockPlugin {
-  public:
+public:
     BedrockPlugin_DB(BedrockServer& s);
     virtual const string& getName() const;
     virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
+
     static const string name;
 
     class Sqlite3QRFSpecWrapper {
-      public:
+public:
         sqlite3_qrf_spec spec{0};
         string* zColumnSep{nullptr};
         string* zNull{nullptr};
@@ -33,12 +34,12 @@ class BedrockPlugin_DB : public BedrockPlugin {
 };
 
 class BedrockDBCommand : public BedrockCommand {
-  public:
+public:
     BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB* plugin);
     virtual bool peek(SQLite& db);
     virtual void process(SQLite& db);
 
-  private:
+private:
     string query;
 
     // Callback for SQLite output formatter.

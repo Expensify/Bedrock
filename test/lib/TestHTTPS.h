@@ -3,8 +3,11 @@
 #include <libstuff/SHTTPSManager.h>
 
 class TestHTTPS : public SHTTPSManager {
-  public:
-    TestHTTPS(BedrockPlugin& plugin_) : SHTTPSManager(plugin_) { }
+public:
+    TestHTTPS(BedrockPlugin& plugin_) : SHTTPSManager(plugin_)
+    {
+    }
+
     virtual ~TestHTTPS();
 
     // SHTTPSManager API

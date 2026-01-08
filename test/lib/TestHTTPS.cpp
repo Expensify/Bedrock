@@ -1,8 +1,11 @@
 #include "TestHTTPS.h"
 
-TestHTTPS::~TestHTTPS() {}
+TestHTTPS::~TestHTTPS()
+{
+}
 
-bool TestHTTPS::_onRecv(Transaction* transaction) {
+bool TestHTTPS::_onRecv(Transaction* transaction)
+{
     // Parse the method line, this is more complicated than in most of our code because here we're handling HTTP
     // responses instead of bedrock responses, the difference being that HTTP responses start with `HTTP/X.Y `, which
     // we don't care about. This code looks for the first space in the methodLine, and then for the first non-space
@@ -22,6 +25,7 @@ bool TestHTTPS::_onRecv(Transaction* transaction) {
     return false;
 }
 
-SHTTPSManager::Transaction* TestHTTPS::sendRequest(const string& url, SData& request) {
+SHTTPSManager::Transaction* TestHTTPS::sendRequest(const string& url, SData& request)
+{
     return _httpsSend(url, request);
 }

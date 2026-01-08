@@ -3,8 +3,8 @@
 #include "../BedrockPlugin.h"
 
 class BedrockPlugin_Jobs : public BedrockPlugin {
-  friend class BedrockJobsCommand;
-  public:
+    friend class BedrockJobsCommand;
+public:
     BedrockPlugin_Jobs(BedrockServer& s);
     virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
     virtual const string& getName() const;
@@ -15,26 +15,31 @@ class BedrockPlugin_Jobs : public BedrockPlugin {
     static constexpr int64_t MAX_SIZE_NAME = 255 * 50;
 
     // Set of supported verbs for jobs with case-insensitive matching.
-    static const set<string,STableComp>supportedRequestVerbs;
+    static const set<string, STableComp>supportedRequestVerbs;
 
     const bool isLive;
 
-  private:
+private:
     static const string name;
     static const int64_t JOBS_DEFAULT_PRIORITY;
 };
 
 class BedrockJobsCommand : public BedrockCommand {
-  public:
+public:
     BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin);
     virtual bool peek(SQLite& db);
     virtual void process(SQLite& db);
     virtual void handleFailedReply();
 
-  private:
+private:
     // Helper functions
     string _constructNextRunDATETIME(SQLite& db, const string& lastScheduled, const string& lastRun, const string& repeat);
-    bool _validateRepeat(SQLite& db, const string& repeat) { return !_constructNextRunDATETIME(db, "", "", repeat).empty(); }
+
+    bool _validateRepeat(SQLite& db, const string& repeat)
+    {
+        return !_constructNextRunDATETIME(db, "", "", repeat).empty();
+    }
+
     bool _hasPendingChildJobs(SQLite& db, int64_t jobID);
     void _validatePriority(const int64_t priority);
 
