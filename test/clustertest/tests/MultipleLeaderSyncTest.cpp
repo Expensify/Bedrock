@@ -1,14 +1,18 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct MultipleLeaderSyncTest : tpunit::TestFixture {
+struct MultipleLeaderSyncTest : tpunit::TestFixture
+{
     MultipleLeaderSyncTest()
         : tpunit::TestFixture("MultipleLeaderSync",
                               TEST(MultipleLeaderSyncTest::test)
-                             ) { }
+        )
+    {
+    }
 
     // Create a bunch of trivial write commands.
-    void runTrivialWrites(int writeCount, BedrockTester& node) {
+    void runTrivialWrites(int writeCount, BedrockTester& node)
+    {
         int count = 0;
 
         SData genericRequest("Query");
@@ -34,7 +38,8 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         }
     }
 
-    bool waitForCommit(BedrockTester& node, uint64_t minCommitCount, uint64_t timeoutUS = 60'000'000) {
+    bool waitForCommit(BedrockTester& node, uint64_t minCommitCount, uint64_t timeoutUS = 60'000'000)
+    {
         uint64_t start = STimeNow();
         while (STimeNow() < start + timeoutUS) {
             try {
@@ -52,7 +57,8 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
         return false;
     }
 
-    void test() {
+    void test()
+    {
         // create a 5 node cluster
         BedrockClusterTester tester = BedrockClusterTester(ClusterSize::FIVE_NODE_CLUSTER, {"CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)"});
 
@@ -111,7 +117,8 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
                         node2Leading = true;
                         return;
                     }
-                } catch (const SException& e) {}
+                } catch (const SException& e) {
+                }
                 usleep(10'000);
             }
         });
@@ -131,7 +138,8 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
                     if (node1Synchronizing && node1Leading) {
                         return;
                     }
-                } catch (const SException& e) {}
+                } catch (const SException& e) {
+                }
                 usleep(10'000);
             }
         });
@@ -151,7 +159,8 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture {
                     if (node0Synchronizing && node0Leading) {
                         return;
                     }
-                } catch (const SException& e) {}
+                } catch (const SException& e) {
+                }
                 usleep(10'000);
             }
         });
