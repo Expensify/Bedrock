@@ -972,14 +972,14 @@ bool SQLiteNode::update() {
                     // Hey, our commit succeeded! Record how long it took.
                     _db.logLastTransactionTiming(
                         format(
-                            "Committed leader transaction for '{} ({}). (consistencyRequired={}), {} of {} approved ({} total).", 
-                            _lastSentTransactionID + 1, 
-                            _db.getCommittedHash(), 
-                            CONSISTENCY_LEVEL_NAMES[_commitConsistency], 
-                            numFullApproved, 
-                            numFullPeers, 
+                            "Committed leader transaction for '{} ({}). (consistencyRequired={}), {} of {} approved ({} total).",
+                            _lastSentTransactionID + 1,
+                            _db.getCommittedHash(),
+                            CONSISTENCY_LEVEL_NAMES[_commitConsistency],
+                            numFullApproved,
+                            numFullPeers,
                             _peerList.size()
-                        ), 
+                        ),
                         "SQLiteNode::update"
                     );
                     SINFO("[performance] Successfully committed " << CONSISTENCY_LEVEL_NAMES[_commitConsistency]
@@ -2276,7 +2276,7 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
 
     // Shared with single-threaded replication because this is the only thread writing, and thus we can't get conflicts,
     // and using SHARED prevents us from blocking or being blocked by readers.
-    if (!db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
+    if (!db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED, true)) {
         STHROW("failed to begin transaction");
     }
 

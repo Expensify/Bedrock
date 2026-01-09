@@ -90,7 +90,7 @@ class SQLite {
 
     // Begins a new transaction. Returns true on success. If type is EXCLUSIVE, locks the commit mutex to guarantee
     // that this transaction cannot conflict with any others.
-    bool beginTransaction(TRANSACTION_TYPE type = TRANSACTION_TYPE::SHARED);
+    bool beginTransaction(TRANSACTION_TYPE type = TRANSACTION_TYPE::SHARED, bool beginOnly = false);
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the

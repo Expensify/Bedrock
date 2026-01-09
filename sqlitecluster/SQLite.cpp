@@ -409,7 +409,7 @@ SQLite::TRANSACTION_TYPE SQLite::getLastTransactionType() {
     return _lastTransactionType;
 }
 
-bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
+bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly) {
     _lastTransactionType = type;
     _transactionTimer.start("BEGIN_TRANSACTION");
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
@@ -454,14 +454,12 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
         SINFO("Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
     }
     uint64_t before = STimeNow();
-    _insideTransaction = !SQuery(_db, "BEGIN CONCURRENT");
-    if(_hctree) {
-        SQResult pageCountResult;
-        SQuery(_db, "PRAGMA page_count;", pageCountResult);
-        if (!pageCountResult.empty()) {
-            _pageCountDifference = SToUInt64(pageCountResult[0][0]) - _pageCountDifference;
-        }
+
+    string beginQuery = (beginOnly && _hctree) ? "BEGIN" : "BEGIN CONCURRENT";
+    if (beginQuery == "BEGIN") {
+        SINFO("Begin is BEGIN");
     }
+    _insideTransaction = !SQuery(_db, beginQuery);
 
     // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
     // where we're actually able to start such that we know we shouldn't get a conflict if this commits successfully on
