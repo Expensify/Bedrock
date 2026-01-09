@@ -478,9 +478,20 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
         SINFO("Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
     }
     uint64_t before = STimeNow();
+<<<<<<< HEAD
 
     string beginQuery = (beginOnly && _hctree) ? "BEGIN" : "BEGIN CONCURRENT";
     _insideTransaction = !SQuery(_db, beginQuery);
+=======
+    _insideTransaction = !SQuery(_db, "BEGIN CONCURRENT");
+    if (_hctree) {
+        SQResult pageCountResult;
+        SQuery(_db, "PRAGMA page_count;", pageCountResult);
+        if (!pageCountResult.empty()) {
+            _pageCountDifference = SToUInt64(pageCountResult[0][0]) - _pageCountDifference;
+        }
+    }
+>>>>>>> main
 
     // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
     // where we're actually able to start such that we know we shouldn't get a conflict if this commits successfully on

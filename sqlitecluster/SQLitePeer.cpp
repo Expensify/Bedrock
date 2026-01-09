@@ -12,7 +12,7 @@
 #define SLOGPREFIX "{" << name << "} "
 
 SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& params_, uint64_t id_)
-  : commitCount(0),
+    : commitCount(0),
     host(host_),
     id(id_),
     name(name_),
@@ -30,18 +30,22 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     lastPingTime(0),
     forked(false),
     hash()
-{ }
+{
+}
 
-SQLitePeer::~SQLitePeer() {
+SQLitePeer::~SQLitePeer()
+{
     delete socket;
 }
 
-bool SQLitePeer::connected() const {
+bool SQLitePeer::connected() const
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
-    return (socket && socket->state.load() == STCPManager::Socket::CONNECTED);
+    return socket && socket->state.load() == STCPManager::Socket::CONNECTED;
 }
 
-bool SQLitePeer::remainingDataToSend() const {
+bool SQLitePeer::remainingDataToSend() const
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
 
     // If there's no socket, there's no data to send (even if there's data in the sendbuffer, which would be weird.)
@@ -68,7 +72,8 @@ bool SQLitePeer::remainingDataToSend() const {
     return false;
 }
 
-void SQLitePeer::reset() {
+void SQLitePeer::reset()
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     latency = 0;
     loggedIn = false;
@@ -85,21 +90,24 @@ void SQLitePeer::reset() {
     forked = false;
 }
 
-void SQLitePeer::shutdownSocket() {
+void SQLitePeer::shutdownSocket()
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         socket->shutdown();
     }
 }
 
-void SQLitePeer::prePoll(fd_map& fdm) const {
+void SQLitePeer::prePoll(fd_map& fdm) const
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         STCPManager::prePoll(fdm, *socket);
     }
 }
 
-SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextActivity) {
+SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextActivity)
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         STCPManager::postPoll(fdm, *socket);
@@ -115,6 +123,7 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextA
 
                 break;
             }
+
             case STCPManager::Socket::CLOSED: {
                 // Done; clean up and try to reconnect
                 uint64_t delay = SRandom::rand64() % (STIME_US_PER_S * 1);
@@ -126,8 +135,10 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextA
                 nextReconnect = STimeNow() + delay;
                 nextActivity = min(nextActivity, nextReconnect.load());
                 return PeerPostPollStatus::SOCKET_CLOSED;
+
                 break;
             }
+
             default:
                 // Connecting or shutting down, wait
                 // **FIXME: Add timeout here?
@@ -161,7 +172,8 @@ SQLitePeer::PeerPostPollStatus SQLitePeer::postPoll(fd_map& fdm, uint64_t& nextA
     return PeerPostPollStatus::OK;
 }
 
-uint64_t SQLitePeer::lastRecvTime() const {
+uint64_t SQLitePeer::lastRecvTime() const
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         return socket->lastRecvTime;
@@ -169,7 +181,8 @@ uint64_t SQLitePeer::lastRecvTime() const {
     return 0;
 }
 
-uint64_t SQLitePeer::lastSendTime() const {
+uint64_t SQLitePeer::lastSendTime() const
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         return socket->lastSendTime;
@@ -177,7 +190,8 @@ uint64_t SQLitePeer::lastSendTime() const {
     return 0;
 }
 
-SData SQLitePeer::popMessage() {
+SData SQLitePeer::popMessage()
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket) {
         SData message;
@@ -190,7 +204,8 @@ SData SQLitePeer::popMessage() {
     throw out_of_range("no messages");
 }
 
-bool SQLitePeer::setSocket(STCPManager::Socket* newSocket, bool onlyIfNull) {
+bool SQLitePeer::setSocket(STCPManager::Socket* newSocket, bool onlyIfNull)
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket && onlyIfNull) {
         return false;
@@ -202,35 +217,45 @@ bool SQLitePeer::setSocket(STCPManager::Socket* newSocket, bool onlyIfNull) {
     return true;
 }
 
-string SQLitePeer::responseName(Response response) {
+string SQLitePeer::responseName(Response response)
+{
     switch (response) {
         case Response::NONE:
             return "NONE";
+
             break;
+
         case Response::APPROVE:
             return "APPROVE";
+
             break;
+
         case Response::DENY:
             return "DENY";
+
             break;
+
         default:
             return "";
     }
 }
 
-void SQLitePeer::setCommit(uint64_t count, const string& hashString) {
+void SQLitePeer::setCommit(uint64_t count, const string& hashString)
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     const_cast<atomic<uint64_t>&>(commitCount) = count;
     hash = hashString;
 }
 
-void SQLitePeer::getCommit(uint64_t& count, string& hashString) const {
+void SQLitePeer::getCommit(uint64_t& count, string& hashString) const
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     count = commitCount.load();
     hashString = hash.load();
 }
 
-STable SQLitePeer::getData() const {
+STable SQLitePeer::getData() const
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     // Add all of our standard stuff.
     STable result({
@@ -260,7 +285,8 @@ STable SQLitePeer::getData() const {
     return result;
 }
 
-bool SQLitePeer::isPermafollower(const STable& params) {
+bool SQLitePeer::isPermafollower(const STable& params)
+{
     auto it = params.find("Permafollower");
     if (it != params.end() && it->second == "true") {
         return true;
@@ -268,7 +294,8 @@ bool SQLitePeer::isPermafollower(const STable& params) {
     return false;
 }
 
-void SQLitePeer::sendMessage(const SData& message) {
+void SQLitePeer::sendMessage(const SData& message)
+{
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     if (socket && socket->state.load() < STCPManager::Socket::State::SHUTTINGDOWN) {
         size_t bytesSent = 0;
