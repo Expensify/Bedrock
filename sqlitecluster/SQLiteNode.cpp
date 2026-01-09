@@ -103,7 +103,7 @@ const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString)
 
     // Sort the peerList by name so we can get peers by name efficiently with binary search
     sort(peerList.begin(), peerList.end(),
-              [](const SQLitePeer* peer1, const SQLitePeer* peer2) {
+         [](const SQLitePeer* peer1, const SQLitePeer* peer2) {
         return peer1->name < peer2->name;
                                                                                                        });
 
@@ -1356,7 +1356,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             _server.onNodeLogin(peer);
         } else if (!peer->loggedIn) {
             STHROW("not logged in");
-        } else if (SIEquals(message.methodLine, "STATE"))   {
+        } else if (SIEquals(message.methodLine, "STATE")) {
             // STATE: Broadcast to all peers whenever a node's state changes. Also sent whenever a node commits a new query
             // (and thus has a new commit count and hash). A peer can react or respond to a peer's state change as follows:
             if (!message.isSet("State")) {
