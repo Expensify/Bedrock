@@ -3,15 +3,17 @@
 
 // Represents a single peer in the database cluster
 class SQLitePeer {
-  public:
+public:
     // Possible responses from a peer.
-    enum class Response {
+    enum class Response
+    {
         NONE,
         APPROVE,
         DENY
     };
 
-    enum class PeerPostPollStatus {
+    enum class PeerPostPollStatus
+    {
         OK,
         JUST_CONNECTED,
         SOCKET_ERROR,
@@ -42,7 +44,7 @@ class SQLitePeer {
     void reset();
 
     // Pops a message off the *front* of the receive buffer and returns it.
-    // If there are no messages, throws `std::out_of_range`.
+    // If there are no messages, throws `out_of_range`.
     SData popMessage();
 
     // NOTE: If this returns PeerPostPollStatus::SOCKET_CLOSED then the caller must call `reset` on this peer.
@@ -95,7 +97,7 @@ class SQLitePeer {
     // Set to true when this peer is known to be unusable, I.e., when it has a database that is forked from us.
     atomic<bool> forked;
 
-  private:
+private:
     // For initializing the permafollower value from the params list.
     static bool isPermafollower(const STable& params);
 
