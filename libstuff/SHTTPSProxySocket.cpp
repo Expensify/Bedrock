@@ -33,6 +33,11 @@ SHTTPSProxySocket::~SHTTPSProxySocket() {
 bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
 
+    // Don't try to send if we're still connecting to the proxy - wait for postPoll to transition to CONNECTED
+    if (state.load() == Socket::State::CONNECTING) {
+        return true;
+    }
+
     bool result = false;
     size_t oldSize = sendBuffer.size();
     size_t oldPreSendSize = preSendBuffer.size();
