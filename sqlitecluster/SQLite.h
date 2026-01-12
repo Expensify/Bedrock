@@ -6,15 +6,27 @@
 #include <shared_mutex>
 
 class SQLite {
-  public:
+public:
 
     class timeout_error : public exception {
-      public :
-        timeout_error(const string& e, uint64_t time) : _what(e), _time(time) {};
-        virtual ~timeout_error() {};
-        const char* what() const noexcept { return _what.c_str(); }
-        const uint64_t time() const noexcept { return _time; }
-      private:
+public:
+        timeout_error(const string& e, uint64_t time) : _what(e), _time(time)
+        {
+        };
+        virtual ~timeout_error()
+        {
+        };
+        const char* what() const noexcept
+        {
+            return _what.c_str();
+        }
+
+        const uint64_t time() const noexcept
+        {
+            return _time;
+        }
+
+private:
         string _what;
         uint64_t _time;
     };
@@ -40,10 +52,17 @@ class SQLite {
     // normal `process` phase of a command on leader, but is treated similarly to a commit conflict in replication, and
     // re-runs the command after the other command (the `DELETE`) has finished.
     class constraint_error : public exception {
-      public :
-        constraint_error() {};
-        virtual ~constraint_error() {};
-        const char* what() const noexcept { return "constraint_error"; }
+public:
+        constraint_error()
+        {
+        };
+        virtual ~constraint_error()
+        {
+        };
+        const char* what() const noexcept
+        {
+            return "constraint_error";
+        }
     };
 
     // Constant to use like a sqlite result code when commits are disabled (see: https://www.sqlite.org/rescode.html)
@@ -68,7 +87,10 @@ class SQLite {
     ~SQLite();
 
     // Returns the canonicalized filename for this database
-    const string& getFilename() { return _filename; }
+    const string& getFilename()
+    {
+        return _filename;
+    }
 
     sqlite3* getDBHandle();
 
@@ -83,14 +105,15 @@ class SQLite {
     int read(const string& query, sqlite3_qrf_spec* spec) const;
 
     // Types of transactions that we can begin.
-    enum class TRANSACTION_TYPE {
+    enum class TRANSACTION_TYPE
+    {
         SHARED,
         EXCLUSIVE
     };
 
     // Begins a new transaction. Returns true on success. If type is EXCLUSIVE, locks the commit mutex to guarantee
     // that this transaction cannot conflict with any others.
-    bool beginTransaction(TRANSACTION_TYPE type = TRANSACTION_TYPE::SHARED);
+    bool beginTransaction(TRANSACTION_TYPE type = TRANSACTION_TYPE::SHARED, bool beginOnly = false);
 
     // Verifies a table exists and has a particular definition. If the database is left with the right schema, it
     // returns true. If it had to create a new table (ie, the table was missing), it also sets created to true. If the
@@ -188,7 +211,10 @@ class SQLite {
     void rollback(const string& commandName = "");
 
     // Returns the total number of changes on this database
-    int getChangeCount() { return sqlite3_total_changes(_db); }
+    int getChangeCount()
+    {
+        return sqlite3_total_changes(_db);
+    }
 
     // Returns the timing of the last command
     void logLastTransactionTiming(const string& message, const string& commandName);
@@ -209,23 +235,35 @@ class SQLite {
     string getCommittedHash();
 
     // Returns what the new state will be of the database if the current transaction is committed.
-    string getUncommittedHash() { return _uncommittedHash; }
+    string getUncommittedHash()
+    {
+        return _uncommittedHash;
+    }
 
     // Returns a concatenated string containing all the 'write' queries executed within the current, uncommitted
     // transaction.
-    string getUncommittedQuery() { return _uncommittedQuery; }
+    string getUncommittedQuery()
+    {
+        return _uncommittedQuery;
+    }
 
     // Gets the ROWID of the last insertion (for auto-increment indexes)
     int64_t getLastInsertRowID();
 
     // Gets any error message associated with the previous query
-    string getLastError() { return sqlite3_errmsg(_db); }
+    string getLastError()
+    {
+        return sqlite3_errmsg(_db);
+    }
 
     // Returns the most recent error string from sqlite.
     const string getMostRecentSQLiteErrorLog() const;
 
     // Returns true if we're inside an uncommitted transaction.
-    bool insideTransaction() const { return _insideTransaction; }
+    bool insideTransaction() const
+    {
+        return _insideTransaction;
+    }
 
     // Looks up the exact SQL of a paricular commit to the database, as well as gets the SHA1 hash of the database
     // immediately following tha commit.
@@ -254,7 +292,7 @@ class SQLite {
     // This atomically removes and returns committed transactions from our internal list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to tuples of (query, hash, dbCountAtTransactionStart), so that those
     // transactions can be replicated out to peers.
-    map<uint64_t, tuple<string,string, uint64_t>> popCommittedTransactions();
+    map<uint64_t, tuple<string, string, uint64_t>> popCommittedTransactions();
 
     // The whitelist is either nullptr, in which case the feature is disabled, or it's a map of table names to sets of
     // column names that are allowed for reading. Using whitelist at all put the database handle into a more
@@ -295,11 +333,11 @@ class SQLite {
     void exclusiveLockDB();
     void exclusiveUnlockDB();
 
-  private:
+private:
     // This structure contains all of the data that's shared between a set of SQLite objects that share the same
     // underlying database file.
     class SharedData {
-      public:
+public:
         // Constructor.
         SharedData();
 
@@ -359,7 +397,7 @@ class SQLite {
         // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
         shared_mutex writeLock;
 
-      private:
+private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
         map<uint64_t, tuple<string, string, uint64_t>> _preparedTransactions;
