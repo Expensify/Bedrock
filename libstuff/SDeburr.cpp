@@ -122,22 +122,22 @@ void SDeburr::registerSQLite(sqlite3* db)
     // Behavior: NULL input → NULL, Non-NULL input → deburred ASCII text
     // Declared deterministic to enable SQLite optimizations
     auto sqliteDeburr = [](sqlite3_context* ctx, int argc, sqlite3_value** argv) {
-            if (argc != 1) {
-                sqlite3_result_null(ctx);
-                return;
-            }
-            if (sqlite3_value_type(argv[0]) == SQLITE_NULL) {
-                sqlite3_result_null(ctx);
-                return;
-            }
-            const unsigned char* text = sqlite3_value_text(argv[0]);
-            if (!text) {
-                sqlite3_result_null(ctx);
-                return;
-            }
-            string out = SDeburr::deburr(text);
-            sqlite3_result_text(ctx, out.c_str(), static_cast<int>(out.size()), SQLITE_TRANSIENT);
-        };
+        if (argc != 1) {
+            sqlite3_result_null(ctx);
+            return;
+        }
+        if (sqlite3_value_type(argv[0]) == SQLITE_NULL) {
+            sqlite3_result_null(ctx);
+            return;
+        }
+        const unsigned char* text = sqlite3_value_text(argv[0]);
+        if (!text) {
+            sqlite3_result_null(ctx);
+            return;
+        }
+        string out = SDeburr::deburr(text);
+        sqlite3_result_text(ctx, out.c_str(), static_cast<int>(out.size()), SQLITE_TRANSIENT);
+    };
 
     sqlite3_create_function_v2(db, "DEBURR", 1, SQLITE_UTF8 | SQLITE_DETERMINISTIC, nullptr, sqliteDeburr, nullptr, nullptr, nullptr);
 }

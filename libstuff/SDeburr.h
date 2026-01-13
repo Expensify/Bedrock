@@ -59,10 +59,10 @@ private:
         array<const char*, 0x0180> map = {};
 
         auto mapCodePoints = [&map](const char* value, const vector<char32_t>& codePoints) {
-                for (const auto& codePoint : codePoints) {
-                    map[codePoint] = value;
-                }
-            };
+            for (const auto& codePoint : codePoints) {
+                map[codePoint] = value;
+            }
+        };
 
         // Latin-1 Supplement mappings (0xC0..0xFF)
         mapCodePoints("A", {0x00C0, 0x00C1, 0x00C2, 0x00C3, 0x00C4, 0x00C5});

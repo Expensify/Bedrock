@@ -93,8 +93,8 @@ void SInitializeSignals()
 {
     // Our default die function does nothing.
     SSignalHandlerDieFunc = [](){
-            return "";
-        };
+        return "";
+    };
 
     // Clear the thread-local signal number.
     _SSignal_threadCaughtSignalNumber = 0;
@@ -278,8 +278,8 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
                 SALERT(logMessage);
             }
             SSignalHandlerDieFunc = [](){
-                    return "";
-                };
+                return "";
+            };
             SWARN("DIE function returned.");
 
             // Finish writing the crash file with the request details if it exists
