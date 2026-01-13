@@ -2418,13 +2418,13 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                         atomic<bool> finished = false;
 
                         function<void()> callback = [&m, &cv, &finished]() {
-                                // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
-                                // for `handleSocket` to release it's lock (by calling `wait`), and then notify the waiting
-                                // socket thread.
-                                lock_guard lock(m);
-                                finished = true;
-                                cv.notify_all();
-                            };
+                            // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
+                            // for `handleSocket` to release it's lock (by calling `wait`), and then notify the waiting
+                            // socket thread.
+                            lock_guard lock(m);
+                            finished = true;
+                            cv.notify_all();
+                        };
 
                         // Ok, none of above synchronization code gets called unless the command has a socket to respond on.
                         bool hasSocket = command->socket;
@@ -2440,8 +2440,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             [&](){
                             SInitialize(threadName + "_cmd");
                             runCommand(move(command));
-                            }
-                        );
+                        });
 
                         // Now that the command is running, we wait for it to complete (if it has a socket, and hasn't finished by the time we get to this point).
                         // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.
