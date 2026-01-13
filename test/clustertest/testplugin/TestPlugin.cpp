@@ -13,16 +13,18 @@ mutex BedrockPlugin_TestPlugin::dataLock;
 map<string, string> BedrockPlugin_TestPlugin::arbitraryData;
 
 const string BedrockPlugin_TestPlugin::name("TestPlugin");
-const string& BedrockPlugin_TestPlugin::getName() const {
+const string& BedrockPlugin_TestPlugin::getName() const
+{
     return name;
 }
 
-extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s) {
+extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s)
+{
     return new BedrockPlugin_TestPlugin(s);
 }
 
 BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin(BedrockServer& s) :
-BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this)), _maxID(-1)
+    BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this)), _maxID(-1)
 {
 }
 
@@ -30,7 +32,8 @@ BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
 {
 }
 
-bool fileAppend(const string& path, const string& buffer) {
+bool fileAppend(const string& path, const string& buffer)
+{
     // Try to open the file for appending.
     FILE* fp = fopen(path.c_str(), "a");
     if (!fp) {
@@ -51,7 +54,8 @@ bool fileAppend(const string& path, const string& buffer) {
     return numWritten == buffer.size();
 }
 
-string fileLockAndLoad(const string& path) {
+string fileLockAndLoad(const string& path)
+{
     string buffer;
     FILE* fp = fopen(path.c_str(), "rb");
     if (!fp) {
@@ -76,7 +80,8 @@ string fileLockAndLoad(const string& path) {
     return buffer;
 }
 
-unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& baseCommand) {
+unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& baseCommand)
+{
     static set<string> supportedCommands = {
         "testcommand",
         "testescalate",
@@ -115,20 +120,22 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
 }
 
 TestPluginCommand::TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_TestPlugin* plugin) :
-  BedrockCommand(move(baseCommand), plugin),
-  pendingResult(false),
-  urls(request["urls"])
+    BedrockCommand(move(baseCommand), plugin),
+    pendingResult(false),
+    urls(request["urls"])
 {
 }
 
-string TestPluginCommand::serializeData() const {
+string TestPluginCommand::serializeData() const
+{
     if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
         return serializedDataString;
     }
     return "";
 }
 
-void TestPluginCommand::deserializeData(const string& data) {
+void TestPluginCommand::deserializeData(const string& data)
+{
     if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
         serializedDataString = data;
     }
@@ -163,7 +170,8 @@ TestPluginCommand::~TestPluginCommand()
     }
 }
 
-void TestPluginCommand::reset(BedrockCommand::STAGE stage) {
+void TestPluginCommand::reset(BedrockCommand::STAGE stage)
+{
     if (stage == STAGE::PEEK) {
         // We don't reset `pendingResult`, `urls`, or `chainedHTTPResponseContent` because they preserve state across
         // multiple `repeek` calls.
@@ -171,11 +179,13 @@ void TestPluginCommand::reset(BedrockCommand::STAGE stage) {
     BedrockCommand::reset(stage);
 };
 
-bool TestPluginCommand::shouldPrePeek() {
+bool TestPluginCommand::shouldPrePeek()
+{
     return request.methodLine == "prepeekcommand" || request.methodLine == "prepeekpostprocesscommand";
 }
 
-bool TestPluginCommand::shouldPostProcess() {
+bool TestPluginCommand::shouldPostProcess()
+{
     return set<string>{
         "postprocesscommand",
         "prepeekpostprocesscommand",
@@ -184,11 +194,13 @@ bool TestPluginCommand::shouldPostProcess() {
     }.count(request.methodLine);
 }
 
-bool BedrockPlugin_TestPlugin::preventAttach() {
+bool BedrockPlugin_TestPlugin::preventAttach()
+{
     return shouldPreventAttach;
 }
 
-void TestPluginCommand::prePeek(SQLite& db) {
+void TestPluginCommand::prePeek(SQLite& db)
+{
     if (request.methodLine == "prepeekcommand" || request.methodLine == "prepeekpostprocesscommand") {
         if (request["shouldThrow"] == "true") {
             STHROW("501 ERROR");
@@ -198,7 +210,9 @@ void TestPluginCommand::prePeek(SQLite& db) {
         STHROW("500 no prePeek defined, shouldPrePeek should be false");
     }
 }
-bool TestPluginCommand::peek(SQLite& db) {
+
+bool TestPluginCommand::peek(SQLite& db)
+{
     // Always blacklist on userID.
     crashIdentifyingValues.insert("userID");
 
@@ -207,7 +221,7 @@ bool TestPluginCommand::peek(SQLite& db) {
         usleep(request.calc("PeekSleep") * 1000);
     }
 
-    if (SStartsWith(request.methodLine,"testcommand")) {
+    if (SStartsWith(request.methodLine, "testcommand")) {
         if (!request["response"].empty()) {
             response.methodLine = request["response"];
         } else {
@@ -400,7 +414,8 @@ bool TestPluginCommand::peek(SQLite& db) {
     return false;
 }
 
-void TestPluginCommand::process(SQLite& db) {
+void TestPluginCommand::process(SQLite& db)
+{
     // If `stateChanged` hasn't finished, we need to wait.
     // This simulates what we want in our internal plugins, because we don't want
     // any command processed until the leader server knows the maxID value.
@@ -430,7 +445,7 @@ void TestPluginCommand::process(SQLite& db) {
             querySize += nq.size();
         }
         response["QuerySize"] = to_string(querySize);
-    } else if (SStartsWith(request.methodLine,"EscalateSerializedData")) {
+    } else if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
         // We want to return the data that was serialized and escalated, and also our own nodename, to verify it does not match
         // the node that serialized the data.
         response.content = _plugin->server.args["-nodeName"] + ":" + serializedDataString;
@@ -448,7 +463,7 @@ void TestPluginCommand::process(SQLite& db) {
         } else {
             // Assert if we got here with no requests.
             if (httpsRequests.empty()) {
-                SINFO ("Calling process with no https request: " << request.methodLine);
+                SINFO("Calling process with no https request: " << request.methodLine);
                 SASSERT(false);
             }
             // If any of our responses were bad, we want to know that.
@@ -563,7 +578,8 @@ void TestPluginCommand::process(SQLite& db) {
     }
 }
 
-void TestPluginCommand::postProcess(SQLite& db) {
+void TestPluginCommand::postProcess(SQLite& db)
+{
     if (request.methodLine == "postprocesscommand" || request.methodLine == "prepeekpostprocesscommand") {
         jsonContent["postProcessInfo"] = "this was returned in postProcessInfo";
         SQResult result;
@@ -584,12 +600,14 @@ void TestPluginCommand::postProcess(SQLite& db) {
     }
 }
 
-bool TestPluginCommand::shouldEnableOnPrepareNotification(const SQLite& db, void (**handler)(SQLite& _db, int64_t tableID)) {
+bool TestPluginCommand::shouldEnableOnPrepareNotification(const SQLite& db, void(**handler)(SQLite & _db, int64_t tableID))
+{
     *handler = BedrockPlugin_TestPlugin::onPrepareHandler;
     return request.methodLine == "preparehandler";
 }
 
-void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {
+void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db)
+{
     bool ignore;
     SASSERT(db.verifyTable("dbupgrade", "CREATE TABLE dbupgrade ( "
                                         "id    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, "
@@ -597,12 +615,14 @@ void BedrockPlugin_TestPlugin::upgradeDatabase(SQLite& db) {
     SASSERT(db.verifyTable("test", "CREATE TABLE test (id INTEGER NOT NULL PRIMARY KEY, value TEXT NOT NULL)", ignore));
 }
 
-void BedrockPlugin_TestPlugin::onPrepareHandler(SQLite& db, int64_t tableID) {
+void BedrockPlugin_TestPlugin::onPrepareHandler(SQLite& db, int64_t tableID)
+{
     int64_t tid = 999999999 + tableID;
     db.write("INSERT INTO test (id, value) VALUES (" + to_string(tid) + ", 'this is written in onPrepareHandler');");
 }
 
-void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState) {
+void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState)
+{
     // We spin this up in another thread because `stateChanged` is called from the `sync` thread in bedrock
     // so this function cannot do any sort of waiting or it will block the sync thread. By offloading this,
     // we can let the code wait for a condition to be met before it actually runs. In our case, we want to
@@ -625,8 +645,8 @@ void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState
     }).detach();
 }
 
-
-bool TestHTTPSManager::_onRecv(Transaction* transaction) {
+bool TestHTTPSManager::_onRecv(Transaction* transaction)
+{
     string methodLine = transaction->fullResponse.methodLine;
     transaction->response = 0;
     size_t offset = methodLine.find_first_of(' ', 0);
@@ -645,14 +665,17 @@ bool TestHTTPSManager::_onRecv(Transaction* transaction) {
     return false;
 }
 
-TestHTTPSManager::~TestHTTPSManager() {
+TestHTTPSManager::~TestHTTPSManager()
+{
 }
 
-TestHTTPSManager::Transaction* TestHTTPSManager::send(const string& url, const SData& request) {
+TestHTTPSManager::Transaction* TestHTTPSManager::send(const string& url, const SData& request)
+{
     return _httpsSend(url, request);
 }
 
-SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, const SData& request) {
+SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, const SData& request)
+{
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
     string host, path;

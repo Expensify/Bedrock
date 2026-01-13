@@ -1,11 +1,15 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct StatusHandlingCommandsTest : tpunit::TestFixture {
+struct StatusHandlingCommandsTest : tpunit::TestFixture
+{
     StatusHandlingCommandsTest()
-        : tpunit::TestFixture("StatusHandlingCommands", TEST(StatusHandlingCommandsTest::test)) { }
+        : tpunit::TestFixture("StatusHandlingCommands", TEST(StatusHandlingCommandsTest::test))
+    {
+    }
 
-    void test() {
+    void test()
+    {
         BedrockClusterTester tester;
         BedrockTester& leader = tester.getTester(0);
         BedrockTester& follower = tester.getTester(1);
@@ -44,5 +48,4 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture {
         ASSERT_EQUAL(results[1], "HTTP/1.1 200 FOLLOWING")
         // We don't test STANDINGDOWN because it's unreliable to get it to show up in the status, we can move straight through it too quickly.
     }
-
 } __StatusHandlingCommandsTest;

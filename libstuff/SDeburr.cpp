@@ -9,7 +9,8 @@
 
 using namespace std;
 
-const char* SDeburr::unicodeToAscii(uint32_t codepoint) {
+const char* SDeburr::unicodeToAscii(uint32_t codepoint)
+{
     // Check if the codepoint is in the range of unicode characters we can map to ascii.
     // 0x00C0 is the first character we map in the latin1 unicode block: https://en.wikipedia.org/wiki/Latin-1_Supplement
     // 0x017F is the last character we map in the latin-extended-a unicode block: https://en.wikipedia.org/wiki/Latin_Extended-A
@@ -19,7 +20,8 @@ const char* SDeburr::unicodeToAscii(uint32_t codepoint) {
     return nullptr;
 }
 
-string SDeburr::deburr(const unsigned char* inputBytes) {
+string SDeburr::deburr(const unsigned char* inputBytes)
+{
     string result;
     size_t inputLength = strlen(reinterpret_cast<const char*>(inputBytes));
     result.reserve(inputLength);
@@ -74,7 +76,7 @@ string SDeburr::deburr(const unsigned char* inputBytes) {
         uint32_t codepoint = inputBytes[i] & ((1 << (7 - numLeadingOnes)) - 1);
         i++;
 
-        // Process continuation bytes. 
+        // Process continuation bytes.
         for (int j = 1; j < numLeadingOnes; j++) {
             if (countl_one(inputBytes[i]) != 1) {
                 // Invalid continuation byte, stop processing this sequence
@@ -109,11 +111,13 @@ string SDeburr::deburr(const unsigned char* inputBytes) {
     return result;
 }
 
-string SDeburr::deburr(const string& input) {
+string SDeburr::deburr(const string& input)
+{
     return deburr(reinterpret_cast<const unsigned char*>(input.c_str()));
 }
 
-void SDeburr::registerSQLite(sqlite3* db) {
+void SDeburr::registerSQLite(sqlite3* db)
+{
     // SQLite UDF: DEBURR(text) → deburred ASCII string.
     // Behavior: NULL input → NULL, Non-NULL input → deburred ASCII text
     // Declared deterministic to enable SQLite optimizations

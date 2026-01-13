@@ -5,9 +5,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 
-template <typename T>
+template<typename T>
 class SSynchronizedQueue {
-  public:
+public:
     // Constructor/Destructor
     SSynchronizedQueue();
     ~SSynchronizedQueue();
@@ -42,7 +42,7 @@ class SSynchronizedQueue {
     // Apply a lambda to each item in the queue.
     void each(const function<void (T&)> f);
 
-  protected:
+protected:
     list<T> _queue;
     mutable recursive_mutex _queueMutex;
 
@@ -59,7 +59,8 @@ class SSynchronizedQueue {
 };
 
 template<typename T>
-SSynchronizedQueue<T>::SSynchronizedQueue() {
+SSynchronizedQueue<T>::SSynchronizedQueue()
+{
     // Open up a pipe for communication and set the non-blocking reads.
     int result = pipe(_pipeFD);
     if (result == -1) {
@@ -70,7 +71,8 @@ SSynchronizedQueue<T>::SSynchronizedQueue() {
 }
 
 template<typename T>
-SSynchronizedQueue<T>::~SSynchronizedQueue() {
+SSynchronizedQueue<T>::~SSynchronizedQueue()
+{
     if (_pipeFD[0] != -1) {
         close(_pipeFD[0]);
     }
@@ -80,7 +82,8 @@ SSynchronizedQueue<T>::~SSynchronizedQueue() {
 }
 
 template<typename T>
-void SSynchronizedQueue<T>::prePoll(fd_map& fdm) {
+void SSynchronizedQueue<T>::prePoll(fd_map& fdm)
+{
     // Put the read-side of the pipe into the fd set.
     // **NOTE: This is *not* synchronized.  All threads use the same pipes. All threads use *different* fd_maps, though
     //         so we don't have to worry about contention inside FDSet.
@@ -88,7 +91,8 @@ void SSynchronizedQueue<T>::prePoll(fd_map& fdm) {
 }
 
 template<typename T>
-void SSynchronizedQueue<T>::postPoll(fd_map& fdm) {
+void SSynchronizedQueue<T>::postPoll(fd_map& fdm)
+{
     // Check if there is anything to read off of the pipe, if there is, empty it.
     if (SFDAnySet(fdm, _pipeFD[0], SREADEVTS)) {
         // Read until there is nothing left to read.
@@ -109,19 +113,22 @@ void SSynchronizedQueue<T>::postPoll(fd_map& fdm) {
 }
 
 template<typename T>
-void SSynchronizedQueue<T>::clear() noexcept {
+void SSynchronizedQueue<T>::clear() noexcept
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     _queue.clear();
 }
 
 template<typename T>
-bool SSynchronizedQueue<T>::empty() const {
+bool SSynchronizedQueue<T>::empty() const
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     return _queue.empty();
 }
 
 template<typename T>
-const T& SSynchronizedQueue<T>::front() const {
+const T& SSynchronizedQueue<T>::front() const
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     if (!_queue.empty()) {
         return _queue.front();
@@ -130,7 +137,8 @@ const T& SSynchronizedQueue<T>::front() const {
 }
 
 template<typename T>
-T SSynchronizedQueue<T>::pop() {
+T SSynchronizedQueue<T>::pop()
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     if (!_queue.empty()) {
         T item = move(_queue.front());
@@ -141,7 +149,8 @@ T SSynchronizedQueue<T>::pop() {
 }
 
 template<typename T>
-void SSynchronizedQueue<T>::push(T&& rhs) {
+void SSynchronizedQueue<T>::push(T&& rhs)
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     // Just add to the queue
     _queue.push_back(move(rhs));
@@ -152,13 +161,15 @@ void SSynchronizedQueue<T>::push(T&& rhs) {
 }
 
 template<typename T>
-size_t SSynchronizedQueue<T>::size() const {
+size_t SSynchronizedQueue<T>::size() const
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     return _queue.size();
 }
 
 template<typename T>
-void SSynchronizedQueue<T>::each(const function<void (T&)> f) {
+void SSynchronizedQueue<T>::each(const function<void (T&)> f)
+{
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
     for_each(_queue.begin(), _queue.end(), f);
 }

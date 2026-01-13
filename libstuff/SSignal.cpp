@@ -10,12 +10,13 @@
 #include <format>
 
 thread_local function<string()> SSignalHandlerDieFunc;
-void SSetSignalHandlerDieFunc(function<string()>&& func) {
+void SSetSignalHandlerDieFunc(function<string()>&& func)
+{
     SSignalHandlerDieFunc = move(func);
 }
 
 // 64kb emergency stack location.
-constexpr auto sigStackSize{1024*64};
+constexpr auto sigStackSize{1024 * 64};
 char __SIGSTACK[sigStackSize];
 
 void* SSIGNAL_NOTIFY_INTERRUPT;
@@ -25,7 +26,7 @@ void _SSignal_signalHandlerThreadFunc();
 
 // The function to call in threads handling their own signals. This is only used for exception signals like SEGV
 // and FPE.
-void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext);
+void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext);
 
 // A boolean indicating whether or not we've initialized our signal thread.
 atomic_flag _SSignal_threadInitialized = ATOMIC_FLAG_INIT;
@@ -46,29 +47,34 @@ thread_local int _SSignal_threadCaughtSignalNumber = 0;
 
 // The number of termination signals received so far.
 atomic<uint64_t> _SSignal_terminationCount(0);
-uint64_t STerminationSignalCount() {
+uint64_t STerminationSignalCount()
+{
     return _SSignal_terminationCount.load();
 }
 
-bool SCheckSignal(int signum) {
+bool SCheckSignal(int signum)
+{
     uint64_t signals = _SSignal_pendingSignalBitMask.load();
     signals >>= signum;
     bool result = signals & 1;
     return result;
 }
 
-bool SGetSignal(int signum) {
+bool SGetSignal(int signum)
+{
     uint64_t signals = _SSignal_pendingSignalBitMask.fetch_and(~(1 << signum));
     signals >>= signum;
     bool result = signals & 1;
     return result;
 }
 
-uint64_t SGetSignals() {
+uint64_t SGetSignals()
+{
     return _SSignal_pendingSignalBitMask.load();
 }
 
-string SGetSignalDescription() {
+string SGetSignalDescription()
+{
     list<string> descriptions;
     for (int i = 0; i < 64; i++) {
         if (SCheckSignal(i)) {
@@ -78,13 +84,17 @@ string SGetSignalDescription() {
     return SComposeList(descriptions);
 }
 
-void SClearSignals() {
+void SClearSignals()
+{
     _SSignal_pendingSignalBitMask.store(0);
 }
 
-void SInitializeSignals() {
+void SInitializeSignals()
+{
     // Our default die function does nothing.
-    SSignalHandlerDieFunc = [](){ return ""; };
+    SSignalHandlerDieFunc = [](){
+        return "";
+    };
 
     // Clear the thread-local signal number.
     _SSignal_threadCaughtSignalNumber = 0;
@@ -134,7 +144,8 @@ void SInitializeSignals() {
     }
 }
 
-void _SSignal_signalHandlerThreadFunc() {
+void _SSignal_signalHandlerThreadFunc()
+{
     // Initialize logging for this thread.
     SLogSetThreadName("signal");
     SLogSetThreadPrefix("xxxxxx ");
@@ -145,7 +156,6 @@ void _SSignal_signalHandlerThreadFunc() {
 
     // Now we wait for any signal to occur.
     while (true) {
-
         // Wait for a signal to appear.
         siginfo_t siginfo = {0};
         struct timespec timeout;
@@ -183,7 +193,8 @@ void _SSignal_signalHandlerThreadFunc() {
     }
 }
 
-void SStopSignalThread() {
+void SStopSignalThread()
+{
     _SSignal_threadStopFlag = true;
     if (_SSignal_threadInitialized.test_and_set()) {
         // Send ourselves a signal to interrupt our thread.
@@ -193,7 +204,8 @@ void SStopSignalThread() {
     }
 }
 
-void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
+void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
+{
     if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
         // If we haven't already saved a signal number, we'll do it now. Any signal we catch here will generate a
         // second ABORT signal, and we don't want that to overwrite this value, so we only set it if unset.
@@ -214,7 +226,7 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 if (callstack) {
                     free(callstack);
                 }
-                callstack = (void**)malloc(sizeof(void*) * max_depth);
+                callstack = (void**) malloc(sizeof(void*) * max_depth);
                 depth = backtrace(callstack, max_depth);
                 if (depth == max_depth) {
                     max_depth *= 2;
@@ -242,7 +254,7 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
                 char* end = strchr(front, '+');
                 char copy[1000];
                 memset(copy, 0, 1000);
-                strncpy(copy, front, min((size_t)999, (size_t)(end - front)));
+                strncpy(copy, front, min((size_t) 999, (size_t) (end - front)));
                 char* demangled = abi::__cxa_demangle(copy, 0, 0, &status);
                 char* tolog = status ? copy : demangled;
                 if (tolog[0] == '\0') {
@@ -265,7 +277,9 @@ void _SSignal_StackTrace(int signum, siginfo_t *info, void *ucontext) {
             if (!logMessage.empty()) {
                 SALERT(logMessage);
             }
-            SSignalHandlerDieFunc = [](){ return ""; };
+            SSignalHandlerDieFunc = [](){
+                return "";
+            };
             SWARN("DIE function returned.");
 
             // Finish writing the crash file with the request details if it exists
