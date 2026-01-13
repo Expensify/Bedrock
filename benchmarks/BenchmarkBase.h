@@ -12,7 +12,8 @@
 using namespace std;
 
 // Global storage for benchmark results
-struct BenchmarkResult {
+struct BenchmarkResult
+{
     double throughputMBps;
     uint64_t elapsedUs;
     size_t totalBytes;
@@ -22,12 +23,12 @@ extern map<string, BenchmarkResult> g_benchmarkResults;
 
 /**
  * Simple micro-framework for writing performance benchmarks.
- * 
+ *
  * To create a new benchmark:
  * 1. Inherit from BenchmarkBase
  * 2. Override setup() and/or teardown() if needed
  * 3. Call runBench() with your test data and function
- * 
+ *
  * Example:
  *   void myBenchmark() {
  *       vector<string> inputs = {"test1", "test2"};
@@ -38,25 +39,32 @@ extern map<string, BenchmarkResult> g_benchmarkResults;
  */
 class BenchmarkBase {
 public:
-    BenchmarkBase(const string& name) : testName(name) {}
+    BenchmarkBase(const string& name) : testName(name)
+    {
+    }
 
 private:
     string testName;
 
 protected:
+
     /**
      * Override this to set up data before benchmarks run.
      */
-    virtual void setup() {}
+    virtual void setup()
+    {
+    }
 
     /**
      * Override this to clean up after benchmarks finish.
      */
-    virtual void teardown() {}
+    virtual void teardown()
+    {
+    }
 
     /**
      * Run a benchmark with the given inputs and function.
-     * 
+     *
      * @param name Human-readable name for this benchmark
      * @param inputs Test data to run the function on
      * @param iterations How many times to run each input
@@ -66,8 +74,9 @@ protected:
     template<typename InputType, typename Func>
     uint64_t runBench(const string& name,
                       const vector<InputType>& inputs,
-                      int iterations, 
-                      Func func) {
+                      int iterations,
+                      Func func)
+    {
         setup();
 
         // Warm-up: run a few times to get CPU caches ready
@@ -104,12 +113,12 @@ protected:
         g_benchmarkResults[fullName] = {mbps, elapsedUs, totalBytes};
 
         cout << "[" << testName << "] " << name
-                  << ": inputs=" << inputs.size()
-                  << ", iters=" << iterations
-                  << ", bytes=" << totalBytes
-                  << ", time_us=" << elapsedUs
-                  << ", throughput_MBps=" << mbps
-                  << endl;
+        << ": inputs=" << inputs.size()
+        << ", iters=" << iterations
+        << ", bytes=" << totalBytes
+        << ", time_us=" << elapsedUs
+        << ", throughput_MBps=" << mbps
+        << endl;
 
         // Ensure the compiler doesn't optimize away our work
         if (guard == 0) {
@@ -121,6 +130,7 @@ protected:
     }
 
 private:
+
     /**
      * Get the size in bytes of different input types.
      * For strings: returns the actual string content size
@@ -128,10 +138,11 @@ private:
      * For containers and other types: compilation error (needs explicit specialization)
      */
     template<typename T>
-    size_t getInputSize(const T& input) {
-        if constexpr (is_same_v<T, string>) {
+    size_t getInputSize(const T& input)
+    {
+        if constexpr (is_same_v<T, string> ) {
             return input.size();
-        } else if constexpr (is_integral_v<T>) {
+        } else if constexpr (is_integral_v<T> ) {
             return sizeof(T);
         } else {
             static_assert(is_integral_v<T> || is_same_v<T, string>,

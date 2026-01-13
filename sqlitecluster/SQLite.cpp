@@ -14,7 +14,8 @@
 // Tracing can only be enabled or disabled globally, not per object.
 atomic<bool> SQLite::enableTrace(false);
 
-sqlite3* SQLite::getDBHandle() {
+sqlite3* SQLite::getDBHandle()
+{
     return _db;
 }
 
@@ -22,11 +23,13 @@ thread_local string SQLite::_mostRecentSQLiteErrorLog;
 thread_local int64_t SQLite::_conflictPage;
 thread_local string SQLite::_conflictLocation;
 
-const string SQLite::getMostRecentSQLiteErrorLog() const {
+const string SQLite::getMostRecentSQLiteErrorLog() const
+{
     return _mostRecentSQLiteErrorLog;
 }
 
-string SQLite::initializeFilename(const string& filename) {
+string SQLite::initializeFilename(const string& filename)
+{
     // Canonicalize our filename and save that version.
     if (filename == ":memory:") {
         // This path is special, it exists in memory. This doesn't actually work correctly with journaling and such, as
@@ -46,14 +49,18 @@ string SQLite::initializeFilename(const string& filename) {
     }
 }
 
-const set<string>& SQLite::getTablesUsed() const {
+const set<string>& SQLite::getTablesUsed() const
+{
     return _tablesUsed;
 }
 
-SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool hctree) {
-    static struct SharedDataLookupMapType {
+SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool hctree)
+{
+    static struct SharedDataLookupMapType
+    {
         map<string, SharedData*> m;
-        ~SharedDataLookupMapType() {
+        ~SharedDataLookupMapType()
+        {
             for (auto& p : m) {
                 delete(p.second);
             }
@@ -103,7 +110,8 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
     }
 }
 
-bool SQLite::validateDBFormat(const string& filename, bool hctree) {
+bool SQLite::validateDBFormat(const string& filename, bool hctree)
+{
     // Open the DB in read-write mode.
     const bool fileExists = SFileExists(filename);
     const bool fileIsEmpty = !SFileSize(filename);
@@ -134,13 +142,14 @@ bool SQLite::validateDBFormat(const string& filename, bool hctree) {
         }
         SINFO("Opening database '" << filename << "'.");
     } else {
-        SINFO( "Creating database '" << filename << "'.");
+        SINFO("Creating database '" << filename << "'.");
     }
 
     return hctree;
 }
 
-sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree) {
+sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree)
+{
     sqlite3* db;
     string completeFilename = filename;
     if (hctree) {
@@ -160,7 +169,8 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool h
     return db;
 }
 
-vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables) {
+vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables)
+{
     // Make sure we don't try and create more journals than we can name.
     SASSERT(minJournalTables < 10'000);
 
@@ -201,7 +211,8 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables) {
     return journalNames;
 }
 
-void SQLite::commonConstructorInitialization(bool hctree) {
+void SQLite::commonConstructorInitialization(bool hctree)
+{
     // Perform sanity checks.
     SASSERT(!_filename.empty());
     SASSERT(_maxJournalSize > 0);
@@ -275,7 +286,8 @@ SQLite::SQLite(const SQLite& from) :
     commonConstructorInitialization(_hctree);
 }
 
-int SQLite::_progressHandlerCallback(void* arg) {
+int SQLite::_progressHandlerCallback(void* arg)
+{
     SQLite* sqlite = static_cast<SQLite*>(arg);
     uint64_t now = STimeNow();
     if (sqlite->_timeoutLimit && now > sqlite->_timeoutLimit) {
@@ -297,22 +309,26 @@ int SQLite::_progressHandlerCallback(void* arg) {
     return 0;
 }
 
-void SQLite::setAbortRef(atomic<bool>& abortVar) {
+void SQLite::setAbortRef(atomic<bool>& abortVar)
+{
     _shouldAbortPtr = &abortVar;
 }
 
-void SQLite::clearAbortRef() {
+void SQLite::clearAbortRef()
+{
     _shouldAbortPtr = nullptr;
 }
 
-int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize) {
+int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, int walFileSize)
+{
     SQLite* sqlite = static_cast<SQLite*>(sqliteObject);
     sqlite->_sharedData.outstandingFramesToCheckpoint = walFileSize;
     sqlite->_sharedData.knownOutstandingFramesToCheckpoint = walFileSize;
     return SQLITE_OK;
 }
 
-void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
+void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg)
+{
     // Skip logging this as it generates a lot of noise and we don't use it.
     if (strstr(zMsg, "automatic index on")) {
         return;
@@ -338,18 +354,21 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg) {
     }
 }
 
-int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x) {
+int SQLite::_sqliteTraceCallback(unsigned int traceCode, void* c, void* p, void* x)
+{
     if (enableTrace && traceCode == SQLITE_TRACE_STMT) {
-        SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql((sqlite3_stmt*)p));
+        SINFO("NORMALIZED_SQL:" << sqlite3_normalized_sql((sqlite3_stmt*) p));
     }
     return 0;
 }
 
-string SQLite::_getJournalQuery(const list<string>& queryParts, bool append) {
+string SQLite::_getJournalQuery(const list<string>& queryParts, bool append)
+{
     return _getJournalQuery(_journalNames, queryParts, append);
 }
 
-string SQLite::_getJournalQuery(const vector<string>& journalNames, const list<string>& queryParts, bool append) {
+string SQLite::_getJournalQuery(const vector<string>& journalNames, const list<string>& queryParts, bool append)
+{
     list<string> queries;
     for (const string& name : journalNames) {
         queries.emplace_back(SComposeList(queryParts, " " + name + " ") + (append ? " " + name : ""));
@@ -358,7 +377,8 @@ string SQLite::_getJournalQuery(const vector<string>& journalNames, const list<s
     return query;
 }
 
-SQLite::~SQLite() {
+SQLite::~SQLite()
+{
     // First, rollback any incomplete transaction.
     if (!_uncommittedQuery.empty()) {
         SINFO("Rolling back in destructor.");
@@ -373,7 +393,8 @@ SQLite::~SQLite() {
     DBINFO("Database closed.");
 }
 
-void SQLite::exclusiveLockDB() {
+void SQLite::exclusiveLockDB()
+{
     // This order is important and not intuitive. It seems like we should lock `writeLock` before `commitLock` because that's the order these occur in a typical database operation,
     // however, there are two possible flows here. For a non-blocking transaction (i.e., one run in parallel with other transactions), the lock order is:
     // writeLock, commitLock, but importantly, in this case, these are not locked simultaneously. writeLock is only locked for the time of the actual DB write query, and then released.
@@ -394,22 +415,25 @@ void SQLite::exclusiveLockDB() {
         SINFO("Locking writeLock");
         _sharedData.writeLock.lock();
         SINFO("writeLock Locked");
-    } catch(const system_error& e) {
+    } catch (const system_error& e) {
         SWARN("Caught system_error calling _sharedData.writeLock, code: " << e.code() << ", message: " << e.what());
         throw;
     }
 }
 
-void SQLite::exclusiveUnlockDB() {
+void SQLite::exclusiveUnlockDB()
+{
     _sharedData.writeLock.unlock();
     _sharedData.commitLock.unlock();
 }
 
-SQLite::TRANSACTION_TYPE SQLite::getLastTransactionType() {
+SQLite::TRANSACTION_TYPE SQLite::getLastTransactionType()
+{
     return _lastTransactionType;
 }
 
-bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
+bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
+{
     _lastTransactionType = type;
     _transactionTimer.start("BEGIN_TRANSACTION");
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
@@ -454,14 +478,9 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
         SINFO("Beginning transaction - open transaction count: " << (_sharedData.openTransactionCount));
     }
     uint64_t before = STimeNow();
-    _insideTransaction = !SQuery(_db, "BEGIN CONCURRENT");
-    if(_hctree) {
-        SQResult pageCountResult;
-        SQuery(_db, "PRAGMA page_count;", pageCountResult);
-        if (!pageCountResult.empty()) {
-            _pageCountDifference = SToUInt64(pageCountResult[0][0]) - _pageCountDifference;
-        }
-    }
+
+    string beginQuery = (beginOnly && _hctree) ? "BEGIN" : "BEGIN CONCURRENT";
+    _insideTransaction = !SQuery(_db, beginQuery);
 
     // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
     // where we're actually able to start such that we know we shouldn't get a conflict if this commits successfully on
@@ -487,7 +506,8 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type) {
     return _insideTransaction;
 }
 
-bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created, const string& type) {
+bool SQLite::verifyTable(const string& tableName, const string& sql, bool& created, const string& type)
+{
     // sqlite trims semicolon, so let's not supply it else we get confused later
     SASSERT(!SEndsWith(sql, ";"));
 
@@ -520,7 +540,8 @@ bool SQLite::verifyTable(const string& tableName, const string& sql, bool& creat
     }
 }
 
-bool SQLite::verifyIndex(const string& indexName, const string& tableName, const string& indexSQLDefinition, bool isUnique, bool createIfNotExists) {
+bool SQLite::verifyIndex(const string& indexName, const string& tableName, const string& indexSQLDefinition, bool isUnique, bool createIfNotExists)
+{
     SINFO("Verifying index", {{"indexName", indexName}, {"isUnique", to_string(isUnique)}});
     SQResult result;
     SASSERT(read("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=" + SQ(tableName) + " AND name=" + SQ(indexName) + ";", result));
@@ -541,7 +562,8 @@ bool SQLite::verifyIndex(const string& indexName, const string& tableName, const
     }
 }
 
-bool SQLite::addColumn(const string& tableName, const string& column, const string& columnType) {
+bool SQLite::addColumn(const string& tableName, const string& column, const string& columnType)
+{
     // Add a column to the table if it does not exist.  Totally freak out on error.
     const string& sql =
         SCollapse(read("SELECT sql FROM sqlite_master WHERE type='table' AND tbl_name='" + tableName + "';"));
@@ -555,7 +577,8 @@ bool SQLite::addColumn(const string& tableName, const string& column, const stri
     return false;
 }
 
-string SQLite::read(const string& query) const {
+string SQLite::read(const string& query) const
+{
     // Execute the read-only query
     SQResult result;
     if (!read(query, result)) {
@@ -567,7 +590,8 @@ string SQLite::read(const string& query) const {
     return result[0][0];
 }
 
-int SQLite::read(const string& query, sqlite3_qrf_spec* spec) const {
+int SQLite::read(const string& query, sqlite3_qrf_spec* spec) const
+{
     // Execute the read-only query. Skips caching.
     uint64_t before = STimeNow();
     int queryResult = SQuery(_db, query, spec);
@@ -576,7 +600,8 @@ int SQLite::read(const string& query, sqlite3_qrf_spec* spec) const {
     return queryResult;
 }
 
-bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) const {
+bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) const
+{
     uint64_t before = STimeNow();
     bool queryResult = false;
     _readQueryCount++;
@@ -597,8 +622,8 @@ bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) cons
     return queryResult;
 }
 
-void SQLite::_checkInterruptErrors(const string& error) const {
-
+void SQLite::_checkInterruptErrors(const string& error) const
+{
     // Local error code.
     int errorCode = 0;
     uint64_t time = 0;
@@ -629,7 +654,8 @@ void SQLite::_checkInterruptErrors(const string& error) const {
     // Otherwise, no error.
 }
 
-bool SQLite::write(const string& query) {
+bool SQLite::write(const string& query)
+{
     if (_noopUpdateMode) {
         SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
         return true;
@@ -640,7 +666,8 @@ bool SQLite::write(const string& query) {
     return _writeIdempotent(query, ignore);
 }
 
-bool SQLite::write(const string& query, SQResult& result) {
+bool SQLite::write(const string& query, SQResult& result)
+{
     if (_noopUpdateMode) {
         SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
         return true;
@@ -650,21 +677,25 @@ bool SQLite::write(const string& query, SQResult& result) {
     return _writeIdempotent(query, result);
 }
 
-bool SQLite::writeIdempotent(const string& query) {
+bool SQLite::writeIdempotent(const string& query)
+{
     SQResult ignore;
     return _writeIdempotent(query, ignore);
 }
 
-bool SQLite::writeIdempotent(const string& query, SQResult& result) {
+bool SQLite::writeIdempotent(const string& query, SQResult& result)
+{
     return _writeIdempotent(query, result);
 }
 
-bool SQLite::writeUnmodified(const string& query) {
+bool SQLite::writeUnmodified(const string& query)
+{
     SQResult ignore;
     return _writeIdempotent(query, ignore, true);
 }
 
-bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries) {
+bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries)
+{
     if (!_insideTransaction) {
         STHROW("500 Attempted to write outside of transaction");
     }
@@ -732,7 +763,8 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
     return true;
 }
 
-bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
+bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
+{
     SASSERT(_insideTransaction);
 
     // Pick a journal for this transaction.
@@ -823,7 +855,8 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash) {
     return true;
 }
 
-int SQLite::commit(const string& description, const string& commandName, function<void()>* preCheckpointCallback) {
+int SQLite::commit(const string& description, const string& commandName, function<void()>* preCheckpointCallback)
+{
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
         return COMMIT_DISABLED;
@@ -844,7 +877,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
     _conflictLocation = "";
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
-    if(_hctree) {
+    if (_hctree) {
         SQResult pageCountResult;
         SQuery(_db, "PRAGMA page_count;", pageCountResult);
         if (!pageCountResult.empty()) {
@@ -852,7 +885,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
         }
     }
     result = SQuery(_db, "COMMIT");
-    if(_hctree) {
+    if (_hctree) {
         SQResult pageCountResult;
         SQuery(_db, "PRAGMA page_count;", pageCountResult);
         if (!pageCountResult.empty()) {
@@ -861,22 +894,23 @@ int SQLite::commit(const string& description, const string& commandName, functio
     }
 
     // In HCTree mode, we log extra info for slow commits.
+
     /* This is disabled because the diagnostic logging is unreasonably expensive (30+ seconds for the query).
-    if (_hctree) {
-        uint64_t afterCommit = STimeNow();
-        // log for any commit over 1 second.
-        if ((afterCommit - beforeCommit) > 1'000'000) {
-            SQResult slowCommitResult;
-            SQuery(_db, "SELECT * FROM hctvalid", slowCommitResult);
-            SINFO("SLOW HCTREE COMMIT " << (slowCommitResult.size() + 1) << " lines to follow");
-            string headers = SComposeList(slowCommitResult.headers);
-            SINFO("SLOW HCTREE COMMIT HEADERS: " << headers);
-            for (size_t i = 0; i < slowCommitResult.size(); i++) {
-                SINFO("SLOW HCTREE COMMIT ROW: " << i << ": " << SComposeList(slowCommitResult[i]));
-            }
-        }
-    }
-    */
+     * if (_hctree) {
+     *  uint64_t afterCommit = STimeNow();
+     *  // log for any commit over 1 second.
+     *  if ((afterCommit - beforeCommit) > 1'000'000) {
+     *      SQResult slowCommitResult;
+     *      SQuery(_db, "SELECT * FROM hctvalid", slowCommitResult);
+     *      SINFO("SLOW HCTREE COMMIT " << (slowCommitResult.size() + 1) << " lines to follow");
+     *      string headers = SComposeList(slowCommitResult.headers);
+     *      SINFO("SLOW HCTREE COMMIT HEADERS: " << headers);
+     *      for (size_t i = 0; i < slowCommitResult.size(); i++) {
+     *          SINFO("SLOW HCTREE COMMIT ROW: " << i << ": " << SComposeList(slowCommitResult[i]));
+     *      }
+     *  }
+     * }
+     */
 
     _lastConflictPage = _conflictPage;
     _lastConflictLocation = _conflictLocation;
@@ -885,14 +919,14 @@ int SQLite::commit(const string& description, const string& commandName, functio
     SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
         char time[16];
-        snprintf(time, 16, "%.2fms", (double)(STimeNow() - beforeCommit) / 1000.0);
+        snprintf(time, 16, "%.2fms", (double) (STimeNow() - beforeCommit) / 1000.0);
 
         // And record pages after the commit.
         int endPages;
         sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &endPages, &dummy, 0);
 
         // Similarly, record WAL file size.
-        sqlite3_file *pWal = 0;
+        sqlite3_file* pWal = 0;
         sqlite3_int64 sz = 0;
         sqlite3_file_control(_db, "main", SQLITE_FCNTL_JOURNAL_POINTER, &pWal);
         if (pWal && pWal->pMethods) {
@@ -936,13 +970,13 @@ int SQLite::commit(const string& description, const string& commandName, functio
                 description,
                 SToStr(_sharedData.commitCount),
                 time,
-                (endPages - startPages),
+                   (endPages - startPages),
                 sz,
                 _readQueryCount,
                 _writeQueryCount,
                 _cacheHits,
                 _journalName,
-                (_hctree ? format(" HC-Tree pages added: {}", _pageCountDifference) : "")),
+                   (_hctree ? format(" HC-Tree pages added: {}", _pageCountDifference) : "")),
             commandName);
         _readQueryCount = 0;
         _writeQueryCount = 0;
@@ -959,7 +993,8 @@ int SQLite::commit(const string& description, const string& commandName, functio
     return result;
 }
 
-int SQLite::getCheckpointModeFromString(const string& checkpointModeString) {
+int SQLite::getCheckpointModeFromString(const string& checkpointModeString)
+{
     if (checkpointModeString == "PASSIVE") {
         return SQLITE_CHECKPOINT_PASSIVE;
     }
@@ -975,11 +1010,13 @@ int SQLite::getCheckpointModeFromString(const string& checkpointModeString) {
     SERROR("Invalid checkpoint type: " << checkpointModeString);
 }
 
-map<uint64_t, tuple<string, string, uint64_t>> SQLite::popCommittedTransactions() {
+map<uint64_t, tuple<string, string, uint64_t>> SQLite::popCommittedTransactions()
+{
     return _sharedData.popCommittedTransactions();
 }
 
-void SQLite::rollback(const string& commandName) {
+void SQLite::rollback(const string& commandName)
+{
     // Make sure we're actually inside a transaction
     if (_insideTransaction) {
         // Store the total transaction time only if we were inside one.
@@ -1029,29 +1066,32 @@ void SQLite::rollback(const string& commandName) {
     _dbCountAtStart = 0;
 }
 
-void SQLite::logLastTransactionTiming(const string& message, const string& commandName) {
+void SQLite::logLastTransactionTiming(const string& message, const string& commandName)
+{
     // We don't want to add `commitLockElapsed` and `totalTransactionElapsed` to the total elapsed time since they overlap with parts of the transaction
     // and that could double-count certain times (i.e. `commitElapsed` occurs simultaneously with `commitLockElapsed`)
     uint64_t totalElapsed = _beginElapsed + _readElapsed + _writeElapsed + _prepareElapsed + _commitElapsed + _rollbackElapsed;
     SINFO(message, {
         {"command", commandName},
-        {"totalElapsed", to_string(totalElapsed/1000)},
-        {"readElapsed", to_string(_readElapsed/1000)},
-        {"writeElapsed", to_string(_writeElapsed/1000)},
-        {"prepareElapsed", to_string(_prepareElapsed/1000)},
-        {"commitElapsed", to_string(_commitElapsed/1000)},
-        {"rollbackElapsed", to_string(_rollbackElapsed/1000)},
-        {"totalTransactionElapsed", to_string(_totalTransactionElapsed/1000)},
-        {"beginElapsed", to_string(_beginElapsed/1000)},
-        {"commitLockElapsed", to_string(_commitLockElapsed/1000)},
+        {"totalElapsed", to_string(totalElapsed / 1000)},
+        {"readElapsed", to_string(_readElapsed / 1000)},
+        {"writeElapsed", to_string(_writeElapsed / 1000)},
+        {"prepareElapsed", to_string(_prepareElapsed / 1000)},
+        {"commitElapsed", to_string(_commitElapsed / 1000)},
+        {"rollbackElapsed", to_string(_rollbackElapsed / 1000)},
+        {"totalTransactionElapsed", to_string(_totalTransactionElapsed / 1000)},
+        {"beginElapsed", to_string(_beginElapsed / 1000)},
+        {"commitLockElapsed", to_string(_commitLockElapsed / 1000)},
     });
 }
 
-bool SQLite::getCommit(uint64_t id, string& query, string& hash) {
+bool SQLite::getCommit(uint64_t id, string& query, string& hash)
+{
     return getCommit(_db, _journalNames, id, query, hash);
 }
 
-bool SQLite::getCommit(sqlite3* db, const vector<string>& journalNames, uint64_t id, string& query, string& hash) {
+bool SQLite::getCommit(sqlite3* db, const vector<string>& journalNames, uint64_t id, string& query, string& hash)
+{
     // TODO: This can fail if called after `BEGIN TRANSACTION`, if the id we want to look up was committed by another
     // thread. We may or may never need to handle this case.
     // Look up the query and hash for the given commit
@@ -1071,20 +1111,22 @@ bool SQLite::getCommit(sqlite3* db, const vector<string>& journalNames, uint64_t
     }
 
     // If we found a hash, we assume this was a good commit, as we'll allow an empty commit.
-    return (!hash.empty());
+    return !hash.empty();
 }
 
-string SQLite::getCommittedHash() {
+string SQLite::getCommittedHash()
+{
     return _sharedData.lastCommittedHash.load();
 }
 
-int SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS) {
+int SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS)
+{
     // Look up all the queries within that range
     SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
     string query = _getJournalQuery({"SELECT id, hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
-                                    (toIndex ? " AND id <= " + SQ(toIndex) : "")});
+                                     (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
-    query = "SELECT hash, query FROM (" + query  + ") ORDER BY id";
+    query = "SELECT hash, query FROM (" + query + ") ORDER BY id";
     if (timeoutLimitUS) {
         setTimeout(timeoutLimitUS);
     }
@@ -1093,40 +1135,48 @@ int SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, u
     return queryResult;
 }
 
-int64_t SQLite::getLastInsertRowID() {
+int64_t SQLite::getLastInsertRowID()
+{
     // Make sure it *does* happen after an INSERT, but not with a IGNORE
     SASSERTWARN(SContains(_uncommittedQuery, "INSERT") || SContains(_uncommittedQuery, "REPLACE"));
     SASSERTWARN(!SContains(_uncommittedQuery, "IGNORE"));
-    int64_t sqliteRowID = (int64_t)sqlite3_last_insert_rowid(_db);
+    int64_t sqliteRowID = (int64_t) sqlite3_last_insert_rowid(_db);
     return sqliteRowID;
 }
 
-uint64_t SQLite::getCommitCount() const {
+uint64_t SQLite::getCommitCount() const
+{
     return _sharedData.commitCount;
 }
 
-uint64_t SQLite::getOutstandingFramesToCheckpoint() const {
+uint64_t SQLite::getOutstandingFramesToCheckpoint() const
+{
     return _sharedData.knownOutstandingFramesToCheckpoint;
 }
 
-size_t SQLite::getLastWriteChangeCount() {
+size_t SQLite::getLastWriteChangeCount()
+{
     int count = sqlite3_changes(_db);
-    return count > 0 ? (size_t)count : 0;
+    return count > 0 ? (size_t) count : 0;
 }
 
-void SQLite::enableRewrite(bool enable) {
+void SQLite::enableRewrite(bool enable)
+{
     _enableRewrite = enable;
 }
 
-void SQLite::setRewriteHandler(bool (*handler)(int, const char*, string&)) {
+void SQLite::setRewriteHandler(bool (*handler)(int, const char*, string&))
+{
     _rewriteHandler = handler;
 }
 
-void SQLite::enablePrepareNotifications(bool enable) {
+void SQLite::enablePrepareNotifications(bool enable)
+{
     _shouldNotifyPluginsOnPrepare = enable;
 }
 
-void SQLite::setOnPrepareHandler(void (*handler)(SQLite& _db, int64_t tableID)) {
+void SQLite::setOnPrepareHandler(void (*handler)(SQLite& _db, int64_t tableID))
+{
     _onPrepareHandler = handler;
 }
 
@@ -1137,7 +1187,8 @@ int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const cha
     return db->_authorize(actionCode, detail1, detail2, detail3, detail4);
 }
 
-int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4) {
+int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4)
+{
     // If we've enabled re-writing, see if we need to re-write this query.
     if (_enableRewrite && !_currentlyRunningRewritten && (*_rewriteHandler)(actionCode, detail1, _rewrittenQuery)) {
         // Deny the original query, we'll re-run on the re-written version.
@@ -1216,6 +1267,7 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
         case SQLITE_COPY:
         case SQLITE_RECURSIVE:
             return SQLITE_DENY;
+
             break;
 
         // The following are *always* allowed in whitelist mode.
@@ -1223,7 +1275,9 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
         case SQLITE_ANALYZE:
         case SQLITE_FUNCTION:
             return SQLITE_OK;
+
             break;
+
         case SQLITE_PRAGMA:
         {
             string normalizedTable = SToLower(detail1);
@@ -1239,6 +1293,7 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
             }
             break;
         }
+
         case SQLITE_READ:
         {
             // See if there's an entry in the whitelist for this table.
@@ -1260,19 +1315,22 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
     return SQLITE_DENY;
 }
 
-void SQLite::setTimeout(uint64_t timeLimitUS) {
+void SQLite::setTimeout(uint64_t timeLimitUS)
+{
     _timeoutStart = STimeNow();
     _timeoutLimit = _timeoutStart + timeLimitUS;
     _timeoutError = 0;
 }
 
-void SQLite::clearTimeout() {
+void SQLite::clearTimeout()
+{
     _timeoutLimit = 0;
     _timeoutStart = 0;
     _timeoutError = 0;
 }
 
-void SQLite::setUpdateNoopMode(bool enabled) {
+void SQLite::setUpdateNoopMode(bool enabled)
+{
     if (_noopUpdateMode == enabled) {
         return;
     }
@@ -1289,19 +1347,23 @@ void SQLite::setUpdateNoopMode(bool enabled) {
     }
 }
 
-bool SQLite::getUpdateNoopMode() const {
+bool SQLite::getUpdateNoopMode() const
+{
     return _noopUpdateMode;
 }
 
-uint64_t SQLite::getDBCountAtStart() const {
+uint64_t SQLite::getDBCountAtStart() const
+{
     return _dbCountAtStart;
 }
 
-void SQLite::setCommitEnabled(bool enable) {
+void SQLite::setCommitEnabled(bool enable)
+{
     _sharedData.setCommitEnabled(enable);
 }
 
-int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& statements) {
+int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& statements)
+{
     // We need a pointer to a prepared statement.
     sqlite3_stmt* ppStmt = nullptr;
 
@@ -1329,31 +1391,36 @@ int SQLite::getPreparedStatements(const string& query, list<sqlite3_stmt*>& stat
     return SQLITE_OK;
 }
 
-void SQLite::setQueryOnly(bool enabled) {
+void SQLite::setQueryOnly(bool enabled)
+{
     SQResult result;
     string query = "PRAGMA query_only = "s + (enabled ? "true" : "false") + ";";
     SQuery(_db, query, result);
 }
 
-int64_t SQLite::getLastConflictPage() const {
+int64_t SQLite::getLastConflictPage() const
+{
     return _lastConflictPage;
 }
 
-string SQLite::getLastConflictLocation() const {
+string SQLite::getLastConflictLocation() const
+{
     return _lastConflictLocation;
 }
 
 SQLite::SharedData::SharedData() :
-nextJournalCount(0),
-_commitEnabled(true),
-openTransactionCount(0),
-_commitLockTimer("commit lock timer", {
+    nextJournalCount(0),
+    _commitEnabled(true),
+    openTransactionCount(0),
+    _commitLockTimer("commit lock timer", {
     {"EXCLUSIVE", chrono::steady_clock::duration::zero()},
     {"SHARED", chrono::steady_clock::duration::zero()},
 })
-{ }
+{
+}
 
-void SQLite::SharedData::setCommitEnabled(bool enable) {
+void SQLite::SharedData::setCommitEnabled(bool enable)
+{
     if (_commitEnabled == enable) {
         // Exit early without grabbing the lock. It's possible during highly congested times for getting the lock to take long enough to time out the cluster.
         return;
@@ -1363,24 +1430,28 @@ void SQLite::SharedData::setCommitEnabled(bool enable) {
     _commitEnabled = enable;
 }
 
-void SQLite::SharedData::incrementCommit(const string& commitHash) {
+void SQLite::SharedData::incrementCommit(const string& commitHash)
+{
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     commitCount++;
     commitTransactionInfo(commitCount);
     lastCommittedHash.store(commitHash);
 }
 
-void SQLite::SharedData::prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash, uint64_t dbCountAtTransactionStart) {
+void SQLite::SharedData::prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash, uint64_t dbCountAtTransactionStart)
+{
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     _preparedTransactions.insert_or_assign(commitID, make_tuple(query, hash, dbCountAtTransactionStart));
 }
 
-void SQLite::SharedData::commitTransactionInfo(uint64_t commitID) {
+void SQLite::SharedData::commitTransactionInfo(uint64_t commitID)
+{
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     _committedTransactions.insert(_preparedTransactions.extract(commitID));
 }
 
-map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::popCommittedTransactions() {
+map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::popCommittedTransactions()
+{
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     decltype(_committedTransactions) result;
     result = move(_committedTransactions);

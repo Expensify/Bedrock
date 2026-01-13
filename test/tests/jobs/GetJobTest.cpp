@@ -5,7 +5,8 @@
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 
-bool isBetweenSecondsInclusive(uint64_t startTimestamp, uint64_t endTimestamp, const string& timestampString) {
+bool isBetweenSecondsInclusive(uint64_t startTimestamp, uint64_t endTimestamp, const string& timestampString)
+{
     uint64_t testTime = startTimestamp;
     while (true) {
         string testTimeString = SComposeTime("%Y-%m-%d %H:%M:%S", testTime);
@@ -25,7 +26,8 @@ bool isBetweenSecondsInclusive(uint64_t startTimestamp, uint64_t endTimestamp, c
     return false;
 }
 
-struct GetJobTest : tpunit::TestFixture {
+struct GetJobTest : tpunit::TestFixture
+{
     GetJobTest()
         : tpunit::TestFixture("GetJob",
                               BEFORE_CLASS(GetJobTest::setupClass),
@@ -43,23 +45,33 @@ struct GetJobTest : tpunit::TestFixture {
                               TEST(GetJobTest::testRetryableParentJobs),
                               TEST(GetJobTest::testInvalidNextRun),
                               AFTER(GetJobTest::tearDown),
-                              AFTER_CLASS(GetJobTest::tearDownClass)) { }
+                              AFTER_CLASS(GetJobTest::tearDownClass))
+    {
+    }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass()
+    {
+        tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
+    }
 
     // Reset the jobs table
-    void tearDown() {
+    void tearDown()
+    {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
     }
 
-    void tearDownClass() { delete tester; }
+    void tearDownClass()
+    {
+        delete tester;
+    }
 
     // Simple GetJob
-    void getJob() {
+    void getJob()
+    {
         // Create the job
         SData command("CreateJob");
         string jobName = "job";
@@ -107,7 +119,8 @@ struct GetJobTest : tpunit::TestFixture {
     }
 
     // Simple GetJob with Http
-    void getJobWithHttp() {
+    void getJobWithHttp()
+    {
         uint64_t start = STimeNow();
         // Create the job
         SData command("CreateJob");
@@ -152,7 +165,8 @@ struct GetJobTest : tpunit::TestFixture {
     }
 
     // Cannot use numResults
-    void withNumResults() {
+    void withNumResults()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -167,7 +181,8 @@ struct GetJobTest : tpunit::TestFixture {
     }
 
     // No job found
-    void noJobFound() {
+    void noJobFound()
+    {
         // GetJob
         SData command("GetJob");
         command["name"] = "job";
@@ -175,7 +190,8 @@ struct GetJobTest : tpunit::TestFixture {
     }
 
     // Create jobs with the same nextRun time but different priorities
-    void testPriorities() {
+    void testPriorities()
+    {
         string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow());
         // Create jobs of different priorities
         // Low
@@ -239,8 +255,8 @@ struct GetJobTest : tpunit::TestFixture {
     // Create jobs in order of low, medium, high, high, medium, low
     // with nextRun times in order of now, now+1, now+2, now+5, now+4, now+3
     // Expect the jobs to be returned in order of low, medium, high, high, medium, low
-    void testPrioritiesWithDifferentNextRunTimes() {
-
+    void testPrioritiesWithDifferentNextRunTimes()
+    {
         // We mark a `start at` time because timing is critical to this test.
         uint64_t startAt = STimeNow();
         // Create jobs of different priorities
@@ -340,7 +356,7 @@ struct GetJobTest : tpunit::TestFixture {
         if (names[0] != "low" || names[1] != "medium" || names[2] != "high") {
             cout << "Will fail:" << endl;
             for (auto& a : responses) {
-                for (auto&p : a) {
+                for (auto& p : a) {
                     cout << p.first << ": " << p.second << endl;
                 }
                 cout << endl;
@@ -361,7 +377,8 @@ struct GetJobTest : tpunit::TestFixture {
     }
 
     // Get a parent job that has finished and cancelled jobs
-    void testWithFinishedAndCancelledChildren() {
+    void testWithFinishedAndCancelledChildren()
+    {
         // Create the parent
         SData command("CreateJob");
         command["name"] = "parent";
@@ -397,13 +414,13 @@ struct GetJobTest : tpunit::TestFixture {
         command.methodLine = "FinishJob";
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
-        
+
         // Get a child
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "child_finished";
         response = tester->executeWaitVerifyContentTable(command);
-        
+
         // Cancel a child
         command.clear();
         command.methodLine = "CancelJob";
@@ -470,14 +487,15 @@ struct GetJobTest : tpunit::TestFixture {
     // than the QUEUED nextRun
     // We set the firstRun for all the jobs that don't have a retryAfter to 2 seconds in the future
     // This way, after the two jobs with retryAfter are run, the nextRun will be the same for all jobs but one
-    void testPrioritiesWithRunQueued() {
+    void testPrioritiesWithRunQueued()
+    {
         // Create jobs of different priorities
         // Low
         SData command("CreateJob");
         command["name"] = "low_5";
         command["priority"] = "0";
         const uint64_t time = STimeNow();
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time+2000000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 2000000);
         tester->executeWaitVerifyContent(command);
 
         // High
@@ -501,7 +519,7 @@ struct GetJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "high_2";
         command["priority"] = "1000";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time+2000000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 2000000);
         tester->executeWaitVerifyContent(command);
 
         // Medium
@@ -509,7 +527,7 @@ struct GetJobTest : tpunit::TestFixture {
         command.methodLine = "CreateJob";
         command["name"] = "medium_3";
         command["priority"] = "500";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time+2000000);
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", time + 2000000);
         tester->executeWaitVerifyContent(command);
 
         // Get the two jobs with retryAfter set to put them in a RUNQUEUED state
@@ -564,7 +582,8 @@ struct GetJobTest : tpunit::TestFixture {
     }
 
     // Get a job from a list of names and make sure the jobs are returned in the proper order by priorities
-    void testMultipleNames() {
+    void testMultipleNames()
+    {
         // Create jobs of different priorities
         // Low
         SData command("CreateJob");
@@ -628,7 +647,8 @@ struct GetJobTest : tpunit::TestFixture {
 
     // Create jobs with the same nextRun time but different priorities
     // Test that the priority parameter works
-    void testPriorityParameter() {
+    void testPriorityParameter()
+    {
         string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow());
         // Create jobs of different priorities
         // Low
@@ -701,7 +721,8 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_NOT_EQUAL(SParseJSONObject(jobList.front())["name"].find("high"), string::npos);
     }
 
-    void testInvalidJobPriority() {
+    void testInvalidJobPriority()
+    {
         // GetJob
         SData command("GetJobs");
         command["name"] = "*";
@@ -710,7 +731,8 @@ struct GetJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command, "402 Invalid priority value");
     }
 
-    void testRetryableParentJobs() {
+    void testRetryableParentJobs()
+    {
         // Create the parent job
         SData createJobCommand("CreateJob");
         createJobCommand["name"] = "ParentJob";
@@ -763,7 +785,7 @@ struct GetJobTest : tpunit::TestFixture {
         finishJobCommand["jobID"] = parentJobID;
         uint64_t start = STimeNow();
         tester->executeWaitVerifyContentTable(finishJobCommand);
-        uint64_t end= STimeNow();
+        uint64_t end = STimeNow();
 
         // Now the parent is PAUSED and the child is QUEUED for running.
         state = tester->readDB("SELECT state FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
@@ -808,7 +830,8 @@ struct GetJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(stoi(parentCount), 0);
     }
 
-    void testInvalidNextRun() {
+    void testInvalidNextRun()
+    {
         SData command("CreateJob");
         command["name"] = "jobWithInvalidNextRun";
         command["firstRun"] = SUNQUOTED_CURRENT_TIMESTAMP();
@@ -835,6 +858,4 @@ struct GetJobTest : tpunit::TestFixture {
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", jobData);
         ASSERT_EQUAL(jobData[0][0], "FAILED");
     }
-
 } __GetJobTest;
-

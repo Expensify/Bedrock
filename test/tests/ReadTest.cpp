@@ -1,26 +1,32 @@
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 
-struct ReadTest : tpunit::TestFixture {
+struct ReadTest : tpunit::TestFixture
+{
     ReadTest()
         : tpunit::TestFixture("Read",
                               BEFORE_CLASS(ReadTest::setup),
                               TEST(ReadTest::simpleRead),
                               TEST(ReadTest::simpleReadWithHttp),
                               TEST(ReadTest::readNoSemicolon),
-                              AFTER_CLASS(ReadTest::tearDown)) { }
+                              AFTER_CLASS(ReadTest::tearDown))
+    {
+    }
 
     BedrockTester* tester;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockTester();
     }
 
-    void tearDown() {
+    void tearDown()
+    {
         delete tester;
     }
 
-    void simpleRead() {
+    void simpleRead()
+    {
         SData status("Query");
         status["query"] = "SELECT 1;";
         string response = tester->executeWaitVerifyContent(status);
@@ -28,7 +34,8 @@ struct ReadTest : tpunit::TestFixture {
         ASSERT_EQUAL(val, 1);
     }
 
-    void simpleReadWithHttp() {
+    void simpleReadWithHttp()
+    {
         SData status("Query / HTTP/1.1");
         status["query"] = "SELECT 1;";
         string response = tester->executeWaitVerifyContent(status);
@@ -36,10 +43,10 @@ struct ReadTest : tpunit::TestFixture {
         ASSERT_EQUAL(val, 1);
     }
 
-    void readNoSemicolon() {
+    void readNoSemicolon()
+    {
         SData status("Query");
         status["query"] = "SELECT 1";
         tester->executeWaitVerifyContent(status, "502");
     }
-
 } __ReadTest;

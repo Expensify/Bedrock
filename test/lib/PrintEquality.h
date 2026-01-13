@@ -32,7 +32,7 @@ ostream& operator<<(ostream& output, const map<T, U>& val)
 }
 
 template<typename T>
-ostream& operator<<(ostream& output, const std::optional<T>& val)
+ostream& operator<<(ostream& output, const optional<T>& val)
 {
     if (val.has_value()) {
         return output << val.value();
@@ -42,9 +42,10 @@ ostream& operator<<(ostream& output, const std::optional<T>& val)
 }
 
 class PrintEquality {
-    public:
-        template <typename U, typename V>
-        PrintEquality(const U& a, const V& b, bool isEqual) {
-            cout << a << " " << (isEqual ? "=" : "!") << "= " << b << "\n";
-        }
+public:
+    template<typename U, typename V>
+    PrintEquality(const U& a, const V& b, bool isEqual)
+    {
+        cout << a << " " << (isEqual ? "=" : "!") << "= " << b << "\n";
+    }
 };

@@ -234,10 +234,7 @@ STCPManager::Socket::~Socket()
     if (ssl) {
         delete ssl;
     } else {
-        if (s >= 0) {
-            ::shutdown(s, SHUT_RDWR);
-            ::close(s);
-        }
+        S_close(&s);
     }
 }
 

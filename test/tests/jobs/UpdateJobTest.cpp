@@ -3,27 +3,33 @@
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
 
-struct UpdateJobTest : tpunit::TestFixture {
+struct UpdateJobTest : tpunit::TestFixture
+{
     UpdateJobTest()
-            : tpunit::TestFixture("UpdateJob",
-                                  BEFORE_CLASS(UpdateJobTest::setupClass),
-                                  TEST(UpdateJobTest::updateJob),
-                                  TEST(UpdateJobTest::updateStringValueLookingLikeNumber),
-                                  TEST(UpdateJobTest::updateMockedJob),
-                                  AFTER_CLASS(UpdateJobTest::tearDownClass)) { }
+        : tpunit::TestFixture("UpdateJob",
+                              BEFORE_CLASS(UpdateJobTest::setupClass),
+                              TEST(UpdateJobTest::updateJob),
+                              TEST(UpdateJobTest::updateStringValueLookingLikeNumber),
+                              TEST(UpdateJobTest::updateMockedJob),
+                              AFTER_CLASS(UpdateJobTest::tearDownClass))
+    {
+    }
 
     BedrockTester* tester;
 
-    void setupClass() {
+    void setupClass()
+    {
         tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
     }
 
-    void tearDownClass() {
+    void tearDownClass()
+    {
         delete tester;
     }
 
     // Simple UpdateJob with all parameters
-    void updateJob() {
+    void updateJob()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -83,7 +89,8 @@ struct UpdateJobTest : tpunit::TestFixture {
         ASSERT_EQUAL("{\"key\":\"value\",\"anotherKey\":\"1234\"}", currentJob[0][0]);
     }
 
-    void updateMockedJob() {
+    void updateMockedJob()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -113,6 +120,4 @@ struct UpdateJobTest : tpunit::TestFixture {
         ASSERT_NOT_EQUAL(currentJob[0][2], oldPriority);
         ASSERT_EQUAL(currentJob[0][3], "2020-01-01 00:00:00");
     }
-
 } __UpdateJobTest;
-
