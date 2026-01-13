@@ -18,27 +18,27 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture
         leader.stopServer();
 
         thread healthCheckThread([&results, &follower](){
-                                 SData cmd("GET /status/handlingCommands HTTP/1.1");
-                                 string result;
-                                 bool foundLeader = false;
-                                 bool foundFollower = false;
-                                 bool foundStandingdown = false;
-                                 chrono::steady_clock::time_point start = chrono::steady_clock::now();
+            SData cmd("GET /status/handlingCommands HTTP/1.1");
+            string result;
+            bool foundLeader = false;
+            bool foundFollower = false;
+            bool foundStandingdown = false;
+            chrono::steady_clock::time_point start = chrono::steady_clock::now();
 
-                                 while (chrono::steady_clock::now() < start + 60s && (!foundLeader || !foundFollower || !foundStandingdown)) {
-                                     result = follower.executeWaitMultipleData({cmd}, 1, false)[0].methodLine;
-                                     if (result == "HTTP/1.1 200 LEADING") {
-                                         results[0] = result;
-                                         foundLeader = true;
-                                     } else if (result == "HTTP/1.1 200 FOLLOWING") {
-                                         results[1] = result;
-                                         foundFollower = true;
+            while (chrono::steady_clock::now() < start + 60s && (!foundLeader || !foundFollower || !foundStandingdown)) {
+                result = follower.executeWaitMultipleData({cmd}, 1, false)[0].methodLine;
+                if (result == "HTTP/1.1 200 LEADING") {
+                    results[0] = result;
+                    foundLeader = true;
+                } else if (result == "HTTP/1.1 200 FOLLOWING") {
+                    results[1] = result;
+                    foundFollower = true;
 
-                                         // If we get here, it's not going back to leading/standingdown.
-                                         break;
-                                     }
-                                 }
-            });
+                    // If we get here, it's not going back to leading/standingdown.
+                    break;
+                }
+            }
+        });
 
         sleep(1);
         leader.startServer(false);

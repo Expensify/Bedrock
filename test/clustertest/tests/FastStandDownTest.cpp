@@ -44,16 +44,16 @@ struct FastStandDownTest : tpunit::TestFixture
         httpsRequest["waitFor"] = "5"; // Wait for 5 seconds before sending.
         vector<SData> httpsResult;
         thread t1([&]() {
-                  httpsResult = tester->getTester(0).executeWaitMultipleData({httpsRequest}, 1);
-            });
+            httpsResult = tester->getTester(0).executeWaitMultipleData({httpsRequest}, 1);
+        });
         uint64_t commandStartTime = STimeNow();
 
         // Stop leader, but don't wait for it to finish yet.
         thread t2([&]() {
-                  // Allow for our command to have sent.
-                  sleep(1);
-                  tester->stopNode(0);
-            });
+            // Allow for our command to have sent.
+            sleep(1);
+            tester->stopNode(0);
+        });
 
         // Wait for secondary to be leading. We can't wait for the old leader to be following, because it will have closed its ports so we can't check its state.
         ASSERT_TRUE(tester->getTester(1).waitForState("LEADING"));
@@ -83,18 +83,18 @@ struct FastStandDownTest : tpunit::TestFixture
         insertQuery["Query"] = "INSERT INTO test VALUES(" + insertQuery["commandExecuteTime"] + ", " + SQ("escalated_in_the_past") + ");";
         vector<SData> httpsResult;
         thread t1([&]() {
-                  httpsResult = tester->getTester(0).executeWaitMultipleData({insertQuery}, 1);
-            });
+            httpsResult = tester->getTester(0).executeWaitMultipleData({insertQuery}, 1);
+        });
         uint64_t commandStartTime = STimeNow();
 
         // Stop leader, but don't wait for it to finish yet.
         uint64_t nodeStopStime = 0;
         thread t2([&]() {
-                  // Allow for all of our commands to have sent.
-                  sleep(1);
-                  tester->stopNode(0);
-                  nodeStopStime = STimeNow();
-            });
+            // Allow for all of our commands to have sent.
+            sleep(1);
+            tester->stopNode(0);
+            nodeStopStime = STimeNow();
+        });
 
         // Wait for secondary to be leading. We can't wait for the old leader to be following, because it will have closed its ports and so we can't check its state.
         ASSERT_TRUE(tester->getTester(1).waitForState("LEADING"));
