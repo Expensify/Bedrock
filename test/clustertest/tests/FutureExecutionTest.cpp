@@ -3,25 +3,31 @@
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct FutureExecutionTest : tpunit::TestFixture {
+struct FutureExecutionTest : tpunit::TestFixture
+{
     FutureExecutionTest()
         : tpunit::TestFixture("FutureExecution",
                               BEFORE_CLASS(FutureExecutionTest::setup),
                               AFTER_CLASS(FutureExecutionTest::teardown),
                               TEST(FutureExecutionTest::FutureExecution),
-                              TEST(FutureExecutionTest::FutureExecutionTimeout)) { }
+                              TEST(FutureExecutionTest::FutureExecutionTimeout))
+    {
+    }
 
     BedrockClusterTester* tester;
 
-    void setup() {
+    void setup()
+    {
         tester = new BedrockClusterTester();
     }
 
-    void teardown() {
+    void teardown()
+    {
         delete tester;
     }
 
-    void FutureExecution() {
+    void FutureExecution()
+    {
         // We only care about leader because future execution only works on leader.
         BedrockTester& brtester = tester->getTester(0);
 
@@ -62,7 +68,8 @@ struct FutureExecutionTest : tpunit::TestFixture {
         ASSERT_TRUE(success);
     }
 
-    void FutureExecutionTimeout() {
+    void FutureExecutionTimeout()
+    {
         // We only care about leader because future execution only works on leader.
         BedrockTester& brtester = tester->getTester(0);
 
@@ -77,5 +84,4 @@ struct FutureExecutionTest : tpunit::TestFixture {
         query["Query"] = "SELECT 1;";
         brtester.executeWaitVerifyContent(query, "555 Timeout");
     }
-
 } __FutureExecutionTest;

@@ -330,7 +330,8 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
     return spec;
 }
 
-string BedrockPlugin_DB::generateErrorContextMessage(const string& query, const string& errorMessage, int errorOffset) {
+string BedrockPlugin_DB::generateErrorContextMessage(const string& query, const string& errorMessage, int errorOffset)
+{
     if (errorOffset < 0) {
         return errorMessage;
     }
@@ -380,8 +381,6 @@ string BedrockPlugin_DB::generateErrorContextMessage(const string& query, const 
 
     return errorMessage + "\n" + contextMessage + "\n";
 }
-
-
 
 BedrockPlugin_DB::Sqlite3QRFSpecWrapper::Sqlite3QRFSpecWrapper()
     : zColumnSep(new string),

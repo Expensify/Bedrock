@@ -1,13 +1,15 @@
-
 #include <libstuff/SData.h>
 #include <libstuff/SRandom.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
-struct UpgradeTest : tpunit::TestFixture {
+struct UpgradeTest : tpunit::TestFixture
+{
     UpgradeTest()
-    : tpunit::TestFixture("Upgrade",
-                          TEST(UpgradeTest::mismatchedFollowerSendMultipleCommands)
-                         ) { }
+        : tpunit::TestFixture("Upgrade",
+                              TEST(UpgradeTest::mismatchedFollowerSendMultipleCommands)
+        )
+    {
+    }
 
     // The explanation for what this test does is here:
     // https://github.com/Expensify/Bedrock/pull/1293
@@ -16,7 +18,8 @@ struct UpgradeTest : tpunit::TestFixture {
     // where sending multiple commands on the same socket where the leader and follower are on different versions would cause
     // the second command to hang.
     // I'm not sure this test is worth keeping given the low likelihood of ever seeing this particular regression.
-    void mismatchedFollowerSendMultipleCommands() {
+    void mismatchedFollowerSendMultipleCommands()
+    {
         BedrockClusterTester tester;
 
         // Cluster is up, shut down follower 2.
@@ -27,7 +30,7 @@ struct UpgradeTest : tpunit::TestFixture {
 
         // Start it back up and let it go following.
         tester.startNode(2);
-        
+
         // Make sure the entire cluster is in the expected state.
         ASSERT_TRUE(tester.getTester(2).waitForState("FOLLOWING"));
         ASSERT_TRUE(tester.getTester(1).waitForState("FOLLOWING"));
@@ -56,5 +59,4 @@ struct UpgradeTest : tpunit::TestFixture {
         ASSERT_EQUAL(results[0].methodLine, "200 OK");
         ASSERT_EQUAL(results[1].methodLine, "200 OK");
     }
-
 } __UpgradeTest;
