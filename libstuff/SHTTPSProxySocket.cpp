@@ -6,10 +6,10 @@
 #include <mutex>
 
 SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID)
- : STCPManager::Socket::Socket(0, STCPManager::Socket::State::CONNECTING, true),
-   proxyAddress(proxyAddress),
-   hostname(host),
-   requestID(requestID)
+    : STCPManager::Socket::Socket(0, STCPManager::Socket::State::CONNECTING, true),
+    proxyAddress(proxyAddress),
+    hostname(host),
+    requestID(requestID)
 {
     SASSERT(SHostIsValid(proxyAddress));
     s = S_socket(proxyAddress, true, false, false);
@@ -19,7 +19,7 @@ SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& h
 }
 
 SHTTPSProxySocket::SHTTPSProxySocket(SHTTPSProxySocket&& from)
-: STCPManager::Socket(move(from))
+    : STCPManager::Socket(move(from))
 {
     proxyAddress = move(from.proxyAddress);
     from.proxyAddress = "";
@@ -27,10 +27,12 @@ SHTTPSProxySocket::SHTTPSProxySocket(SHTTPSProxySocket&& from)
     from.requestID = "";
 }
 
-SHTTPSProxySocket::~SHTTPSProxySocket() {
+SHTTPSProxySocket::~SHTTPSProxySocket()
+{
 }
 
-bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
+bool SHTTPSProxySocket::send(size_t* bytesSentCount)
+{
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
 
     bool result = false;
@@ -61,7 +63,8 @@ bool SHTTPSProxySocket::send(size_t* bytesSentCount) {
     return result;
 }
 
-bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
+bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount)
+{
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
 
     if (state.load() < Socket::State::SHUTTINGDOWN) {
@@ -85,7 +88,8 @@ bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount) {
     return send(bytesSentCount);
 }
 
-bool SHTTPSProxySocket::recv() {
+bool SHTTPSProxySocket::recv()
+{
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
 
     bool result = false;
@@ -119,7 +123,7 @@ bool SHTTPSProxySocket::recv() {
                     }
                 }
             }
-        } else  {
+        } else {
             result = ssl->recvAppend(recvBuffer);
         }
 

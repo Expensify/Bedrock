@@ -15,10 +15,11 @@ using namespace std;
 
 // Convenience base class for managing a series of TCP sockets. This includes filling receive buffers, emptying send
 // buffers, completing connections, performing graceful shutdowns, etc.
-struct STCPManager {
+struct STCPManager
+{
     // Captures all the state for a single socket
     class Socket {
-      public:
+public:
         enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
         Socket(const string& host, bool https = false);
         Socket(int sock = 0, State state_ = CONNECTING, bool https = false);
@@ -39,6 +40,7 @@ struct STCPManager {
         virtual bool send(const string& buffer, size_t* bytesSentCount = nullptr);
         virtual bool recv();
         void shutdown(State toState = SHUTTINGDOWN);
+
         uint64_t id;
         string logString;
 
@@ -46,7 +48,7 @@ struct STCPManager {
         string sendBufferCopy();
         void setSendBuffer(const string& buffer);
 
-      protected:
+protected:
         static atomic<uint64_t> socketCount;
         recursive_mutex sendRecvMutex;
 
@@ -59,7 +61,7 @@ struct STCPManager {
     };
 
     class Port {
-      public:
+public:
         Port(int _s, const string& _host);
         ~Port();
 

@@ -15,6 +15,7 @@ using namespace std;
 
 class SDeburr {
 public:
+
     /**
      * Returns a lowercased, ASCII-only approximation of `input`.
      *
@@ -39,6 +40,7 @@ public:
     static void registerSQLite(sqlite3* db);
 
 private:
+
     /**
      * Converts special characters to ASCII equivalents.
      *
@@ -53,7 +55,7 @@ private:
      * Fast lookup table for converting accented characters.
      * The array indices are simply the unicode code points that map to the given character.
      */
-    static constexpr array<const char*, 0x0180> UNICODE_TO_ASCII_MAP = []() constexpr {
+    static constexpr array<const char*, 0x0180> UNICODE_TO_ASCII_MAP = [] () constexpr {
         array<const char*, 0x0180> map = {};
 
         auto mapCodePoints = [&map](const char* value, const vector<char32_t>& codePoints) {
@@ -79,7 +81,7 @@ private:
         mapCodePoints("c", {0x00E7});
         mapCodePoints("e", {0x00E8, 0x00E9, 0x00EA, 0x00EB});
         mapCodePoints("i", {0x00EC, 0x00ED, 0x00EE, 0x00EF});
-        mapCodePoints("d",{0x00F0});
+        mapCodePoints("d", {0x00F0});
         mapCodePoints("n", {0x00F1});
         mapCodePoints("o", {0x00F2, 0x00F3, 0x00F4, 0x00F5, 0x00F6, 0x00F8});
         mapCodePoints("u", {0x00F9, 0x00FA, 0x00FB, 0x00FC});
@@ -128,7 +130,5 @@ private:
         mapCodePoints("z", {0x017A, 0x017C, 0x017E});
 
         return map;
-    }();
+    } ();
 };
-
-

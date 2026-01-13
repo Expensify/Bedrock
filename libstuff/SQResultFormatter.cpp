@@ -3,24 +3,31 @@
 
 SQResultFormatter::FORMAT_OPTIONS SQResultFormatter::defaultOptions{};
 
-string SQResultFormatter::format(const SQResult& result, SQResultFormatter::FORMAT format, const SQResultFormatter::FORMAT_OPTIONS& options) {
+string SQResultFormatter::format(const SQResult& result, SQResultFormatter::FORMAT format, const SQResultFormatter::FORMAT_OPTIONS& options)
+{
     switch (format) {
         case FORMAT::COLUMN:
             return formatColumn(result, options);
+
         case FORMAT::CSV:
             return formatCSV(result, options);
+
         case FORMAT::TABS:
             return formatTabs(result, options);
+
         case FORMAT::JSON:
             return formatJSON(result, options);
+
         case FORMAT::QUOTE:
             return formatQuote(result, options);
+
         case FORMAT::LIST:
             return formatList(result, options);
     }
 }
 
-string SQResultFormatter::formatJSON(const SQResult& result, const FORMAT_OPTIONS& options) {
+string SQResultFormatter::formatJSON(const SQResult& result, const FORMAT_OPTIONS& options)
+{
     // Just output as a simple object
     // This probably isn't super fast, but could be easily optimized if it ever became necessary.
     STable output;
@@ -35,7 +42,8 @@ string SQResultFormatter::formatJSON(const SQResult& result, const FORMAT_OPTION
     return SComposeJSONObject(output);
 }
 
-string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTIONS& options) {
+string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTIONS& options)
+{
     // Match the native format of sqlite3 and handle embedded newlines by
     // splitting cells into physical lines and aligning continuation lines
     // under their respective columns.
@@ -119,13 +127,13 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
         while (byteIndex < input.size()) {
             uint32_t codePoint = utf8Next(input, byteIndex);
             if (codePoint == 0) {
-                continue; // safety
+                continue;     // safety
             }
             if (codePoint < 0x20 || codePoint == 0x7F) {
-                continue; // control -> width 0
+                continue;     // control -> width 0
             }
             if (isCombining(codePoint)) {
-                continue; // zero-width combining
+                continue;     // zero-width combining
             }
             if (isWide(codePoint)) {
                 displayWidthCount += 2;
@@ -147,7 +155,7 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
         string expandedOutput;
         expandedOutput.reserve(input.size());
         size_t byteIndex = 0;
-        size_t visualColumn = 0; // visual column within the cell
+        size_t visualColumn = 0;     // visual column within the cell
         while (byteIndex < input.size()) {
             size_t codePointStart = byteIndex;
             uint32_t codePoint = utf8Next(input, byteIndex);
@@ -280,7 +288,8 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
     return output;
 }
 
-string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIONS& options) {
+string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIONS& options)
+{
     auto isNumeric = [](const string& input) -> bool {
         if (input.empty()) {
             return false;
@@ -381,7 +390,8 @@ string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIO
     return output;
 }
 
-string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS& options) {
+string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS& options)
+{
     // Standard CSV + sqlite3 shell defaults:
     //  - Separator: comma
     //  - Quote a field if it contains comma, double-quote, CR, LF, any ASCII whitespace/control, or any non-ASCII byte
@@ -391,7 +401,7 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
 
     auto needsQuoting = [](const string& input) -> bool {
         if (input.empty()) {
-            return true; // sqlite shell prints "" for empty strings
+            return true;     // sqlite shell prints "" for empty strings
         }
         for (unsigned char byte : input) {
             if (byte == ',' || byte == '"' || byte == '\n' || byte == '\r') {
@@ -401,7 +411,7 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
                 return true;     // spaces, tabs, other ASCII whitespace/control
             }
             if (byte >= 0x80) {
-                return true;    // non-ASCII bytes (e.g., accented chars, emoji bytes)
+                return true;     // non-ASCII bytes (e.g., accented chars, emoji bytes)
             }
         }
         return false;
@@ -409,7 +419,7 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
 
     auto quoteCSV = [&](const string& input) -> string {
         if (input.empty()) {
-            return "\"\""; // empty string becomes ""
+            return "\"\"";     // empty string becomes ""
         }
         if (!needsQuoting(input)) {
             return input;
@@ -460,7 +470,8 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
     return output;
 }
 
-string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTIONS& options) {
+string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTIONS& options)
+{
     // Mimic sqlite3 shell `.mode tabs`:
     //  - Separator is a single TAB character
     //  - No field quoting/escaping; fields are written verbatim
@@ -505,7 +516,8 @@ string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTION
     return output;
 }
 
-string SQResultFormatter::formatList(const SQResult& result, const FORMAT_OPTIONS& options) {
+string SQResultFormatter::formatList(const SQResult& result, const FORMAT_OPTIONS& options)
+{
     // Mimic sqlite3 shell `.mode list`:
     //  - Columns separated by a pipe ("|")
     //  - Each row on a single line

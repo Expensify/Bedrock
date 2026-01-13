@@ -51,26 +51,26 @@ uint64_t STerminationSignalCount();
 // Assertion stuff
 // --------------------------------------------------------------------------
 // Test invariants and warns on failure
-#define SASSERT(_LHS_)                                                                                                 \
+#define SASSERT(_LHS_)                                                                                                     \
         do {                                                                                                               \
             if (!(_LHS_)) {                                                                                                \
                 SERROR("Assertion failed: (" << #_LHS_ << ") != true");                                                    \
             }                                                                                                              \
         } while (false)
-#define SASSERTEQUALS(_LHS_, _RHS_)                                                                                    \
+#define SASSERTEQUALS(_LHS_, _RHS_)                                                                                        \
         do {                                                                                                               \
             if ((_LHS_) != (_RHS_)) {                                                                                      \
                 SERROR("Assertion failed: (" << #_LHS_ << ") != (" << #_RHS_ << "): (" << _LHS_ << ") != (" << _RHS_       \
                        << ")");                                                                      \
             }                                                                                                              \
         } while (false)
-#define SASSERTWARN(_LHS_)                                                                                             \
+#define SASSERTWARN(_LHS_)                                                                                                 \
         do {                                                                                                               \
             if (!(_LHS_)) {                                                                                                \
                 SWARN("Assertion failed: (" << #_LHS_ << ") != true");                                                     \
             }                                                                                                              \
         } while (false)
-#define SASSERTWARNEQUALS(_LHS_, _RHS_)                                                                                \
+#define SASSERTWARNEQUALS(_LHS_, _RHS_)                                                                                    \
         do {                                                                                                               \
             if ((_LHS_) != (_RHS_)) {                                                                                      \
                 SWARN("Assertion failed: (" << #_LHS_ << ") != (" << #_RHS_ << "): (" << _LHS_ << ") != (" << _RHS_        \

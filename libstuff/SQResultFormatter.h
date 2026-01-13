@@ -2,10 +2,11 @@
 #include "SQResult.h"
 class SQResultFormatter {
 public:
-  // SQLite supports the following:
-  // ascii box csv column html insert json line list markdown quote table tabs tcl
-  // We support the following six:
-    enum class FORMAT{
+    // SQLite supports the following:
+    // ascii box csv column html insert json line list markdown quote table tabs tcl
+    // We support the following six:
+    enum class FORMAT
+    {
         COLUMN,
         CSV,
         TABS,
@@ -16,7 +17,7 @@ public:
 
     // Formatting options.
     class FORMAT_OPTIONS {
-      public:
+public:
         bool header = true;
         string nullvalue;
         string separator = "|";
