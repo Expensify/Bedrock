@@ -7,43 +7,46 @@
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
 
-struct LibStuff : tpunit::TestFixture {
+struct LibStuff : tpunit::TestFixture
+{
     LibStuff() : tpunit::TestFixture(true, "LibStuff",
-                                    TEST(LibStuff::testEncryptDecrpyt),
-                                    TEST(LibStuff::testSHMACSHA1),
-                                    TEST(LibStuff::testSHMACSHA256),
-                                    TEST(LibStuff::testJSONDecode),
-                                    TEST(LibStuff::testJSON),
-                                    TEST(LibStuff::testEscapeUnescape),
-                                    TEST(LibStuff::testTrim),
-                                    TEST(LibStuff::testCollapse),
-                                    TEST(LibStuff::testStrip),
-                                    TEST(LibStuff::testChunkedEncoding),
-                                    TEST(LibStuff::testDaysInMonth),
-                                    TEST(LibStuff::testGZip),
-                                    TEST(LibStuff::testConstantTimeEquals),
-                                    TEST(LibStuff::testParseIntegerList),
-                                    TEST(LibStuff::testSData),
-                                    TEST(LibStuff::testSTable),
-                                    TEST(LibStuff::testFileIO),
-                                    TEST(LibStuff::testSQList),
-                                    TEST(LibStuff::testRandom),
-                                    TEST(LibStuff::testHexConversion),
-                                    TEST(LibStuff::testBase32Conversion),
-                                    TEST(LibStuff::testContains),
-                                    TEST(LibStuff::testFirstOfMonth),
-                                    TEST(LibStuff::SREMatchTest),
-                                    TEST(LibStuff::SREReplaceTest),
-                                    TEST(LibStuff::testSReplace),
-                                    TEST(LibStuff::testSReplaceAll),
-                                    TEST(LibStuff::testSReplaceAllBut),
-                                    TEST(LibStuff::SQResultTest),
-                                    TEST(LibStuff::testReturningClause),
-                                    TEST(LibStuff::SRedactSensitiveValuesTest)
-                                    )
-    { }
+                                     TEST(LibStuff::testEncryptDecrpyt),
+                                     TEST(LibStuff::testSHMACSHA1),
+                                     TEST(LibStuff::testSHMACSHA256),
+                                     TEST(LibStuff::testJSONDecode),
+                                     TEST(LibStuff::testJSON),
+                                     TEST(LibStuff::testEscapeUnescape),
+                                     TEST(LibStuff::testTrim),
+                                     TEST(LibStuff::testCollapse),
+                                     TEST(LibStuff::testStrip),
+                                     TEST(LibStuff::testChunkedEncoding),
+                                     TEST(LibStuff::testDaysInMonth),
+                                     TEST(LibStuff::testGZip),
+                                     TEST(LibStuff::testConstantTimeEquals),
+                                     TEST(LibStuff::testParseIntegerList),
+                                     TEST(LibStuff::testSData),
+                                     TEST(LibStuff::testSTable),
+                                     TEST(LibStuff::testFileIO),
+                                     TEST(LibStuff::testSQList),
+                                     TEST(LibStuff::testRandom),
+                                     TEST(LibStuff::testHexConversion),
+                                     TEST(LibStuff::testBase32Conversion),
+                                     TEST(LibStuff::testContains),
+                                     TEST(LibStuff::testFirstOfMonth),
+                                     TEST(LibStuff::SREMatchTest),
+                                     TEST(LibStuff::SREReplaceTest),
+                                     TEST(LibStuff::testSReplace),
+                                     TEST(LibStuff::testSReplaceAll),
+                                     TEST(LibStuff::testSReplaceAllBut),
+                                     TEST(LibStuff::SQResultTest),
+                                     TEST(LibStuff::testReturningClause),
+                                     TEST(LibStuff::SRedactSensitiveValuesTest)
+    )
+    {
+    }
 
-    void testEncryptDecrpyt() {
+    void testEncryptDecrpyt()
+    {
         string iv = "58fae8d18b6fe8ed";
         const string key = "44e8ff3f0e0e5323e953ac91685a62e0";
         string clearText = "Encrypt this message.";
@@ -53,18 +56,21 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(clearText, decrypted);
     }
 
-    void testSHMACSHA1() {
+    void testSHMACSHA1()
+    {
         ASSERT_EQUAL(SToHex(SHMACSHA1("", "")), "FBDB1D1B18AA6C08324B7D64B71FB76370690E1D");
         ASSERT_EQUAL(SToHex(SHMACSHA1("key", "The quick brown fox jumps over the lazy dog")),
                      "DE7C9B85B8B78AA6BC8A7A36F70A90701C9DB4D9");
     }
 
-    void testSHMACSHA256() {
+    void testSHMACSHA256()
+    {
         ASSERT_EQUAL(SToHex(SHMACSHA256("", "")), "B613679A0814D9EC772F95D778C35FC5FF1697C493715653C6C712144292C5AD");
         ASSERT_EQUAL(SToHex(SHMACSHA256("key", "Only a Sith deals in absolutes")), "524C9B1C0B6E9F47F10041A429FCB2C880129F940DC9E41F31267E0909D46845");
     }
 
-    void testJSONDecode() {
+    void testJSONDecode()
+    {
         const string& sampleJson = SFileLoad("sample_data/lottoNumbers.json");
         ASSERT_FALSE(sampleJson.empty());
 
@@ -76,7 +82,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(view["name"], "Lottery Mega Millions Winning Numbers: Beginning 2002");
     }
 
-    void testJSON() {
+    void testJSON()
+    {
         // Floating point value tests
         ASSERT_EQUAL(SToJSON("{\"imAFloat\":0.0000}"), "{\"imAFloat\":0.0000}");
         ASSERT_EQUAL(SToJSON("{\"imAFloat\":-0.23456789}"), "{\"imAFloat\":-0.23456789}");
@@ -84,7 +91,7 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SToJSON("{\"object\":{\"imAFloat\":1.00}}"), "{\"object\":{\"imAFloat\":1.00}}");
 
         STable testFloats;
-        testFloats["imAFloat"] = (double)0.000;
+        testFloats["imAFloat"] = (double) 0.000;
         string returnVal = SComposeJSONObject(testFloats);
         ASSERT_EQUAL(returnVal, "{\"imAFloat\":0.000000}");
 
@@ -101,15 +108,15 @@ struct LibStuff : tpunit::TestFixture {
         innerObject0["doubleQuoteTest"] = "These are \"double quotes\".";
         innerObject0["wackyTest"] = "`1234567890-=~!@#$%^&*()_+[]\\{}|.;':\",./<>\\n?";
         innerObject0["badJSON"] = "{\"name\":\"bb\",\"type\":\"text\"}],\"approverTable\":false,\"ccList\":[],"
-                                  "\"approver\":\"blah@company.com\"}";
+            "\"approver\":\"blah@company.com\"}";
         innerObject0["ofxTest"] = "{\"ofx\":\"<OFX>\\n<SIGNONMSGSRSV1>\\n<SONRS>\\n<STATUS><CODE>15501\\n<SEVERITY>"
-                                  "ERROR\\n<MESSAGE>The profile currently in "
-                                  "use.\\n<\\/"
-                                  "STATUS>\\n<DTSERVER>20110304033419.851[0:GMT]\\n<LANGUAGE>ENG\\n<FI>\\n<ORG>BB&amp;"
-                                  "T\\n<FID>BB&amp;T\\n<\\/FI>\\n<\\/SONRS>\\n<\\/"
-                                  "SIGNONMSGSRSV1>\\n<SIGNUPMSGSRSV1>\\n<ACCTINFOTRNRS>\\n<TRNUID>315B1FB9-913C-991F-"
-                                  "1BD7-6537CAA54C26\\n<STATUS>\\n<CODE>15500\\n<SEVERITY>ERROR\\n<\\/"
-                                  "STATUS>\\n<CLTCOOKIE>4\\n<\\/ACCTINFOTRNRS>\\n<\\/SIGNUPMSGSRSV1>\\n<\\/OFX>\"}";
+            "ERROR\\n<MESSAGE>The profile currently in "
+            "use.\\n<\\/"
+            "STATUS>\\n<DTSERVER>20110304033419.851[0:GMT]\\n<LANGUAGE>ENG\\n<FI>\\n<ORG>BB&amp;"
+            "T\\n<FID>BB&amp;T\\n<\\/FI>\\n<\\/SONRS>\\n<\\/"
+            "SIGNONMSGSRSV1>\\n<SIGNUPMSGSRSV1>\\n<ACCTINFOTRNRS>\\n<TRNUID>315B1FB9-913C-991F-"
+            "1BD7-6537CAA54C26\\n<STATUS>\\n<CODE>15500\\n<SEVERITY>ERROR\\n<\\/"
+            "STATUS>\\n<CLTCOOKIE>4\\n<\\/ACCTINFOTRNRS>\\n<\\/SIGNUPMSGSRSV1>\\n<\\/OFX>\"}";
 
         // Verify we can undo our own encoding (Objects)
         innerObject0Verify = SParseJSONObject(SComposeJSONObject(innerObject0));
@@ -172,7 +179,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(nanParsed["negative"], "-inf");
     }
 
-    void testEscapeUnescape() {
+    void testEscapeUnescape()
+    {
         ASSERT_EQUAL(SEscape("a,b,c", ","), "a\\,b\\,c");
         ASSERT_EQUAL(SUnescape(SEscape("\r\n\\\"\\zqy", "q")), "\r\n\\\"\\zqy");
         ASSERT_EQUAL(SEscape("\x1a", "\x1a"), "\\u001a");
@@ -182,7 +190,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SUnescape("\\u05c0"), "\xd7\x80");     // 2 Byte, bottom 0
     }
 
-    void testTrim() {
+    void testTrim()
+    {
         ASSERT_EQUAL("", STrim(""));
         ASSERT_EQUAL("", STrim(" \t\n\r"));
         ASSERT_EQUAL("FooBar", STrim("FooBar"));
@@ -191,7 +200,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL("FooBar", STrim(" FooBar "));
     }
 
-    void testCollapse() {
+    void testCollapse()
+    {
         ASSERT_EQUAL("", SCollapse(""));
         ASSERT_EQUAL(" ", SCollapse("   "));
         ASSERT_EQUAL(" ", SCollapse("\t  "));
@@ -200,7 +210,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(" Lorem ipsum ", SCollapse("  Lorem \r\t\nipsum \r\n"));
     }
 
-    void testStrip() {
+    void testStrip()
+    {
         // simple SStrip
         ASSERT_EQUAL("", SStrip(""));
         ASSERT_EQUAL("   ", SStrip("   "));
@@ -211,19 +222,20 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(" a", SStrip("Foo Bar", " a", true));
     }
 
-    void testChunkedEncoding() {
+    void testChunkedEncoding()
+    {
         string methodLine, content, recvBuffer;
         STable headers;
         size_t processed;
 
         recvBuffer = "some method line\r\n"
-                     "header1: value1\r"
-                     "header2: value2\n"
-                     "header3: value3\r\n"
-                     "\r\n"
-                     "this is the body";
+            "header1: value1\r"
+            "header2: value2\n"
+            "header3: value3\r\n"
+            "\r\n"
+            "this is the body";
         processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
-        ASSERT_EQUAL((int64_t)processed, (int)recvBuffer.size());
+        ASSERT_EQUAL((int64_t) processed, (int) recvBuffer.size());
         ASSERT_EQUAL(methodLine, "some method line");
         ASSERT_EQUAL(headers["header1"], "value1");
         ASSERT_EQUAL(headers["header2"], "value2");
@@ -231,66 +243,66 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(content, "this is the body");
 
         recvBuffer = "some method line\r\n"
-                     "Content-Length: 100\r"
-                     "\r\n"
-                     "too short";
+            "Content-Length: 100\r"
+            "\r\n"
+            "too short";
         processed = SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(processed, 0);
         ASSERT_EQUAL(methodLine, "");
         ASSERT_EQUAL(content, "");
 
         recvBuffer = "some method line\r\n"
-                     "Content-Length: 5\r"
-                     "\r\n"
-                     "too short"; // only 'too s' read.
+            "Content-Length: 5\r"
+            "\r\n"
+            "too short";          // only 'too s' read.
         SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "some method line");
         ASSERT_EQUAL(content, "too s");
 
         recvBuffer = "some method line\r\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "5\r\n"
-                     "abcde\r\n"
-                     "a; ignored chunk header crap\r\n"
-                     "0123456789\r\n"
-                     "0\r\n"
-                     "\r\n";
+            "Transfer-Encoding: chunked\r"
+            "\r\n"
+            "5\r\n"
+            "abcde\r\n"
+            "a; ignored chunk header crap\r\n"
+            "0123456789\r\n"
+            "0\r\n"
+            "\r\n";
         SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "some method line");
         ASSERT_EQUAL(content, "abcde0123456789");
 
         recvBuffer = "some method line\r\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "6\r\n" // one too long.
-                     "abcde";
+            "Transfer-Encoding: chunked\r"
+            "\r\n"
+            "6\r\n"          // one too long.
+            "abcde";
         SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "");
         ASSERT_EQUAL(content, "");
 
         recvBuffer = "some method line\r\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "5\r\n" // exact without end.
-                     "abcde";
+            "Transfer-Encoding: chunked\r"
+            "\r\n"
+            "5\r\n"          // exact without end.
+            "abcde";
         SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "");
         ASSERT_EQUAL(content, "");
 
         recvBuffer = "some method line\r\n"
-                     "header1: value1\r"
-                     "header2: value2\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "5\r\n"
-                     "abcde\r\n"
-                     "a; ignored chunk header crap\r\n"
-                     "0123456789\r\n"
-                     "0\r\n"
-                     "header2: value2a\n"
-                     "header3: value3\n"
-                     "\r\n";
+            "header1: value1\r"
+            "header2: value2\n"
+            "Transfer-Encoding: chunked\r"
+            "\r\n"
+            "5\r\n"
+            "abcde\r\n"
+            "a; ignored chunk header crap\r\n"
+            "0123456789\r\n"
+            "0\r\n"
+            "header2: value2a\n"
+            "header3: value3\n"
+            "\r\n";
         SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "some method line");
         ASSERT_EQUAL(headers["header1"], "value1");
@@ -299,46 +311,47 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(content, "abcde0123456789");
 
         recvBuffer = "some method line x\r\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "5\r\n"
-                     "abcde\r\n"
-                     "aa; ignored chunk header crap\r\n" // too long
-                     "0123456789\r\n"
-                     "0\r\n"
-                     "\r\n";
+            "Transfer-Encoding: chunked\r"
+            "\r\n"
+            "5\r\n"
+            "abcde\r\n"
+            "aa; ignored chunk header crap\r\n"          // too long
+            "0123456789\r\n"
+            "0\r\n"
+            "\r\n";
         SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "");
         ASSERT_EQUAL(content, "");
 
         recvBuffer = "some method line y\r\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "5\r\n"
-                     "abcde\r\n"
-                     "az; ignored chunk header crap\r\n" // invalid hex
-                     "0123456789\r\n"
-                     "0\r\n"
-                     "\r\n";
+            "Transfer-Encoding: chunked\r"
+            "\r\n"
+            "5\r\n"
+            "abcde\r\n"
+            "az; ignored chunk header crap\r\n"          // invalid hex
+            "0123456789\r\n"
+            "0\r\n"
+            "\r\n";
         SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "some method line y");
         ASSERT_EQUAL(content, "abcde"); // partial fail.
 
         recvBuffer = "some method line z\r\n"
-                     "Transfer-Encoding: chunked\r"
-                     "\r\n"
-                     "5\r\n"
-                     "abcde\r\n"
-                     "a; ignored chunk header crap\r\n"
-                     "0123456789\r\n"
-                     "0\r\n";
+            "Transfer-Encoding: chunked\r"
+            "\r\n"
+            "5\r\n"
+            "abcde\r\n"
+            "a; ignored chunk header crap\r\n"
+            "0123456789\r\n"
+            "0\r\n";
         // "\r\n"; // missing last new line.
         SParseHTTP(recvBuffer.c_str(), recvBuffer.length(), methodLine, headers, content);
         ASSERT_EQUAL(methodLine, "");
         ASSERT_EQUAL(content, "");
     }
 
-    void testDaysInMonth() {
+    void testDaysInMonth()
+    {
         ASSERT_EQUAL(SDaysInMonth(2012, 2), 29);
         ASSERT_EQUAL(SDaysInMonth(2013, 2), 28);
         ASSERT_EQUAL(SDaysInMonth(2013, 4), 30);
@@ -346,18 +359,18 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SDaysInMonth(2014, 7), 31);
     }
 
-    void testGZip() {
-
+    void testGZip()
+    {
         // All these really test is that we won't segfault or anything.
         string data = "";
         ASSERT_TRUE(SGZip(data).length() > 1);
 
-        data += (char)(SRandom::rand64() % 256);
+        data += (char) (SRandom::rand64() % 256);
         ASSERT_TRUE(SGZip(data).length() > 1);
 
         data = "";
         for (int i = 0; i < 10000000; i++) {
-            data += (char)(SRandom::rand64() % 256);
+            data += (char) (SRandom::rand64() % 256);
         }
         ASSERT_TRUE(SGZip(data).length() > 1);
 
@@ -369,7 +382,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SGUnzip(SGZip(data)), data);
     }
 
-    void testConstantTimeEquals() {
+    void testConstantTimeEquals()
+    {
         // Tests equality but not timing, which is really the important part of this function.
         ASSERT_TRUE(SConstantTimeEquals("", ""));
         ASSERT_TRUE(SConstantTimeEquals("a", "a"));
@@ -384,7 +398,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_TRUE(!SConstantTimeEquals("1F8B08000000000002032BC9C82C5600A2448592D4E21200EAE71E0D0E000000", "a"));
     }
 
-    void testParseIntegerList() {
+    void testParseIntegerList()
+    {
         list<int64_t> before;
         for (int i = -10; i < 300; i++) {
             before.push_back(i);
@@ -393,7 +408,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_TRUE(before == after);
     }
 
-    void testSData() {
+    void testSData()
+    {
         SData a("this is a methodline");
         SData b("methodline");
         ASSERT_EQUAL(a.methodLine, "this is a methodline");
@@ -423,7 +439,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(c["i"], "false");
     }
 
-    void testSTable() {
+    void testSTable()
+    {
         // Verify that auto-stringification works.
         STable test;
         test["a"] = 1;
@@ -432,7 +449,7 @@ struct LibStuff : tpunit::TestFixture {
         test["d"] = 5000000001;
         test["e"] = -5000000001;
         test["f"] = 1.2;
-        test["g"] = (unsigned char)'a';
+        test["g"] = (unsigned char) 'a';
         test["h"] = 'b';
         test["i"] = "string";
         test["j"] = true;
@@ -450,7 +467,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(test["k"], "false");
     }
 
-    void testFileIO() {
+    void testFileIO()
+    {
         const string path = "./fileio.test";
         const string contents = "test";
         string readBuffer;
@@ -483,7 +501,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SFileSize(path), 0);
     }
 
-    void testSQList() {
+    void testSQList()
+    {
         list<int> intList;
         list<unsigned> uintList;
         list<int64_t> int64List;
@@ -596,14 +615,16 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SQList(stringList), SQList(SComposeList(stringList), false));
     }
 
-    void testUpperLower() {
+    void testUpperLower()
+    {
         ASSERT_EQUAL(SToUpper("asdf"), "ASDF");
         ASSERT_EQUAL(SToUpper("as-as"), "AS-AS");
         ASSERT_EQUAL(SToLower("ASDF"), "asdf");
         ASSERT_EQUAL(SToLower("AS_DF"), "as_df");
     }
 
-    void testRandom() {
+    void testRandom()
+    {
         // There's not really a good way to test a random number generator. This test is here in case someone wants to
         // uncomment the `cout` line and verify that the numbers don't all come out the same, or sequential, but an
         // automated test for this is impractical. This might be useful if you change the random number code and want
@@ -615,23 +636,25 @@ struct LibStuff : tpunit::TestFixture {
         }
     }
 
-    void testHexConversion() {
+    void testHexConversion()
+    {
         ASSERT_EQUAL(SStrFromHex("48656c6c6f"), "Hello");
         ASSERT_EQUAL(SStrFromHex("48656C6C6f"), "Hello");
 
         string start = "I wish I was an Oscar Meyer Weiner";
         ASSERT_EQUAL(SStrFromHex(SToHex(start)), start);
-
     }
 
-    void testBase32Conversion() {
+    void testBase32Conversion()
+    {
         ASSERT_EQUAL(SBase32HexStringFromBase32("ABCDEF"), "012345");
         ASSERT_EQUAL(SBase32HexStringFromBase32("LMNOPQRST"), "BCDEFGHIJ");
 
         ASSERT_EQUAL(SHexStringFromBase32("RQMRTRON"), "DEADBEEF17")
     }
 
-    void testContains() {
+    void testContains()
+    {
         list<string> stringList = list<string>();
         stringList.push_back("asdf");
         ASSERT_TRUE(SContains(stringList, "asdf"));
@@ -641,7 +664,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_TRUE(SContains(string("asdf"), string("asd")));
     }
 
-    void testFirstOfMonth() {
+    void testFirstOfMonth()
+    {
         string timeStamp = "2020-03-01";
         string timeStamp2 = "2020-12-01";
         string timeStamp3 = "2020-06-17";
@@ -674,7 +698,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SFirstOfMonth(timeStamp4, -25), "2018-06-01");
     }
 
-    void SREMatchTest() {
+    void SREMatchTest()
+    {
         // Basic case.
         ASSERT_TRUE(SREMatch(".*cat.*", "this contains cat"));
         ASSERT_FALSE(SREMatch(".*cat.*", "this does not"));
@@ -716,7 +741,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(matchList[2][1], "Snowball");
     }
 
-    void SREReplaceTest() {
+    void SREReplaceTest()
+    {
         // This specifically tests multiple replacements and that the final string is longer than the starting string.
         string from = "a cat is not a dog it is a cat";
         string expected = "a dinosaur is not a dog it is a dinosaur";
@@ -737,7 +763,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(result4, "a chicken did something to a horse");
     }
 
-    void testSReplace() {
+    void testSReplace()
+    {
         // Test empty find string (should return original)
         ASSERT_EQUAL(SReplace("hello", "", "x"), "hello");
 
@@ -789,7 +816,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(longOutput, string(2000, 'b'));
     }
 
-    void testSReplaceAll() {
+    void testSReplaceAll()
+    {
         // Test empty unsafe chars (should return original)
         ASSERT_EQUAL(SReplaceAll("hello", "", '_'), "hello");
 
@@ -836,7 +864,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(SReplaceAll(withBinary, "\x01\x02\x03", '_'), "test___test");
     }
 
-    void testSReplaceAllBut() {
+    void testSReplaceAllBut()
+    {
         // Test empty safe chars (all chars become unsafe)
         ASSERT_EQUAL(SReplaceAllBut("abc", "", '_'), "___");
 
@@ -868,13 +897,14 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(sanitized, "My_File__2024_.txt");
     }
 
-    void SQResultTest() {
+    void SQResultTest()
+    {
         SQLite db(":memory:", 1000, 1000, 1);
         db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
         db.write("CREATE TABLE testTable(id INTEGER PRIMARY KEY, name STRING, value STRING, created DATE);");
-        db.write ("INSERT INTO testTable VALUES(1, 'name1', 'value1', '2023-12-20');");
-        db.write ("INSERT INTO testTable VALUES(2, 'name2', 'value2', '2023-12-21');");
-        db.write ("INSERT INTO testTable VALUES(3, 'name3', 'value3', '2023-12-22');");
+        db.write("INSERT INTO testTable VALUES(1, 'name1', 'value1', '2023-12-20');");
+        db.write("INSERT INTO testTable VALUES(2, 'name2', 'value2', '2023-12-21');");
+        db.write("INSERT INTO testTable VALUES(3, 'name3', 'value3', '2023-12-22');");
         db.prepare();
         db.commit();
 
@@ -904,7 +934,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(result[0]["coco"], "name1");
     }
 
-    void testReturningClause() {
+    void testReturningClause()
+    {
         // Given a sqlite DB with a table and pre inserted values
         SQLite db(":memory:", 1000, 1000, 1);
         db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
@@ -935,7 +966,8 @@ struct LibStuff : tpunit::TestFixture {
         ASSERT_EQUAL(result[0]["value"], "value1");
     }
 
-    void SRedactSensitiveValuesTest() {
+    void SRedactSensitiveValuesTest()
+    {
         string logValue = R"({"edits":["test1", "test2", "test3"]})";
         SRedactSensitiveValues(logValue);
         ASSERT_EQUAL(R"({"edits":["REDACTED"]})", logValue);

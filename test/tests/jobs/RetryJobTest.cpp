@@ -3,7 +3,8 @@
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
 
-struct RetryJobTest : tpunit::TestFixture {
+struct RetryJobTest : tpunit::TestFixture
+{
     RetryJobTest()
         : tpunit::TestFixture("RetryJob",
                               BEFORE_CLASS(RetryJobTest::setupClass),
@@ -29,30 +30,41 @@ struct RetryJobTest : tpunit::TestFixture {
                               TEST(RetryJobTest::hasDelayAndNextRun),
                               TEST(RetryJobTest::simpleRetryWithHttp),
                               AFTER(RetryJobTest::tearDown),
-                              AFTER_CLASS(RetryJobTest::tearDownClass)) { }
+                              AFTER_CLASS(RetryJobTest::tearDownClass))
+    {
+    }
 
     BedrockTester* tester;
 
-    void setupClass() { tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});}
+    void setupClass()
+    {
+        tester = new BedrockTester({{"-plugins", "Jobs,DB"}}, {});
+    }
 
     // Reset the jobs table
-    void tearDown() {
+    void tearDown()
+    {
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
     }
 
-    void tearDownClass() { delete tester; }
+    void tearDownClass()
+    {
+        delete tester;
+    }
 
     // Throw an error if the job doesn't exist
-    void nonExistentJob() {
+    void nonExistentJob()
+    {
         SData command("RetryJob");
         command["jobID"] = "1";
         tester->executeWaitVerifyContent(command, "404 No job with this jobID");
     }
 
     // Throw an error if the job is not in RUNNING state
-    void notInRunningState() {
+    void notInRunningState()
+    {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
@@ -67,7 +79,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // If job has a parentID, the parent should be paused
-    void parentIsNotPaused() {
+    void parentIsNotPaused()
+    {
         // Create the parent
         SData command("CreateJob");
         command["name"] = "parent";
@@ -105,7 +118,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Child jobs that are in the FINISHED or CANCELLED state should be deleted when the parent is finished
-    void removeFinishedAndCancelledChildren() {
+    void removeFinishedAndCancelledChildren()
+    {
         // Create the parent
         SData command("CreateJob");
         command["name"] = "parent";
@@ -181,7 +195,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Update the job data if new data is passed
-    void updateData() {
+    void updateData()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -211,7 +226,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Cannot retry with a negative delay
-    void negativeDelay() {
+    void negativeDelay()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -233,7 +249,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Retry with a positive delay and confirm nextRun is updated appropriately
-    void positiveDelay() {
+    void positiveDelay()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -281,7 +298,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Retry with too large of a delay
-    void delayError() {
+    void delayError()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -308,7 +326,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Retry a job with a repeat
-    void hasRepeat() {
+    void hasRepeat()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -337,7 +356,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Retry a job with a repeat that uses the custom "START OF HOUR" modifier
-    void hasRepeatStartOfHour() {
+    void hasRepeatStartOfHour()
+    {
         uint64_t now = STimeNow();
 
         // Create the job
@@ -368,7 +388,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Same as hasRepeatStartOfHour but "START OF HOUR" is not last, to confirm it works when not last.
-    void hasRepeatStartOfHourNotLast() {
+    void hasRepeatStartOfHourNotLast()
+    {
         uint64_t now = STimeNow();
 
         // Create the job
@@ -399,7 +420,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Retry job in RUNQUEUED state
-    void inRunqueuedState() {
+    void inRunqueuedState()
+    {
         // Create a job
         SData command("CreateJob");
         command["name"] = "job";
@@ -415,7 +437,7 @@ struct RetryJobTest : tpunit::TestFixture {
 
         // Confirm the job is in RUNQUEUED
         SQResult result;
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "RUNQUEUED");
 
         // Retry it
@@ -425,12 +447,13 @@ struct RetryJobTest : tpunit::TestFixture {
         tester->executeWaitVerifyContent(command);
 
         // Confrim the job is back in the QUEUED state
-        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";",  result);
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
     }
 
     // Confirm nextRun is updated appropriately
-    void simplyRetryWithNextRun() {
+    void simplyRetryWithNextRun()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -458,7 +481,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Update the name and priority
-    void changeNameAndPriority() {
+    void changeNameAndPriority()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -488,7 +512,8 @@ struct RetryJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(result[0][1], "1000");
     }
 
-    void changeName() {
+    void changeName()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -517,7 +542,8 @@ struct RetryJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(result[0][1], "500");
     }
 
-    void changePriority() {
+    void changePriority()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -547,7 +573,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Repeat should take precedence over nextRun
-    void hasRepeatWithNextRun() {
+    void hasRepeatWithNextRun()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -576,7 +603,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Repeat should take precedence over delay
-    void hasRepeatWithDelay() {
+    void hasRepeatWithDelay()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -604,38 +632,40 @@ struct RetryJobTest : tpunit::TestFixture {
         ASSERT_FLOAT_EQUAL(difftime(JobTestHelper::getTimestampForDateTimeString(result[0][1]), JobTestHelper::getTimestampForDateTimeString(result[0][0])), 3600);
     }
 
-    void hasRepeatWithNextRunIgnoreRepeat() {
-         // Create the job
-         SData command("CreateJob");
-         command["name"] = "job";
-         command["repeat"] = "STARTED, +1 HOUR";
-         STable response = tester->executeWaitVerifyContentTable(command);
-         string jobID = response["jobID"];
+    void hasRepeatWithNextRunIgnoreRepeat()
+    {
+        // Create the job
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "STARTED, +1 HOUR";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
 
-         // Get the job
-         command.clear();
-         command.methodLine = "GetJob";
-         command["name"] = "job";
-         tester->executeWaitVerifyContent(command);
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
 
-         // Retry it
-         command.clear();
-         command.methodLine = "RetryJob";
-         command["jobID"] = jobID;
-         string nextRun = getTimeInFuture(10);
-         command["nextRun"] = nextRun;
-         command["ignoreRepeat"] = "true";
-         tester->executeWaitVerifyContent(command);
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        string nextRun = getTimeInFuture(10);
+        command["nextRun"] = nextRun;
+        command["ignoreRepeat"] = "true";
+        tester->executeWaitVerifyContent(command);
 
-         // Confirm nextRun is the given nextRun time, not in 1 hour
-         SQResult result;
-         tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
-         ASSERT_EQUAL(result.size(), 1);
-         ASSERT_EQUAL(result[0][0], nextRun);
+        // Confirm nextRun is the given nextRun time, not in 1 hour
+        SQResult result;
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], nextRun);
     }
 
     // nextRun should take precedence over delay
-    void hasDelayAndNextRun() {
+    void hasDelayAndNextRun()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -664,7 +694,8 @@ struct RetryJobTest : tpunit::TestFixture {
     }
 
     // Retry the job with HTTP
-    void simpleRetryWithHttp() {
+    void simpleRetryWithHttp()
+    {
         // Create the job
         SData command("CreateJob");
         command["name"] = "job";
@@ -691,7 +722,8 @@ struct RetryJobTest : tpunit::TestFixture {
         ASSERT_EQUAL(result[0][0], nextRun);
     }
 
-    string getTimeInFuture(int numSeconds) {
+    string getTimeInFuture(int numSeconds)
+    {
         time_t t = time(0);
         char buffer[26];
         t = t + numSeconds;

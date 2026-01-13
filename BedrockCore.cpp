@@ -3,31 +3,37 @@
 #include "BedrockServer.h"
 #include <libstuff/libstuff.h>
 
-BedrockCore::BedrockCore(SQLite& db, const BedrockServer& server) : SQLiteCore(db), _server(server) {}
+BedrockCore::BedrockCore(SQLite& db, const BedrockServer& server) : SQLiteCore(db), _server(server)
+{
+}
 
 // RAII-style mechanism for automatically setting and unsetting query rewriting
 class AutoScopeRewrite {
-  public:
-    AutoScopeRewrite(bool enable, SQLite& db, bool (*handler)(int, const char*, string&)) : _enable(enable), _db(db), _handler(handler) {
+public:
+    AutoScopeRewrite(bool enable, SQLite& db, bool(*handler)(int, const char*, string&)) : _enable(enable), _db(db), _handler(handler)
+    {
         if (_enable) {
             _db.setRewriteHandler(_handler);
             _db.enableRewrite(true);
         }
     }
-    ~AutoScopeRewrite() {
+
+    ~AutoScopeRewrite()
+    {
         if (_enable) {
             _db.setRewriteHandler(nullptr);
             _db.enableRewrite(false);
         }
     }
 
-  private:
+private:
     bool _enable;
     SQLite& _db;
     bool (*_handler)(int, const char*, string&);
 };
 
-uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing) {
+uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing)
+{
     int64_t timeout = command->timeout();
     int64_t now = STimeNow();
 
@@ -50,7 +56,8 @@ uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& comman
     return isProcessing ? min(processTimeout, adjustedTimeout) : adjustedTimeout;
 }
 
-bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db, const BedrockServer* server) {
+bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db, const BedrockServer* server)
+{
     try {
         _getRemainingTime(command, false);
     } catch (const SException& e) {
@@ -62,7 +69,8 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db, co
     return false;
 }
 
-void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread) {
+void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread)
+{
     AutoTimer timer(command, isBlockingCommitThread ? BedrockCommand::BLOCKING_PREPEEK : BedrockCommand::PREPEEK);
 
     // Convenience references to commonly used properties.
@@ -122,8 +130,8 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
     _db.setQueryOnly(false);
 }
 
-BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
-
+BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command, bool exclusive)
+{
     // Convenience references to commonly used properties.
     const SData& request = command->request;
     SData& response = command->response;
@@ -166,7 +174,6 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
                 _db.setQueryOnly(false);
                 return RESULT::SHOULD_PROCESS;
             }
-
         } catch (const SQLite::timeout_error& e) {
             // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
             if (!command->shouldSuppressTimeoutWarnings()) {
@@ -221,7 +228,8 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     return returnValue;
 }
 
-BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& command, bool exclusive) {
+BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& command, bool exclusive)
+{
     // Convenience references to commonly used properties.
     const SData& request = command->request;
     SData& response = command->response;
@@ -330,7 +338,8 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     return needsCommit ? RESULT::NEEDS_COMMIT : RESULT::NO_COMMIT_REQUIRED;
 }
 
-void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread) {
+void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread)
+{
     AutoTimer timer(command, isBlockingCommitThread ? BedrockCommand::BLOCKING_POSTPROCESS : BedrockCommand::POSTPROCESS);
 
     // Convenience references to commonly used properties.
@@ -393,7 +402,8 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
     _db.setQueryOnly(false);
 }
 
-void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db, const BedrockServer* server) {
+void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db, const BedrockServer* server)
+{
     string msg = "Error processing command '" + command->request.methodLine + "' (" + e.what() + "), ignoring.";
     if (!e.body.empty()) {
         msg = msg + " Request body: " + e.body;
@@ -432,7 +442,8 @@ void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, c
     }
 }
 
-void BedrockCore::decreaseCommandTimeout(unique_ptr<BedrockCommand>& command, uint64_t timeoutMS) {
+void BedrockCore::decreaseCommandTimeout(unique_ptr<BedrockCommand>& command, uint64_t timeoutMS)
+{
     const uint64_t remainingTimeUS = _getRemainingTime(command, false);
     if ((timeoutMS * 1000ull) < remainingTimeUS) {
         command->setTimeout(timeoutMS);
