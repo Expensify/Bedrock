@@ -2272,13 +2272,28 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     // Create a command.
     unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
 
-    // Apply HTTPS requests.
-    if (serializedHTTPSRequests.size()) {
-        command->deserializeHTTPSRequests(serializedHTTPSRequests);
-        SINFO("Deserialized " << command->httpsRequests.size() << " HTTPS requests for command " << command->request.methodLine << ".");
-    }
-    if (serializedData.size()) {
-        command->deserializeData(serializedData);
+    // And we and keep track of the client that initiated this command, so we can respond later, except
+    // if we received connection:forget in which case we don't respond later
+    command->initiatingClientID = SIEquals(command->request["Connection"], "forget") ? -1 : socket.id;
+
+    try {
+        // Apply HTTPS requests.
+        if (serializedHTTPSRequests.size()) {
+            command->deserializeHTTPSRequests(serializedHTTPSRequests);
+            SINFO("Deserialized " << command->httpsRequests.size() << " HTTPS requests for command " << command->request.methodLine << ".");
+        }
+        if (serializedData.size()) {
+            command->deserializeData(serializedData);
+        }
+    } catch (const SException& e) {
+        command->complete = true;
+        command->response.methodLine = e.method;
+    } catch (const exception& e) {
+        command->complete = true;
+        command->response.methodLine = e.what();
+    } catch (...) {
+        command->complete = true;
+        command->response.methodLine = "500 UNKNOWN ERROR";
     }
 
     SDEBUG("Deserialized command " << command->request.methodLine);
@@ -2299,10 +2314,6 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     } else {
         command->id = args["-nodeName"] + "#" + to_string(_requestCount++);
     }
-
-    // And we and keep track of the client that initiated this command, so we can respond later, except
-    // if we received connection:forget in which case we don't respond later
-    command->initiatingClientID = SIEquals(command->request["Connection"], "forget") ? -1 : socket.id;
 
     return command;
 }

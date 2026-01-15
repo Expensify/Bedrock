@@ -139,6 +139,9 @@ void TestPluginCommand::deserializeData(const string& data)
     if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
         serializedDataString = data;
     }
+    if (request.isSet("throw")) {
+        STHROW("500 BAD DESERIALIZE");
+    }
 }
 
 TestPluginCommand::~TestPluginCommand()

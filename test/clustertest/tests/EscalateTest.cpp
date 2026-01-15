@@ -8,6 +8,7 @@ struct EscalateTest : tpunit::TestFixture
                                          AFTER_CLASS(EscalateTest::teardown),
                                          TEST(EscalateTest::test),
                                          TEST(EscalateTest::testSerializedData),
+                                         TEST(EscalateTest::testSerializedDataException),
                                          TEST(EscalateTest::socketReuse))
     {
     }
@@ -68,6 +69,16 @@ struct EscalateTest : tpunit::TestFixture
         resultComponenets.pop_front();
         ASSERT_EQUAL("Escalate", resultComponenets.front());
         resultComponenets.pop_front();
+    }
+
+    void testSerializedDataException()
+    {
+        // We're going to escalate from follower 1.
+        BedrockTester& brtester = tester->getTester(1);
+        SData cmd("EscalateSerializedData");
+        cmd["throw"] = "true";
+        SData result = brtester.executeWaitMultipleData({cmd})[0];
+        ASSERT_EQUAL("500 BAD DESERIALIZE", result.methodLine);
     }
 
     // Note: see this PR: https://github.com/Expensify/Bedrock/pull/1308 for the reasoning behind this test.
