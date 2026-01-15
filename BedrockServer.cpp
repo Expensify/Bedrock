@@ -2285,7 +2285,7 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
         if (serializedData.size()) {
             command->deserializeData(serializedData);
         }
-    } catch(const SException& e) {
+    } catch (const SException& e) {
         command->complete = true;
         command->response.methodLine = e.method;
     } catch (const exception& e) {
