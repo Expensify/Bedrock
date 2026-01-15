@@ -34,11 +34,11 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
     // Perform the actual commit, rollback if it fails.
     int errorCode = _db.commit(SQLiteNode::stateName(node.getState()), commandName);
     if (errorCode == SQLITE_BUSY_SNAPSHOT) {
-        _db.rollback();
+        _db.rollback(commandName);
         return false;
     } else if (errorCode == SQLite::COMMIT_DISABLED) {
         SINFO("Commits currently disabled, rolling back.");
-        _db.rollback();
+        _db.rollback(commandName);
         return false;
     }
 
