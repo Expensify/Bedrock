@@ -2278,7 +2278,12 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
         SINFO("Deserialized " << command->httpsRequests.size() << " HTTPS requests for command " << command->request.methodLine << ".");
     }
     if (serializedData.size()) {
-        command->deserializeData(serializedData);
+        try {
+            command->deserializeData(serializedData);
+        } catch (const SException&) {
+            SINFO("Discarding command " << command->request.methodLine << " due to data deserialization failure.");
+            return nullptr;
+        }
     }
 
     SDEBUG("Deserialized command " << command->request.methodLine);
