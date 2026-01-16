@@ -315,7 +315,8 @@ void BedrockServer::sync()
             if (_upgradeInProgress) {
                 _upgradeInProgress = false;
                 if (committingCommand) {
-                    db.rollback();
+                    const string commandName = command ? command->getMethodName() : "No Command";
+                    db.rollback(commandName);
                     committingCommand = false; //NOLINT
                 }
             }
