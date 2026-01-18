@@ -159,3 +159,8 @@ Confused by all the above?  No problem -- there are a few "canned" patterns buil
 * **WEEKLY** = FINISHED, + 7 DAYS
 
 These are useful if you generally want something to happen *approximately but no greater* than the indicated frequency.
+
+### Sequential Jobs
+Jobs with the same `sequentialKey` run one at a time, in creation order. New jobs with a key that's already active are set to `WAITING` state. When the active job completes (FinishJob/FailJob/DeleteJob), the oldest WAITING job is promoted to `QUEUED`.
+
+**Unsupported:** `repeat` and `parentJobID` with `sequentialKey` - these jobs don't get deleted on completion, so WAITING jobs would never be promoted.
