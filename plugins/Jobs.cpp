@@ -1218,6 +1218,17 @@ void BedrockJobsCommand::process(SQLite& db)
                 if (!db.read("SELECT 1 FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + " LIMIT 1;").empty()) {
                     STHROW("405 Failed to delete a job with outstanding children");
                 }
+
+                // Promote the next job in sequence that is WAITING 
+                if (!sequentialKey.empty()) {
+                    db.writeIdempotent("UPDATE jobs SET state='QUEUED' "
+                                       "WHERE jobID = ("
+                                       "  SELECT jobID FROM jobs "
+                                       "  WHERE sequentialKey=" + SQ(sequentialKey) + " "
+                                       "  AND state='WAITING' "
+                                       "  ORDER BY created ASC "
+                                       "  LIMIT 1);");
+                }
             }
         }
 
