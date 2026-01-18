@@ -124,4 +124,48 @@ struct FailJobTest : tpunit::TestFixture
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "FAILED");
     }
+
+    // FailJob should promote the next WAITING job with same sequentialKey
+    void failJobPromotesWaitingJob()
+    {
+        // Create first job
+        SData command("CreateJob");
+        command["name"] = "testSequential1";
+        command["sequentialKey"] = "test_key_fail";
+        STable response1 = tester->executeWaitVerifyContentTable(command);
+        string jobID1 = response1["jobID"];
+
+        // Create second job
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "testSequential2";
+        command["sequentialKey"] = "test_key_fail";
+        STable response2 = tester->executeWaitVerifyContentTable(command);
+        string jobID2 = response2["jobID"];
+
+        // Verify second job is WAITING
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID2 + ";", result);
+        ASSERT_EQUAL(result[0][0], "WAITING");
+
+        // Get first job to put it in RUNNING state
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "testSequential1";
+        tester->executeWaitVerifyContent(command);
+
+        // Fail first job
+        command.clear();
+        command.methodLine = "FailJob";
+        command["jobID"] = jobID1;
+        tester->executeWaitVerifyContent(command);
+
+        // Verify first job is FAILED
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID1 + ";", result);
+        ASSERT_EQUAL(result[0][0], "FAILED");
+
+        // Verify second job is now QUEUED
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID2 + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+    }
 } __FailJobTest;
