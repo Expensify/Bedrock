@@ -28,6 +28,10 @@ struct CreateJobTest : tpunit::TestFixture
                               TEST(CreateJobTest::retryLifecycle),
                               TEST(CreateJobTest::retryWithChildren),
                               TEST(CreateJobTest::getManualJobWithRetryAfter),
+                              TEST(CreateJobTest::createWithSequentialKey),
+                              TEST(CreateJobTest::sequentialKeyWaitsWhenQueued),
+                              TEST(CreateJobTest::sequentialKeyWaitsWhenRunning),
+                              TEST(CreateJobTest::differentSequentialKeysDontInterfere),
                               AFTER(CreateJobTest::tearDown),
                               AFTER_CLASS(CreateJobTest::tearDownClass))
     {
