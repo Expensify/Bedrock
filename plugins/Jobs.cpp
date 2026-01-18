@@ -1219,7 +1219,7 @@ void BedrockJobsCommand::process(SQLite& db)
                     STHROW("405 Failed to delete a job with outstanding children");
                 }
 
-                // Promote the next job in sequence that is WAITING 
+                // Promote the next job in sequence that is WAITING
                 if (!sequentialKey.empty()) {
                     db.writeIdempotent("UPDATE jobs SET state='QUEUED' "
                                        "WHERE jobID = ("
