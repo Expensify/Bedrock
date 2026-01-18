@@ -724,4 +724,68 @@ struct CreateJobTest : tpunit::TestFixture
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobIDB + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
     }
+
+    // Three jobs with same sequentialKey run in order
+    void sequentialJobsRunInOrder()
+    {
+        // Create three jobs
+        SData command("CreateJob");
+        command["name"] = "testSequential1";
+        command["sequentialKey"] = "test_key_order";
+        STable response1 = tester->executeWaitVerifyContentTable(command);
+        string jobID1 = response1["jobID"];
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "testSequential2";
+        command["sequentialKey"] = "test_key_order";
+        STable response2 = tester->executeWaitVerifyContentTable(command);
+        string jobID2 = response2["jobID"];
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "testSequential3";
+        command["sequentialKey"] = "test_key_order";
+        STable response3 = tester->executeWaitVerifyContentTable(command);
+        string jobID3 = response3["jobID"];
+
+        // Verify states: first QUEUED, rest WAITING
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID1 + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID2 + ";", result);
+        ASSERT_EQUAL(result[0][0], "WAITING");
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID3 + ";", result);
+        ASSERT_EQUAL(result[0][0], "WAITING");
+
+        // Get and finish first job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "testSequential1";
+        tester->executeWaitVerifyContent(command);
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID1;
+        tester->executeWaitVerifyContent(command);
+
+        // Verify second job is now QUEUED, third still WAITING
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID2 + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID3 + ";", result);
+        ASSERT_EQUAL(result[0][0], "WAITING");
+
+        // Get and finish second job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "testSequential2";
+        tester->executeWaitVerifyContent(command);
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID2;
+        tester->executeWaitVerifyContent(command);
+
+        // Verify third job is now QUEUED
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID3 + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+    }
 } __CreateJobTest;
