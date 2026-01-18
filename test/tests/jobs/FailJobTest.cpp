@@ -12,6 +12,7 @@ struct FailJobTest : tpunit::TestFixture
                               TEST(FailJobTest::notInRunningRunqueuedState),
                               TEST(FailJobTest::failJobInRunningState),
                               TEST(FailJobTest::failJobInRunqueuedState),
+                              TEST(FailJobTest::failJobPromotesWaitingJob),
                               AFTER(FailJobTest::tearDown),
                               AFTER_CLASS(FailJobTest::tearDownClass))
     {
