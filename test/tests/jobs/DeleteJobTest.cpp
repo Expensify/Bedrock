@@ -11,6 +11,7 @@ struct DeleteJobTest : tpunit::TestFixture
                               TEST(DeleteJobTest::deleteJobWithChild),
                               TEST(DeleteJobTest::deleteRunningJob),
                               TEST(DeleteJobTest::deleteFinishedJob),
+                              TEST(DeleteJobTest::deleteJobPromotesWaitingJob),
                               AFTER(DeleteJobTest::tearDown),
                               AFTER_CLASS(DeleteJobTest::tearDownClass))
     {
