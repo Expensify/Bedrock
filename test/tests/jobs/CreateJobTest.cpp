@@ -32,6 +32,7 @@ struct CreateJobTest : tpunit::TestFixture
                               TEST(CreateJobTest::sequentialKeyWaitsWhenQueued),
                               TEST(CreateJobTest::sequentialKeyWaitsWhenRunning),
                               TEST(CreateJobTest::differentSequentialKeysDontInterfere),
+                              TEST(CreateJobTest::sequentialJobsRunInOrder),
                               AFTER(CreateJobTest::tearDown),
                               AFTER_CLASS(CreateJobTest::tearDownClass))
     {
