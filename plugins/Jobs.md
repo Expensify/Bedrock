@@ -1,11 +1,12 @@
 # Bedrock::Jobs -- Rock solid job queuing
 Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that manages a scheduled job queue.  Commands include:
 
- * **CreateJob( name, [data], [firstRun], [repeat] )** - Schedules a new job, optionally in the future, optionally to repeat.
+ * **CreateJob( name, [data], [firstRun], [repeat], [sequentialKey] )** - Schedules a new job, optionally in the future, optionally to repeat.
    * *name* - Any arbitrary string name for this job.
    * *data* - (optional) An arbitrary data blob to associate with this job, typically JSON encoded.
    * *firstRun* - (optional) The time/date on which to run this job the first time, in "YYYY-MM-DD [HH:MM:SS]" format
    * *repeat* - (optional) Description of how this job should repeat (see ["Repeat Syntax"](#repeat-syntax) below)
+   * *sequentialKey* - (optional) Jobs with the same sequentialKey run one at a time, in creation order (see ["Sequential Jobs"](#sequential-jobs) below)
 
  * **GetJob( name, [connection: wait, [timeout] ] )** - Waits for a match (if requested) and atomically dequeues exactly one job.
    * *name* - A pattern to match in GLOB syntax (eg, "Foo*" will get the first job whose name starts with "Foo")
