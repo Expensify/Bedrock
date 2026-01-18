@@ -336,5 +336,4 @@ struct SequentialJobTest : tpunit::TestFixture
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobIDB + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
     }
-
 } __SequentialJobTest;
