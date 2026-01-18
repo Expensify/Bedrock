@@ -96,7 +96,8 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db)
                                "data        TEXT NOT NULL, "
                                "priority    INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
                                "parentJobID INTEGER NOT NULL DEFAULT 0, "
-                               "retryAfter  TEXT NOT NULL DEFAULT \"\")",
+                               "retryAfter  TEXT NOT NULL DEFAULT \"\", "
+                               "sequentialKey TEXT NOT NULL DEFAULT \"\")",
                            ignore));
     // verify and conditionally create indexes
     SASSERT(db.verifyIndex("jobsName", "jobs", "( name )", false, !BedrockPlugin_Jobs::isLive));
