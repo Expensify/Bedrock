@@ -198,4 +198,42 @@ struct DeleteJobTest : tpunit::TestFixture
         command["jobID"] = parentID;
         tester->executeWaitVerifyContent(command);
     }
+
+    // DeleteJob should promote the next WAITING job with same sequentialKey
+    void deleteJobPromotesWaitingJob()
+    {
+        // Create first job
+        SData command("CreateJob");
+        command["name"] = "testSequential1";
+        command["sequentialKey"] = "test_key_delete";
+        STable response1 = tester->executeWaitVerifyContentTable(command);
+        string jobID1 = response1["jobID"];
+
+        // Create second job
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "testSequential2";
+        command["sequentialKey"] = "test_key_delete";
+        STable response2 = tester->executeWaitVerifyContentTable(command);
+        string jobID2 = response2["jobID"];
+
+        // Verify second job is WAITING
+        SQResult result;
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID2 + ";", result);
+        ASSERT_EQUAL(result[0][0], "WAITING");
+
+        // Delete first job
+        command.clear();
+        command.methodLine = "DeleteJob";
+        command["jobID"] = jobID1;
+        tester->executeWaitVerifyContent(command);
+
+        // Verify first job is deleted
+        tester->readDB("SELECT * FROM jobs WHERE jobID = " + jobID1 + ";", result);
+        ASSERT_TRUE(result.empty());
+
+        // Verify second job is now QUEUED
+        tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID2 + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+    }
 } __DeleteJobTest;
