@@ -1029,7 +1029,7 @@ void BedrockJobsCommand::process(SQLite& db)
 
         // Verify there is a job like this and it's running
         SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest'), retryAfter, json_extract(data, '$.originalNextRun') "
+        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest'), retryAfter, json_extract(data, '$.originalNextRun'), sequentialKey "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
@@ -1047,6 +1047,7 @@ void BedrockJobsCommand::process(SQLite& db)
         mockRequest = result[0][5] == "1";
         const string retryAfter = result[0][6];
         const string originalDataNextRun = result[0][7];
+        const string& sequentialKey = result[0][8];
 
         // Make sure we're finishing a job that's actually running
         if (state != "RUNNING" && state != "RUNQUEUED" && !mockRequest) {
