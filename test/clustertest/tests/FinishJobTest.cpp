@@ -23,6 +23,7 @@ struct FinishJobTest : tpunit::TestFixture
                               TEST(FinishJobTest::hasDataDelete),
                               TEST(FinishJobTest::hasNextRun),
                               TEST(FinishJobTest::simpleFinishJobWithHttp),
+                              TEST(FinishJobTest::finishJobPromotesWaitingJob),
                               AFTER(FinishJobTest::tearDown),
                               AFTER_CLASS(FinishJobTest::tearDownClass))
     {
