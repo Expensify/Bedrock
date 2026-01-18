@@ -1288,12 +1288,13 @@ void BedrockJobsCommand::process(SQLite& db)
         //     - data  - Data to associate with this failed job
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
+        const int64_t jobID = request.calc64("jobID");
 
         // Verify there is a job like this and it's running
         SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat "
+        if (!db.read("SELECT state, nextRun, lastRun, repeat, sequentialKey "
                      "FROM jobs "
-                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
+                     "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
             STHROW("502 Select failed");
         }
@@ -1301,10 +1302,11 @@ void BedrockJobsCommand::process(SQLite& db)
             STHROW("404 No job with this jobID");
         }
         const string& state = result[0][0];
+        const string& sequentialKey = result[0][4];
 
         // Make sure we're failing a job that's actually running or running with a retryAfter
         if (state != "RUNNING" && state != "RUNQUEUED") {
-            SINFO("Trying to fail job#" << request["jobID"] << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
+            SINFO("Trying to fail job#" << jobID << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
             STHROW("405 Can only fail RUNNING or RUNQUEUED jobs");
         }
 
@@ -1319,8 +1321,19 @@ void BedrockJobsCommand::process(SQLite& db)
         updateList.push_back("state='FAILED'");
 
         // Update this job
-        if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
+        if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(jobID) + ";")) {
             STHROW("502 Fail failed");
+        }
+
+        // Promote the next WAITING job with the same sequentialKey
+        if (!sequentialKey.empty()) {
+            db.writeIdempotent("UPDATE jobs SET state='QUEUED' "
+                               "WHERE jobID = ("
+                               "  SELECT jobID FROM jobs "
+                               "  WHERE sequentialKey=" + SQ(sequentialKey) + " "
+                               "  AND state='WAITING' "
+                               "  ORDER BY created ASC "
+                               "  LIMIT 1);");
         }
 
         // Successfully processed
@@ -1336,30 +1349,44 @@ void BedrockJobsCommand::process(SQLite& db)
         //     - jobID - ID of the job to delete
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
+        int64_t jobID = request.calc64("jobID");
 
         // Verify there is a job like this and it's not running
         SQResult result;
-        if (!db.read("SELECT state "
+        if (!db.read("SELECT state, sequentialKey "
                      "FROM jobs "
-                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
+                     "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
             STHROW("502 Select failed");
         }
         if (result.empty()) {
             STHROW("404 No job with this jobID");
         }
-        if (result[0][0] == "RUNNING") {
+        const string& state = result[0][0];
+        const string& sequentialKey = result[0][1];
+
+        if (state == "RUNNING") {
             STHROW("405 Can't delete a RUNNING job");
         }
-        if (result[0][0] == "PAUSED") {
+        if (state == "PAUSED") {
             STHROW("405 Can't delete a parent jobs with children running");
         }
 
         // Delete the job
         if (!db.writeIdempotent("DELETE FROM jobs "
-                      "WHERE jobID=" +
-                      SQ(request.calc64("jobID")) + ";")) {
+                      "WHERE jobID=" + SQ(jobID) + ";")) {
             STHROW("502 Delete failed");
+        }
+
+        // Promote the next WAITING job with the same sequentialKey
+        if (!sequentialKey.empty()) {
+            db.writeIdempotent("UPDATE jobs SET state='QUEUED' "
+                               "WHERE jobID = ("
+                               "  SELECT jobID FROM jobs "
+                               "  WHERE sequentialKey=" + SQ(sequentialKey) + " "
+                               "  AND state='WAITING' "
+                               "  ORDER BY created ASC "
+                               "  LIMIT 1);");
         }
 
         // Successfully processed
