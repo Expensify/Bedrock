@@ -609,13 +609,29 @@ void BedrockJobsCommand::process(SQLite& db)
                     }
                 }
 
+                // If sequentialKey is set, check if there are other pending jobs with the same key.
+                // If so, this job should wait for them to complete before running by setting the initial state to WAITING.
+                const string& safeSequentialKey = SContains(job, "sequentialKey") ? SQ(job["sequentialKey"]) : SQ("");
+                if (safeSequentialKey != SQ("")) {
+                    SQResult result;
+                    if (!db.read("SELECT 1 FROM jobs "
+                                 "WHERE sequentialKey=" + safeSequentialKey + " "
+                                 "AND state IN ('QUEUED', 'RUNQUEUED', 'RUNNING', 'WAITING') "
+                                 "LIMIT 1;", result)) {
+                        STHROW("502 Select failed");
+                    }
+                    if (!result.empty()) {
+                        initialState = "WAITING";
+                    }
+                }
+
                 // If no data was provided, use an empty object
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
                 // Create this new job with a new generated ID
                 const int64_t jobIDToUse = SQLiteUtils::getRandomID(db, "jobs", "jobID");
                 SINFO("Next jobID: " << jobIDToUse);
-                if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
+                if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter, sequentialKey ) "
                          "VALUES( " +
                             SQ(jobIDToUse) + ", " +
                             currentTime + ", " +
@@ -626,7 +642,8 @@ void BedrockJobsCommand::process(SQLite& db)
                             safeData + ", " +
                             SQ(priority) + ", " +
                             SQ(parentJobID) + ", " +
-                            safeRetryAfter + " " +
+                            safeRetryAfter + ", " +
+                            safeSequentialKey + " " +
                          " );")) {
                     STHROW("502 insert query failed");
                 }
