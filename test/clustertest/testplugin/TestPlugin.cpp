@@ -235,7 +235,6 @@ bool TestPluginCommand::peek(SQLite& db)
         response.content = "this is a test response";
         return true;
     } else if (SStartsWith(request.methodLine, "ThreadException")) {
-
         // Retuns the thread and the future associated with its completion.
         auto threadpair = SThread([](){
             STHROW("500 THREAD THREW");
