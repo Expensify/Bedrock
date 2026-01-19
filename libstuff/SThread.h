@@ -8,7 +8,7 @@
 
 using namespace std;
 
-// SThread is a thread wrapper intended to be used in the same way as std::thread,
+// SThread is a thread wrapper intended to be used in the same way as thread,
 // except that it will trap exceptions and pass them back to the caller as part of a promise.
 template<class F, class ... Args>
 auto SThread(F&& f, Args&&... args)
