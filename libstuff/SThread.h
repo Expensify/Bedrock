@@ -8,21 +8,21 @@
 
 using namespace std;
 
-// SThread is a std::thread wrapper intended to be used in the same way as std::thread,
+// SThread is a thread wrapper intended to be used in the same way as std::thread,
 // except that it will trap exceptions and pass them back to the caller as part of a promise.
-template <class F, class... Args>
+template<class F, class ... Args>
 auto SThread(F&& f, Args&&... args)
 {
     // Create type aliases for the function, argument list, and return types.
-    // These are decayed as per std::decay (https://en.cppreference.com/w/cpp/types/decay.html)
+    // These are decayed as per decay (https://en.cppreference.com/w/cpp/types/decay.html)
     // which makes the same sort of type conversions that the compiler makes when passign by value.
     using Fn = decay_t<F>;
 
     // We create a tuple from the passed args to allow passing variadic arguments to our lambda below.
-    using DecayedArgsTuple = tuple<decay_t<Args>...>;
+    using DecayedArgsTuple = tuple<decay_t<Args> ...>;
 
     // Create an alias to the return type of the passed function with the passed args:
-    using return_type = invoke_result_t<Fn, decay_t<Args>...>;
+    using return_type = invoke_result_t<Fn, decay_t<Args> ...>;
 
     // Now we create the promise and future we will need to return the result from this invocation. We get
     // the future here, because we will pass the promise by move to the thread lambda, and that will leave the
@@ -37,25 +37,25 @@ auto SThread(F&& f, Args&&... args)
     // Finally we can create our new thread and pass it our function and arguments.
     thread t(
         [p = move(prom), fn = move(fn), argTuple = move(argTuple)]() mutable {
-            try {
-                // We call `apply` to use our argments from a tuple as if they were a list of discrete arguments.
-                // This is effectively like calling `invoke` and passing the arguments separately.
-                // We check the return type of our function as we will either need to pass the result of the function to
-                // set_value() or not depending on whether the funtion returns anything.
-                if constexpr (is_void_v<return_type>) {
-                    apply(move(fn), move(argTuple));
-                    p.set_value();
-                } else {
-                    p.set_value(apply(move(fn), move(argTuple)));
-                }
-            } catch (const exception& e) {
-                SWARN("Uncaught exception in SThread: " << e.what());
-                p.set_exception(current_exception());
-            } catch (...) {
-                SWARN("Uncaught exception in SThread: unknown type");
-                p.set_exception(current_exception());
+        try {
+            // We call `apply` to use our argments from a tuple as if they were a list of discrete arguments.
+            // This is effectively like calling `invoke` and passing the arguments separately.
+            // We check the return type of our function as we will either need to pass the result of the function to
+            // set_value() or not depending on whether the funtion returns anything.
+            if constexpr (is_void_v<return_type> ) {
+                apply(move(fn), move(argTuple));
+                p.set_value();
+            } else {
+                p.set_value(apply(move(fn), move(argTuple)));
             }
+        } catch (const exception& e) {
+            SWARN("Uncaught exception in SThread: " << e.what());
+            p.set_exception(current_exception());
+        } catch (...) {
+            SWARN("Uncaught exception in SThread: unknown type");
+            p.set_exception(current_exception());
         }
+    }
     );
 
     // Now our function has started and we can return to the caller. We pass pack the thread object so that the caller can wait
