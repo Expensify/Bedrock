@@ -1,3 +1,5 @@
+#pragma once
+
 #include "libstuff/SFastBuffer.h"
 #include <libstuff/STCPManager.h>
 
