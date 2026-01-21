@@ -108,7 +108,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     // `204 No Content` is an implicit content length of 0. If we successfully parsed a 204 request, we can always
     // treat the request as complete, becuase we need to have parsed all of the headers for `deserialize` above to
     // return anything at all here.
-    bool is204 = SStartsWith(transaction.fullResponse.methodLine, "204 ");
+    bool is204 = SIContains(transaction.fullResponse.methodLine, "204 No Content");
 
     // If there's not a Content-Length, we need to check for the socket being closed.
     bool hasContentLength = transaction.fullResponse.nameValueMap.contains("Content-Length");
