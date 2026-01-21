@@ -1526,11 +1526,25 @@ unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLit
             }
         }
     } catch (const SException& e) {
+        SWARN("ENSURE_BUGBOT Command constructor failed with error: "s + e.what() + ", on command: " + baseCommand->request.methodLine);
         auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(), nullptr);
         errorCommand->complete = true;
         errorCommand->response.methodLine = e.what();
+        if (!e.headers.empty()) {
+            errorCommand->response.nameValueMap = e.headers;
+        }
+        if (!e.body.empty()) {
+            errorCommand->response.content = e.body;
+        }
+        return errorCommand;
+    } catch (const exception& e) {
+        SWARN("ENSURE_BUGBOT Command constructor failed with error: "s + e.what() + ", on command: " + baseCommand->request.methodLine);
+        auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(), nullptr);
+        errorCommand->complete = true;
+        errorCommand->response.methodLine = "500 Internal server error";
         return errorCommand;
     } catch (...) {
+        SWARN("ENSURE_BUGBOT Command constructor failed with error: UNKNOWN, on command: " + baseCommand->request.methodLine);
         auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(), nullptr);
         errorCommand->complete = true;
         errorCommand->response.methodLine = "500 Internal server error";
