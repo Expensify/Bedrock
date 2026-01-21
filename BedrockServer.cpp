@@ -1529,10 +1529,12 @@ unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLit
         auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(), nullptr);
         errorCommand->complete = true;
         errorCommand->response.methodLine = e.what();
+        return errorCommand;
     } catch(...) {
         auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(), nullptr);
         errorCommand->complete = true;
         errorCommand->response.methodLine = "500 Internal server error";
+        return errorCommand;
     }
 
     // Same weirdness as above, but for default commands.
