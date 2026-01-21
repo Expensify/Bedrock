@@ -1515,14 +1515,26 @@ unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SData&& request)
 
 unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLiteCommand>&& baseCommand)
 {
-    for (auto pair : plugins) {
-        // This is a bit weird to avoid changing this signature in all the plugins. It would be more straightforward if
-        // the plugins just accepted a `unique_ptr<SQLiteCommand>&&`, but this still works.
-        auto command = pair.second->getCommand(move(*baseCommand));
-        if (command) {
-            SDEBUG("Plugin " << pair.first << " handling command " << command->request.methodLine);
-            return command;
+    try {
+        for (auto pair : plugins) {
+            // This is a bit weird to avoid changing this signature in all the plugins. It would be more straightforward if
+            // the plugins just accepted a `unique_ptr<SQLiteCommand>&&`, but this still works.
+            auto command = pair.second->getCommand(move(*baseCommand));
+            if (command) {
+                SDEBUG("Plugin " << pair.first << " handling command " << command->request.methodLine);
+                return command;
+            }
         }
+    } catch (const SException& e) {
+        auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(), nullptr);
+        errorCommand->complete = true;
+        errorCommand->response.methodLine = e.what();
+        return errorCommand;
+    } catch (...) {
+        auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(), nullptr);
+        errorCommand->complete = true;
+        errorCommand->response.methodLine = "500 Internal server error";
+        return errorCommand;
     }
 
     // Same weirdness as above, but for default commands.
