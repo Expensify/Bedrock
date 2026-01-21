@@ -107,7 +107,8 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
 
     // If there's not a Content-Length, we need to check for the socket being closed.
     bool hasContentLength = transaction.fullResponse.nameValueMap.contains("Content-Length");
-    bool completeRequest = size && (hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
+    bool is204 = SStartsWith(transaction.fullResponse.methodLine, "204 ");
+    bool completeRequest = size && (is204 || hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
     if (completeRequest) {
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
