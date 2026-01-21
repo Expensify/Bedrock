@@ -1525,12 +1525,12 @@ unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLit
                 return command;
             }
         }
-    } catch (const SException & e) {
+    } catch (const SException& e) {
         auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(), nullptr);
         errorCommand->complete = true;
         errorCommand->response.methodLine = e.what();
         return errorCommand;
-    } catch(...) {
+    } catch (...) {
         auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(), nullptr);
         errorCommand->complete = true;
         errorCommand->response.methodLine = "500 Internal server error";
