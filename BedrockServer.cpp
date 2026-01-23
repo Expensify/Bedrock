@@ -1526,11 +1526,25 @@ unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLit
             }
         }
     } catch (const SException& e) {
+        SWARN("ENSURE_BUGBOT Command constructor failed with error: "s + e.what() + ", on command: " + baseCommand->request.methodLine);
         auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(), nullptr);
         errorCommand->complete = true;
         errorCommand->response.methodLine = e.what();
+        if (!e.headers.empty()) {
+            errorCommand->response.nameValueMap = e.headers;
+        }
+        if (!e.body.empty()) {
+            errorCommand->response.content = e.body;
+        }
+        return errorCommand;
+    } catch (const exception& e) {
+        SWARN("ENSURE_BUGBOT Command constructor failed with error: "s + e.what() + ", on command: " + baseCommand->request.methodLine);
+        auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(), nullptr);
+        errorCommand->complete = true;
+        errorCommand->response.methodLine = "500 Internal server error";
         return errorCommand;
     } catch (...) {
+        SWARN("ENSURE_BUGBOT Command constructor failed with error: UNKNOWN, on command: " + baseCommand->request.methodLine);
         auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(), nullptr);
         errorCommand->complete = true;
         errorCommand->response.methodLine = "500 Internal server error";
@@ -2333,170 +2347,176 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
 
 void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fromPublicCommandPort, bool fromPrivateCommandPort)
 {
-    shared_lock<shared_mutex> controlPortLock(_controlPortExclusionMutex, defer_lock);
-    if (fromControlPort) {
-        controlPortLock.lock();
-    }
-
-    // Initialize and get a unique thread ID.
-    string threadName = "socket" + to_string(_socketThreadNumber++);
-    SInitialize(threadName);
-    SINFO("[performance] Socket thread starting");
-
-    // This outer loop just runs until the entire socket life cycle is done, meaning it deserializes a command,
-    // waits for it to get processed, deserializes another, etc, until the socket gets closed.
-    // This whole block is largely duplicated from `postPoll` and modified to work on a single non-blocking socket.
-    while (socket.state != STCPManager::Socket::CLOSED) {
-        // We are going to call `poll` in a loop with only this one socket as a file descriptor.
-        // The reason for this is because it's possible that a client is connected to us, and not sending us any data.
-        // It may be waiting for it's own data before it can send us a request, or it may have just forgotten to
-        // disconnect. In the normal case, this is no big deal, we can wait inside `recv` until it either sends us some
-        // data or it disconnects. The exception is if we want to shut down. In that case, we need to know to close the
-        // socket at some point, so what we do is `poll` with a 1 second timeout, and if we ever hit the timeout and
-        // are in a `shutting down` state, then we finish up and exit. In any other case, we just wait in `poll` again
-        // until we get some data or a disconnection.
-        int pollResult = 0;
-        struct pollfd pollStruct = {socket.s, POLLIN, 0};
-
-        // As long as `poll` returns 0 we've timed out, indicating that we're still waiting for something to happen. In
-        // that case, we'll loop again *unless* we're shutting down.
-        while (!(pollResult = poll(&pollStruct, 1, 1'000))) {
-            if (_shutdownState != RUNNING) {
-                SINFO("Socket thread exiting because no data and shutting down.");
-                socket.shutdown(Socket::CLOSED);
-                break;
-            }
+    try {
+        shared_lock<shared_mutex> controlPortLock(_controlPortExclusionMutex, defer_lock);
+        if (fromControlPort) {
+            controlPortLock.lock();
         }
 
-        // If the above loop didn't close the socket due to inactivity at shutdown, let's handle the activity.
-        if (socket.state != STCPManager::Socket::CLOSED) {
-            if (pollResult < 0) {
-                // This is an exceptional case, we'll just kill the socket if this happens and let the client reconnect.
-                SINFO("Poll failed: " << strerror(errno));
-                socket.shutdown(Socket::CLOSED);
-            } else {
-                // We've either got new data, or an error on the socket. Let's determine which by trying to read.
-                if (!socket.recv()) {
-                    // If reading failed, then the socket was closed.
+        // Initialize and get a unique thread ID.
+        string threadName = "socket" + to_string(_socketThreadNumber++);
+        SInitialize(threadName);
+        SINFO("[performance] Socket thread starting");
+
+        // This outer loop just runs until the entire socket life cycle is done, meaning it deserializes a command,
+        // waits for it to get processed, deserializes another, etc, until the socket gets closed.
+        // This whole block is largely duplicated from `postPoll` and modified to work on a single non-blocking socket.
+        while (socket.state != STCPManager::Socket::CLOSED) {
+            // We are going to call `poll` in a loop with only this one socket as a file descriptor.
+            // The reason for this is because it's possible that a client is connected to us, and not sending us any data.
+            // It may be waiting for it's own data before it can send us a request, or it may have just forgotten to
+            // disconnect. In the normal case, this is no big deal, we can wait inside `recv` until it either sends us some
+            // data or it disconnects. The exception is if we want to shut down. In that case, we need to know to close the
+            // socket at some point, so what we do is `poll` with a 1 second timeout, and if we ever hit the timeout and
+            // are in a `shutting down` state, then we finish up and exit. In any other case, we just wait in `poll` again
+            // until we get some data or a disconnection.
+            int pollResult = 0;
+            struct pollfd pollStruct = {socket.s, POLLIN, 0};
+
+            // As long as `poll` returns 0 we've timed out, indicating that we're still waiting for something to happen. In
+            // that case, we'll loop again *unless* we're shutting down.
+            while (!(pollResult = poll(&pollStruct, 1, 1'000))) {
+                if (_shutdownState != RUNNING) {
+                    SINFO("Socket thread exiting because no data and shutting down.");
                     socket.shutdown(Socket::CLOSED);
-                }
-            }
-        }
-
-        // Now, if the socket hasn't been closed, we'll try to handle the new data on it appropriately.
-        if (socket.state == STCPManager::Socket::CONNECTED) {
-            // If there's a request, we'll dequeue it.
-            SData request;
-
-            // If the socket is owned by a plugin, we let the plugin populate our request.
-            BedrockPlugin* plugin = static_cast<BedrockPlugin*>(socket.data);
-            if (plugin) {
-                // Call the plugin's handler.
-                plugin->onPortRecv(&socket, request);
-                if (!request.empty()) {
-                    // If it populated our request, then we'll save the plugin name so we can handle the response.
-                    request["plugin"] = plugin->getName();
-                }
-            } else {
-                // Otherwise, handle any default request.
-                int requestSize = 0;
-                if (socket.recvBuffer.startsWithHTTPRequest()) {
-                    requestSize = request.deserialize(socket.recvBuffer);
-                    socket.recvBuffer.consumeFront(requestSize);
-                }
-
-                // If this socket was accepted from the public command port, and that's supposed to be closed now, set
-                // `Connection: close` so that we don't keep doing a bunch of activity on it.
-                if (requestSize && fromPublicCommandPort && _isCommandPortLikelyBlocked) {
-                    request["Connection"] = "close";
+                    break;
                 }
             }
 
-            // If we have a populated request, from either a plugin or our default handling, we'll queue up the
-            // command.
-            if (!request.empty()) {
-                // Make a command from our request.
-                unique_ptr<BedrockCommand> command = buildCommandFromRequest(move(request), socket, fromPrivateCommandPort);
-
-                if (!command) {
-                    // If we couldn't build a command, this was some sort of unusual exception case (like trying to
-                    // schedule a command in the future while shutting down). We can just give up.
-                    SINFO("No command from request, closing socket.");
+            // If the above loop didn't close the socket due to inactivity at shutdown, let's handle the activity.
+            if (socket.state != STCPManager::Socket::CLOSED) {
+                if (pollResult < 0) {
+                    // This is an exceptional case, we'll just kill the socket if this happens and let the client reconnect.
+                    SINFO("Poll failed: " << strerror(errno));
                     socket.shutdown(Socket::CLOSED);
-                } else if (!_handleIfStatusOrControlCommand(command)) {
-                    if (fromControlPort && _shutdownState != RUNNING) {
-                        // Don't handle non-control commands on the control port if we're shutting down. As the control
-                        // port can remain open through shutdown (in the case of detaching) and can expect DB access,
-                        // which is being turned off, these could cause weird crashes. Instead, just return an error.
-                        command->response.methodLine = "500 Server Shutting Down";
-                        _reply(command);
-                    } else {
-                        // If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.
-                        // If the command has a socket (it's this socket) then we need to wait for it to finish before
-                        // we can dequeue the next command, so that the responses all end up delivered in order.
-                        // If a command *doesn't* have a socket, then that's a special case for a `fire and forget`
-                        // command that was already responded to in `buildCommandFromRequest` and we can move on to the
-                        // next thing immediately.
-                        mutex m;
-                        condition_variable cv;
-                        atomic<bool> finished = false;
-
-                        function<void()> callback = [&m, &cv, &finished]() {
-                            // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
-                            // for `handleSocket` to release it's lock (by calling `wait`), and then notify the waiting
-                            // socket thread.
-                            lock_guard lock(m);
-                            finished = true;
-                            cv.notify_all();
-                        };
-
-                        // Ok, none of above synchronization code gets called unless the command has a socket to respond on.
-                        bool hasSocket = command->socket;
-                        if (hasSocket) {
-                            // Set the destructor callback for when the command finishes.
-                            command->destructionCallback = &callback;
-                        }
-
-                        // Running the command in a separate thread allows this thread to poll the client socket and if it is
-                        // disconnected, abort the command.
-                        atomic<bool>& commandShouldAbortFlag = command->shouldAbort;
-                        thread commandThread(
-                            [&](){
-                            SInitialize(threadName + "_cmd");
-                            runCommand(move(command));
-                        });
-
-                        // Now that the command is running, we wait for it to complete (if it has a socket, and hasn't finished by the time we get to this point).
-                        // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.
-                        unique_lock<mutex> lock(m);
-                        while (!finished && hasSocket) {
-                            struct pollfd disconnectCheck = {socket.s, (POLLIN | POLLRDHUP), 0};
-                            if (poll(&disconnectCheck, 1, 0) > 0) {
-                                if (disconnectCheck.revents & (POLLHUP | POLLERR | POLLNVAL | POLLRDHUP)) {
-                                    SINFO("Socket disconnected with command running, aborting.");
-                                    commandShouldAbortFlag = true;
-                                }
-                            }
-
-                            // We also force an abort if we're shutting down.
-                            auto shutdownTime = _shutdownTime.load();
-                            if (shutdownTime != chrono::time_point<chrono::steady_clock>{} && chrono::steady_clock::now() >= shutdownTime) {
-                                SINFO("Aborting command past shutdown timeout limit.");
-                                commandShouldAbortFlag = true;
-                            }
-                            cv.wait_for(lock, chrono::seconds(1));
-                        }
-
-                        commandThread.join();
+                } else {
+                    // We've either got new data, or an error on the socket. Let's determine which by trying to read.
+                    if (!socket.recv()) {
+                        // If reading failed, then the socket was closed.
+                        socket.shutdown(Socket::CLOSED);
                     }
                 }
             }
-        } else if (socket.state == STCPManager::Socket::SHUTTINGDOWN || socket.state == STCPManager::Socket::CLOSED) {
-            // Do nothing here except prevent the warning below from firing. This loop should exit on the next
-            // iteration.
-        } else {
-            SWARN("Socket in unhandled state: " << socket.state);
+
+            // Now, if the socket hasn't been closed, we'll try to handle the new data on it appropriately.
+            if (socket.state == STCPManager::Socket::CONNECTED) {
+                // If there's a request, we'll dequeue it.
+                SData request;
+
+                // If the socket is owned by a plugin, we let the plugin populate our request.
+                BedrockPlugin* plugin = static_cast<BedrockPlugin*>(socket.data);
+                if (plugin) {
+                    // Call the plugin's handler.
+                    plugin->onPortRecv(&socket, request);
+                    if (!request.empty()) {
+                        // If it populated our request, then we'll save the plugin name so we can handle the response.
+                        request["plugin"] = plugin->getName();
+                    }
+                } else {
+                    // Otherwise, handle any default request.
+                    int requestSize = 0;
+                    if (socket.recvBuffer.startsWithHTTPRequest()) {
+                        requestSize = request.deserialize(socket.recvBuffer);
+                        socket.recvBuffer.consumeFront(requestSize);
+                    }
+
+                    // If this socket was accepted from the public command port, and that's supposed to be closed now, set
+                    // `Connection: close` so that we don't keep doing a bunch of activity on it.
+                    if (requestSize && fromPublicCommandPort && _isCommandPortLikelyBlocked) {
+                        request["Connection"] = "close";
+                    }
+                }
+
+                // If we have a populated request, from either a plugin or our default handling, we'll queue up the
+                // command.
+                if (!request.empty()) {
+                    // Make a command from our request.
+                    unique_ptr<BedrockCommand> command = buildCommandFromRequest(move(request), socket, fromPrivateCommandPort);
+
+                    if (!command) {
+                        // If we couldn't build a command, this was some sort of unusual exception case (like trying to
+                        // schedule a command in the future while shutting down). We can just give up.
+                        SINFO("No command from request, closing socket.");
+                        socket.shutdown(Socket::CLOSED);
+                    } else if (!_handleIfStatusOrControlCommand(command)) {
+                        if (fromControlPort && _shutdownState != RUNNING) {
+                            // Don't handle non-control commands on the control port if we're shutting down. As the control
+                            // port can remain open through shutdown (in the case of detaching) and can expect DB access,
+                            // which is being turned off, these could cause weird crashes. Instead, just return an error.
+                            command->response.methodLine = "500 Server Shutting Down";
+                            _reply(command);
+                        } else {
+                            // If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.
+                            // If the command has a socket (it's this socket) then we need to wait for it to finish before
+                            // we can dequeue the next command, so that the responses all end up delivered in order.
+                            // If a command *doesn't* have a socket, then that's a special case for a `fire and forget`
+                            // command that was already responded to in `buildCommandFromRequest` and we can move on to the
+                            // next thing immediately.
+                            mutex m;
+                            condition_variable cv;
+                            atomic<bool> finished = false;
+
+                            function<void()> callback = [&m, &cv, &finished]() {
+                                // Lock the mutex above (which will be locked by this thread while we're queuing), which waits
+                                // for `handleSocket` to release it's lock (by calling `wait`), and then notify the waiting
+                                // socket thread.
+                                lock_guard lock(m);
+                                finished = true;
+                                cv.notify_all();
+                            };
+
+                            // Ok, none of above synchronization code gets called unless the command has a socket to respond on.
+                            bool hasSocket = command->socket;
+                            if (hasSocket) {
+                                // Set the destructor callback for when the command finishes.
+                                command->destructionCallback = &callback;
+                            }
+
+                            // Running the command in a separate thread allows this thread to poll the client socket and if it is
+                            // disconnected, abort the command.
+                            atomic<bool>& commandShouldAbortFlag = command->shouldAbort;
+                            thread commandThread(
+                                [&](){
+                                SInitialize(threadName + "_cmd");
+                                runCommand(move(command));
+                            });
+
+                            // Now that the command is running, we wait for it to complete (if it has a socket, and hasn't finished by the time we get to this point).
+                            // When this happens, destructionCallback fires, sets `finished` to true, and we can move on to the next request.
+                            unique_lock<mutex> lock(m);
+                            while (!finished && hasSocket) {
+                                struct pollfd disconnectCheck = {socket.s, (POLLIN | POLLRDHUP), 0};
+                                if (poll(&disconnectCheck, 1, 0) > 0) {
+                                    if (disconnectCheck.revents & (POLLHUP | POLLERR | POLLNVAL | POLLRDHUP)) {
+                                        SINFO("Socket disconnected with command running, aborting.");
+                                        commandShouldAbortFlag = true;
+                                    }
+                                }
+
+                                // We also force an abort if we're shutting down.
+                                auto shutdownTime = _shutdownTime.load();
+                                if (shutdownTime != chrono::time_point<chrono::steady_clock>{} && chrono::steady_clock::now() >= shutdownTime) {
+                                    SINFO("Aborting command past shutdown timeout limit.");
+                                    commandShouldAbortFlag = true;
+                                }
+                                cv.wait_for(lock, chrono::seconds(1));
+                            }
+
+                            commandThread.join();
+                        }
+                    }
+                }
+            } else if (socket.state == STCPManager::Socket::SHUTTINGDOWN || socket.state == STCPManager::Socket::CLOSED) {
+                // Do nothing here except prevent the warning below from firing. This loop should exit on the next
+                // iteration.
+            } else {
+                SWARN("Socket in unhandled state: " << socket.state);
+            }
         }
+    } catch (const exception& e) {
+        SALERT("handleSocket got exception: " << e.what());
+    } catch (...) {
+        SALERT("handleSocket got unknown exception");
     }
 
     // At this point out socket is closed and we can clean up.
