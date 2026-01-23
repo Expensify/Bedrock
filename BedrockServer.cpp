@@ -2499,25 +2499,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                 SWARN("Socket in unhandled state: " << socket.state);
             }
         }
-
-        // At this point out socket is closed and we can clean up.
-        // Note that we never return early, we always want to hit this code and decrement our counter and clean up our socket.
-        _outstandingSocketThreads--;
-        SINFO("[performance] Socket thread complete (" << _outstandingSocketThreads << " remaining).");
-
-        // Check to see if we need to unblock creating new socket threads. We do this each time we cross having 50 active
-        // threads. We are guaranteed to hit this as the thread count decrements to 0, as _shouldBlockNewSocketThreads is
-        // atomic and every value must be hit as threads complete.
-        // Note that if we were to start blocking the command port for NOT_ENOUGH_THREADS with less than 50 threads, we
-        // will never hit this unlock case, but we only ever see this problem with thousands of threads, so we don't have
-        // to try and handle that case, and don't need to lock this mutex on every thread's completion then.
-        if (_outstandingSocketThreads == 50) {
-            lock_guard<mutex> lock(_newSocketThreadBlockedMutex);
-            if (_shouldBlockNewSocketThreads) {
-                _shouldBlockNewSocketThreads = false;
-                unblockCommandPort("NOT_ENOUGH_THREADS");
-            }
-        }
     } catch (const exception& e) {
         SALERT("handleSocket got exception: " << e.what());
         socket.shutdown();
@@ -2526,6 +2507,25 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
         SALERT("handleSocket got unknown exception");
         socket.shutdown();
         ::close(socket.s);
+    }
+
+    // At this point out socket is closed and we can clean up.
+    // Note that we never return early, we always want to hit this code and decrement our counter and clean up our socket.
+    _outstandingSocketThreads--;
+    SINFO("[performance] Socket thread complete (" << _outstandingSocketThreads << " remaining).");
+
+    // Check to see if we need to unblock creating new socket threads. We do this each time we cross having 50 active
+    // threads. We are guaranteed to hit this as the thread count decrements to 0, as _shouldBlockNewSocketThreads is
+    // atomic and every value must be hit as threads complete.
+    // Note that if we were to start blocking the command port for NOT_ENOUGH_THREADS with less than 50 threads, we
+    // will never hit this unlock case, but we only ever see this problem with thousands of threads, so we don't have
+    // to try and handle that case, and don't need to lock this mutex on every thread's completion then.
+    if (_outstandingSocketThreads == 50) {
+        lock_guard<mutex> lock(_newSocketThreadBlockedMutex);
+        if (_shouldBlockNewSocketThreads) {
+            _shouldBlockNewSocketThreads = false;
+            unblockCommandPort("NOT_ENOUGH_THREADS");
+        }
     }
 }
 
