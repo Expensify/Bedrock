@@ -2501,12 +2501,8 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
         }
     } catch (const exception& e) {
         SALERT("handleSocket got exception: " << e.what());
-        socket.shutdown();
-        ::close(socket.s);
     } catch (...) {
         SALERT("handleSocket got unknown exception");
-        socket.shutdown();
-        ::close(socket.s);
     }
 
     // At this point out socket is closed and we can clean up.
