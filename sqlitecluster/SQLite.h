@@ -84,7 +84,7 @@ public:
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
     // exist because we already have a SQLite object for this file.
     SQLite(const SQLite& from);
-    ~SQLite();
+    virtual ~SQLite();
 
     // Returns the canonicalized filename for this database
     const string& getFilename()
@@ -96,13 +96,13 @@ public:
 
     // Performs a read-only query (eg, SELECT). This can be done inside or outside a transaction. Returns true on
     // success, and fills the 'result' with the result of the query.
-    bool read(const string& query, SQResult& result, bool skipInfoWarn = false) const;
+    virtual bool read(const string& query, SQResult& result, bool skipInfoWarn = false) const;
 
     // Performs a read-only query (eg, SELECT) that returns a single value.
-    string read(const string& query) const;
+    virtual string read(const string& query) const;
 
     // Performs a read-only query (eg, SELECT) that uses a query result formatter to format the response.
-    int read(const string& query, sqlite3_qrf_spec* spec) const;
+    virtual int read(const string& query, sqlite3_qrf_spec* spec) const;
 
     // Types of transactions that we can begin.
     enum class TRANSACTION_TYPE
@@ -131,20 +131,20 @@ public:
     // Performs a read/write query (eg, INSERT, UPDATE, DELETE). This is added to the current transaction's query list.
     // Returns true on success.
     // If we're in noop-update mode, this call alerts and performs no write, but returns as if it had completed.
-    bool write(const string& query);
+    virtual bool write(const string& query);
 
     // Performs a read/write query
     // Designed for use with queries that include a RETURNING clause
-    bool write(const string& query, SQResult& result);
+    virtual bool write(const string& query, SQResult& result);
 
     // This is the same as `write` except it runs successfully without any warnings or errors in noop-update mode.
     // It's intended to be used for `mockRequest` enabled commands, such that we only run a version of them that's
     // known to be repeatable. What counts as repeatable is up to the individual command.
-    bool writeIdempotent(const string& query);
+    virtual bool writeIdempotent(const string& query);
 
     // Executes a write query and retrieves the result.
     // Designed for use with queries that include a RETURNING clause
-    bool writeIdempotent(const string& query, SQResult& result);
+    virtual bool writeIdempotent(const string& query, SQResult& result);
 
     // This runs a query completely unchanged, always adding it to the uncommitted query, such that it will be recorded
     // in the journal even if it had no effect on the database. This lets replicated or synchronized queries be added

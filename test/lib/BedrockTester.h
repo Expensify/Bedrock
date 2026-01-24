@@ -86,7 +86,7 @@ public:
     bool readDB(const string& query, SQResult& result, bool online = true, int64_t timeoutMS = 0);
 
     // Closes and releases any existing DB file.
-    void freeDB();
+    virtual void freeDB();
 
     // Wait for a particular key in a `Status` message to equal a particular value, for up to `timeoutUS` us. Returns
     // true if a match was found, or times out otherwose.
@@ -107,7 +107,7 @@ public:
 protected:
     // Returns an SQLite object attached to the same DB file as the bedrock server. Writing to this is dangerous and
     // should not be done!
-    SQLite& getSQLiteDB();
+    virtual SQLite& getSQLiteDB();
 
     // These are the arguments for the bedrock process we'll start for this tester. This is a combination of defaults,
     // automatically assigned arguments (like a randomly generated DB file name) and any args passed into the
