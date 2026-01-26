@@ -4,13 +4,13 @@ layout: default
 
 Synchronization
 ====
-Bedrock's primary feature is its ability to seamlessly synchronize data between multiple nodes, manage distributed commits across those nodes, and automatically failover (and recover) in response to failure.  This enables for very reliable configurations [across multiple datacenters](http://bedrockdb.com/multizone.html) (or availability zones).  A general description of how this works follows:
+Bedrock's primary feature is its ability to seamlessly synchronize data between multiple nodes, manage distributed commits across those nodes, and automatically failover (and recover) in response to failure.  This enables for very reliable configurations [across multiple datacenters](https://bedrockdb.com/multizone.html) (or availability zones).  A general description of how this works follows:
 
 1. Any number of nodes starts up, each of which has a unique priority (except for "permafollowers", which have 0 priority and are invisible from a quorum perspective, but provide additional read capacity).
 
 2. All nodes attempt to connect to all other nodes.
 
-3. During this process all nodes `SYNCHRONIZE` from their peers, which means they broadcast "My most recent transaction has commitCount X, and the hash of every transaction up to that point is Y".  Anybody who has newer data will respond with the missing transactions, which are all committed in the same order on every node via a [private blockchain](http://bedrockdb.com/blockchain.html).
+3. During this process all nodes `SYNCHRONIZE` from their peers, which means they broadcast "My most recent transaction has commitCount X, and the hash of every transaction up to that point is Y".  Anybody who has newer data will respond with the missing transactions, which are all committed in the same order on every node via a [private blockchain](https://bedrockdb.com/blockchain.html).
 
 4. Any two nodes that disagree on what the hash of a given transaction should be will immediately disconnect from each other.  This means that any node that has "forked" away from the cluster will be excluded from participation.
 
