@@ -44,7 +44,7 @@ This provides comprehensive functionality for scheduled, recurring, atomically-p
     $ nc localhost 8888
     CreateJob
     name: CheckLiveness
-    data: {"url":"http://bedrockdb.com"}
+    data: {"url":"https://bedrockdb.com"}
     repeat: finished, +1 minute
     
     200 OK
@@ -60,13 +60,13 @@ Next, a worker queries for a job:  (Protip: Set "Connection: wait" and "Timeout:
     200 OK
     Content-Length: 72
     
-    {"data":{"url":"http://bedrockdb.com"},"jobID":1,"name":"CheckLiveness"}
+    {"data":{"url":"https://bedrockdb.com"},"jobID":1,"name":"CheckLiveness"}
 
 This atomically dequeues exactly one job, returning the data associated with that job.  As the worker operates on the job, it can report incremental progress back to Bedrock:
 
     UpdateJob
     jobID: 1
-    data: {"url":"http://bedrockdb.com","status":"CHECKING"}
+    data: {"url":"https://bedrockdb.com","status":"CHECKING"}
     
     200 OK
 
@@ -78,13 +78,13 @@ This allows some other party (such as the service that queued the job) to option
     200 OK
     Content-Length: 237
 
-    {"created":"2016-10-18 18:45:19","data":{"url":"http://bedrockdb.com","status":"CHECKING"},"jobID":1,"lastRun":"2016-10-18 18:45:33","name":"CheckLiveness","nextRun":"2016-10-18 18:45:19","repeat":"FINISHED, +1 MINUTE","state":"RUNNING"}
+    {"created":"2016-10-18 18:45:19","data":{"url":"https://bedrockdb.com","status":"CHECKING"},"jobID":1,"lastRun":"2016-10-18 18:45:33","name":"CheckLiveness","nextRun":"2016-10-18 18:45:19","repeat":"FINISHED, +1 MINUTE","state":"RUNNING"}
 
 When the worker finishes, it marks it as complete.  Additionally, it can provide final data on the job, which will be provided to the next worker in the event this job is a recurring one.
 
     FinishJob
     jobID: 1
-    data: {"url":"http://bedrockdb.com","failCount":1}
+    data: {"url":"https://bedrockdb.com","failCount":1}
     
     200 OK
 
@@ -103,7 +103,7 @@ But as we can see, the job is there, queued for the future:
     Content-Length: 262
     
     created | jobID | state | name | nextRun | lastRun | repeat | data | priority | parentJobID
-    2016-10-18 18:45:19 | 1 | QUEUED | CheckLiveness | 2016-10-18 18:54:11 | 2016-10-18 18:52:54 | FINISHED, +1 MINUTE | {"url":"http://bedrockdb.com","failCount":1} | 0 | 0
+    2016-10-18 18:45:19 | 1 | QUEUED | CheckLiveness | 2016-10-18 18:54:11 | 2016-10-18 18:52:54 | FINISHED, +1 MINUTE | {"url":"https://bedrockdb.com","failCount":1} | 0 | 0
 
 Once 1 minute elapses, the job is available to be worked on again -- and is seeded with the data provided when it was finished last time.  This is a very simple, reliable mechanism to allow one job to finish where the last job left off (eg, when processing a feed where it's bad to double-process the same entry):
 
@@ -113,7 +113,7 @@ Once 1 minute elapses, the job is available to be worked on again -- and is seed
     200 OK
     Content-Length: 86
     
-    {"data":{"url":"http://bedrockdb.com","failCount":1},"jobID":1,"name":"CheckLiveness"}
+    {"data":{"url":"https://bedrockdb.com","failCount":1},"jobID":1,"name":"CheckLiveness"}
 
 ## Blocking not polling
 The point of a job system is to distribute a bunch of worker processes across a bunch of different servers.  To do this means each of those job servers is continuously asking for work.  A straightforward way to do that is to have each worker just "poll" Bedrock::Jobs at some high frequency until work is available.  However, that's very wasteful, and means there is an average delay between queuing and processing a job equal to half the period of the polling frequency.  Accordingly, Bedrock::Jobs eschews polling in favor of a "blocking" design that allows a worker to wait up to some timeout for work to develop.  So if the worker process requests work when none is available:

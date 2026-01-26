@@ -1,6 +1,6 @@
 [Unit]
 Description=Expensify Bedrock Server
-Documentation=http://bedrockdb.com/
+Documentation=https://bedrockdb.com/
 After=network.target
 
 # The following creates the database file if absent
