@@ -138,7 +138,7 @@ bool BedrockCommand::areHttpsRequestsComplete() const
     return true;
 }
 
-void BedrockCommand::_waitForHTTPSRequests()
+void BedrockCommand::_waitForHTTPSRequests(bool extraDiagnostics)
 {
     uint64_t startTime = 0;
     while (!areHttpsRequestsComplete()) {
@@ -148,15 +148,27 @@ void BedrockCommand::_waitForHTTPSRequests()
         if (!startTime) {
             startTime = now;
         }
+
+        if (extraDiagnostics) {
+            SINFO("HTTPS requests not yet complete at " << now);
+        }
+
         if (now < timeout()) {
             maxWaitUs = timeout() - now;
         } else {
+            if (extraDiagnostics) {
+                SINFO("Command has timed out waiting for HTTPS request");
+            }
+
             // This uses the same starting point as in areHttpsRequestsComplete, for efficiency.
             // We won't iterate over large numbers of known completed requests, instead starting
             // from the the point of the list of known completed request.
             auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
             while (requestIt != httpsRequests.end()) {
                 if (!(*requestIt)->response) {
+                    if (extraDiagnostics) {
+                        SINFO("Marking request to " << (*requestIt)->fullRequest.methodLine << " as 500 due to timeout");
+                    }
                     (*requestIt)->response = 500;
                 }
                 requestIt++;
@@ -183,7 +195,10 @@ void BedrockCommand::_waitForHTTPSRequests()
 
         // The 3rd parameter to `postPoll` here is the total allowed idle time on this connection. We will kill connections that do nothing at all after BedrockCommand::DEFAULT_TIMEOUT normally,
         // or after only 5 seconds when we're shutting down so that we can clean up and move along.
-        postPoll(fdm, ignore, _plugin->server.isShuttingDown() ? 5'000 : BedrockCommand::DEFAULT_TIMEOUT);
+        if (extraDiagnostics) {
+            SINFO("Invoking postPoll");
+        }
+        postPoll(fdm, ignore, _plugin->server.isShuttingDown() ? 5'000 : BedrockCommand::DEFAULT_TIMEOUT, extraDiagnostics);
     }
 
     if (startTime) {
@@ -199,7 +214,7 @@ void BedrockCommand::waitForHTTPSRequests()
     _waitForHTTPSRequests();
 }
 
-void BedrockCommand::waitForHTTPSRequests(SQLite& db)
+void BedrockCommand::waitForHTTPSRequests(SQLite& db, bool extraDiagnostics)
 {
     bool wasInTransaction = db.insideTransaction();
     if (wasInTransaction) {
@@ -209,7 +224,7 @@ void BedrockCommand::waitForHTTPSRequests(SQLite& db)
         db.rollback(getMethodName());
     }
 
-    _waitForHTTPSRequests();
+    _waitForHTTPSRequests(extraDiagnostics);
 
     if (wasInTransaction) {
         if (!db.beginTransaction(db.getLastTransactionType())) {
@@ -395,7 +410,7 @@ void BedrockCommand::prePoll(fd_map& fdm)
     }
 }
 
-void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWaitMS)
+void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWaitMS, bool extraDiagnostics)
 {
     auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
     while (requestIt != httpsRequests.end()) {
@@ -408,7 +423,7 @@ void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWa
         if (!transaction->timeoutAt) {
             transaction->timeoutAt = _timeout;
         }
-        transaction->manager.postPoll(fdm, *transaction, nextActivity, maxWaitMS);
+        transaction->manager.postPoll(fdm, *transaction, nextActivity, maxWaitMS, extraDiagnostics);
         requestIt++;
     }
 }
