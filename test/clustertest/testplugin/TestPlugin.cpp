@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include <libstuff/SQResult.h>
+#include <libstuff/SThread.h>
 
 extern int* __pointerToFakeIntArray;
 
@@ -109,6 +110,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "testquery",
         "testPostProcessTimeout",
         "EscalateSerializedData",
+        "ThreadException",
         "httpswait"
     };
     for (auto& cmdName : supportedCommands) {
@@ -231,6 +233,21 @@ bool TestPluginCommand::peek(SQLite& db)
             response.methodLine = "200 OK";
         }
         response.content = "this is a test response";
+        return true;
+    } else if (SStartsWith(request.methodLine, "ThreadException")) {
+        // Retuns the thread and the future associated with its completion.
+        auto threadpair = SThread([](){
+            STHROW("500 THREAD THREW");
+        });
+
+        // Wait for the thread to finish.
+        threadpair.first.join();
+
+        // See if the thread threw, and if so, rethrow.
+        if (request.isSet("rethrow")) {
+            threadpair.second.get();
+        }
+
         return true;
     } else if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
         // Only set this if it's blank. The intention is that it will be blank on a follower, but already set by

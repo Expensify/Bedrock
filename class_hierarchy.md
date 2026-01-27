@@ -27,7 +27,7 @@ The lack of data members inside STCPManager is intentional. It allows for much e
 locked, and where and when. If all of the synchronization for a particular class is localized inside that class itself,
 and not scattered down a hierarchy of parent classes, it's much easier to reason about and get correct.
 
-SQLiteServer is a purely abstract interaface with no data members. It exists so that SQLite can call methods in
+SQLiteServer is a purely abstract interface with no data members. It exists so that SQLite can call methods in
 BedrockServer without needing to know everything about Bedrock Server. This leaves BedrockServer as it's own thing
 managing it's own data.
 

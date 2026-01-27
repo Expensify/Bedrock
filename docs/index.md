@@ -1,7 +1,7 @@
 ---
 layout: default
 ---
-[Why](http://firstround.com/review/your-database-is-your-prison-heres-how-expensify-broke-free/) | [Code](https://github.com/Expensify/Bedrock) | [Install](http://bedrockdb.com#how-to-get-it) | [Use](http://bedrockdb.com#how-to-use-it) | [Jobs](http://bedrockdb.com/jobs.html) | [Cache](http://bedrockdb.com/cache.html) | [vs MySQL](http://bedrockdb.com/vs_mysql.html) | [Replication](http://bedrockdb.com/synchronization.html) | [Blockchain](http://bedrockdb.com/blockchain.html) | [Multizone](http://bedrockdb.com/multizone.html) | [Chat](https://gitter.im/Expensify-Bedrock/Lobby) | [Contact](http://bedrockdb.com#how-to-help-and-get-helped)
+[Why](http://firstround.com/review/your-database-is-your-prison-heres-how-expensify-broke-free/) | [Code](https://github.com/Expensify/Bedrock) | [Install](https://bedrockdb.com#how-to-get-it) | [Use](https://bedrockdb.com#how-to-use-it) | [Jobs](https://bedrockdb.com/jobs.html) | [Cache](https://bedrockdb.com/cache.html) | [vs MySQL](https://bedrockdb.com/vs_mysql.html) | [Replication](https://bedrockdb.com/synchronization.html) | [Blockchain](https://bedrockdb.com/blockchain.html) | [Multizone](https://bedrockdb.com/multizone.html) | [Chat](https://gitter.im/Expensify-Bedrock/Lobby) | [Contact](https://bedrockdb.com#how-to-help-and-get-helped)
 
 # Bedrock -- Rock-solid distributed data
 Bedrock is a simple, modular, WAN-replicated, Blockchain-based data foundation for global-scale applications.  Taking each of those in turn:
@@ -9,22 +9,22 @@ Bedrock is a simple, modular, WAN-replicated, Blockchain-based data foundation f
 * **Bedrock is simple.** This means it exposes the fewest knobs necessary, with appropriate defaults at every layer.
 * **Bedrock is modular.**  This means its functionality is packaged into separate "plugins" that are decoupled and independently maintainable.
 * **Bedrock is WAN-replicated.**  This means it is designed to endure the myriad real-world problems that occur across slow, unreliable internet connections.
-* **Bedrock is Blockchain-based.** This means it uses a [private blockchain](http://bedrockdb.com/blockchain.html) to synchronize and self organize.
+* **Bedrock is Blockchain-based.** This means it uses a [private blockchain](https://bedrockdb.com/blockchain.html) to synchronize and self organize.
 * **Bedrock is a data foundation.**  This means it is not just a simple database that responds to queries, but rather a platform on which data-processing applications (like databases, job queues, caches, etc) can be built.
 * **Bedrock is for global-scale applications.**  This means it is built to be deployed in a geo-redundant fashion spanning many datacenters around the world.
 
 Bedrock was built by [Expensify](https://www.expensify.com), and is a networking and distributed transaction layer built atop [SQLite](http://sqlite.org/), the fastest, most reliable, and most widely distributed database in the world.
 
 ## Why to use it
-If you're building a website or other online service, you've got to use *something*.  Why use Bedrock rather than the alternatives?  We've provided a more [detailed comparision against MySQL](http://bedrockdb.com/vs_mysql.html), but in general Bedrock is:
+If you're building a website or other online service, you've got to use *something*.  Why use Bedrock rather than the alternatives?  We've provided a more [detailed comparison against MySQL](https://bedrockdb.com/vs_mysql.html), but in general Bedrock is:
 
 * **Faster.**  This is true for networked queries using the Bedrock::DB plugin, but especially true for custom plugins you write yourself because SQLite is just a library that operates inside your process's memory space.  That means when your plugin queries SQLite, it isn't serializing/deserializing over a network: it's directly accessing the RAM of the database itself.  This is great in a single node, but if you still want more (because who doesn't?) then install any number of nodes and load-balance reads across all of them.  This means every CPU of every database server is available for parallel reads, each of which has direct access to the database RAM.
 
 * **Simpler.**  This is because Bedrock is written for modern hardware with large SSD-backed RAID drives and generous RAM file caches, and thereby doesn't mess with the zillion hacky tricks the other databases do to eke out high performance on largely obsolete hardware.  This results in fewer esoteric knobs, and sane defaults that "just work".
 
-* **More reliable.**  This is because Bedrock's [synchronization engine](http://bedrockdb.com/synchronization.html) supports active/active distributed transactions with automatic failover, and can be clustered not just inside a single datacenter, but [across multiple datacenters](http://bedrockdb.com/multizone.html) spanning the internet.  This means Bedrock continues functioning not only if a single node goes down, but even if you lose an entire datacenter.  After all, it doesn't matter who you are using: your datacenter *will fail*, eventually.  But you needn't fail along with it.
+* **More reliable.**  This is because Bedrock's [synchronization engine](https://bedrockdb.com/synchronization.html) supports active/active distributed transactions with automatic failover, and can be clustered not just inside a single datacenter, but [across multiple datacenters](https://bedrockdb.com/multizone.html) spanning the internet.  This means Bedrock continues functioning not only if a single node goes down, but even if you lose an entire datacenter.  After all, it doesn't matter who you are using: your datacenter *will fail*, eventually.  But you needn't fail along with it.
 
-* **More powerful.**  Most people don't realize just how powerful SQLite is.  Indexes, triggers, foreign key constraints, native JSON support, expression indexes -- check the [full list here](http://sqlite.org/fullsql.html).  You'll be amazed, but that's just the start.  On top of this Bedrock layers a robust plugin system, and includes a fully functional [job queue](http://bedrockdb.com/jobs.html) and [replicated cache](http://bedrockdb.com/cache.html) -- all the basics you need for modern service design, wrapped into one simple package.
+* **More powerful.**  Most people don't realize just how powerful SQLite is.  Indexes, triggers, foreign key constraints, native JSON support, expression indexes -- check the [full list here](http://sqlite.org/fullsql.html).  You'll be amazed, but that's just the start.  On top of this Bedrock layers a robust plugin system, and includes a fully functional [job queue](https://bedrockdb.com/jobs.html) and [replicated cache](https://bedrockdb.com/cache.html) -- all the basics you need for modern service design, wrapped into one simple package.
 
 Bedrock is not only production ready, but actively used by Expensify's many thousands of customers, and millions of users.  (Curious why an expense reporting company built their own database?  Read what the [First Round Review](http://firstround.com/review/your-database-is-your-prison-heres-how-expensify-broke-free/) has to say about it.)
 
@@ -49,21 +49,21 @@ You can build from scratch as follows:
     # Create an empty database (See: https://github.com/Expensify/Bedrock/issues/489)
     touch bedrock.db
 
-    # Run it (press Ctrl^C to quit, or use -fork to make it run in the backgroud)
+    # Run it (press Ctrl^C to quit, or use -fork to make it run in the background)
     ./bedrock
 
     # Connect to it in a different terminal using netcat
     nc localhost 8888
 
     # Type "Status" and then enter twice to verify it's working
-    # See here to use the default DB plugin: http://bedrockdb.com/db.html
+    # See here to use the default DB plugin: https://bedrockdb.com/db.html
 
 ### Arch Linux
 Copy/paste this command into your terminal:
 
     yaourt -S bedrock
 
-This will tansparently download the latest version from GitHub, compile it, package it up, and install it.
+This will transparently download the latest version from GitHub, compile it, package it up, and install it.
 
 ### MacOSX
 You can build from scratch as follows:
@@ -92,14 +92,14 @@ You can build from scratch as follows:
     # Create an empty database (See: https://github.com/Expensify/Bedrock/issues/489)
     touch bedrock.db
 
-    # Run it (press Ctrl^C to quit, or use -fork to make it run in the backgroud)
+    # Run it (press Ctrl^C to quit, or use -fork to make it run in the background)
     ./bedrock
 
     # Connect to it in a different terminal using netcat
     nc localhost 8888
 
     # Type "Status" and then enter twice to verify it's working
-    # See here to use the default DB plugin: http://bedrockdb.com/db.html
+    # See here to use the default DB plugin: https://bedrockdb.com/db.html
 
 
 ## How to use it
@@ -162,16 +162,16 @@ It really can be that easy.
 ## Bedrock plugins
 Additionally, Bedrock::DB is just one plugin to the overall Bedrock platform.  Bedrock itself is less a database, and more a tool that can be used to build a wide variety of data-management applications -- with a database being just one example.  Each "plugin" implements and exposes new externally-visible commands (essentially equivalent to "stored procedures").  However, unlike simple stored procedures, plugins can also include schema changes.  Plugins can be enabled via the "-plugins" command line parameter.  Current plugins include:
 
-* [Status](http://bedrockdb.com/status.html) - Provides basic status about the health the Bedrock cluster.
-* [DB](http://bedrockdb.com/db.html) - Provides direct SQL access to the underlying database.
-* [Jobs](http://bedrockdb.com/jobs.html) - Provides a simple job queue.
-* [Cache](http://bedrockdb.com/cache.html) - Provides a simple replicated cache.
-* [MySQL](http://bedrockdb.com/mysql.html) - Emulates MySQL
+* [Status](https://bedrockdb.com/status.html) - Provides basic status about the health the Bedrock cluster.
+* [DB](https://bedrockdb.com/db.html) - Provides direct SQL access to the underlying database.
+* [Jobs](https://bedrockdb.com/jobs.html) - Provides a simple job queue.
+* [Cache](https://bedrockdb.com/cache.html) - Provides a simple replicated cache.
+* [MySQL](https://bedrockdb.com/mysql.html) - Emulates MySQL
 
 ## How to help and get helped
 So many ways!
 
-* Run `bedrock -?` on the command line to see all the available [command-line options](http://bedrockdb.com/cli.html)
+* Run `bedrock -?` on the command line to see all the available [command-line options](https://bedrockdb.com/cli.html)
 * Chat with us live on [Bedrock's Gitter page](https://gitter.im/Expensify-Bedrock/Lobby)
 * Post to the [Bedrock mailing list](https://groups.google.com/forum/#!forum/bedrock) by emailing [bedrock@googlegroups.com](mailto:bedrock@googlegroups.com)
 * Create an issue in [Bedrock's GitHub issue list](https://github.com/Expensify/Bedrock/issues)
