@@ -1,6 +1,6 @@
 [Unit]
 Description=Generates prerequisite files for bedrock.service, if absent
-Documentation=http://bedrockdb.com/
+Documentation=https://bedrockdb.com/
 
 [Service]
 Type=oneshot
