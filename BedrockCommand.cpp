@@ -156,7 +156,6 @@ void BedrockCommand::_waitForHTTPSRequests(bool extraDiagnostics)
         if (now < timeout()) {
             maxWaitUs = timeout() - now;
         } else {
-
             if (extraDiagnostics) {
                 SINFO("Command has timed out waiting for HTTPS request");
             }
@@ -196,7 +195,7 @@ void BedrockCommand::_waitForHTTPSRequests(bool extraDiagnostics)
 
         // The 3rd parameter to `postPoll` here is the total allowed idle time on this connection. We will kill connections that do nothing at all after BedrockCommand::DEFAULT_TIMEOUT normally,
         // or after only 5 seconds when we're shutting down so that we can clean up and move along.
-        if(extraDiagnostics) {
+        if (extraDiagnostics) {
             SINFO("Invoking postPoll");
         }
         postPoll(fdm, ignore, _plugin->server.isShuttingDown() ? 5'000 : BedrockCommand::DEFAULT_TIMEOUT, extraDiagnostics);
