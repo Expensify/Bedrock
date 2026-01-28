@@ -115,7 +115,11 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     // `204 No Content` is an implicit content length of 0. If we successfully parsed a 204 request, we can always
     // treat the request as complete, becuase we need to have parsed all of the headers for `deserialize` above to
     // return anything at all here.
-    bool is204 = SIContains(transaction.fullResponse.methodLine, "204 No Content");
+    bool is204 = false;
+    size_t afterHTTPVersionSpace = transaction.fullRequest.methodLine.find(" ");
+    if (afterHTTPVersionSpace != string::npos) {
+        is204 = atoi(transaction.fullRequest.methodLine.c_str() + afterHTTPVersionSpace) == 204;
+    }
     if (extraDiagnostics) {
         SINFO("Forced 204:" << is204);
     }
