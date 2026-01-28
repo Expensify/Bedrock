@@ -96,7 +96,8 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db)
                                "data        TEXT NOT NULL, "
                                "priority    INTEGER NOT NULL DEFAULT " + SToStr(JOBS_DEFAULT_PRIORITY) + ", "
                                "parentJobID INTEGER NOT NULL DEFAULT 0, "
-                               "retryAfter  TEXT NOT NULL DEFAULT \"\")",
+                               "retryAfter  TEXT NOT NULL DEFAULT \"\", "
+                               "sequentialKey TEXT NOT NULL DEFAULT \"\")",
                            ignore));
     // verify and conditionally create indexes
     SASSERT(db.verifyIndex("jobsName", "jobs", "( name )", false, !BedrockPlugin_Jobs::isLive));
@@ -608,13 +609,29 @@ void BedrockJobsCommand::process(SQLite& db)
                     }
                 }
 
+                // If sequentialKey is set, check if there are other pending jobs with the same key.
+                // If so, this job should wait for them to complete before running by setting the initial state to WAITING.
+                const string& safeSequentialKey = SContains(job, "sequentialKey") ? SQ(job["sequentialKey"]) : SQ("");
+                if (safeSequentialKey != SQ("")) {
+                    SQResult result;
+                    if (!db.read("SELECT 1 FROM jobs "
+                                 "WHERE sequentialKey=" + safeSequentialKey + " "
+                                 "AND state IN ('QUEUED', 'RUNQUEUED', 'RUNNING', 'WAITING') "
+                                 "LIMIT 1;", result)) {
+                        STHROW("502 Select failed");
+                    }
+                    if (!result.empty()) {
+                        initialState = "WAITING";
+                    }
+                }
+
                 // If no data was provided, use an empty object
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
 
                 // Create this new job with a new generated ID
                 const int64_t jobIDToUse = SQLiteUtils::getRandomID(db, "jobs", "jobID");
                 SINFO("Next jobID: " << jobIDToUse);
-                if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter ) "
+                if (!db.writeIdempotent("INSERT INTO jobs ( jobID, created, state, name, nextRun, repeat, data, priority, parentJobID, retryAfter, sequentialKey ) "
                          "VALUES( " +
                             SQ(jobIDToUse) + ", " +
                             currentTime + ", " +
@@ -625,7 +642,8 @@ void BedrockJobsCommand::process(SQLite& db)
                             safeData + ", " +
                             SQ(priority) + ", " +
                             SQ(parentJobID) + ", " +
-                            safeRetryAfter + " " +
+                            safeRetryAfter + ", " +
+                            safeSequentialKey + " " +
                          " );")) {
                     STHROW("502 insert query failed");
                 }
@@ -1011,7 +1029,7 @@ void BedrockJobsCommand::process(SQLite& db)
 
         // Verify there is a job like this and it's running
         SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest'), retryAfter, json_extract(data, '$.originalNextRun') "
+        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest'), retryAfter, json_extract(data, '$.originalNextRun'), sequentialKey "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
@@ -1029,6 +1047,7 @@ void BedrockJobsCommand::process(SQLite& db)
         mockRequest = result[0][5] == "1";
         const string retryAfter = result[0][6];
         const string originalDataNextRun = result[0][7];
+        const string& sequentialKey = result[0][8];
 
         // Make sure we're finishing a job that's actually running
         if (state != "RUNNING" && state != "RUNQUEUED" && !mockRequest) {
@@ -1199,6 +1218,17 @@ void BedrockJobsCommand::process(SQLite& db)
                 if (!db.read("SELECT 1 FROM jobs WHERE parentJobID != 0 AND parentJobID=" + SQ(jobID) + " LIMIT 1;").empty()) {
                     STHROW("405 Failed to delete a job with outstanding children");
                 }
+
+                // Promote the next job in sequence that is WAITING
+                if (!sequentialKey.empty()) {
+                    db.writeIdempotent("UPDATE jobs SET state='QUEUED' "
+                                       "WHERE jobID = ("
+                                       "  SELECT jobID FROM jobs "
+                                       "  WHERE sequentialKey=" + SQ(sequentialKey) + " "
+                                       "  AND state='WAITING' "
+                                       "  ORDER BY created ASC "
+                                       "  LIMIT 1);");
+                }
             }
         }
 
@@ -1258,12 +1288,13 @@ void BedrockJobsCommand::process(SQLite& db)
         //     - data  - Data to associate with this failed job
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
+        const int64_t jobID = request.calc64("jobID");
 
         // Verify there is a job like this and it's running
         SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat "
+        if (!db.read("SELECT state, nextRun, lastRun, repeat, sequentialKey "
                      "FROM jobs "
-                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
+                     "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
             STHROW("502 Select failed");
         }
@@ -1271,10 +1302,11 @@ void BedrockJobsCommand::process(SQLite& db)
             STHROW("404 No job with this jobID");
         }
         const string& state = result[0][0];
+        const string& sequentialKey = result[0][4];
 
         // Make sure we're failing a job that's actually running or running with a retryAfter
         if (state != "RUNNING" && state != "RUNQUEUED") {
-            SINFO("Trying to fail job#" << request["jobID"] << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
+            SINFO("Trying to fail job#" << jobID << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
             STHROW("405 Can only fail RUNNING or RUNQUEUED jobs");
         }
 
@@ -1289,8 +1321,19 @@ void BedrockJobsCommand::process(SQLite& db)
         updateList.push_back("state='FAILED'");
 
         // Update this job
-        if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
+        if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(jobID) + ";")) {
             STHROW("502 Fail failed");
+        }
+
+        // Promote the next WAITING job with the same sequentialKey
+        if (!sequentialKey.empty()) {
+            db.writeIdempotent("UPDATE jobs SET state='QUEUED' "
+                               "WHERE jobID = ("
+                               "  SELECT jobID FROM jobs "
+                               "  WHERE sequentialKey=" + SQ(sequentialKey) + " "
+                               "  AND state='WAITING' "
+                               "  ORDER BY created ASC "
+                               "  LIMIT 1);");
         }
 
         // Successfully processed
@@ -1306,30 +1349,44 @@ void BedrockJobsCommand::process(SQLite& db)
         //     - jobID - ID of the job to delete
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
+        int64_t jobID = request.calc64("jobID");
 
         // Verify there is a job like this and it's not running
         SQResult result;
-        if (!db.read("SELECT state "
+        if (!db.read("SELECT state, sequentialKey "
                      "FROM jobs "
-                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
+                     "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
             STHROW("502 Select failed");
         }
         if (result.empty()) {
             STHROW("404 No job with this jobID");
         }
-        if (result[0][0] == "RUNNING") {
+        const string& state = result[0][0];
+        const string& sequentialKey = result[0][1];
+
+        if (state == "RUNNING") {
             STHROW("405 Can't delete a RUNNING job");
         }
-        if (result[0][0] == "PAUSED") {
+        if (state == "PAUSED") {
             STHROW("405 Can't delete a parent jobs with children running");
         }
 
         // Delete the job
         if (!db.writeIdempotent("DELETE FROM jobs "
-                      "WHERE jobID=" +
-                      SQ(request.calc64("jobID")) + ";")) {
+                      "WHERE jobID=" + SQ(jobID) + ";")) {
             STHROW("502 Delete failed");
+        }
+
+        // Promote the next WAITING job with the same sequentialKey
+        if (!sequentialKey.empty()) {
+            db.writeIdempotent("UPDATE jobs SET state='QUEUED' "
+                               "WHERE jobID = ("
+                               "  SELECT jobID FROM jobs "
+                               "  WHERE sequentialKey=" + SQ(sequentialKey) + " "
+                               "  AND state='WAITING' "
+                               "  ORDER BY created ASC "
+                               "  LIMIT 1);");
         }
 
         // Successfully processed
