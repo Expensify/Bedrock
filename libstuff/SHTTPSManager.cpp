@@ -115,9 +115,15 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     // `204 No Content` is an implicit content length of 0. If we successfully parsed a 204 request, we can always
     // treat the request as complete, becuase we need to have parsed all of the headers for `deserialize` above to
     // return anything at all here.
-    bool is204 = SIContains(transaction.fullResponse.methodLine, "204 No Content");
-    if (extraDiagnostics) {
-        SINFO("Forced 204:" << is204);
+    int statusCode = 0;
+    if (size) {
+        size_t afterHTTPVersionSpace = transaction.fullResponse.methodLine.find(" ");
+        if (afterHTTPVersionSpace != string::npos) {
+            statusCode = atoi(transaction.fullResponse.methodLine.c_str() + afterHTTPVersionSpace);
+        }
+        if (extraDiagnostics) {
+            SINFO("Forced 204:" << (statusCode == 204));
+        }
     }
 
     // If there's not a Content-Length, we need to check for the socket being closed.
@@ -125,7 +131,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     if (extraDiagnostics) {
         SINFO("Has content-length? " << hasContentLength);
     }
-    bool completeRequest = size && (is204 || hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
+    bool completeRequest = size && ((statusCode == 204) || hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
     if (completeRequest) {
         if (extraDiagnostics) {
             SINFO("Request marked complete");
