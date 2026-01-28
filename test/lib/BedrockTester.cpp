@@ -607,7 +607,7 @@ string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS
 
 bool BedrockTester::readDB(const string& query, SQResult& result, bool online, int64_t timeoutMS)
 {
-    if (ENABLE_HCTREE && online) {
+    if (databaseOnlineMode && online) {
         string fixedQuery = query;
         if (!SEndsWith(query, ";")) {
             fixedQuery += ";";
