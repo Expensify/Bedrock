@@ -13,6 +13,7 @@
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
 #include <test/lib/tpunit++.hpp>
+#include <test/lib/RemoteSQLite.h>
 
 PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
@@ -46,6 +47,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
                              bool startImmediately,
                              const string& bedrockBinary,
                              atomic<uint64_t>* alternateCounter) :
+    databaseOnlineMode(ENABLE_HCTREE),
     _serverPort(serverPort ?: ports.getPort()),
     _nodePort(nodePort ?: ports.getPort()),
     _controlPort(controlPort ?: ports.getPort()),
@@ -566,17 +568,22 @@ SQLite& BedrockTester::getSQLiteDB()
 {
     lock_guard<decltype(_dbMutex)> lock(_dbMutex);
     if (!_db) {
-        // Assumes wal2 mode.
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
+        if (databaseOnlineMode) {
+            _db = new RemoteSQLite(this);
+        } else {
+            _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
+        }
     }
     return *_db;
 }
 
 void BedrockTester::freeDB()
 {
-    lock_guard<decltype(_dbMutex)> lock(_dbMutex);
-    delete _db;
-    _db = nullptr;
+    if (!databaseOnlineMode) {
+        lock_guard<decltype(_dbMutex)> lock(_dbMutex);
+        delete _db;
+        _db = nullptr;
+    }
 }
 
 string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS)
@@ -613,6 +620,9 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
             command["timeout"] = to_string(timeoutMS);
         }
         auto commandResult = executeWaitMultipleData({command}, 1);
+        if (commandResult[0].methodLine == "400 Unique Constraints Violation") {
+            throw SQLite::constraint_error();
+        }
         result.deserialize(commandResult[0].content);
 
         return true;
