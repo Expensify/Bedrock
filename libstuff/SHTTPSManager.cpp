@@ -78,7 +78,7 @@ void SStandaloneHTTPSManager::prePoll(fd_map& fdm, SStandaloneHTTPSManager::Tran
     STCPManager::prePoll(fdm, *transaction.s);
 }
 
-void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS, bool extraDiagnostics)
+void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS)
 {
     if (!transaction.s || transaction.finished) {
         // If there's no socket, or we're done, skip. Because we call poll on commands, we may poll transactions that
@@ -103,14 +103,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
     // are complete solely based on the content, so these return the size as if the body thus-far were the entire content.
     // This means we have to check if we've hit EOF and closed the socket to know for sure that we've received the entire
     // response in these cases.
-    if (extraDiagnostics) {
-        // BE CAREFUL WITH THIS, IT WILL LOG WHATEVER'S IN THE RESPONSE!
-        SINFO("Will attempt to deserialize: " << transaction.s->recvBuffer);
-    }
     int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
-    if (extraDiagnostics) {
-        SINFO("Deserialize result: " << size);
-    }
 
     // `204 No Content` is an implicit content length of 0. If we successfully parsed a 204 request, we can always
     // treat the request as complete, becuase we need to have parsed all of the headers for `deserialize` above to
@@ -121,21 +114,12 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         if (afterHTTPVersionSpace != string::npos) {
             statusCode = atoi(transaction.fullResponse.methodLine.c_str() + afterHTTPVersionSpace);
         }
-        if (extraDiagnostics) {
-            SINFO("Forced 204:" << (statusCode == 204));
-        }
     }
 
     // If there's not a Content-Length, we need to check for the socket being closed.
     bool hasContentLength = transaction.fullResponse.nameValueMap.contains("Content-Length");
-    if (extraDiagnostics) {
-        SINFO("Has content-length? " << hasContentLength);
-    }
     bool completeRequest = size && ((statusCode == 204) || hasContentLength || (transaction.s->state == STCPManager::Socket::CLOSED));
     if (completeRequest) {
-        if (extraDiagnostics) {
-            SINFO("Request marked complete");
-        }
         // Consume how much we read.
         transaction.s->recvBuffer.consumeFront(size);
         transaction.finished = now;
@@ -157,9 +141,6 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         delete transaction.s;
         transaction.s = nullptr;
     } else {
-        if (extraDiagnostics) {
-            SINFO("Request not marked complete");
-        }
         // If we don't have a response, we need to check for a timeout, or a disconnection.
         // The disconnection check is straightforward, we just check the socket state.
         // The timeout is a little less so, because we have two different ways to time out:
@@ -228,7 +209,7 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTrans
     return transaction;
 }
 
-SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy, bool extraDiagnostics)
+SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy)
 {
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
@@ -274,10 +255,6 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
     }
     transaction->s = s;
     transaction->fullRequest = modifiedRequest;
-
-    if (extraDiagnostics) {
-        SINFO("Full request to send: " << modifiedRequest.serialize());
-    }
 
     // Ship it.
     transaction->s->send(modifiedRequest.serialize());
