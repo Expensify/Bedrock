@@ -607,6 +607,13 @@ string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS
 
 bool BedrockTester::readDB(const string& query, SQResult& result, bool online, int64_t timeoutMS)
 {
+    auto runAndRollback = [](SQLite& db, const string& query, SQResult& result){
+        db.beginTransaction();
+        bool success = db.read(query, result);
+        db.rollback();
+        return success;
+    };
+
     if (databaseOnlineMode && online) {
         string fixedQuery = query;
         if (!SEndsWith(query, ";")) {
@@ -626,12 +633,12 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
         result.deserialize(commandResult[0].content);
 
         return true;
+    } else if (databaseOnlineMode) {
+        // When tester is in online database mode and online=false we create a temporary sqlite for this specific query
+        SQLite db = SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
+        return runAndRollback(db, query, result);
     } else {
-        SQLite& db = getSQLiteDB();
-        db.beginTransaction();
-        bool success = db.read(query, result);
-        db.rollback();
-        return success;
+        return runAndRollback(getSQLiteDB(), query, result);
     }
 }
 
