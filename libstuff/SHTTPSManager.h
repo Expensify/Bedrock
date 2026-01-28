@@ -38,7 +38,7 @@ public:
     // Default timeout for HTTPS requests is 5 minutes.This can be changed on any call to postPoll.
     // This is a total amount of milliseconds of idle activity since the last send on a socket before killing it.
     // The purpose of this is to be able to shut down when no activity is happening.
-    void postPoll(fd_map& fdm, Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS = (5 * 60 * 1000), bool extraDiagnostics = false);
+    void postPoll(fd_map& fdm, Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS = (5 * 60 * 1000));
 
     // Close a transaction and remove it from our internal lists.
     void closeTransaction(Transaction* transaction);
@@ -53,7 +53,7 @@ protected:   // Child API
     const string _caCrt;
 
     // Methods
-    Transaction* _httpsSend(const string& url, const SData& request, bool allowProxy = false, bool extraDiagnostics = false);
+    Transaction* _httpsSend(const string& url, const SData& request, bool allowProxy = false);
     Transaction* _createErrorTransaction();
     virtual bool _onRecv(Transaction* transaction);
 
