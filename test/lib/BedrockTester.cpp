@@ -13,6 +13,7 @@
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
 #include <test/lib/tpunit++.hpp>
+#include <test/lib/RemoteSQLite.h>
 
 PortMap BedrockTester::ports;
 mutex BedrockTester::_testersMutex;
@@ -46,6 +47,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
                              bool startImmediately,
                              const string& bedrockBinary,
                              atomic<uint64_t>* alternateCounter) :
+    remoteMode(ENABLE_HCTREE),
     _serverPort(serverPort ?: ports.getPort()),
     _nodePort(nodePort ?: ports.getPort()),
     _controlPort(controlPort ?: ports.getPort()),
@@ -566,17 +568,25 @@ SQLite& BedrockTester::getSQLiteDB()
 {
     lock_guard<decltype(_dbMutex)> lock(_dbMutex);
     if (!_db) {
-        // Assumes wal2 mode.
-        _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
+        if (remoteMode) {
+            _db = new RemoteSQLite(this);
+        } else {
+            _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
+        }
     }
     return *_db;
 }
 
 void BedrockTester::freeDB()
 {
-    lock_guard<decltype(_dbMutex)> lock(_dbMutex);
-    delete _db;
-    _db = nullptr;
+    // IMPORTANT: Do not free the pointer in remote mode. Doing so is both inefficient and unsafe,
+    // as it leads to a dangling reference because executeWaitMultipleData (called in that mode)
+    // might call this function.
+    if (!remoteMode) {
+        lock_guard<decltype(_dbMutex)> lock(_dbMutex);
+        delete _db;
+        _db = nullptr;
+    }
 }
 
 string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS)
@@ -600,7 +610,7 @@ string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS
 
 bool BedrockTester::readDB(const string& query, SQResult& result, bool online, int64_t timeoutMS)
 {
-    if (ENABLE_HCTREE && online) {
+    if (remoteMode && online) {
         string fixedQuery = query;
         if (!SEndsWith(query, ";")) {
             fixedQuery += ";";
@@ -613,14 +623,21 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
             command["timeout"] = to_string(timeoutMS);
         }
         auto commandResult = executeWaitMultipleData({command}, 1);
+        if (commandResult[0].methodLine == "400 Unique Constraints Violation") {
+            throw SQLite::constraint_error();
+        }
         result.deserialize(commandResult[0].content);
 
         return true;
     } else {
-        SQLite& db = getSQLiteDB();
-        db.beginTransaction();
-        bool success = db.read(query, result);
-        db.rollback();
+        optional<SQLite> optionalDB;
+        if (remoteMode) {
+            optionalDB.emplace(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
+        }
+        SQLite& localDB = optionalDB ? *optionalDB : getSQLiteDB();
+        localDB.beginTransaction();
+        bool success = localDB.read(query, result);
+        localDB.rollback();
         return success;
     }
 }
