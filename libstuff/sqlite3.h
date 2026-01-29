@@ -148,10 +148,10 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.52.0"
 #define SQLITE_VERSION_NUMBER 3052000
-#define SQLITE_SOURCE_ID      "2026-01-26 17:38:45 090d8d16dfbe48d8698adbf9c9b1e6d3fedac0d8f6e768060f28eb38bc6025da"
+#define SQLITE_SOURCE_ID      "2026-01-29 18:12:20 bbd66e49dc3da48e898fd1acf92e86d8e5f900d16defb21353176cf933ed86a2"
 #define SQLITE_SCM_BRANCH     "hctree-bedrock"
 #define SQLITE_SCM_TAGS       ""
-#define SQLITE_SCM_DATETIME   "2026-01-26T17:38:45.031Z"
+#define SQLITE_SCM_DATETIME   "2026-01-29T18:12:20.056Z"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
