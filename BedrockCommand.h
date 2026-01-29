@@ -114,7 +114,7 @@ public:
     // If it is not, this will throw.
     // The reason for this is because the current transaction will be rolled back and then restarted at the end of waiting
     // for network requests, which will break everything if done from `process`.
-    void waitForHTTPSRequests(SQLite& db, bool extraDiagnostics = false);
+    void waitForHTTPSRequests(SQLite& db);
 
     // This call is the same as the above, but is only allowed if you are neither peeking *nor* processing.
     // It is intended only for use when the command is not assigned a DB at all, and thus does not need rolling back and
@@ -258,7 +258,7 @@ private:
     void prePoll(fd_map& fdm);
 
     // Handle any activity on those sockets that was noted in poll.
-    void postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWaitMS, bool extraDiagnostics = false);
+    void postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWaitMS);
 
     // This is a set of name/value pairs that must be present and matching for two commands to compare as "equivalent"
     // for the sake of determining whether they're likely to cause a crash.
@@ -355,7 +355,7 @@ private:
     bool _inDBWriteOperation = false;
 
     // Internal function that provides the main functionality for waitForHTTPSRequests().
-    void _waitForHTTPSRequests(bool extraDiagnostics = false);
+    void _waitForHTTPSRequests();
 
     // Set certain initial state on construction. Common functionality to several constructors.
     void _init();
