@@ -9,10 +9,7 @@
 #include <unistd.h>
 #include <format>
 
-// ucontext.h is needed for signal recovery on Linux
-#if defined(__linux__)
-#include <ucontext.h>
-#endif
+// setjmp.h is included via libstuff.h for signal recovery
 
 thread_local function<string()> SSignalHandlerDieFunc;
 void SSetSignalHandlerDieFunc(function<string()>&& func)
@@ -54,19 +51,21 @@ thread_local int _SSignal_threadCaughtSignalNumber = 0;
 // Used by SThread to enable graceful recovery from SIGSEGV/SIGFPE.
 thread_local bool _SSignal_threadIsRecoverable = false;
 
-// Thread-local flag to prevent recursive recovery attempts (e.g., if trampoline itself crashes).
-thread_local bool _SSignal_inTrampoline = false;
+// Thread-local jump buffer for signal recovery via sigsetjmp/siglongjmp.
+thread_local sigjmp_buf _SSignal_recoveryPoint;
 
-// Thread-local storage for crash info to be passed to the trampoline.
+// Thread-local flag indicating whether the recovery point has been set (sigsetjmp called).
+thread_local bool _SSignal_recoveryPointSet = false;
+
+// Thread-local storage for crash info to be passed back after siglongjmp.
 struct SSignalCrashInfo {
     int signum;
     void* faultAddress;
-    void* instructionPointer;
     void* callstack[32];
     int callstackDepth;
     bool hasCrashInfo;
 };
-thread_local SSignalCrashInfo _SSignal_crashInfo = {0, nullptr, nullptr, {}, 0, false};
+thread_local SSignalCrashInfo _SSignal_crashInfo = {0, nullptr, {}, 0, false};
 
 // The number of termination signals received so far.
 atomic<uint64_t> _SSignal_terminationCount(0);
@@ -120,6 +119,29 @@ void SSetThreadRecoverable(bool recoverable)
 bool SIsThreadRecoverable()
 {
     return _SSignal_threadIsRecoverable;
+}
+
+sigjmp_buf* SGetRecoveryPoint()
+{
+    return &_SSignal_recoveryPoint;
+}
+
+void SSetRecoveryPointActive(bool active)
+{
+    _SSignal_recoveryPointSet = active;
+}
+
+SSignalException SBuildSignalException()
+{
+    SSignalException ex(
+        _SSignal_crashInfo.signum,
+        _SSignal_crashInfo.faultAddress,
+        nullptr,  // No instruction pointer available with sigsetjmp approach
+        _SSignal_crashInfo.callstack,
+        _SSignal_crashInfo.callstackDepth
+    );
+    _SSignal_crashInfo.hasCrashInfo = false;
+    return ex;
 }
 
 void SInitializeSignals()
@@ -237,68 +259,18 @@ void SStopSignalThread()
     }
 }
 
-// Platform-specific helpers for ucontext manipulation.
-// These allow us to redirect execution after a signal to a trampoline function.
-#if defined(__linux__)
-static void _SSignal_SetInstructionPointer(ucontext_t* ctx, void* target) {
-    #if defined(__x86_64__)
-        ctx->uc_mcontext.gregs[REG_RIP] = (greg_t)target;
-    #elif defined(__aarch64__)
-        ctx->uc_mcontext.pc = (unsigned long)target;
-    #else
-        #error "Unsupported architecture for signal recovery"
-    #endif
-}
-
-static void* _SSignal_GetInstructionPointer(ucontext_t* ctx) {
-    #if defined(__x86_64__)
-        return (void*)ctx->uc_mcontext.gregs[REG_RIP];
-    #elif defined(__aarch64__)
-        return (void*)ctx->uc_mcontext.pc;
-    #else
-        return nullptr;
-    #endif
-}
-#endif
-
-// Trampoline function that runs after the signal handler returns.
-// This executes on the original thread's stack and throws an SSignalException.
-// The signal handler redirects execution here by modifying the instruction pointer in ucontext.
-__attribute__((noinline, noreturn))
-void _SSignal_Trampoline() {
-    // Mark that we're in the trampoline to prevent recursive recovery attempts.
-    _SSignal_inTrampoline = true;
-
-    // Copy crash info from TLS to stack before throwing.
-    SSignalCrashInfo info = _SSignal_crashInfo;
-    _SSignal_crashInfo.hasCrashInfo = false;
-
-    // Throw the exception - this will unwind to the catch block in SThread.
-    throw SSignalException(
-        info.signum,
-        info.faultAddress,
-        info.instructionPointer,
-        info.callstack,
-        info.callstackDepth
-    );
-}
-
 void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
 {
-#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__))
-    // Check if this is a recoverable signal in a recoverable thread.
+    // Check if this is a recoverable signal in a recoverable thread with a recovery point set.
     // SIGABRT is not recoverable - it's usually called intentionally or as a result of another crash.
     bool isRecoverableSignal = (signum == SIGSEGV || signum == SIGFPE || signum == SIGBUS || signum == SIGILL);
 
-    if (isRecoverableSignal && _SSignal_threadIsRecoverable && !_SSignal_inTrampoline && ucontext != nullptr) {
-        ucontext_t* ctx = static_cast<ucontext_t*>(ucontext);
-
-        // Store crash information in thread-local storage for the trampoline.
+    if (isRecoverableSignal && _SSignal_threadIsRecoverable && _SSignal_recoveryPointSet) {
+        // Store crash information in thread-local storage before jumping.
         _SSignal_crashInfo.signum = signum;
         _SSignal_crashInfo.faultAddress = info ? info->si_addr : nullptr;
-        _SSignal_crashInfo.instructionPointer = _SSignal_GetInstructionPointer(ctx);
 
-        // Capture backtrace while we have the original context.
+        // Capture backtrace while we're in the signal handler context.
         // Note: backtrace() is not strictly signal-safe but usually works.
         _SSignal_crashInfo.callstackDepth = backtrace(
             _SSignal_crashInfo.callstack,
@@ -307,16 +279,13 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
         _SSignal_crashInfo.hasCrashInfo = true;
 
         SWARN("Signal " << strsignal(signum) << "(" << signum << ") in recoverable thread, "
-              << "redirecting to exception trampoline. Fault address: " << (info ? info->si_addr : nullptr));
+              << "jumping to recovery point. Fault address: " << (info ? info->si_addr : nullptr));
 
-        // Modify the instruction pointer to point to our trampoline.
-        // When the signal handler returns, execution will resume at the trampoline.
-        _SSignal_SetInstructionPointer(ctx, (void*)&_SSignal_Trampoline);
-
-        // Return from signal handler - execution will resume at trampoline on original thread stack.
-        return;
+        // Jump back to the recovery point set in SThread.
+        // The second argument becomes the return value of sigsetjmp.
+        siglongjmp(_SSignal_recoveryPoint, signum);
+        // Never reaches here
     }
-#endif
 
     if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
         // If we haven't already saved a signal number, we'll do it now. Any signal we catch here will generate a
@@ -463,9 +432,7 @@ vector<string> SSignalException::stackTrace() const noexcept {
 
 void SSignalException::logStackTrace() const noexcept {
     try {
-        SWARN("Signal " << signalName() << " at fault address "
-              << SToHex((uint64_t)_faultAddress)
-              << ", instruction " << SToHex((uint64_t)_instructionPointer));
+        SWARN("Signal " << signalName() << " at fault address " << SToHex((uint64_t)_faultAddress));
         for (const auto& frame : stackTrace()) {
             SWARN("  " << frame);
         }

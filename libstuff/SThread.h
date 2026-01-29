@@ -46,6 +46,27 @@ auto SThread(F&& f, Args&&... args)
         SInitializeSignals();
         SSetThreadRecoverable(true);
 
+        // Set up the recovery point for signal handling using sigsetjmp.
+        // If a signal occurs, the handler will call siglongjmp and sigsetjmp will
+        // "return" with the signal number instead of 0.
+        int signalCaught = sigsetjmp(*SGetRecoveryPoint(), 1);
+        SSetRecoveryPointActive(true);
+
+        if (signalCaught != 0) {
+            // We got here via siglongjmp from the signal handler.
+            // signalCaught contains the signal number.
+            SSetRecoveryPointActive(false);
+            SSetThreadRecoverable(false);
+
+            // Build the exception from the crash info stored by the signal handler.
+            SSignalException ex = SBuildSignalException();
+
+            SWARN("Signal exception in SThread: " << ex.what());
+            ex.logStackTrace();
+            p.set_exception(make_exception_ptr(ex));
+            return;
+        }
+
         try {
             // We call `apply` to use our argments from a tuple as if they were a list of discrete arguments.
             // This is effectively like calling `invoke` and passing the arguments separately.
@@ -71,6 +92,7 @@ auto SThread(F&& f, Args&&... args)
         }
 
         // Restore non-recoverable state (belt-and-suspenders, thread is ending anyway).
+        SSetRecoveryPointActive(false);
         SSetThreadRecoverable(false);
     }
     );

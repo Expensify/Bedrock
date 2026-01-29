@@ -4,6 +4,7 @@
 
 #include <poll.h>
 #include <libgen.h>
+#include <setjmp.h>
 #include <syslog.h>
 
 #include <algorithm>
@@ -276,6 +277,16 @@ void SSetThreadRecoverable(bool recoverable);
 
 // Check if this thread is marked as recoverable.
 bool SIsThreadRecoverable();
+
+// Get the thread-local recovery point for sigsetjmp/siglongjmp signal recovery.
+sigjmp_buf* SGetRecoveryPoint();
+
+// Set whether the recovery point is active (sigsetjmp has been called).
+void SSetRecoveryPointActive(bool active);
+
+// Build an SSignalException from the current thread-local crash info.
+// Called after siglongjmp returns to the recovery point.
+SSignalException SBuildSignalException();
 
 // And also exception stuff.
 string SGetCurrentExceptionName();
