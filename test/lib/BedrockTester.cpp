@@ -579,6 +579,9 @@ SQLite& BedrockTester::getSQLiteDB()
 
 void BedrockTester::freeDB()
 {
+    // IMPORTANT: Do not free the pointer in remote mode. Doing so is both inefficient and unsafe,
+    // as it leads to a dangling reference because executeWaitMultipleData (called in that mode)
+    // might call this function.
     if (!remoteMode) {
         lock_guard<decltype(_dbMutex)> lock(_dbMutex);
         delete _db;
