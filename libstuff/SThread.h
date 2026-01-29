@@ -11,7 +11,8 @@
 using namespace std;
 
 // SThread is a thread wrapper intended to be used in the same way as thread,
-// except that it will trap exceptions and pass them back to the caller as part of a promise.
+// except that it will trap exceptions (including signal-generated exceptions like SIGSEGV)
+// and pass them back to the caller as part of a promise.
 template<class F, class ... Args>
 auto SThread(F&& f, Args&&... args)
 {
@@ -39,6 +40,12 @@ auto SThread(F&& f, Args&&... args)
     // Finally we can create our new thread and pass it our function and arguments.
     thread t(
         [p = move(prom), fn = move(fn), argTuple = move(argTuple)]() mutable {
+        // Initialize signal handling for this thread and mark it as recoverable.
+        // This allows signals like SIGSEGV/SIGFPE to be converted to SSignalException
+        // instead of aborting the process.
+        SInitializeSignals();
+        SSetThreadRecoverable(true);
+
         try {
             // We call `apply` to use our argments from a tuple as if they were a list of discrete arguments.
             // This is effectively like calling `invoke` and passing the arguments separately.
@@ -50,6 +57,11 @@ auto SThread(F&& f, Args&&... args)
             } else {
                 p.set_value(apply(move(fn), move(argTuple)));
             }
+        } catch (const SSignalException& e) {
+            // Signal-generated exception - log stack trace before propagating.
+            SWARN("Signal exception in SThread: " << e.what());
+            e.logStackTrace();
+            p.set_exception(current_exception());
         } catch (const exception& e) {
             SWARN("Uncaught exception in SThread: " << e.what());
             p.set_exception(current_exception());
@@ -57,6 +69,9 @@ auto SThread(F&& f, Args&&... args)
             SWARN("Uncaught exception in SThread: unknown type");
             p.set_exception(current_exception());
         }
+
+        // Restore non-recoverable state (belt-and-suspenders, thread is ending anyway).
+        SSetThreadRecoverable(false);
     }
     );
 

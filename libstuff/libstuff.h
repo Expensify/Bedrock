@@ -169,6 +169,41 @@ public:
 // Utility function for generating pretty callstacks.
 vector<string> SGetCallstack(int depth = 0, void* const* callstack = nullptr) noexcept;
 
+// An SSignalException is thrown when a recoverable thread (started via SThread) receives
+// a signal like SIGSEGV or SIGFPE. Instead of crashing the process, the signal is converted
+// into this exception which can be caught and handled gracefully.
+class SSignalException : public exception {
+private:
+    static const int CALLSTACK_LIMIT = 32;
+    int _signum;
+    void* _faultAddress;
+    void* _instructionPointer;
+    void* _callstack[CALLSTACK_LIMIT];
+    int _depth;
+    mutable string _whatMessage;
+
+public:
+    SSignalException(int signum,
+                     void* faultAddress,
+                     void* instructionPointer,
+                     void* const* callstack,
+                     int depth);
+
+    const char* what() const noexcept override;
+
+    // Accessors
+    int signal() const noexcept { return _signum; }
+    void* faultAddress() const noexcept { return _faultAddress; }
+    void* instructionPointer() const noexcept { return _instructionPointer; }
+
+    // Get demangled stack trace
+    vector<string> stackTrace() const noexcept;
+    void logStackTrace() const noexcept;
+
+    // Signal name for logging
+    const char* signalName() const noexcept;
+};
+
 // --------------------------------------------------------------------------
 // Time stuff TODO: Replace with chrono
 // --------------------------------------------------------------------------
@@ -234,6 +269,13 @@ string SGetSignalDescription();
 void SClearSignals();
 
 void SStopSignalThread();
+
+// Mark this thread as recoverable - signals like SIGSEGV/SIGFPE will be converted
+// to SSignalException instead of aborting. Used by SThread.
+void SSetThreadRecoverable(bool recoverable);
+
+// Check if this thread is marked as recoverable.
+bool SIsThreadRecoverable();
 
 // And also exception stuff.
 string SGetCurrentExceptionName();

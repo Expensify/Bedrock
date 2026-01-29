@@ -17,6 +17,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 #include <libstuff/AutoTimer.h>
+#include <libstuff/SThread.h>
 #include <PageLockGuard.h>
 #include <sqlitecluster/SQLitePeer.h>
 
@@ -2207,12 +2208,14 @@ void BedrockServer::_acceptSockets()
                 }
 
                 // And start up this socket's thread.
+                // We use SThread to enable signal recovery - if a SIGSEGV occurs in the handler,
+                // it will be converted to an exception and the thread will exit gracefully.
                 _outstandingSocketThreads++;
-                thread t;
+                pair<thread, future<void>> threadPair;
                 bool threadStarted = false;
                 while (!threadStarted) {
                     try {
-                        t = thread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
+                        threadPair = SThread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
                         threadStarted = true;
                     } catch (const system_error& e) {
                         // We don't care about this lock here from a performance perspective, it only happens when we
@@ -2246,7 +2249,11 @@ void BedrockServer::_acceptSockets()
                     }
                 }
                 try {
-                    t.detach();
+                    // Detach the thread - it will run independently.
+                    // The future (threadPair.second) is discarded. If handleSocket catches the
+                    // SSignalException (it does), the future sees normal completion. If it doesn't
+                    // catch, the exception is stored in the future but never retrieved.
+                    threadPair.first.detach();
                 } catch (const system_error& e) {
                     SALERT("Caught system_error in thread detach: " << e.code() << ", message: " << e.what());
                     throw;
@@ -2513,6 +2520,10 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                 SWARN("Socket in unhandled state: " << socket.state);
             }
         }
+    } catch (const SSignalException& e) {
+        // Signal-generated exception (SIGSEGV, SIGFPE, etc.) - log with full stack trace.
+        SALERT("handleSocket caught signal " << e.signalName() << " at " << e.faultAddress());
+        e.logStackTrace();
     } catch (const exception& e) {
         SALERT("handleSocket got exception: " << e.what());
     } catch (...) {

@@ -111,6 +111,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "testPostProcessTimeout",
         "EscalateSerializedData",
         "ThreadException",
+        "ThreadSIGSEGV",
+        "ThreadSIGFPE",
         "httpswait"
     };
     for (auto& cmdName : supportedCommands) {
@@ -248,6 +250,53 @@ bool TestPluginCommand::peek(SQLite& db)
             threadpair.second.get();
         }
 
+        return true;
+    } else if (SStartsWith(request.methodLine, "ThreadSIGSEGV")) {
+        // Test SIGSEGV recovery in SThread.
+        auto threadpair = SThread([](){
+            // Deliberately cause SIGSEGV by dereferencing null pointer.
+            int* ptr = nullptr;
+            *ptr = 42;
+        });
+
+        // Wait for the thread to finish.
+        threadpair.first.join();
+
+        // If rethrow is set, try to get the future result which should throw SSignalException.
+        if (request.isSet("rethrow")) {
+            try {
+                threadpair.second.get();
+            } catch (const SSignalException& e) {
+                response.methodLine = "200 Caught SIGSEGV";
+                return true;
+            }
+        }
+
+        response.methodLine = "200 OK";
+        return true;
+    } else if (SStartsWith(request.methodLine, "ThreadSIGFPE")) {
+        // Test SIGFPE recovery in SThread.
+        auto threadpair = SThread([](){
+            // Deliberately cause SIGFPE by dividing by zero.
+            volatile int zero = 0;
+            volatile int result = 1 / zero;
+            (void)result;
+        });
+
+        // Wait for the thread to finish.
+        threadpair.first.join();
+
+        // If rethrow is set, try to get the future result which should throw SSignalException.
+        if (request.isSet("rethrow")) {
+            try {
+                threadpair.second.get();
+            } catch (const SSignalException& e) {
+                response.methodLine = "200 Caught SIGFPE";
+                return true;
+            }
+        }
+
+        response.methodLine = "200 OK";
         return true;
     } else if (SStartsWith(request.methodLine, "EscalateSerializedData")) {
         // Only set this if it's blank. The intention is that it will be blank on a follower, but already set by
