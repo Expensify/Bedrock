@@ -258,7 +258,7 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
     spec.spec.nWrap = 10000;
     spec.spec.nScreenWidth = 10000;
     spec.spec.nLineLimit = 1;
-    spec.spec.nCharLimit = 10000;
+    spec.spec.nCharLimit = 16 * 1024 * 1024;
     spec.spec.nWidth = 0;
     spec.spec.nAlign = 0;
     spec.spec.aWidth = 0;
