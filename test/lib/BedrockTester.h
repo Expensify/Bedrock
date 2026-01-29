@@ -103,7 +103,7 @@ public:
     void autoAttachDebugger();
 
     string serverName;
-    bool databaseOnlineMode;
+    bool remoteMode;
 
 protected:
     // Returns an SQLite object attached to the same DB file as the bedrock server. Writing to this is dangerous and

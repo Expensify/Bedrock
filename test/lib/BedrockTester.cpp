@@ -47,7 +47,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
                              bool startImmediately,
                              const string& bedrockBinary,
                              atomic<uint64_t>* alternateCounter) :
-    databaseOnlineMode(ENABLE_HCTREE),
+    remoteMode(ENABLE_HCTREE),
     _serverPort(serverPort ?: ports.getPort()),
     _nodePort(nodePort ?: ports.getPort()),
     _controlPort(controlPort ?: ports.getPort()),
@@ -568,7 +568,7 @@ SQLite& BedrockTester::getSQLiteDB()
 {
     lock_guard<decltype(_dbMutex)> lock(_dbMutex);
     if (!_db) {
-        if (databaseOnlineMode) {
+        if (remoteMode) {
             _db = new RemoteSQLite(this);
         } else {
             _db = new SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
@@ -579,7 +579,7 @@ SQLite& BedrockTester::getSQLiteDB()
 
 void BedrockTester::freeDB()
 {
-    if (!databaseOnlineMode) {
+    if (!remoteMode) {
         lock_guard<decltype(_dbMutex)> lock(_dbMutex);
         delete _db;
         _db = nullptr;
@@ -614,7 +614,7 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
         return success;
     };
 
-    if (databaseOnlineMode && online) {
+    if (remoteMode && online) {
         string fixedQuery = query;
         if (!SEndsWith(query, ";")) {
             fixedQuery += ";";
@@ -633,7 +633,7 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
         result.deserialize(commandResult[0].content);
 
         return true;
-    } else if (databaseOnlineMode) {
+    } else if (remoteMode) {
         // When tester is in online database mode and online=false we create a temporary sqlite for this specific query
         SQLite db = SQLite(_args["-db"], 1000000, 3000000, -1, 0, ENABLE_HCTREE);
         return runAndRollback(db, query, result);
