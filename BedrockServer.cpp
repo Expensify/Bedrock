@@ -7,6 +7,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
+#include <exception>
 #include <fstream>
 #include <sys/resource.h>
 #include <sys/time.h>
@@ -333,7 +334,14 @@ void BedrockServer::sync()
             try {
                 while (true) {
                     // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-                    command = unique_ptr<BedrockCommand>(nullptr);
+                    if (command) {
+                        try {
+                            command = unique_ptr<BedrockCommand>(nullptr);
+                        } catch (const exception& e) {
+                            SWARN("ENSURE_BUGBOT exception in command destructor:" << e.what());
+                        }
+                    }
+
                     command = _syncNodeQueuedCommands.pop();
                     if (command->initiatingClientID) {
                         // This one came from a local client, so we can save it for later.
@@ -486,7 +494,13 @@ void BedrockServer::sync()
                 AutoTimerTime escalateTime(escalateLoopTimer);
 
                 // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-                command = unique_ptr<BedrockCommand>(nullptr);
+                if (command) {
+                    try {
+                        command = unique_ptr<BedrockCommand>(nullptr);
+                    } catch (const exception& e) {
+                        SWARN("ENSURE_BUGBOT exception in command destructor:" << e.what());
+                    }
+                }
 
                 // Get the next sync node command to work on.
                 command = _syncNodeQueuedCommands.pop();
@@ -552,8 +566,8 @@ void BedrockServer::sync()
                             command->response.clear();
                             command->response.methodLine = "500 Refused";
                             command->complete = true;
-                            _replyAndDelete(command);
                             core.rollback(command->getMethodName());
+                            _replyAndDelete(command);
                             break;
                         }
                     }
@@ -635,17 +649,21 @@ void BedrockServer::sync()
     }
 
     // If there's anything left in the command queue here, we'll discard it, because we have no way of processing it.
-    if (_commandQueue.size()) {
-        SWARN("Sync thread shut down with " << _commandQueue.size() << " queued commands. Commands were: "
-              << SComposeList(_commandQueue.getRequestMethodLines()) << ". Clearing.");
-        _commandQueue.clear();
-    }
+    try {
+        if (_commandQueue.size()) {
+            SWARN("Sync thread shut down with " << _commandQueue.size() << " queued commands. Commands were: "
+                << SComposeList(_commandQueue.getRequestMethodLines()) << ". Clearing.");
+            _commandQueue.clear();
+        }
 
-    // Same for the blocking queue.
-    if (_blockingCommandQueue.size()) {
-        SWARN("Sync thread shut down with " << _blockingCommandQueue.size() << " blocking queued commands. Commands were: "
-              << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
-        _blockingCommandQueue.clear();
+        // Same for the blocking queue.
+        if (_blockingCommandQueue.size()) {
+            SWARN("Sync thread shut down with " << _blockingCommandQueue.size() << " blocking queued commands. Commands were: "
+                << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
+            _blockingCommandQueue.clear();
+        }
+    } catch (const exception& e) {
+        SWARN("ENSURE_BUGBOT received exception when clearing command queues: " << e.what());
     }
 
     for (auto plugin : plugins) {
