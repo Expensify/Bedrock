@@ -10,7 +10,7 @@ for FILENAME in $(git diff --name-only origin/main...`git branch | grep \* | cut
             continue
             ;;
     esac
-    uncrustify -c /vagrant/Bedrock/.uncrustify.cfg -f $FILENAME -o $FILENAME -l CPP;
+    uncrustify -c /vagrant/Bedrock/.uncrustify.cfg --replace --no-backup -l CPP "$FILENAME";
     # Removes occurrences of std:: that aren't in comments and have a leading space (except if it's inside pointer brackets, eg: <std::thing>)
     sed '/^.*\/\/.*/!s/ std::/ /; /^.* std::.*\/\//s/ std::/ /; /^.*\<.*std::.*\>/s/std:://;' "$FILENAME" > "$FILENAME.new";
     mv -f "$FILENAME.new" "$FILENAME"
