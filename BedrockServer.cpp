@@ -2583,3 +2583,14 @@ SQLiteNodeState BedrockServer::getState() const
     // Scripts and tests, as well as the status command, expect this result.
     return SQLiteNodeState::SEARCHING;
 }
+
+void BedrockServer::_deleteCommand(unique_ptr<BedrockCommand>& command) {
+    if (command) {
+            string commandMethodLine = command->request.methodLine;
+        try {
+            command = nullptr;
+        } catch (const exception& e) {
+            SWARN("ENSURE_BUGBOT command (" << commandMethodLine << ") destructor threw: " << e.what());
+        }
+    }
+}

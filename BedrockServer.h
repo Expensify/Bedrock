@@ -312,6 +312,8 @@ private:
     // Each worker thread runs this function. It gets the same data as the sync thread, plus its individual thread ID.
     void worker(int threadId);
 
+    void _deleteCommand(unique_ptr<BedrockCommand>& command);
+
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
     void _replyAndDelete(unique_ptr<BedrockCommand>& command);
