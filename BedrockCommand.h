@@ -54,8 +54,9 @@ public:
     // Constructor to initialize via a request object (by move).
     BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin, bool escalateImmediately_ = false);
 
-    // Destructor.
-    virtual ~BedrockCommand();
+    // Destructor. Marked noexcept(false) to allow derived classes to throw exceptions
+    // that can be caught by the server's exception handling.
+    virtual ~BedrockCommand() noexcept(false);
 
     // Optionally called to execute read-only operations for a command in a separate transaction than the transaction
     // that can execute write operations for a command (i.e. the transaction that runs peek and process). This must be

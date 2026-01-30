@@ -111,7 +111,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "testPostProcessTimeout",
         "EscalateSerializedData",
         "ThreadException",
-        "httpswait"
+        "httpswait",
+        "throwindestruction"
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -146,8 +147,16 @@ void TestPluginCommand::deserializeData(const string& data)
     }
 }
 
-TestPluginCommand::~TestPluginCommand()
+void TestPluginCommand::intentionalThrow()
 {
+    throw runtime_error("Intentional exception in destructor for testing");
+}
+
+TestPluginCommand::~TestPluginCommand() noexcept(false)
+{
+    if (request.methodLine == "throwindestruction") {
+        intentionalThrow();
+    }
     if (request.methodLine == "testescalate") {
         string serverState = SQLiteNode::stateName(plugin().server.getState());
         string statString = "Destroying testescalate (" + serverState + ")\n";
@@ -374,6 +383,10 @@ bool TestPluginCommand::peek(SQLite& db)
             STHROW("500 expected 200 response");
         }
         response.content = httpsRequests.back()->fullResponse.content;
+        return true;
+    } else if (SStartsWith(request.methodLine, "throwindestruction")) {
+        // This command completes normally, but throws in the destructor to test exception handling.
+        response.methodLine = "200 OK";
         return true;
     } else if (SStartsWith(request.methodLine, "chainedrequest")) {
         // Let's see what the user wanted to request.

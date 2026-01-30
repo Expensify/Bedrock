@@ -83,7 +83,7 @@ int64_t BedrockCommand::_getTimeout(const SData& request, const uint64_t schedul
     return timeout + scheduledTime;
 }
 
-BedrockCommand::~BedrockCommand()
+BedrockCommand::~BedrockCommand() noexcept(false)
 {
     for (auto request : httpsRequests) {
         request->manager.closeTransaction(request);

@@ -48,7 +48,7 @@ public:
 class TestPluginCommand : public BedrockCommand {
 public:
     TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_TestPlugin* plugin);
-    ~TestPluginCommand();
+    ~TestPluginCommand() noexcept(false);
     virtual void prePeek(SQLite& db) override;
     virtual bool peek(SQLite& db) override;
     virtual void process(SQLite& db) override;
@@ -67,6 +67,8 @@ private:
     {
         return static_cast<BedrockPlugin_TestPlugin&>(*_plugin);
     }
+
+    void intentionalThrow();
 
     bool pendingResult;
     string chainedHTTPResponseContent;

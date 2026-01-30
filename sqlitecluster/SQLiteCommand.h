@@ -70,7 +70,7 @@ public:
     SQLiteCommand& operator=(SQLiteCommand&& from) noexcept;
 
     // Destructor.
-    virtual ~SQLiteCommand()
+    virtual ~SQLiteCommand() noexcept(false)
     {
     }
 };
