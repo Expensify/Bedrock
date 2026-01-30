@@ -641,14 +641,14 @@ void BedrockServer::sync()
     // If there's anything left in the command queue here, we'll discard it, because we have no way of processing it.
     if (_commandQueue.size()) {
         SWARN("Sync thread shut down with " << _commandQueue.size() << " queued commands. Commands were: "
-                << SComposeList(_commandQueue.getRequestMethodLines()) << ". Clearing.");
+              << SComposeList(_commandQueue.getRequestMethodLines()) << ". Clearing.");
         _commandQueue.clear();
     }
 
     // Same for the blocking queue.
     if (_blockingCommandQueue.size()) {
         SWARN("Sync thread shut down with " << _blockingCommandQueue.size() << " blocking queued commands. Commands were: "
-                << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
+              << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
         _blockingCommandQueue.clear();
     }
 
