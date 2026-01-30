@@ -432,7 +432,7 @@ void BedrockServer::sync()
                     // Otherwise, save the commit count, mark this command as complete, and reply.
                     command->response["commitCount"] = to_string(db.getCommitCount());
                     command->complete = true;
-                    _reply(command);
+                    _replyAndDelete(command);
                 } else {
                     SINFO("Sync thread finished committing non-command");
                 }
@@ -527,7 +527,7 @@ void BedrockServer::sync()
                         // We'll respond to it now, either directly or by sending it back to the sync thread.
                         if (command->complete) {
                             SINFO("Command completed in prePeek, replying now.");
-                            _reply(command);
+                            _replyAndDelete(command);
                             break;
                         }
 
@@ -536,7 +536,7 @@ void BedrockServer::sync()
                             // This command completed in peek, respond to it appropriately, either directly or by sending it
                             // back to the sync thread.
                             SASSERT(command->complete);
-                            _reply(command);
+                            _replyAndDelete(command);
 
                             break;
                         } else if (result == BedrockCore::RESULT::SHOULD_PROCESS) {
@@ -552,7 +552,7 @@ void BedrockServer::sync()
                             command->response.clear();
                             command->response.methodLine = "500 Refused";
                             command->complete = true;
-                            _reply(command);
+                            _replyAndDelete(command);
                             core.rollback(command->getMethodName());
                             break;
                         }
@@ -578,7 +578,7 @@ void BedrockServer::sync()
                     } else if (result == BedrockCore::RESULT::NO_COMMIT_REQUIRED) {
                         // Otherwise, the command doesn't need a commit (maybe it was an error, or it didn't have any work
                         // to do). We'll just respond.
-                        _reply(command);
+                        _replyAndDelete(command);
                     } else if (result == BedrockCore::RESULT::SERVER_NOT_LEADING) {
                         SINFO("Server stopped leading, re-queueing commad");
                         _commandQueue.push(move(command));
@@ -763,7 +763,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         SALERT("REJECTING CRASH-INDUCING COMMAND, command:" + command->request.methodLine, command->request.nameValueMap);
         command->response.methodLine = "500 Refused";
         command->complete = true;
-        _reply(command);
+        _replyAndDelete(command);
         return;
     }
 
@@ -773,7 +773,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         // It's feasible that our command times out in this loop. In this case, we do not have a DB object to pass.
         // The only implication of this is the response does not get the commitCount attached to it.
         if (BedrockCore::isTimedOut(command, nullptr, this)) {
-            _reply(command);
+            _replyAndDelete(command);
             return;
         }
 
@@ -827,7 +827,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         // client that we can't respond to, so we don't bother sending the response.
         SASSERT(command->initiatingClientID);
         if (command->initiatingClientID > 0) {
-            _reply(command);
+            _replyAndDelete(command);
         }
 
         // This command is done, move on to the next one.
@@ -874,7 +874,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
             // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
             if (core.isTimedOut(command, &db, this)) {
-                _reply(command);
+                _replyAndDelete(command);
                 return;
             }
 
@@ -907,7 +907,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 core.prePeekCommand(command, isBlocking);
 
                 if (command->complete) {
-                    _reply(command);
+                    _replyAndDelete(command);
                     break;
                 }
             }
@@ -974,7 +974,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             _syncNodeQueuedCommands.push(move(command));
                         } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
                             SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
-                            _reply(command);
+                            _replyAndDelete(command);
                         } else {
                             // TODO: Something less naive that considers how these failures happen rather than a simple
                             // endless loop of requeue and retry.
@@ -1054,7 +1054,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         if (command->httpsRequests.size()) {
                             SALERT("Server stopped leading while running command with HTTPS requests!");
                             command->response.methodLine = "500 Leader stopped leading";
-                            _reply(command);
+                            _replyAndDelete(command);
                             break;
                         } else {
                             // Allow for an extra retry and start from the top.
@@ -1072,7 +1072,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     // PostProcess if the command should run postProcess, and there have been no errors thrown thus far.
                     core.postProcessCommand(command, isBlocking);
                 }
-                _reply(command);
+                _replyAndDelete(command);
 
                 // Don't need to retry.
                 break;
@@ -1134,7 +1134,7 @@ bool BedrockServer::_handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& 
 {
     if (_isStatusCommand(command)) {
         _status(command);
-        _reply(command);
+        _replyAndDelete(command);
         return true;
     } else if (_isControlCommand(command)) {
         // Control commands can only come from localhost (and thus have an empty `_source`)
@@ -1146,7 +1146,7 @@ bool BedrockServer::_handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& 
                   << command->request["_source"] << "). Ignoring.");
             command->response.methodLine = "401 Unauthorized";
         }
-        _reply(command);
+        _replyAndDelete(command);
         return true;
     }
     return false;
@@ -1555,7 +1555,7 @@ unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLit
     return make_unique<BedrockCommand>(move(*baseCommand), nullptr);
 }
 
-void BedrockServer::_reply(unique_ptr<BedrockCommand>& command)
+void BedrockServer::_replyAndDelete(unique_ptr<BedrockCommand>& command)
 {
     // Finalize timing info even for commands we won't respond to (this makes this data available in logs).
     command->finalizeTimingInfo();
@@ -1609,6 +1609,14 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command)
             SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
         }
         command->handleFailedReply();
+    }
+
+    // Delete the existing command, catch any exceptions that are thrown by the destructor (which is a bug).
+    string commandMethodLine = command->request.methodLine;
+    try {
+        command = nullptr;
+    } catch (const exception& e) {
+        SWARN("ENSURE_BUGBOT Command destructor failed for command " << commandMethodLine << ", error: " << e.what());
     }
 }
 
@@ -2444,7 +2452,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             // port can remain open through shutdown (in the case of detaching) and can expect DB access,
                             // which is being turned off, these could cause weird crashes. Instead, just return an error.
                             command->response.methodLine = "500 Server Shutting Down";
-                            _reply(command);
+                            _replyAndDelete(command);
                         } else {
                             // If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.
                             // If the command has a socket (it's this socket) then we need to wait for it to finish before

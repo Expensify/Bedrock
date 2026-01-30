@@ -314,7 +314,7 @@ private:
 
     // Send a reply for a completed command back to the initiating client. If the `originator` of the command is set,
     // then this is an error, as the command should have been sent back to a peer.
-    void _reply(unique_ptr<BedrockCommand>& command);
+    void _replyAndDelete(unique_ptr<BedrockCommand>& command);
 
     // The following are constants used as methodlines by status command requests.
     static constexpr auto STATUS_IS_FOLLOWER = "GET /status/isFollower HTTP/1.1";
