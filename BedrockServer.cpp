@@ -652,14 +652,14 @@ void BedrockServer::sync()
     try {
         if (_commandQueue.size()) {
             SWARN("Sync thread shut down with " << _commandQueue.size() << " queued commands. Commands were: "
-                << SComposeList(_commandQueue.getRequestMethodLines()) << ". Clearing.");
+                  << SComposeList(_commandQueue.getRequestMethodLines()) << ". Clearing.");
             _commandQueue.clear();
         }
 
         // Same for the blocking queue.
         if (_blockingCommandQueue.size()) {
             SWARN("Sync thread shut down with " << _blockingCommandQueue.size() << " blocking queued commands. Commands were: "
-                << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
+                  << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
             _blockingCommandQueue.clear();
         }
     } catch (const exception& e) {
@@ -2584,9 +2584,10 @@ SQLiteNodeState BedrockServer::getState() const
     return SQLiteNodeState::SEARCHING;
 }
 
-void BedrockServer::_deleteCommand(unique_ptr<BedrockCommand>& command) {
+void BedrockServer::_deleteCommand(unique_ptr<BedrockCommand>& command)
+{
     if (command) {
-            string commandMethodLine = command->request.methodLine;
+        string commandMethodLine = command->request.methodLine;
         try {
             command = nullptr;
         } catch (const exception& e) {
