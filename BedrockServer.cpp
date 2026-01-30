@@ -334,13 +334,8 @@ void BedrockServer::sync()
             try {
                 while (true) {
                     // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-                    if (command) {
-                        try {
-                            command = unique_ptr<BedrockCommand>(nullptr);
-                        } catch (const exception& e) {
-                            SWARN("ENSURE_BUGBOT exception in command destructor:" << e.what());
-                        }
-                    }
+                    // We do this explicitly because otherwise it can wait for as long as `pop` takes to get another command.
+                    _deleteCommand(command);
 
                     command = _syncNodeQueuedCommands.pop();
                     if (command->initiatingClientID) {
@@ -494,13 +489,8 @@ void BedrockServer::sync()
                 AutoTimerTime escalateTime(escalateLoopTimer);
 
                 // Reset this to blank. This releases the existing command and allows it to get cleaned up.
-                if (command) {
-                    try {
-                        command = unique_ptr<BedrockCommand>(nullptr);
-                    } catch (const exception& e) {
-                        SWARN("ENSURE_BUGBOT exception in command destructor:" << e.what());
-                    }
-                }
+                // We do this explicitly because otherwise it can wait for as long as `pop` takes to get another command.
+                _deleteCommand(command);
 
                 // Get the next sync node command to work on.
                 command = _syncNodeQueuedCommands.pop();
@@ -649,21 +639,17 @@ void BedrockServer::sync()
     }
 
     // If there's anything left in the command queue here, we'll discard it, because we have no way of processing it.
-    try {
-        if (_commandQueue.size()) {
-            SWARN("Sync thread shut down with " << _commandQueue.size() << " queued commands. Commands were: "
-                  << SComposeList(_commandQueue.getRequestMethodLines()) << ". Clearing.");
-            _commandQueue.clear();
-        }
+    if (_commandQueue.size()) {
+        SWARN("Sync thread shut down with " << _commandQueue.size() << " queued commands. Commands were: "
+                << SComposeList(_commandQueue.getRequestMethodLines()) << ". Clearing.");
+        _commandQueue.clear();
+    }
 
-        // Same for the blocking queue.
-        if (_blockingCommandQueue.size()) {
-            SWARN("Sync thread shut down with " << _blockingCommandQueue.size() << " blocking queued commands. Commands were: "
-                  << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
-            _blockingCommandQueue.clear();
-        }
-    } catch (const exception& e) {
-        SWARN("ENSURE_BUGBOT received exception when clearing command queues: " << e.what());
+    // Same for the blocking queue.
+    if (_blockingCommandQueue.size()) {
+        SWARN("Sync thread shut down with " << _blockingCommandQueue.size() << " blocking queued commands. Commands were: "
+                << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
+        _blockingCommandQueue.clear();
     }
 
     for (auto plugin : plugins) {
@@ -1629,13 +1615,8 @@ void BedrockServer::_replyAndDelete(unique_ptr<BedrockCommand>& command)
         command->handleFailedReply();
     }
 
-    // Delete the existing command, catch any exceptions that are thrown by the destructor (which is a bug).
-    string commandMethodLine = command->request.methodLine;
-    try {
-        command = nullptr;
-    } catch (const exception& e) {
-        SWARN("ENSURE_BUGBOT Command destructor failed for command " << commandMethodLine << ", error: " << e.what());
-    }
+    // Explcitly delete the existing command so we can catch any exceptions that might throw.
+    _deleteCommand(command);
 }
 
 void BedrockServer::blockCommandPort(const string& reason)
