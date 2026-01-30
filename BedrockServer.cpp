@@ -2208,14 +2208,18 @@ void BedrockServer::_acceptSockets()
                 }
 
                 // And start up this socket's thread.
-                // We use SThread to enable signal recovery - if a SIGSEGV occurs in the handler,
+                // We use SThreadWithCleanup to enable signal recovery - if a SIGSEGV occurs in the handler,
                 // it will be converted to an exception and the thread will exit gracefully.
+                // The cleanup callback ensures _outstandingSocketThreads is decremented even when
+                // siglongjmp skips the normal cleanup code in handleSocket.
                 _outstandingSocketThreads++;
                 pair<thread, future<void>> threadPair;
                 bool threadStarted = false;
                 while (!threadStarted) {
                     try {
-                        threadPair = SThread(&BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
+                        threadPair = SThreadWithCleanup(
+                            [this]() { _socketThreadCleanup(); },
+                            &BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
                         threadStarted = true;
                     } catch (const system_error& e) {
                         // We don't care about this lock here from a performance perspective, it only happens when we
@@ -2530,8 +2534,16 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
         SALERT("handleSocket got unknown exception");
     }
 
-    // At this point out socket is closed and we can clean up.
-    // Note that we never return early, we always want to hit this code and decrement our counter and clean up our socket.
+    // Cleanup is handled by SThreadWithCleanup callback - see _socketThreadCleanup().
+    // This ensures cleanup happens even if a signal (SIGSEGV, etc.) causes siglongjmp
+    // to skip the normal function exit.
+}
+
+void BedrockServer::_socketThreadCleanup()
+{
+    // Decrement our counter and check if we need to unblock new socket threads.
+    // This is called from SThreadWithCleanup to ensure it runs even if a signal
+    // causes siglongjmp to skip the normal handleSocket exit.
     _outstandingSocketThreads--;
     SINFO("[performance] Socket thread complete (" << _outstandingSocketThreads << " remaining).");
 

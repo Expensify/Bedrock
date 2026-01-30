@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 #include <format>
 
@@ -173,11 +174,11 @@ void SInitializeSignals()
     // This is the signal action structure we'll use to specify what to listen for.
     struct sigaction newAction = {};
 
-    // The old style handler is explicitly null
-    newAction.sa_handler = nullptr;
-    newAction.sa_flags = SA_ONSTACK;
+    // SA_SIGINFO is required to use sa_sigaction (three-argument handler) instead of sa_handler.
+    // SA_ONSTACK uses the alternate signal stack set up above.
+    newAction.sa_flags = SA_SIGINFO | SA_ONSTACK;
 
-    // The new style handler is _SSignal_StackTrace.
+    // The three-argument signal handler that receives siginfo_t with fault details.
     newAction.sa_sigaction = &_SSignal_StackTrace;
 
     // While we're inside the signal handler, we want to block any other signals from occurring until we return.
@@ -265,6 +266,11 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
     // SIGABRT is not recoverable - it's usually called intentionally or as a result of another crash.
     bool isRecoverableSignal = (signum == SIGSEGV || signum == SIGFPE || signum == SIGBUS || signum == SIGILL);
 
+    // Debug: log recovery state
+    SWARN("Signal handler: tid=" << syscall(SYS_gettid) << " signum=" << signum << " isRecoverable=" << isRecoverableSignal
+          << " threadRecoverable=" << _SSignal_threadIsRecoverable
+          << " recoveryPointSet=" << _SSignal_recoveryPointSet);
+
     if (isRecoverableSignal && _SSignal_threadIsRecoverable && _SSignal_recoveryPointSet) {
         // Store crash information in thread-local storage before jumping.
         _SSignal_crashInfo.signum = signum;
@@ -345,7 +351,8 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
                 SWARN(fullLogLine);
                 if (fd != -1) {
                     fullLogLine = format("{}{}", fullLogLine, "\n");
-                    write(fd, fullLogLine.c_str(), strlen(fullLogLine.c_str()));
+                    // Ignore return value - we're in a signal handler and can't do much if write fails.
+                    [[maybe_unused]] auto _ = write(fd, fullLogLine.c_str(), strlen(fullLogLine.c_str()));
                 }
                 free(frame);
             }
@@ -366,7 +373,8 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
             // Finish writing the crash file with the request details if it exists
             if (fd != -1 && !logMessage.empty()) {
                 logMessage += "\n";
-                write(fd, logMessage.c_str(), strlen(logMessage.c_str()));
+                // Ignore return value - we're in a signal handler and can't do much if write fails.
+                [[maybe_unused]] auto __ = write(fd, logMessage.c_str(), strlen(logMessage.c_str()));
             }
             close(fd);
 

@@ -1,5 +1,6 @@
 #include "TestPlugin.h"
 
+#include <csignal>
 #include <dlfcn.h>
 #include <iostream>
 #include <sys/file.h>
@@ -277,10 +278,8 @@ bool TestPluginCommand::peek(SQLite& db)
     } else if (SStartsWith(request.methodLine, "ThreadSIGFPE")) {
         // Test SIGFPE recovery in SThread.
         auto threadpair = SThread([](){
-            // Deliberately cause SIGFPE by dividing by zero.
-            volatile int zero = 0;
-            volatile int result = 1 / zero;
-            (void)result;
+            // Raise SIGFPE explicitly - division by zero doesn't reliably raise SIGFPE on all systems.
+            raise(SIGFPE);
         });
 
         // Wait for the thread to finish.
