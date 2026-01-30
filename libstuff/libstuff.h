@@ -193,9 +193,20 @@ public:
     const char* what() const noexcept override;
 
     // Accessors
-    int signal() const noexcept { return _signum; }
-    void* faultAddress() const noexcept { return _faultAddress; }
-    void* instructionPointer() const noexcept { return _instructionPointer; }
+    int signal() const noexcept
+    {
+        return _signum;
+    }
+
+    void* faultAddress() const noexcept
+    {
+        return _faultAddress;
+    }
+
+    void* instructionPointer() const noexcept
+    {
+        return _instructionPointer;
+    }
 
     // Get demangled stack trace
     vector<string> stackTrace() const noexcept;

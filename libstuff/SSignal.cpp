@@ -59,7 +59,8 @@ thread_local sigjmp_buf _SSignal_recoveryPoint;
 thread_local bool _SSignal_recoveryPointSet = false;
 
 // Thread-local storage for crash info to be passed back after siglongjmp.
-struct SSignalCrashInfo {
+struct SSignalCrashInfo
+{
     int signum;
     void* faultAddress;
     void* callstack[32];
@@ -403,20 +404,21 @@ SSignalException::SSignalException(int signum,
                                    void* const* callstack,
                                    int depth)
     : _signum(signum),
-      _faultAddress(faultAddress),
-      _instructionPointer(instructionPointer),
-      _depth(min(depth, CALLSTACK_LIMIT))
+    _faultAddress(faultAddress),
+    _instructionPointer(instructionPointer),
+    _depth(min(depth, CALLSTACK_LIMIT))
 {
     if (callstack && _depth > 0) {
         memcpy(_callstack, callstack, _depth * sizeof(void*));
     }
 }
 
-const char* SSignalException::what() const noexcept {
+const char* SSignalException::what() const noexcept
+{
     if (_whatMessage.empty()) {
         // Build message lazily to avoid issues in constructor context.
         try {
-            _whatMessage = "Signal " + string(signalName()) + " at address " + SToHex((uint64_t)_faultAddress);
+            _whatMessage = "Signal " + string(signalName()) + " at address " + SToHex((uint64_t) _faultAddress);
         } catch (...) {
             _whatMessage = "Signal exception";
         }
@@ -424,23 +426,30 @@ const char* SSignalException::what() const noexcept {
     return _whatMessage.c_str();
 }
 
-const char* SSignalException::signalName() const noexcept {
+const char* SSignalException::signalName() const noexcept
+{
     switch (_signum) {
         case SIGSEGV: return "SIGSEGV";
+
         case SIGFPE:  return "SIGFPE";
+
         case SIGBUS:  return "SIGBUS";
+
         case SIGILL:  return "SIGILL";
+
         default:      return "UNKNOWN";
     }
 }
 
-vector<string> SSignalException::stackTrace() const noexcept {
+vector<string> SSignalException::stackTrace() const noexcept
+{
     return SGetCallstack(_depth, _callstack);
 }
 
-void SSignalException::logStackTrace() const noexcept {
+void SSignalException::logStackTrace() const noexcept
+{
     try {
-        SWARN("Signal " << signalName() << " at fault address " << SToHex((uint64_t)_faultAddress));
+        SWARN("Signal " << signalName() << " at fault address " << SToHex((uint64_t) _faultAddress));
         for (const auto& frame : stackTrace()) {
             SWARN("  " << frame);
         }

@@ -5,9 +5,9 @@ struct SignalExceptionTest : tpunit::TestFixture
 {
     SignalExceptionTest()
         : tpunit::TestFixture("SignalException",
-            TEST(SignalExceptionTest::testThreadSIGSEGV),
-            TEST(SignalExceptionTest::testThreadSIGFPE),
-            TEST(SignalExceptionTest::testSocketThreadSIGSEGV))
+                              TEST(SignalExceptionTest::testThreadSIGSEGV),
+                              TEST(SignalExceptionTest::testThreadSIGFPE),
+                              TEST(SignalExceptionTest::testSocketThreadSIGSEGV))
     {
     }
 

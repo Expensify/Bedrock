@@ -125,7 +125,8 @@ auto _SThreadImpl(Cleanup&& cleanup, F&& f, Args&&... args)
 template<class F, class ... Args>
 auto SThread(F&& f, Args&&... args)
 {
-    return _SThreadImpl([](){}, forward<F>(f), forward<Args>(args)...);
+    return _SThreadImpl([](){
+                             }, forward<F>(f), forward<Args>(args)...);
 }
 
 // SThreadWithCleanup is like SThread but takes a cleanup callback that is guaranteed

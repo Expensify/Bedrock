@@ -2218,7 +2218,9 @@ void BedrockServer::_acceptSockets()
                 while (!threadStarted) {
                     try {
                         threadPair = SThreadWithCleanup(
-                            [this]() { _socketThreadCleanup(); },
+                            [this]() {
+                            _socketThreadCleanup();
+                                                               },
                             &BedrockServer::handleSocket, this, move(socket), port == _controlPort, port == _commandPortPublic, port == _commandPortPrivate);
                         threadStarted = true;
                     } catch (const system_error& e) {
