@@ -6,8 +6,11 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 #include <format>
+
+// setjmp.h is included via libstuff.h for signal recovery
 
 thread_local function<string()> SSignalHandlerDieFunc;
 void SSetSignalHandlerDieFunc(function<string()>&& func)
@@ -44,6 +47,27 @@ thread _SSignal_signalThread;
 // Each thread gets an int it can store a signal number in. Since all signals caught by threads result in
 // `abort()`, this records the original signal number until the signal handler for abort has a chance to log it.
 thread_local int _SSignal_threadCaughtSignalNumber = 0;
+
+// Thread-local flag indicating this thread should convert signals to exceptions instead of aborting.
+// Used by SThread to enable graceful recovery from SIGSEGV/SIGFPE.
+thread_local bool _SSignal_threadIsRecoverable = false;
+
+// Thread-local jump buffer for signal recovery via sigsetjmp/siglongjmp.
+thread_local sigjmp_buf _SSignal_recoveryPoint;
+
+// Thread-local flag indicating whether the recovery point has been set (sigsetjmp called).
+thread_local bool _SSignal_recoveryPointSet = false;
+
+// Thread-local storage for crash info to be passed back after siglongjmp.
+struct SSignalCrashInfo
+{
+    int signum;
+    void* faultAddress;
+    void* callstack[32];
+    int callstackDepth;
+    bool hasCrashInfo;
+};
+thread_local SSignalCrashInfo _SSignal_crashInfo = {0, nullptr, {}, 0, false};
 
 // The number of termination signals received so far.
 atomic<uint64_t> _SSignal_terminationCount(0);
@@ -89,6 +113,39 @@ void SClearSignals()
     _SSignal_pendingSignalBitMask.store(0);
 }
 
+void SSetThreadRecoverable(bool recoverable)
+{
+    _SSignal_threadIsRecoverable = recoverable;
+}
+
+bool SIsThreadRecoverable()
+{
+    return _SSignal_threadIsRecoverable;
+}
+
+sigjmp_buf* SGetRecoveryPoint()
+{
+    return &_SSignal_recoveryPoint;
+}
+
+void SSetRecoveryPointActive(bool active)
+{
+    _SSignal_recoveryPointSet = active;
+}
+
+SSignalException SBuildSignalException()
+{
+    SSignalException ex(
+        _SSignal_crashInfo.signum,
+        _SSignal_crashInfo.faultAddress,
+        nullptr,  // No instruction pointer available with sigsetjmp approach
+        _SSignal_crashInfo.callstack,
+        _SSignal_crashInfo.callstackDepth
+    );
+    _SSignal_crashInfo.hasCrashInfo = false;
+    return ex;
+}
+
 void SInitializeSignals()
 {
     // Our default die function does nothing.
@@ -118,11 +175,11 @@ void SInitializeSignals()
     // This is the signal action structure we'll use to specify what to listen for.
     struct sigaction newAction = {};
 
-    // The old style handler is explicitly null
-    newAction.sa_handler = nullptr;
-    newAction.sa_flags = SA_ONSTACK;
+    // SA_SIGINFO is required to use sa_sigaction (three-argument handler) instead of sa_handler.
+    // SA_ONSTACK uses the alternate signal stack set up above.
+    newAction.sa_flags = SA_SIGINFO | SA_ONSTACK;
 
-    // The new style handler is _SSignal_StackTrace.
+    // The three-argument signal handler that receives siginfo_t with fault details.
     newAction.sa_sigaction = &_SSignal_StackTrace;
 
     // While we're inside the signal handler, we want to block any other signals from occurring until we return.
@@ -206,6 +263,37 @@ void SStopSignalThread()
 
 void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
 {
+    // Check if this is a recoverable signal in a recoverable thread with a recovery point set.
+    // SIGABRT is not recoverable - it's usually called intentionally or as a result of another crash.
+    bool isRecoverableSignal = (signum == SIGSEGV || signum == SIGFPE || signum == SIGBUS || signum == SIGILL);
+
+    // Debug: log recovery state
+    SWARN("Signal handler: tid=" << syscall(SYS_gettid) << " signum=" << signum << " isRecoverable=" << isRecoverableSignal
+          << " threadRecoverable=" << _SSignal_threadIsRecoverable
+          << " recoveryPointSet=" << _SSignal_recoveryPointSet);
+
+    if (isRecoverableSignal && _SSignal_threadIsRecoverable && _SSignal_recoveryPointSet) {
+        // Store crash information in thread-local storage before jumping.
+        _SSignal_crashInfo.signum = signum;
+        _SSignal_crashInfo.faultAddress = info ? info->si_addr : nullptr;
+
+        // Capture backtrace while we're in the signal handler context.
+        // Note: backtrace() is not strictly signal-safe but usually works.
+        _SSignal_crashInfo.callstackDepth = backtrace(
+            _SSignal_crashInfo.callstack,
+            sizeof(_SSignal_crashInfo.callstack) / sizeof(void*)
+        );
+        _SSignal_crashInfo.hasCrashInfo = true;
+
+        SWARN("Signal " << strsignal(signum) << "(" << signum << ") in recoverable thread, "
+              << "jumping to recovery point. Fault address: " << (info ? info->si_addr : nullptr));
+
+        // Jump back to the recovery point set in SThread.
+        // The second argument becomes the return value of sigsetjmp.
+        siglongjmp(_SSignal_recoveryPoint, signum);
+        // Never reaches here
+    }
+
     if (signum == SIGSEGV || signum == SIGABRT || signum == SIGFPE || signum == SIGILL || signum == SIGBUS) {
         // If we haven't already saved a signal number, we'll do it now. Any signal we catch here will generate a
         // second ABORT signal, and we don't want that to overwrite this value, so we only set it if unset.
@@ -264,7 +352,8 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
                 SWARN(fullLogLine);
                 if (fd != -1) {
                     fullLogLine = format("{}{}", fullLogLine, "\n");
-                    write(fd, fullLogLine.c_str(), strlen(fullLogLine.c_str()));
+                    // Ignore return value - we're in a signal handler and can't do much if write fails.
+                    [[maybe_unused]] auto _ = write(fd, fullLogLine.c_str(), strlen(fullLogLine.c_str()));
                 }
                 free(frame);
             }
@@ -285,7 +374,8 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
             // Finish writing the crash file with the request details if it exists
             if (fd != -1 && !logMessage.empty()) {
                 logMessage += "\n";
-                write(fd, logMessage.c_str(), strlen(logMessage.c_str()));
+                // Ignore return value - we're in a signal handler and can't do much if write fails.
+                [[maybe_unused]] auto __ = write(fd, logMessage.c_str(), strlen(logMessage.c_str()));
             }
             close(fd);
 
@@ -304,5 +394,66 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
         }
     } else {
         SALERT("Non-signal thread got signal " << strsignal(signum) << "(" << signum << "), which wasn't expected");
+    }
+}
+
+// SSignalException implementation
+SSignalException::SSignalException(int signum,
+                                   void* faultAddress,
+                                   void* instructionPointer,
+                                   void* const* callstack,
+                                   int depth)
+    : _signum(signum),
+    _faultAddress(faultAddress),
+    _instructionPointer(instructionPointer),
+    _depth(min(depth, CALLSTACK_LIMIT))
+{
+    if (callstack && _depth > 0) {
+        memcpy(_callstack, callstack, _depth * sizeof(void*));
+    }
+}
+
+const char* SSignalException::what() const noexcept
+{
+    if (_whatMessage.empty()) {
+        // Build message lazily to avoid issues in constructor context.
+        try {
+            _whatMessage = "Signal " + string(signalName()) + " at address " + SToHex((uint64_t) _faultAddress);
+        } catch (...) {
+            _whatMessage = "Signal exception";
+        }
+    }
+    return _whatMessage.c_str();
+}
+
+const char* SSignalException::signalName() const noexcept
+{
+    switch (_signum) {
+        case SIGSEGV: return "SIGSEGV";
+
+        case SIGFPE:  return "SIGFPE";
+
+        case SIGBUS:  return "SIGBUS";
+
+        case SIGILL:  return "SIGILL";
+
+        default:      return "UNKNOWN";
+    }
+}
+
+vector<string> SSignalException::stackTrace() const noexcept
+{
+    return SGetCallstack(_depth, _callstack);
+}
+
+void SSignalException::logStackTrace() const noexcept
+{
+    try {
+        SWARN("Signal " << signalName() << " at fault address " << SToHex((uint64_t) _faultAddress));
+        for (const auto& frame : stackTrace()) {
+            SWARN("  " << frame);
+        }
+    } catch (...) {
+        // Logging failed, but we're noexcept so just ignore.
     }
 }

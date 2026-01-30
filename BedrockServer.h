@@ -346,6 +346,10 @@ private:
     // those ports.
     void _acceptSockets();
 
+    // Cleanup callback for socket threads. Called from SThreadWithCleanup to ensure
+    // cleanup happens even if a signal causes siglongjmp to skip normal function exit.
+    void _socketThreadCleanup();
+
     // This stars the server shutting down.
     void _beginShutdown(const string& reason, bool detach = false);
 
