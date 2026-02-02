@@ -29,7 +29,7 @@ jobs:
         repository: Expensify/Bedrock
         path: .
         # Set fetch-depth to 0 so that we can compare HEAD with all git log history
-        fetch-depth: 0
+        fetch-depth: 1
     - name: Run style checks
       run: "./ci_style.sh"
 
