@@ -34,7 +34,7 @@ done
 
 cd test
 mark_fold start test_bedrock
-./test -threads 64 $ENABLE_HCTREE_FLAG
+./test -threads 128 $ENABLE_HCTREE_FLAG
 mark_fold end test_bedrock
 
 cd clustertest
