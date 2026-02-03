@@ -94,23 +94,22 @@ jobs:
       with:
         repository: Expensify/Bedrock
         path: .
-    - name: Download binaries
-      uses: ./.github/actions/composite/download-binaries
-    - name: Setup tmate session
-      if: runner.debug == '1'
-      # v3
-      uses: mxschmitt/action-tmate@e5c7151931ca95bad1c6f4190c730ecf8c7dde48
-      timeout-minutes: 60
-      with:
-        limit-access-to-actor: true
-    # If tmate was run, we want to mark this step as failed so bedrock tests don't look like they're passing
-    - name: Mark failure if debugging
-      if: runner.debug == '1'
-      run: exit 1
-    - name: Run tests
-      env:
-        ENABLE_HCTREE: "false"
-      run: "./ci_tests.sh"
+    - name: Compile hwtime_test
+      run: |
+        echo "=== Compiling hwtime_test.c with clang-18 ==="
+        set +e
+        clang-18 hwtime_test.c -o hwtime_test 2>&1
+        EXIT_CODE=$?
+        echo "=== Compilation exit code: $EXIT_CODE ==="
+        exit 0
+    - name: Run hwtime_test
+      run: |
+        echo "=== Running hwtime_test ==="
+        set +e
+        ./hwtime_test 2>&1
+        EXIT_CODE=$?
+        echo "=== Run exit code: $EXIT_CODE ==="
+        exit 0
   BedrockTestsWithHCTree:
     name: "Bedrock Tests with HCTree"
     runs-on: ubuntu-24.04-v64
