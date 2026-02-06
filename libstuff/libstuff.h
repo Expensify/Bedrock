@@ -263,10 +263,9 @@ void SSyslogNoop(int priority, const char* format, ...);
 extern atomic<void (*)(int priority, const char* format, ...)> SSyslogFunc;
 
 // --------------------------------------------------------------------------
-// Fluentd JSON logging support
+// Fluentd JSON logging stuff
 // --------------------------------------------------------------------------
 // Initialize Fluentd TCP socket connection. Call once at startup.
-// Returns true on success. If initialization fails, SFluentdLog will be a no-op.
 void SFluentdInitialize(const string& host, int port, const string& tag);
 
 // Log a message to Fluentd in JSON format. Thread-safe.
