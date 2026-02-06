@@ -258,6 +258,17 @@ void SSyslogSocketDirect(int priority, const char* format, ...);
 // Atomic pointer to the syslog function that we'll actually use. Easy to change to `syslog` or `SSyslogSocketDirect`.
 extern atomic<void (*)(int priority, const char* format, ...)> SSyslogFunc;
 
+// --------------------------------------------------------------------------
+// Fluentd JSON logging support
+// --------------------------------------------------------------------------
+// Initialize Fluentd TCP socket connection. Call once at startup.
+// Returns true on success. If initialization fails, SFluentdLog will be a no-op.
+void SFluentdInitialize(const string& host, int port, const string& tag);
+
+// Log a message to Fluentd in JSON format. Thread-safe.
+// No-op if Fluentd is not initialized. Handles connection failures gracefully.
+void SFluentdLog(int priority, const string& typeTag, const string& message, const STable& params = {});
+
 string addLogParams(string&& message, const STable& params = {});
 
 // **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
@@ -267,11 +278,13 @@ string addLogParams(string&& message, const STable& params = {});
             if (_g_SLogMask & (1 << (_PRI_))) {                                     \
                 ostringstream __out;                                                \
                 __out << _MSG_;                                                     \
-                const string s = addLogParams(__out.str(), ## __VA_ARGS__);          \
+                const string __rawMsg = __out.str();                                \
+                const string s = addLogParams(string(__rawMsg), ## __VA_ARGS__);    \
                 const string prefix = SWHEREAMI;                                    \
                 for (size_t i = 0; i < s.size(); i += 7168) {                       \
                     (*SSyslogFunc)(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
                 }                                                                   \
+                SFluentdLog(_PRI_, prefix + __rawMsg, ## __VA_ARGS__);              \
             }                                                                       \
         } while (false)
 
