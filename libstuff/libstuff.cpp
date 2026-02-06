@@ -324,6 +324,43 @@ void SFluentdInitialize(const string& host, int port, const string& tag)
     SFluentdConfigured.store(true);
 }
 
+void SFluentdLog(int priority, const string& message, const STable& params)
+{
+    if (!SFluentdConfigured.load()) {
+        return;
+    }
+
+    // Build JSON before acquiring lock
+    STable record;
+    record["timestamp"] = to_string(time(nullptr));
+    record["priority"] = to_string(priority);
+    record["thread_name"] = SThreadLogName;
+    record["thread_prefix"] = SThreadLogPrefix;
+    record["process"] = SProcessName;
+    record["message"] = message;
+
+    for (const auto& [key, value] : params) {
+        record[key] = value;
+    }
+
+    string json = "[\"" + SFluentdTag + "\"," + to_string(time(nullptr)) + "," + SComposeJSONObject(record) + "]\n";
+
+    // Lock for socket operations
+    lock_guard<mutex> lock(SFluentdSocketMutex);
+
+    // Reconnect if needed
+    if (SFluentdSocketFD == -1) {
+        if (!SFluentdConnect(lock)) {
+            return;
+        }
+    }
+
+    // Try to send the log over TCP. Close the socket on failure
+    if (send(SFluentdSocketFD, json.c_str(), json.size(), MSG_NOSIGNAL) == -1) {
+        close(SFluentdSocketFD);
+        SFluentdSocketFD = -1;
+    }
+}
 
 /////////////////////////////////////////////////////////////////////////////
 // Math stuff
