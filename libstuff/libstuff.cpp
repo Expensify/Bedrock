@@ -291,7 +291,7 @@ static int SFluentdPort = 0;
 static string SFluentdTag;
 static atomic<bool> SFluentdConfigured{false};
 
-// Connect to Fluentd. Lock parameter enforces mutex is held.
+// Lock parameter enforces mutex is held before calling this function.
 static bool SFluentdConnect(const lock_guard<mutex>&)
 {
     SFluentdSocketFD = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -330,7 +330,7 @@ void SFluentdLog(int priority, const string& message, const STable& params)
         return;
     }
 
-    // Build JSON before acquiring lock
+    // Build JSON before acquiring lock to avoid doing heavy stuff in the critical section
     STable record;
     record["timestamp"] = to_string(time(nullptr));
     record["priority"] = to_string(priority);
@@ -345,7 +345,6 @@ void SFluentdLog(int priority, const string& message, const STable& params)
 
     string json = "[\"" + SFluentdTag + "\"," + to_string(time(nullptr)) + "," + SComposeJSONObject(record) + "]\n";
 
-    // Lock for socket operations
     lock_guard<mutex> lock(SFluentdSocketMutex);
 
     // Reconnect if needed
@@ -355,7 +354,7 @@ void SFluentdLog(int priority, const string& message, const STable& params)
         }
     }
 
-    // Try to send the log over TCP. Close the socket on failure
+    // Try to send the log over TCP. Close the socket on failure. It'll try to reconnect on next attempt
     if (send(SFluentdSocketFD, json.c_str(), json.size(), MSG_NOSIGNAL) == -1) {
         close(SFluentdSocketFD);
         SFluentdSocketFD = -1;
