@@ -291,6 +291,29 @@ static int SFluentdPort = 0;
 static string SFluentdTag;
 static atomic<bool> SFluentdConfigured{false};
 
+// Connect to Fluentd. Lock parameter enforces mutex is held.
+static bool SFluentdConnect(const lock_guard<mutex>&)
+{
+    SFluentdSocketFD = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (SFluentdSocketFD == -1) {
+        return false;
+    }
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(SFluentdPort);
+    inet_pton(AF_INET, SFluentdHost.c_str(), &addr.sin_addr);
+
+    if (connect(SFluentdSocketFD, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+        close(SFluentdSocketFD);
+        SFluentdSocketFD = -1;
+        return false;
+    }
+
+    return true;
+}
+
 void SFluentdInitialize(const string& host, int port, const string& tag)
 {
     lock_guard<mutex> lock(SFluentdSocketMutex);
