@@ -280,6 +280,28 @@ void SSyslogSocketDirect(int priority, const char* format, ...)
     }
 }
 
+void SSyslogNoop(int priority, const char* format, ...)
+{
+}
+
+static int SFluentdSocketFD = -1;
+static mutex SFluentdSocketMutex;
+static string SFluentdHost;
+static int SFluentdPort = 0;
+static string SFluentdTag;
+static atomic<bool> SFluentdConfigured{false};
+
+void SFluentdInitialize(const string& host, int port, const string& tag)
+{
+    lock_guard<mutex> lock(SFluentdSocketMutex);
+    SFluentdHost = host;
+    SFluentdPort = port;
+    SFluentdTag = tag;
+    SFluentdConnect(lock);
+    SFluentdConfigured.store(true);
+}
+
+
 /////////////////////////////////////////////////////////////////////////////
 // Math stuff
 /////////////////////////////////////////////////////////////////////////////
