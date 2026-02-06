@@ -1299,6 +1299,19 @@ BedrockServer::BedrockServer(const SData& args_)
         SSyslogFunc = &SSyslogSocketDirect;
     }
 
+    // Log destination: rsyslog, fluentd, or both. Default is rsyslog.
+    // Fluentd defaults: 127.0.0.1:24224, tag=bedrock. Override with -fluentdHost, -fluentdPort, -fluentdTag
+    string logDestination = args.isSet("-logDestination") ? args["-logDestination"] : "rsyslog";
+    if (logDestination == "fluentd" || logDestination == "both") {
+        string host = args.isSet("-fluentdHost") ? args["-fluentdHost"] : "127.0.0.1";
+        int port = args.isSet("-fluentdPort") ? SToInt(args["-fluentdPort"]) : 24224;
+        string tag = args.isSet("-fluentdTag") ? args["-fluentdTag"] : "bedrock";
+        SFluentdInitialize(host, port, tag);
+    }
+    if (logDestination == "fluentd") {
+        SSyslogFunc = &SSyslogNoop;
+    }
+
     // Check for commands that will be forced to use QUORUM write consistency.
     if (args.isSet("-synchronousCommands")) {
         list<string> syncCommands;
