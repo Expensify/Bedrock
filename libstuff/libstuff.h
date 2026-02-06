@@ -255,7 +255,11 @@ void SWhitelistLogParams(const set<string>& params);
 // This is a drop-in replacement for syslog that directly logs to `/run/systemd/journal/syslog` bypassing journald.
 void SSyslogSocketDirect(int priority, const char* format, ...);
 
-// Atomic pointer to the syslog function that we'll actually use. Easy to change to `syslog` or `SSyslogSocketDirect`.
+// No-op function to disable rsyslog logging.
+void SSyslogNoop(int priority, const char* format, ...);
+
+// Atomic pointer to the syslog function that we'll actually use.
+// Can be set to `syslog`, `SSyslogSocketDirect`, or `SSyslogNoop`.
 extern atomic<void (*)(int priority, const char* format, ...)> SSyslogFunc;
 
 // --------------------------------------------------------------------------
@@ -267,7 +271,7 @@ void SFluentdInitialize(const string& host, int port, const string& tag);
 
 // Log a message to Fluentd in JSON format. Thread-safe.
 // No-op if Fluentd is not initialized. Handles connection failures gracefully.
-void SFluentdLog(int priority, const string& typeTag, const string& message, const STable& params = {});
+void SFluentdLog(int priority, const string& message, const STable& params = {});
 
 string addLogParams(string&& message, const STable& params = {});
 
