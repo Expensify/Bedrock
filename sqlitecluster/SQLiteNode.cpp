@@ -215,21 +215,33 @@ void SQLiteNode::_replicate()
         }
 
         // At this point, we're guaranteed to have a message. Process it and then run again.
-        if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-            auto start = chrono::steady_clock::now();
-            _handleBeginTransaction(db, peer, command);
-            _handlePrepareTransaction(db, peer, command, dequeueTime);
-            auto duration = chrono::steady_clock::now() - start;
-            SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
-        } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-            int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
-            if (result != SQLITE_OK) {
-                STHROW("commit failed");
+        try {
+            if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
+                auto start = chrono::steady_clock::now();
+                _handleBeginTransaction(db, peer, command);
+                _handlePrepareTransaction(db, peer, command, dequeueTime);
+                auto duration = chrono::steady_clock::now() - start;
+                SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
+            } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
+                int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
+                if (result != SQLITE_OK) {
+                    STHROW("commit failed with result: " + to_string(result));
+                }
+            } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
+                _handleRollbackTransaction(db, peer, command);
+            } else {
+                SWARN("Invalid command passed to _replicate: " << command.methodLine);
             }
-        } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-            _handleRollbackTransaction(db, peer, command);
-        } else {
-            SWARN("Invalid command passed to _replicate: " << command.methodLine);
+        } catch (const SException& e) {
+            SALERT("_replicate thread caught exception, rolling back and exiting. "
+                   << "Message: " << command.methodLine
+                   << ", error: " << e.what()
+                   << ", commitCount: " << db.getCommitCount()
+                   << ", peer: " << (peer ? peer->name : "unknown"));
+            if (db.insideTransaction()) {
+                db.rollback();
+            }
+            return;
         }
     }
 }
