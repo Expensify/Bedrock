@@ -78,6 +78,9 @@ SQLite& SQLitePool::initializeIndex(size_t index)
     if (_objects[index] == nullptr) {
         _objects[index] = new SQLite(_baseDB);
     }
+    // Reset the max transaction elapsed time when handing out a db handle to a new command, so we don't
+    // carry over stale timing from the previous command that used this handle.
+    _objects[index]->resetMaxTransactionElapsed();
     return *_objects[index];
 }
 

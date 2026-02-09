@@ -510,6 +510,10 @@ void BedrockServer::sync()
                     return addLogParams("CRASHING from BedrockServer::sync, command:" + command->request.methodLine, command->request.nameValueMap);
                 });
 
+                // Reset the max transaction elapsed time for this new command on the shared sync thread db handle,
+                // so we don't carry over stale timing from the previous command that used this handle.
+                db.resetMaxTransactionElapsed();
+
                 // And now we'll decide how to handle it.
                 if (getState() == SQLiteNodeState::LEADING || getState() == SQLiteNodeState::STANDINGDOWN) {
                     // We peek commands here in the sync thread to be able to run peek and process as part of the same

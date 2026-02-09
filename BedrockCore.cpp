@@ -142,7 +142,6 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     try {
         SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command->priority);
         command->peekCount++;
-        _db.resetMaxTransactionElapsed();
         _db.setTimeout(_getRemainingTime(command, false));
         _db.setAbortRef(command->shouldAbort);
 
@@ -241,7 +240,6 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     try {
         SDEBUG("Processing '" << request.methodLine << "'");
         command->processCount++;
-        _db.resetMaxTransactionElapsed();
         _db.setTimeout(_getRemainingTime(command, true));
         _db.setAbortRef(command->shouldAbort);
         if (!_db.insideTransaction()) {
