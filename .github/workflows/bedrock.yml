@@ -14,7 +14,7 @@ env:
 jobs:
   Style_Check:
     name: "C++ Styler"
-    runs-on: ubuntu-24.04
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       packages: read
     container:
@@ -35,7 +35,7 @@ jobs:
 
   Build_Bedrock:
     name: "Create Bedrock and Test"
-    runs-on: ubuntu-24.04-v64 # The biggest and best for my baby
+    runs-on: blacksmith-32vcpu-ubuntu-2404 # The biggest and best for my baby
     permissions:
       packages: read
     container:
@@ -78,7 +78,7 @@ jobs:
         compression-level: 1
   BedrockTests:
     name: "Bedrock Tests"
-    runs-on: ubuntu-24.04-v64
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     permissions:
       packages: read
     container:
@@ -113,7 +113,7 @@ jobs:
       run: "./ci_tests.sh"
   BedrockTestsWithHCTree:
     name: "Bedrock Tests with HCTree"
-    runs-on: ubuntu-24.04-v64
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     permissions:
       packages: read
@@ -147,7 +147,7 @@ jobs:
   Upload_Bedrock_Binaries:
     name: "Upload Bedrock Binaries"
     if: "${{ startsWith(github.ref, 'refs/tags/') }}"
-    runs-on: ubuntu-24.04-v64
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
     needs: [BedrockTests,BedrockTestsWithHCTree]
     steps:
