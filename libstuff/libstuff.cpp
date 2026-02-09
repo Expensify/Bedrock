@@ -305,7 +305,7 @@ static bool SFluentdConnect(const lock_guard<mutex>&)
     addr.sin_port = htons(SFluentdPort);
     inet_pton(AF_INET, SFluentdHost.c_str(), &addr.sin_addr);
 
-    if (connect(SFluentdSocketFD, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+    if (connect(SFluentdSocketFD, (struct sockaddr*) &addr, sizeof(addr)) == -1) {
         close(SFluentdSocketFD);
         SFluentdSocketFD = -1;
         return false;
