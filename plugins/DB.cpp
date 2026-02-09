@@ -89,10 +89,16 @@ bool BedrockDBCommand::peek(SQLite& db)
     // The `.schema` command (and other dot commands) isn't part of sqlite itself, but a convenience function built into the sqlite3 CLI.
     // This re-writes this into the internal query that does the same thing, and sets the format options to match the CLI.
     vector<string> matches;
-    bool isSchema = SREMatch("\\s*\\.schema\\s+(.*?)\\s*", query, false, false, &matches);
-    if (isSchema) {
+    bool isSchemaTable = SREMatch("\\s*\\.schema\\s+(.*?)\\s*", query, false, false, &matches);
+    bool isSchemaAll = !isSchemaTable && SREMatch("\\s*\\.schema\\s*", query, false, false);
+    if (isSchemaTable) {
         SINFO("Re-writing schema query for " + matches[1]);
         query = "SELECT sql FROM sqlite_schema WHERE tbl_name LIKE " + SQ(matches[1]) + ";";
+        wrapper.spec.bTitles = 0;
+        wrapper.spec.eStyle = QRF_STYLE_Column;
+    } else if (isSchemaAll) {
+        SINFO("Re-writing schema query for all tables");
+        query = "SELECT sql FROM sqlite_schema WHERE sql IS NOT NULL ORDER BY rowid;";
         wrapper.spec.bTitles = 0;
         wrapper.spec.eStyle = QRF_STYLE_Column;
     }
