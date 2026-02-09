@@ -210,6 +210,10 @@ public:
     // Cancels the current transaction and rolls it back.
     void rollback(const string& commandName = "");
 
+    // Resets the max transaction elapsed time. Call this at command boundaries to avoid
+    // carrying over timing from a previous command on the same db handle.
+    void resetMaxTransactionElapsed() { _totalTransactionElapsed = 0; }
+
     // Returns the total number of changes on this database
     int getChangeCount()
     {

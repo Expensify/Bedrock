@@ -142,6 +142,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     try {
         SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command->priority);
         command->peekCount++;
+        _db.resetMaxTransactionElapsed();
         _db.setTimeout(_getRemainingTime(command, false));
         _db.setAbortRef(command->shouldAbort);
 
