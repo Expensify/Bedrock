@@ -936,7 +936,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
 
         _commitElapsed += STimeNow() - before;
         _commitLockElapsed += _sharedData._commitLockTimer.stop();
-        _totalTransactionElapsed = _transactionTimer.stop();
+        _totalTransactionElapsed = max(_totalTransactionElapsed, _transactionTimer.stop());
         _sharedData.incrementCommit(_uncommittedHash);
         _insideTransaction = false;
         _uncommittedHash.clear();
@@ -1019,8 +1019,10 @@ void SQLite::rollback(const string& commandName)
 {
     // Make sure we're actually inside a transaction
     if (_insideTransaction) {
-        // Store the total transaction time only if we were inside one.
-        _totalTransactionElapsed = _transactionTimer.stop();
+        // Store the highest transaction time across all transactions in this command.
+        // We use max() because a single command may run multiple transactions (e.g., peek then process),
+        // and we want to capture the longest one rather than just the last.
+        _totalTransactionElapsed = max(_totalTransactionElapsed, _transactionTimer.stop());
 
         // Cancel this transaction
         if (_autoRolledBack) {
