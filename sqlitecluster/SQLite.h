@@ -212,6 +212,10 @@ public:
 
     // Resets the max transaction elapsed time. Call this at command boundaries to avoid
     // carrying over timing from a previous command on the same db handle.
+    // This is intentionally not reset in beginTransaction like other timing counters, because a single
+    // command may run multiple transactions (e.g., when peek makes httpsRequests, the transaction is
+    // closed and reopened after the requests complete), and we want to track the highest transaction
+    // time across all of them.
     void resetMaxTransactionElapsed()
     {
         _totalTransactionElapsed = 0;
