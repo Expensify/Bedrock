@@ -254,10 +254,14 @@ void SQLite::commonConstructorInitialization(bool hctree)
     // Setting a wal hook prevents auto-checkpointing.
     sqlite3_wal_hook(_db, _walHookCallback, this);
 
-    // For non-passive checkpoints, we must set a busy timeout in order to wait on any readers.
-    // We set it to 2 minutes as the majority of transactions should take less than that.
-    if (_checkpointMode != SQLITE_CHECKPOINT_PASSIVE) {
-        sqlite3_busy_timeout(_db, 120'000);
+    // initializeDB() sets busy_timeout(120s) early to protect initialization queries (e.g., initializeJournal
+    // reading sqlite_master) from SQLITE_BUSY when the database is locked during startup.
+    // Now that initialization is complete, configure the runtime busy_timeout based on checkpoint mode:
+    // - Non-passive checkpoints need busy_timeout to wait on readers during checkpointing.
+    // - Passive checkpoints skip locked pages, so no busy_timeout is needed at runtime.
+    //   Reset to 0 to avoid stalling runtime queries with a 120s wait on every lock conflict.
+    if (_checkpointMode == SQLITE_CHECKPOINT_PASSIVE) {
+        sqlite3_busy_timeout(_db, 0);
     }
 }
 

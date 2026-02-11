@@ -62,7 +62,6 @@ struct SQLiteInitTest : tpunit::TestFixture
         // POSIX advisory locks only block between different processes, not between threads.
         pid_t lockPid = fork();
         if (lockPid == 0) {
-
             // Child process: hold the exclusive lock.
             close(pipefd[0]);
 
