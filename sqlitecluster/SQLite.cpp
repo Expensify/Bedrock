@@ -162,6 +162,12 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool h
         SERROR("sqlite3_open_v2 returned " << result << ", Extended error code: " << sqlite3_extended_errcode(db));
     }
 
+    // Set busy_timeout immediately after opening the database so that all subsequent initialization queries
+    // (e.g., initializeJournal reading sqlite_master) can wait for locks instead of failing with SQLITE_BUSY.
+    // This is critical during startup when another process may hold WAL locks during recovery or checkpoint.
+    // Without this, initializeJournal would crash with SASSERT if the database was locked.
+    sqlite3_busy_timeout(db, 120'000);
+
     // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
     // any tables to be effective.
     SASSERT(!SQuery(db, "PRAGMA legacy_file_format = OFF"));
