@@ -3,6 +3,7 @@ test/test
 test/clustertest/clustertest
 test/clustertest/testplugin/testplugin.so
 test/bedrocktest_*
+test/br_sync_db*
 test/clustertest/cluster_node_?_bedrocktest*
 bedrock
 .build
