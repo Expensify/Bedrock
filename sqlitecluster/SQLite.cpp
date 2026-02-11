@@ -166,7 +166,7 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool h
     // (e.g., initializeJournal reading sqlite_master) can wait for locks instead of failing with SQLITE_BUSY.
     // This is critical during startup when another process may hold WAL locks during recovery or checkpoint.
     // Without this, initializeJournal would crash with SASSERT if the database was locked.
-    sqlite3_busy_timeout(db, 120'000);
+    sqlite3_busy_timeout(db, BUSY_TIMEOUT_MS);
 
     // PRAGMA legacy_file_format=OFF sets the default for creating new databases, so it must be called before creating
     // any tables to be effective.

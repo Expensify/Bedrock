@@ -601,6 +601,11 @@ private:
     // Set to true inside of a write query.
     bool _currentlyWriting{false};
 
+    // Busy timeout in milliseconds for waiting on database locks. Set to 2 minutes because the majority of
+    // transactions should take less than that. Used during initialization (to survive locked databases at startup)
+    // and at runtime for non-passive checkpoints (which must wait on readers).
+    static constexpr int BUSY_TIMEOUT_MS = 120'000;
+
     // One of 0|1|2|3 (a.k.a. PASSIVE|FULL|RESTART|TRUNCATE), which is the value to be passed to sqlite3_wal_checkpoint_v2.
     int _checkpointMode;
 
