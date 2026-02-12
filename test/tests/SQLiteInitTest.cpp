@@ -46,15 +46,15 @@ struct SQLiteInitTest : tpunit::TestFixture
         }
 
         // Create a pipe so the child can signal when the lock is acquired.
-        int pipeFDs[2];
-        ASSERT_EQUAL(pipe(pipeFDs), 0);
+        int pipeFileDescriptors[2];
+        ASSERT_EQUAL(pipe(pipeFileDescriptors), 0);
 
         // Fork a child process to hold an exclusive lock on the database.
         // POSIX advisory locks only block between different processes, not between threads.
         pid_t lockProcessID = fork();
         if (lockProcessID == 0) {
             // Child process: hold the exclusive lock.
-            close(pipeFDs[0]);
+            close(pipeFileDescriptors[0]);
 
             sqlite3* lockDB = nullptr;
             sqlite3_open_v2(filename.c_str(), &lockDB,
@@ -63,8 +63,8 @@ struct SQLiteInitTest : tpunit::TestFixture
             sqlite3_exec(lockDB, "INSERT INTO journal VALUES(1, 'test', 'hash');", NULL, NULL, NULL);
 
             // Signal parent that lock is acquired.
-            write(pipeFDs[1], "L", 1);
-            close(pipeFDs[1]);
+            write(pipeFileDescriptors[1], "L", 1);
+            close(pipeFileDescriptors[1]);
 
             // Hold the lock for 5 seconds. This is longer than SQuery's 3 retry attempts (~3 seconds
             // with 1-second sleeps). Without busy_timeout, the parent's SQuery would give up and SASSERT.
@@ -79,10 +79,10 @@ struct SQLiteInitTest : tpunit::TestFixture
         ASSERT_GREATER_THAN(lockProcessID, 0);
 
         // Parent: wait for child to signal that the lock is acquired.
-        close(pipeFDs[1]);
+        close(pipeFileDescriptors[1]);
         char signalByte;
-        read(pipeFDs[0], &signalByte, 1);
-        close(pipeFDs[0]);
+        read(pipeFileDescriptors[0], &signalByte, 1);
+        close(pipeFileDescriptors[0]);
 
         // Construct a SQLite object while the database is locked by the child process.
         // The constructor calls initializeJournal -> SQVerifyTable -> SQuery on sqlite_master.
