@@ -16,26 +16,17 @@ struct SQLiteInitTest : tpunit::TestFixture
 
     // Verifies that busy_timeout is configured before initializeJournal runs in the SQLite constructor.
     //
-    // The bug: busy_timeout was only set in commonConstructorInitialization(), which runs in the constructor
-    // body AFTER the member initializer list. But initializeJournal() runs in the member initializer list,
-    // so it executed queries without busy_timeout. If the database was locked (e.g., during WAL recovery
-    // at startup), SQuery would fail with SQLITE_BUSY after 3 retries and trigger SASSERT -> abort().
-    //
-    // The fix: Set busy_timeout in initializeDB() so it's in effect before initializeJournal() runs.
-    //
-    // Test approach: A child process holds an exclusive lock on the database for 5 seconds. The parent
-    // process constructs a SQLite object during that time. With the fix, busy_timeout causes sqlite to
-    // wait for the lock and succeed. Without the fix, SQuery fails with SQLITE_BUSY and SASSERT aborts.
+    // A child process holds an exclusive lock on the database for 5 seconds. The parent
+    // process constructs a SQLite object during that time. The test proves that busy_timeout causes sqlite to
+    // wait for the lock and succeed.
     //
     // Note: POSIX advisory locks only block across processes (not threads), so we must use fork().
-    //
-    // See: https://github.com/Expensify/Expensify/issues/597036
     void testBusyTimeoutSetBeforeJournalInit()
     {
         // Create a temp file for our test database.
         char filenameTemplate[] = "/tmp/br_init_XXXXXX";
-        int fd = mkstemp(filenameTemplate);
-        close(fd);
+        int fileDescriptor = mkstemp(filenameTemplate);
+        close(fileDescriptor);
         string filename(filenameTemplate);
 
         // Set up the database with a journal table using raw sqlite3.
@@ -55,15 +46,15 @@ struct SQLiteInitTest : tpunit::TestFixture
         }
 
         // Create a pipe so the child can signal when the lock is acquired.
-        int pipefd[2];
-        ASSERT_EQUAL(pipe(pipefd), 0);
+        int pipeFDs[2];
+        ASSERT_EQUAL(pipe(pipeFDs), 0);
 
         // Fork a child process to hold an exclusive lock on the database.
         // POSIX advisory locks only block between different processes, not between threads.
-        pid_t lockPid = fork();
-        if (lockPid == 0) {
+        pid_t lockProcessID = fork();
+        if (lockProcessID == 0) {
             // Child process: hold the exclusive lock.
-            close(pipefd[0]);
+            close(pipeFDs[0]);
 
             sqlite3* lockDB = nullptr;
             sqlite3_open_v2(filename.c_str(), &lockDB,
@@ -72,8 +63,8 @@ struct SQLiteInitTest : tpunit::TestFixture
             sqlite3_exec(lockDB, "INSERT INTO journal VALUES(1, 'test', 'hash');", NULL, NULL, NULL);
 
             // Signal parent that lock is acquired.
-            write(pipefd[1], "L", 1);
-            close(pipefd[1]);
+            write(pipeFDs[1], "L", 1);
+            close(pipeFDs[1]);
 
             // Hold the lock for 5 seconds. This is longer than SQuery's 3 retry attempts (~3 seconds
             // with 1-second sleeps). Without busy_timeout, the parent's SQuery would give up and SASSERT.
@@ -85,13 +76,13 @@ struct SQLiteInitTest : tpunit::TestFixture
             _exit(0);
         }
 
-        ASSERT_GREATER_THAN(lockPid, 0);
+        ASSERT_GREATER_THAN(lockProcessID, 0);
 
         // Parent: wait for child to signal that the lock is acquired.
-        close(pipefd[1]);
-        char buf;
-        read(pipefd[0], &buf, 1);
-        close(pipefd[0]);
+        close(pipeFDs[1]);
+        char signalByte;
+        read(pipeFDs[0], &signalByte, 1);
+        close(pipeFDs[0]);
 
         // Construct a SQLite object while the database is locked by the child process.
         // The constructor calls initializeJournal -> SQVerifyTable -> SQuery on sqlite_master.
@@ -101,7 +92,7 @@ struct SQLiteInitTest : tpunit::TestFixture
 
         // Wait for lock-holding child to exit.
         int status = 0;
-        waitpid(lockPid, &status, 0);
+        waitpid(lockProcessID, &status, 0);
 
         // If we got here, the SQLite constructor succeeded despite the database being locked during
         // journal initialization. This verifies that busy_timeout is set before initializeJournal runs.
