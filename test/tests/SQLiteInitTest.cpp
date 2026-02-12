@@ -15,20 +15,10 @@ struct SQLiteInitTest : tpunit::TestFixture
     }
 
     // Verifies that busy_timeout is configured before initializeJournal runs in the SQLite constructor.
-    //
-    // Without the fix, busy_timeout was only set in commonConstructorInitialization() (constructor body),
-    // but initializeJournal() runs earlier in the member initializer list. If the database was locked,
-    // SQuery would fail with SQLITE_BUSY after 3 retries and trigger SASSERT -> abort().
-    //
-    // Test approach: We use two child processes to isolate the test from crashes:
+    // Use two child processes to isolate the test from crashes:
     //   - Child A holds an exclusive lock on the database for 5 seconds.
     //   - Child B attempts to construct a SQLite object while the lock is held.
-    // The parent checks child B's exit status. If child B was killed by SIGABRT, the fix is missing.
-    //
-    // We need separate processes (not threads) because POSIX advisory locks only block across processes.
-    // Child B is forked after child A acquires the lock, so child B does not inherit any lock-related
-    // file descriptors — this avoids POSIX lock inheritance issues that would prevent the lock from
-    // blocking child B's queries.
+    // The parent checks child B's exit status and verifies it did not crash.
     void testBusyTimeoutSetBeforeJournalInit()
     {
         // Create a temp file for our test database.
@@ -98,9 +88,7 @@ struct SQLiteInitTest : tpunit::TestFixture
         // child A's lock-related file descriptors.
         pid_t constructorProcessID = fork();
         if (constructorProcessID == 0) {
-            // The constructor calls initializeJournal -> SQVerifyTable -> SQuery on sqlite_master.
-            // With the fix (busy_timeout set in initializeDB), sqlite waits for the lock and succeeds.
-            // Without the fix, SQuery fails with SQLITE_BUSY after 3 retries -> SASSERT -> abort.
+            // Construct a SQLite object while the database is locked.
             SQLite db(filename, 1000, 5000, -1, 0, false, "PASSIVE");
             _exit(0);
         }
