@@ -11,7 +11,7 @@ public:
     {
         // Constructor/Destructor
         Transaction(SStandaloneHTTPSManager& manager_, const string& requestID = "");
-        ~Transaction();
+        virtual ~Transaction();
 
         // Attributes
         STCPManager::Socket* s;
