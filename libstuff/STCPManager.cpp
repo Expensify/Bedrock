@@ -319,7 +319,7 @@ unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host)
     int s;
     s = S_socket(host, true, true, false);
     if (s == -1) {
-        SWARN("Couldn't open port " << host << " caller must retry.");
+        SHMMM("Couldn't open port " << host << " caller must retry.");
         return nullptr;
     }
 
