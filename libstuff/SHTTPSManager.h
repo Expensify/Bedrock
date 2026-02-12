@@ -47,7 +47,9 @@ public:
 
     // Allows the manager to clean up any references it has to this transaction. Note that this shoud *not* actually delete the
     // passed pointer.
-    virtual void remove(Transaction* t) {}
+    virtual void remove(Transaction* t)
+    {
+    }
 
 protected:   // Child API
 
