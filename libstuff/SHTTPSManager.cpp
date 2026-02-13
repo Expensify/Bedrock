@@ -46,8 +46,6 @@ void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction)
         return;
     }
 
-    delete transaction->s;
-    transaction->s = nullptr;
     delete transaction;
 }
 
@@ -196,7 +194,10 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
 SStandaloneHTTPSManager::Transaction::~Transaction()
 {
     manager.remove(this);
-    SASSERT(!s);
+    if (this->s) {
+        delete this->s;
+        this->s = nullptr;
+    }
 }
 
 SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTransaction()
