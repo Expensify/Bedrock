@@ -142,7 +142,6 @@ void BedrockCommand::_waitForHTTPSRequests()
 {
     uint64_t startTime = 0;
     while (!areHttpsRequestsComplete()) {
-
         // This uses the same starting point as in areHttpsRequestsComplete, for efficiency.
         // We won't iterate over large numbers of known completed requests, instead starting
         // from the the point of the list of known completed request.
@@ -181,7 +180,7 @@ void BedrockCommand::_waitForHTTPSRequests()
             if (transaction->scheduledStart) {
                 if (transaction->scheduledStart <= now) {
                     // Scheduled start is in the past, fire it.
-                    if(transaction->startFunc) {
+                    if (transaction->startFunc) {
                         (transaction->startFunc)(transaction);
                     } else {
                         SWARN("Future scheduled transaction with no startFunc, this will just time out.");
