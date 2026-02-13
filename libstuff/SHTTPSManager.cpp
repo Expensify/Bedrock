@@ -194,6 +194,7 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
 
 SStandaloneHTTPSManager::Transaction::~Transaction()
 {
+    manager.remove(this);
     SASSERT(!s);
 }
 
