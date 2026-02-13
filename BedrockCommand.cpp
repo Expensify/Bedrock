@@ -168,9 +168,6 @@ void BedrockCommand::_waitForHTTPSRequests()
             break;
         }
 
-        fd_map fdm;
-        prePoll(fdm);
-
         // If any transactions have a scheduled start time, adjust the wait time to not exceed that.
         // If any transactions should be started, start them.
         // This has the effect that any transaction scheduled (say) 50ms from now will cause us to wait up to 50ms,
@@ -193,6 +190,9 @@ void BedrockCommand::_waitForHTTPSRequests()
             }
             requestIt++;
         }
+
+        fd_map fdm;
+        prePoll(fdm);
 
         // We never wait more than 1 second in `poll`. There are two uses for this. One is that at shutdown, we want to kill any sockets that have are making no progress.
         // We don't want these to be stuck sitting for 5 minutes doing nothing while the server hangs, so we will interrupt every second to check on them.
