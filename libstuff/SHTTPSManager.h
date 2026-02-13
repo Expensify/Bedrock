@@ -27,7 +27,7 @@ public:
         // Allow a transaction to be scheduled to start in the future.
         // If it is scheduled to start in the future, we will call `startFunc` at the timestamp scheduled.
         uint64_t scheduledStart = 0;
-        function <void(Transaction*)>* startFunc = nullptr;
+        function <void(Transaction*)> startFunc;
     };
 
     static const string proxyAddressHTTPS;

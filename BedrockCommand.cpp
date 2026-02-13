@@ -182,7 +182,7 @@ void BedrockCommand::_waitForHTTPSRequests()
                 if (transaction->scheduledStart <= now) {
                     // Scheduled start is in the past, fire it.
                     if(transaction->startFunc) {
-                        (*transaction->startFunc)(transaction);
+                        (transaction->startFunc)(transaction);
                     } else {
                         SWARN("Future scheduled transaction with no startFunc, this will just time out.");
                     }
