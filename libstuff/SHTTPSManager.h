@@ -11,7 +11,7 @@ public:
     {
         // Constructor/Destructor
         Transaction(SStandaloneHTTPSManager& manager_, const string& requestID = "");
-        ~Transaction();
+        virtual ~Transaction();
 
         // Attributes
         STCPManager::Socket* s;
@@ -44,6 +44,12 @@ public:
     void closeTransaction(Transaction* transaction);
 
     static int getHTTPResponseCode(const string& methodLine);
+
+    // Allows the manager to clean up any references it has to this transaction. Note that this shoud *not* actually delete the
+    // passed pointer.
+    virtual void remove(Transaction* t)
+    {
+    }
 
 protected:   // Child API
 
