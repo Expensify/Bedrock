@@ -2,6 +2,7 @@
 
 #include <dlfcn.h>
 #include <iostream>
+#include <memory>
 #include <sys/file.h>
 #include <string.h>
 
@@ -322,14 +323,19 @@ bool TestPluginCommand::peek(SQLite& db)
         SData newRequest("GET / HTTP/1.1");
         newRequest["Host"] = "www.google.com";
         auto transaction = plugin().httpsManager->httpsDontSend("https://www.google.com/", newRequest);
-        httpsRequests.push_back(transaction);
+
+        // Note that this line and the thread we pass it to unsafely accesses this memory, and if the command is deleted while we wait for our
+        // thread timeout to elapse, this will crash. We allow this here as this is only a test case.
+        SHTTPSManager::Transaction* ptr = transaction.get();
+
+        httpsRequests.push_back(move(transaction));
         if (request["neversend"].empty()) {
             int waitFor = request.isSet("waitFor") ? request.calc("waitFor") : 35;
-            thread([waitFor, transaction, newRequest](){
+            thread([waitFor, ptr, newRequest](){
                 SINFO("Sleeping " << waitFor << " seconds for httpstimeout");
                 sleep(waitFor);
                 SINFO("Done Sleeping " << waitFor << " seconds for httpstimeout");
-                transaction->s->send(newRequest.serialize());
+                ptr->s->send(newRequest.serialize());
             }).detach();
         }
     } else if (SStartsWith(request.methodLine, "exceptioninpeek")) {
@@ -665,20 +671,20 @@ void BedrockPlugin_TestPlugin::stateChanged(SQLite& db, SQLiteNodeState newState
     }).detach();
 }
 
-bool TestHTTPSManager::_onRecv(Transaction* transaction)
+bool TestHTTPSManager::_onRecv(Transaction& transaction)
 {
-    string methodLine = transaction->fullResponse.methodLine;
-    transaction->response = 0;
+    string methodLine = transaction.fullResponse.methodLine;
+    transaction.response = 0;
     size_t offset = methodLine.find_first_of(' ', 0);
     offset = methodLine.find_first_not_of(' ', offset);
     if (offset != string::npos) {
         int status = SToInt(methodLine.substr(offset));
         if (status) {
-            transaction->response = status;
+            transaction.response = status;
         }
     }
-    if (!transaction->response) {
-        transaction->response = 400;
+    if (!transaction.response) {
+        transaction.response = 400;
         SWARN("Failed to parse method line from request: " << methodLine);
     }
 
@@ -689,12 +695,12 @@ TestHTTPSManager::~TestHTTPSManager()
 {
 }
 
-TestHTTPSManager::Transaction* TestHTTPSManager::send(const string& url, const SData& request)
+unique_ptr<TestHTTPSManager::Transaction> TestHTTPSManager::send(const string& url, const SData& request)
 {
     return _httpsSend(url, request);
 }
 
-SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, const SData& request)
+unique_ptr<TestHTTPSManager::Transaction> TestHTTPSManager::httpsDontSend(const string& url, const SData& request)
 {
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
@@ -715,7 +721,7 @@ SHTTPSManager::Transaction* TestHTTPSManager::httpsDontSend(const string& url, c
     }
 
     // Wrap in a transaction
-    Transaction* transaction = new Transaction(*this);
+    unique_ptr<Transaction> transaction = make_unique<Transaction>(*this);
     transaction->s = s;
     transaction->fullRequest = request;
 

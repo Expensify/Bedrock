@@ -85,8 +85,8 @@ int64_t BedrockCommand::_getTimeout(const SData& request, const uint64_t schedul
 
 BedrockCommand::~BedrockCommand()
 {
-    for (auto request : httpsRequests) {
-        request->manager.closeTransaction(request);
+    for (auto& request : httpsRequests) {
+        request->manager.closeTransaction(*request);
     }
     if (destructionCallback) {
         (*destructionCallback)();
@@ -173,12 +173,12 @@ void BedrockCommand::_waitForHTTPSRequests()
         // This has the effect that any transaction scheduled (say) 50ms from now will cause us to wait up to 50ms,
         // and then when this loop runs on the next iteration, it will get started.
         while (requestIt != httpsRequests.end()) {
-            SHTTPSManager::Transaction* transaction = *requestIt;
+            const unique_ptr<SHTTPSManager::Transaction>& transaction = *requestIt;
             if (transaction->scheduledStart) {
                 if (transaction->scheduledStart <= now) {
                     // Scheduled start is in the past, fire it.
                     if (transaction->startFunc) {
-                        (transaction->startFunc)(transaction);
+                        (transaction->startFunc)(*transaction);
                     } else {
                         SWARN("Future scheduled transaction with no startFunc, this will just time out.");
                     }
@@ -414,7 +414,7 @@ void BedrockCommand::prePoll(fd_map& fdm)
 {
     auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
     while (requestIt != httpsRequests.end()) {
-        SHTTPSManager::Transaction* transaction = *requestIt;
+        const unique_ptr<SHTTPSManager::Transaction>& transaction = *requestIt;
         transaction->manager.prePoll(fdm, *transaction);
         requestIt++;
     }
@@ -424,7 +424,7 @@ void BedrockCommand::postPoll(fd_map& fdm, uint64_t nextActivity, uint64_t maxWa
 {
     auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
     while (requestIt != httpsRequests.end()) {
-        SHTTPSManager::Transaction* transaction = *requestIt;
+        const unique_ptr<SHTTPSManager::Transaction>& transaction = *requestIt;
 
         // If nothing else has set the timeout for this request (i.e., a HTTPS manager that expects to receive a
         // response in a particular time), we will set the timeout here to match the timeout of the command so that we
@@ -461,7 +461,7 @@ void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSReque
     for (const string& requestStr : requests) {
         STable requestMap = SParseJSONObject(requestStr);
 
-        SHTTPSManager::Transaction* httpsRequest = new SHTTPSManager::Transaction(_noopHTTPSManager, request["requestID"]);
+        unique_ptr<SHTTPSManager::Transaction> httpsRequest = make_unique<SHTTPSManager::Transaction>(_noopHTTPSManager, request["requestID"]);
         httpsRequest->s = nullptr;
         httpsRequest->created = SToUInt64(requestMap["created"]);
         httpsRequest->finished = SToUInt64(requestMap["finished"]);
@@ -470,7 +470,7 @@ void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSReque
         httpsRequest->fullRequest.deserialize(SDecodeBase64(requestMap["fullRequest"]));
         httpsRequest->fullResponse.deserialize(SDecodeBase64(requestMap["fullResponse"]));
 
-        httpsRequests.push_back(httpsRequest);
+        httpsRequests.push_back(move(httpsRequest));
 
         // These should never be incomplete when passed with a serialized command.
         if (!httpsRequest->response) {

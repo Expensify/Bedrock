@@ -40,15 +40,10 @@ SStandaloneHTTPSManager::~SStandaloneHTTPSManager()
 {
 }
 
-void SStandaloneHTTPSManager::closeTransaction(Transaction* transaction)
+void SStandaloneHTTPSManager::closeTransaction(Transaction& transaction)
 {
-    if (transaction == nullptr) {
-        return;
-    }
-
-    delete transaction->s;
-    transaction->s = nullptr;
-    delete transaction;
+    delete transaction.s;
+    transaction.s = nullptr;
 }
 
 int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine)
@@ -130,7 +125,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         // the existing behavior, which is an exercise for later.
         if (SContains(transaction.fullResponse.methodLine, " 200") || SContains(transaction.fullResponse.methodLine, "204") || transaction.fullResponse.content.size()) {
             // Pass the transaction down to the subclass.
-            _onRecv(&transaction);
+            _onRecv(transaction);
         } else {
             // Coercing anything that's not 200 to 500 makes no sense, and should be abandoned with the above.
             SWARN("Message failed: '" << transaction.fullResponse.methodLine << "'");
@@ -161,7 +156,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
                 SINFO("Connection closed after receiving partial response");
                 transaction.finished = now;
                 if (!transaction.fullResponse.methodLine.empty()) {
-                    _onRecv(&transaction);
+                    _onRecv(transaction);
                 }
 
                 // Clean up the socket
@@ -194,22 +189,21 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
 
 SStandaloneHTTPSManager::Transaction::~Transaction()
 {
-    manager.remove(this);
     SASSERT(!s);
 }
 
-SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_createErrorTransaction()
+unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_createErrorTransaction()
 {
     // Sometimes we have to create transactions without an attempted connect. This could happen if we don't have the
     // host or service id yet.
     SHMMM("We had to create an error transaction instead of attempting a real one.");
-    Transaction* transaction = new Transaction(*this);
+    unique_ptr<Transaction> transaction = make_unique<Transaction>(*this);
     transaction->response = 503;
     transaction->finished = STimeNow();
     return transaction;
 }
 
-SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy)
+unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy)
 {
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
@@ -222,7 +216,7 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
     }
 
     // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
-    Transaction* transaction = new Transaction(*this);
+    unique_ptr<Transaction> transaction = make_unique<Transaction>(*this);
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
     Socket* s = nullptr;
@@ -240,7 +234,6 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
             s = new Socket(host, isHttps);
         }
     } catch (const SException& exception) {
-        delete transaction;
         return _createErrorTransaction();
     }
 
@@ -263,8 +256,8 @@ SStandaloneHTTPSManager::Transaction* SStandaloneHTTPSManager::_httpsSend(const 
     return transaction;
 }
 
-bool SStandaloneHTTPSManager::_onRecv(Transaction* transaction)
+bool SStandaloneHTTPSManager::_onRecv(Transaction& transaction)
 {
-    transaction->response = getHTTPResponseCode(transaction->fullResponse.methodLine);
+    transaction.response = getHTTPResponseCode(transaction.fullResponse.methodLine);
     return false;
 }
