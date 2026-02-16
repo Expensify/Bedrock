@@ -93,7 +93,5 @@ struct SSLTest : tpunit::TestFixture
         // Make sure that the response has a body. This differentiates it from the response to a CONNECT message
         // So that we can test we're looking at the actual proxied response and not just the response from the proxy itself.
         EXPECT_TRUE(transaction->fullResponse.content.size());
-
-        manager.closeTransaction(*transaction);
     }
 } __SSLTest;

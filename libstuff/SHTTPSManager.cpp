@@ -40,12 +40,6 @@ SStandaloneHTTPSManager::~SStandaloneHTTPSManager()
 {
 }
 
-void SStandaloneHTTPSManager::closeTransaction(Transaction& transaction)
-{
-    delete transaction.s;
-    transaction.s = nullptr;
-}
-
 int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine)
 {
     // This code looks for the first space in the methodLine, and then for the first non-space
@@ -189,7 +183,7 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
 
 SStandaloneHTTPSManager::Transaction::~Transaction()
 {
-    SASSERT(!s);
+    delete s;
 }
 
 unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_createErrorTransaction()

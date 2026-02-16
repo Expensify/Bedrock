@@ -44,9 +44,6 @@ public:
     // The purpose of this is to be able to shut down when no activity is happening.
     void postPoll(fd_map& fdm, Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS = (5 * 60 * 1000));
 
-    // Deletes the socket object for the given transaction, if present.
-    void closeTransaction(Transaction& transaction);
-
     static int getHTTPResponseCode(const string& methodLine);
 
 protected:   // Child API
