@@ -188,7 +188,6 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
     timeoutAt(0),
     response(0),
     manager(manager_),
-    sentTime(0),
     requestID(requestID.empty() ? SThreadLogPrefix : requestID)
 {
 }

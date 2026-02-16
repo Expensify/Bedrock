@@ -142,6 +142,11 @@ void BedrockCommand::_waitForHTTPSRequests()
 {
     uint64_t startTime = 0;
     while (!areHttpsRequestsComplete()) {
+        // This uses the same starting point as in areHttpsRequestsComplete, for efficiency.
+        // We won't iterate over large numbers of known completed requests, instead starting
+        // from the the point of the list of known completed request.
+        auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
+
         // Wait until the command's timeout, or break early if the command has timed out.
         uint64_t maxWaitUs = 0;
         uint64_t now = STimeNow();
@@ -151,10 +156,7 @@ void BedrockCommand::_waitForHTTPSRequests()
         if (now < timeout()) {
             maxWaitUs = timeout() - now;
         } else {
-            // This uses the same starting point as in areHttpsRequestsComplete, for efficiency.
-            // We won't iterate over large numbers of known completed requests, instead starting
-            // from the the point of the list of known completed request.
-            auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
+            // Look at all our uncompleted requests, mark them failed.
             while (requestIt != httpsRequests.end()) {
                 if (!(*requestIt)->response) {
                     (*requestIt)->response = 500;
@@ -164,6 +166,29 @@ void BedrockCommand::_waitForHTTPSRequests()
 
             // Timed everything out, can return.
             break;
+        }
+
+        // If any transactions have a scheduled start time, adjust the wait time to not exceed that.
+        // If any transactions should be started, start them.
+        // This has the effect that any transaction scheduled (say) 50ms from now will cause us to wait up to 50ms,
+        // and then when this loop runs on the next iteration, it will get started.
+        while (requestIt != httpsRequests.end()) {
+            SHTTPSManager::Transaction* transaction = *requestIt;
+            if (transaction->scheduledStart) {
+                if (transaction->scheduledStart <= now) {
+                    // Scheduled start is in the past, fire it.
+                    if (transaction->startFunc) {
+                        (transaction->startFunc)(transaction);
+                    } else {
+                        SWARN("Future scheduled transaction with no startFunc, this will just time out.");
+                    }
+                    transaction->scheduledStart = 0;
+                } else {
+                    // If this is sooner than any other thing we're waiting for, shrink the max wait.
+                    maxWaitUs = min(maxWaitUs, transaction->scheduledStart - now);
+                }
+            }
+            requestIt++;
         }
 
         fd_map fdm;
@@ -441,7 +466,6 @@ void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSReque
         httpsRequest->created = SToUInt64(requestMap["created"]);
         httpsRequest->finished = SToUInt64(requestMap["finished"]);
         httpsRequest->timeoutAt = SToUInt64(requestMap["timeoutAt"]);
-        httpsRequest->sentTime = SToUInt64(requestMap["sentTime"]);
         httpsRequest->response = SToInt(requestMap["response"]);
         httpsRequest->fullRequest.deserialize(SDecodeBase64(requestMap["fullRequest"]));
         httpsRequest->fullResponse.deserialize(SDecodeBase64(requestMap["fullResponse"]));
@@ -467,7 +491,6 @@ string BedrockCommand::serializeHTTPSRequests()
         data["created"] = to_string(httpsRequest->created);
         data["finished"] = to_string(httpsRequest->finished);
         data["timeoutAt"] = to_string(httpsRequest->timeoutAt);
-        data["sentTime"] = to_string(httpsRequest->sentTime);
         data["response"] = to_string(httpsRequest->response);
         data["fullRequest"] = SEncodeBase64(httpsRequest->fullRequest.serialize());
         data["fullResponse"] = SEncodeBase64(httpsRequest->fullResponse.serialize());
