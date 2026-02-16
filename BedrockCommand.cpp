@@ -470,12 +470,12 @@ void BedrockCommand::deserializeHTTPSRequests(const string& serializedHTTPSReque
         httpsRequest->fullRequest.deserialize(SDecodeBase64(requestMap["fullRequest"]));
         httpsRequest->fullResponse.deserialize(SDecodeBase64(requestMap["fullResponse"]));
 
-        httpsRequests.push_back(move(httpsRequest));
-
         // These should never be incomplete when passed with a serialized command.
         if (!httpsRequest->response) {
             SWARN("Received incomplete HTTPS request.");
         }
+
+        httpsRequests.push_back(move(httpsRequest));
     }
 }
 
