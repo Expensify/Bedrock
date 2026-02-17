@@ -209,7 +209,6 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
         host += ":443";
     }
 
-    // Create a new transaction. This can throw if `validate` fails. We explicitly do this *before* creating a socket.
     unique_ptr<Transaction> transaction = make_unique<Transaction>(*this);
 
     // If this is going to be an https transaction, create a certificate and give it to the socket.
