@@ -4,6 +4,7 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <atomic>
+#include <syslog.h>
 
 #include <libstuff/SFluentdLogger.h>
 #include <test/lib/BedrockTester.h>
