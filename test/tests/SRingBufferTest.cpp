@@ -5,7 +5,8 @@
 #include <libstuff/SRingBuffer.h>
 #include <test/lib/BedrockTester.h>
 
-struct SRingBufferTest : tpunit::TestFixture {
+struct SRingBufferTest : tpunit::TestFixture
+{
     SRingBufferTest() : tpunit::TestFixture(
         "SRingBuffer",
         TEST(SRingBufferTest::testPushPop),
@@ -14,10 +15,13 @@ struct SRingBufferTest : tpunit::TestFixture {
         TEST(SRingBufferTest::testFIFOOrder),
         TEST(SRingBufferTest::testMultiProducer),
         TEST(SRingBufferTest::testProducerConsumer)
-    ) {}
+    )
+    {
+    }
 
     // Test basic push and pop
-    void testPushPop() {
+    void testPushPop()
+    {
         SRingBuffer<int, 10> buffer;
 
         // Push returns true
@@ -30,7 +34,8 @@ struct SRingBufferTest : tpunit::TestFixture {
     }
 
     // Test pop on empty buffer
-    void testEmptyPop() {
+    void testEmptyPop()
+    {
         SRingBuffer<int, 10> buffer;
 
         // Pop on empty returns nullopt
@@ -39,7 +44,8 @@ struct SRingBufferTest : tpunit::TestFixture {
     }
 
     // Test buffer rejects push when full
-    void testFullBuffer() {
+    void testFullBuffer()
+    {
         SRingBuffer<int, 5> buffer;
 
         // Fill buffer to capacity
@@ -58,7 +64,8 @@ struct SRingBufferTest : tpunit::TestFixture {
     }
 
     // Test FIFO ordering
-    void testFIFOOrder() {
+    void testFIFOOrder()
+    {
         SRingBuffer<int, 10> buffer;
 
         // Push 1, 2, 3
@@ -73,7 +80,8 @@ struct SRingBufferTest : tpunit::TestFixture {
     }
 
     // Test multiple threads pushing concurrently
-    void testMultiProducer() {
+    void testMultiProducer()
+    {
         SRingBuffer<int, 1000> buffer;
         atomic<int> pushCount{0};
         const int numThreads = 4;
@@ -110,7 +118,8 @@ struct SRingBufferTest : tpunit::TestFixture {
     }
 
     // Test producer-consumer pattern with wrap-around
-    void testProducerConsumer() {
+    void testProducerConsumer()
+    {
         SRingBuffer<int, 100> buffer;
         atomic<bool> done{false};
         atomic<int> produced{0};
@@ -147,5 +156,4 @@ struct SRingBufferTest : tpunit::TestFixture {
         ASSERT_EQUAL(produced.load(), totalItems);
         ASSERT_EQUAL(consumed.load(), totalItems);
     }
-
 } __SRingBufferTest;

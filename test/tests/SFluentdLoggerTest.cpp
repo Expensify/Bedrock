@@ -14,7 +14,8 @@ public:
     int port = 0;
     atomic<int> messageCount{0};
 
-    MockServer() {
+    MockServer()
+    {
         // Create socket
         serverFd = socket(AF_INET, SOCK_STREAM, 0);
         int opt = 1;
@@ -25,12 +26,12 @@ public:
         addr.sin_family = AF_INET;
         addr.sin_addr.s_addr = INADDR_ANY;
         addr.sin_port = htons(0);
-        bind(serverFd, (struct sockaddr*)&addr, sizeof(addr));
+        bind(serverFd, (struct sockaddr*) &addr, sizeof(addr));
         listen(serverFd, 1);
 
         // Get assigned port
         socklen_t len = sizeof(addr);
-        getsockname(serverFd, (struct sockaddr*)&addr, &len);
+        getsockname(serverFd, (struct sockaddr*) &addr, &len);
         port = ntohs(addr.sin_port);
 
         // Accept and count messages in background
@@ -51,7 +52,8 @@ public:
         });
     }
 
-    ~MockServer() {
+    ~MockServer()
+    {
         close(serverFd);
         acceptThread.join();
     }
@@ -61,16 +63,20 @@ private:
     thread acceptThread;
 };
 
-struct SFluentdLoggerTest : tpunit::TestFixture {
+struct SFluentdLoggerTest : tpunit::TestFixture
+{
     SFluentdLoggerTest() : tpunit::TestFixture(
         "SFluentdLogger",
         TEST(SFluentdLoggerTest::testBuffersWithoutServer),
         TEST(SFluentdLoggerTest::testMultipleMessages),
         TEST(SFluentdLoggerTest::testDrainOnShutdown)
-    ) {}
+    )
+    {
+    }
 
     // Test log() buffers messages even without a server
-    void testBuffersWithoutServer() {
+    void testBuffersWithoutServer()
+    {
         // Create logger pointing to non-existent server
         SFluentdLogger logger("127.0.0.1", 59999);
 
@@ -82,7 +88,8 @@ struct SFluentdLoggerTest : tpunit::TestFixture {
     }
 
     // Test multiple messages are sent to server
-    void testMultipleMessages() {
+    void testMultipleMessages()
+    {
         // Start mock server
         MockServer server;
 
@@ -103,7 +110,8 @@ struct SFluentdLoggerTest : tpunit::TestFixture {
     }
 
     // Test destructor drains all buffered messages
-    void testDrainOnShutdown() {
+    void testDrainOnShutdown()
+    {
         // Start mock server
         MockServer server;
 
@@ -124,5 +132,4 @@ struct SFluentdLoggerTest : tpunit::TestFixture {
         // All messages drained before shutdown
         ASSERT_EQUAL(server.messageCount.load(), 100);
     }
-
 } __SFluentdLoggerTest;
