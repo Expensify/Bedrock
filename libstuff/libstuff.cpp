@@ -314,7 +314,7 @@ void SFluentdLog(int priority, const string& message, const STable& params)
     }
     string json = SComposeJSONObject(record) + "\n";
 
-    if (!fluentdLogger->log(move(json))) {
+    if (!fluentdLogger->log(priority, move(json))) {
         syslog(priority, "%s", message.data());
     }
 }
