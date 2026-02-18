@@ -301,18 +301,17 @@ void SFluentdLog(int priority, const string& message, const STable& params)
     }
 
     STable record;
-    record["timestamp"] = to_string(time(nullptr));
-    record["priority"] = to_string(priority);
-    record["thread_name"] = SThreadLogName;
-    record["thread_prefix"] = SThreadLogPrefix;
-    record["process"] = SProcessName;
-    record["message"] = message;
+    record["_timestamp"] = to_string(time(nullptr));
+    record["_priority"] = to_string(priority);
+    record["_thread_name"] = SThreadLogName;
+    record["_thread_prefix"] = SThreadLogPrefix;
+    record["_process"] = SProcessName;
+    record["_message"] = message;
+    record["_tag"] = fluentdTag;
 
     for (const auto& [key, value] : params) {
         record[key] = value;
     }
-
-    record["tag"] = fluentdTag;
     string json = SComposeJSONObject(record) + "\n";
 
     if (!fluentdLogger->log(move(json))) {
