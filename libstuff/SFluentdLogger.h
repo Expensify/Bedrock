@@ -9,12 +9,17 @@
 
 using namespace std;
 
+struct FluentdLogRecord {
+    int priority;
+    string json;
+};
+
 class SFluentdLogger {
 public:
     SFluentdLogger(const string& host, int port);
     ~SFluentdLogger();
 
-    bool log(string&& json);
+    bool log(int priority, string&& json);
 
 private:
     int openSocket();
@@ -24,6 +29,6 @@ private:
     string host;
     int port;
     atomic<bool> running{false};
-    unique_ptr<SRingBuffer<string, SRINGBUFFER_DEFAULT_CAPACITY>> buffer;
+    unique_ptr<SRingBuffer<FluentdLogRecord, SRINGBUFFER_DEFAULT_CAPACITY>> buffer;
     thread senderThread;
 };
