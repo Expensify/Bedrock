@@ -11,7 +11,7 @@ public:
     {
         // Constructor/Destructor
         Transaction(SStandaloneHTTPSManager& manager_, const string& requestID = "");
-        ~Transaction();
+        virtual ~Transaction();
 
         // Attributes
         STCPManager::Socket* s;
@@ -22,8 +22,12 @@ public:
         SData fullResponse;
         int response;
         SStandaloneHTTPSManager& manager;
-        uint64_t sentTime;
         const string requestID;
+
+        // Allow a transaction to be scheduled to start in the future.
+        // If it is scheduled to start in the future, we will call `startFunc` at the timestamp scheduled.
+        uint64_t scheduledStart = 0;
+        function<void(Transaction*)> startFunc;
     };
 
     static const string proxyAddressHTTPS;
@@ -44,6 +48,12 @@ public:
     void closeTransaction(Transaction* transaction);
 
     static int getHTTPResponseCode(const string& methodLine);
+
+    // Allows the manager to clean up any references it has to this transaction. Note that this shoud *not* actually delete the
+    // passed pointer.
+    virtual void remove(Transaction* t)
+    {
+    }
 
 protected:   // Child API
 

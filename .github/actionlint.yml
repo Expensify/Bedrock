@@ -1,8 +1,0 @@
-# This file contains the config for actionlint.
-# See https://github.com/rhysd/actionlint/blob/main/docs/config.md
-#
-# Primarily, we use this config to define some large runners that are not registered in actionlint
-self-hosted-runner:
-  labels:
-    - ubuntu-24.04-v64
-
