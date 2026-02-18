@@ -84,7 +84,7 @@ struct SFluentdLoggerTest : tpunit::TestFixture
         // All logs return true (buffered)
         for (int i = 0; i < 100; i++) {
             string json = "{\"count\":" + to_string(i) + "}\n";
-            ASSERT_TRUE(logger.log(move(json)));
+            ASSERT_TRUE(logger.log(LOG_INFO, move(json)));
         }
     }
 
@@ -99,7 +99,7 @@ struct SFluentdLoggerTest : tpunit::TestFixture
             SFluentdLogger logger("127.0.0.1", server.port);
             for (int i = 0; i < 50; i++) {
                 string json = "{\"msg\":" + to_string(i) + "}\n";
-                logger.log(move(json));
+                logger.log(LOG_INFO, move(json));
             }
 
             // Wait for sender thread to transmit
