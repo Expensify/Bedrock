@@ -121,7 +121,7 @@ struct SFluentdLoggerTest : tpunit::TestFixture
             SFluentdLogger logger("127.0.0.1", server.port);
             for (int i = 0; i < 100; i++) {
                 string json = "{\"drain\":" + to_string(i) + "}\n";
-                logger.log(move(json));
+                logger.log(LOG_INFO, move(json));
             }
 
             // Destructor drains buffer
