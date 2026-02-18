@@ -7,7 +7,8 @@
 #include <syslog.h>
 #include <unistd.h>
 
-SFluentdLogger::SFluentdLogger(const string& host, int port) : host(host), port(port), running(true)
+SFluentdLogger::SFluentdLogger(const string& host, int port) : host(host), port(port), running(true),
+    buffer(make_unique<SRingBuffer<string, SRINGBUFFER_DEFAULT_CAPACITY>>())
 {
     auto [thread, future] = SThread(&SFluentdLogger::senderLoop, this);
     senderThread = move(thread);
@@ -59,7 +60,7 @@ void SFluentdLogger::senderLoop()
     int fd = -1;
 
     while (true) {
-        auto entry = buffer.pop();
+        auto entry = buffer->pop();
 
         if (!entry.has_value()) {
             if (!running.load()) {
@@ -83,5 +84,5 @@ void SFluentdLogger::senderLoop()
 
 bool SFluentdLogger::log(string&& json)
 {
-    return buffer.push(move(json));
+    return buffer->push(move(json));
 }

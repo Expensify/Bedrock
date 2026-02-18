@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
 #include <string>
 #include <thread>
 
@@ -23,6 +24,6 @@ private:
     string host;
     int port;
     atomic<bool> running{false};
-    SRingBuffer<string, SRINGBUFFER_DEFAULT_CAPACITY> buffer;
+    unique_ptr<SRingBuffer<string, SRINGBUFFER_DEFAULT_CAPACITY>> buffer;
     thread senderThread;
 };
