@@ -310,7 +310,7 @@ void SFluentdLog(int priority, const string& message, const STable& params)
     record["_tag"] = fluentdTag;
 
     for (const auto& [key, value] : params) {
-        record[key] = value;
+        record[key] = SIsLogParamWhitelisted(key) ? value : "<REDACTED>";
     }
     string json = SComposeJSONObject(record) + "\n";
 
