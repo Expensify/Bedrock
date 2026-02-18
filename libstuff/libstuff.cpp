@@ -28,6 +28,8 @@
 #include <libstuff/SQResult.h>
 #include <libstuff/SData.h>
 #include <libstuff/SFastBuffer.h>
+#include <libstuff/SRingBuffer.h>
+#include <libstuff/SThread.h>
 #include <libstuff/sqlite3.h>
 
 // Additional headers
