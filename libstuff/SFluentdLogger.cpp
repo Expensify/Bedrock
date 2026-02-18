@@ -74,10 +74,11 @@ void SFluentdLogger::senderLoop()
             fd = openSocket();
         }
 
-        if (!sendAll(fd, entry.value())) {
+        const auto& record = entry.value();
+        if (!sendAll(fd, record.json)) {
             close(fd);
             fd = -1;
-            syslog(LOG_WARNING, "%s", entry.value().data());
+            syslog(record.priority, "%s", record.json.data());
         }
     }
 
@@ -86,7 +87,8 @@ void SFluentdLogger::senderLoop()
     }
 }
 
-bool SFluentdLogger::log(string&& json)
+bool SFluentdLogger::log(int priority, string&& json)
 {
-    return buffer->push(move(json));
+    FluentdLogRecord record{priority, move(json)};
+    return buffer->push(move(record));
 }
