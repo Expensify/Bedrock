@@ -263,13 +263,11 @@ void SSyslogNoop(int priority, const char* format, ...);
 extern atomic<void (*)(int priority, const char* format, ...)> SSyslogFunc;
 
 // --------------------------------------------------------------------------
-// Fluentd JSON logging stuff
+// Fluentd logging with lock-free ring buffer.
+// Producers push to buffer. Sender thread writes to Fluentd.
+// Falls back to syslog if buffer full or Fluentd unavailable.
 // --------------------------------------------------------------------------
-// Initialize Fluentd TCP socket connection. Call once at startup.
 void SFluentdInitialize(const string& host, int port, const string& tag);
-
-// Log a message to Fluentd in JSON format. Thread-safe.
-// No-op if Fluentd is not initialized. Handles connection failures gracefully.
 void SFluentdLog(int priority, const string& message, const STable& params = {});
 
 string addLogParams(string&& message, const STable& params = {});
