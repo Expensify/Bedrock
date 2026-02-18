@@ -286,53 +286,90 @@ void SSyslogNoop(int priority, const char* format, ...)
 {
 }
 
-static int SFluentdSocketFD = -1;
-static mutex SFluentdSocketMutex;
 static string SFluentdHost;
 static int SFluentdPort = 0;
 static string SFluentdTag;
-static atomic<bool> SFluentdConfigured{false};
+static atomic<bool> SFluentdRunning{false};
+static SRingBuffer<string, SRINGBUFFER_DEFAULT_CAPACITY> SFluentdBuffer;
 
-// Lock parameter enforces mutex is held before calling this function.
-static bool SFluentdConnect(const lock_guard<mutex>&)
+static int SFluentdConnect()
 {
-    SFluentdSocketFD = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (SFluentdSocketFD == -1) {
-        return false;
+    int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (fd == -1) {
+        return -1;
     }
 
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(SFluentdPort);
-    inet_pton(AF_INET, SFluentdHost.c_str(), &addr.sin_addr);
+    inet_pton(AF_INET, SFluentdHost.data(), &addr.sin_addr);
 
-    if (connect(SFluentdSocketFD, (struct sockaddr*) &addr, sizeof(addr)) == -1) {
-        close(SFluentdSocketFD);
-        SFluentdSocketFD = -1;
-        return false;
+    if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+        close(fd);
+        return -1;
     }
 
+    return fd;
+}
+
+// send() may not write all bytes in one call. Loop until complete.
+static bool SFluentdSendAll(int fd, const string& data)
+{
+    size_t sent = 0;
+    while (sent < data.size()) {
+        ssize_t n = send(fd, data.data() + sent, data.size() - sent, MSG_NOSIGNAL);
+        if (n <= 0) {
+            return false;
+        }
+        sent += n;
+    }
     return true;
+}
+
+// Sender thread: pops from ring buffer and writes to Fluentd socket.
+static void SFluentdSenderLoop()
+{
+    int fd = -1;
+    while (SFluentdRunning.load()) {
+        auto entry = SFluentdBuffer.pop();
+
+        // Buffer is empty, sleep to avoid waiting
+        if (!entry.has_value()) {
+            this_thread::sleep_for(chrono::milliseconds(1));
+            continue;
+        }
+
+        // Connect if not connected
+        if (fd == -1) {
+            fd = SFluentdConnect();
+        }
+
+        // Send failed, close socket and fallback to syslog
+        if (!SFluentdSendAll(fd, entry.value())) {
+            close(fd);
+            fd = -1;
+            syslog(LOG_WARNING, "%s", entry.value().data());
+        }
+    }
 }
 
 void SFluentdInitialize(const string& host, int port, const string& tag)
 {
-    lock_guard<mutex> lock(SFluentdSocketMutex);
     SFluentdHost = host;
     SFluentdPort = port;
     SFluentdTag = tag;
-    SFluentdConnect(lock);
-    SFluentdConfigured.store(true);
+    SFluentdRunning.store(true);
+    auto [thread, future] = SThread(SFluentdSenderLoop);
+    thread.detach();
 }
 
 void SFluentdLog(int priority, const string& message, const STable& params)
 {
-    if (!SFluentdConfigured.load()) {
+    if (!SFluentdRunning.load()) {
         return;
     }
 
-    // Build JSON before acquiring lock to avoid doing heavy stuff in the critical section
     STable record;
     record["timestamp"] = to_string(time(nullptr));
     record["priority"] = to_string(priority);
@@ -348,19 +385,9 @@ void SFluentdLog(int priority, const string& message, const STable& params)
     record["tag"] = SFluentdTag;
     string json = SComposeJSONObject(record) + "\n";
 
-    lock_guard<mutex> lock(SFluentdSocketMutex);
-
-    // Reconnect if needed
-    if (SFluentdSocketFD == -1) {
-        if (!SFluentdConnect(lock)) {
-            return;
-        }
-    }
-
-    // Try to send the log over TCP. Close the socket on failure. It'll try to reconnect on next attempt
-    if (send(SFluentdSocketFD, json.c_str(), json.size(), MSG_NOSIGNAL) == -1) {
-        close(SFluentdSocketFD);
-        SFluentdSocketFD = -1;
+    if (!SFluentdBuffer.push(move(json))) {
+        // Fallback to syslog if buffer is full
+        syslog(priority, "%s", message.data());
     }
 }
 
