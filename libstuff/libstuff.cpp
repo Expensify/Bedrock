@@ -285,87 +285,18 @@ void SSyslogNoop(int priority, const char* format, ...)
 {
 }
 
-static string SFluentdHost;
-static int SFluentdPort = 0;
-static string SFluentdTag;
-static atomic<bool> SFluentdRunning{false};
-static SRingBuffer<string, SRINGBUFFER_DEFAULT_CAPACITY> SFluentdBuffer;
-
-static int SFluentdConnect()
-{
-    int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (fd == -1) {
-        return -1;
-    }
-
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(SFluentdPort);
-    inet_pton(AF_INET, SFluentdHost.data(), &addr.sin_addr);
-
-    if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
-        close(fd);
-        return -1;
-    }
-
-    return fd;
-}
-
-// send() may not write all bytes in one call. Loop until complete.
-static bool SFluentdSendAll(int fd, const string& data)
-{
-    size_t sent = 0;
-    while (sent < data.size()) {
-        ssize_t n = send(fd, data.data() + sent, data.size() - sent, MSG_NOSIGNAL);
-        if (n <= 0) {
-            return false;
-        }
-        sent += n;
-    }
-    return true;
-}
-
-// Sender thread: pops from ring buffer and writes to Fluentd socket.
-static void SFluentdSenderLoop()
-{
-    int fd = -1;
-    while (SFluentdRunning.load()) {
-        auto entry = SFluentdBuffer.pop();
-
-        // Buffer is empty, sleep to avoid waiting
-        if (!entry.has_value()) {
-            this_thread::sleep_for(chrono::milliseconds(1));
-            continue;
-        }
-
-        // Connect if not connected
-        if (fd == -1) {
-            fd = SFluentdConnect();
-        }
-
-        // Send failed, close socket and fallback to syslog
-        if (!SFluentdSendAll(fd, entry.value())) {
-            close(fd);
-            fd = -1;
-            syslog(LOG_WARNING, "%s", entry.value().data());
-        }
-    }
-}
+static unique_ptr<SFluentdLogger> fluentdLogger;
+static string fluentdTag;
 
 void SFluentdInitialize(const string& host, int port, const string& tag)
 {
-    SFluentdHost = host;
-    SFluentdPort = port;
-    SFluentdTag = tag;
-    SFluentdRunning.store(true);
-    auto [thread, future] = SThread(SFluentdSenderLoop);
-    thread.detach();
+    fluentdTag = tag;
+    fluentdLogger = make_unique<SFluentdLogger>(host, port);
 }
 
 void SFluentdLog(int priority, const string& message, const STable& params)
 {
-    if (!SFluentdRunning.load()) {
+    if (!fluentdLogger) {
         return;
     }
 
@@ -381,11 +312,10 @@ void SFluentdLog(int priority, const string& message, const STable& params)
         record[key] = value;
     }
 
-    record["tag"] = SFluentdTag;
+    record["tag"] = fluentdTag;
     string json = SComposeJSONObject(record) + "\n";
 
-    if (!SFluentdBuffer.push(move(json))) {
-        // Fallback to syslog if buffer is full
+    if (!fluentdLogger->log(move(json))) {
         syslog(priority, "%s", message.data());
     }
 }
