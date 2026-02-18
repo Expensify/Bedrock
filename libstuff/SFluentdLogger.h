@@ -9,7 +9,8 @@
 
 using namespace std;
 
-struct FluentdLogRecord {
+struct FluentdLogRecord
+{
     int priority;
     string json;
 };
