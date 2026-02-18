@@ -25,12 +25,13 @@ struct SRingBufferTest : tpunit::TestFixture
         SRingBuffer<int, 10> buffer;
 
         // Push returns true
-        ASSERT_TRUE(buffer.push(42));
+        int val = 42;
+        ASSERT_TRUE(buffer.push(move(val)));
 
         // Pop returns the value
-        auto val = buffer.pop();
-        ASSERT_TRUE(val.has_value());
-        ASSERT_EQUAL(val.value(), 42);
+        auto result = buffer.pop();
+        ASSERT_TRUE(result.has_value());
+        ASSERT_EQUAL(result.value(), 42);
     }
 
     // Test pop on empty buffer
@@ -50,17 +51,20 @@ struct SRingBufferTest : tpunit::TestFixture
 
         // Fill buffer to capacity
         for (int i = 0; i < 5; i++) {
-            ASSERT_TRUE(buffer.push(i));
+            int val = i;
+            ASSERT_TRUE(buffer.push(move(val)));
         }
 
         // Push fails when full
-        ASSERT_FALSE(buffer.push(100));
+        int val = 100;
+        ASSERT_FALSE(buffer.push(move(val)));
 
         // Pop one item
         buffer.pop();
 
         // Push succeeds again
-        ASSERT_TRUE(buffer.push(100));
+        val = 100;
+        ASSERT_TRUE(buffer.push(move(val)));
     }
 
     // Test FIFO ordering
@@ -69,9 +73,10 @@ struct SRingBufferTest : tpunit::TestFixture
         SRingBuffer<int, 10> buffer;
 
         // Push 1, 2, 3
-        buffer.push(1);
-        buffer.push(2);
-        buffer.push(3);
+        int a = 1, b = 2, c = 3;
+        buffer.push(move(a));
+        buffer.push(move(b));
+        buffer.push(move(c));
 
         // Pop in same order
         ASSERT_EQUAL(buffer.pop().value(), 1);
@@ -90,9 +95,10 @@ struct SRingBufferTest : tpunit::TestFixture
         // Spawn producer threads
         vector<thread> producers;
         for (int t = 0; t < numThreads; t++) {
-            producers.emplace_back([&buffer, &pushCount, pushesPerThread]() {
-                for (int i = 0; i < pushesPerThread; i++) {
-                    if (buffer.push(i)) {
+            producers.emplace_back([&buffer, &pushCount]() {
+                for (int i = 0; i < 100; i++) {
+                    int val = i;
+                    if (buffer.push(move(val))) {
                         pushCount++;
                     }
                 }
@@ -129,7 +135,9 @@ struct SRingBufferTest : tpunit::TestFixture
         // Producer pushes 1000 items through size-100 buffer
         thread producer([&]() {
             for (int i = 0; i < totalItems; i++) {
-                while (!buffer.push(i)) {
+                int val = i;
+                while (!buffer.push(move(val))) {
+                    val = i;
                     this_thread::yield();
                 }
                 produced++;
