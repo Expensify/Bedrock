@@ -79,10 +79,6 @@ void SFluentdLogger::senderLoop()
             syslog(LOG_WARNING, "%s", entry.value().data());
         }
     }
-
-    if (fd != -1) {
-        close(fd);
-    }
 }
 
 bool SFluentdLogger::log(string&& json)
