@@ -7,7 +7,7 @@
 
 using namespace std;
 
-// 10M entries, ~1GB at 100 bytes/item, ~200 seconds buffer at 50K items/sec
+// 10M items, ~1GB at 100 bytes/item, ~200 seconds buffer at 50K items/sec
 constexpr size_t SRINGBUFFER_DEFAULT_CAPACITY = 10'000'000;
 
 /*
@@ -18,6 +18,8 @@ public:
     struct BufferElement
     {
         T data;
+
+        // Prevents consumer from reading partially-written data. Producer reserves slot with CAS, then writes data, then signals ready.
         atomic<bool> isReady{false};
     };
 
