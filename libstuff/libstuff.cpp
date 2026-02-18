@@ -343,7 +343,8 @@ void SFluentdLog(int priority, const string& message, const STable& params)
         record[key] = value;
     }
 
-    string json = "[\"" + SFluentdTag + "\"," + to_string(time(nullptr)) + "," + SComposeJSONObject(record) + "]\n";
+    record["tag"] = SFluentdTag;
+    string json = SComposeJSONObject(record) + "\n";
 
     lock_guard<mutex> lock(SFluentdSocketMutex);
 
