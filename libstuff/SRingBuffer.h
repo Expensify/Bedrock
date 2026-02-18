@@ -11,16 +11,18 @@ using namespace std;
 constexpr size_t SRINGBUFFER_DEFAULT_CAPACITY = 10'000'000;
 
 /*
-Lock free multi producer, single consumer ring buffer. Used for Fluentd logging
-*/
-template <typename T, size_t C> class SRingBuffer {
-  public:
-    struct BufferElement {
+ * Lock free multi producer, single consumer ring buffer. Used for Fluentd logging
+ */
+template<typename T, size_t C> class SRingBuffer {
+public:
+    struct BufferElement
+    {
         T data;
         atomic<bool> isReady{false};
     };
 
-    bool push(T&& data) {
+    bool push(T&& data)
+    {
         size_t currentTail = tail.load(memory_order_relaxed);
 
         while (true) {
@@ -39,7 +41,8 @@ template <typename T, size_t C> class SRingBuffer {
         return true;
     }
 
-    optional<T> pop() {
+    optional<T> pop()
+    {
         size_t currentHead = head.load();
         size_t index = currentHead % C;
 
@@ -55,7 +58,7 @@ template <typename T, size_t C> class SRingBuffer {
         return bufferData;
     }
 
-  private:
+private:
     array<BufferElement, C> buffer;
 
     // Single consumer reads from here

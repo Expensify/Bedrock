@@ -9,13 +9,13 @@
 using namespace std;
 
 class SFluentdLogger {
-  public:
+public:
     SFluentdLogger(const string& host, int port);
     ~SFluentdLogger();
 
     bool log(string&& json);
 
-  private:
+private:
     int openSocket();
     bool sendAll(int fd, const string& data);
     void senderLoop();

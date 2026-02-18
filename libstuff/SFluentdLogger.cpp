@@ -7,19 +7,22 @@
 #include <syslog.h>
 #include <unistd.h>
 
-SFluentdLogger::SFluentdLogger(const string& host, int port) : host(host), port(port), running(true) {
+SFluentdLogger::SFluentdLogger(const string& host, int port) : host(host), port(port), running(true)
+{
     auto [thread, future] = SThread(&SFluentdLogger::senderLoop, this);
     senderThread = move(thread);
 }
 
-SFluentdLogger::~SFluentdLogger() {
+SFluentdLogger::~SFluentdLogger()
+{
     running.store(false);
     if (senderThread.joinable()) {
         senderThread.join();
     }
 }
 
-int SFluentdLogger::openSocket() {
+int SFluentdLogger::openSocket()
+{
     int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (fd == -1) {
         return -1;
@@ -30,7 +33,7 @@ int SFluentdLogger::openSocket() {
     addr.sin_port = htons(port);
     inet_pton(AF_INET, host.data(), &addr.sin_addr);
 
-    if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == -1) {
+    if (connect(fd, (struct sockaddr*) &addr, sizeof(addr)) == -1) {
         close(fd);
         return -1;
     }
@@ -38,7 +41,8 @@ int SFluentdLogger::openSocket() {
     return fd;
 }
 
-bool SFluentdLogger::sendAll(int fd, const string& data) {
+bool SFluentdLogger::sendAll(int fd, const string& data)
+{
     size_t sent = 0;
     while (sent < data.size()) {
         ssize_t n = send(fd, data.data() + sent, data.size() - sent, MSG_NOSIGNAL);
@@ -50,7 +54,8 @@ bool SFluentdLogger::sendAll(int fd, const string& data) {
     return true;
 }
 
-void SFluentdLogger::senderLoop() {
+void SFluentdLogger::senderLoop()
+{
     int fd = -1;
 
     while (true) {
@@ -80,4 +85,7 @@ void SFluentdLogger::senderLoop() {
     }
 }
 
-bool SFluentdLogger::log(string&& json) { return buffer.push(move(json)); }
+bool SFluentdLogger::log(string&& json)
+{
+    return buffer.push(move(json));
+}
