@@ -8,7 +8,9 @@
 using namespace std;
 
 // 10M items, ~1GB at 100 bytes/item, ~200 seconds buffer at 50K items/sec
-constexpr size_t SRINGBUFFER_DEFAULT_CAPACITY = 10'000'000;
+#ifndef SRINGBUFFER_DEFAULT_CAPACITY
+#define SRINGBUFFER_DEFAULT_CAPACITY 10000000
+#endif
 
 /*
  * Lock free multi producer, single consumer ring buffer. Used for Fluentd logging

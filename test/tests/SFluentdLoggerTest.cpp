@@ -1,3 +1,6 @@
+// Override buffer size before including headers because the default 10M is too large for tests.
+#define SRINGBUFFER_DEFAULT_CAPACITY 1000
+
 #include <thread>
 #include <chrono>
 #include <sys/socket.h>
