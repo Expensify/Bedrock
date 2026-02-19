@@ -328,6 +328,8 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
                 spec.spec.eStyle = QRF_STYLE_Table;
             } else if (*it == "-tabs" || *it == "--tabs") {
                 // Nothing to set.
+            } else if (*it == "--nolimits") {
+                spec.spec.nLineLimit = 0;
             }
         }
     }
