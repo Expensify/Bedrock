@@ -1296,8 +1296,10 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     buffer.clear();
 
     // Validate methodLine before adding it to the buffer to avoid control characters
-    if (any_of(methodLine.cbegin(), methodLine.cend(), [](auto c) { return c < 32 || c == 127; })) {
-        STHROW("Invalid non-printable character detected in methodLine");
+    for (const unsigned char c : methodLine) {
+        if (c < 32 || c == 127) {
+            STHROW("Invalid control character ascii(" + to_string(static_cast<int>(c)) + ") in methodLine");
+        }
     }
 
     buffer += methodLine + "\r\n";
