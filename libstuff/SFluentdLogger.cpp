@@ -91,6 +91,10 @@ void SFluentdLogger::senderLoop()
             break;
         }
 
+        if (state == State::Empty) {
+            continue;
+        }
+
         if (fd == -1) {
             fd = openSocket();
         }
