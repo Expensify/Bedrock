@@ -20,8 +20,8 @@ struct SRingBufferTest : tpunit::TestFixture
         TEST(SRingBufferTest::testFlushOnShutdown),
         TEST(SRingBufferTest::testShutdownOnEmpty),
         TEST(SRingBufferTest::testWaitUnblocksOnShutdown),
-        TEST(SRingBufferTest::testSmallCapacity),
-        TEST(SRingBufferTest::testWrapAroundIntegrity)
+        TEST(SRingBufferTest::testWrapAroundIntegrity),
+        TEST(SRingBufferTest::testCapacityOne)
     )
     {
     }
@@ -286,51 +286,6 @@ struct SRingBufferTest : tpunit::TestFixture
         ASSERT_TRUE(consumerFinished);
     }
 
-    // Test buffer with small capacity
-    void testSmallCapacity()
-    {
-        SRingBuffer<int, 3> buffer;
-
-        // Fill buffer to capacity
-        for (int i = 0; i < 3; i++) {
-            int val = i;
-            ASSERT_TRUE(buffer.push(move(val)));
-        }
-
-        // Next push fails (buffer full)
-        int val = 99;
-        ASSERT_FALSE(buffer.push(move(val)));
-
-        // Pop two items
-        auto [d0, s0] = buffer.pop();
-        ASSERT_TRUE(s0 == State::Ready);
-        ASSERT_EQUAL(d0.value(), 0);
-
-        auto [d1, s1] = buffer.pop();
-        ASSERT_TRUE(s1 == State::Ready);
-        ASSERT_EQUAL(d1.value(), 1);
-
-        // Push one more
-        val = 100;
-        ASSERT_TRUE(buffer.push(move(val)));
-
-        // Shutdown (buffer has 2 items: 2, 100 - space for shutdown marker)
-        buffer.shutdown();
-
-        // Drain remaining items
-        auto [d2, s2] = buffer.pop();
-        ASSERT_TRUE(s2 == State::Ready);
-        ASSERT_EQUAL(d2.value(), 2);
-
-        auto [d3, s3] = buffer.pop();
-        ASSERT_TRUE(s3 == State::Ready);
-        ASSERT_EQUAL(d3.value(), 100);
-
-        // Finally shutdown marker
-        auto [shutdownData, shutdownState] = buffer.pop();
-        ASSERT_TRUE(shutdownState == State::Shutdown);
-    }
-
     // Test data integrity after many wrap-arounds
     void testWrapAroundIntegrity()
     {
@@ -346,5 +301,39 @@ struct SRingBufferTest : tpunit::TestFixture
             ASSERT_TRUE(state == State::Ready);
             ASSERT_EQUAL(data.value(), i);
         }
+    }
+
+    // Test buffer with capacity of 1
+    void testCapacityOne()
+    {
+        SRingBuffer<int, 1> buffer;
+
+        // Push one item
+        int val = 42;
+        ASSERT_TRUE(buffer.push(move(val)));
+
+        // Second push fails (full)
+        val = 99;
+        ASSERT_FALSE(buffer.push(move(val)));
+
+        // Pop the item
+        auto [data, state] = buffer.pop();
+        ASSERT_TRUE(state == State::Ready);
+        ASSERT_EQUAL(data.value(), 42);
+
+        // Push again after pop
+        val = 100;
+        ASSERT_TRUE(buffer.push(move(val)));
+
+        // Shutdown with pending data
+        buffer.shutdown();
+
+        // Get data then shutdown marker
+        auto [d1, s1] = buffer.pop();
+        ASSERT_TRUE(s1 == State::Ready);
+        ASSERT_EQUAL(d1.value(), 100);
+
+        auto [d2, s2] = buffer.pop();
+        ASSERT_TRUE(s2 == State::Shutdown);
     }
 } __SRingBufferTest;
