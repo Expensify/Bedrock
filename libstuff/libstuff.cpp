@@ -294,7 +294,7 @@ void SFluentdInitialize(const string& host, in_port_t port, const string& tag)
     fluentdLogger = make_unique<SFluentdLogger>(host, port);
 }
 
-void SFluentdLog(int priority, const string& message, const STable& params)
+void SFluentdLog(int priority, string&& message, STable&& params)
 {
     if (!fluentdLogger) {
         return;
@@ -306,16 +306,16 @@ void SFluentdLog(int priority, const string& message, const STable& params)
     record["_thread_name"] = SThreadLogName;
     record["_thread_prefix"] = SThreadLogPrefix;
     record["_process"] = SProcessName;
-    record["_message"] = message;
+    record["_message"] = move(message);
     record["_tag"] = fluentdTag;
 
-    for (const auto& [key, value] : params) {
-        record[key] = SIsLogParamWhitelisted(key) ? value : "<REDACTED>";
+    for (auto& [key, value] : params) {
+        record[key] = SIsLogParamWhitelisted(key) ? move(value) : "<REDACTED>";
     }
-    string json = SComposeJSONObject(record) + "\n";
 
-    if (!fluentdLogger->log(priority, move(json))) {
-        syslog(priority, "%s", message.data());
+    if (!fluentdLogger->log(priority, SComposeJSONObject(record) + "\n")) {
+        // Fallback to syslog if fluentdLooger fails to log
+        syslog(priority, "%s", SComposeJSONObject(record).c_str());
     }
 }
 
