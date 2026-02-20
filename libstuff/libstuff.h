@@ -289,7 +289,7 @@ string addLogParams(string&& message, const STable& params = {});
                 for (size_t i = 0; i < s.size(); i += 7168) {                       \
                     (*SSyslogFunc)(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
                 }                                                                   \
-                SFluentdLog(_PRI_, prefix + __rawMsg, STable(## __VA_ARGS__));       \
+                SFluentdLog(_PRI_, prefix + __rawMsg, STable(__VA_ARGS__));       \
             }                                                                       \
         } while (false)
 
