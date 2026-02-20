@@ -14,7 +14,9 @@ struct SRingBufferTest : tpunit::TestFixture
         TEST(SRingBufferTest::testFullBuffer),
         TEST(SRingBufferTest::testFIFOOrder),
         TEST(SRingBufferTest::testMultiProducer),
-        TEST(SRingBufferTest::testProducerConsumer)
+        TEST(SRingBufferTest::testProducerConsumer),
+        TEST(SRingBufferTest::testShutdown),
+        TEST(SRingBufferTest::testFlushOnShutdown)
     )
     {
     }
@@ -24,24 +26,26 @@ struct SRingBufferTest : tpunit::TestFixture
     {
         SRingBuffer<int, 10> buffer;
 
-        // Push returns true
+        // Push a value
         int val = 42;
         ASSERT_TRUE(buffer.push(move(val)));
 
-        // Pop returns the value
-        auto result = buffer.pop();
-        ASSERT_TRUE(result.has_value());
-        ASSERT_EQUAL(result.value(), 42);
+        // Pop returns the value with Ready state
+        auto [data, state] = buffer.pop();
+        ASSERT_TRUE(state == State::Ready);
+        ASSERT_TRUE(data.has_value());
+        ASSERT_EQUAL(data.value(), 42);
     }
 
-    // Test pop on empty buffer
+    // Test pop on empty buffer returns Empty state
     void testEmptyPop()
     {
         SRingBuffer<int, 10> buffer;
 
-        // Pop on empty returns nullopt
-        auto val = buffer.pop();
-        ASSERT_FALSE(val.has_value());
+        // Pop on empty buffer returns Empty state
+        auto [data, state] = buffer.pop();
+        ASSERT_TRUE(state == State::Empty);
+        ASSERT_FALSE(data.has_value());
     }
 
     // Test buffer rejects push when full
@@ -59,10 +63,10 @@ struct SRingBufferTest : tpunit::TestFixture
         int val = 100;
         ASSERT_FALSE(buffer.push(move(val)));
 
-        // Pop one item
+        // Pop one item to make space
         buffer.pop();
 
-        // Push succeeds again
+        // Push succeeds after making space
         val = 100;
         ASSERT_TRUE(buffer.push(move(val)));
     }
@@ -78,10 +82,17 @@ struct SRingBufferTest : tpunit::TestFixture
         buffer.push(move(b));
         buffer.push(move(c));
 
-        // Pop in same order
-        ASSERT_EQUAL(buffer.pop().value(), 1);
-        ASSERT_EQUAL(buffer.pop().value(), 2);
-        ASSERT_EQUAL(buffer.pop().value(), 3);
+        // Pop first item
+        auto [firstData, firstState] = buffer.pop();
+        ASSERT_EQUAL(firstData.value(), 1);
+
+        // Pop second item
+        auto [secondData, secondState] = buffer.pop();
+        ASSERT_EQUAL(secondData.value(), 2);
+
+        // Pop third item
+        auto [thirdData, thirdState] = buffer.pop();
+        ASSERT_EQUAL(thirdData.value(), 3);
     }
 
     // Test multiple threads pushing concurrently
