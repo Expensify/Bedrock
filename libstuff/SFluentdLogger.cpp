@@ -7,7 +7,7 @@
 #include <syslog.h>
 #include <unistd.h>
 
-SFluentdLogger::SFluentdLogger(const string& host, int port) : host(host), port(port), running(true),
+SFluentdLogger::SFluentdLogger(const string& host, in_port_t port) : host(host), port(port), running(true),
     buffer(make_unique<SRingBuffer<FluentdLogRecord, SRINGBUFFER_DEFAULT_CAPACITY>>())
 {
     auto [thread, future] = SThread(&SFluentdLogger::senderLoop, this);

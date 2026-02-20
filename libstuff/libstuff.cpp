@@ -288,7 +288,7 @@ void SSyslogNoop(int priority, const char* format, ...)
 static unique_ptr<SFluentdLogger> fluentdLogger;
 static string fluentdTag;
 
-void SFluentdInitialize(const string& host, int port, const string& tag)
+void SFluentdInitialize(const string& host, in_port_t port, const string& tag)
 {
     fluentdTag = tag;
     fluentdLogger = make_unique<SFluentdLogger>(host, port);

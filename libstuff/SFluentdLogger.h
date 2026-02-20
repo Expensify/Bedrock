@@ -17,7 +17,7 @@ struct FluentdLogRecord
 
 class SFluentdLogger {
 public:
-    SFluentdLogger(const string& host, int port);
+    SFluentdLogger(const string& host, in_port_t port);
     ~SFluentdLogger();
 
     bool log(int priority, string&& json);
@@ -28,7 +28,7 @@ private:
     void senderLoop();
 
     string host;
-    int port;
+    in_port_t port;
     atomic<bool> running{false};
     unique_ptr<SRingBuffer<FluentdLogRecord, SRINGBUFFER_DEFAULT_CAPACITY>> buffer;
     thread senderThread;

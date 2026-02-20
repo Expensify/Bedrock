@@ -12,7 +12,7 @@
 // Mock TCP server that counts newline-delimited messages
 class MockServer {
 public:
-    int port = 0;
+    in_port_t port = 0;
     atomic<int> messageCount{0};
 
     MockServer()

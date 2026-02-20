@@ -1304,7 +1304,7 @@ BedrockServer::BedrockServer(const SData& args_)
     string logDestination = args.isSet("-logDestination") ? args["-logDestination"] : "rsyslog";
     if (logDestination == "fluentd" || logDestination == "both") {
         string host = args.isSet("-fluentdHost") ? args["-fluentdHost"] : "127.0.0.1";
-        int port = args.isSet("-fluentdPort") ? SToInt(args["-fluentdPort"]) : 24224;
+        in_port_t port = args.isSet("-fluentdPort") ? SToInt(args["-fluentdPort"]) : 24224;
         string tag = args.isSet("-fluentdTag") ? args["-fluentdTag"] : "bedrock";
         SFluentdInitialize(host, port, tag);
     }
