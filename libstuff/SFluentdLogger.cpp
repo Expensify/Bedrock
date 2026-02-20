@@ -1,8 +1,6 @@
 #include <libstuff/SFluentdLogger.h>
 #include <libstuff/SThread.h>
 
-#include <chrono>
-
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
