@@ -24,6 +24,9 @@ public:
 
     bool log(int priority, string&& json);
 
+    inline static unique_ptr<SFluentdLogger> instance;
+    inline static string tag;
+
 private:
     int openSocket();
     bool sendAll(int fd, const string& data);

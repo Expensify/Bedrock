@@ -29,6 +29,7 @@
 #include <libstuff/SData.h>
 #include <libstuff/SFastBuffer.h>
 #include <libstuff/SFluentdLogger.h>
+#include <libstuff/SFluentdLogger.h>
 #include <libstuff/sqlite3.h>
 
 // Additional headers
@@ -285,18 +286,15 @@ void SSyslogNoop(int priority, const char* format, ...)
 {
 }
 
-static unique_ptr<SFluentdLogger> fluentdLogger;
-static string fluentdTag;
-
 void SFluentdInitialize(const string& host, in_port_t port, const string& tag)
 {
-    fluentdTag = tag;
-    fluentdLogger = make_unique<SFluentdLogger>(host, port);
+    SFluentdLogger::tag = tag;
+    SFluentdLogger::instance = make_unique<SFluentdLogger>(host, port);
 }
 
 void SFluentdLog(int priority, string&& message, STable&& params)
 {
-    if (!fluentdLogger) {
+    if (!SFluentdLogger::instance) {
         return;
     }
 
@@ -307,13 +305,13 @@ void SFluentdLog(int priority, string&& message, STable&& params)
     record["_thread_prefix"] = SThreadLogPrefix;
     record["_process"] = SProcessName;
     record["_message"] = move(message);
-    record["_tag"] = fluentdTag;
+    record["_tag"] = SFluentdLogger::tag;
 
     for (auto& [key, value] : params) {
         record[key] = SIsLogParamWhitelisted(key) ? move(value) : "<REDACTED>";
     }
 
-    if (!fluentdLogger->log(priority, SComposeJSONObject(record) + "\n")) {
+    if (!SFluentdLogger::instance->log(priority, SComposeJSONObject(record) + "\n")) {
         // Fallback to syslog if fluentdLogger fails to log
         syslog(priority, "%s", SComposeJSONObject(record).c_str());
     }
