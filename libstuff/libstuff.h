@@ -2,6 +2,7 @@
 #define LIBSTUFF_H
 #include "libstuff/qrf.h"
 
+#include <netinet/in.h>
 #include <poll.h>
 #include <libgen.h>
 #include <syslog.h>
