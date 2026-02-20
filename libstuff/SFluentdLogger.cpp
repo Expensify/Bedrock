@@ -30,7 +30,7 @@ const char* SPriorityName(int priority)
     }
 }
 
-SFluentdLogger::SFluentdLogger(const string& host, in_port_t port) : host(host), port(port), running(true),
+SFluentdLogger::SFluentdLogger(const string& host, in_port_t port) : host(host), port(port),
     buffer(make_unique<SRingBuffer<FluentdLogRecord, SRINGBUFFER_DEFAULT_CAPACITY>>())
 {
     auto [thread, future] = SThread(&SFluentdLogger::senderLoop, this);
@@ -39,7 +39,8 @@ SFluentdLogger::SFluentdLogger(const string& host, in_port_t port) : host(host),
 
 SFluentdLogger::~SFluentdLogger()
 {
-    running.store(false);
+    buffer->shutdown();
+
     if (senderThread.joinable()) {
         senderThread.join();
     }
