@@ -1,6 +1,7 @@
 #include <thread>
 #include <vector>
 #include <atomic>
+#include <chrono>
 
 #include <libstuff/SRingBuffer.h>
 #include <test/lib/BedrockTester.h>
@@ -16,7 +17,11 @@ struct SRingBufferTest : tpunit::TestFixture
         TEST(SRingBufferTest::testMultiProducer),
         TEST(SRingBufferTest::testProducerConsumer),
         TEST(SRingBufferTest::testShutdown),
-        TEST(SRingBufferTest::testFlushOnShutdown)
+        TEST(SRingBufferTest::testFlushOnShutdown),
+        TEST(SRingBufferTest::testShutdownOnEmpty),
+        TEST(SRingBufferTest::testWaitUnblocksOnShutdown),
+        TEST(SRingBufferTest::testCapacityOne),
+        TEST(SRingBufferTest::testWrapAroundIntegrity)
     )
     {
     }
@@ -232,5 +237,107 @@ struct SRingBufferTest : tpunit::TestFixture
         auto [finalData, finalState] = buffer.pop();
         ASSERT_TRUE(finalState == State::Shutdown);
         ASSERT_FALSE(finalData.has_value());
+    }
+
+    // Test shutdown on empty buffer
+    void testShutdownOnEmpty()
+    {
+        SRingBuffer<int, 10> buffer;
+
+        // Shutdown immediately with no data
+        buffer.shutdown();
+
+        // Pop returns shutdown marker directly
+        auto [data, state] = buffer.pop();
+        ASSERT_TRUE(state == State::Shutdown);
+        ASSERT_FALSE(data.has_value());
+    }
+
+    // Test wait() unblocks when shutdown is called
+    void testWaitUnblocksOnShutdown()
+    {
+        SRingBuffer<int, 10> buffer;
+        atomic<bool> consumerStarted{false};
+        atomic<bool> consumerFinished{false};
+
+        // Consumer blocks in wait()
+        thread consumer([&]() {
+            consumerStarted = true;
+            buffer.wait();
+            auto [data, state] = buffer.pop();
+            ASSERT_TRUE(state == State::Shutdown);
+            consumerFinished = true;
+        });
+
+        // Wait for consumer to start
+        while (!consumerStarted) {
+            this_thread::yield();
+        }
+
+        // Small delay to ensure consumer is blocked in wait()
+        this_thread::sleep_for(chrono::milliseconds(10));
+
+        // Shutdown unblocks consumer
+        buffer.shutdown();
+
+        consumer.join();
+
+        // Consumer received shutdown
+        ASSERT_TRUE(consumerFinished);
+    }
+
+    // Test buffer with capacity of 1
+    void testCapacityOne()
+    {
+        SRingBuffer<int, 1> buffer;
+
+        // Push one item fills buffer
+        int val = 42;
+        ASSERT_TRUE(buffer.push(move(val)));
+
+        // Second push fails
+        val = 99;
+        ASSERT_FALSE(buffer.push(move(val)));
+
+        // Pop the item
+        auto [data, state] = buffer.pop();
+        ASSERT_TRUE(state == State::Ready);
+        ASSERT_EQUAL(data.value(), 42);
+
+        // Buffer empty again
+        auto [emptyData, emptyState] = buffer.pop();
+        ASSERT_TRUE(emptyState == State::Empty);
+
+        // Can push again
+        val = 100;
+        ASSERT_TRUE(buffer.push(move(val)));
+
+        // Shutdown
+        buffer.shutdown();
+
+        // Get data then shutdown marker
+        auto [finalData, finalState] = buffer.pop();
+        ASSERT_TRUE(finalState == State::Ready);
+        ASSERT_EQUAL(finalData.value(), 100);
+
+        auto [shutdownData, shutdownState] = buffer.pop();
+        ASSERT_TRUE(shutdownState == State::Shutdown);
+    }
+
+    // Test data integrity after many wrap-arounds
+    void testWrapAroundIntegrity()
+    {
+        SRingBuffer<int, 8> buffer;
+        const int totalItems = 1000;
+
+        // Push and pop, verifying each value
+        for (int i = 0; i < totalItems; i++) {
+            int val = i;
+            ASSERT_TRUE(buffer.push(move(val)));
+
+            auto [data, state] = buffer.pop();
+            ASSERT_TRUE(state == State::Ready);
+            ASSERT_EQUAL(data.value(), i);
+        }
     }
 } __SRingBufferTest;
