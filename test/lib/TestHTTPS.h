@@ -11,6 +11,6 @@ public:
     virtual ~TestHTTPS();
 
     // SHTTPSManager API
-    virtual bool _onRecv(Transaction* transaction);
-    virtual Transaction* sendRequest(const string& url, SData& request);
+    virtual bool _onRecv(Transaction& transaction) override;
+    virtual unique_ptr<Transaction> sendRequest(const string& url, SData& request);
 };
