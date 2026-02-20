@@ -1297,7 +1297,7 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
 
     // Validate methodLine before adding it to the buffer to avoid control characters
     for (const unsigned char c : methodLine) {
-        if (c < 32 || c == 127) {
+        if (c != 9 && (c < 32 || c == 127)) {
             STHROW("Invalid control character ascii(" + to_string(static_cast<int>(c)) + ") in methodLine");
         }
     }
