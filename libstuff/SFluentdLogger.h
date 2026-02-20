@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <memory>
 #include <netinet/in.h>
 #include <string>
@@ -14,7 +13,7 @@ const char* SPriorityName(int priority);
 
 struct FluentdLogRecord
 {
-    int priority;
+    int priority = 0;
     string json;
 };
 
@@ -32,7 +31,6 @@ private:
 
     string host;
     in_port_t port;
-    atomic<bool> running{false};
     unique_ptr<SRingBuffer<FluentdLogRecord, SRINGBUFFER_DEFAULT_CAPACITY>> buffer;
     thread senderThread;
 };
