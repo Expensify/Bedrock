@@ -40,9 +40,6 @@ SFluentdLogger::SFluentdLogger(const string& host, in_port_t port) : host(host),
 SFluentdLogger::~SFluentdLogger()
 {
     running.store(false);
-    while (!flushed.load()) {
-        buffer->notifyConsumer();
-    }
     if (senderThread.joinable()) {
         senderThread.join();
     }
