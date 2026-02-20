@@ -9,6 +9,8 @@
 
 using namespace std;
 
+const char* SPriorityName(int priority);
+
 struct FluentdLogRecord
 {
     int priority;
