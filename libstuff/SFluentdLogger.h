@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <memory>
+#include <netinet/in.h>
 #include <string>
 #include <thread>
 
