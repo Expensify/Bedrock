@@ -124,9 +124,13 @@ struct SRingBufferTest : tpunit::TestFixture
         // All pushes succeeded
         ASSERT_EQUAL(pushCount.load(), numThreads * pushesPerThread);
 
-        // Pop all items
+        // Pop all items until buffer is empty
         int popCount = 0;
-        while (buffer.pop().has_value()) {
+        while (true) {
+            auto [data, state] = buffer.pop();
+            if (state == State::Empty) {
+                break;
+            }
             popCount++;
         }
 
@@ -138,12 +142,11 @@ struct SRingBufferTest : tpunit::TestFixture
     void testProducerConsumer()
     {
         SRingBuffer<int, 100> buffer;
-        atomic<bool> done{false};
         atomic<int> produced{0};
         atomic<int> consumed{0};
         const int totalItems = 1000;
 
-        // Producer pushes 1000 items through size-100 buffer
+        // Producer pushes items and calls shutdown when done
         thread producer([&]() {
             for (int i = 0; i < totalItems; i++) {
                 int val = i;
@@ -153,17 +156,20 @@ struct SRingBufferTest : tpunit::TestFixture
                 }
                 produced++;
             }
-            done = true;
+            buffer.shutdown();
         });
 
-        // Consumer pops until done
+        // Consumer waits for data and processes until shutdown
         thread consumer([&]() {
-            while (!done || consumed < totalItems) {
-                auto val = buffer.pop();
-                if (val.has_value()) {
+            while (true) {
+                buffer.wait();
+                auto [data, state] = buffer.pop();
+
+                if (state == State::Shutdown) {
+                    break;
+                }
+                if (state == State::Ready) {
                     consumed++;
-                } else {
-                    this_thread::yield();
                 }
             }
         });
@@ -171,8 +177,60 @@ struct SRingBufferTest : tpunit::TestFixture
         producer.join();
         consumer.join();
 
-        // All items produced and consumed
+        // All items produced
         ASSERT_EQUAL(produced.load(), totalItems);
+
+        // All items consumed
         ASSERT_EQUAL(consumed.load(), totalItems);
+    }
+
+    // Test shutdown marker is delivered after all data
+    void testShutdown()
+    {
+        SRingBuffer<int, 10> buffer;
+
+        // Push one item
+        int val = 1;
+        buffer.push(move(val));
+
+        // Call shutdown
+        buffer.shutdown();
+
+        // First pop returns the data
+        auto [data, dataState] = buffer.pop();
+        ASSERT_TRUE(dataState == State::Ready);
+        ASSERT_EQUAL(data.value(), 1);
+
+        // Second pop returns shutdown marker
+        auto [shutdownData, shutdownState] = buffer.pop();
+        ASSERT_TRUE(shutdownState == State::Shutdown);
+        ASSERT_FALSE(shutdownData.has_value());
+    }
+
+    // Test all buffered data is flushed before shutdown marker
+    void testFlushOnShutdown()
+    {
+        SRingBuffer<int, 10> buffer;
+
+        // Push 5 items
+        for (int i = 0; i < 5; i++) {
+            int val = i;
+            buffer.push(move(val));
+        }
+
+        // Call shutdown
+        buffer.shutdown();
+
+        // All 5 items should come before shutdown marker
+        for (int i = 0; i < 5; i++) {
+            auto [itemData, itemState] = buffer.pop();
+            ASSERT_TRUE(itemState == State::Ready);
+            ASSERT_EQUAL(itemData.value(), i);
+        }
+
+        // Finally get shutdown marker
+        auto [finalData, finalState] = buffer.pop();
+        ASSERT_TRUE(finalState == State::Shutdown);
+        ASSERT_FALSE(finalData.has_value());
     }
 } __SRingBufferTest;
