@@ -88,6 +88,7 @@ public:
 
         while (true) {
             while (currentWriteIndex - readIndex.load(memory_order_acquire) >= C) {
+                this_thread::yield();
                 currentWriteIndex = writeIndex.load(memory_order_relaxed);
             }
             if (writeIndex.compare_exchange_weak(currentWriteIndex, currentWriteIndex + 1, memory_order_acq_rel, memory_order_relaxed)) {
