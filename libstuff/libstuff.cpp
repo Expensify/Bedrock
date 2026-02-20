@@ -314,7 +314,7 @@ void SFluentdLog(int priority, string&& message, STable&& params)
     }
 
     if (!fluentdLogger->log(priority, SComposeJSONObject(record) + "\n")) {
-        // Fallback to syslog if fluentdLooger fails to log
+        // Fallback to syslog if fluentdLogger fails to log
         syslog(priority, "%s", SComposeJSONObject(record).c_str());
     }
 }
