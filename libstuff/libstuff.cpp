@@ -1294,6 +1294,14 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
 
     // Just walk across and compose a valid HTTP-like message
     buffer.clear();
+
+    // Validate methodLine before adding it to the buffer to avoid control characters
+    for (const unsigned char c : methodLine) {
+        if (c != 9 && (c < 32 || c == 127)) {
+            STHROW("Invalid control character ascii(" + to_string(static_cast<int>(c)) + ") in methodLine");
+        }
+    }
+
     buffer += methodLine + "\r\n";
     for (pair<string, string> item : nameValueMap) {
         if (SIEquals("Set-Cookie", item.first)) {
