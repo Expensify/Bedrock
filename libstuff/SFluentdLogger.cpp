@@ -89,6 +89,5 @@ void SFluentdLogger::senderLoop()
 
 bool SFluentdLogger::log(int priority, string&& json)
 {
-    FluentdLogRecord record{priority, move(json)};
-    return buffer->push(move(record));
+    return buffer->push({priority, move(json)});
 }
