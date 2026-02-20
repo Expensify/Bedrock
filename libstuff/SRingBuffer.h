@@ -25,18 +25,18 @@ public:
 
     bool push(T&& data)
     {
-        size_t currentTail = tail.load(memory_order_relaxed);
+        size_t currentWriteIndex = writeIndex.load(memory_order_relaxed);
 
         while (true) {
-            if (currentTail - head.load(memory_order_acquire) >= C) {
+            if (currentWriteIndex - readIndex.load(memory_order_acquire) >= C) {
                 return false;
             }
-            if (tail.compare_exchange_weak(currentTail, currentTail + 1, memory_order_acq_rel, memory_order_relaxed)) {
+            if (writeIndex.compare_exchange_weak(currentWriteIndex, currentWriteIndex + 1, memory_order_acq_rel, memory_order_relaxed)) {
                 break;
             }
         }
 
-        size_t index = currentTail % C;
+        size_t index = currentWriteIndex % C;
         buffer[index].data = move(data);
         buffer[index].isReady.store(true, memory_order_release);
 
@@ -45,8 +45,8 @@ public:
 
     optional<T> pop()
     {
-        size_t currentHead = head.load();
-        size_t index = currentHead % C;
+        size_t currentReadIndex = readIndex.load();
+        size_t index = currentReadIndex % C;
 
         if (!buffer[index].isReady.load(memory_order_acquire)) {
             return nullopt;
@@ -55,7 +55,7 @@ public:
         T bufferData = move(buffer[index].data);
         buffer[index].isReady.store(false, memory_order_release);
 
-        head.store(currentHead + 1, memory_order_release);
+        readIndex.store(currentReadIndex + 1, memory_order_release);
 
         return bufferData;
     }
@@ -64,8 +64,8 @@ private:
     array<BufferElement, C> buffer;
 
     // Single consumer reads from here
-    atomic<size_t> head{0};
+    atomic<size_t> readIndex{0};
 
     // Multiple producers write here
-    atomic<size_t> tail{0};
+    atomic<size_t> writeIndex{0};
 };
