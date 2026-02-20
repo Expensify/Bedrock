@@ -4,7 +4,6 @@
 #include <atomic>
 #include <optional>
 #include <string>
-#include <thread>
 #include <utility>
 
 using namespace std;
@@ -20,7 +19,8 @@ enum class State
 };
 
 /*
- * Lock free multi producer, single consumer ring buffer. Used for Fluentd logging
+ * Lock free multi producer, single consumer ring buffer. Used for Fluentd logging.
+ * Allocates C+1 slots internally: C for data, 1 reserved for shutdown marker.
  */
 template<typename T, size_t C> class SRingBuffer {
 public:
@@ -43,7 +43,7 @@ public:
             }
         }
 
-        size_t index = currentWriteIndex % C;
+        size_t index = currentWriteIndex % BufferSize;
         buffer[index].data = move(data);
         buffer[index].state.store(State::Ready, memory_order_release);
         buffer[index].state.notify_one();
@@ -54,7 +54,7 @@ public:
     pair<optional<T>, State> pop()
     {
         size_t currentReadIndex = readIndex.load(memory_order_acquire);
-        size_t index = currentReadIndex % C;
+        size_t index = currentReadIndex % BufferSize;
 
         State slotState = buffer[index].state.load(memory_order_acquire);
 
@@ -78,31 +78,20 @@ public:
 
     void wait()
     {
-        size_t index = readIndex.load(memory_order_acquire) % C;
+        size_t index = readIndex.load(memory_order_acquire) % BufferSize;
         buffer[index].state.wait(State::Empty, memory_order_acquire);
     }
 
     void shutdown()
     {
-        size_t currentWriteIndex = writeIndex.load(memory_order_relaxed);
-
-        while (true) {
-            while (currentWriteIndex - readIndex.load(memory_order_acquire) >= C) {
-                this_thread::yield();
-                currentWriteIndex = writeIndex.load(memory_order_relaxed);
-            }
-            if (writeIndex.compare_exchange_weak(currentWriteIndex, currentWriteIndex + 1, memory_order_acq_rel, memory_order_relaxed)) {
-                break;
-            }
-        }
-
-        size_t index = currentWriteIndex % C;
+        size_t index = writeIndex.fetch_add(1, memory_order_acq_rel) % BufferSize;
         buffer[index].state.store(State::Shutdown, memory_order_release);
         buffer[index].state.notify_one();
     }
 
 private:
-    array<BufferElement, C> buffer;
+    static constexpr size_t BufferSize = C + 1;
+    array<BufferElement, BufferSize> buffer;
 
     // Single consumer reads from here
     atomic<size_t> readIndex{0};
