@@ -301,7 +301,7 @@ void SFluentdLog(int priority, string&& message, STable&& params)
     }
 
     STable record;
-    record["_timestamp"] = to_string(time(nullptr));
+    record["_timestamp"] = to_string(STimeNow());
     record["_priority"] = SPriorityName(priority);
     record["_thread_name"] = SThreadLogName;
     record["_thread_prefix"] = SThreadLogPrefix;
