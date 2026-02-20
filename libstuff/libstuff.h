@@ -2,6 +2,7 @@
 #define LIBSTUFF_H
 #include "libstuff/qrf.h"
 
+#include <netinet/in.h>
 #include <poll.h>
 #include <libgen.h>
 #include <syslog.h>
@@ -252,11 +253,26 @@ void SLogStackTrace(int level = LOG_WARNING);
 // This method will allow plugins to whitelist log params they need to log.
 void SWhitelistLogParams(const set<string>& params);
 
+// Check if a log param is in the whitelist.
+bool SIsLogParamWhitelisted(const string& key);
+
 // This is a drop-in replacement for syslog that directly logs to `/run/systemd/journal/syslog` bypassing journald.
 void SSyslogSocketDirect(int priority, const char* format, ...);
 
-// Atomic pointer to the syslog function that we'll actually use. Easy to change to `syslog` or `SSyslogSocketDirect`.
+// No-op function to disable rsyslog logging.
+void SSyslogNoop(int priority, const char* format, ...);
+
+// Atomic pointer to the syslog function that we'll actually use.
+// Can be set to `syslog`, `SSyslogSocketDirect`, or `SSyslogNoop`.
 extern atomic<void (*)(int priority, const char* format, ...)> SSyslogFunc;
+
+// --------------------------------------------------------------------------
+// Fluentd logging with lock-free ring buffer.
+// Producers push to buffer. Sender thread writes to Fluentd.
+// Falls back to syslog if buffer full or Fluentd unavailable.
+// --------------------------------------------------------------------------
+void SFluentdInitialize(const string& host, in_port_t port, const string& tag);
+void SFluentdLog(int priority, string&& message, STable&& params = {});
 
 string addLogParams(string&& message, const STable& params = {});
 
@@ -267,11 +283,13 @@ string addLogParams(string&& message, const STable& params = {});
             if (_g_SLogMask & (1 << (_PRI_))) {                                     \
                 ostringstream __out;                                                \
                 __out << _MSG_;                                                     \
-                const string s = addLogParams(__out.str(), ## __VA_ARGS__);          \
+                const string __rawMsg = __out.str();                                \
+                const string s = addLogParams(string(__rawMsg), ## __VA_ARGS__);    \
                 const string prefix = SWHEREAMI;                                    \
                 for (size_t i = 0; i < s.size(); i += 7168) {                       \
                     (*SSyslogFunc)(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
                 }                                                                   \
+                SFluentdLog(_PRI_, prefix + __rawMsg, STable(__VA_ARGS__));       \
             }                                                                       \
         } while (false)
 

@@ -297,6 +297,18 @@ int main(int argc, char* argv[])
         SLogLevel(LOG_WARNING);
     }
 
+    // Log destination: rsyslog, fluentd, or both. Default is rsyslog.
+    string logDestination = args.isSet("-logDestination") ? args["-logDestination"] : "rsyslog";
+    if (logDestination == "fluentd" || logDestination == "both") {
+        string host = args.isSet("-fluentdHost") ? args["-fluentdHost"] : "127.0.0.1";
+        in_port_t port = args.isSet("-fluentdPort") ? SToInt(args["-fluentdPort"]) : 24224;
+        string tag = args.isSet("-fluentdTag") ? args["-fluentdTag"] : "bedrock";
+        SFluentdInitialize(host, port, tag);
+    }
+    if (logDestination == "fluentd") {
+        SSyslogFunc = &SSyslogNoop;
+    }
+
 // Set the defaults
 #define SETDEFAULT(_NAME_, _VAL_)                                                                                      \
         do {                                                       \
