@@ -84,14 +84,11 @@ void SFluentdLogger::senderLoop()
     int fd = -1;
 
     while (true) {
-        auto entry = buffer->pop();
+        buffer->wait();
+        auto [entry, state] = buffer->pop();
 
-        if (!entry.has_value()) {
-            if (!running.load()) {
-                break;
-            }
-            this_thread::sleep_for(chrono::milliseconds(1));
-            continue;
+        if (state == State::Shutdown) {
+            break;
         }
 
         if (fd == -1) {
