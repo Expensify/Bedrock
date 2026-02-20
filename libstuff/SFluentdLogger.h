@@ -32,6 +32,7 @@ private:
     string host;
     in_port_t port;
     atomic<bool> running{false};
+    atomic<bool> flushed{false};
     unique_ptr<SRingBuffer<FluentdLogRecord, SRINGBUFFER_DEFAULT_CAPACITY>> buffer;
     thread senderThread;
 };
