@@ -89,6 +89,7 @@ void SFluentdLogger::senderLoop()
             if (!running.load()) {
                 break;
             }
+            this_thread::sleep_for(chrono::milliseconds(1));
             continue;
         }
 
@@ -107,7 +108,6 @@ void SFluentdLogger::senderLoop()
     if (fd != -1) {
         close(fd);
     }
-    flushed.store(true);
 }
 
 bool SFluentdLogger::log(int priority, string&& json)
