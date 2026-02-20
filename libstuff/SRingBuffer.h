@@ -39,6 +39,7 @@ public:
         size_t index = currentTail % C;
         buffer[index].data = move(data);
         buffer[index].isReady.store(true, memory_order_release);
+        buffer[index].isReady.notify_one();
 
         return true;
     }
@@ -47,6 +48,8 @@ public:
     {
         size_t currentHead = head.load();
         size_t index = currentHead % C;
+
+        buffer[index].isReady.wait(false, memory_order_acquire);
 
         if (!buffer[index].isReady.load(memory_order_acquire)) {
             return nullopt;
@@ -58,6 +61,11 @@ public:
         head.store(currentHead + 1, memory_order_release);
 
         return bufferData;
+    }
+
+    void notifyConsumer()
+    {
+        buffer[head.load() % C].isReady.notify_one();
     }
 
 private:
