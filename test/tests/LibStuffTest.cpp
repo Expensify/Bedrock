@@ -40,7 +40,8 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testSReplaceAllBut),
                                      TEST(LibStuff::SQResultTest),
                                      TEST(LibStuff::testReturningClause),
-                                     TEST(LibStuff::SRedactSensitiveValuesTest)
+                                     TEST(LibStuff::SRedactSensitiveValuesTest),
+                                     TEST(LibStuff::SComposeHTTPTest)
     )
     {
     }
@@ -979,5 +980,16 @@ struct LibStuff : tpunit::TestFixture
         logValue = R"({"html":"private conversation happens here"})";
         SRedactSensitiveValues(logValue);
         ASSERT_EQUAL(R"({"html":"<REDACTED>"})", logValue);
+    }
+
+    void SComposeHTTPTest()
+    {
+        string methodLine = "500 Internal Server Error";
+        string buffer = SComposeHTTP(methodLine, {}, "");
+        ASSERT_EQUAL(buffer, "500 Internal Server Error\r\nContent-Length: 0\r\n\r\n");
+
+        // Verify that control characters are not allowed in methodLine
+        string methodLineWithControlChars = "500 Internal Server Error\r\nContent-Type: application/json";
+        ASSERT_THROW(SComposeHTTP(methodLineWithControlChars, {}, ""), SException);
     }
 } __LibStuff;
