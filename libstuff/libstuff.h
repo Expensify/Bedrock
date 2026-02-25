@@ -294,14 +294,14 @@ string addLogParams(string&& message, const STable& params = {});
         } while (false)
 
 #define SLOGPREFIX ""
-#define SDEBUG(_MSG_, ...) SSYSLOG(LOG_DEBUG, "[dbug] " SLOGPREFIX, _MSG_, ## __VA_ARGS__)
-#define SINFO(_MSG_, ...) SSYSLOG(LOG_INFO, "[info] " SLOGPREFIX, _MSG_, ## __VA_ARGS__)
-#define SHMMM(_MSG_, ...) SSYSLOG(LOG_NOTICE, "[hmmm] " SLOGPREFIX, _MSG_, ## __VA_ARGS__)
-#define SWARN(_MSG_, ...) SSYSLOG(LOG_WARNING, "[warn] " SLOGPREFIX, _MSG_, ## __VA_ARGS__)
-#define SALERT(_MSG_, ...) SSYSLOG(LOG_ALERT, "[alrt] " SLOGPREFIX, _MSG_, ## __VA_ARGS__)
+#define SDEBUG(_MSG_, ...) SSYSLOG(LOG_DEBUG, "[dbug] ", SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SINFO(_MSG_, ...) SSYSLOG(LOG_INFO, "[info] ", SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SHMMM(_MSG_, ...) SSYSLOG(LOG_NOTICE, "[hmmm] ", SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SWARN(_MSG_, ...) SSYSLOG(LOG_WARNING, "[warn] ", SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SALERT(_MSG_, ...) SSYSLOG(LOG_ALERT, "[alrt] ", SLOGPREFIX << _MSG_, ## __VA_ARGS__)
 #define SERROR(_MSG_, ...)                                  \
         do {                                                    \
-            SSYSLOG(LOG_ERR, "[eror] " SLOGPREFIX, _MSG_, ## __VA_ARGS__); \
+            SSYSLOG(LOG_ERR, "[eror] ", SLOGPREFIX << _MSG_, ## __VA_ARGS__); \
             SLogStackTrace();                                   \
             abort();                                            \
         } while (false)
