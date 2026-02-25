@@ -89,8 +89,8 @@
 
 #define S_COOKIE_SEPARATOR ((char) 0xFF)
 
-thread_local string SThreadLogPrefix;
-thread_local string SThreadLogParam;
+thread_local string SThreadLogPrefix{"xxxxxx"};
+thread_local string SThreadLogParam{"we@dont.know"};
 thread_local string SThreadLogName;
 thread_local bool isSyncThread;
 
@@ -140,7 +140,6 @@ void SInitialize(const string& threadName, const char* processName)
 
     // Initialize signal handling
     SLogSetThreadName(threadName);
-    SLogSetThreadPrefix("xxxxxx");
     SInitializeSignals();
 }
 
@@ -3284,16 +3283,16 @@ SAutoThreadPrefix::SAutoThreadPrefix(const SData& request)
     oldLogParam = SThreadLogParam;
     const string requestID = request.isSet("requestID") ? request["requestID"] : "xxxxxx";
     SThreadLogPrefix = requestID;
-    SThreadLogParam = request.isSet("logParam") ? request["logParam"] : "we@dont.know";
+    if (request.isSet("logParam")) {
+        SThreadLogParam = request["logParam"];
+    }
 }
 
 SAutoThreadPrefix::SAutoThreadPrefix(const string& rID)
 {
     oldPrefix = SThreadLogPrefix;
     oldLogParam = SThreadLogParam;
-    const string requestID = rID.empty() ? "xxxxxx" : rID;
-    SThreadLogPrefix = requestID;
-    SThreadLogParam = "we@dont.know";
+    SThreadLogPrefix = rID.empty() ? "xxxxxx" : rID;
 }
 
 SAutoThreadPrefix::~SAutoThreadPrefix()
