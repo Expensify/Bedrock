@@ -272,36 +272,36 @@ extern atomic<void (*)(int priority, const char* format, ...)> SSyslogFunc;
 // Falls back to syslog if buffer full or Fluentd unavailable.
 // --------------------------------------------------------------------------
 void SFluentdInitialize(const string& host, in_port_t port, const string& tag);
-void SFluentdLog(int priority, string&& message, STable&& params = {});
+void SFluentdLog(int priority, string&& typeTag, string&& message, string&& file, int line, string&& function, STable&& params = {});
 
 string addLogParams(string&& message, const STable& params = {});
 
 // **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
 #define SWHEREAMI SThreadLogPrefix + "(" + basename((char*) __FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
-#define SSYSLOG(_PRI_, _MSG_, ...)                                              \
+#define SSYSLOG(_PRI_, _TAG_, _MSG_, ...)                                       \
         do {                                                                        \
             if (_g_SLogMask & (1 << (_PRI_))) {                                     \
                 ostringstream __out;                                                \
                 __out << _MSG_;                                                     \
                 const string __rawMsg = __out.str();                                \
-                const string s = addLogParams(string(__rawMsg), ## __VA_ARGS__);    \
+                const string s = addLogParams(string(_TAG_) + __rawMsg, ## __VA_ARGS__); \
                 const string prefix = SWHEREAMI;                                    \
                 for (size_t i = 0; i < s.size(); i += 7168) {                       \
                     (*SSyslogFunc)(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
                 }                                                                   \
-                SFluentdLog(_PRI_, prefix + __rawMsg, STable(__VA_ARGS__));       \
+                SFluentdLog(_PRI_, _TAG_, string(__rawMsg), basename((char*)__FILE__), __LINE__, __FUNCTION__, STable(__VA_ARGS__)); \
             }                                                                       \
         } while (false)
 
 #define SLOGPREFIX ""
-#define SDEBUG(_MSG_, ...) SSYSLOG(LOG_DEBUG, "[dbug] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
-#define SINFO(_MSG_, ...) SSYSLOG(LOG_INFO, "[info] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
-#define SHMMM(_MSG_, ...) SSYSLOG(LOG_NOTICE, "[hmmm] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
-#define SWARN(_MSG_, ...) SSYSLOG(LOG_WARNING, "[warn] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
-#define SALERT(_MSG_, ...) SSYSLOG(LOG_ALERT, "[alrt] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SDEBUG(_MSG_, ...) SSYSLOG(LOG_DEBUG, "[dbug] " SLOGPREFIX, _MSG_, ## __VA_ARGS__)
+#define SINFO(_MSG_, ...) SSYSLOG(LOG_INFO, "[info] " SLOGPREFIX, _MSG_, ## __VA_ARGS__)
+#define SHMMM(_MSG_, ...) SSYSLOG(LOG_NOTICE, "[hmmm] " SLOGPREFIX, _MSG_, ## __VA_ARGS__)
+#define SWARN(_MSG_, ...) SSYSLOG(LOG_WARNING, "[warn] " SLOGPREFIX, _MSG_, ## __VA_ARGS__)
+#define SALERT(_MSG_, ...) SSYSLOG(LOG_ALERT, "[alrt] " SLOGPREFIX, _MSG_, ## __VA_ARGS__)
 #define SERROR(_MSG_, ...)                                  \
         do {                                                    \
-            SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__); \
+            SSYSLOG(LOG_ERR, "[eror] " SLOGPREFIX, _MSG_, ## __VA_ARGS__); \
             SLogStackTrace();                                   \
             abort();                                            \
         } while (false)

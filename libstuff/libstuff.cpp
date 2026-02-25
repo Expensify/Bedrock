@@ -292,26 +292,29 @@ void SFluentdInitialize(const string& host, in_port_t port, const string& tag)
     SFluentdLogger::instance = make_unique<SFluentdLogger>(host, port);
 }
 
-void SFluentdLog(int priority, string&& message, STable&& params)
+void SFluentdLog(int priority, string&& typeTag, string&& message, string&& file, int line, string&& function, STable&& params)
 {
     if (!SFluentdLogger::instance) {
         return;
     }
 
     STable record;
-    record["_timestamp"] = to_string(STimeNow());
-    record["_priority"] = SPriorityName(priority);
-    record["_thread_name"] = SThreadLogName;
-    record["_thread_prefix"] = SThreadLogPrefix;
-    record["_process"] = SProcessName;
-    record["_message"] = move(message);
-    record["_tag"] = SFluentdLogger::tag;
+    record["timestamp"] = to_string(STimeNow());
+    record["tag"] = SFluentdLogger::tag;
+    record["request_id"] = STrim(SThreadLogPrefix);
+    record["type_tag"] = move(typeTag);
+    record["thread_name"] = SThreadLogName;
+    record["filename"] = move(file) + ":" + to_string(line);
+    record["function"] = move(function);
+    record["message"] = move(message);
 
     for (auto& [key, value] : params) {
         record[key] = SIsLogParamWhitelisted(key) ? move(value) : "<REDACTED>";
     }
 
-    if (!SFluentdLogger::instance->log(priority, SComposeJSONObject(record) + "\n")) {
+    string json = SComposeJSONObject(record) + "\n";
+
+    if (!SFluentdLogger::instance->log(priority, move(json))) {
         // Fallback to syslog if fluentdLogger fails to log
         syslog(priority, "%s", SComposeJSONObject(record).c_str());
     }
