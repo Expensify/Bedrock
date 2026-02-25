@@ -7,29 +7,6 @@
 #include <syslog.h>
 #include <unistd.h>
 
-const char* SPriorityName(int priority)
-{
-    switch (priority) {
-        case LOG_EMERG:   return "EMERG";
-
-        case LOG_ALERT:   return "ALERT";
-
-        case LOG_CRIT:    return "CRIT";
-
-        case LOG_ERR:     return "ERROR";
-
-        case LOG_WARNING: return "WARN";
-
-        case LOG_NOTICE:  return "NOTICE";
-
-        case LOG_INFO:    return "INFO";
-
-        case LOG_DEBUG:   return "DEBUG";
-
-        default:          return "UNKNOWN";
-    }
-}
-
 SFluentdLogger::SFluentdLogger(const string& host, in_port_t port) : host(host), port(port),
     buffer(make_unique<SRingBuffer<FluentdLogRecord, SRINGBUFFER_DEFAULT_CAPACITY>>())
 {
