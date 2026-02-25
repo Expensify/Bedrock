@@ -1,5 +1,6 @@
 #include "DB.h"
 #include "libstuff/libstuff.h"
+#include "libstuff/qrf.h"
 #include "libstuff/sqlite3.h"
 
 #include <cctype>
@@ -310,6 +311,8 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
                 spec.spec.bTitles = QRF_SW_Off;
             } else if (*it == "-html" || *it == "--html") {
                 spec.spec.eStyle = QRF_STYLE_Html;
+            } else if (*it == "-html" || *it == "--explain") {
+                spec.spec.eStyle = QRF_STYLE_Explain;
             } else if (*it == "-json" || *it == "--json") {
                 spec.spec.eStyle = QRF_STYLE_Json;
             } else if (*it == "-line" || *it == "--line") {
