@@ -272,7 +272,7 @@ extern atomic<void (*)(int priority, const char* format, ...)> SSyslogFunc;
 // Falls back to syslog if buffer full or Fluentd unavailable.
 // --------------------------------------------------------------------------
 void SFluentdInitialize(const string& host, in_port_t port, const string& tag);
-void SFluentdLog(int priority, string&& typeTag, string&& message, string&& file, int line, string&& function, STable&& params = {});
+void SFluentdLog(int priority, const char* typeTag, string&& message, const char* file, int line, const char* function, STable&& params = {});
 
 string addLogParams(string&& message, const STable& params = {});
 

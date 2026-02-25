@@ -292,7 +292,7 @@ void SFluentdInitialize(const string& host, in_port_t port, const string& tag)
     SFluentdLogger::instance = make_unique<SFluentdLogger>(host, port);
 }
 
-void SFluentdLog(int priority, string&& typeTag, string&& message, string&& file, int line, string&& function, STable&& params)
+void SFluentdLog(int priority, const char* typeTag, string&& message, const char* file, int line, const char* function, STable&& params)
 {
     if (!SFluentdLogger::instance) {
         return;
@@ -302,10 +302,11 @@ void SFluentdLog(int priority, string&& typeTag, string&& message, string&& file
     record["timestamp"] = to_string(STimeNow());
     record["tag"] = SFluentdLogger::tag;
     record["request_id"] = STrim(SThreadLogPrefix);
-    record["type_tag"] = move(typeTag);
+    record["type_tag"] = typeTag;
     record["thread_name"] = SThreadLogName;
-    record["filename"] = move(file) + ":" + to_string(line);
-    record["function"] = move(function);
+    record["file"] = file;
+    record["line"] = to_string(line);
+    record["function"] = function;
     record["message"] = move(message);
 
     for (auto& [key, value] : params) {
