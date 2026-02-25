@@ -157,12 +157,12 @@ public:
     template<typename T>
     class GrowOnlyList {
 public:
-        auto front() const
+        const T& front() const
         {
             return _list.front();
         }
 
-        auto back() const
+        const T& back() const
         {
             return _list.back();
         }
@@ -197,11 +197,6 @@ public:
             return _list.empty();
         }
 
-        auto push_back(const T& i)
-        {
-            return _list.push_back(i);
-        }
-
         auto push_back(T&& i)
         {
             return _list.push_back(move(i));
@@ -211,7 +206,7 @@ private:
         list<T> _list;
     };
 
-    GrowOnlyList<SHTTPSManager::Transaction*> httpsRequests;
+    GrowOnlyList<unique_ptr<SHTTPSManager::Transaction>> httpsRequests;
 
     // Each command is assigned a priority.
     Priority priority;
@@ -387,5 +382,5 @@ private:
     // it was known that 990 of them had completed, then on the next loop we can use this to check only the remaining 10 requests rather than all 1,000.
     //
     // The default value of this is httpsRequests.end(), which is treated as "no requests completed".
-    mutable list<SHTTPSManager::Transaction*>::const_iterator _lastContiguousCompletedTransaction;
+    mutable list<unique_ptr<SHTTPSManager::Transaction>>::const_iterator _lastContiguousCompletedTransaction;
 };

@@ -27,7 +27,7 @@ public:
         // Allow a transaction to be scheduled to start in the future.
         // If it is scheduled to start in the future, we will call `startFunc` at the timestamp scheduled.
         uint64_t scheduledStart = 0;
-        function<void(Transaction*)> startFunc;
+        function<void(Transaction&)> startFunc;
     };
 
     static const string proxyAddressHTTPS;
@@ -44,16 +44,7 @@ public:
     // The purpose of this is to be able to shut down when no activity is happening.
     void postPoll(fd_map& fdm, Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS = (5 * 60 * 1000));
 
-    // Close a transaction and remove it from our internal lists.
-    void closeTransaction(Transaction* transaction);
-
     static int getHTTPResponseCode(const string& methodLine);
-
-    // Allows the manager to clean up any references it has to this transaction. Note that this shoud *not* actually delete the
-    // passed pointer.
-    virtual void remove(Transaction* t)
-    {
-    }
 
 protected:   // Child API
 
@@ -63,9 +54,9 @@ protected:   // Child API
     const string _caCrt;
 
     // Methods
-    Transaction* _httpsSend(const string& url, const SData& request, bool allowProxy = false);
-    Transaction* _createErrorTransaction();
-    virtual bool _onRecv(Transaction* transaction);
+    unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, bool allowProxy = false);
+    unique_ptr<Transaction> _createErrorTransaction();
+    virtual bool _onRecv(Transaction& transaction);
 
     static string initProxyAddressHTTPS();
 };

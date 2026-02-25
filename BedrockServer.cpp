@@ -2488,7 +2488,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                                 struct pollfd disconnectCheck = {socket.s, (POLLIN | POLLRDHUP), 0};
                                 if (poll(&disconnectCheck, 1, 0) > 0) {
                                     if (disconnectCheck.revents & (POLLHUP | POLLERR | POLLNVAL | POLLRDHUP)) {
-                                        SINFO("Socket disconnected with command running, aborting.");
+                                        SDEBUG("Socket disconnected with command running, aborting.");
                                         commandShouldAbortFlag = true;
                                     }
                                 }

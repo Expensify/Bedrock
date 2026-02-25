@@ -9,11 +9,11 @@ public:
     {
     }
 
-    Transaction* send(const string& url, const SData& request);
-    virtual bool _onRecv(Transaction* transaction);
+    unique_ptr<Transaction> send(const string& url, const SData& request);
+    virtual bool _onRecv(Transaction& transaction) override;
 
     // Like _httpsSend in the base class, but doesn't actually send, so we can test timeouts.
-    Transaction* httpsDontSend(const string& url, const SData& request);
+    unique_ptr<Transaction> httpsDontSend(const string& url, const SData& request);
 
     virtual ~TestHTTPSManager();
 };
