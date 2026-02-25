@@ -90,6 +90,7 @@
 #define S_COOKIE_SEPARATOR ((char) 0xFF)
 
 thread_local string SThreadLogPrefix;
+thread_local string SThreadLogParam;
 thread_local string SThreadLogName;
 thread_local bool isSyncThread;
 
@@ -302,6 +303,7 @@ void SFluentdLog(int priority, const char* typeTag, string&& message, const char
     record["timestamp"] = to_string(STimeNow());
     record["tag"] = SFluentdLogger::tag;
     record["request_id"] = SThreadLogPrefix;
+    record["log_param"] = SThreadLogParam;
     record["type_tag"] = typeTag;
     record["thread_name"] = SThreadLogName;
     record["file"] = file;
@@ -313,7 +315,7 @@ void SFluentdLog(int priority, const char* typeTag, string&& message, const char
         record[key] = SIsLogParamWhitelisted(key) ? move(value) : "<REDACTED>";
     }
 
-    string json = SComposeJSONObject(record) + "\n";
+    string json = SComposeJSONObject(record, true) + "\n";
 
     if (!SFluentdLogger::instance->log(priority, move(json))) {
         // Fallback to syslog if fluentdLogger fails to log
@@ -3277,22 +3279,27 @@ void SLogLevel(int level)
 
 SAutoThreadPrefix::SAutoThreadPrefix(const SData& request)
 {
-    // Retain the old prefix
+    // Retain the old values
     oldPrefix = SThreadLogPrefix;
+    oldLogParam = SThreadLogParam;
     const string requestID = request.isSet("requestID") ? request["requestID"] : "xxxxxx";
-    SLogSetThreadPrefix(requestID + (request.isSet("logParam") ? " " + request["logParam"] : ""));
+    SThreadLogPrefix = requestID;
+    SThreadLogParam = request.isSet("logParam") ? request["logParam"] : "we@dont.know";
 }
 
 SAutoThreadPrefix::SAutoThreadPrefix(const string& rID)
 {
     oldPrefix = SThreadLogPrefix;
+    oldLogParam = SThreadLogParam;
     const string requestID = rID.empty() ? "xxxxxx" : rID;
-    SLogSetThreadPrefix(requestID);
+    SThreadLogPrefix = requestID;
+    SThreadLogParam = "we@dont.know";
 }
 
 SAutoThreadPrefix::~SAutoThreadPrefix()
 {
-    SLogSetThreadPrefix(oldPrefix);
+    SThreadLogPrefix = move(oldPrefix);
+    SThreadLogParam = move(oldLogParam);
 }
 
 float SToFloat(const string& val)
