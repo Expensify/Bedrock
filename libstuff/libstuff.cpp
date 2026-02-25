@@ -139,7 +139,7 @@ void SInitialize(const string& threadName, const char* processName)
 
     // Initialize signal handling
     SLogSetThreadName(threadName);
-    SLogSetThreadPrefix("xxxxxx ");
+    SLogSetThreadPrefix("xxxxxx");
     SInitializeSignals();
 }
 
@@ -301,7 +301,7 @@ void SFluentdLog(int priority, const char* typeTag, string&& message, const char
     STable record;
     record["timestamp"] = to_string(STimeNow());
     record["tag"] = SFluentdLogger::tag;
-    record["request_id"] = STrim(SThreadLogPrefix);
+    record["request_id"] = SThreadLogPrefix;
     record["type_tag"] = typeTag;
     record["thread_name"] = SThreadLogName;
     record["file"] = file;
@@ -3272,14 +3272,14 @@ SAutoThreadPrefix::SAutoThreadPrefix(const SData& request)
     // Retain the old prefix
     oldPrefix = SThreadLogPrefix;
     const string requestID = request.isSet("requestID") ? request["requestID"] : "xxxxxx";
-    SLogSetThreadPrefix(requestID + (request.isSet("logParam") ? " " + request["logParam"] : "") + " ");
+    SLogSetThreadPrefix(requestID + (request.isSet("logParam") ? " " + request["logParam"] : ""));
 }
 
 SAutoThreadPrefix::SAutoThreadPrefix(const string& rID)
 {
     oldPrefix = SThreadLogPrefix;
     const string requestID = rID.empty() ? "xxxxxx" : rID;
-    SLogSetThreadPrefix(requestID + " ");
+    SLogSetThreadPrefix(requestID);
 }
 
 SAutoThreadPrefix::~SAutoThreadPrefix()

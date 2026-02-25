@@ -277,7 +277,7 @@ void SFluentdLog(int priority, const char* typeTag, string&& message, const char
 string addLogParams(string&& message, const STable& params = {});
 
 // **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
-#define SWHEREAMI SThreadLogPrefix + "(" + basename((char*) __FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
+#define SWHEREAMI SThreadLogPrefix + " (" + basename((char*) __FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
 #define SSYSLOG(_PRI_, _TAG_, _MSG_, ...)                                       \
         do {                                                                        \
             if (_g_SLogMask & (1 << (_PRI_))) {                                     \
