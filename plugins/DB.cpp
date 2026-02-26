@@ -313,6 +313,8 @@ BedrockPlugin_DB::Sqlite3QRFSpecWrapper BedrockPlugin_DB::parseSQLite3Args(const
                 spec.spec.eStyle = QRF_STYLE_Html;
             } else if (*it == "-explain" || *it == "--explain") {
                 spec.spec.eStyle = QRF_STYLE_Explain;
+            } else if (*it == "-eqp" || *it == "--eqp" || *it == "--explainqueryplan" || *it == "--explainqueryplan") {
+                spec.spec.eStyle = QRF_STYLE_Eqp;
             } else if (*it == "-json" || *it == "--json") {
                 spec.spec.eStyle = QRF_STYLE_Json;
             } else if (*it == "-line" || *it == "--line") {
