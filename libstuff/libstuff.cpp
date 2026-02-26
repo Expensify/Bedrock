@@ -3284,9 +3284,7 @@ SAutoThreadPrefix::SAutoThreadPrefix(const SData& request)
     oldLogParam = SThreadLogParam;
     const string requestID = request.isSet("requestID") ? request["requestID"] : "xxxxxx";
     SThreadLogPrefix = requestID;
-    if (request.isSet("logParam")) {
-        SThreadLogParam = request["logParam"];
-    }
+    SThreadLogParam = request.isSet("logParam") ? request["logParam"] : "we@dont.know";
 }
 
 SAutoThreadPrefix::SAutoThreadPrefix(const string& rID)
@@ -3294,6 +3292,7 @@ SAutoThreadPrefix::SAutoThreadPrefix(const string& rID)
     oldPrefix = SThreadLogPrefix;
     oldLogParam = SThreadLogParam;
     SThreadLogPrefix = rID.empty() ? "xxxxxx" : rID;
+    SThreadLogParam = "we@dont.know";
 }
 
 SAutoThreadPrefix::~SAutoThreadPrefix()
