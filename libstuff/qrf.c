@@ -17,6 +17,7 @@
 #endif
 #include <string.h>
 #include <assert.h>
+#include <stdint.h>
 
 typedef sqlite3_int64 i64;
 
@@ -34,7 +35,8 @@ typedef struct qrfEQPGraph qrfEQPGraph;
 struct qrfEQPGraph {
   qrfEQPGraphRow *pRow;  /* Linked list of all rows of the EQP output */
   qrfEQPGraphRow *pLast; /* Last element of the pRow list */
-  char zPrefix[100];     /* Graph prefix */
+  int nWidth;            /* Width of the graph */
+  char zPrefix[400];     /* Graph prefix */
 };
 
 /*
@@ -140,6 +142,15 @@ static void qrfOom(Qrf *p){
   qrfError(p, SQLITE_NOMEM, "out of memory");
 }
 
+/*
+** Transfer any error in pStr over into p.
+*/
+static void qrfStrErr(Qrf *p, sqlite3_str *pStr){
+  int rc = pStr ? sqlite3_str_errcode(pStr) : 0;
+  if( rc ){
+    qrfError(p, rc, sqlite3_errstr(rc));
+  }
+}
 
 
 /*
@@ -221,6 +232,45 @@ static void qrfEqpRenderLevel(Qrf *p, int iEqpId){
 }
 
 /*
+** Render the 64-bit value N in a more human-readable format into
+** pOut.
+**
+**   +  Only show the first three significant digits.
+**   +  Append suffixes K, M, G, T, P, and E for 1e3, 1e6, ... 1e18
+*/
+static void qrfApproxInt64(sqlite3_str *pOut, i64 N){
+  static const char aSuffix[] = { 'K', 'M', 'G', 'T', 'P', 'E' };
+  int i;
+  if( N<0 ){
+    N = N==INT64_MIN ? INT64_MAX : -N;
+    sqlite3_str_append(pOut, "-", 1);
+  }
+  if( N<10000 ){
+    sqlite3_str_appendf(pOut, "%4lld ", N);
+    return;
+  }
+  for(i=1; i<=18; i++){
+    N = (N+5)/10;
+    if( N<10000 ){
+      int n = (int)N;
+      switch( i%3 ){
+        case 0:
+          sqlite3_str_appendf(pOut, "%d.%02d", n/1000, (n%1000)/10);
+          break;
+        case 1:
+          sqlite3_str_appendf(pOut, "%2d.%d", n/100, (n%100)/10);
+          break;
+        case 2:
+          sqlite3_str_appendf(pOut, "%4d", n/10);
+          break;
+      }
+      sqlite3_str_append(pOut, &aSuffix[i/3], 1);
+      break;
+    }
+  }
+}
+
+/*
 ** Display and reset the EXPLAIN QUERY PLAN data
 */
 static void qrfEqpRender(Qrf *p, i64 nCycle){
@@ -235,7 +285,26 @@ static void qrfEqpRender(Qrf *p, i64 nCycle){
       p->u.pGraph->pRow = pRow->pNext;
       sqlite3_free(pRow);
     }else if( nCycle>0 ){
-      sqlite3_str_appendf(p->pOut, "QUERY PLAN (cycles=%lld [100%%])\n",nCycle);
+      int nSp = p->u.pGraph->nWidth - 2;
+      if( p->spec.eStyle==QRF_STYLE_StatsEst ){
+        sqlite3_str_appendchar(p->pOut, nSp, ' ');
+        sqlite3_str_appendall(p->pOut,
+                                "Cycles      Loops  (est)  Rows   (est)\n");
+        sqlite3_str_appendchar(p->pOut, nSp, ' ');
+        sqlite3_str_appendall(p->pOut,
+                                "----------  ------------  ------------\n");
+      }else{
+        sqlite3_str_appendchar(p->pOut, nSp, ' ');
+        sqlite3_str_appendall(p->pOut,
+                                "Cycles      Loops  Rows \n");
+        sqlite3_str_appendchar(p->pOut, nSp, ' ');
+        sqlite3_str_appendall(p->pOut,
+                                "----------  -----  -----\n");
+      }
+      sqlite3_str_appendall(p->pOut, "QUERY PLAN");
+      sqlite3_str_appendchar(p->pOut, nSp - 10, ' ');
+      qrfApproxInt64(p->pOut, nCycle);
+      sqlite3_str_appendall(p->pOut, " 100%\n");
     }else{
       sqlite3_str_appendall(p->pOut, "QUERY PLAN\n");
     }
@@ -290,6 +359,8 @@ static void qrfEqpStats(Qrf *p){
   int i = 0;
   i64 nTotal = 0;
   int nWidth = 0;
+  int prevPid = -1;             /* Previous iPid */
+  double rEstCum = 1.0;         /* Cumulative row estimate */
   sqlite3_str *pLine = sqlite3_str_new(p->db);
   sqlite3_str *pStats = sqlite3_str_new(p->db);
   qrfEqpReset(p);
@@ -303,7 +374,7 @@ static void qrfEqpStats(Qrf *p){
     n = (int)strlen(z) + qrfStatsHeight(pS,i)*3;
     if( n>nWidth ) nWidth = n;
   }
-  nWidth += 4;
+  nWidth += 2;
 
   sqlite3_stmt_scanstatus_v2(pS,-1, SQLITE_SCANSTAT_NCYCLE, f, (void*)&nTotal);
   for(i=0; 1; i++){
@@ -319,40 +390,49 @@ static void qrfEqpStats(Qrf *p){
     if( sqlite3_stmt_scanstatus_v2(pS,i,SQLITE_SCANSTAT_EXPLAIN,f,(void*)&zo) ){
       break;
     }
+    sqlite3_stmt_scanstatus_v2(pS,i, SQLITE_SCANSTAT_PARENTID,f,(void*)&iPid);
+    if( iPid!=prevPid ){
+      prevPid = iPid;
+      rEstCum = 1.0;
+    }
     sqlite3_stmt_scanstatus_v2(pS,i, SQLITE_SCANSTAT_EST,f,(void*)&rEst);
+    rEstCum *= rEst;
     sqlite3_stmt_scanstatus_v2(pS,i, SQLITE_SCANSTAT_NLOOP,f,(void*)&nLoop);
     sqlite3_stmt_scanstatus_v2(pS,i, SQLITE_SCANSTAT_NVISIT,f,(void*)&nRow);
     sqlite3_stmt_scanstatus_v2(pS,i, SQLITE_SCANSTAT_NCYCLE,f,(void*)&nCycle);
     sqlite3_stmt_scanstatus_v2(pS,i, SQLITE_SCANSTAT_SELECTID,f,(void*)&iId);
-    sqlite3_stmt_scanstatus_v2(pS,i, SQLITE_SCANSTAT_PARENTID,f,(void*)&iPid);
     sqlite3_stmt_scanstatus_v2(pS,i, SQLITE_SCANSTAT_NAME,f,(void*)&zName);
 
     if( nCycle>=0 || nLoop>=0 || nRow>=0 ){
-      const char *zSp = "";
-      double rpl;
+      int nSp = 0;
       sqlite3_str_reset(pStats);
       if( nCycle>=0 && nTotal>0 ){
-        sqlite3_str_appendf(pStats, "cycles=%lld [%d%%]",
-            nCycle, ((nCycle*100)+nTotal/2) / nTotal
+        qrfApproxInt64(pStats, nCycle);
+        sqlite3_str_appendf(pStats, " %3d%%",
+            ((nCycle*100)+nTotal/2) / nTotal
         );
-        zSp = " ";
+        nSp = 2;
       }
       if( nLoop>=0 ){
-        sqlite3_str_appendf(pStats, "%sloops=%lld", zSp, nLoop);
-        zSp = " ";
+        if( nSp ) sqlite3_str_appendchar(pStats, nSp, ' ');
+        qrfApproxInt64(pStats, nLoop);
+        nSp = 2;
+        if( p->spec.eStyle==QRF_STYLE_StatsEst ){
+          sqlite3_str_appendf(pStats, "  ");
+          qrfApproxInt64(pStats, (i64)(rEstCum/rEst));
+        }
       }
       if( nRow>=0 ){
-        sqlite3_str_appendf(pStats, "%srows=%lld", zSp, nRow);
-        zSp = " ";
+        if( nSp ) sqlite3_str_appendchar(pStats, nSp, ' ');
+        qrfApproxInt64(pStats, nRow);
+        nSp = 2;
+        if( p->spec.eStyle==QRF_STYLE_StatsEst ){
+          sqlite3_str_appendf(pStats, "  ");
+          qrfApproxInt64(pStats, (i64)rEstCum);
+        }
       }
-
-      if( p->spec.eStyle==QRF_STYLE_StatsEst ){
-        rpl = (double)nRow / (double)nLoop;
-        sqlite3_str_appendf(pStats, "%srpl=%.1f est=%.1f", zSp, rpl, rEst);
-      }
-
       sqlite3_str_appendf(pLine,
-          "% *s (%s)", -1*(nWidth-qrfStatsHeight(pS,i)*3), zo,
+          "% *s %s", -1*(nWidth-qrfStatsHeight(pS,i)*3), zo,
           sqlite3_str_value(pStats)
       );
       sqlite3_str_reset(pStats);
@@ -362,7 +442,10 @@ static void qrfEqpStats(Qrf *p){
       qrfEqpAppend(p, iId, iPid, zo);
     }
   }
+  if( p->u.pGraph ) p->u.pGraph->nWidth = nWidth;
+  qrfStrErr(p, pLine);
   sqlite3_free(sqlite3_str_finish(pLine));
+  qrfStrErr(p, pStats);
   sqlite3_free(sqlite3_str_finish(pStats));
 #endif
 }
@@ -726,9 +809,11 @@ static void qrfEscape(
 static int qrfRelaxable(Qrf *p, const char *z){
   size_t i, n;
   if( z[0]=='\'' || qrfSpace(z[0]) ) return 0;
-  if( z[0]==0 && (p->spec.zNull==0 || p->spec.zNull[0]==0) ) return 0;
+  if( z[0]==0 ){
+    return (p->spec.zNull!=0 && p->spec.zNull[0]!=0);
+  }
   n = strlen(z);
-  if( z[n-1]=='\'' || qrfSpace(z[n-1]) ) return 0;
+  if( n==0 || z[n-1]=='\'' || qrfSpace(z[n-1]) ) return 0;
   if( p->spec.zNull && strcmp(p->spec.zNull,z)==0 ) return 0;
   i = (z[0]=='-' || z[0]=='+');
   if( strcmp(z+i,"Inf")==0 ) return 0;
@@ -1874,6 +1959,7 @@ static void qrfColumnar(Qrf *p){
       pStr = sqlite3_str_new(p->db);
       qrfEncodeText(p, pStr, z ? z : "");
       n = sqlite3_str_length(pStr);
+      qrfStrErr(p, pStr);
       z = data.az[data.n] = sqlite3_str_finish(pStr);
       if( p->spec.nTitleLimit ){
         nNL = 0;
@@ -1901,6 +1987,7 @@ static void qrfColumnar(Qrf *p){
       pStr = sqlite3_str_new(p->db);
       qrfRenderValue(p, pStr, i);
       n = sqlite3_str_length(pStr);
+      qrfStrErr(p, pStr);
       z = data.az[data.n] = sqlite3_str_finish(pStr);
       data.abNum[data.n] = eType==SQLITE_INTEGER || eType==SQLITE_FLOAT;
       data.aiWth[data.n] = w = qrfDisplayWidth(z, n, &nNL);
@@ -2055,7 +2142,7 @@ static void qrfColumnar(Qrf *p){
   }else{
     bRTrim = 0;
   }
-  for(i=0; i<data.n; i+=nColumn){
+  for(i=0; i<data.n && sqlite3_str_errcode(p->pOut)==SQLITE_OK; i+=nColumn){
     int bMore;
     int nRow = 0;
 
@@ -2242,7 +2329,7 @@ static void qrfExplain(Qrf *p){
   assert( 0==sqlite3_stricmp( sqlite3_column_name(p->pStmt, 2), "p1" ) );
   assert( 0==sqlite3_stricmp( sqlite3_column_name(p->pStmt, 3), "p2" ) );
 
-  for(iOp=0; SQLITE_ROW==sqlite3_step(p->pStmt); iOp++){
+  for(iOp=0; SQLITE_ROW==sqlite3_step(p->pStmt) && !p->iErr; iOp++){
     int iAddr = sqlite3_column_int(p->pStmt, 0);
     const char *zOp = (const char*)sqlite3_column_text(p->pStmt, 1);
     int p1 = sqlite3_column_int(p->pStmt, 2);
@@ -2299,7 +2386,7 @@ static void qrfExplain(Qrf *p){
     }
     if( nArg>nWidth ) nArg = nWidth;
 
-    for(iOp=0; sqlite3_step(p->pStmt)==SQLITE_ROW; iOp++){
+    for(iOp=0; sqlite3_step(p->pStmt)==SQLITE_ROW && !p->iErr; iOp++){
       /* If this is the first row seen, print out the headers */
       if( iOp==0 ){
         for(i=0; i<nArg; i++){
@@ -2555,6 +2642,7 @@ static void qrfOneSimpleRow(Qrf *p){
         }while( zVal[0] );
         sqlite3_str_reset(pVal);
       }
+      qrfStrErr(p, pVal);
       sqlite3_free(sqlite3_str_finish(pVal));
       qrfWrite(p);
       break;
@@ -2618,7 +2706,7 @@ static void qrfInitialize(
     qrfOom(p);
     return;
   }
-  p->iErr = 0;
+  p->iErr = SQLITE_OK;
   p->nCol = sqlite3_column_count(p->pStmt);
   p->nRow = 0;
   sz = sizeof(sqlite3_qrf_spec);
@@ -2789,13 +2877,23 @@ static void qrfFinalize(Qrf *p){
       break;
     }
     case QRF_STYLE_Stats:
-    case QRF_STYLE_StatsEst:
+    case QRF_STYLE_StatsEst: {
+      i64 nCycle = 0;
+#ifdef SQLITE_ENABLE_STMT_SCANSTATUS
+      sqlite3_stmt_scanstatus_v2(p->pStmt, -1, SQLITE_SCANSTAT_NCYCLE,
+                                 SQLITE_SCANSTAT_COMPLEX, (void*)&nCycle);
+#endif
+      qrfEqpRender(p, nCycle);
+      qrfWrite(p);
+      break;
+    }
     case QRF_STYLE_Eqp: {
       qrfEqpRender(p, 0);
       qrfWrite(p);
       break;
     }
   }
+  qrfStrErr(p, p->pOut);
   if( p->spec.pzOutput ){
     if( p->spec.pzOutput[0] ){
       sqlite3_int64 n, sz;
