@@ -7,6 +7,9 @@
 using namespace tpunit;
 
 atomic<bool> tpunit::_TestFixture::exitFlag(false);
+bool tpunit::_TestFixture::_verboseOutput = false;
+atomic<int> tpunit::_TestFixture::_shortOutputColumn(0);
+recursive_mutex tpunit::_TestFixture::_shortOutputMutex;
 thread_local string tpunit::currentTestName;
 thread_local tpunit::_TestFixture* tpunit::currentTestPtr = nullptr;
 thread_local mutex tpunit::currentTestNameMutex;
@@ -429,7 +432,20 @@ bool tpunit::_TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsign
            ((lhs_u.c[lsb] > rhs_u.c[lsb]) ? lhs_u.c[lsb] - rhs_u.c[lsb] : rhs_u.c[lsb] - lhs_u.c[lsb]) <= ulps;
 }
 
+namespace tpunit {
+void tpunit_break_check_line() {
+    if (!_TestFixture::_verboseOutput) {
+        lock_guard<recursive_mutex> lock(_TestFixture::_shortOutputMutex);
+        if (_TestFixture::_shortOutputColumn > 0) {
+            printf("\n");
+            _TestFixture::_shortOutputColumn = 0;
+        }
+    }
+}
+}
+
 void tpunit::_TestFixture::tpunit_detail_assert(_TestFixture* f, const char* _file, int _line) {
+    tpunit_break_check_line();
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("   assertion #%i at %s:%i\n", ++f->_stats._assertions, _file, _line);
     f->printTestBuffer();
@@ -442,6 +458,7 @@ void tpunit::_TestFixture::tpunit_detail_exception(_TestFixture* f, method* _met
 }
 
 void tpunit::_TestFixture::tpunit_detail_trace(_TestFixture* f, const char* _file, int _line, const char* _message) {
+    tpunit_break_check_line();
     lock_guard<recursive_mutex> lock(*(f->_mutex));
     printf("   trace #%i at %s:%i: %s\n", ++f->_stats._traces, _file, _line, _message);
     f->printTestBuffer();
@@ -455,15 +472,18 @@ void tpunit::_TestFixture::tpunit_detail_do_method(tpunit::_TestFixture::method*
        }
        (*m->_this.*m->_addr)();
     } catch(const std::exception& e) {
+       tpunit_break_check_line();
        lock_guard<recursive_mutex> lock(*(m->_this->_mutex));
        tpunit_detail_exception(m->_this, m, e.what());
     } catch(const char* e) {
+       tpunit_break_check_line();
        lock_guard<recursive_mutex> lock(*(m->_this->_mutex));
        tpunit_detail_exception(m->_this, m, e);
     } catch(ShutdownException se) {
        // Just re-throw, this exception is special and indicates that a test wants its thread to quit.
        throw;
     } catch(...) {
+       tpunit_break_check_line();
        lock_guard<recursive_mutex> lock(*(m->_this->_mutex));
        tpunit_detail_exception(m->_this, m, "caught unknown exception type");
     }
@@ -505,15 +525,41 @@ void tpunit::_TestFixture::tpunit_detail_do_tests(_TestFixture* f) {
             // passed to appear failed when another test failed while this test was running. They cannot cause failed
             // tests to appear to have passed.
             if(!f->_stats._assertions && !f->_stats._exceptions) {
-                lock_guard<recursive_mutex> lock(m);
-                printf("\xE2\x9C\x85 %s %s\n", t->_name, time);
+                if (_verboseOutput) {
+                    lock_guard<recursive_mutex> lock(m);
+                    printf("\xE2\x9C\x85 %s %s\n", t->_name, time);
+                } else {
+                    lock_guard<recursive_mutex> lock(_shortOutputMutex);
+                    if (_shortOutputColumn >= 80) {
+                        printf("\n");
+                        _shortOutputColumn = 0;
+                    }
+                    printf("\033[32m\xE2\x9C\x93\033[0m");
+                    fflush(stdout);
+                    _shortOutputColumn++;
+                }
                 tpunit_detail_stats()._passes++;
             } else {
-                lock_guard<recursive_mutex> lock(m);
-
-                // Dump the test buffer if the test included any log lines.
-                f->printTestBuffer();
-                printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s %s\n", t->_name, time);
+                if (_verboseOutput) {
+                    lock_guard<recursive_mutex> lock(m);
+                    // Dump the test buffer if the test included any log lines.
+                    f->printTestBuffer();
+                    printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s %s\n", t->_name, time);
+                } else {
+                    // Break the check line first, then release the mutex before acquiring f->_mutex
+                    // to avoid ABBA deadlock with tpunit_break_check_line() callers.
+                    {
+                        lock_guard<recursive_mutex> lock(_shortOutputMutex);
+                        if (_shortOutputColumn > 0) {
+                            printf("\n");
+                            _shortOutputColumn = 0;
+                        }
+                    }
+                    lock_guard<recursive_mutex> lock(m);
+                    // Dump the test buffer if the test included any log lines.
+                    f->printTestBuffer();
+                    printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s %s\n\n", t->_name, time);
+                }
                 tpunit_detail_stats()._failures++;
                 tpunit_detail_stats()._failureNames.emplace(t->_name);
             }

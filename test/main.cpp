@@ -98,6 +98,7 @@ int main(int argc, char* argv[])
     if (args.isSet("-v")) {
         BedrockTester::VERBOSE_LOGGING = true;
         SLogLevel(LOG_DEBUG);
+        tpunit::_TestFixture::_verboseOutput = true;
     }
     if (args.isSet("-q")) {
         BedrockTester::QUIET_LOGGING = true;

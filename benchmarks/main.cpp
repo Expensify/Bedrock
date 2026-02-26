@@ -131,6 +131,10 @@ int main(int argc, char* argv[])
         exclude.insert(args["-except"]);
     }
 
+    if (args.contains("-v") || args.contains("--verbose")) {
+        tpunit::_TestFixture::_verboseOutput = true;
+    }
+
     if (baselineRef.empty()) {
         // Normal benchmark run
         return runBenchmarks(include, exclude) ? 0 : 1;
