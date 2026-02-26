@@ -300,7 +300,7 @@ void SFluentdLog(int priority, const char* typeTag, string&& message, const char
 
     STable record;
     record["timestamp"] = to_string(STimeNow());
-    record["tag"] = SFluentdLogger::tag;
+    record["source"] = "bedrock";
     record["request_id"] = SThreadLogPrefix;
     record["log_param"] = SThreadLogParam;
     record["type_tag"] = typeTag;
@@ -314,7 +314,8 @@ void SFluentdLog(int priority, const char* typeTag, string&& message, const char
         record[key] = SIsLogParamWhitelisted(key) ? move(value) : "<REDACTED>";
     }
 
-    string json = SComposeJSONObject(record, true) + "\n";
+    // Forward protocol: [tag, time (seconds), record]
+    string json = "[\"" + SFluentdLogger::tag + "\"," + to_string(time(nullptr)) + "," + SComposeJSONObject(record, true) + "]\n";
 
     if (!SFluentdLogger::instance->log(priority, move(json))) {
         // Fallback to syslog if fluentdLogger fails to log
