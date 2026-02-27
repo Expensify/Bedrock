@@ -300,6 +300,9 @@ public:
     // in the case that a specific table/column are not being directly requested.
     map<string, set<string>>* whitelist = nullptr;
 
+    // Allows easily setting an evaluator to allow or deny queries at runtime.
+    function<bool(int action_code, const char* detail1, const char* detail2, const char* detail3, const char* detail4)> authorizer;
+
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
 

@@ -1230,6 +1230,13 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
         }
     }
 
+    if (authorizer) {
+        bool authorized = authorizer(actionCode, detail1, detail2, detail3, detail4);
+        if (!authorized) {
+            return SQLITE_DENY;
+        }
+    }
+
     // If the whitelist isn't set, we always return OK.
     if (!whitelist) {
         return SQLITE_OK;
