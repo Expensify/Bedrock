@@ -300,8 +300,8 @@ public:
     // in the case that a specific table/column are not being directly requested.
     map<string, set<string>>* whitelist = nullptr;
 
-    // Allows easily setting an evaluator to allow or deny queries at runtime.
-    function<bool(int action_code, const char* detail1, const char* detail2, const char* detail3, const char* detail4)> authorizer;
+    // Sets an evaluator to allow or deny queries at runtime. Clears the query cache when called.
+    void setAuthorizer(function<bool(int action_code, const char* detail1, const char* detail2, const char* detail3, const char* detail4)> auth);
 
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
@@ -511,6 +511,9 @@ private:
     static int _sqliteAuthorizerCallback(void*, int, const char*, const char*, const char*, const char*);
 
     // The following variables maintain the state required around automatically re-writing queries.
+
+    // Evaluator to allow or deny queries at runtime.
+    function<bool(int action_code, const char* detail1, const char* detail2, const char* detail3, const char* detail4)> _authorizer;
 
     // If true, we'll attempt query re-writing.
     bool _enableRewrite = false;
