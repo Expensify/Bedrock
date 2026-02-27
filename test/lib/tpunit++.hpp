@@ -206,7 +206,6 @@ namespace tpunit {
          static std::atomic<bool> exitFlag;
          static bool _verboseOutput;
          static std::atomic<int> _shortOutputColumn;
-         static std::recursive_mutex _shortOutputMutex;
 
          struct perFixtureStats {
             perFixtureStats();
@@ -444,8 +443,7 @@ public:
 
    /**
     * If short output mode is active and checks have been printed on the current
-    * line, prints a newline and resets the column counter. Safe to call from any
-    * context where _shortOutputMutex is NOT already held.
+    * line, prints a newline and resets the column counter.
     */
    void tpunit_break_check_line();
 

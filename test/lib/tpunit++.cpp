@@ -9,7 +9,6 @@ using namespace tpunit;
 atomic<bool> tpunit::_TestFixture::exitFlag(false);
 bool tpunit::_TestFixture::_verboseOutput = false;
 atomic<int> tpunit::_TestFixture::_shortOutputColumn(0);
-recursive_mutex tpunit::_TestFixture::_shortOutputMutex;
 thread_local string tpunit::currentTestName;
 thread_local tpunit::_TestFixture* tpunit::currentTestPtr = nullptr;
 thread_local mutex tpunit::currentTestNameMutex;
@@ -435,7 +434,7 @@ bool tpunit::_TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsign
 namespace tpunit {
 void tpunit_break_check_line() {
     if (!_TestFixture::_verboseOutput) {
-        lock_guard<recursive_mutex> lock(_TestFixture::_shortOutputMutex);
+        lock_guard<recursive_mutex> lock(*(currentTestPtr->_mutex));
         if (_TestFixture::_shortOutputColumn > 0) {
             printf("\n");
             _TestFixture::_shortOutputColumn = 0;
@@ -529,7 +528,7 @@ void tpunit::_TestFixture::tpunit_detail_do_tests(_TestFixture* f) {
                     lock_guard<recursive_mutex> lock(m);
                     printf("\xE2\x9C\x85 %s %s\n", t->_name, time);
                 } else {
-                    lock_guard<recursive_mutex> lock(_shortOutputMutex);
+                    lock_guard<recursive_mutex> lock(m);
                     if (_shortOutputColumn >= 80) {
                         printf("\n");
                         _shortOutputColumn = 0;
@@ -546,16 +545,11 @@ void tpunit::_TestFixture::tpunit_detail_do_tests(_TestFixture* f) {
                     f->printTestBuffer();
                     printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s %s\n", t->_name, time);
                 } else {
-                    // Break the check line first, then release the mutex before acquiring f->_mutex
-                    // to avoid ABBA deadlock with tpunit_break_check_line() callers.
-                    {
-                        lock_guard<recursive_mutex> lock(_shortOutputMutex);
-                        if (_shortOutputColumn > 0) {
-                            printf("\n");
-                            _shortOutputColumn = 0;
-                        }
-                    }
                     lock_guard<recursive_mutex> lock(m);
+                    if (_shortOutputColumn > 0) {
+                        printf("\n");
+                        _shortOutputColumn = 0;
+                    }
                     // Dump the test buffer if the test included any log lines.
                     f->printTestBuffer();
                     printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s %s\n\n", t->_name, time);
