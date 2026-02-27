@@ -523,12 +523,11 @@ void tpunit::_TestFixture::tpunit_detail_do_tests(_TestFixture* f) {
             // No new assertions or exceptions. This not currently synchronized correctly. They can cause tests that
             // passed to appear failed when another test failed while this test was running. They cannot cause failed
             // tests to appear to have passed.
+            lock_guard<recursive_mutex> lock(m);
             if(!f->_stats._assertions && !f->_stats._exceptions) {
                 if (_verboseOutput) {
-                    lock_guard<recursive_mutex> lock(m);
                     printf("\xE2\x9C\x85 %s %s\n", t->_name, time);
                 } else {
-                    lock_guard<recursive_mutex> lock(m);
                     if (_shortOutputColumn >= 80) {
                         printf("\n");
                         _shortOutputColumn = 0;
@@ -540,12 +539,10 @@ void tpunit::_TestFixture::tpunit_detail_do_tests(_TestFixture* f) {
                 tpunit_detail_stats()._passes++;
             } else {
                 if (_verboseOutput) {
-                    lock_guard<recursive_mutex> lock(m);
                     // Dump the test buffer if the test included any log lines.
                     f->printTestBuffer();
                     printf("\xE2\x9D\x8C !FAILED! \xE2\x9D\x8C %s %s\n", t->_name, time);
                 } else {
-                    lock_guard<recursive_mutex> lock(m);
                     if (_shortOutputColumn > 0) {
                         printf("\n");
                         _shortOutputColumn = 0;
