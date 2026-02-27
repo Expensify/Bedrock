@@ -9,7 +9,7 @@
 
 using namespace std;
 
-namespace tpunit { void tpunit_break_check_line(); }
+namespace tpunit {void tpunit_break_check_line();}
 
 template<typename T>
 ostream& operator<<(ostream& output, const list<T>& val)
