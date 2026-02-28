@@ -5,20 +5,28 @@
 #include <tuple>
 #include <utility>
 #include <type_traits>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 #include "libstuff.h"
 
 using namespace std;
 
-// SThread is a thread wrapper intended to be used in the same way as thread,
-// except that it will trap exceptions and pass them back to the caller as part of a promise.
-template<class F, class ... Args>
-auto SThread(F&& f, Args&&... args)
+// Internal implementation of SThread with optional cleanup callback.
+// The cleanup callback is called at thread exit regardless of how the thread terminates:
+// - Normal completion
+// - Exception thrown
+// - Signal caught via siglongjmp (SIGSEGV, SIGFPE, etc.)
+// This is critical because siglongjmp does not unwind the stack, so cleanup code in the
+// user's function will not run in the signal case.
+template<class Cleanup, class F, class ... Args>
+auto _SThreadImpl(Cleanup&& cleanup, F&& f, Args&&... args)
 {
     // Create type aliases for the function, argument list, and return types.
     // These are decayed as per decay (https://en.cppreference.com/w/cpp/types/decay.html)
     // which makes the same sort of type conversions that the compiler makes when passign by value.
     using Fn = decay_t<F>;
+    using CleanupFn = decay_t<Cleanup>;
 
     // We create a tuple from the passed args to allow passing variadic arguments to our lambda below.
     using DecayedArgsTuple = tuple<decay_t<Args> ...>;
@@ -34,11 +42,45 @@ auto SThread(F&& f, Args&&... args)
 
     // Now we can create the callable function and it's arguments that we will pass to our lambda.
     Fn fn(forward<F>(f));
+    CleanupFn cleanupFn(forward<Cleanup>(cleanup));
     DecayedArgsTuple argTuple(forward<Args>(args)...);
 
     // Finally we can create our new thread and pass it our function and arguments.
     thread t(
-        [p = move(prom), fn = move(fn), argTuple = move(argTuple)]() mutable {
+        [p = move(prom), fn = move(fn), cleanupFn = move(cleanupFn), argTuple = move(argTuple)]() mutable {
+        // Initialize signal handling for this thread and mark it as recoverable.
+        // This allows signals like SIGSEGV/SIGFPE to be converted to SSignalException
+        // instead of aborting the process.
+        SInitializeSignals();
+        SSetThreadRecoverable(true);
+        SINFO("SThread: tid=" << syscall(SYS_gettid) << " Set threadRecoverable=true, isRecoverable=" << SIsThreadRecoverable());
+
+        // Set up the recovery point for signal handling using sigsetjmp.
+        // If a signal occurs, the handler will call siglongjmp and sigsetjmp will
+        // "return" with the signal number instead of 0.
+        int signalCaught = sigsetjmp(*SGetRecoveryPoint(), 1);
+        SSetRecoveryPointActive(true);
+        SINFO("SThread: tid=" << syscall(SYS_gettid) << " Set recoveryPointActive=true after sigsetjmp");
+
+        if (signalCaught != 0) {
+            // We got here via siglongjmp from the signal handler.
+            // signalCaught contains the signal number.
+            SSetRecoveryPointActive(false);
+            SSetThreadRecoverable(false);
+
+            // Build the exception from the crash info stored by the signal handler.
+            SSignalException ex = SBuildSignalException();
+
+            SWARN("Signal exception in SThread: " << ex.what());
+            ex.logStackTrace();
+            p.set_exception(make_exception_ptr(ex));
+
+            // Call cleanup before returning - this is critical because siglongjmp
+            // skips any cleanup code in the user's function.
+            cleanupFn();
+            return;
+        }
+
         try {
             // We call `apply` to use our argments from a tuple as if they were a list of discrete arguments.
             // This is effectively like calling `invoke` and passing the arguments separately.
@@ -50,6 +92,11 @@ auto SThread(F&& f, Args&&... args)
             } else {
                 p.set_value(apply(move(fn), move(argTuple)));
             }
+        } catch (const SSignalException& e) {
+            // Signal-generated exception - log stack trace before propagating.
+            SWARN("Signal exception in SThread: " << e.what());
+            e.logStackTrace();
+            p.set_exception(current_exception());
         } catch (const exception& e) {
             SWARN("Uncaught exception in SThread: " << e.what());
             p.set_exception(current_exception());
@@ -57,10 +104,37 @@ auto SThread(F&& f, Args&&... args)
             SWARN("Uncaught exception in SThread: unknown type");
             p.set_exception(current_exception());
         }
+
+        // Restore non-recoverable state (belt-and-suspenders, thread is ending anyway).
+        SSetRecoveryPointActive(false);
+        SSetThreadRecoverable(false);
+
+        // Call cleanup at thread exit.
+        cleanupFn();
     }
     );
 
     // Now our function has started and we can return to the caller. We pass pack the thread object so that the caller can wait
     // for it to complete, and also the future, so that the caller can check if there were any exceptions.
     return make_pair(move(t), move(fut));
+}
+
+// SThread is a thread wrapper intended to be used in the same way as thread,
+// except that it will trap exceptions (including signal-generated exceptions like SIGSEGV)
+// and pass them back to the caller as part of a promise.
+template<class F, class ... Args>
+auto SThread(F&& f, Args&&... args)
+{
+    return _SThreadImpl([](){
+                             }, forward<F>(f), forward<Args>(args)...);
+}
+
+// SThreadWithCleanup is like SThread but takes a cleanup callback that is guaranteed
+// to be called when the thread exits, even if the thread is terminated by a signal
+// (SIGSEGV, SIGFPE, etc.). This is necessary because siglongjmp does not unwind
+// the stack, so any cleanup code in the user's function would be skipped.
+template<class Cleanup, class F, class ... Args>
+auto SThreadWithCleanup(Cleanup&& cleanup, F&& f, Args&&... args)
+{
+    return _SThreadImpl(forward<Cleanup>(cleanup), forward<F>(f), forward<Args>(args)...);
 }
