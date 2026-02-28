@@ -28,6 +28,7 @@
 #include <libstuff/SQResult.h>
 #include <libstuff/SData.h>
 #include <libstuff/SFastBuffer.h>
+#include <libstuff/SFluentdLogger.h>
 #include <libstuff/sqlite3.h>
 
 // Additional headers
@@ -87,7 +88,8 @@
 
 #define S_COOKIE_SEPARATOR ((char) 0xFF)
 
-thread_local string SThreadLogPrefix;
+thread_local string SThreadLogPrefix{"xxxxxx"};
+thread_local string SThreadLogParam{"we@dont.know"};
 thread_local string SThreadLogName;
 thread_local bool isSyncThread;
 
@@ -137,7 +139,6 @@ void SInitialize(const string& threadName, const char* processName)
 
     // Initialize signal handling
     SLogSetThreadName(threadName);
-    SLogSetThreadPrefix("xxxxxx ");
     SInitializeSignals();
 }
 
@@ -277,6 +278,47 @@ void SSyslogSocketDirect(int priority, const char* format, ...)
         va_start(argptr, format);
         vsyslog(priority, format, argptr);
         va_end(argptr);
+    }
+}
+
+void SSyslogNoop(int priority, const char* format, ...)
+{
+}
+
+void SFluentdInitialize(const string& host, in_port_t port, const string& tag)
+{
+    SFluentdLogger::tag = tag;
+    SFluentdLogger::instance = make_unique<SFluentdLogger>(host, port);
+}
+
+void SFluentdLog(int priority, const char* typeTag, string&& message, const char* file, int line, const char* function, STable&& params)
+{
+    if (!SFluentdLogger::instance) {
+        return;
+    }
+
+    STable record;
+    record["timestamp"] = to_string(STimeNow());
+    record["source"] = "bedrock";
+    record["request_id"] = SThreadLogPrefix;
+    record["log_param"] = SThreadLogParam;
+    record["type_tag"] = typeTag;
+    record["thread_name"] = SThreadLogName;
+    record["file"] = file;
+    record["line"] = to_string(line);
+    record["function"] = function;
+    record["message"] = move(message);
+
+    for (auto& [key, value] : params) {
+        record[key] = SIsLogParamWhitelisted(key) ? move(value) : "<REDACTED>";
+    }
+
+    // Forward protocol: [tag, time (seconds), record]
+    string json = "[\"" + SFluentdLogger::tag + "\"," + to_string(time(nullptr)) + "," + SComposeJSONObject(record, true) + "]\n";
+
+    if (!SFluentdLogger::instance->log(priority, move(json))) {
+        // Fallback to syslog if fluentdLogger fails to log
+        syslog(priority, "%s", SComposeJSONObject(record).c_str());
     }
 }
 
@@ -3236,22 +3278,26 @@ void SLogLevel(int level)
 
 SAutoThreadPrefix::SAutoThreadPrefix(const SData& request)
 {
-    // Retain the old prefix
+    // Retain the old values
     oldPrefix = SThreadLogPrefix;
+    oldLogParam = SThreadLogParam;
     const string requestID = request.isSet("requestID") ? request["requestID"] : "xxxxxx";
-    SLogSetThreadPrefix(requestID + (request.isSet("logParam") ? " " + request["logParam"] : "") + " ");
+    SThreadLogPrefix = requestID;
+    SThreadLogParam = request.isSet("logParam") ? request["logParam"] : "we@dont.know";
 }
 
 SAutoThreadPrefix::SAutoThreadPrefix(const string& rID)
 {
     oldPrefix = SThreadLogPrefix;
-    const string requestID = rID.empty() ? "xxxxxx" : rID;
-    SLogSetThreadPrefix(requestID + " ");
+    oldLogParam = SThreadLogParam;
+    SThreadLogPrefix = rID.empty() ? "xxxxxx" : rID;
+    SThreadLogParam = "we@dont.know";
 }
 
 SAutoThreadPrefix::~SAutoThreadPrefix()
 {
-    SLogSetThreadPrefix(oldPrefix);
+    SThreadLogPrefix = move(oldPrefix);
+    SThreadLogParam = move(oldLogParam);
 }
 
 float SToFloat(const string& val)

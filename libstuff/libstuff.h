@@ -2,6 +2,7 @@
 #define LIBSTUFF_H
 #include "libstuff/qrf.h"
 
+#include <netinet/in.h>
 #include <poll.h>
 #include <libgen.h>
 #include <syslog.h>
@@ -252,38 +253,55 @@ void SLogStackTrace(int level = LOG_WARNING);
 // This method will allow plugins to whitelist log params they need to log.
 void SWhitelistLogParams(const set<string>& params);
 
+// Check if a log param is in the whitelist.
+bool SIsLogParamWhitelisted(const string& key);
+
 // This is a drop-in replacement for syslog that directly logs to `/run/systemd/journal/syslog` bypassing journald.
 void SSyslogSocketDirect(int priority, const char* format, ...);
 
-// Atomic pointer to the syslog function that we'll actually use. Easy to change to `syslog` or `SSyslogSocketDirect`.
+// No-op function to disable rsyslog logging.
+void SSyslogNoop(int priority, const char* format, ...);
+
+// Atomic pointer to the syslog function that we'll actually use.
+// Can be set to `syslog`, `SSyslogSocketDirect`, or `SSyslogNoop`.
 extern atomic<void (*)(int priority, const char* format, ...)> SSyslogFunc;
+
+// --------------------------------------------------------------------------
+// Fluentd logging with lock-free ring buffer.
+// Producers push to buffer. Sender thread writes to Fluentd.
+// Falls back to syslog if buffer full or Fluentd unavailable.
+// --------------------------------------------------------------------------
+void SFluentdInitialize(const string& host, in_port_t port, const string& tag);
+void SFluentdLog(int priority, const char* typeTag, string&& message, const char* file, int line, const char* function, STable&& params = {});
 
 string addLogParams(string&& message, const STable& params = {});
 
 // **NOTE: rsyslog default max line size is 8k bytes. We split on 7k byte boundaries in order to fit the syslog line prefix and the expanded \r\n to #015#012
-#define SWHEREAMI SThreadLogPrefix + "(" + basename((char*) __FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
-#define SSYSLOG(_PRI_, _MSG_, ...)                                              \
+#define SWHEREAMI SThreadLogPrefix + " " + SThreadLogParam + " (" + basename((char*) __FILE__) + ":" + SToStr(__LINE__) + ") " + __FUNCTION__ + " [" + SThreadLogName + "] "
+#define SSYSLOG(_PRI_, _TAG_, _MSG_, ...)                                       \
         do {                                                                        \
             if (_g_SLogMask & (1 << (_PRI_))) {                                     \
                 ostringstream __out;                                                \
                 __out << _MSG_;                                                     \
-                const string s = addLogParams(__out.str(), ## __VA_ARGS__);          \
+                const string __rawMsg = __out.str();                                \
+                const string s = addLogParams(string(_TAG_) + " " + __rawMsg, ## __VA_ARGS__); \
                 const string prefix = SWHEREAMI;                                    \
                 for (size_t i = 0; i < s.size(); i += 7168) {                       \
                     (*SSyslogFunc)(_PRI_, "%s", (prefix + s.substr(i, 7168)).c_str()); \
                 }                                                                   \
+                SFluentdLog(_PRI_, _TAG_, string(__rawMsg), basename((char*) __FILE__), __LINE__, __FUNCTION__, STable(__VA_ARGS__)); \
             }                                                                       \
         } while (false)
 
 #define SLOGPREFIX ""
-#define SDEBUG(_MSG_, ...) SSYSLOG(LOG_DEBUG, "[dbug] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
-#define SINFO(_MSG_, ...) SSYSLOG(LOG_INFO, "[info] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
-#define SHMMM(_MSG_, ...) SSYSLOG(LOG_NOTICE, "[hmmm] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
-#define SWARN(_MSG_, ...) SSYSLOG(LOG_WARNING, "[warn] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
-#define SALERT(_MSG_, ...) SSYSLOG(LOG_ALERT, "[alrt] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SDEBUG(_MSG_, ...) SSYSLOG(LOG_DEBUG, "[dbug]", SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SINFO(_MSG_, ...) SSYSLOG(LOG_INFO, "[info]", SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SHMMM(_MSG_, ...) SSYSLOG(LOG_NOTICE, "[hmmm]", SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SWARN(_MSG_, ...) SSYSLOG(LOG_WARNING, "[warn]", SLOGPREFIX << _MSG_, ## __VA_ARGS__)
+#define SALERT(_MSG_, ...) SSYSLOG(LOG_ALERT, "[alrt]", SLOGPREFIX << _MSG_, ## __VA_ARGS__)
 #define SERROR(_MSG_, ...)                                  \
         do {                                                    \
-            SSYSLOG(LOG_ERR, "[eror] " << SLOGPREFIX << _MSG_, ## __VA_ARGS__); \
+            SSYSLOG(LOG_ERR, "[eror]", SLOGPREFIX << _MSG_, ## __VA_ARGS__); \
             SLogStackTrace();                                   \
             abort();                                            \
         } while (false)
@@ -294,6 +312,7 @@ string addLogParams(string&& message, const STable& params = {});
 
 // Each thread gets its own thread-local log prefix.
 extern thread_local string SThreadLogPrefix;
+extern thread_local string SThreadLogParam;
 extern thread_local string SThreadLogName;
 
 extern thread_local bool isSyncThread;
@@ -312,6 +331,7 @@ struct SAutoThreadPrefix
 private:
     // Attributes
     string oldPrefix;
+    string oldLogParam;
 };
 #define SAUTOPREFIX(_PREFIX_) SAutoThreadPrefix __SAUTOPREFIX ## __LINE__(_PREFIX_)
 
