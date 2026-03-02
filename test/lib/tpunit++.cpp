@@ -434,10 +434,15 @@ bool tpunit::_TestFixture::tpunit_detail_fp_equal(double lhs, double rhs, unsign
 namespace tpunit {
 void tpunit_break_check_line() {
     if (!_TestFixture::_verboseOutput) {
-        lock_guard<recursive_mutex> lock(*(currentTestPtr->_mutex));
+        if (currentTestPtr) {
+            currentTestPtr->_mutex->lock();
+        }
         if (_TestFixture::_shortOutputColumn > 0) {
             printf("\n");
             _TestFixture::_shortOutputColumn = 0;
+        }
+        if (currentTestPtr) {
+            currentTestPtr->_mutex->unlock();
         }
     }
 }
