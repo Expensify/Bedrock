@@ -1162,6 +1162,9 @@ size_t SQLite::getLastWriteChangeCount()
 
 void SQLite::enableRewrite(bool enable)
 {
+    if (enable && _authorizer) {
+        SWARN("Setting enableRewrite with a custom authorizer also enabled may cause side effects");
+    }
     _enableRewrite = enable;
 }
 
@@ -1178,6 +1181,15 @@ void SQLite::enablePrepareNotifications(bool enable)
 void SQLite::setOnPrepareHandler(void (*handler)(SQLite& _db, int64_t tableID))
 {
     _onPrepareHandler = handler;
+}
+
+void SQLite::setAuthorizer(function<bool(int action_code, const char* detail1, const char* detail2, const char* detail3, const char* detail4)> auth)
+{
+    if (auth && _enableRewrite) {
+        SWARN("Setting enableRewrite with a custom authorizer also enabled may cause side effects");
+    }
+    _authorizer = move(auth);
+    _queryCache.clear();
 }
 
 int SQLite::_sqliteAuthorizerCallback(void* pUserData, int actionCode, const char* detail1, const char* detail2,
@@ -1227,6 +1239,13 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
             if (_currentlyWriting) {
                 return SQLITE_DENY;
             }
+        }
+    }
+
+    if (_authorizer) {
+        bool authorized = _authorizer(actionCode, detail1, detail2, detail3, detail4);
+        if (!authorized) {
+            return SQLITE_DENY;
         }
     }
 
