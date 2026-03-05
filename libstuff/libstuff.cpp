@@ -2835,6 +2835,10 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
 
             int numColumns = sqlite3_column_count(preparedStatement);
             result.headers.resize(numColumns);
+            
+            for (int i = 0; i < numColumns; i++) {
+                result.headers[i] = sqlite3_column_name(preparedStatement, i);
+            }
 
             while (true) {
                 size_t beforeStep = 0;
@@ -2851,9 +2855,6 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                     stepTimeUS += stepTime;
                 }
 
-                for (int i = 0; i < numColumns; i++) {
-                    result.headers[i] = sqlite3_column_name(preparedStatement, i);
-                }
 
                 if (error == SQLITE_ROW) {
                     SQResultRow row(result, numColumns);
