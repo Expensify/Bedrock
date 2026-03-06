@@ -104,3 +104,8 @@ void SWhitelistLogParams(const set<string>& params)
 {
     PARAMS_WHITELIST.insert(params.begin(), params.end());
 }
+
+bool SIsLogParamWhitelisted(const string& key)
+{
+    return SContains(PARAMS_WHITELIST, key);
+}
