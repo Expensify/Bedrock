@@ -203,10 +203,11 @@ void BedrockCommand::_waitForHTTPSRequests()
         S_poll(fdm, maxWaitUs);
         uint64_t ignore{0};
 
-        // The 3rd parameter to `postPoll` here is the total allowed idle time on this connection. We will kill connections that have been idle longer than the
-        // remaining time until this command's timeout, or after only 5 seconds when we're shutting down so that we can clean up and move along.
-        uint64_t remainingMs = _timeout > STimeNow() ? (_timeout - STimeNow()) / 1000 : 0;
-        postPoll(fdm, ignore, _plugin->server.isShuttingDown() ? 5'000 : remainingMs);
+        // The 3rd parameter to `postPoll` here is the idle-since-last-send threshold. We use the command's timeout duration so that a connection can sit idle
+        // for at most as long as the command is allowed to run. The command's absolute deadline is separately enforced via transaction.timeoutAt.
+        // At shutdown, we shrink this to 5 seconds so that we can clean up and move along.
+        uint64_t commandTimeoutMs = (_timeout - scheduledTime) / 1000;
+        postPoll(fdm, ignore, _plugin->server.isShuttingDown() ? 5'000 : commandTimeoutMs);
     }
 
     if (startTime) {
