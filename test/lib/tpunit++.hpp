@@ -204,6 +204,8 @@ namespace tpunit {
       public:
 
          static std::atomic<bool> exitFlag;
+         static bool _verboseOutput;
+         static std::atomic<int> _shortOutputColumn;
 
          struct perFixtureStats {
             perFixtureStats();
@@ -438,6 +440,12 @@ public:
    };
 
    extern thread_local tpunit::_TestFixture* currentTestPtr;
+
+   /**
+    * If short output mode is active and checks have been printed on the current
+    * line, prints a newline and resets the column counter.
+    */
+   void tpunit_break_check_line();
 
    /**
     * Convenience class containing the entry point to run all registered tests.

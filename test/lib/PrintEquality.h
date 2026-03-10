@@ -9,6 +9,8 @@
 
 using namespace std;
 
+namespace tpunit {void tpunit_break_check_line();}
+
 template<typename T>
 ostream& operator<<(ostream& output, const list<T>& val)
 {
@@ -46,6 +48,7 @@ public:
     template<typename U, typename V>
     PrintEquality(const U& a, const V& b, bool isEqual)
     {
+        tpunit::tpunit_break_check_line();
         cout << a << " " << (isEqual ? "=" : "!") << "= " << b << "\n";
     }
 };
