@@ -640,6 +640,10 @@ void SQLite::_checkInterruptErrors(const string& error) const
         }
     }
 
+    if (_shouldAbortPtr && _shouldAbortPtr->load()) {
+        errorCode = 2;
+    }
+
     // If we had an interrupt error, and were inside a transaction, and autocommit is now on, we have been auto-rolled
     // back, we won't need to actually do a rollback for this transaction.
     if (errorCode && _insideTransaction && sqlite3_get_autocommit(_db)) {
@@ -649,6 +653,10 @@ void SQLite::_checkInterruptErrors(const string& error) const
 
     if (errorCode == 1) {
         throw timeout_error("timeout in "s + error, time);
+    }
+
+    if (errorCode == 2) {
+        STHROW("499 Client Disconnected");
     }
 
     // Otherwise, no error.
