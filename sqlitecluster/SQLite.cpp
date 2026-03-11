@@ -962,6 +962,20 @@ int SQLite::commit(const string& description, const string& commandName, functio
 
                 // It might not actually be 0, but we'll just let sqlite tell us what it is next time _walHookCallback runs.
                 _sharedData.outstandingFramesToCheckpoint = 0;
+
+                SQResult freelistResult, pageCountResult, pageSizeResult;
+                SQuery(_db, "PRAGMA freelist_count;", freelistResult);
+                if (!freelistResult.empty()) {
+                    _sharedData.freelistCount = SToUInt64(freelistResult[0][0]);
+                }
+                SQuery(_db, "PRAGMA page_count;", pageCountResult);
+                if (!pageCountResult.empty()) {
+                    _sharedData.pageCount = SToUInt64(pageCountResult[0][0]);
+                }
+                SQuery(_db, "PRAGMA page_size;", pageSizeResult);
+                if (!pageSizeResult.empty()) {
+                    _sharedData.pageSize = SToUInt64(pageSizeResult[0][0]);
+                }
             }
             _sharedData.checkpointInProgress.clear();
         }
@@ -1152,6 +1166,21 @@ uint64_t SQLite::getCommitCount() const
 uint64_t SQLite::getOutstandingFramesToCheckpoint() const
 {
     return _sharedData.knownOutstandingFramesToCheckpoint;
+}
+
+uint64_t SQLite::getFreelistCount() const
+{
+    return _sharedData.freelistCount;
+}
+
+uint64_t SQLite::getPageCount() const
+{
+    return _sharedData.pageCount;
+}
+
+uint64_t SQLite::getPageSize() const
+{
+    return _sharedData.pageSize;
 }
 
 size_t SQLite::getLastWriteChangeCount()
