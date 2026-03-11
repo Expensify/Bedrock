@@ -205,7 +205,8 @@ public:
     list<STable> getPeerInfo();
 
     // Send a command to all of our peers. It will be wrapped appropriately.
-    void broadcastCommand(const SData& message);
+    // If peerName is specified, command will be sent to only that peer.
+    void broadcastCommand(const SData& message, const string& peerName = "");
 
     // Set the detach state of the server. Setting to true will cause the server to detach from the database and go
     // into a sleep loop until this is called again with false
