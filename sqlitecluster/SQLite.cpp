@@ -303,7 +303,7 @@ int SQLite::_progressHandlerCallback(void* arg)
     // cause unexpected behavior (including a segfault), but this is avoided by calling those functions in accordance with
     // thier documentation and *not using them* in the middle of a running query.
     if (sqlite->_shouldAbortPtr && sqlite->_shouldAbortPtr->load()) {
-        return 2;
+        return 1;
     }
 
     return 0;
@@ -640,6 +640,10 @@ void SQLite::_checkInterruptErrors(const string& error) const
         }
     }
 
+    if (_shouldAbortPtr && _shouldAbortPtr->load()) {
+        errorCode = 2;
+    }
+
     // If we had an interrupt error, and were inside a transaction, and autocommit is now on, we have been auto-rolled
     // back, we won't need to actually do a rollback for this transaction.
     if (errorCode && _insideTransaction && sqlite3_get_autocommit(_db)) {
@@ -652,7 +656,7 @@ void SQLite::_checkInterruptErrors(const string& error) const
     }
 
     if (errorCode == 2) {
-        STHROW("408 User Disconnected");
+        STHROW("408 User Aborted");
     }
 
     // Otherwise, no error.
