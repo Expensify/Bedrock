@@ -652,9 +652,8 @@ void SQLite::_checkInterruptErrors(const string& error) const
     }
 
     if (errorCode == 2) {
-        throw timeout_error("user aborted in "s + error, time);
+        STHROW("408 User Disconnected");
     }
-
 
     // Otherwise, no error.
 }
