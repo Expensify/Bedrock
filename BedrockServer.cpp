@@ -2107,7 +2107,7 @@ SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& com
     return message;
 }
 
-void BedrockServer::broadcastCommand(const SData& command)
+void BedrockServer::broadcastCommand(const SData& command, const string& peerName)
 {
     auto _clusterMessengerCopy = _clusterMessenger;
     if (!_clusterMessengerCopy) {
@@ -2115,7 +2115,15 @@ void BedrockServer::broadcastCommand(const SData& command)
         return;
     }
 
-    _clusterMessengerCopy->runOnAll(command);
+    if (peerName == "") {
+        _clusterMessengerCopy->runOnAll(command);
+    } else {
+        BedrockCommand cmd(SQLiteCommand(SData(command)), nullptr);
+        bool result = _clusterMessengerCopy->runOnPeer(cmd, peerName);
+        if (!result) {
+            SWARN("Failed to run command " << command.methodLine << " on peer " << peerName);
+        }
+    }
     SINFO("Completed broadcast of command " << command.methodLine << ".");
 }
 
