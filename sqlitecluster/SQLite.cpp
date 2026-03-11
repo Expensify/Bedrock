@@ -656,7 +656,7 @@ void SQLite::_checkInterruptErrors(const string& error) const
     }
 
     if (errorCode == 2) {
-        STHROW("408 User Aborted");
+        STHROW("499 Client Disconnected");
     }
 
     // Otherwise, no error.
