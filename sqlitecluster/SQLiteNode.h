@@ -121,6 +121,15 @@ public:
     // Get's the number of WAL frames that are currently waiting to be checkpointed.
     uint64_t getOutstandingFramesToCheckpoint() const;
 
+    // Get's the number of unused (free) pages in the database file.
+    uint64_t getFreelistCount() const;
+
+    // Get's the total number of pages in the database file.
+    uint64_t getPageCount() const;
+
+    // Get's the size of each database page in bytes.
+    uint64_t getPageSize() const;
+
     // Get's the current leader version (our own version if we're leading)
     // Can block.
     const string getLeaderVersion() const;
