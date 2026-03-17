@@ -40,7 +40,7 @@ SStandaloneHTTPSManager::~SStandaloneHTTPSManager()
 {
 }
 
-int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine, const int& defaultStatusCode)
+int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine, const int& defaultStatusCode = 400)
 {
     // This code looks for the first space in the methodLine, and then for the first non-space
     // after that, and *then* parses the response code. If we fail to find such a code, or can't parse it as an
