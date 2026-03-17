@@ -98,36 +98,39 @@ public:
 #include <type_traits>
 #include <utility>
 
-class SString : public std::string {
-    using string = std::string;
+class SString : public string {
+    using string = string;
 
     template<typename>
     static constexpr bool always_false_v = false;
 
     template<typename T>
-    using bare_t = std::remove_cvref_t<T>;
+    using bare_t = remove_cvref_t<T>;
 
     template<typename T>
     static void assign_impl(string& out, T&& from)
     {
         using U = bare_t<T>;
 
-        if constexpr (std::is_same_v<U, char>) {
+        if constexpr (is_same_v<U, char> ) {
             out.assign(1, from);
-        } else if constexpr (std::is_same_v<U, unsigned char>) {
+        } else if constexpr (is_same_v<U, unsigned char> ) {
             out.assign(1, static_cast<char>(from));
-        } else if constexpr (std::is_same_v<U, bool>) {
+        } else if constexpr (is_same_v<U, bool> ) {
             out = from ? "true" : "false";
-        } else if constexpr (std::is_arithmetic_v<U>) {
-            out = std::to_string(from);
-        } else if constexpr (requires(string& s, T&& v) { s = std::forward<T>(v); }) {
-            out = std::forward<T>(from);
+        } else if constexpr (is_arithmetic_v<U> ) {
+            out = to_string(from);
+        } else if constexpr (requires(string & s, T && v)
+                                                        {
+                                                          s = forward<T>(v);
+        }) {
+            out = forward<T>(from);
         } else {
             static_assert(
                 always_false_v<U>,
                 "SString cannot be constructed/assigned from this type. "
                 "Supported types are: bool, char, unsigned char, arithmetic types, "
-                "and any type assignable to std::string."
+                "and any type assignable to string."
             );
         }
     }
@@ -138,13 +141,13 @@ public:
     template<typename T>
     SString(T&& from)
     {
-        assign_impl(*this, std::forward<T>(from));
+        assign_impl(*this, forward<T>(from));
     }
 
     template<typename T>
     SString& operator=(T&& from)
     {
-        assign_impl(*this, std::forward<T>(from));
+        assign_impl(*this, forward<T>(from));
         return *this;
     }
 };
