@@ -44,7 +44,7 @@ public:
     // The purpose of this is to be able to shut down when no activity is happening.
     void postPoll(fd_map& fdm, Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS = (5 * 60 * 1000));
 
-    static int getHTTPResponseCode(const string& methodLine);
+    static int getHTTPResponseCode(const string& methodLine, const int& defaultStatusCode);
 
 protected:   // Child API
 
