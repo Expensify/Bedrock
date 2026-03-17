@@ -99,8 +99,6 @@ public:
 #include <utility>
 
 class SString : public string {
-    using string = string;
-
     template<typename>
     static constexpr bool always_false_v = false;
 
