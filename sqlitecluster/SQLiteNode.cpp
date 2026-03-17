@@ -634,6 +634,8 @@ bool SQLiteNode::update()
         ///
         case SQLiteNodeState::SYNCHRONIZING: {
             if (_isShuttingDown) {
+                _reconnectPeer(_syncPeer);
+                _syncPeer = nullptr;
                 _changeState(SQLiteNodeState::SEARCHING);
                 return false;
             }
