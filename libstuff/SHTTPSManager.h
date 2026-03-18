@@ -28,6 +28,17 @@ public:
         // If it is scheduled to start in the future, we will call `startFunc` at the timestamp scheduled.
         uint64_t scheduledStart = 0;
         function<void(Transaction&)> startFunc;
+
+        // When set, this transaction uses SSE streaming via pollStreamingData() instead of
+        // the standard postPoll() buffered response path. Each complete SSE event (delimited
+        // by \n\n) is dispatched to this callback as it arrives.
+        function<void(const string& data)> streamCallback;
+
+        // Accumulated SSE body data not yet dispatched as a complete event.
+        string streamBuffer;
+
+        // Set to true once the HTTP response headers have been parsed for a streaming transaction.
+        bool streamHeadersParsed = false;
     };
 
     static const string proxyAddressHTTPS;
@@ -43,6 +54,12 @@ public:
     // This is a total amount of milliseconds of idle activity since the last send on a socket before killing it.
     // The purpose of this is to be able to shut down when no activity is happening.
     void postPoll(fd_map& fdm, Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS = (5 * 60 * 1000));
+
+    // Poll a streaming SSE transaction. Reads data from the socket, parses HTTP headers on the
+    // first call, then incrementally extracts complete SSE events (delimited by \n\n) and dispatches
+    // them to transaction.streamCallback. Returns true when the stream is finished: either
+    // "data: [DONE]\n\n" was received, the socket closed, or a timeout was hit.
+    bool pollStreamingData(fd_map& fdm, Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS = (5 * 60 * 1000));
 
     static int getHTTPResponseCode(const string& methodLine);
 

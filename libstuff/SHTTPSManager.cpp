@@ -254,6 +254,127 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
     return transaction;
 }
 
+bool SStandaloneHTTPSManager::pollStreamingData(fd_map& fdm, Transaction& transaction, uint64_t& nextActivity, uint64_t timeoutMS)
+{
+    if (!transaction.s || transaction.finished) {
+        return true;
+    }
+
+    SAUTOPREFIX(transaction.requestID);
+    STCPManager::postPoll(fdm, *transaction.s);
+
+    uint64_t now = STimeNow();
+
+    if (!transaction.streamHeadersParsed) {
+        // Attempt to parse HTTP response headers. For responses without Content-Length,
+        // SParseHTTP returns the full buffer size and puts all post-header data into content.
+        int size = transaction.fullResponse.deserialize(transaction.s->recvBuffer);
+        if (size == 0) {
+            // Headers not yet complete. Check for disconnect or timeout.
+            if (transaction.s->state.load() > STCPManager::Socket::CONNECTED) {
+                SWARN("Streaming connection died before headers received");
+                transaction.response = 501;
+                transaction.finished = now;
+                delete transaction.s;
+                transaction.s = nullptr;
+                return true;
+            }
+            if ((now > transaction.s->lastSendTime + timeoutMS * 1000) ||
+                (now > transaction.timeoutAt)) {
+                SWARN("Streaming transaction timed out waiting for headers");
+                transaction.response = 504;
+                transaction.finished = now;
+                delete transaction.s;
+                transaction.s = nullptr;
+                return true;
+            }
+            uint64_t remainingUntilTimeoutMS = (timeoutMS * 1000) - (now - transaction.s->lastSendTime);
+            uint64_t remainingUntilTimeoutAt = transaction.timeoutAt > now ? transaction.timeoutAt - now : 0;
+            nextActivity = min(nextActivity, min(remainingUntilTimeoutMS, remainingUntilTimeoutAt));
+            return false;
+        }
+
+        transaction.streamHeadersParsed = true;
+        transaction.response = getHTTPResponseCode(transaction.fullResponse.methodLine);
+
+        // Any body data already received is in fullResponse.content (for no-Content-Length responses).
+        if (!transaction.fullResponse.content.empty()) {
+            transaction.streamBuffer = move(transaction.fullResponse.content);
+            transaction.fullResponse.content.clear();
+        }
+        transaction.s->recvBuffer.consumeFront(size);
+
+        if (transaction.response < 200 || transaction.response >= 300) {
+            SINFO("Streaming request returned error " << transaction.response);
+            transaction.finished = now;
+            delete transaction.s;
+            transaction.s = nullptr;
+            return true;
+        }
+    } else {
+        // Headers already parsed. Move any new socket data into the stream buffer.
+        size_t recvSize = transaction.s->recvBuffer.size();
+        if (recvSize > 0) {
+            transaction.streamBuffer.append(transaction.s->recvBuffer.c_str(), recvSize);
+            transaction.s->recvBuffer.consumeFront(recvSize);
+        }
+    }
+
+    // Extract complete SSE events delimited by \n\n.
+    size_t consumed = 0;
+    while (true) {
+        size_t eventEnd = transaction.streamBuffer.find("\n\n", consumed);
+        if (eventEnd == string::npos) {
+            break;
+        }
+
+        string event = transaction.streamBuffer.substr(consumed, eventEnd - consumed);
+        consumed = eventEnd + 2;
+
+        if (event == "data: [DONE]") {
+            transaction.streamBuffer.erase(0, consumed);
+            transaction.finished = now;
+            delete transaction.s;
+            transaction.s = nullptr;
+            return true;
+        }
+
+        if (transaction.streamCallback) {
+            transaction.streamCallback(event);
+        }
+    }
+
+    if (consumed > 0) {
+        transaction.streamBuffer.erase(0, consumed);
+    }
+
+    // Check for socket close after processing any remaining events.
+    if (transaction.s->state.load() == STCPManager::Socket::CLOSED) {
+        SINFO("Streaming connection closed by remote");
+        transaction.finished = now;
+        delete transaction.s;
+        transaction.s = nullptr;
+        return true;
+    }
+
+    // Idle timeout based on last data received, plus absolute deadline.
+    if ((now > transaction.s->lastRecvTime + timeoutMS * 1000) ||
+        (now > transaction.timeoutAt)) {
+        SWARN("Streaming transaction timed out");
+        transaction.response = 504;
+        transaction.finished = now;
+        delete transaction.s;
+        transaction.s = nullptr;
+        return true;
+    }
+
+    uint64_t remainingUntilTimeoutMS = (timeoutMS * 1000) - (now - transaction.s->lastRecvTime);
+    uint64_t remainingUntilTimeoutAt = transaction.timeoutAt > now ? transaction.timeoutAt - now : 0;
+    nextActivity = min(nextActivity, min(remainingUntilTimeoutMS, remainingUntilTimeoutAt));
+
+    return false;
+}
+
 bool SStandaloneHTTPSManager::_onRecv(Transaction& transaction)
 {
     transaction.response = getHTTPResponseCode(transaction.fullResponse.methodLine);
