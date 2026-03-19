@@ -303,6 +303,11 @@ void BedrockServer::sync()
             for (auto& cmd : commands) {
                 _commandQueue.push(move(cmd));
             }
+            {
+                unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
+                _blockingQueueUserCounts.clear();
+                _blockedUsers.clear();
+            }
         }
 
         // Reset some state on falling out of leading. This could be normal, if we're just shutting down, or it
@@ -646,6 +651,11 @@ void BedrockServer::sync()
         SWARN("Sync thread shut down with " << _blockingCommandQueue.size() << " blocking queued commands. Commands were: "
               << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
         _blockingCommandQueue.clear();
+    }
+    {
+        unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
+        _blockingQueueUserCounts.clear();
+        _blockedUsers.clear();
     }
 
     for (auto plugin : plugins) {
@@ -1072,6 +1082,23 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     // PostProcess if the command should run postProcess, and there have been no errors thrown thus far.
                     core.postProcessCommand(command, isBlocking);
                 }
+
+                // Decrement blocking queue rate limit count when a blocking command completes.
+                if (isBlocking && !command->blockingIdentifier.empty() && _maxBlockingQueuePerUser.load() > 0) {
+                    unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
+                    auto it = _blockingQueueUserCounts.find(command->blockingIdentifier);
+                    if (it != _blockingQueueUserCounts.end()) {
+                        it->second--;
+                        if (it->second <= 0) {
+                            _blockingQueueUserCounts.erase(it);
+                        }
+                    }
+                    if (_blockingCommandQueue.size() == 0) {
+                        _blockedUsers.clear();
+                        _blockingQueueUserCounts.clear();
+                    }
+                }
+
                 _reply(command);
 
                 // Don't need to retry.
@@ -1083,7 +1110,35 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         int maxRetries = _maxConflictRetries.load();
         if (maxRetries || _shutdownState.load() != RUNNING) {
             if (command->processCount > maxRetries) {
+                // Check per-user blocking queue rate limit before escalating.
+                int maxPerUser = _maxBlockingQueuePerUser.load();
+                if (maxPerUser > 0 && !command->blockingIdentifier.empty()) {
+                    shared_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
+                    if (_blockedUsers.count(command->blockingIdentifier)) {
+                        lock.unlock();
+                        SALERT("Blocking queue rate limit: rejecting '" << command->request.methodLine
+                               << "' for identifier '" << command->blockingIdentifier << "'");
+                        command->response.methodLine = "503 Blocking queue rate limited";
+                        command->complete = true;
+                        _reply(command);
+                        return;
+                    }
+                }
+
                 SINFO("Max retries (" << maxRetries << ") hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
+
+                // Track the identifier in the blocking queue counts.
+                if (maxPerUser > 0 && !command->blockingIdentifier.empty()) {
+                    unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
+                    int& count = _blockingQueueUserCounts[command->blockingIdentifier];
+                    count++;
+                    if (count >= maxPerUser) {
+                        _blockedUsers.insert(command->blockingIdentifier);
+                        SALERT("Blocking queue rate limit: flagging identifier '" << command->blockingIdentifier
+                               << "' with " << count << " commands in blocking queue (threshold: " << maxPerUser << ")");
+                    }
+                }
+
                 _blockingCommandQueue.push(move(command));
                 return;
             }
@@ -1223,6 +1278,11 @@ void BedrockServer::_resetServer()
     _pluginsDetached = false;
     _upgradeCompleted = false;
     _shutdownTime = chrono::time_point<chrono::steady_clock>{};
+    {
+        unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
+        _blockingQueueUserCounts.clear();
+        _blockedUsers.clear();
+    }
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {
@@ -1241,7 +1301,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _isCommandPortLikelyBlocked(false),
     _syncLoopShouldBeRunning(true), _syncNode(nullptr), _clusterMessenger(nullptr), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _enableConflictPageLocks(args.test("-enableConflictPageLocks")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
+    _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3), _maxBlockingQueuePerUser(0),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _upgradeCompleted(false)
 {
@@ -1767,6 +1827,23 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             content["crashCommandList"] = SComposeJSONArray(crashCommandListArray);
         }
 
+        {
+            // Blocking queue rate limit info.
+            shared_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
+            content["blockingRateLimitThreshold"] = to_string(_maxBlockingQueuePerUser.load());
+            content["blockedUsers"] = to_string(_blockedUsers.size());
+            if (!_blockedUsers.empty()) {
+                content["blockedUserList"] = SComposeJSONArray(_blockedUsers);
+            }
+            if (!_blockingQueueUserCounts.empty()) {
+                STable countsTable;
+                for (const auto& p : _blockingQueueUserCounts) {
+                    countsTable[p.first] = to_string(p.second);
+                }
+                content["blockingQueueUserCounts"] = SComposeJSONObject(countsTable);
+            }
+        }
+
         // On leader, return the current multi-write blacklists.
         if (getState() == SQLiteNodeState::LEADING) {
             // Both of these need to be in the correct state for multi-write to be enabled.
@@ -1857,6 +1934,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "BlockWrites") ||
         SIEquals(command->request.methodLine, "UnblockWrites") ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads") ||
+        SIEquals(command->request.methodLine, "SetBlockingRateLimit") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
     ) {
         return true;
@@ -1961,6 +2039,22 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         }
     } else if (SIEquals(command->request.methodLine, "SetConflictPageLocks")) {
         _enableConflictPageLocks = command->request.test("enable");
+    } else if (SIEquals(command->request.methodLine, "SetBlockingRateLimit")) {
+        if (command->request.isSet("MaxPerUser")) {
+            int64_t maxPerUser = command->request.calc64("MaxPerUser");
+            if (maxPerUser >= 0) {
+                response["previousMaxBlockingQueuePerUser"] = to_string(_maxBlockingQueuePerUser.load());
+                _maxBlockingQueuePerUser.store(maxPerUser);
+                SINFO("Setting _maxBlockingQueuePerUser to " << maxPerUser);
+            }
+        }
+        if (command->request.test("ClearBlocks")) {
+            unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
+            size_t cleared = _blockedUsers.size();
+            _blockedUsers.clear();
+            _blockingQueueUserCounts.clear();
+            SINFO("Manually cleared " << cleared << " blocked users.");
+        }
     } else if (SIEquals(command->request.methodLine, "BlockWrites")) {
         atomic<bool> locked(false);
         lock_guard lock(__quiesceLock);
