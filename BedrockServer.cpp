@@ -307,6 +307,7 @@ void BedrockServer::sync()
                 unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
                 _blockingQueueUserCounts.clear();
                 _blockedUsers.clear();
+                _blockingQueueEmptyTime.store(0);
             }
         }
 
@@ -656,6 +657,7 @@ void BedrockServer::sync()
         unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
         _blockingQueueUserCounts.clear();
         _blockedUsers.clear();
+        _blockingQueueEmptyTime.store(0);
     }
 
     for (auto plugin : plugins) {
@@ -1093,9 +1095,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             _blockingQueueUserCounts.erase(it);
                         }
                     }
-                    if (_blockingCommandQueue.size() == 0) {
-                        _blockedUsers.clear();
-                        _blockingQueueUserCounts.clear();
+                    if (_blockingCommandQueue.size() == 0 && _blockingQueueEmptyTime.load() == 0) {
+                        _blockingQueueEmptyTime.store(STimeNow());
                     }
                 }
 
@@ -1113,6 +1114,15 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 // Check per-user blocking queue rate limit before escalating.
                 int maxPerUser = _maxBlockingQueuePerUser.load();
                 if (maxPerUser > 0 && !command->blockingIdentifier.empty()) {
+                    // Clear blocks if the blocking queue has been empty for 30 seconds.
+                    uint64_t emptyTime = _blockingQueueEmptyTime.load();
+                    if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
+                        unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
+                        _blockedUsers.clear();
+                        _blockingQueueUserCounts.clear();
+                        _blockingQueueEmptyTime.store(0);
+                    }
+
                     shared_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
                     if (_blockedUsers.count(command->blockingIdentifier)) {
                         lock.unlock();
@@ -1139,6 +1149,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     }
                 }
 
+                _blockingQueueEmptyTime.store(0);
                 _blockingCommandQueue.push(move(command));
                 return;
             }
@@ -1282,6 +1293,7 @@ void BedrockServer::_resetServer()
         unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
         _blockingQueueUserCounts.clear();
         _blockedUsers.clear();
+        _blockingQueueEmptyTime.store(0);
     }
 
     // Tell any plugins that they can attach now
@@ -2053,6 +2065,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             size_t cleared = _blockedUsers.size();
             _blockedUsers.clear();
             _blockingQueueUserCounts.clear();
+            _blockingQueueEmptyTime.store(0);
             SINFO("Manually cleared " << cleared << " blocked users.");
         }
     } else if (SIEquals(command->request.methodLine, "BlockWrites")) {

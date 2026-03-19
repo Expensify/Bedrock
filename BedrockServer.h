@@ -423,6 +423,7 @@ private:
     map<string, int> _blockingQueueUserCounts;
     set<string> _blockedUsers;
     atomic<int> _maxBlockingQueuePerUser{0};
+    atomic<uint64_t> _blockingQueueEmptyTime{0};
 
     // Returns whether or not the command was a status or control command. If it was, it will have already been handled
     // and responded to upon return
