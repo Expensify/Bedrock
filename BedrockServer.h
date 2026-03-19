@@ -418,6 +418,12 @@ private:
     // particular command for it count as a match likely to cause a crash.
     map<string, set<STable>> _crashCommands;
 
+    // Per-user blocking queue rate limiting.
+    shared_timed_mutex _blockingRateLimitMutex;
+    map<string, int> _blockingQueueUserCounts;
+    set<string> _blockedUsers;
+    atomic<int> _maxBlockingQueuePerUser{0};
+
     // Returns whether or not the command was a status or control command. If it was, it will have already been handled
     // and responded to upon return
     bool _handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& command);
