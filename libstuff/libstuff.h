@@ -94,39 +94,60 @@ public:
 
 // An SString is just a string with special assignment operators so that we get automatic conversion from arithmetic
 // types.
+#include <string>
+#include <type_traits>
+#include <utility>
+
 class SString : public string {
+    template<typename>
+    static constexpr bool always_false_v = false;
+
+    template<typename T>
+    using bare_t = remove_cvref_t<T>;
+
+    template<typename T>
+    static void assign_impl(string& out, T&& from)
+    {
+        using U = bare_t<T>;
+
+        if constexpr (is_same_v<U, char> ) {
+            out.assign(1, from);
+        } else if constexpr (is_same_v<U, unsigned char> ) {
+            out.assign(1, static_cast<char>(from));
+        } else if constexpr (is_same_v<U, bool> ) {
+            out = from ? "true" : "false";
+        } else if constexpr (is_arithmetic_v<U> ) {
+            out = to_string(from);
+        } else if constexpr (requires(string & s, T && v)
+                                                        {
+                                                          s = forward<T>(v);
+        }) {
+            out = forward<T>(from);
+        } else {
+            static_assert(
+                always_false_v<U>,
+                "SString cannot be constructed/assigned from this type. "
+                "Supported types are: bool, char, unsigned char, arithmetic types, "
+                "and any type assignable to string."
+            );
+        }
+    }
+
 public:
-    // Templated assignment operator for arithmetic types.
+    SString() = default;
+
     template<typename T>
-    typename enable_if<is_arithmetic<T>::value, SString&>::type operator=(const T& from)
+    SString(T&& from)
     {
-        string::operator=(to_string(from));
+        assign_impl(*this, forward<T>(from));
+    }
+
+    template<typename T>
+    SString& operator=(T&& from)
+    {
+        assign_impl(*this, forward<T>(from));
         return *this;
     }
-
-    template<typename T>
-    SString(const T& from) : string(from)
-    {
-    }
-
-    SString();
-
-    // Templated assignment operator for non-arithmetic types.
-    template<typename T>
-    typename enable_if<!is_arithmetic<T>::value, SString&>::type operator=(const T& from)
-    {
-        string::operator=(from);
-        return *this;
-    }
-
-    // Chars are special, we don't treat them as integral types, even though they'd normally count.
-    SString& operator=(const char& from);
-
-    // The above is also true for unsigned chars.
-    SString& operator=(const unsigned char& from);
-
-    // Booleans get converted to strings.
-    SString& operator=(const bool from);
 };
 
 typedef map<string, SString, STableComp> STable;
