@@ -52,6 +52,9 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
         }
     }
     _commandCount++;
+    if (_plugin) {
+        _plugin->activeCommandCount++;
+    }
 }
 
 const string& BedrockCommand::getName() const
@@ -87,6 +90,9 @@ BedrockCommand::~BedrockCommand()
 {
     if (destructionCallback) {
         (*destructionCallback)();
+    }
+    if (_plugin) {
+        _plugin->activeCommandCount--;
     }
     _commandCount--;
 }

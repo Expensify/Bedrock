@@ -105,6 +105,9 @@ public:
     static map<string, void*> g_pluginDLHandles;
     static map<string, string> g_pluginPaths;
 
+    // Tracks the number of in-flight commands owned by this plugin instance.
+    atomic<size_t> activeCommandCount{0};
+
     // Reference to the BedrockServer object that owns this plugin.
     BedrockServer& server;
 };
