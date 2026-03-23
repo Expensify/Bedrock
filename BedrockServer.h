@@ -1,5 +1,6 @@
 #pragma once
 #include <chrono>
+#include <shared_mutex>
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLiteServer.h>
@@ -436,6 +437,13 @@ private:
 
     // Whether or not all plugins are detached
     bool _pluginsDetached;
+
+    // Plugin hot-reload support. _pluginReloadInProgress is checked by getCommandFromPlugins() to reject
+    // commands for the plugin being reloaded. _reloadingPluginName is the UPPER-cased name of that plugin.
+    // _pluginsMutex protects the plugins map during the brief swap window.
+    atomic<bool> _pluginReloadInProgress{false};
+    string _reloadingPluginName;
+    shared_mutex _pluginsMutex;
 
     // This is a snapshot of the state of the node taken at the beginning of any call to peekCommand or processCommand
     // so that the state can't change for the lifetime of that call, from the view of that function.
