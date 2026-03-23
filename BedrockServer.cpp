@@ -1953,6 +1953,16 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             totalCount += s.second.size();
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
+    } else if (SIEquals(command->request.methodLine, "FlushBlockingQueue")) {
+        SINFO("FlushBlockingQueue: failing " << _blockingCommandQueue.size() << " commands: " << SComposeList(_blockingCommandQueue.getRequestMethodLines()));
+        auto commands = _blockingCommandQueue.getAll();
+        for (auto& cmd : commands) {
+            SINFO("FlushBlockingQueue: failing command '" << cmd->request.methodLine << "'");
+            cmd->response.methodLine = "503 Service Unavailable";
+            cmd->complete = true;
+            _reply(cmd);
+        }
+        response["flushedCount"] = to_string(commands.size());
     } else if (SIEquals(command->request.methodLine, "SetConflictParams")) {
         int64_t maxConflictRetries = command->request.calc64("MaxConflictRetries");
         if (maxConflictRetries >= 0) {
