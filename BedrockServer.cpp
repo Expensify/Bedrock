@@ -1123,7 +1123,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         _blockingQueueEmptyTime.store(0);
                     }
 
-                    shared_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
+                    // Check and update atomically under one lock.
+                    unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
                     if (_blockedUsers.count(command->blockingIdentifier)) {
                         lock.unlock();
                         SALERT("Blocking queue rate limit: rejecting '" << command->request.methodLine
@@ -1133,21 +1134,21 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         _reply(command);
                         return;
                     }
+
+                    // Only count on first entry from worker threads, not when the blocking commit
+                    // thread re-queues a command that conflicted again.
+                    if (!isBlocking) {
+                        int& count = _blockingQueueUserCounts[command->blockingIdentifier];
+                        count++;
+                        if (count >= maxPerUser) {
+                            _blockedUsers.insert(command->blockingIdentifier);
+                            SALERT("Blocking queue rate limit: flagging identifier '" << command->blockingIdentifier
+                                   << "' with " << count << " commands in blocking queue (threshold: " << maxPerUser << ")");
+                        }
+                    }
                 }
 
                 SINFO("Max retries (" << maxRetries << ") hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
-
-                // Track the identifier in the blocking queue counts.
-                if (maxPerUser > 0 && !command->blockingIdentifier.empty()) {
-                    unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
-                    int& count = _blockingQueueUserCounts[command->blockingIdentifier];
-                    count++;
-                    if (count >= maxPerUser) {
-                        _blockedUsers.insert(command->blockingIdentifier);
-                        SALERT("Blocking queue rate limit: flagging identifier '" << command->blockingIdentifier
-                               << "' with " << count << " commands in blocking queue (threshold: " << maxPerUser << ")");
-                    }
-                }
 
                 _blockingQueueEmptyTime.store(0);
                 _blockingCommandQueue.push(move(command));
