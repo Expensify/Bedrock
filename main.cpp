@@ -145,6 +145,8 @@ set<string> loadPlugins(SData& args)
             } else {
                 // Call the plugin registration function with the same name.
                 BedrockPlugin::g_registeredPluginList.emplace(make_pair(SToUpper(name), (BedrockPlugin * (*)(BedrockServer&)) sym));
+                BedrockPlugin::g_pluginDLHandles[SToUpper(name)] = lib;
+                BedrockPlugin::g_pluginPaths[SToUpper(name)] = pluginName;
             }
         }
     }
