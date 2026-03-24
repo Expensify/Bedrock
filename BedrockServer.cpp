@@ -2333,12 +2333,19 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             }).detach();
         }
 
-        // Update the version string
-        STable pluginInfo = newPlugin->getInfo();
-        if (!pluginInfo.empty()) {
-            for (auto& row : pluginInfo) {
-                SINFO("[ReloadPlugin] New plugin info: " << row.first << " = " << row.second);
+        // Rebuild the _version string to reflect the reloaded plugin's version.
+        {
+            vector<string> versions = {VERSION};
+            for (auto& p : plugins) {
+                auto info = p.second->getInfo();
+                auto it = info.find("version");
+                if (it != info.end()) {
+                    versions.push_back(p.second->getName() + "_" + it->second);
+                }
             }
+            sort(versions.begin(), versions.end());
+            _version = SComposeList(versions, ":");
+            SINFO("[ReloadPlugin] Updated version string: " << _version);
         }
 
         // Phase 7: Resume
