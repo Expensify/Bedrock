@@ -2133,8 +2133,16 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
                         BedrockPlugin::g_registeredPluginList[pluginKey] = factory;
                         pluginLock.unlock();
                         {
-                            SQLiteScopedHandle rbDBScope(*_dbPool, _dbPool->getIndex());
-                            rollbackPlugin->stateChanged(rbDBScope.db(), getState());
+                            size_t rbIdx = _dbPool->getIndex();
+                            SQLite& rbDB = _dbPool->initializeIndex(rbIdx);
+                            rollbackPlugin->stateChanged(rbDB, getState());
+                            shared_ptr<SQLitePool> rbPoolCopy = _dbPool;
+                            thread([rbPoolCopy, rbIdx, this]() {
+                                SInitialize("ReloadPluginRollbackDBReturn");
+                                while (!isUpgradeComplete()) { usleep(50'000); }
+                                usleep(100'000);
+                                rbPoolCopy->returnToPool(rbIdx);
+                            }).detach();
                         }
                         SWARN("[ReloadPlugin] Rolled back to previous plugin version");
                         _pluginReloadInProgress.store(false);
@@ -2177,8 +2185,16 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
                         BedrockPlugin::g_registeredPluginList[pluginKey] = factory;
                         pluginLock.unlock();
                         {
-                            SQLiteScopedHandle rbDBScope(*_dbPool, _dbPool->getIndex());
-                            rollbackPlugin->stateChanged(rbDBScope.db(), getState());
+                            size_t rbIdx = _dbPool->getIndex();
+                            SQLite& rbDB = _dbPool->initializeIndex(rbIdx);
+                            rollbackPlugin->stateChanged(rbDB, getState());
+                            shared_ptr<SQLitePool> rbPoolCopy = _dbPool;
+                            thread([rbPoolCopy, rbIdx, this]() {
+                                SInitialize("ReloadPluginRollbackDBReturn");
+                                while (!isUpgradeComplete()) { usleep(50'000); }
+                                usleep(100'000);
+                                rbPoolCopy->returnToPool(rbIdx);
+                            }).detach();
                         }
                         SWARN("[ReloadPlugin] Rolled back to previous plugin version");
                         _pluginReloadInProgress.store(false);
@@ -2220,8 +2236,16 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
                         BedrockPlugin::g_registeredPluginList[pluginKey] = factory;
                         pluginLock.unlock();
                         {
-                            SQLiteScopedHandle rbDBScope(*_dbPool, _dbPool->getIndex());
-                            rollbackPlugin->stateChanged(rbDBScope.db(), getState());
+                            size_t rbIdx = _dbPool->getIndex();
+                            SQLite& rbDB = _dbPool->initializeIndex(rbIdx);
+                            rollbackPlugin->stateChanged(rbDB, getState());
+                            shared_ptr<SQLitePool> rbPoolCopy = _dbPool;
+                            thread([rbPoolCopy, rbIdx, this]() {
+                                SInitialize("ReloadPluginRollbackDBReturn");
+                                while (!isUpgradeComplete()) { usleep(50'000); }
+                                usleep(100'000);
+                                rbPoolCopy->returnToPool(rbIdx);
+                            }).detach();
                         }
                         SWARN("[ReloadPlugin] Rolled back to previous plugin version");
                         _pluginReloadInProgress.store(false);
@@ -2254,9 +2278,14 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         SINFO("[ReloadPlugin] New plugin instance created and registered");
 
         // Phase 6: Initialize new plugin
+        // Auth's stateChanged() spawns a detached thread that captures `db` by reference
+        // and uses it after stateChanged() returns. A SQLiteScopedHandle would be destroyed
+        // at the end of this block, leaving the detached thread with a dangling reference.
+        // Instead, we acquire a pool handle and return it in a background thread after
+        // the plugin's async initialization completes.
         if (_dbPool) {
-            SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
-            SQLite& db = dbScope.db();
+            size_t dbIndex = _dbPool->getIndex();
+            SQLite& db = _dbPool->initializeIndex(dbIndex);
             if (getState() == SQLiteNodeState::LEADING) {
                 SINFO("[ReloadPlugin] Running upgradeDatabase for " << pluginKey);
                 try {
@@ -2275,6 +2304,21 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
                 }
             }
             newPlugin->stateChanged(db, getState());
+
+            // Return the DB handle to the pool once the plugin's async initialization is done.
+            // This is necessary because Auth's stateChanged spawns a detached thread that uses
+            // the db reference until isUpgradeComplete() returns true.
+            shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
+            thread([dbPoolCopy, dbIndex, this]() {
+                SInitialize("ReloadPluginDBReturn");
+                while (!isUpgradeComplete()) {
+                    usleep(50'000);
+                }
+                // Give the plugin's thread a moment to finish using the handle after upgrade completes.
+                usleep(100'000);
+                dbPoolCopy->returnToPool(dbIndex);
+                SINFO("[ReloadPlugin] Returned DB handle to pool after plugin initialization");
+            }).detach();
         }
 
         // Update the version string
