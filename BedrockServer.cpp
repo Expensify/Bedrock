@@ -886,6 +886,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
             // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
             if (core.isTimedOut(command, &db, this)) {
+                if (isBlocking) {
+                    _decrementBlockingQueueCount(command);
+                }
                 _reply(command);
                 return;
             }
@@ -897,6 +900,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             uint64_t commitCount = db.getCommitCount();
             uint64_t commandCommitCount = command->request.calcU64("commitCount");
             if (commandCommitCount > commitCount) {
+                if (isBlocking) {
+                    _decrementBlockingQueueCount(command);
+                }
                 SAUTOLOCK(_futureCommitCommandMutex);
                 auto newQueueSize = _futureCommitCommands.size() + 1;
                 SINFO("Command (" << command->request.methodLine << ") depends on future commit (" << commandCommitCount
@@ -919,6 +925,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 core.prePeekCommand(command, isBlocking);
 
                 if (command->complete) {
+                    if (isBlocking) {
+                        _decrementBlockingQueueCount(command);
+                    }
                     _reply(command);
                     break;
                 }
@@ -973,6 +982,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
                     // Peek wasn't enough to handle this command. See if we think it should be writable in parallel.
                     if (!canWriteParallel) {
+                        if (isBlocking) {
+                            _decrementBlockingQueueCount(command);
+                        }
                         // Roll back the transaction, it'll get re-run in the sync thread.
                         core.rollback(command->getMethodName());
                         dbScope.release();
@@ -1085,19 +1097,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     core.postProcessCommand(command, isBlocking);
                 }
 
-                // Decrement blocking queue rate limit count when a blocking command completes.
-                if (isBlocking && !command->blockingIdentifier.empty() && _maxBlockingQueuePerUser.load() > 0) {
-                    unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
-                    auto it = _blockingQueueUserCounts.find(command->blockingIdentifier);
-                    if (it != _blockingQueueUserCounts.end()) {
-                        it->second--;
-                        if (it->second <= 0) {
-                            _blockingQueueUserCounts.erase(it);
-                        }
-                    }
-                    if (_blockingCommandQueue.size() == 0 && _blockingQueueEmptyTime.load() == 0) {
-                        _blockingQueueEmptyTime.store(STimeNow());
-                    }
+                if (isBlocking) {
+                    _decrementBlockingQueueCount(command);
                 }
 
                 _reply(command);
@@ -1114,17 +1115,17 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 // Check per-user blocking queue rate limit before escalating.
                 int maxPerUser = _maxBlockingQueuePerUser.load();
                 if (maxPerUser > 0 && !command->blockingIdentifier.empty()) {
+                    // Check and update atomically under one lock.
+                    unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
+
                     // Clear blocks if the blocking queue has been empty for 30 seconds.
                     uint64_t emptyTime = _blockingQueueEmptyTime.load();
                     if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
-                        unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
                         _blockedUsers.clear();
                         _blockingQueueUserCounts.clear();
                         _blockingQueueEmptyTime.store(0);
                     }
 
-                    // Check and update atomically under one lock.
-                    unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
                     if (_blockedUsers.count(command->blockingIdentifier)) {
                         lock.unlock();
                         SALERT("Blocking queue rate limit: rejecting '" << command->request.methodLine
@@ -1217,6 +1218,24 @@ bool BedrockServer::_handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& 
         return true;
     }
     return false;
+}
+
+void BedrockServer::_decrementBlockingQueueCount(const unique_ptr<BedrockCommand>& command)
+{
+    if (command->blockingIdentifier.empty() || _maxBlockingQueuePerUser.load() <= 0) {
+        return;
+    }
+    unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
+    auto it = _blockingQueueUserCounts.find(command->blockingIdentifier);
+    if (it != _blockingQueueUserCounts.end()) {
+        it->second--;
+        if (it->second <= 0) {
+            _blockingQueueUserCounts.erase(it);
+        }
+    }
+    if (_blockingCommandQueue.size() == 0 && _blockingQueueEmptyTime.load() == 0) {
+        _blockingQueueEmptyTime.store(STimeNow());
+    }
 }
 
 bool BedrockServer::_wouldCrash(const unique_ptr<BedrockCommand>& command)

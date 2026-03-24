@@ -432,6 +432,9 @@ private:
     // Check a command against the list of crash commands, and return whether we think the command would crash.
     bool _wouldCrash(const unique_ptr<BedrockCommand>& command);
 
+    // Decrement the blocking queue rate limit count for a command that is leaving the blocking queue.
+    void _decrementBlockingQueueCount(const unique_ptr<BedrockCommand>& command);
+
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const unique_ptr<BedrockCommand>& command);
 
