@@ -62,7 +62,7 @@ static set<string> PARAMS_WHITELIST = {
     "logParam",
     "message",
     "peer",
-    "Plugin",
+    "PluginName",
     "prepareElapsed",
     "query",
     "readElapsed",

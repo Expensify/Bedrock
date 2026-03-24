@@ -18,7 +18,7 @@ struct ReloadPluginTest : tpunit::TestFixture {
     // Helper to send ReloadPlugin control command
     string sendReloadPlugin(BedrockTester& tester, const string& pluginName) {
         SData command("ReloadPlugin");
-        command["Plugin"] = pluginName;
+        command["PluginName"] = pluginName;
         return tester.executeWaitVerifyContent(command, "", true);
     }
 
@@ -33,7 +33,7 @@ struct ReloadPluginTest : tpunit::TestFixture {
 
         // Reload the plugin
         SData reloadCmd("ReloadPlugin");
-        reloadCmd["Plugin"] = "TESTPLUGIN";
+        reloadCmd["PluginName"] = "TESTPLUGIN";
         leader.executeWaitVerifyContent(reloadCmd, "200", true);
 
         // Verify plugin still works after reload
@@ -59,7 +59,7 @@ struct ReloadPluginTest : tpunit::TestFixture {
 
         // Send reload - it should wait for the slow query to finish
         SData reloadCmd("ReloadPlugin");
-        reloadCmd["Plugin"] = "TESTPLUGIN";
+        reloadCmd["PluginName"] = "TESTPLUGIN";
         leader.executeWaitVerifyContent(reloadCmd, "200", true);
 
         slowThread.join();
@@ -74,7 +74,7 @@ struct ReloadPluginTest : tpunit::TestFixture {
         BedrockTester& leader = tester.getTester(0);
 
         SData cmd("ReloadPlugin");
-        cmd["Plugin"] = "DB";
+        cmd["PluginName"] = "DB";
         leader.executeWaitVerifyContent(cmd, "400", true);
     }
 
@@ -83,7 +83,7 @@ struct ReloadPluginTest : tpunit::TestFixture {
         BedrockTester& leader = tester.getTester(0);
 
         SData cmd("ReloadPlugin");
-        cmd["Plugin"] = "FAKEPLUGIN";
+        cmd["PluginName"] = "FAKEPLUGIN";
         leader.executeWaitVerifyContent(cmd, "400", true);
     }
 
@@ -98,7 +98,7 @@ struct ReloadPluginTest : tpunit::TestFixture {
 
         // Reload the plugin
         SData reloadCmd("ReloadPlugin");
-        reloadCmd["Plugin"] = "TESTPLUGIN";
+        reloadCmd["PluginName"] = "TESTPLUGIN";
         leader.executeWaitVerifyContent(reloadCmd, "200", true);
 
         // Verify data persists after reload
@@ -116,7 +116,7 @@ struct ReloadPluginTest : tpunit::TestFixture {
 
         // Reload on the follower
         SData reloadCmd("ReloadPlugin");
-        reloadCmd["Plugin"] = "TESTPLUGIN";
+        reloadCmd["PluginName"] = "TESTPLUGIN";
         follower.executeWaitVerifyContent(reloadCmd, "200", true);
 
         // Verify commands still work on the follower
@@ -131,12 +131,12 @@ struct ReloadPluginTest : tpunit::TestFixture {
         // Send two reload commands concurrently
         thread t1([&]() {
             SData reloadCmd("ReloadPlugin");
-            reloadCmd["Plugin"] = "TESTPLUGIN";
+            reloadCmd["PluginName"] = "TESTPLUGIN";
             leader.executeWaitVerifyContent(reloadCmd, "", true);
         });
         thread t2([&]() {
             SData reloadCmd("ReloadPlugin");
-            reloadCmd["Plugin"] = "TESTPLUGIN";
+            reloadCmd["PluginName"] = "TESTPLUGIN";
             leader.executeWaitVerifyContent(reloadCmd, "", true);
         });
 

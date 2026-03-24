@@ -2041,9 +2041,11 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         }
     } else if (SIEquals(command->request.methodLine, "ReloadPlugin")) {
         // Hot-reload a dynamically loaded plugin (.so) without restarting Bedrock.
-        string pluginKey = SToUpper(command->request["Plugin"]);
+        // Use "PluginName" header (not "Plugin") to avoid collision with the internal "plugin"
+        // header that _reply() uses to route responses to plugin port handlers.
+        string pluginKey = SToUpper(command->request["PluginName"]);
         if (pluginKey.empty()) {
-            response.methodLine = "400 Missing Plugin header";
+            response.methodLine = "400 Missing PluginName header";
             return;
         }
 
