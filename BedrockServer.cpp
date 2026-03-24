@@ -2115,7 +2115,19 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         SINFO("[ReloadPlugin] Old plugin instance destroyed and .so closed");
 
         // Phase 5: Load new plugin
-        void* newLib = dlopen(pluginPath.c_str(), RTLD_NOW);
+        // dlopen caches by path — calling dlclose + dlopen on the same path may return the
+        // old in-memory copy. Copy the .so to a unique temp path to force a fresh load.
+        string tempSOPath = pluginPath + ".reload." + to_string(STimeNow());
+        if (!SFileCopy(pluginPath, tempSOPath)) {
+            SALERT("[ReloadPlugin] Failed to copy " << pluginPath << " to " << tempSOPath);
+            _pluginReloadInProgress.store(false);
+            _reloadingPluginName.clear();
+            unblockCommandPort("ReloadPlugin");
+            response.methodLine = "500 Plugin reload failed: could not create temp copy of .so";
+            return;
+        }
+        void* newLib = dlopen(tempSOPath.c_str(), RTLD_NOW);
+        SFileDelete(tempSOPath);
         if (!newLib) {
             string dlErr = dlerror();
             SALERT("[ReloadPlugin] Failed to dlopen new .so: " << dlErr << ". Attempting rollback.");
