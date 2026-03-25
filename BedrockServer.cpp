@@ -303,6 +303,7 @@ void BedrockServer::sync()
             for (auto& cmd : commands) {
                 _commandQueue.push(move(cmd));
             }
+            // The blocking queue is being drained, so reset all per-user rate limit state.
             unique_lock<decltype(_blockingRateLimitMutex)> rateLimitLock(_blockingRateLimitMutex);
             _blockingQueueUserCounts.clear();
             _blockedUsers.clear();
@@ -651,6 +652,7 @@ void BedrockServer::sync()
               << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
         _blockingCommandQueue.clear();
     }
+    // The blocking queue was just cleared on shutdown, so reset all per-user rate limit state.
     unique_lock<decltype(_blockingRateLimitMutex)> rateLimitLock(_blockingRateLimitMutex);
     _blockingQueueUserCounts.clear();
     _blockedUsers.clear();
@@ -883,6 +885,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
             // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
             if (core.isTimedOut(command, &db, this)) {
+                // Command is leaving the blocking queue without being processed, so decrement its rate limit count.
                 if (isBlocking) {
                     _decrementBlockingQueueCount(command);
                 }
@@ -897,6 +900,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             uint64_t commitCount = db.getCommitCount();
             uint64_t commandCommitCount = command->request.calcU64("commitCount");
             if (commandCommitCount > commitCount) {
+                // Command is leaving the blocking queue to wait for a future commit, so decrement its rate limit count.
                 if (isBlocking) {
                     _decrementBlockingQueueCount(command);
                 }
@@ -922,6 +926,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 core.prePeekCommand(command, isBlocking);
 
                 if (command->complete) {
+                    // Command completed in prePeek and is leaving the blocking queue, so decrement its rate limit count.
                     if (isBlocking) {
                         _decrementBlockingQueueCount(command);
                     }
@@ -979,6 +984,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
                     // Peek wasn't enough to handle this command. See if we think it should be writable in parallel.
                     if (!canWriteParallel) {
+                        // Command is moving from the blocking queue to the sync thread, so decrement its rate limit count.
                         if (isBlocking) {
                             _decrementBlockingQueueCount(command);
                         }
@@ -1094,6 +1100,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     core.postProcessCommand(command, isBlocking);
                 }
 
+                // Command finished processing and is leaving the blocking queue, so decrement its rate limit count.
                 if (isBlocking) {
                     _decrementBlockingQueueCount(command);
                 }
@@ -1148,6 +1155,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
                 SINFO("Max retries (" << maxRetries << ") hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
 
+                // A command is entering the blocking queue, so reset the empty timestamp to prevent
+                // the 30-second cooldown from clearing rate limit state while commands are still queued.
                 _blockingQueueEmptyTime.store(0);
                 _blockingCommandQueue.push(move(command));
                 return;
@@ -1306,6 +1315,8 @@ void BedrockServer::_resetServer()
     _pluginsDetached = false;
     _upgradeCompleted = false;
     _shutdownTime = chrono::time_point<chrono::steady_clock>{};
+
+    // Server is resetting, so clear all per-user rate limit state.
     unique_lock<decltype(_blockingRateLimitMutex)> rateLimitLock(_blockingRateLimitMutex);
     _blockingQueueUserCounts.clear();
     _blockedUsers.clear();
