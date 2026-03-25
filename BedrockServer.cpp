@@ -303,12 +303,10 @@ void BedrockServer::sync()
             for (auto& cmd : commands) {
                 _commandQueue.push(move(cmd));
             }
-            {
-                unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
-                _blockingQueueUserCounts.clear();
-                _blockedUsers.clear();
-                _blockingQueueEmptyTime.store(0);
-            }
+            unique_lock<decltype(_blockingRateLimitMutex)> rateLimitLock(_blockingRateLimitMutex);
+            _blockingQueueUserCounts.clear();
+            _blockedUsers.clear();
+            _blockingQueueEmptyTime.store(0);
         }
 
         // Reset some state on falling out of leading. This could be normal, if we're just shutting down, or it
@@ -653,12 +651,11 @@ void BedrockServer::sync()
               << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
         _blockingCommandQueue.clear();
     }
-    {
-        unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
-        _blockingQueueUserCounts.clear();
-        _blockedUsers.clear();
-        _blockingQueueEmptyTime.store(0);
-    }
+    unique_lock<decltype(_blockingRateLimitMutex)> rateLimitLock(_blockingRateLimitMutex);
+    _blockingQueueUserCounts.clear();
+    _blockedUsers.clear();
+    _blockingQueueEmptyTime.store(0);
+    rateLimitLock.unlock();
 
     for (auto plugin : plugins) {
         plugin.second->serverStopping();
@@ -1309,12 +1306,11 @@ void BedrockServer::_resetServer()
     _pluginsDetached = false;
     _upgradeCompleted = false;
     _shutdownTime = chrono::time_point<chrono::steady_clock>{};
-    {
-        unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
-        _blockingQueueUserCounts.clear();
-        _blockedUsers.clear();
-        _blockingQueueEmptyTime.store(0);
-    }
+    unique_lock<decltype(_blockingRateLimitMutex)> rateLimitLock(_blockingRateLimitMutex);
+    _blockingQueueUserCounts.clear();
+    _blockedUsers.clear();
+    _blockingQueueEmptyTime.store(0);
+    rateLimitLock.unlock();
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {
