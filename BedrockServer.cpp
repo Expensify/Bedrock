@@ -1866,22 +1866,21 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             content["crashCommandList"] = SComposeJSONArray(crashCommandListArray);
         }
 
-        {
-            // Blocking queue rate limit info.
-            shared_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
-            content["blockingRateLimitThreshold"] = to_string(_maxBlockingQueuePerUser.load());
-            content["blockedUsers"] = to_string(_blockedUsers.size());
-            if (!_blockedUsers.empty()) {
-                content["blockedUserList"] = SComposeJSONArray(_blockedUsers);
-            }
-            if (!_blockingQueueUserCounts.empty()) {
-                STable countsTable;
-                for (const auto& p : _blockingQueueUserCounts) {
-                    countsTable[p.first] = to_string(p.second);
-                }
-                content["blockingQueueUserCounts"] = SComposeJSONObject(countsTable);
-            }
+        // Blocking queue rate limit info.
+        shared_lock<decltype(_blockingRateLimitMutex)> rateLimitLock(_blockingRateLimitMutex);
+        content["blockingRateLimitThreshold"] = to_string(_maxBlockingQueuePerUser.load());
+        content["blockedUsers"] = to_string(_blockedUsers.size());
+        if (!_blockedUsers.empty()) {
+            content["blockedUserList"] = SComposeJSONArray(_blockedUsers);
         }
+        if (!_blockingQueueUserCounts.empty()) {
+            STable countsTable;
+            for (const auto& p : _blockingQueueUserCounts) {
+                countsTable[p.first] = to_string(p.second);
+            }
+            content["blockingQueueUserCounts"] = SComposeJSONObject(countsTable);
+        }
+        rateLimitLock.unlock();
 
         // On leader, return the current multi-write blacklists.
         if (getState() == SQLiteNodeState::LEADING) {
