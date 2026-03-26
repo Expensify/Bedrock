@@ -101,6 +101,13 @@ public:
     // Map of plugin names to functions that will return a new plugin of the given type.
     static map<string, function<BedrockPlugin* (BedrockServer&)>> g_registeredPluginList;
 
+    // dlopen handles and filesystem paths for dynamically loaded plugins (keyed by UPPER(name)).
+    static map<string, void*> g_pluginDLHandles;
+    static map<string, string> g_pluginPaths;
+
+    // Tracks the number of in-flight commands owned by this plugin instance.
+    atomic<size_t> activeCommandCount{0};
+
     // Reference to the BedrockServer object that owns this plugin.
     BedrockServer& server;
 };

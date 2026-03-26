@@ -7,7 +7,9 @@
 #include <chrono>
 #include <csignal>
 #include <cstring>
+#include <dlfcn.h>
 #include <fstream>
+#include <shared_mutex>
 #include <sys/resource.h>
 #include <sys/time.h>
 
@@ -1367,6 +1369,12 @@ BedrockServer::~BedrockServer()
         delete p.second;
     }
 
+    // Close any dynamically loaded plugin shared libraries.
+    for (auto& h : BedrockPlugin::g_pluginDLHandles) {
+        dlclose(h.second);
+    }
+    BedrockPlugin::g_pluginDLHandles.clear();
+
     shutdownTimer.serverDestructor = chrono::steady_clock::now();
     SINFO("Shutdown timing: "
           << "start->safeState=" << chrono::duration_cast<chrono::milliseconds>(shutdownTimer.safeNodeState - shutdownTimer.shutdownStart)
@@ -1473,10 +1481,13 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity)
     _acceptSockets();
 
     // If any plugin timers are firing, let the plugins know.
-    for (auto plugin : plugins) {
-        for (SStopwatch* timer : plugin.second->timers) {
-            if (timer->ding()) {
-                plugin.second->timerFired(timer);
+    {
+        shared_lock<shared_mutex> pluginLock(_pluginsMutex);
+        for (auto plugin : plugins) {
+            for (SStopwatch* timer : plugin.second->timers) {
+                if (timer->ding()) {
+                    plugin.second->timerFired(timer);
+                }
             }
         }
     }
@@ -1516,7 +1527,15 @@ unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SData&& request)
 unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLiteCommand>&& baseCommand)
 {
     try {
+        shared_lock<shared_mutex> pluginLock(_pluginsMutex);
         for (auto pair : plugins) {
+            // Reject commands for a plugin that is being hot-reloaded.
+            if (_pluginReloadInProgress.load() && SIEquals(pair.first, _reloadingPluginName)) {
+                auto errorCommand = make_unique<BedrockCommand>(SQLiteCommand(move(*baseCommand)), nullptr);
+                errorCommand->complete = true;
+                errorCommand->response.methodLine = "503 Plugin reload in progress";
+                return errorCommand;
+            }
             // This is a bit weird to avoid changing this signature in all the plugins. It would be more straightforward if
             // the plugins just accepted a `unique_ptr<SQLiteCommand>&&`, but this still works.
             auto command = pair.second->getCommand(move(*baseCommand));
@@ -1857,6 +1876,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "BlockWrites") ||
         SIEquals(command->request.methodLine, "UnblockWrites") ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads") ||
+        SIEquals(command->request.methodLine, "ReloadPlugin") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
     ) {
         return true;
@@ -2019,6 +2039,321 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         } else {
             response.methodLine = "401 Don't Use Zero";
         }
+    } else if (SIEquals(command->request.methodLine, "ReloadPlugin")) {
+        // Hot-reload a dynamically loaded plugin (.so) without restarting Bedrock.
+        // Use "PluginName" header (not "Plugin") to avoid collision with the internal "plugin"
+        // header that _reply() uses to route responses to plugin port handlers.
+        string pluginKey = SToUpper(command->request["PluginName"]);
+        if (pluginKey.empty()) {
+            response.methodLine = "400 Missing PluginName header";
+            return;
+        }
+
+        // Phase 1: Validate
+        // The plugins map is keyed by plugin->getName() which may differ in case from the
+        // upper-cased key used in g_registeredPluginList/g_pluginDLHandles. Find it case-insensitively.
+        string pluginMapKey;
+        for (auto& p : plugins) {
+            if (SIEquals(p.first, pluginKey)) {
+                pluginMapKey = p.first;
+                break;
+            }
+        }
+        if (pluginMapKey.empty()) {
+            response.methodLine = "400 Plugin not found: " + pluginKey;
+            return;
+        }
+        auto handleIt = BedrockPlugin::g_pluginDLHandles.find(pluginKey);
+        if (handleIt == BedrockPlugin::g_pluginDLHandles.end()) {
+            response.methodLine = "400 Plugin is built-in, cannot reload: " + pluginKey;
+            return;
+        }
+        string pluginPath = BedrockPlugin::g_pluginPaths[pluginKey];
+        if (!SFileExists(pluginPath)) {
+            response.methodLine = "400 Plugin .so file not found: " + pluginPath;
+            return;
+        }
+
+        SINFO("[ReloadPlugin] Starting reload of plugin '" << pluginKey << "' from " << pluginPath);
+
+        // Phase 2: Suppress new commands for this plugin
+        blockCommandPort("ReloadPlugin");
+        _pluginReloadInProgress.store(true);
+        _reloadingPluginName = pluginMapKey;
+
+        // Phase 3: Drain in-flight commands (120s timeout, slightly above DEFAULT_TIMEOUT of 110s)
+        constexpr uint64_t DRAIN_TIMEOUT_US = 120'000'000;
+        BedrockPlugin* oldPlugin = plugins[pluginMapKey];
+        uint64_t drainStart = STimeNow();
+        while (oldPlugin->activeCommandCount.load() > 0) {
+            if (STimeNow() - drainStart > DRAIN_TIMEOUT_US) {
+                SWARN("[ReloadPlugin] Drain timeout after 120s, " << oldPlugin->activeCommandCount.load()
+                      << " commands still active. Aborting reload.");
+                _pluginReloadInProgress.store(false);
+                _reloadingPluginName.clear();
+                unblockCommandPort("ReloadPlugin");
+                response.methodLine = "500 Plugin reload failed: drain timeout";
+                return;
+            }
+            usleep(10'000);
+        }
+        SINFO("[ReloadPlugin] All commands drained for plugin " << pluginKey);
+
+        // Phase 4: Tear down old plugin
+        string oldSOPath = pluginPath;
+        void* oldHandle = handleIt->second;
+        string symbolName = "BEDROCK_PLUGIN_REGISTER_" + pluginKey;
+
+        {
+            unique_lock<shared_mutex> pluginLock(_pluginsMutex);
+            oldPlugin->serverStopping();
+            delete oldPlugin;
+            plugins.erase(pluginMapKey);
+            BedrockPlugin::g_pluginDLHandles.erase(pluginKey);
+        }
+        dlclose(oldHandle);
+        SINFO("[ReloadPlugin] Old plugin instance destroyed and .so closed");
+
+        // Phase 5: Load new plugin
+        // dlopen caches by path — calling dlclose + dlopen on the same path may return the
+        // old in-memory copy. Copy the .so to a unique temp path to force a fresh load.
+        string tempSOPath = pluginPath + ".reload." + to_string(STimeNow());
+        if (!SFileCopy(pluginPath, tempSOPath)) {
+            SALERT("[ReloadPlugin] Failed to copy " << pluginPath << " to " << tempSOPath);
+            _pluginReloadInProgress.store(false);
+            _reloadingPluginName.clear();
+            unblockCommandPort("ReloadPlugin");
+            response.methodLine = "500 Plugin reload failed: could not create temp copy of .so";
+            return;
+        }
+        void* newLib = dlopen(tempSOPath.c_str(), RTLD_NOW);
+        SFileDelete(tempSOPath);
+        if (!newLib) {
+            string dlErr = dlerror();
+            SALERT("[ReloadPlugin] Failed to dlopen new .so: " << dlErr << ". Attempting rollback.");
+            // Attempt rollback with old path
+            void* rollbackLib = dlopen(oldSOPath.c_str(), RTLD_NOW);
+            if (rollbackLib) {
+                void* rollbackSym = dlsym(rollbackLib, symbolName.c_str());
+                if (rollbackSym) {
+                    try {
+                        auto factory = (BedrockPlugin*(*)(BedrockServer&))rollbackSym;
+                        BedrockPlugin* rollbackPlugin = factory(*this);
+                        unique_lock<shared_mutex> pluginLock(_pluginsMutex);
+                        plugins[pluginMapKey] = rollbackPlugin;
+                        BedrockPlugin::g_pluginDLHandles[pluginKey] = rollbackLib;
+                        BedrockPlugin::g_registeredPluginList[pluginKey] = factory;
+                        pluginLock.unlock();
+                        {
+                            size_t rbIdx = _dbPool->getIndex();
+                            SQLite& rbDB = _dbPool->initializeIndex(rbIdx);
+                            rollbackPlugin->stateChanged(rbDB, getState());
+                            shared_ptr<SQLitePool> rbPoolCopy = _dbPool;
+                            thread([rbPoolCopy, rbIdx, this]() {
+                                SInitialize("ReloadPluginRollbackDBReturn");
+                                while (!isUpgradeComplete()) { usleep(50'000); }
+                                usleep(100'000);
+                                rbPoolCopy->returnToPool(rbIdx);
+                            }).detach();
+                        }
+                        SWARN("[ReloadPlugin] Rolled back to previous plugin version");
+                        _pluginReloadInProgress.store(false);
+                        _reloadingPluginName.clear();
+                        unblockCommandPort("ReloadPlugin");
+                        response.methodLine = "500 Plugin reload failed: " + dlErr + ". Rolled back to previous version.";
+                        return;
+                    } catch (const exception& e) {
+                        dlclose(rollbackLib);
+                        SALERT("[ReloadPlugin] Rollback constructor failed: " << e.what());
+                    }
+                } else {
+                    dlclose(rollbackLib);
+                }
+            }
+            SALERT("[ReloadPlugin] Rollback failed. Plugin " << pluginKey << " is now unavailable.");
+            _pluginReloadInProgress.store(false);
+            _reloadingPluginName.clear();
+            unblockCommandPort("ReloadPlugin");
+            response.methodLine = "500 Plugin reload failed: " + dlErr + ". Rollback failed. Plugin " + pluginKey + " is now unavailable.";
+            return;
+        }
+
+        void* newSym = dlsym(newLib, symbolName.c_str());
+        if (!newSym) {
+            string dlErr = dlerror();
+            dlclose(newLib);
+            SALERT("[ReloadPlugin] Failed to find symbol " << symbolName << ": " << dlErr << ". Attempting rollback.");
+            // Rollback attempt
+            void* rollbackLib = dlopen(oldSOPath.c_str(), RTLD_NOW);
+            if (rollbackLib) {
+                void* rollbackSym = dlsym(rollbackLib, symbolName.c_str());
+                if (rollbackSym) {
+                    try {
+                        auto factory = (BedrockPlugin*(*)(BedrockServer&))rollbackSym;
+                        BedrockPlugin* rollbackPlugin = factory(*this);
+                        unique_lock<shared_mutex> pluginLock(_pluginsMutex);
+                        plugins[pluginMapKey] = rollbackPlugin;
+                        BedrockPlugin::g_pluginDLHandles[pluginKey] = rollbackLib;
+                        BedrockPlugin::g_registeredPluginList[pluginKey] = factory;
+                        pluginLock.unlock();
+                        {
+                            size_t rbIdx = _dbPool->getIndex();
+                            SQLite& rbDB = _dbPool->initializeIndex(rbIdx);
+                            rollbackPlugin->stateChanged(rbDB, getState());
+                            shared_ptr<SQLitePool> rbPoolCopy = _dbPool;
+                            thread([rbPoolCopy, rbIdx, this]() {
+                                SInitialize("ReloadPluginRollbackDBReturn");
+                                while (!isUpgradeComplete()) { usleep(50'000); }
+                                usleep(100'000);
+                                rbPoolCopy->returnToPool(rbIdx);
+                            }).detach();
+                        }
+                        SWARN("[ReloadPlugin] Rolled back to previous plugin version");
+                        _pluginReloadInProgress.store(false);
+                        _reloadingPluginName.clear();
+                        unblockCommandPort("ReloadPlugin");
+                        response.methodLine = "500 Plugin reload failed: " + dlErr + ". Rolled back to previous version.";
+                        return;
+                    } catch (const exception& e) {
+                        dlclose(rollbackLib);
+                    }
+                } else {
+                    dlclose(rollbackLib);
+                }
+            }
+            _pluginReloadInProgress.store(false);
+            _reloadingPluginName.clear();
+            unblockCommandPort("ReloadPlugin");
+            response.methodLine = "500 Plugin reload failed: " + dlErr + ". Rollback failed. Plugin " + pluginKey + " is now unavailable.";
+            return;
+        }
+
+        auto newFactory = (BedrockPlugin*(*)(BedrockServer&))newSym;
+        BedrockPlugin* newPlugin = nullptr;
+        try {
+            newPlugin = newFactory(*this);
+        } catch (const exception& e) {
+            dlclose(newLib);
+            SALERT("[ReloadPlugin] New plugin constructor threw: " << e.what() << ". Attempting rollback.");
+            void* rollbackLib = dlopen(oldSOPath.c_str(), RTLD_NOW);
+            if (rollbackLib) {
+                void* rollbackSym = dlsym(rollbackLib, symbolName.c_str());
+                if (rollbackSym) {
+                    try {
+                        auto factory = (BedrockPlugin*(*)(BedrockServer&))rollbackSym;
+                        BedrockPlugin* rollbackPlugin = factory(*this);
+                        unique_lock<shared_mutex> pluginLock(_pluginsMutex);
+                        plugins[pluginMapKey] = rollbackPlugin;
+                        BedrockPlugin::g_pluginDLHandles[pluginKey] = rollbackLib;
+                        BedrockPlugin::g_registeredPluginList[pluginKey] = factory;
+                        pluginLock.unlock();
+                        {
+                            size_t rbIdx = _dbPool->getIndex();
+                            SQLite& rbDB = _dbPool->initializeIndex(rbIdx);
+                            rollbackPlugin->stateChanged(rbDB, getState());
+                            shared_ptr<SQLitePool> rbPoolCopy = _dbPool;
+                            thread([rbPoolCopy, rbIdx, this]() {
+                                SInitialize("ReloadPluginRollbackDBReturn");
+                                while (!isUpgradeComplete()) { usleep(50'000); }
+                                usleep(100'000);
+                                rbPoolCopy->returnToPool(rbIdx);
+                            }).detach();
+                        }
+                        SWARN("[ReloadPlugin] Rolled back to previous plugin version");
+                        _pluginReloadInProgress.store(false);
+                        _reloadingPluginName.clear();
+                        unblockCommandPort("ReloadPlugin");
+                        response.methodLine = "500 Plugin reload failed: "s + e.what() + ". Rolled back to previous version.";
+                        return;
+                    } catch (const exception& e2) {
+                        dlclose(rollbackLib);
+                    }
+                } else {
+                    dlclose(rollbackLib);
+                }
+            }
+            _pluginReloadInProgress.store(false);
+            _reloadingPluginName.clear();
+            unblockCommandPort("ReloadPlugin");
+            response.methodLine = "500 Plugin reload failed: "s + e.what() + ". Rollback failed. Plugin " + pluginKey + " is now unavailable.";
+            return;
+        }
+
+        // Insert the new plugin and save the handle
+        {
+            unique_lock<shared_mutex> pluginLock(_pluginsMutex);
+            plugins[pluginMapKey] = newPlugin;
+        }
+        BedrockPlugin::g_pluginDLHandles[pluginKey] = newLib;
+        BedrockPlugin::g_pluginPaths[pluginKey] = pluginPath;
+        BedrockPlugin::g_registeredPluginList[pluginKey] = newFactory;
+        SINFO("[ReloadPlugin] New plugin instance created and registered");
+
+        // Phase 6: Initialize new plugin
+        // Auth's stateChanged() spawns a detached thread that captures `db` by reference
+        // and uses it after stateChanged() returns. A SQLiteScopedHandle would be destroyed
+        // at the end of this block, leaving the detached thread with a dangling reference.
+        // Instead, we acquire a pool handle and return it in a background thread after
+        // the plugin's async initialization completes.
+        if (_dbPool) {
+            size_t dbIndex = _dbPool->getIndex();
+            SQLite& db = _dbPool->initializeIndex(dbIndex);
+            if (getState() == SQLiteNodeState::LEADING) {
+                SINFO("[ReloadPlugin] Running upgradeDatabase for " << pluginKey);
+                try {
+                    db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+                    newPlugin->upgradeDatabase(db);
+                    if (db.getUncommittedQuery().empty()) {
+                        db.rollback();
+                    } else {
+                        SINFO("[ReloadPlugin] Schema changes detected, committing.");
+                        db.prepare();
+                        db.commit();
+                    }
+                } catch (const exception& e) {
+                    SWARN("[ReloadPlugin] upgradeDatabase failed: " << e.what());
+                    db.rollback();
+                }
+            }
+            newPlugin->stateChanged(db, getState());
+
+            // Return the DB handle to the pool once the plugin's async initialization is done.
+            // This is necessary because Auth's stateChanged spawns a detached thread that uses
+            // the db reference until isUpgradeComplete() returns true.
+            shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
+            thread([dbPoolCopy, dbIndex, this]() {
+                SInitialize("ReloadPluginDBReturn");
+                while (!isUpgradeComplete()) {
+                    usleep(50'000);
+                }
+                // Give the plugin's thread a moment to finish using the handle after upgrade completes.
+                usleep(100'000);
+                dbPoolCopy->returnToPool(dbIndex);
+                SINFO("[ReloadPlugin] Returned DB handle to pool after plugin initialization");
+            }).detach();
+        }
+
+        // Rebuild the _version string to reflect the reloaded plugin's version.
+        {
+            vector<string> versions = {VERSION};
+            for (auto& p : plugins) {
+                auto info = p.second->getInfo();
+                auto it = info.find("version");
+                if (it != info.end()) {
+                    versions.push_back(p.second->getName() + "_" + it->second);
+                }
+            }
+            sort(versions.begin(), versions.end());
+            _version = SComposeList(versions, ":");
+            SINFO("[ReloadPlugin] Updated version string: " << _version);
+        }
+
+        // Phase 7: Resume
+        _pluginReloadInProgress.store(false);
+        _reloadingPluginName.clear();
+        unblockCommandPort("ReloadPlugin");
+        SINFO("[ReloadPlugin] Plugin " << pluginKey << " reloaded successfully");
+        response.methodLine = "200 Plugin reloaded successfully";
     }
 }
 
@@ -2026,6 +2361,7 @@ bool BedrockServer::_upgradeDB(SQLite& db)
 {
     // These all get conglomerated into one big query.
     try {
+        shared_lock<shared_mutex> pluginLock(_pluginsMutex);
         db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
         for (auto plugin : plugins) {
             plugin.second->upgradeDatabase(db);
@@ -2549,6 +2885,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
 void BedrockServer::notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState)
 {
+    shared_lock<shared_mutex> pluginLock(_pluginsMutex);
     for (auto plugin : plugins) {
         plugin.second->stateChanged(db, newState);
     }

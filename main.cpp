@@ -4,6 +4,7 @@
 ///
 #include <dlfcn.h>
 #include <iostream>
+#include <link.h>
 #include <signal.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
@@ -145,6 +146,23 @@ set<string> loadPlugins(SData& args)
             } else {
                 // Call the plugin registration function with the same name.
                 BedrockPlugin::g_registeredPluginList.emplace(make_pair(SToUpper(name), (BedrockPlugin * (*)(BedrockServer&)) sym));
+                BedrockPlugin::g_pluginDLHandles[SToUpper(name)] = lib;
+
+                // Resolve the full filesystem path of the loaded .so via dlinfo, since
+                // pluginName may be a bare filename (e.g., "auth.so") that dlopen resolved
+                // through the standard library search path.
+                string resolvedPath = pluginName;
+                struct link_map* lm = nullptr;
+                if (dlinfo(lib, RTLD_DI_LINKMAP, &lm) == 0 && lm && lm->l_name[0]) {
+                    char* rp = realpath(lm->l_name, nullptr);
+                    if (rp) {
+                        resolvedPath = rp;
+                        free(rp);
+                    } else {
+                        resolvedPath = lm->l_name;
+                    }
+                }
+                BedrockPlugin::g_pluginPaths[SToUpper(name)] = resolvedPath;
             }
         }
     }

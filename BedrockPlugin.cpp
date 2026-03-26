@@ -3,6 +3,8 @@
 #include "BedrockServer.h"
 
 map<string, function<BedrockPlugin* (BedrockServer&)>> BedrockPlugin::g_registeredPluginList;
+map<string, void*> BedrockPlugin::g_pluginDLHandles;
+map<string, string> BedrockPlugin::g_pluginPaths;
 
 BedrockPlugin::BedrockPlugin(BedrockServer& s) : server(s)
 {
