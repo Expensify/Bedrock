@@ -8,9 +8,9 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
     BlockingQueueRateLimitTest()
         : tpunit::TestFixture("BlockingQueueRateLimit",
                               BEFORE_CLASS(BlockingQueueRateLimitTest::setup),
-                              AFTER_CLASS(BlockingQueueRateLimitTest::teardown),
                               TEST(BlockingQueueRateLimitTest::testControlCommands),
-                              TEST(BlockingQueueRateLimitTest::testRateLimiting))
+                              TEST(BlockingQueueRateLimitTest::testRateLimiting),
+                              AFTER_CLASS(BlockingQueueRateLimitTest::teardown))
     {
     }
 
