@@ -1890,6 +1890,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "UnblockWrites") ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads") ||
         SIEquals(command->request.methodLine, "SetBlockingRateLimit") ||
+        SIEquals(command->request.methodLine, "FlushBlockingQueue") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
     ) {
         return true;
@@ -1985,6 +1986,19 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             totalCount += s.second.size();
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
+    } else if (SIEquals(command->request.methodLine, "FlushBlockingQueue")) {
+        auto commands = _blockingCommandQueue.getAll();
+        list<string> methodLines;
+        for (const auto& cmd : commands) {
+            methodLines.push_back(cmd->request.methodLine);
+        }
+        SINFO("FlushBlockingQueue: failing " << commands.size() << " commands: " << SComposeList(methodLines));
+        for (auto& cmd : commands) {
+            cmd->response.methodLine = "503 Service Unavailable";
+            cmd->complete = true;
+            _reply(cmd);
+        }
+        response["flushedCount"] = to_string(commands.size());
     } else if (SIEquals(command->request.methodLine, "SetConflictParams")) {
         int64_t maxConflictRetries = command->request.calc64("MaxConflictRetries");
         if (maxConflictRetries >= 0) {
