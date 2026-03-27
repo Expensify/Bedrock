@@ -20,7 +20,7 @@
 #include <PageLockGuard.h>
 #include <sqlitecluster/SQLitePeer.h>
 
-set<string>BedrockServer::_blacklistedParallelCommands;
+set<string> BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
 thread_local atomic<SQLiteNodeState> BedrockServer::_nodeStateSnapshot = SQLiteNodeState::UNKNOWN;
 
@@ -279,7 +279,7 @@ void BedrockServer::sync()
         }
 
         if (command && committingCommand) {
-            void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
+            void (* onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
             bool enabled = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
             if (enabled) {
                 _syncNode->onPrepareHandlerEnabled = enabled;
@@ -506,7 +506,7 @@ void BedrockServer::sync()
                 // Set the function that will be called if this thread's signal handler catches an unrecoverable error,
                 // like a segfault. Note that it's possible we're in the middle of sending a message to peers when we call
                 // this, which would probably make this message malformed. This is the best we can do.
-                SSetSignalHandlerDieFunc([&](){
+                SSetSignalHandlerDieFunc([&]() {
                     _clusterMessenger->runOnAll(_generateCrashMessage(command));
                     return addLogParams("CRASHING from BedrockServer::sync, command:" + command->request.methodLine, command->request.nameValueMap);
                 });
@@ -604,7 +604,7 @@ void BedrockServer::sync()
         }
     } while (!_syncNode->shutdownComplete() || BedrockCommand::getCommandCount());
 
-    SSetSignalHandlerDieFunc([](){
+    SSetSignalHandlerDieFunc([]() {
         return "Dying in shutdown";
     });
 
@@ -694,7 +694,7 @@ void BedrockServer::worker(int threadId)
     while (true) {
         try {
             // Set a signal handler function that we can call even if we die early with no command.
-            SSetSignalHandlerDieFunc([&](){
+            SSetSignalHandlerDieFunc([&]() {
                 return "Die function called early with no command, probably died in `commandQueue.get`.";
             });
 
@@ -749,7 +749,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // Set the function that lets the signal handler know which command caused a problem, in case that happens.
     // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
     // signals, like SIGSEGV, this function will be called.
-    SSetSignalHandlerDieFunc([&](){
+    SSetSignalHandlerDieFunc([&]() {
         _clusterMessenger->runOnAll(_generateCrashMessage(command));
         return addLogParams("CRASHING from BedrockServer::runCommand, command:" + command->request.methodLine, command->request.nameValueMap);
     });
@@ -1022,7 +1022,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         string transactionHash;
                         {
                             BedrockCore::AutoTimer timer(command, isBlocking ? BedrockCommand::BLOCKING_COMMIT_WORKER : BedrockCommand::COMMIT_WORKER);
-                            void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
+                            void (* onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
                             bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
                             commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler);
 
@@ -1178,7 +1178,6 @@ bool BedrockServer::_handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& 
     }
     return false;
 }
-
 
 bool BedrockServer::_wouldCrash(const unique_ptr<BedrockCommand>& command)
 {
@@ -1822,7 +1821,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
         // We can use the `each` functionality to pass a lambda that will grab each method line in
         // `_syncNodeQueuedCommands`.
         list<string> syncNodeQueuedMethods;
-        _syncNodeQueuedCommands.each([&syncNodeQueuedMethods](auto& item){
+        _syncNodeQueuedCommands.each([&syncNodeQueuedMethods](auto& item) {
             syncNodeQueuedMethods.push_back(item->request.methodLine);
         });
         content["peerList"] = SComposeJSONArray(peerList);
@@ -2207,7 +2206,7 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
         auto _clusterMessengerCopy = _clusterMessenger;
         auto peerName = peer->name;
         if (_clusterMessengerCopy) {
-            thread([command = move(peerCommand), _clusterMessengerCopy, peerName](){
+            thread([command = move(peerCommand), _clusterMessengerCopy, peerName]() {
                 _clusterMessengerCopy->runOnPeer(*command, peerName);
             }).detach();
         }
@@ -2543,7 +2542,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             // disconnected, abort the command.
                             atomic<bool>& commandShouldAbortFlag = command->shouldAbort;
                             thread commandThread(
-                                [&](){
+                                [&]() {
                                 SInitialize(threadName + "_cmd");
                                 runCommand(move(command));
                             });
