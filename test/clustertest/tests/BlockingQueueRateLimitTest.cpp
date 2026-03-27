@@ -32,7 +32,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
 
         // Set the blocking rate limit threshold.
         SData setLimit("SetBlockingRateLimit");
-        setLimit["MaxPerUser"] = "5";
+        setLimit["MaxPerIdentifier"] = "5";
         leader.executeWaitVerifyContent(setLimit, "200", true);
 
         // Verify it shows up in Status.
@@ -46,7 +46,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         leader.executeWaitVerifyContent(clearBlocks, "200", true);
 
         json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockedUsers"], "0");
+        ASSERT_EQUAL(json["blockedIdentifiers"], "0");
     }
 
     void testRateLimiting()
@@ -59,12 +59,12 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
             node.executeWaitVerifyContent(setConflict, "200", true);
         }
 
-        // Set MaxPerUser=2 on all nodes. Low threshold so rate limiting triggers quickly
+        // Set MaxPerIdentifier=2 on all nodes. Low threshold so rate limiting triggers quickly
         // once commands start entering the blocking queue.
         for (int i : {0, 1, 2}) {
             BedrockTester& node = tester->getTester(i);
             SData setLimit("SetBlockingRateLimit");
-            setLimit["MaxPerUser"] = "2";
+            setLimit["MaxPerIdentifier"] = "2";
             node.executeWaitVerifyContent(setLimit, "200", true);
         }
 
@@ -111,7 +111,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         BedrockTester& leader = tester->getTester(0);
         SData status("Status");
         STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        int blockedCount = SToInt(json["blockedUsers"]);
+        int blockedCount = SToInt(json["blockedIdentifiers"]);
         ASSERT_TRUE(blockedCount >= 1);
 
         // Clear blocks on all nodes.

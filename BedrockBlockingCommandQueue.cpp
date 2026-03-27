@@ -19,17 +19,17 @@ bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockComman
 {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
 
-    int maxPerUser = _maxBlockingQueuePerUser.load();
-    if (maxPerUser > 0 && !command->blockingIdentifier.empty()) {
+    int maxPerIdentifier = _maxPerIdentifier.load();
+    if (maxPerIdentifier > 0 && !command->blockingIdentifier.empty()) {
         // Clear blocks if the blocking queue has been empty for 30 seconds.
-        uint64_t emptyTime = _blockingQueueEmptyTime.load();
+        uint64_t emptyTime = _emptyTime.load();
         if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
-            _blockedUsers.clear();
-            _blockingQueueUserCounts.clear();
-            _blockingQueueEmptyTime.store(0);
+            _blockedIdentifiers.clear();
+            _identifierCounts.clear();
+            _emptyTime.store(0);
         }
 
-        if (_blockedUsers.count(command->blockingIdentifier)) {
+        if (_blockedIdentifiers.count(command->blockingIdentifier)) {
             SALERT("Blocking queue rate limit: rejecting '" << command->request.methodLine
                    << "' for identifier '" << command->blockingIdentifier << "'");
             command->response.methodLine = "503 Blocking queue rate limited";
@@ -40,18 +40,18 @@ bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockComman
         // Only count on first entry from worker threads, not when the blocking commit
         // thread re-queues a command that conflicted again.
         if (!isBlocking) {
-            int& count = _blockingQueueUserCounts[command->blockingIdentifier];
+            int& count = _identifierCounts[command->blockingIdentifier];
             count++;
-            if (count >= maxPerUser) {
-                _blockedUsers.insert(command->blockingIdentifier);
+            if (count >= maxPerIdentifier) {
+                _blockedIdentifiers.insert(command->blockingIdentifier);
                 SALERT("Blocking queue rate limit: flagging identifier '" << command->blockingIdentifier
-                       << "' with " << count << " commands in blocking queue (threshold: " << maxPerUser << ")");
+                       << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
             }
         }
     }
 
     // Reset empty time since a command is entering the queue.
-    _blockingQueueEmptyTime.store(0);
+    _emptyTime.store(0);
 
     // Inline the push to avoid double-locking _queueMutex.
     auto priority = command->priority;
@@ -66,64 +66,64 @@ bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockComman
 
 void BedrockBlockingCommandQueue::decrementCount(const unique_ptr<BedrockCommand>& command)
 {
-    if (command->blockingIdentifier.empty() || _maxBlockingQueuePerUser.load() <= 0) {
+    if (command->blockingIdentifier.empty() || _maxPerIdentifier.load() <= 0) {
         return;
     }
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
-    auto it = _blockingQueueUserCounts.find(command->blockingIdentifier);
-    if (it != _blockingQueueUserCounts.end()) {
+    auto it = _identifierCounts.find(command->blockingIdentifier);
+    if (it != _identifierCounts.end()) {
         it->second--;
         if (it->second <= 0) {
-            _blockingQueueUserCounts.erase(it);
+            _identifierCounts.erase(it);
         }
     }
     size_t queueSize = 0;
     for (const auto& q : _queue) {
         queueSize += q.second.size();
     }
-    if (queueSize == 0 && _blockingQueueEmptyTime.load() == 0) {
-        _blockingQueueEmptyTime.store(STimeNow());
+    if (queueSize == 0 && _emptyTime.load() == 0) {
+        _emptyTime.store(STimeNow());
     }
 }
 
 void BedrockBlockingCommandQueue::resetRateLimitState()
 {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
-    _blockingQueueUserCounts.clear();
-    _blockedUsers.clear();
-    _blockingQueueEmptyTime.store(0);
+    _identifierCounts.clear();
+    _blockedIdentifiers.clear();
+    _emptyTime.store(0);
 }
 
 void BedrockBlockingCommandQueue::populateRateLimitStatus(STable& content)
 {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
-    content["blockingRateLimitThreshold"] = to_string(_maxBlockingQueuePerUser.load());
-    content["blockedUsers"] = to_string(_blockedUsers.size());
-    if (!_blockedUsers.empty()) {
-        content["blockedUserList"] = SComposeJSONArray(_blockedUsers);
+    content["blockingRateLimitThreshold"] = to_string(_maxPerIdentifier.load());
+    content["blockedIdentifiers"] = to_string(_blockedIdentifiers.size());
+    if (!_blockedIdentifiers.empty()) {
+        content["blockedIdentifierList"] = SComposeJSONArray(_blockedIdentifiers);
     }
-    if (!_blockingQueueUserCounts.empty()) {
+    if (!_identifierCounts.empty()) {
         STable countsTable;
-        for (const auto& p : _blockingQueueUserCounts) {
+        for (const auto& p : _identifierCounts) {
             countsTable[p.first] = to_string(p.second);
         }
-        content["blockingQueueUserCounts"] = SComposeJSONObject(countsTable);
+        content["blockingQueueIdentifierCounts"] = SComposeJSONObject(countsTable);
     }
 }
 
-int BedrockBlockingCommandQueue::setMaxPerUser(int value)
+int BedrockBlockingCommandQueue::setMaxPerIdentifier(int value)
 {
-    int previous = _maxBlockingQueuePerUser.load();
-    _maxBlockingQueuePerUser.store(value);
+    int previous = _maxPerIdentifier.load();
+    _maxPerIdentifier.store(value);
     return previous;
 }
 
 void BedrockBlockingCommandQueue::clearBlocks()
 {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
-    size_t cleared = _blockedUsers.size();
-    _blockedUsers.clear();
-    _blockingQueueUserCounts.clear();
-    _blockingQueueEmptyTime.store(0);
-    SINFO("Manually cleared " << cleared << " blocked users.");
+    size_t cleared = _blockedIdentifiers.size();
+    _blockedIdentifiers.clear();
+    _identifierCounts.clear();
+    _emptyTime.store(0);
+    SINFO("Manually cleared " << cleared << " blocked identifiers.");
 }

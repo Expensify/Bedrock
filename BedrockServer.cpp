@@ -1995,12 +1995,12 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
     } else if (SIEquals(command->request.methodLine, "SetConflictPageLocks")) {
         _enableConflictPageLocks = command->request.test("enable");
     } else if (SIEquals(command->request.methodLine, "SetBlockingRateLimit")) {
-        if (command->request.isSet("MaxPerUser")) {
-            int64_t maxPerUser = command->request.calc64("MaxPerUser");
-            if (maxPerUser >= 0) {
-                int previous = _blockingCommandQueue.setMaxPerUser(maxPerUser);
-                response["previousMaxBlockingQueuePerUser"] = to_string(previous);
-                SINFO("Setting _maxBlockingQueuePerUser to " << maxPerUser);
+        if (command->request.isSet("MaxPerIdentifier")) {
+            int64_t maxPerIdentifier = command->request.calc64("MaxPerIdentifier");
+            if (maxPerIdentifier >= 0) {
+                int previous = _blockingCommandQueue.setMaxPerIdentifier(maxPerIdentifier);
+                response["previousMaxBlockingQueuePerIdentifier"] = to_string(previous);
+                SINFO("Setting blocking queue max per identifier to " << maxPerIdentifier);
             }
         }
         if (command->request.test("ClearBlocks")) {
