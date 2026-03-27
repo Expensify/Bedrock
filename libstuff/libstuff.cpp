@@ -3583,28 +3583,6 @@ bool STableComp::nocase_compare::operator()(const unsigned char& c1, const unsig
     return tolower(c1) < tolower(c2);
 }
 
-SString::SString()
-{
-}
-
-SString& SString::operator=(const char& from)
-{
-    string::operator=(from);
-    return *this;
-}
-
-SString& SString::operator=(const unsigned char& from)
-{
-    string::operator=(from);
-    return *this;
-}
-
-SString& SString::operator=(const bool from)
-{
-    string::operator=(from ? "true" : "false");
-    return *this;
-}
-
 double SGetCPUUserTime()
 {
     struct rusage usage;
