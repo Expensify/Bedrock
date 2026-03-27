@@ -293,8 +293,7 @@ private:
     };
     CrashMap crashIdentifyingValues;
 
-    // An identifier for rate-limiting commands in the blocking queue.
-    // Typically populated with an accountID by Auth. Empty means skip rate limiting.
+    // An identifier for rate-limiting commands in the blocking queue. Empty means skip rate limiting.
     string blockingIdentifier;
 
     // Return the timestamp by which this command must finish executing.
