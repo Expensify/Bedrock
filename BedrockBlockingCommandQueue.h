@@ -10,4 +10,30 @@ public:
     // Functions to start and stop timing on the commands when they're inserted/removed from the queue.
     static void startTiming(unique_ptr<BedrockCommand>& command);
     static void stopTiming(unique_ptr<BedrockCommand>& command);
+
+    // Check per-user rate limit before pushing a command to the blocking queue.
+    // Returns true if the command was rejected (503 set on response), caller should reply and return.
+    // Returns false if the command was pushed onto the queue (command is moved, caller should not use it).
+    bool checkRateLimitAndPush(unique_ptr<BedrockCommand>& command, bool isBlocking);
+
+    // Decrement the rate limit count for a command leaving the blocking queue.
+    void decrementCount(const unique_ptr<BedrockCommand>& command);
+
+    // Clear all rate limiting state.
+    void resetRateLimitState();
+
+    // Populate the given table with rate limiting status info for the Status command.
+    void populateRateLimitStatus(STable& content);
+
+    // Set the max commands per user threshold. Returns the previous value.
+    int setMaxPerUser(int value);
+
+    // Clear all blocked users and counts.
+    void clearBlocks();
+
+private:
+    map<string, int> _blockingQueueUserCounts;
+    set<string> _blockedUsers;
+    atomic<int> _maxBlockingQueuePerUser{0};
+    atomic<uint64_t> _blockingQueueEmptyTime{0};
 };

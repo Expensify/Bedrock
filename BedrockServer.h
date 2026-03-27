@@ -418,22 +418,12 @@ private:
     // particular command for it count as a match likely to cause a crash.
     map<string, set<STable>> _crashCommands;
 
-    // Per-user blocking queue rate limiting.
-    shared_timed_mutex _blockingRateLimitMutex;
-    map<string, int> _blockingQueueUserCounts;
-    set<string> _blockedUsers;
-    atomic<int> _maxBlockingQueuePerUser{0};
-    atomic<uint64_t> _blockingQueueEmptyTime{0};
-
     // Returns whether or not the command was a status or control command. If it was, it will have already been handled
     // and responded to upon return
     bool _handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& command);
 
     // Check a command against the list of crash commands, and return whether we think the command would crash.
     bool _wouldCrash(const unique_ptr<BedrockCommand>& command);
-
-    // Decrement the blocking queue rate limit count for a command that is leaving the blocking queue.
-    void _decrementBlockingQueueCount(const unique_ptr<BedrockCommand>& command);
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const unique_ptr<BedrockCommand>& command);

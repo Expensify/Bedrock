@@ -303,11 +303,7 @@ void BedrockServer::sync()
             for (auto& cmd : commands) {
                 _commandQueue.push(move(cmd));
             }
-            // The blocking queue is being drained, so reset all per-user rate limit state.
-            unique_lock<decltype(_blockingRateLimitMutex)> rateLimitLock(_blockingRateLimitMutex);
-            _blockingQueueUserCounts.clear();
-            _blockedUsers.clear();
-            _blockingQueueEmptyTime.store(0);
+            _blockingCommandQueue.resetRateLimitState();
         }
 
         // Reset some state on falling out of leading. This could be normal, if we're just shutting down, or it
@@ -652,12 +648,7 @@ void BedrockServer::sync()
               << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
         _blockingCommandQueue.clear();
     }
-    // The blocking queue was just cleared on shutdown, so reset all per-user rate limit state.
-    unique_lock<decltype(_blockingRateLimitMutex)> rateLimitLock(_blockingRateLimitMutex);
-    _blockingQueueUserCounts.clear();
-    _blockedUsers.clear();
-    _blockingQueueEmptyTime.store(0);
-    rateLimitLock.unlock();
+    _blockingCommandQueue.resetRateLimitState();
 
     for (auto plugin : plugins) {
         plugin.second->serverStopping();
@@ -887,7 +878,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             if (core.isTimedOut(command, &db, this)) {
                 // Command is leaving the blocking queue without being processed, so decrement its rate limit count.
                 if (isBlocking) {
-                    _decrementBlockingQueueCount(command);
+                    _blockingCommandQueue.decrementCount(command);
                 }
                 _reply(command);
                 return;
@@ -902,7 +893,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             if (commandCommitCount > commitCount) {
                 // Command is leaving the blocking queue to wait for a future commit, so decrement its rate limit count.
                 if (isBlocking) {
-                    _decrementBlockingQueueCount(command);
+                    _blockingCommandQueue.decrementCount(command);
                 }
                 SAUTOLOCK(_futureCommitCommandMutex);
                 auto newQueueSize = _futureCommitCommands.size() + 1;
@@ -928,7 +919,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 if (command->complete) {
                     // Command completed in prePeek and is leaving the blocking queue, so decrement its rate limit count.
                     if (isBlocking) {
-                        _decrementBlockingQueueCount(command);
+                        _blockingCommandQueue.decrementCount(command);
                     }
                     _reply(command);
                     break;
@@ -986,7 +977,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     if (!canWriteParallel) {
                         // Command is moving from the blocking queue to the sync thread, so decrement its rate limit count.
                         if (isBlocking) {
-                            _decrementBlockingQueueCount(command);
+                            _blockingCommandQueue.decrementCount(command);
                         }
                         // Roll back the transaction, it'll get re-run in the sync thread.
                         core.rollback(command->getMethodName());
@@ -1102,7 +1093,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
                 // Command finished processing and is leaving the blocking queue, so decrement its rate limit count.
                 if (isBlocking) {
-                    _decrementBlockingQueueCount(command);
+                    _blockingCommandQueue.decrementCount(command);
                 }
 
                 _reply(command);
@@ -1116,49 +1107,11 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         int maxRetries = _maxConflictRetries.load();
         if (maxRetries || _shutdownState.load() != RUNNING) {
             if (command->processCount > maxRetries) {
-                // Check per-user blocking queue rate limit before escalating.
-                int maxPerUser = _maxBlockingQueuePerUser.load();
-                if (maxPerUser > 0 && !command->blockingIdentifier.empty()) {
-                    // Check and update atomically under one lock.
-                    unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
-
-                    // Clear blocks if the blocking queue has been empty for 30 seconds.
-                    uint64_t emptyTime = _blockingQueueEmptyTime.load();
-                    if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
-                        _blockedUsers.clear();
-                        _blockingQueueUserCounts.clear();
-                        _blockingQueueEmptyTime.store(0);
-                    }
-
-                    if (_blockedUsers.count(command->blockingIdentifier)) {
-                        lock.unlock();
-                        SALERT("Blocking queue rate limit: rejecting '" << command->request.methodLine
-                               << "' for identifier '" << command->blockingIdentifier << "'");
-                        command->response.methodLine = "503 Blocking queue rate limited";
-                        command->complete = true;
-                        _reply(command);
-                        return;
-                    }
-
-                    // Only count on first entry from worker threads, not when the blocking commit
-                    // thread re-queues a command that conflicted again.
-                    if (!isBlocking) {
-                        int& count = _blockingQueueUserCounts[command->blockingIdentifier];
-                        count++;
-                        if (count >= maxPerUser) {
-                            _blockedUsers.insert(command->blockingIdentifier);
-                            SALERT("Blocking queue rate limit: flagging identifier '" << command->blockingIdentifier
-                                   << "' with " << count << " commands in blocking queue (threshold: " << maxPerUser << ")");
-                        }
-                    }
-                }
-
                 SINFO("Max retries (" << maxRetries << ") hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
-
-                // A command is entering the blocking queue, so reset the empty timestamp to prevent
-                // the 30-second cooldown from clearing rate limit state while commands are still queued.
-                _blockingQueueEmptyTime.store(0);
-                _blockingCommandQueue.push(move(command));
+                if (_blockingCommandQueue.checkRateLimitAndPush(command, isBlocking)) {
+                    _reply(command);
+                    return;
+                }
                 return;
             }
         } else {
@@ -1226,23 +1179,6 @@ bool BedrockServer::_handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& 
     return false;
 }
 
-void BedrockServer::_decrementBlockingQueueCount(const unique_ptr<BedrockCommand>& command)
-{
-    if (command->blockingIdentifier.empty() || _maxBlockingQueuePerUser.load() <= 0) {
-        return;
-    }
-    unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
-    auto it = _blockingQueueUserCounts.find(command->blockingIdentifier);
-    if (it != _blockingQueueUserCounts.end()) {
-        it->second--;
-        if (it->second <= 0) {
-            _blockingQueueUserCounts.erase(it);
-        }
-    }
-    if (_blockingCommandQueue.size() == 0 && _blockingQueueEmptyTime.load() == 0) {
-        _blockingQueueEmptyTime.store(STimeNow());
-    }
-}
 
 bool BedrockServer::_wouldCrash(const unique_ptr<BedrockCommand>& command)
 {
@@ -1316,12 +1252,7 @@ void BedrockServer::_resetServer()
     _upgradeCompleted = false;
     _shutdownTime = chrono::time_point<chrono::steady_clock>{};
 
-    // Server is resetting, so clear all per-user rate limit state.
-    unique_lock<decltype(_blockingRateLimitMutex)> rateLimitLock(_blockingRateLimitMutex);
-    _blockingQueueUserCounts.clear();
-    _blockedUsers.clear();
-    _blockingQueueEmptyTime.store(0);
-    rateLimitLock.unlock();
+    _blockingCommandQueue.resetRateLimitState();
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {
@@ -1340,7 +1271,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _isCommandPortLikelyBlocked(false),
     _syncLoopShouldBeRunning(true), _syncNode(nullptr), _clusterMessenger(nullptr), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _enableConflictPageLocks(args.test("-enableConflictPageLocks")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
-    _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3), _maxBlockingQueuePerUser(0),
+    _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _upgradeCompleted(false)
 {
@@ -1866,21 +1797,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             content["crashCommandList"] = SComposeJSONArray(crashCommandListArray);
         }
 
-        // Blocking queue rate limit info.
-        shared_lock<decltype(_blockingRateLimitMutex)> rateLimitLock(_blockingRateLimitMutex);
-        content["blockingRateLimitThreshold"] = to_string(_maxBlockingQueuePerUser.load());
-        content["blockedUsers"] = to_string(_blockedUsers.size());
-        if (!_blockedUsers.empty()) {
-            content["blockedUserList"] = SComposeJSONArray(_blockedUsers);
-        }
-        if (!_blockingQueueUserCounts.empty()) {
-            STable countsTable;
-            for (const auto& p : _blockingQueueUserCounts) {
-                countsTable[p.first] = to_string(p.second);
-            }
-            content["blockingQueueUserCounts"] = SComposeJSONObject(countsTable);
-        }
-        rateLimitLock.unlock();
+        _blockingCommandQueue.populateRateLimitStatus(content);
 
         // On leader, return the current multi-write blacklists.
         if (getState() == SQLiteNodeState::LEADING) {
@@ -2081,18 +1998,13 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         if (command->request.isSet("MaxPerUser")) {
             int64_t maxPerUser = command->request.calc64("MaxPerUser");
             if (maxPerUser >= 0) {
-                response["previousMaxBlockingQueuePerUser"] = to_string(_maxBlockingQueuePerUser.load());
-                _maxBlockingQueuePerUser.store(maxPerUser);
+                int previous = _blockingCommandQueue.setMaxPerUser(maxPerUser);
+                response["previousMaxBlockingQueuePerUser"] = to_string(previous);
                 SINFO("Setting _maxBlockingQueuePerUser to " << maxPerUser);
             }
         }
         if (command->request.test("ClearBlocks")) {
-            unique_lock<decltype(_blockingRateLimitMutex)> lock(_blockingRateLimitMutex);
-            size_t cleared = _blockedUsers.size();
-            _blockedUsers.clear();
-            _blockingQueueUserCounts.clear();
-            _blockingQueueEmptyTime.store(0);
-            SINFO("Manually cleared " << cleared << " blocked users.");
+            _blockingCommandQueue.clearBlocks();
         }
     } else if (SIEquals(command->request.methodLine, "BlockWrites")) {
         atomic<bool> locked(false);
