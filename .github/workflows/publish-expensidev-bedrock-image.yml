@@ -74,6 +74,7 @@ jobs:
         with:
           repository: Expensify/Bedrock
           ref: ${{ github.sha }}
+          submodules: recursive
           token: ${{ env.CHECKOUT_TOKEN }}
           path: Expensidev/Bedrock
 
