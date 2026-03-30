@@ -19,7 +19,7 @@ bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockComman
 {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
 
-    int maxPerIdentifier = _maxPerIdentifier.load();
+    size_t maxPerIdentifier = _maxPerIdentifier.load();
     if (maxPerIdentifier > 0 && !command->blockingIdentifier.empty()) {
         // Clear blocks if the blocking queue has been empty for 30 seconds.
         uint64_t emptyTime = _emptyTime.load();
@@ -42,7 +42,7 @@ bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockComman
         if (!isBlocking) {
             int& count = _identifierCounts[command->blockingIdentifier];
             count++;
-            if (count >= maxPerIdentifier) {
+            if (count >= (int)maxPerIdentifier) {
                 _blockedIdentifiers.insert(command->blockingIdentifier);
                 SALERT("Blocking queue rate limit: flagging identifier '" << command->blockingIdentifier
                        << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
@@ -111,9 +111,9 @@ void BedrockBlockingCommandQueue::populateRateLimitStatus(STable& content)
     }
 }
 
-int BedrockBlockingCommandQueue::setMaxPerIdentifier(int value)
+size_t BedrockBlockingCommandQueue::setMaxPerIdentifier(size_t value)
 {
-    int previous = _maxPerIdentifier.load();
+    size_t previous = _maxPerIdentifier.load();
     _maxPerIdentifier.store(value);
     return previous;
 }

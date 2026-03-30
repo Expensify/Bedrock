@@ -2011,7 +2011,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         if (command->request.isSet("MaxPerIdentifier")) {
             int64_t maxPerIdentifier = command->request.calc64("MaxPerIdentifier");
             if (maxPerIdentifier >= 0) {
-                int previous = _blockingCommandQueue.setMaxPerIdentifier(maxPerIdentifier);
+                size_t previous = _blockingCommandQueue.setMaxPerIdentifier(maxPerIdentifier);
                 response["previousMaxBlockingQueuePerIdentifier"] = to_string(previous);
                 SINFO("Setting blocking queue max per identifier to " << maxPerIdentifier);
             }

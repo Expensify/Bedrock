@@ -26,7 +26,7 @@ public:
     void populateRateLimitStatus(STable& content);
 
     // Set the max commands per identifier threshold. Returns the previous value.
-    int setMaxPerIdentifier(int value);
+    size_t setMaxPerIdentifier(size_t value);
 
     // Clear all blocked identifiers and counts.
     void clearBlocks();
@@ -34,6 +34,6 @@ public:
 private:
     map<string, int> _identifierCounts;
     set<string> _blockedIdentifiers;
-    atomic<int> _maxPerIdentifier{0};
+    atomic<size_t> _maxPerIdentifier{0};
     atomic<uint64_t> _emptyTime{0};
 };
