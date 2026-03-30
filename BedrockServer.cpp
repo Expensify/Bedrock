@@ -648,7 +648,6 @@ void BedrockServer::sync()
               << SComposeList(_blockingCommandQueue.getRequestMethodLines()) << ". Clearing.");
         _blockingCommandQueue.clear();
     }
-    _blockingCommandQueue.resetRateLimitState();
 
     for (auto plugin : plugins) {
         plugin.second->serverStopping();

@@ -95,7 +95,7 @@ void BedrockBlockingCommandQueue::clear()
     _lookupByTimeout.clear();
     _identifierCounts.clear();
     _blockedIdentifiers.clear();
-    _emptyTime.store(STimeNow());
+    _emptyTime.store(0);
 }
 
 void BedrockBlockingCommandQueue::resetRateLimitState()
