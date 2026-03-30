@@ -83,6 +83,8 @@ jobs:
         with:
           repository: Expensify/FuzzyBot
           ref: production
+          fetch-depth: 0
+          submodules: recursive
           token: ${{ env.CHECKOUT_TOKEN }}
           path: Expensidev/FuzzyBot
 
