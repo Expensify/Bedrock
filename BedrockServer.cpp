@@ -1868,7 +1868,6 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "UnblockWrites") ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads") ||
         SIEquals(command->request.methodLine, "SetBlockingRateLimit") ||
-        SIEquals(command->request.methodLine, "FlushBlockingQueue") ||
         SIEquals(command->request.methodLine, "ClearBlockingQueue") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
     ) {
