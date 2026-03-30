@@ -1108,7 +1108,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         if (maxRetries || _shutdownState.load() != RUNNING) {
             if (command->processCount > maxRetries) {
                 SINFO("Max retries (" << maxRetries << ") hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
-                if (_blockingCommandQueue.checkRateLimitAndPush(command, isBlocking)) {
+                if (_blockingCommandQueue.checkRateLimitAndPush(command)) {
                     _reply(command);
                     return;
                 }

@@ -15,7 +15,7 @@ BedrockBlockingCommandQueue::BedrockBlockingCommandQueue() :
 {
 }
 
-bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockCommand>& command, bool isBlocking)
+bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockCommand>& command)
 {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
 
@@ -37,16 +37,12 @@ bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockComman
             return true;
         }
 
-        // Only count on first entry from worker threads, not when the blocking commit
-        // thread re-queues a command that conflicted again.
-        if (!isBlocking) {
-            int& count = _identifierCounts[command->blockingIdentifier];
-            count++;
-            if (count >= (int)maxPerIdentifier) {
-                _blockedIdentifiers.insert(command->blockingIdentifier);
-                SALERT("Blocking queue rate limit: flagging identifier '" << command->blockingIdentifier
-                       << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
-            }
+        int& count = _identifierCounts[command->blockingIdentifier];
+        count++;
+        if (count >= (int)maxPerIdentifier) {
+            _blockedIdentifiers.insert(command->blockingIdentifier);
+            SALERT("Blocking queue rate limit: flagging identifier '" << command->blockingIdentifier
+                   << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
         }
     }
 

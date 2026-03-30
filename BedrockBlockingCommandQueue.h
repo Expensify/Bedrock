@@ -14,7 +14,7 @@ public:
     // Check per-identifier rate limit before pushing a command to the blocking queue.
     // Returns true if the command was rejected (503 set on response), caller should reply and return.
     // Returns false if the command was pushed onto the queue (command is moved, caller should not use it).
-    bool checkRateLimitAndPush(unique_ptr<BedrockCommand>& command, bool isBlocking);
+    bool checkRateLimitAndPush(unique_ptr<BedrockCommand>& command);
 
     // Decrement the rate limit count for a command leaving the blocking queue.
     void decrementCount(const unique_ptr<BedrockCommand>& command);
