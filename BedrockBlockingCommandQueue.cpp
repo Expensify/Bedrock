@@ -14,28 +14,28 @@ BedrockBlockingCommandQueue::BedrockBlockingCommandQueue() :
     BedrockCommandQueue(
         function<void(unique_ptr<BedrockCommand>&)>(startTiming),
         [this](unique_ptr<BedrockCommand>& command) {
-            stopTiming(command);
+    stopTiming(command);
 
-            // Decrement rate limit count when a command leaves the queue.
-            if (!command->blockingIdentifier.empty() && _maxPerIdentifier.load() > 0) {
-                auto it = _identifierCounts.find(command->blockingIdentifier);
-                if (it != _identifierCounts.end()) {
-                    it->second--;
-                    if (it->second <= 0) {
-                        _identifierCounts.erase(it);
-                    }
-                }
-            }
-
-            // Track when the queue becomes empty for auto-clearing blocks.
-            size_t queueSize = 0;
-            for (const auto& q : _queue) {
-                queueSize += q.second.size();
-            }
-            if (queueSize == 0 && _emptyTime.load() == 0) {
-                _emptyTime.store(STimeNow());
+    // Decrement rate limit count when a command leaves the queue.
+    if (!command->blockingIdentifier.empty() && _maxPerIdentifier.load() > 0) {
+        auto it = _identifierCounts.find(command->blockingIdentifier);
+        if (it != _identifierCounts.end()) {
+            it->second--;
+            if (it->second <= 0) {
+                _identifierCounts.erase(it);
             }
         }
+    }
+
+    // Track when the queue becomes empty for auto-clearing blocks.
+    size_t queueSize = 0;
+    for (const auto& q : _queue) {
+        queueSize += q.second.size();
+    }
+    if (queueSize == 0 && _emptyTime.load() == 0) {
+        _emptyTime.store(STimeNow());
+    }
+}
     )
 {
 }
@@ -64,7 +64,7 @@ bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockComman
 
         int& count = _identifierCounts[command->blockingIdentifier];
         count++;
-        if (count >= (int)maxPerIdentifier) {
+        if (count >= (int) maxPerIdentifier) {
             _blockedIdentifiers.insert(command->blockingIdentifier);
             SALERT("Blocking queue rate limit: flagging identifier '" << command->blockingIdentifier
                    << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
