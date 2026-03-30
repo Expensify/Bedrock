@@ -13,6 +13,8 @@ void BedrockBlockingCommandQueue::stopTiming(unique_ptr<BedrockCommand>& command
 BedrockBlockingCommandQueue::BedrockBlockingCommandQueue() :
     BedrockCommandQueue(
         function<void(unique_ptr<BedrockCommand>&)>(startTiming),
+        // This lambda is called from _dequeue(), which is always invoked with _queueMutex held.
+        // It is safe to access _identifierCounts, _blockedIdentifiers, and _queue without locking.
         [this](unique_ptr<BedrockCommand>& command) {
     stopTiming(command);
 
