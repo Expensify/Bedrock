@@ -16,10 +16,10 @@ public:
     // Returns false if the command was pushed onto the queue (command is moved, caller should not use it).
     bool checkRateLimitAndPush(unique_ptr<BedrockCommand>& command);
 
-    // Decrement the rate limit count for a command leaving the blocking queue.
-    void decrementCount(const unique_ptr<BedrockCommand>& command);
+    // Clear the queue and all rate limiting state.
+    void clear();
 
-    // Clear all rate limiting state.
+    // Clear all rate limiting state (blocked identifiers, counts, empty time).
     void resetRateLimitState();
 
     // Populate the given table with rate limiting status info for the Status command.

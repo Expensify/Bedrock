@@ -876,10 +876,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
             // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
             if (core.isTimedOut(command, &db, this)) {
-                // Command is leaving the blocking queue without being processed, so decrement its rate limit count.
-                if (isBlocking) {
-                    _blockingCommandQueue.decrementCount(command);
-                }
                 _reply(command);
                 return;
             }
@@ -891,10 +887,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             uint64_t commitCount = db.getCommitCount();
             uint64_t commandCommitCount = command->request.calcU64("commitCount");
             if (commandCommitCount > commitCount) {
-                // Command is leaving the blocking queue to wait for a future commit, so decrement its rate limit count.
-                if (isBlocking) {
-                    _blockingCommandQueue.decrementCount(command);
-                }
                 SAUTOLOCK(_futureCommitCommandMutex);
                 auto newQueueSize = _futureCommitCommands.size() + 1;
                 SINFO("Command (" << command->request.methodLine << ") depends on future commit (" << commandCommitCount
@@ -917,10 +909,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 core.prePeekCommand(command, isBlocking);
 
                 if (command->complete) {
-                    // Command completed in prePeek and is leaving the blocking queue, so decrement its rate limit count.
-                    if (isBlocking) {
-                        _blockingCommandQueue.decrementCount(command);
-                    }
                     _reply(command);
                     break;
                 }
@@ -975,10 +963,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
                     // Peek wasn't enough to handle this command. See if we think it should be writable in parallel.
                     if (!canWriteParallel) {
-                        // Command is moving from the blocking queue to the sync thread, so decrement its rate limit count.
-                        if (isBlocking) {
-                            _blockingCommandQueue.decrementCount(command);
-                        }
                         // Roll back the transaction, it'll get re-run in the sync thread.
                         core.rollback(command->getMethodName());
                         dbScope.release();
@@ -1089,11 +1073,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 if (command->shouldPostProcess() && command->response.methodLine == "200 OK") {
                     // PostProcess if the command should run postProcess, and there have been no errors thrown thus far.
                     core.postProcessCommand(command, isBlocking);
-                }
-
-                // Command finished processing and is leaving the blocking queue, so decrement its rate limit count.
-                if (isBlocking) {
-                    _blockingCommandQueue.decrementCount(command);
                 }
 
                 _reply(command);

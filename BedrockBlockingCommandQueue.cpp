@@ -11,7 +11,32 @@ void BedrockBlockingCommandQueue::stopTiming(unique_ptr<BedrockCommand>& command
 }
 
 BedrockBlockingCommandQueue::BedrockBlockingCommandQueue() :
-    BedrockCommandQueue(function<void(unique_ptr<BedrockCommand>&)>(startTiming), function<void(unique_ptr<BedrockCommand>&)>(stopTiming))
+    BedrockCommandQueue(
+        function<void(unique_ptr<BedrockCommand>&)>(startTiming),
+        [this](unique_ptr<BedrockCommand>& command) {
+            stopTiming(command);
+
+            // Decrement rate limit count when a command leaves the queue.
+            if (!command->blockingIdentifier.empty() && _maxPerIdentifier.load() > 0) {
+                auto it = _identifierCounts.find(command->blockingIdentifier);
+                if (it != _identifierCounts.end()) {
+                    it->second--;
+                    if (it->second <= 0) {
+                        _identifierCounts.erase(it);
+                    }
+                }
+            }
+
+            // Track when the queue becomes empty for auto-clearing blocks.
+            size_t queueSize = 0;
+            for (const auto& q : _queue) {
+                queueSize += q.second.size();
+            }
+            if (queueSize == 0 && _emptyTime.load() == 0) {
+                _emptyTime.store(STimeNow());
+            }
+        }
+    )
 {
 }
 
@@ -60,26 +85,14 @@ bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockComman
     return false;
 }
 
-void BedrockBlockingCommandQueue::decrementCount(const unique_ptr<BedrockCommand>& command)
+void BedrockBlockingCommandQueue::clear()
 {
-    if (command->blockingIdentifier.empty() || _maxPerIdentifier.load() <= 0) {
-        return;
-    }
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
-    auto it = _identifierCounts.find(command->blockingIdentifier);
-    if (it != _identifierCounts.end()) {
-        it->second--;
-        if (it->second <= 0) {
-            _identifierCounts.erase(it);
-        }
-    }
-    size_t queueSize = 0;
-    for (const auto& q : _queue) {
-        queueSize += q.second.size();
-    }
-    if (queueSize == 0 && _emptyTime.load() == 0) {
-        _emptyTime.store(STimeNow());
-    }
+    _queue.clear();
+    _lookupByTimeout.clear();
+    _identifierCounts.clear();
+    _blockedIdentifiers.clear();
+    _emptyTime.store(STimeNow());
 }
 
 void BedrockBlockingCommandQueue::resetRateLimitState()
