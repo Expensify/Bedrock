@@ -985,7 +985,7 @@ struct LibStuff : tpunit::TestFixture
 
     void testSEncodeURIComponentUTF8()
     {
-        const string utf8Name = u8"Shāhrukh";
+        const string utf8Name = "Sh\xC4\x81hrukh";
         const string encoded = SEncodeURIComponent(utf8Name);
 
         ASSERT_EQUAL(encoded, "Sh%C4%81hrukh");
