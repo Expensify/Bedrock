@@ -32,7 +32,7 @@ public:
     void clearBlocks();
 
 private:
-    map<string, int> _identifierCounts;
+    map<string, size_t> _identifierCounts;
     set<string> _blockedIdentifiers;
     atomic<size_t> _maxPerIdentifier{0};
     atomic<uint64_t> _emptyTime{0};

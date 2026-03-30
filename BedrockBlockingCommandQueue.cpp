@@ -22,9 +22,10 @@ BedrockBlockingCommandQueue::BedrockBlockingCommandQueue() :
     if (!command->blockingIdentifier.empty() && _maxPerIdentifier.load() > 0) {
         auto it = _identifierCounts.find(command->blockingIdentifier);
         if (it != _identifierCounts.end()) {
-            it->second--;
-            if (it->second <= 0) {
+            if (it->second <= 1) {
                 _identifierCounts.erase(it);
+            } else {
+                it->second--;
             }
         }
     }
@@ -64,9 +65,9 @@ bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockComman
             return true;
         }
 
-        int& count = _identifierCounts[command->blockingIdentifier];
+        size_t& count = _identifierCounts[command->blockingIdentifier];
         count++;
-        if (count >= (int) maxPerIdentifier) {
+        if (count >= maxPerIdentifier) {
             _blockedIdentifiers.insert(command->blockingIdentifier);
             SALERT("Blocking queue rate limit: flagging identifier '" << command->blockingIdentifier
                    << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
