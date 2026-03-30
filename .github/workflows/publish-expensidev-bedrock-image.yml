@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: Expensify/Expensidev
-          ref: main
+          ref: 633e0f770879fc2e2e77a4759d2249dbc5ff0568
           token: ${{ env.CHECKOUT_TOKEN }}
           path: Expensidev
 
