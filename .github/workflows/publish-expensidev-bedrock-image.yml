@@ -54,7 +54,7 @@ jobs:
             dockerfile: Expensidev/ci/docker/Dockerfile.webrock
     steps:
       - name: Checkout Expensidev
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: Expensify/Expensidev
           ref: main
@@ -62,7 +62,7 @@ jobs:
           path: Expensidev
 
       - name: Checkout Auth
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: Expensify/Auth
           ref: production
@@ -70,7 +70,7 @@ jobs:
           path: Expensidev/Auth
 
       - name: Checkout Bedrock
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: Expensify/Bedrock
           ref: ${{ github.sha }}
@@ -78,7 +78,7 @@ jobs:
           path: Expensidev/Bedrock
 
       - name: Checkout FuzzyBot
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: Expensify/FuzzyBot
           ref: production
@@ -86,7 +86,7 @@ jobs:
           path: Expensidev/FuzzyBot
 
       - name: Checkout ExpensifyTableManager
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: Expensify/ExpensifyTableManager
           ref: production
@@ -94,7 +94,7 @@ jobs:
           path: Expensidev/ExpensifyTableManager
 
       - name: Checkout ExpensifyBackupManager
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: Expensify/ExpensifyBackupManager
           ref: production
@@ -102,7 +102,7 @@ jobs:
           path: Expensidev/ExpensifyBackupManager
 
       - name: Checkout WhitelistDB
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
         with:
           repository: Expensify/WhitelistDB
           ref: production
@@ -110,17 +110,17 @@ jobs:
           path: Expensidev/WhitelistDB
 
       - name: Setup Docker Builder
-        uses: useblacksmith/setup-docker-builder@33fed32c1ba8775f20366ec9e8d0cd9fe8fc1dd3
+        uses: useblacksmith/setup-docker-builder@33fed32c1ba8775f20366ec9e8d0cd9fe8fc1dd3 # v1.3.0
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ env.CHECKOUT_TOKEN }}
 
       - name: Build and push image
-        uses: useblacksmith/build-push-action@8be78d7cc5f972bb9f88f73f3ad84fc59fdd0bf8
+        uses: useblacksmith/build-push-action@30c71162f16ea2c27c3e21523255d209b8b538c1 # v2
         with:
           context: Expensidev
           file: ${{ matrix.dockerfile }}
@@ -135,10 +135,10 @@ jobs:
     needs: [build]
     steps:
       - name: Setup Docker Builder
-        uses: useblacksmith/setup-docker-builder@33fed32c1ba8775f20366ec9e8d0cd9fe8fc1dd3
+        uses: useblacksmith/setup-docker-builder@33fed32c1ba8775f20366ec9e8d0cd9fe8fc1dd3 # v1.3.0
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
