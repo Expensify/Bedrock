@@ -1010,5 +1010,9 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode(" Timeout"), 400);
         ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode("Timeout"), 400);
         ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode(""), 400);
+
+        // Explicit defaultStatusCode is used when parsing fails.
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode("garbage", 502), 502);
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode("", 500), 500);
     }
 } __LibStuff;
