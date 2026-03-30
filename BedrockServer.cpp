@@ -1869,6 +1869,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "SetMaxSocketThreads") ||
         SIEquals(command->request.methodLine, "SetBlockingRateLimit") ||
         SIEquals(command->request.methodLine, "FlushBlockingQueue") ||
+        SIEquals(command->request.methodLine, "ClearBlockingQueue") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
     ) {
         return true;
@@ -1964,13 +1965,13 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             totalCount += s.second.size();
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
-    } else if (SIEquals(command->request.methodLine, "FlushBlockingQueue")) {
+    } else if (SIEquals(command->request.methodLine, "ClearBlockingQueue")) {
         auto commands = _blockingCommandQueue.getAll();
         list<string> methodLines;
         for (const auto& cmd : commands) {
             methodLines.push_back(cmd->request.methodLine);
         }
-        SINFO("FlushBlockingQueue: failing " << commands.size() << " commands: " << SComposeList(methodLines));
+        SINFO("ClearBlockingQueue: failing " << commands.size() << " commands: " << SComposeList(methodLines));
         for (auto& cmd : commands) {
             cmd->response.methodLine = "503 Service Unavailable";
             cmd->complete = true;
