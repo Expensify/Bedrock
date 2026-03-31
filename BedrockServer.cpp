@@ -1709,7 +1709,11 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
     } else if (SIEquals(request.methodLine, STATUS_HANDLING_COMMANDS)) {
         // This is similar to the above check, and is used for letting HAProxy load-balance commands.
 
-        if (_version != _leaderVersion.load()) {
+        if (_shouldBackup) {
+            response.methodLine = "HTTP/1.1 503 Backup In Progress";
+        } else if (_detach) {
+            response.methodLine = "HTTP/1.1 503 Detached";
+        } else if (_version != _leaderVersion.load()) {
             response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version;
         } else {
             string method = "HTTP/1.1 ";
