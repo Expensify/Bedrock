@@ -1709,7 +1709,11 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
     } else if (SIEquals(request.methodLine, STATUS_HANDLING_COMMANDS)) {
         // This is similar to the above check, and is used for letting HAProxy load-balance commands.
 
-        if (_version != _leaderVersion.load()) {
+        if (_shouldBackup) {
+            response.methodLine = "HTTP/1.1 503 Backup In Progress";
+        } else if (_detach) {
+            response.methodLine = "HTTP/1.1 503 Detached";
+        } else if (_version != _leaderVersion.load()) {
             response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version;
         } else {
             string method = "HTTP/1.1 ";
@@ -1857,7 +1861,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "BlockWrites") ||
         SIEquals(command->request.methodLine, "UnblockWrites") ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads") ||
-        SIEquals(command->request.methodLine, "FlushBlockingQueue") ||
+        SIEquals(command->request.methodLine, "ClearBlockingQueue") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
     ) {
         return true;
@@ -1953,13 +1957,13 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             totalCount += s.second.size();
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
-    } else if (SIEquals(command->request.methodLine, "FlushBlockingQueue")) {
+    } else if (SIEquals(command->request.methodLine, "ClearBlockingQueue")) {
         auto commands = _blockingCommandQueue.getAll();
         list<string> methodLines;
         for (const auto& cmd : commands) {
             methodLines.push_back(cmd->request.methodLine);
         }
-        SINFO("FlushBlockingQueue: failing " << commands.size() << " commands: " << SComposeList(methodLines));
+        SINFO("ClearBlockingQueue: failing " << commands.size() << " commands: " << SComposeList(methodLines));
         for (auto& cmd : commands) {
             cmd->response.methodLine = "503 Service Unavailable";
             cmd->complete = true;
