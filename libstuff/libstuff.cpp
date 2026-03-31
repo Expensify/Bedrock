@@ -1463,7 +1463,7 @@ string SEncodeURIComponent(const string& value)
                     // Unsafe character, escape
                     working += '%';
                     working += hexChars[uch >> 4];
-                    working += hexChars[(uch >> 4) & 0xF];
+                    working += hexChars[uch & 0xF];
                     break;
             }
         }
