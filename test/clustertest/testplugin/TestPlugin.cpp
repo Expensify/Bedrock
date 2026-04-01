@@ -127,6 +127,9 @@ TestPluginCommand::TestPluginCommand(SQLiteCommand&& baseCommand, BedrockPlugin_
     pendingResult(false),
     urls(request["urls"])
 {
+    if (request.isSet("blockingIdentifier")) {
+        blockingIdentifier = request["blockingIdentifier"];
+    }
 }
 
 string TestPluginCommand::serializeData() const
@@ -237,7 +240,7 @@ bool TestPluginCommand::peek(SQLite& db)
         return true;
     } else if (SStartsWith(request.methodLine, "ThreadException")) {
         // Retuns the thread and the future associated with its completion.
-        auto threadpair = SThread([](){
+        auto threadpair = SThread([]() {
             STHROW("500 THREAD THREW");
         });
 
@@ -331,7 +334,7 @@ bool TestPluginCommand::peek(SQLite& db)
         httpsRequests.push_back(move(transaction));
         if (request["neversend"].empty()) {
             int waitFor = request.isSet("waitFor") ? request.calc("waitFor") : 35;
-            thread([waitFor, ptr, newRequest](){
+            thread([waitFor, ptr, newRequest]() {
                 SINFO("Sleeping " << waitFor << " seconds for httpstimeout");
                 sleep(waitFor);
                 SINFO("Done Sleeping " << waitFor << " seconds for httpstimeout");
@@ -355,7 +358,7 @@ bool TestPluginCommand::peek(SQLite& db)
         // then the tester will try to attach, sleep, then try again.
         // The command will be gone by the time the sleep finishes, so pass a pointer to the plugin.
         BedrockPlugin_TestPlugin* pluginPtr = &plugin();
-        thread([pluginPtr](){
+        thread([pluginPtr]() {
             // Have this plugin block attaching
             pluginPtr->shouldPreventAttach = true;
 

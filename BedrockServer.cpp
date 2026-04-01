@@ -20,7 +20,7 @@
 #include <PageLockGuard.h>
 #include <sqlitecluster/SQLitePeer.h>
 
-set<string>BedrockServer::_blacklistedParallelCommands;
+set<string> BedrockServer::_blacklistedParallelCommands;
 shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
 thread_local atomic<SQLiteNodeState> BedrockServer::_nodeStateSnapshot = SQLiteNodeState::UNKNOWN;
 
@@ -279,7 +279,7 @@ void BedrockServer::sync()
         }
 
         if (command && committingCommand) {
-            void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
+            void (* onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
             bool enabled = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
             if (enabled) {
                 _syncNode->onPrepareHandlerEnabled = enabled;
@@ -303,6 +303,7 @@ void BedrockServer::sync()
             for (auto& cmd : commands) {
                 _commandQueue.push(move(cmd));
             }
+            _blockingCommandQueue.resetRateLimitState();
         }
 
         // Reset some state on falling out of leading. This could be normal, if we're just shutting down, or it
@@ -505,7 +506,7 @@ void BedrockServer::sync()
                 // Set the function that will be called if this thread's signal handler catches an unrecoverable error,
                 // like a segfault. Note that it's possible we're in the middle of sending a message to peers when we call
                 // this, which would probably make this message malformed. This is the best we can do.
-                SSetSignalHandlerDieFunc([&](){
+                SSetSignalHandlerDieFunc([&]() {
                     _clusterMessenger->runOnAll(_generateCrashMessage(command));
                     return addLogParams("CRASHING from BedrockServer::sync, command:" + command->request.methodLine, command->request.nameValueMap);
                 });
@@ -603,7 +604,7 @@ void BedrockServer::sync()
         }
     } while (!_syncNode->shutdownComplete() || BedrockCommand::getCommandCount());
 
-    SSetSignalHandlerDieFunc([](){
+    SSetSignalHandlerDieFunc([]() {
         return "Dying in shutdown";
     });
 
@@ -692,7 +693,7 @@ void BedrockServer::worker(int threadId)
     while (true) {
         try {
             // Set a signal handler function that we can call even if we die early with no command.
-            SSetSignalHandlerDieFunc([&](){
+            SSetSignalHandlerDieFunc([&]() {
                 return "Die function called early with no command, probably died in `commandQueue.get`.";
             });
 
@@ -747,7 +748,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // Set the function that lets the signal handler know which command caused a problem, in case that happens.
     // If a signal is caught on this thread, which should only happen for unrecoverable, yet synchronous
     // signals, like SIGSEGV, this function will be called.
-    SSetSignalHandlerDieFunc([&](){
+    SSetSignalHandlerDieFunc([&]() {
         _clusterMessenger->runOnAll(_generateCrashMessage(command));
         return addLogParams("CRASHING from BedrockServer::runCommand, command:" + command->request.methodLine, command->request.nameValueMap);
     });
@@ -1004,7 +1005,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         string transactionHash;
                         {
                             BedrockCore::AutoTimer timer(command, isBlocking ? BedrockCommand::BLOCKING_COMMIT_WORKER : BedrockCommand::COMMIT_WORKER);
-                            void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
+                            void (* onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
                             bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
                             commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler);
 
@@ -1072,6 +1073,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                     // PostProcess if the command should run postProcess, and there have been no errors thrown thus far.
                     core.postProcessCommand(command, isBlocking);
                 }
+
                 _reply(command);
 
                 // Don't need to retry.
@@ -1084,7 +1086,12 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         if (maxRetries || _shutdownState.load() != RUNNING) {
             if (command->processCount > maxRetries) {
                 SINFO("Max retries (" << maxRetries << ") hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
-                _blockingCommandQueue.push(move(command));
+                if (isBlocking) {
+                    _blockingCommandQueue.push(move(command));
+                } else if (_blockingCommandQueue.checkRateLimitAndPush(command)) {
+                    _reply(command);
+                    return;
+                }
                 return;
             }
         } else {
@@ -1223,6 +1230,8 @@ void BedrockServer::_resetServer()
     _pluginsDetached = false;
     _upgradeCompleted = false;
     _shutdownTime = chrono::time_point<chrono::steady_clock>{};
+
+    _blockingCommandQueue.resetRateLimitState();
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {
@@ -1771,6 +1780,8 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             content["crashCommandList"] = SComposeJSONArray(crashCommandListArray);
         }
 
+        _blockingCommandQueue.populateRateLimitStatus(content);
+
         // On leader, return the current multi-write blacklists.
         if (getState() == SQLiteNodeState::LEADING) {
             // Both of these need to be in the correct state for multi-write to be enabled.
@@ -1794,7 +1805,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
         // We can use the `each` functionality to pass a lambda that will grab each method line in
         // `_syncNodeQueuedCommands`.
         list<string> syncNodeQueuedMethods;
-        _syncNodeQueuedCommands.each([&syncNodeQueuedMethods](auto& item){
+        _syncNodeQueuedCommands.each([&syncNodeQueuedMethods](auto& item) {
             syncNodeQueuedMethods.push_back(item->request.methodLine);
         });
         content["peerList"] = SComposeJSONArray(peerList);
@@ -1861,6 +1872,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "BlockWrites") ||
         SIEquals(command->request.methodLine, "UnblockWrites") ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads") ||
+        SIEquals(command->request.methodLine, "SetBlockingRateLimit") ||
         SIEquals(command->request.methodLine, "ClearBlockingQueue") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
     ) {
@@ -1979,6 +1991,18 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         }
     } else if (SIEquals(command->request.methodLine, "SetConflictPageLocks")) {
         _enableConflictPageLocks = command->request.test("enable");
+    } else if (SIEquals(command->request.methodLine, "SetBlockingRateLimit")) {
+        if (command->request.isSet("MaxPerIdentifier")) {
+            int64_t maxPerIdentifier = command->request.calc64("MaxPerIdentifier");
+            if (maxPerIdentifier >= 0) {
+                size_t previous = _blockingCommandQueue.setMaxPerIdentifier(maxPerIdentifier);
+                response["previousMaxBlockingQueuePerIdentifier"] = to_string(previous);
+                SINFO("Setting blocking queue max per identifier to " << maxPerIdentifier);
+            }
+        }
+        if (command->request.test("ClearBlocks")) {
+            _blockingCommandQueue.clearBlocks();
+        }
     } else if (SIEquals(command->request.methodLine, "BlockWrites")) {
         atomic<bool> locked(false);
         lock_guard lock(__quiesceLock);
@@ -2166,7 +2190,7 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
         auto _clusterMessengerCopy = _clusterMessenger;
         auto peerName = peer->name;
         if (_clusterMessengerCopy) {
-            thread([command = move(peerCommand), _clusterMessengerCopy, peerName](){
+            thread([command = move(peerCommand), _clusterMessengerCopy, peerName]() {
                 _clusterMessengerCopy->runOnPeer(*command, peerName);
             }).detach();
         }
@@ -2502,7 +2526,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             // disconnected, abort the command.
                             atomic<bool>& commandShouldAbortFlag = command->shouldAbort;
                             thread commandThread(
-                                [&](){
+                                [&]() {
                                 SInitialize(threadName + "_cmd");
                                 runCommand(move(command));
                             });
