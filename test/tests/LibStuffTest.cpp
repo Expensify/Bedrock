@@ -2,6 +2,7 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SData.h>
+#include <libstuff/SHTTPSManager.h>
 #include <libstuff/SQResult.h>
 #include <libstuff/SRandom.h>
 #include <sqlitecluster/SQLite.h>
@@ -10,6 +11,7 @@
 struct LibStuff : tpunit::TestFixture
 {
     LibStuff() : tpunit::TestFixture(true, "LibStuff",
+                                     TEST(LibStuff::testGetHTTPResponseCode),
                                      TEST(LibStuff::testEncryptDecrpyt),
                                      TEST(LibStuff::testSHMACSHA1),
                                      TEST(LibStuff::testSHMACSHA256),
@@ -991,5 +993,26 @@ struct LibStuff : tpunit::TestFixture
         // Verify that control characters are not allowed in methodLine
         string methodLineWithControlChars = "500 Internal Server Error\r\nContent-Type: application/json";
         ASSERT_THROW(SComposeHTTP(methodLineWithControlChars, {}, ""), SException);
+    }
+
+    void testGetHTTPResponseCode()
+    {
+        // Standard HTTP response lines parse correctly.
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode("HTTP/1.1 200 OK"), 200);
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode("HTTP/1.1 204 No Content"), 204);
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode("HTTP/1.1 202 Accepted"), 202);
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode("HTTP/1.1 400 Bad Request"), 400);
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode("HTTP/1.1 500 Internal Server Error"), 500);
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode("HTTP/1.1 504 Gateway Timeout"), 504);
+
+        // Non-standard responses (e.g., from a load balancer sending " Timeout" instead of a proper
+        // HTTP status line) fall back to 400 rather than crashing or producing a misleading result.
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode(" Timeout"), 400);
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode("Timeout"), 400);
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode(""), 400);
+
+        // Explicit defaultStatusCode is used when parsing fails.
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode("garbage", 502), 502);
+        ASSERT_EQUAL(SStandaloneHTTPSManager::getHTTPResponseCode("", 500), 500);
     }
 } __LibStuff;

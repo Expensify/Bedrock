@@ -112,23 +112,16 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         transaction.s->recvBuffer.consumeFront(size);
         transaction.finished = now;
 
-        // This is supposed to check for a "200" or "204 No Content"response, which it does very poorly. It also checks for message
-        // content. Why this is the what constitutes a valid response is lost to time. Any well-formed response should
-        // be valid here, and this should get cleaned up. However, this requires testing anything that might rely on
-        // the existing behavior, which is an exercise for later.
-        if (
-            SContains(transaction.fullResponse.methodLine, " 200") ||
-            SContains(transaction.fullResponse.methodLine, "204") ||
-            SContains(transaction.fullResponse.methodLine, "202") ||
-            transaction.fullResponse.content.size()
-        ) {
-            // Pass the transaction down to the subclass.
-            _onRecv(transaction);
-        } else {
-            // Coercing anything that's not 200 to 500 makes no sense, and should be abandoned with the above.
-            SWARN("Message failed: '" << transaction.fullResponse.methodLine << "'");
-            transaction.response = getHTTPResponseCode(transaction.fullResponse.methodLine, 500);
+        // Log a hint for non-standard responses that don't follow HTTP format (e.g., a load balancer
+        // returning a plain-text " Timeout" instead of a proper "HTTP/1.1 504 Gateway Timeout").
+        // These are not errors in our code, but they are unexpected from the remote service.
+        if (!SStartsWith(transaction.fullResponse.methodLine, "HTTP/")) {
+            SHMMM("Received non-standard response: '" << transaction.fullResponse.methodLine << "'");
         }
+
+        // Pass the transaction down to the subclass for all complete responses. Each subclass's _onRecv
+        // is responsible for parsing the response code and handling errors appropriately.
+        _onRecv(transaction);
 
         // Finished with the socket, free it up.
         delete transaction.s;
