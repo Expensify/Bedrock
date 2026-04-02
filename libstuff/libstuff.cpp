@@ -1435,13 +1435,13 @@ string SEncodeURIComponent(const string& value)
     string working;
     for (int c = 0; c < (int) value.size(); ++c) {
         // Test this character
-        char ch = value[c];
+        const unsigned char uch = static_cast<unsigned char>(value[c]);
         // Why isn't this just isalnum(ch)?
         // http://cplusplus.com/reference/clibrary/cctype/isalnum/
-        if (SWITHIN('a', ch, 'z') || SWITHIN('A', ch, 'Z') || SWITHIN('0', ch, '9')) {
-            working += ch;
+        if (SWITHIN('a', uch, 'z') || SWITHIN('A', uch, 'Z') || SWITHIN('0', uch, '9')) {
+            working += uch;
         } else {
-            switch (ch) {
+            switch (uch) {
                 case ' ':
                     // Unsafe character, replace
                     working += '+';
@@ -1456,14 +1456,14 @@ string SEncodeURIComponent(const string& value)
                 case '(':
                 case ')':
                     // Safe character
-                    working += ch;
+                    working += uch;
                     break;
 
                 default:
                     // Unsafe character, escape
                     working += '%';
-                    working += hexChars[ch >> 4];
-                    working += hexChars[ch & 0xF];
+                    working += hexChars[uch >> 4];
+                    working += hexChars[uch & 0xF];
                     break;
             }
         }

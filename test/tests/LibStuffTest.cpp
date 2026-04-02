@@ -41,6 +41,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::SQResultTest),
                                      TEST(LibStuff::testReturningClause),
                                      TEST(LibStuff::SRedactSensitiveValuesTest),
+                                     TEST(LibStuff::testSEncodeURIComponentUTF8),
                                      TEST(LibStuff::SComposeHTTPTest)
     )
     {
@@ -980,6 +981,15 @@ struct LibStuff : tpunit::TestFixture
         logValue = R"({"html":"private conversation happens here"})";
         SRedactSensitiveValues(logValue);
         ASSERT_EQUAL(R"({"html":"<REDACTED>"})", logValue);
+    }
+
+    void testSEncodeURIComponentUTF8()
+    {
+        const string utf8Name = "Sh\xC4\x81hrukh";
+        const string encoded = SEncodeURIComponent(utf8Name);
+
+        ASSERT_EQUAL(encoded, "Sh%C4%81hrukh");
+        ASSERT_EQUAL(SDecodeURIComponent(encoded.c_str(), encoded.size()), utf8Name);
     }
 
     void SComposeHTTPTest()
