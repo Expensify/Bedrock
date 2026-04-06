@@ -58,8 +58,8 @@ bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockComman
         }
 
         if (_blockedIdentifiers.count(command->blockingIdentifier)) {
-            SALERT("Blocking queue rate limit: rejecting '" << command->request.methodLine
-                   << "' for identifier '" << command->blockingIdentifier << "'");
+            SINFO("Blocking queue rate limit: rejecting '" << command->request.methodLine
+                  << "' for identifier '" << command->blockingIdentifier << "'");
             command->response.methodLine = "503 Blocking queue rate limited";
             command->complete = true;
             return true;
@@ -69,7 +69,7 @@ bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockComman
         count++;
         if (count >= maxPerIdentifier) {
             _blockedIdentifiers.insert(command->blockingIdentifier);
-            SALERT("Blocking queue rate limit: flagging identifier '" << command->blockingIdentifier
+            SALERT("Blocking queue rate limit: blocking identifier '" << command->blockingIdentifier
                    << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
         }
     }
@@ -125,9 +125,7 @@ void BedrockBlockingCommandQueue::populateRateLimitStatus(STable& content)
 
 size_t BedrockBlockingCommandQueue::setMaxPerIdentifier(size_t value)
 {
-    size_t previous = _maxPerIdentifier.load();
-    _maxPerIdentifier.store(value);
-    return previous;
+    return _maxPerIdentifier.exchange(value);
 }
 
 void BedrockBlockingCommandQueue::clearBlocks()
