@@ -86,8 +86,8 @@ protected:
     T _dequeue();
 
     // Synchronization primitives for managing access to the queue.
-    mutex _queueMutex;
-    condition_variable _queueCondition;
+    recursive_mutex _queueMutex;
+    condition_variable_any _queueCondition;
 
     // The main queue is a map of priorities to the items queued at that priority, sorted by their scheduled time.
     map<Priority, multimap<Scheduled, ItemTimeoutPair>> _queue;
@@ -129,7 +129,7 @@ size_t SScheduledPriorityQueue<T>::size()
 template<typename T>
 T SScheduledPriorityQueue<T>::get(uint64_t waitUS, bool loggingEnabled)
 {
-    unique_lock<mutex> queueLock(_queueMutex);
+    unique_lock<decltype(_queueMutex)> queueLock(_queueMutex);
 
     // NOTE:
     // Possible future improvement: Say there's work in the queue, but it's not ready yet (i.e., it's scheduled in the
@@ -205,9 +205,8 @@ void SScheduledPriorityQueue<T>::push(T&& item, Priority priority, Scheduled sch
 template<typename T>
 T SScheduledPriorityQueue<T>::_dequeue()
 {
-    // NOTE: We don't grab a mutex here on purpose - we use a non-recursive mutex to work with condition_variable, so
-    // we need to only lock it once, which we've already done in whichever function is calling this one (since this is
-    // private).
+    // NOTE: We don't grab a mutex here on purpose - we need to only lock it once, which we've already done in
+    // whichever function is calling this one (since this is private).
 
     // We need to know what time it is, so that we can compare to scheduled times.
     uint64_t now = STimeNow();

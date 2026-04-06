@@ -11,10 +11,12 @@ public:
     static void startTiming(unique_ptr<BedrockCommand>& command);
     static void stopTiming(unique_ptr<BedrockCommand>& command);
 
-    // Check per-identifier rate limit before pushing a command to the blocking queue.
-    // Returns true if the command was rejected (503 set on response), caller should reply and return.
-    // Returns false if the command was pushed onto the queue (command is moved, caller should not use it).
-    bool checkRateLimitAndPush(unique_ptr<BedrockCommand>& command);
+    // Override push() to enforce per-identifier rate limits before enqueuing.
+    // Throws SException("503 ...") if the identifier is rate limited; caller should catch and reply.
+    void push(unique_ptr<BedrockCommand>&& command);
+
+    // Override get() to decrement per-identifier counts and track when the queue becomes empty.
+    unique_ptr<BedrockCommand> get(uint64_t waitUS = 0, bool loggingEnabled = false);
 
     // Clear the queue and all rate limiting state.
     void clear();

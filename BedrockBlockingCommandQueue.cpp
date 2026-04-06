@@ -11,12 +11,52 @@ void BedrockBlockingCommandQueue::stopTiming(unique_ptr<BedrockCommand>& command
 }
 
 BedrockBlockingCommandQueue::BedrockBlockingCommandQueue() :
-    BedrockCommandQueue(
-        function<void(unique_ptr<BedrockCommand>&)>(startTiming),
-        // This lambda is called from _dequeue(), which is always invoked with _queueMutex held.
-        // It is safe to access _identifierCounts, _blockedIdentifiers, and _queue without locking.
-        [this](unique_ptr<BedrockCommand>& command) {
-    stopTiming(command);
+    BedrockCommandQueue(function<void(unique_ptr<BedrockCommand>&)>(startTiming),
+                        function<void(unique_ptr<BedrockCommand>&)>(stopTiming))
+{
+}
+
+void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
+{
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
+
+    size_t maxPerIdentifier = _maxPerIdentifier.load();
+    if (maxPerIdentifier > 0 && !command->blockingIdentifier.empty()) {
+        // Clear blocks if the blocking queue has been empty for 30 seconds.
+        uint64_t emptyTime = _emptyTime.load();
+        if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
+            _blockedIdentifiers.clear();
+            _identifierCounts.clear();
+            _emptyTime.store(0);
+        }
+
+        if (_blockedIdentifiers.count(command->blockingIdentifier)) {
+            SINFO("Blocking queue rate limit: rejecting '" << command->request.methodLine
+                  << "' for identifier '" << command->blockingIdentifier << "'");
+            STHROW("503 Blocking queue rate limited");
+        }
+
+        size_t& count = _identifierCounts[command->blockingIdentifier];
+        count++;
+        if (count >= maxPerIdentifier) {
+            _blockedIdentifiers.insert(command->blockingIdentifier);
+            SALERT("Blocking queue rate limit: blocking identifier '" << command->blockingIdentifier
+                   << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
+        }
+    }
+
+    // Reset empty time since a command is entering the queue.
+    _emptyTime.store(0);
+
+    // Delegate to parent; _queueMutex is recursive so this re-acquisition is safe.
+    BedrockCommandQueue::push(move(command));
+}
+
+unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::get(uint64_t waitUS, bool loggingEnabled)
+{
+    auto command = BedrockCommandQueue::get(waitUS, loggingEnabled);
+
+    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
 
     // Decrement rate limit count when a command leaves the queue.
     if (!command->blockingIdentifier.empty() && _maxPerIdentifier.load() > 0) {
@@ -38,54 +78,8 @@ BedrockBlockingCommandQueue::BedrockBlockingCommandQueue() :
     if (queueSize == 0 && _emptyTime.load() == 0) {
         _emptyTime.store(STimeNow());
     }
-}
-    )
-{
-}
 
-bool BedrockBlockingCommandQueue::checkRateLimitAndPush(unique_ptr<BedrockCommand>& command)
-{
-    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
-
-    size_t maxPerIdentifier = _maxPerIdentifier.load();
-    if (maxPerIdentifier > 0 && !command->blockingIdentifier.empty()) {
-        // Clear blocks if the blocking queue has been empty for 30 seconds.
-        uint64_t emptyTime = _emptyTime.load();
-        if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
-            _blockedIdentifiers.clear();
-            _identifierCounts.clear();
-            _emptyTime.store(0);
-        }
-
-        if (_blockedIdentifiers.count(command->blockingIdentifier)) {
-            SINFO("Blocking queue rate limit: rejecting '" << command->request.methodLine
-                  << "' for identifier '" << command->blockingIdentifier << "'");
-            command->response.methodLine = "503 Blocking queue rate limited";
-            command->complete = true;
-            return true;
-        }
-
-        size_t& count = _identifierCounts[command->blockingIdentifier];
-        count++;
-        if (count >= maxPerIdentifier) {
-            _blockedIdentifiers.insert(command->blockingIdentifier);
-            SALERT("Blocking queue rate limit: blocking identifier '" << command->blockingIdentifier
-                   << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
-        }
-    }
-
-    // Reset empty time since a command is entering the queue.
-    _emptyTime.store(0);
-
-    // Inline the push to avoid double-locking _queueMutex.
-    auto priority = command->priority;
-    auto scheduledTime = command->scheduledTime;
-    auto timeout = command->timeout();
-    _startFunction(command);
-    _lookupByTimeout.insert(make_pair(timeout, make_pair(priority, scheduledTime)));
-    _queue[priority].emplace(scheduledTime, ItemTimeoutPair(move(command), timeout));
-    _queueCondition.notify_one();
-    return false;
+    return command;
 }
 
 void BedrockBlockingCommandQueue::clear()
