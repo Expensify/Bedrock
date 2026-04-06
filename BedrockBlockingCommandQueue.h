@@ -22,8 +22,8 @@ public:
     // Clear all rate limiting state (blocked identifiers, counts, empty time).
     void resetRateLimitState();
 
-    // Populate the given table with rate limiting status info for the Status command.
-    void populateRateLimitStatus(STable& content);
+    // Return a table of rate limiting status info for the Status command.
+    STable getState();
 
     // Set the max commands per identifier threshold. Returns the previous value.
     size_t setMaxPerIdentifier(size_t value);

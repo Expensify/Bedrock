@@ -106,9 +106,10 @@ void BedrockBlockingCommandQueue::resetRateLimitState()
     _emptyTime.store(0);
 }
 
-void BedrockBlockingCommandQueue::populateRateLimitStatus(STable& content)
+STable BedrockBlockingCommandQueue::getState()
 {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
+    STable content;
     content["blockingRateLimitThreshold"] = to_string(_maxPerIdentifier.load());
     content["blockedIdentifiers"] = to_string(_blockedIdentifiers.size());
     if (!_blockedIdentifiers.empty()) {
@@ -121,6 +122,7 @@ void BedrockBlockingCommandQueue::populateRateLimitStatus(STable& content)
         }
         content["blockingQueueIdentifierCounts"] = SComposeJSONObject(countsTable);
     }
+    return content;
 }
 
 size_t BedrockBlockingCommandQueue::setMaxPerIdentifier(size_t value)

@@ -1774,7 +1774,9 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             content["crashCommandList"] = SComposeJSONArray(crashCommandListArray);
         }
 
-        _blockingCommandQueue.populateRateLimitStatus(content);
+        for (auto& p : _blockingCommandQueue.getState()) {
+            content[p.first] = p.second;
+        }
 
         // On leader, return the current multi-write blacklists.
         if (getState() == SQLiteNodeState::LEADING) {
