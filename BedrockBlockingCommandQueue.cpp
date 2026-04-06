@@ -121,4 +121,3 @@ size_t BedrockBlockingCommandQueue::setMaxPerIdentifier(size_t value)
 {
     return _maxPerIdentifier.exchange(value);
 }
-
