@@ -15,8 +15,9 @@ public:
     // Throws SException("503 ...") if the identifier is rate limited; caller should catch and reply.
     void push(unique_ptr<BedrockCommand>&& command);
 
-    // Override get() to decrement per-identifier counts and track when the queue becomes empty.
-    unique_ptr<BedrockCommand> get(uint64_t waitUS = 0, bool loggingEnabled = false);
+    // Override _dequeue() to atomically decrement per-identifier counts and track when the queue
+    // becomes empty. Called by get() while _queueMutex is still held.
+    unique_ptr<BedrockCommand> _dequeue();
 
     // Clear the queue and all rate limiting state.
     void clear();

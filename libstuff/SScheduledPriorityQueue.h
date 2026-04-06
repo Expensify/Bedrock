@@ -83,7 +83,8 @@ protected:
 
     // Removes an item from the queue and returns it, if a suitable item is available (see the comment at the top of
     // this file for what counts as a suitable item). Throws `out_of_range` otherwise.
-    T _dequeue();
+    // Virtual to allow subclasses to hook into dequeue while the lock is still held.
+    virtual T _dequeue();
 
     // Synchronization primitives for managing access to the queue.
     recursive_mutex _queueMutex;

@@ -52,11 +52,10 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
     BedrockCommandQueue::push(move(command));
 }
 
-unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::get(uint64_t waitUS, bool loggingEnabled)
+unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
 {
-    auto command = BedrockCommandQueue::get(waitUS, loggingEnabled);
-
-    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
+    // Called by get() with _queueMutex held, so access to rate limit state is safe without locking.
+    auto command = SScheduledPriorityQueue<unique_ptr<BedrockCommand>>::_dequeue();
 
     // Decrement rate limit count when a command leaves the queue.
     if (!command->blockingIdentifier.empty() && _maxPerIdentifier.load() > 0) {
