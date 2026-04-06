@@ -40,7 +40,7 @@ void BedrockCommandQueue::abandonFutureCommands(int msInFuture)
     uint64_t timeLimit = STimeNow() + msInFuture * 1000;
 
     // Lock around changes to the queue.
-    unique_lock<mutex> queueLock(_queueMutex);
+    unique_lock<decltype(_queueMutex)> queueLock(_queueMutex);
 
     // We're going to look at each queue by priority. It's possible we'll end up removing *everything* from multiple
     // queues. In that case, we need to remove the queues themselves, so we keep a list of queues to delete when we're
