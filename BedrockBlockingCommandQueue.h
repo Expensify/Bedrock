@@ -19,17 +19,14 @@ public:
     // Clear the queue and all rate limiting state.
     void clear();
 
-    // Clear all rate limiting state (blocked identifiers, counts, empty time).
-    void resetRateLimitState();
+    // Reset rate limit counters without emptying the queue. Returns the number of unblocked identifiers.
+    size_t clearRateLimits();
 
     // Return a table of rate limiting status info for the Status command.
     STable getState();
 
     // Set the max commands per identifier threshold. Returns the previous value.
     size_t setMaxPerIdentifier(size_t value);
-
-    // Clear all blocked identifiers and counts.
-    void clearBlocks();
 
 private:
     map<string, size_t> _identifierCounts;

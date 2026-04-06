@@ -303,7 +303,7 @@ void BedrockServer::sync()
             for (auto& cmd : commands) {
                 _commandQueue.push(move(cmd));
             }
-            _blockingCommandQueue.resetRateLimitState();
+            _blockingCommandQueue.clearRateLimits();
         }
 
         // Reset some state on falling out of leading. This could be normal, if we're just shutting down, or it
@@ -1229,7 +1229,7 @@ void BedrockServer::_resetServer()
     _upgradeCompleted = false;
     _shutdownTime = chrono::time_point<chrono::steady_clock>{};
 
-    _blockingCommandQueue.resetRateLimitState();
+    _blockingCommandQueue.clearRateLimits();
 
     // Tell any plugins that they can attach now
     for (auto plugin : plugins) {
@@ -1997,7 +1997,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             }
         }
         if (command->request.test("ClearBlocks")) {
-            _blockingCommandQueue.clearBlocks();
+            _blockingCommandQueue.clearRateLimits();
         }
     } else if (SIEquals(command->request.methodLine, "BlockWrites")) {
         atomic<bool> locked(false);

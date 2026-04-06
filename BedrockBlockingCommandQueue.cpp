@@ -95,15 +95,17 @@ void BedrockBlockingCommandQueue::clear()
     _lookupByTimeout.clear();
     _identifierCounts.clear();
     _blockedIdentifiers.clear();
-    _emptyTime.store(0);
+    _emptyTime.store(STimeNow());
 }
 
-void BedrockBlockingCommandQueue::resetRateLimitState()
+size_t BedrockBlockingCommandQueue::clearRateLimits()
 {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
+    size_t cleared = _blockedIdentifiers.size();
     _identifierCounts.clear();
     _blockedIdentifiers.clear();
     _emptyTime.store(0);
+    return cleared;
 }
 
 STable BedrockBlockingCommandQueue::getState()
@@ -130,12 +132,3 @@ size_t BedrockBlockingCommandQueue::setMaxPerIdentifier(size_t value)
     return _maxPerIdentifier.exchange(value);
 }
 
-void BedrockBlockingCommandQueue::clearBlocks()
-{
-    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
-    size_t cleared = _blockedIdentifiers.size();
-    _blockedIdentifiers.clear();
-    _identifierCounts.clear();
-    _emptyTime.store(0);
-    SINFO("Manually cleared " << cleared << " blocked identifiers.");
-}
