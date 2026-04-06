@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 
@@ -82,7 +80,6 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
                 vector<SData> requests;
                 for (int j = 0; j < 200; j++) {
                     SData cmd("idcollision");
-                    cmd["writeConsistency"] = "ASYNC";
                     cmd["blockingIdentifier"] = "testuser";
                     cmd["value"] = "node" + to_string(i) + "-" + to_string(j);
                     requests.push_back(cmd);
@@ -104,7 +101,6 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
             t.join();
         }
 
-        cout << "[BlockingQueueRateLimitTest] 200s: " << count200.load() << ", 503s: " << count503.load() << endl;
         ASSERT_TRUE(count503.load() >= 1);
 
         // Verify the leader shows blocked users.
@@ -132,9 +128,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
 
         // Verify the previously blocked user can send commands again.
         SData cmd("idcollision");
-        cmd["writeConsistency"] = "ASYNC";
         cmd["blockingIdentifier"] = "testuser";
-        cmd["value"] = "after-clear";
         leader.executeWaitVerifyContent(cmd, "200");
     }
 } __BlockingQueueRateLimitTest;
