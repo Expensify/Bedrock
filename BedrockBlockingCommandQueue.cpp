@@ -38,14 +38,15 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
 
         size_t& count = _identifierCounts[command->blockingIdentifier];
         count++;
-        if (count >= maxPerIdentifier) {
+        if (count > maxPerIdentifier) {
             _blockedIdentifiers.insert(command->blockingIdentifier);
-            SALERT("Blocking queue rate limit: blocking identifier '" << command->blockingIdentifier
-                   << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
+            SWARN("Blocking queue rate limit: blocking identifier '" << command->blockingIdentifier
+                  << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
         }
     }
 
-    // Reset empty time since a command is entering the queue.
+    // A command is entering the queue, so it is no longer empty. Clear the empty timestamp so
+    // the 30-second auto-reset window doesn't fire until the queue drains again.
     _emptyTime.store(0);
 
     // Delegate to parent; _queueMutex is recursive so this re-acquisition is safe.
@@ -83,12 +84,8 @@ unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
 
 void BedrockBlockingCommandQueue::clear()
 {
-    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
-    _queue.clear();
-    _lookupByTimeout.clear();
-    _identifierCounts.clear();
-    _blockedIdentifiers.clear();
-    _emptyTime.store(STimeNow());
+    clearRateLimits();
+    BedrockCommandQueue::clear();
 }
 
 size_t BedrockBlockingCommandQueue::clearRateLimits()
