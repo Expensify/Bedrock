@@ -27,7 +27,6 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
         if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
             _blockedIdentifiers.clear();
             _identifierCounts.clear();
-            _emptyTime.store(0);
         }
 
         if (_blockedIdentifiers.count(command->blockingIdentifier)) {
