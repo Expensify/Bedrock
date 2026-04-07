@@ -28,23 +28,55 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
     {
         BedrockTester& leader = tester->getTester(0);
 
-        // Set the blocking rate limit threshold.
+        // Set the blocking rate limit threshold and verify it shows up in Status.
         SData setLimit("SetBlockingRateLimit");
         setLimit["MaxPerIdentifier"] = "5";
         leader.executeWaitVerifyContent(setLimit, "200", true);
 
-        // Verify it shows up in Status.
         SData status("Status");
         STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
         ASSERT_EQUAL(json["blockingRateLimitThreshold"], "5");
 
-        // Clear blocks and verify.
+        // Force conflicts to push commands into the blocking queue and trigger rate limiting.
+        // MaxConflictRetries=1 routes commands to the blocking queue after one conflict.
+        // MaxPerIdentifier=1 means the 2nd command for the same identifier triggers a block.
+        SData setConflict("SetConflictParams");
+        setConflict["MaxConflictRetries"] = "1";
+        leader.executeWaitVerifyContent(setConflict, "200", true);
+
+        SData setLimitLow("SetBlockingRateLimit");
+        setLimitLow["MaxPerIdentifier"] = "1";
+        leader.executeWaitVerifyContent(setLimitLow, "200", true);
+
+        vector<SData> requests;
+        for (int j = 0; j < 20; j++) {
+            SData cmd("idcollision");
+            cmd["blockingIdentifier"] = "controltest";
+            cmd["value"] = to_string(j);
+            requests.push_back(cmd);
+        }
+        leader.executeWaitMultipleData(requests);
+
+        // At least one identifier should now be blocked.
+        json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_TRUE(SToInt(json["blockedIdentifiers"]) >= 1);
+
+        // ClearBlocks should remove all blocked identifiers.
         SData clearBlocks("SetBlockingRateLimit");
         clearBlocks["ClearBlocks"] = "true";
         leader.executeWaitVerifyContent(clearBlocks, "200", true);
 
         json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
         ASSERT_EQUAL(json["blockedIdentifiers"], "0");
+
+        // Reset state.
+        SData resetConflict("SetConflictParams");
+        resetConflict["MaxConflictRetries"] = "3";
+        leader.executeWaitVerifyContent(resetConflict, "200", true);
+
+        SData resetLimit("SetBlockingRateLimit");
+        resetLimit["MaxPerIdentifier"] = "0";
+        leader.executeWaitVerifyContent(resetLimit, "200", true);
     }
 
     void testRateLimiting()
@@ -101,6 +133,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
             t.join();
         }
 
+        ASSERT_EQUAL(count200.load() + count503.load(), 600);
         ASSERT_TRUE(count503.load() >= 1);
 
         // Verify the leader shows blocked users.
