@@ -206,8 +206,7 @@ void SScheduledPriorityQueue<T>::push(T&& item, Priority priority, Scheduled sch
 template<typename T>
 T SScheduledPriorityQueue<T>::_dequeue()
 {
-    // NOTE: We don't grab a mutex here on purpose - we need to only lock it once, which we've already done in
-    // whichever function is calling this one (since this is private).
+    // NOTE: We don't grab a mutex here on purpose - _queueMutex is already held by get(), which calls this function.
 
     // We need to know what time it is, so that we can compare to scheduled times.
     uint64_t now = STimeNow();
