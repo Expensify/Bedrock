@@ -51,16 +51,26 @@ void SSocketPool::_timeoutThreadFunc()
 unique_ptr<STCPManager::Socket> SSocketPool::getSocket()
 {
     {
-        // If there's an existing socket, return it.
         lock_guard<mutex> lock(_poolMutex);
-        if (_sockets.size()) {
-            pair<chrono::steady_clock::time_point, unique_ptr<STCPManager::Socket>> s = move(_sockets.front());
+        while (_sockets.size()) {
+            auto s = move(_sockets.front());
             _sockets.pop_front();
-            return move(s.second);
+
+            // Verify the socket is still alive before returning it.
+            if (s.second->state.load() == STCPManager::Socket::CONNECTED) {
+                struct pollfd pfd = {s.second->s, POLLIN | POLLOUT, 0};
+                int ret = poll(&pfd, 1, 0);
+                if (ret >= 0 && !(pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+                    return move(s.second);
+                }
+            }
+
+            // Socket is dead, discard it (destructor closes fd).
+            SINFO("[SOCKET] Discarding stale socket from pool for host '" << host << "'.");
         }
     }
 
-    // If we get here, we need to create a socket to return. No need to hold the lock, so it goes out of scope.
+    // No live pooled socket available, create a new one. No need to hold the lock, so it goes out of scope.
     try {
         // TODO: Allow S_socket to take a parsed address instead of redoing all the parsing each time.
         return unique_ptr<STCPManager::Socket>(new STCPManager::Socket(host));
