@@ -1720,7 +1720,11 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
     } else if (SIEquals(request.methodLine, STATUS_HANDLING_COMMANDS)) {
         // This is similar to the above check, and is used for letting HAProxy load-balance commands.
 
-        if (_version != _leaderVersion.load()) {
+        if (_shouldBackup) {
+            response.methodLine = "HTTP/1.1 503 Backup In Progress";
+        } else if (_detach) {
+            response.methodLine = "HTTP/1.1 503 Detached";
+        } else if (_version != _leaderVersion.load()) {
             response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version;
         } else {
             string method = "HTTP/1.1 ";
@@ -2537,7 +2541,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             while (!finished && hasSocket) {
                                 struct pollfd disconnectCheck = {socket.s, (POLLIN | POLLRDHUP), 0};
                                 if (poll(&disconnectCheck, 1, 0) > 0) {
-                                    if (disconnectCheck.revents & (POLLHUP | POLLERR | POLLNVAL | POLLRDHUP)) {
+                                    if (!commandShouldAbortFlag && disconnectCheck.revents & (POLLHUP | POLLERR | POLLNVAL | POLLRDHUP)) {
                                         SINFO("Socket disconnected with command running, aborting.");
                                         commandShouldAbortFlag = true;
                                     }
@@ -2545,7 +2549,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
                                 // We also force an abort if we're shutting down.
                                 auto shutdownTime = _shutdownTime.load();
-                                if (shutdownTime != chrono::time_point<chrono::steady_clock>{} && chrono::steady_clock::now() >= shutdownTime) {
+                                if (!commandShouldAbortFlag && shutdownTime != chrono::time_point<chrono::steady_clock>{} && chrono::steady_clock::now() >= shutdownTime) {
                                     SINFO("Aborting command past shutdown timeout limit.");
                                     commandShouldAbortFlag = true;
                                 }
