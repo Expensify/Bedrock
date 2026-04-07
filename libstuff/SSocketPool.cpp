@@ -50,24 +50,28 @@ void SSocketPool::_timeoutThreadFunc()
 
 unique_ptr<STCPManager::Socket> SSocketPool::getSocket()
 {
-    {
-        lock_guard<mutex> lock(_poolMutex);
-        while (_sockets.size()) {
-            auto s = move(_sockets.front());
-            _sockets.pop_front();
-
-            // Verify the socket is still alive before returning it.
-            if (s.second->state.load() == STCPManager::Socket::CONNECTED) {
-                struct pollfd pfd = {s.second->s, POLLIN | POLLOUT, 0};
-                int ret = poll(&pfd, 1, 0);
-                if (ret >= 0 && !(pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
-                    return move(s.second);
-                }
+    while (true) {
+        unique_ptr<STCPManager::Socket> socket;
+        {
+            lock_guard<mutex> lock(_poolMutex);
+            if (_sockets.empty()) {
+                break;
             }
-
-            // Socket is dead, discard it (destructor closes fd).
-            SINFO("[SOCKET] Discarding stale socket from pool for host '" << host << "'.");
+            socket = move(_sockets.front().second);
+            _sockets.pop_front();
         }
+
+        // Verify the socket is still alive before returning it.
+        if (socket->state.load() == STCPManager::Socket::CONNECTED) {
+            struct pollfd pfd = {socket->s, POLLIN | POLLOUT, 0};
+            int ret = poll(&pfd, 1, 0);
+            if (ret >= 0 && !(pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+                return socket;
+            }
+        }
+
+        // Socket is dead, discard it (destructor closes fd).
+        SINFO("[SOCKET] Discarding stale socket from pool for host '" << host << "'.");
     }
 
     // No live pooled socket available, create a new one. No need to hold the lock, so it goes out of scope.
