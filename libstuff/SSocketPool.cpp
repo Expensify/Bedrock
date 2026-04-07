@@ -62,7 +62,7 @@ unique_ptr<STCPManager::Socket> SSocketPool::getSocket()
         }
 
         // Verify the socket is still alive before returning it.
-        if (socket->state.load() == STCPManager::Socket::CONNECTED) {
+        if (socket->state.load() != STCPManager::Socket::CLOSED) {
             struct pollfd pfd = {socket->s, POLLIN | POLLOUT, 0};
             int ret = poll(&pfd, 1, 0);
             if (ret >= 0 && !(pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
