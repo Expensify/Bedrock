@@ -58,10 +58,10 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
             threads.emplace_back([this, i]() {
                 BedrockTester& node = tester->getTester(i);
                 vector<SData> requests;
-                for (int j = 0; j < 100; j++) {
+                for (int j = 0; j < 200; j++) {
                     SData cmd("idcollision");
                     cmd["blockingIdentifier"] = "controltest";
-                    cmd["value"] = to_string(i * 100 + j);
+                    cmd["value"] = to_string(i * 200 + j);
                     requests.push_back(cmd);
                 }
                 node.executeWaitMultipleData(requests);
