@@ -2513,7 +2513,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             while (!finished && hasSocket) {
                                 struct pollfd disconnectCheck = {socket.s, (POLLIN | POLLRDHUP), 0};
                                 if (poll(&disconnectCheck, 1, 0) > 0) {
-                                    if (disconnectCheck.revents & (POLLHUP | POLLERR | POLLNVAL | POLLRDHUP)) {
+                                    if (!commandShouldAbortFlag && disconnectCheck.revents & (POLLHUP | POLLERR | POLLNVAL | POLLRDHUP)) {
                                         SINFO("Socket disconnected with command running, aborting.");
                                         commandShouldAbortFlag = true;
                                     }
@@ -2521,7 +2521,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
                                 // We also force an abort if we're shutting down.
                                 auto shutdownTime = _shutdownTime.load();
-                                if (shutdownTime != chrono::time_point<chrono::steady_clock>{} && chrono::steady_clock::now() >= shutdownTime) {
+                                if (!commandShouldAbortFlag && shutdownTime != chrono::time_point<chrono::steady_clock>{} && chrono::steady_clock::now() >= shutdownTime) {
                                     SINFO("Aborting command past shutdown timeout limit.");
                                     commandShouldAbortFlag = true;
                                 }
