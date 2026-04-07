@@ -11,13 +11,9 @@ public:
     static void startTiming(unique_ptr<BedrockCommand>& command);
     static void stopTiming(unique_ptr<BedrockCommand>& command);
 
-    // Override push() to enforce per-identifier rate limits before enqueuing.
+    // Enforce per-identifier rate limits before enqueuing. Hides BedrockCommandQueue::push().
     // Throws SException("503 ...") if the identifier is rate limited; caller should catch and reply.
     void push(unique_ptr<BedrockCommand>&& command);
-
-    // Override _dequeue() to atomically decrement per-identifier counts and track when the queue
-    // becomes empty. Called by get() while _queueMutex is still held.
-    unique_ptr<BedrockCommand> _dequeue();
 
     // Clear the queue and all rate limiting state.
     void clear();
@@ -30,6 +26,11 @@ public:
 
     // Set the max commands per identifier threshold. Returns the previous value.
     size_t setMaxPerIdentifier(size_t value);
+
+protected:
+    // Called by get() while _queueMutex is held; atomically decrements per-identifier counts
+    // and records when the queue becomes empty.
+    unique_ptr<BedrockCommand> _dequeue() override;
 
 private:
     map<string, size_t> _identifierCounts;
