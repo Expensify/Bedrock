@@ -303,6 +303,8 @@ void BedrockServer::sync()
             for (auto& cmd : commands) {
                 _commandQueue.push(move(cmd));
             }
+            // Clear rate limit state since we're transitioning away from leading. Any blocks accumulated
+            // while leading are no longer meaningful — commands will be re-queued against new leader state.
             _blockingCommandQueue.clearRateLimits();
         }
 

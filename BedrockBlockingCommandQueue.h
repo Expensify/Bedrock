@@ -13,6 +13,12 @@ public:
 
     // Enforce per-identifier rate limits before enqueuing. Hides BedrockCommandQueue::push().
     // Throws SException("503 ...") if the identifier is rate limited; caller should catch and reply.
+    //
+    // Rate limit state auto-resets when the queue has been continuously empty for 30 seconds — this
+    // is a global reset, not per-identifier. A brief drain (even one dequeue that empties the queue)
+    // starts the timer and will unblock all identifiers once 30 seconds elapse. This is intentional:
+    // the primary threat is a sustained burst from one identifier, so a quiet period is a safe signal
+    // to restore normal operation.
     void push(unique_ptr<BedrockCommand>&& command);
 
     // Clear the queue and all rate limiting state.
