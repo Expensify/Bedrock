@@ -1813,6 +1813,21 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             content["syncNodeAvailable"] = "false";
         }
 
+        auto dbPoolCopy = _dbPool;
+        if (dbPoolCopy) {
+            SQLiteScopedHandle dbScope(*dbPoolCopy, dbPoolCopy->getIndex());
+            SQLite& db = dbScope.db();
+            SQResult freelistResult, pageCountResult;
+            db.read("PRAGMA freelist_count;", freelistResult);
+            if (!freelistResult.empty()) {
+                content["freelistCount"] = freelistResult[0][0];
+            }
+            db.read("PRAGMA page_count;", pageCountResult);
+            if (!pageCountResult.empty()) {
+                content["pageCount"] = pageCountResult[0][0];
+            }
+        }
+
         // Done, compose the response.
         response.methodLine = "200 OK";
         response.content = SComposeJSONObject(content);
