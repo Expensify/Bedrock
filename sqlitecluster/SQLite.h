@@ -231,15 +231,6 @@ public:
     // Returns the number of WAL frames that are currently waiting to be checkpointed.
     uint64_t getOutstandingFramesToCheckpoint() const;
 
-    // Returns the number of unused (free) pages in the database file.
-    uint64_t getFreelistCount() const;
-
-    // Returns the total number of pages in the database file.
-    uint64_t getPageCount() const;
-
-    // Returns the size of each database page in bytes.
-    uint64_t getPageSize() const;
-
     // Returns the current state of the database, as a SHA1 hash of all queries committed.
     string getCommittedHash();
 
@@ -402,15 +393,6 @@ public:
         // Like above, this records the number of frames that we know are currently waiting to be checkpointed, however it
         // is not reset at the end of each checkpoint. This way the graph that relies on this value won't dip to 0
         atomic<size_t> knownOutstandingFramesToCheckpoint = 0;
-
-        // Number of unused pages in the database file, updated after each checkpoint.
-        atomic<size_t> freelistCount = 0;
-
-        // Total number of pages in the database file, updated after each checkpoint.
-        atomic<size_t> pageCount = 0;
-
-        // Size of each database page in bytes, updated after each checkpoint.
-        atomic<size_t> pageSize = 0;
 
         // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
         shared_mutex writeLock;

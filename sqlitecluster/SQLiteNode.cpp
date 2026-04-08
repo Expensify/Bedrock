@@ -374,27 +374,6 @@ uint64_t SQLiteNode::getOutstandingFramesToCheckpoint() const
     return _db.getOutstandingFramesToCheckpoint();
 }
 
-uint64_t SQLiteNode::getFreelistCount() const
-{
-    // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
-    // private methods.
-    return _db.getFreelistCount();
-}
-
-uint64_t SQLiteNode::getPageCount() const
-{
-    // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
-    // private methods.
-    return _db.getPageCount();
-}
-
-uint64_t SQLiteNode::getPageSize() const
-{
-    // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
-    // private methods.
-    return _db.getPageSize();
-}
-
 bool SQLiteNode::commitInProgress() const
 {
     // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in

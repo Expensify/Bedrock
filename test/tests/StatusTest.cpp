@@ -18,6 +18,5 @@ struct StatusTest : tpunit::TestFixture
         ASSERT_TRUE(SContains(response, "outstandingFramesToCheckpoint"));
         ASSERT_TRUE(SContains(response, "freelistCount"));
         ASSERT_TRUE(SContains(response, "pageCount"));
-        ASSERT_TRUE(SContains(response, "pageSize"));
     }
 } __StatusTest;

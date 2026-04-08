@@ -1804,12 +1804,24 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             content["CommitCount"] = to_string(_syncNodeCopy->getCommitCount());
             content["priority"] = to_string(_syncNodeCopy->getPriority());
             content["outstandingFramesToCheckpoint"] = to_string(_syncNodeCopy->getOutstandingFramesToCheckpoint());
-            content["freelistCount"] = to_string(_syncNodeCopy->getFreelistCount());
-            content["pageCount"] = to_string(_syncNodeCopy->getPageCount());
-            content["pageSize"] = to_string(_syncNodeCopy->getPageSize());
             _syncNodeCopy = nullptr;
         } else {
             content["syncNodeAvailable"] = "false";
+        }
+
+        auto dbPoolCopy = _dbPool;
+        if (dbPoolCopy) {
+            SQLiteScopedHandle dbScope(*dbPoolCopy, dbPoolCopy->getIndex());
+            SQLite& db = dbScope.db();
+            SQResult freelistResult, pageCountResult;
+            db.read("PRAGMA freelist_count;", freelistResult);
+            if (!freelistResult.empty()) {
+                content["freelistCount"] = freelistResult[0][0];
+            }
+            db.read("PRAGMA page_count;", pageCountResult);
+            if (!pageCountResult.empty()) {
+                content["pageCount"] = pageCountResult[0][0];
+            }
         }
 
         // Done, compose the response.
