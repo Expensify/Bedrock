@@ -962,8 +962,6 @@ int SQLite::commit(const string& description, const string& commandName, functio
 
                 // It might not actually be 0, but we'll just let sqlite tell us what it is next time _walHookCallback runs.
                 _sharedData.outstandingFramesToCheckpoint = 0;
-
-
             }
             _sharedData.checkpointInProgress.clear();
         }
