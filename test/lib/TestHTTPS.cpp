@@ -21,6 +21,9 @@ bool TestHTTPS::_onRecv(Transaction& transaction)
             transaction.response = status;
         }
     }
+    if (!transaction.response) {
+        transaction.response = 400;
+    }
 
     return false;
 }
