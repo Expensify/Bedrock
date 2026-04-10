@@ -115,6 +115,8 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
         // Log a hint for non-standard responses that don't follow HTTP format (e.g., a load balancer
         // returning a plain-text " Timeout" instead of a proper "HTTP/1.1 504 Gateway Timeout").
         // These are not errors in our code, but they are unexpected from the remote service.
+        // Note: non-standard responses have no Content-Length and an unparseable statusCode, so they
+        // only reach this branch once the socket is closed (making completeRequest true via CLOSED state).
         if (!SStartsWith(transaction.fullResponse.methodLine, "HTTP/")) {
             SHMMM("Received non-standard response: '" << transaction.fullResponse.methodLine << "'");
         }
@@ -148,6 +150,10 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
                 transaction.finished = now;
                 if (!transaction.fullResponse.methodLine.empty()) {
                     _onRecv(transaction);
+                } else {
+                    // Got bytes but no parseable methodLine (e.g., bare "\r\n\r\n"). Use a safe
+                    // fallback rather than leaving response == 0, which would stall wait loops.
+                    transaction.response = 400;
                 }
 
                 // Clean up the socket
