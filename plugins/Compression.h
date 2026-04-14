@@ -1,5 +1,6 @@
 #pragma once
 #include <libstuff/libstuff.h>
+#define ZSTD_STATIC_LINKING_ONLY
 #include <zstd.h>
 #include "../BedrockPlugin.h"
 
