@@ -4,7 +4,7 @@
 #include <libstuff/SQResult.h>
 
 const string BedrockPlugin_Zstd::name("Zstd");
-map<size_t, BedrockPlugin_Zstd::ZDictionaries> BedrockPlugin_Zstd::_dictionaries;
+map<size_t, BedrockPlugin_ZZDictionaries> BedrockPlugin_Zstd::_dictionaries;
 
 const string& BedrockPlugin_Zstd::getName() const
 {
