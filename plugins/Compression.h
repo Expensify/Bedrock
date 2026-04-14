@@ -3,6 +3,9 @@
 #include <zstd.h>
 #include "../BedrockPlugin.h"
 
+// Forward-declare sqlite3 types to avoid forcing all consumers to include sqlite3 headers.
+struct sqlite3;
+
 class BedrockPlugin_Zstd : public BedrockPlugin {
 public:
     BedrockPlugin_Zstd(BedrockServer& s);
@@ -21,6 +24,13 @@ public:
     // Loads all dictionaries from the zstdDictionaries table into compiled in-memory maps.
     // Called once at startup from the sync thread, before any queries run.
     static void loadDictionariesFromDB(SQLite& db);
+
+    // Register the compress(data, dictID) and decompress(data) SQLite UDFs.
+    static void registerSQLite(sqlite3* db);
+
+    // Non-SQL decompression for use in the synchronization path.
+    // Returns decompressed data if input is a zstd frame, otherwise returns input unchanged.
+    static string decompress(const string& input);
 
     static const string name;
 

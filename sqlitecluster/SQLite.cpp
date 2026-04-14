@@ -5,6 +5,7 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SDeburr.h>
+#include <plugins/Compression.h>
 #include <libstuff/SQResult.h>
 #include <string>
 #include <format>
@@ -240,6 +241,9 @@ void SQLite::commonConstructorInitialization(bool hctree)
 
     // Register application-defined deburr function.
     SDeburr::registerSQLite(_db);
+
+    // Register compress/decompress functions for zstd compression.
+    BedrockPlugin_Zstd::registerSQLite(_db);
 
     // We saw queries where the progress counter never exceeds 551,000, so we're setting it to a lower number
     // based on Richard Hipp's recommendation.

@@ -15,7 +15,7 @@
 #include <plugins/DB.h>
 #include <plugins/Jobs.h>
 #include <plugins/MySQL.h>
-#include <plugins/Zstd.h>
+#include <plugins/Compression.h>
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
 #include <sqlitecluster/SQLite.h>
