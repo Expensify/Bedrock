@@ -15,6 +15,7 @@
 #include <plugins/DB.h>
 #include <plugins/Jobs.h>
 #include <plugins/MySQL.h>
+#include <plugins/Zstd.h>
 #include <libstuff/libstuff.h>
 #include <libstuff/SSSLState.h>
 #include <sqlitecluster/SQLite.h>
@@ -102,6 +103,9 @@ set<string> loadPlugins(SData& args)
     }));
     BedrockPlugin::g_registeredPluginList.emplace(make_pair("MYSQL", [](BedrockServer& s){
         return new BedrockPlugin_MySQL(s);
+    }));
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("ZSTD", [](BedrockServer& s){
+        return new BedrockPlugin_Zstd(s);
     }));
 
     for (string pluginName : plugins) {
@@ -324,7 +328,7 @@ int main(int argc, char* argv[])
     SETDEFAULT("-controlPort", "localhost:9999");
     SETDEFAULT("-nodeName", SGetHostName());
     SETDEFAULT("-cacheSize", SToStr(0));
-    SETDEFAULT("-plugins", "db,jobs,cache,mysql");
+    SETDEFAULT("-plugins", "db,jobs,cache,mysql,zstd");
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
