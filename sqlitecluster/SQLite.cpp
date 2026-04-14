@@ -1107,7 +1107,7 @@ bool SQLite::getCommit(sqlite3* db, const vector<string>& journalNames, uint64_t
     // TODO: This can fail if called after `BEGIN TRANSACTION`, if the id we want to look up was committed by another
     // thread. We may or may never need to handle this case.
     // Look up the query and hash for the given commit
-    string internalQuery = _getJournalQuery(journalNames, {"SELECT query, hash FROM", "WHERE id = " + SQ(id)});
+    string internalQuery = _getJournalQuery(journalNames, {"SELECT decompress(query), hash FROM", "WHERE id = " + SQ(id)});
     SQResult result;
     SASSERT(!SQuery(db, internalQuery, result));
     if (!result.empty()) {
@@ -1135,7 +1135,7 @@ int SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, u
 {
     // Look up all the queries within that range
     SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
-    string query = _getJournalQuery({"SELECT id, hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
+    string query = _getJournalQuery({"SELECT id, hash, decompress(query) AS query FROM", "WHERE id >= " + SQ(fromIndex) +
                                      (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     query = "SELECT hash, query FROM (" + query + ") ORDER BY id";
