@@ -23,7 +23,7 @@ RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys BA9EF27F && \
 # Update and install dependencies
 RUN apt-fast update && apt-fast install -y \
     wget gnupg software-properties-common lsb-release ccache zlib1g-dev rsyslog cmake \
-    libpcre2-dev libpcre3-dev libsodium-dev libgpgme11-dev libstdc++-13-dev make \
+    libpcre2-dev libpcre3-dev libsodium-dev libgpgme11-dev libstdc++-13-dev libzstd-dev make \
     linux-headers-generic git clang-18 lldb-18 lld-18 clangd-18 clang-tidy-18 \
     clang-format-18 clang-tools-18 llvm-18-dev llvm-18-tools libomp-18-dev libc++-18-dev \
     libc++abi-18-dev libclang-common-18-dev libclang-18-dev libclang-cpp18-dev libunwind-18-dev
@@ -69,7 +69,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # Install necessary packages
 RUN apt-get update && apt-get install -y software-properties-common && \
-    apt-get install -y build-essential libpcre++ zlib1g && \
+    apt-get install -y build-essential libpcre++ zlib1g libzstd1 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
     rm -rf /etc/apt/sources.list.d/*
