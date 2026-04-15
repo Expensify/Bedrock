@@ -110,6 +110,11 @@ void BedrockServer::sync()
     _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"]);
     SQLite& db = _dbPool->getBase();
 
+    // Allow plugins to read from the DB at startup.
+    for (auto plugin : plugins) {
+        plugin.second->initializeFromDB(db);
+    }
+
     // Initialize the command processor.
     BedrockCore core(db, *this);
 

@@ -35,6 +35,11 @@ unique_ptr<BedrockCommand> BedrockPlugin_Zstd::getCommand(SQLiteCommand&& baseCo
     return nullptr;
 }
 
+void BedrockPlugin_Zstd::initializeFromDB(SQLite& db)
+{
+    loadDictionariesFromDB(db);
+}
+
 void BedrockPlugin_Zstd::upgradeDatabase(SQLite& db)
 {
     bool created;

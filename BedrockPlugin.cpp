@@ -81,6 +81,10 @@ void BedrockPlugin::upgradeDatabase(SQLite& db)
 {
 }
 
+void BedrockPlugin::initializeFromDB(SQLite& db)
+{
+}
+
 bool BedrockPlugin::shouldLockCommitPageOnConflict(const string& conflictLocation) const
 {
     return true;

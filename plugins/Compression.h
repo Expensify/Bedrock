@@ -14,6 +14,7 @@ public:
 
     virtual const string& getName() const;
     virtual void upgradeDatabase(SQLite& db);
+    virtual void initializeFromDB(SQLite& db);
     virtual unique_ptr<BedrockCommand> getCommand(SQLiteCommand&& baseCommand);
 
     // Returns the compiled compression dictionary for the given ID, or nullptr if not found.
