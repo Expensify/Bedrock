@@ -55,7 +55,7 @@ const set<string>& SQLite::getTablesUsed() const
     return _tablesUsed;
 }
 
-SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool hctree)
+SQLite::SharedData& SQLite::initializeSharedData()
 {
     static struct SharedDataLookupMapType
     {
@@ -71,30 +71,30 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
 
     static mutex instantiationMutex;
     lock_guard<mutex> lock(instantiationMutex);
-    auto sharedDataIterator = sharedDataLookupMap.m.find(filename);
+    auto sharedDataIterator = sharedDataLookupMap.m.find(_filename);
     if (sharedDataIterator == sharedDataLookupMap.m.end()) {
         SharedData* sharedData = new SharedData(); // This is never deleted.
 
         // Look up the existing wal setting for this DB.
         SQResult result;
-        SQuery(db, "PRAGMA journal_mode;", result);
+        SQuery(_db, "PRAGMA journal_mode;", result);
         bool isDBCurrentlyUsingWAL2 = result.size() && result[0][0] == "wal2";
 
         // If the intended wal setting doesn't match the existing wal setting, change it.
-        if (!hctree && !isDBCurrentlyUsingWAL2) {
-            SASSERT(!SQuery(db, "PRAGMA journal_mode = delete;", result));
-            SASSERT(!SQuery(db, "PRAGMA journal_mode = WAL2;", result));
+        if (!_hctree && !isDBCurrentlyUsingWAL2) {
+            SASSERT(!SQuery(_db, "PRAGMA journal_mode = delete;", result));
+            SASSERT(!SQuery(_db, "PRAGMA journal_mode = WAL2;", result));
         }
 
         // Read the highest commit count from the database, and store it in commitCount.
-        string query = "SELECT MAX(maxIDs) FROM (" + _getJournalQuery(journalNames, {"SELECT MAX(id) as maxIDs FROM"}, true) + ")";
-        SASSERT(!SQuery(db, query, result));
+        string query = "SELECT MAX(maxIDs) FROM (" + _getJournalQuery(_journalNames, {"SELECT MAX(id) as maxIDs FROM"}, true) + ")";
+        SASSERT(!SQuery(_db, query, result));
         uint64_t commitCount = result.empty() ? 0 : SToUInt64(result[0][0]);
         sharedData->commitCount = commitCount;
 
         // And then read the hash for that transaction.
-        string lastCommittedHash, ignore;
-        getCommit(db, journalNames, commitCount, ignore, lastCommittedHash);
+        string lastCommittedHash;
+        getCommit(commitCount, nullptr, &lastCommittedHash);
         sharedData->lastCommittedHash.store(lastCommittedHash);
 
         // If we have a commit count, we should have a hash as well.
@@ -103,7 +103,7 @@ SQLite::SharedData& SQLite::initializeSharedData(sqlite3* db, const string& file
         }
 
         // Insert our SharedData object into the global map.
-        sharedDataLookupMap.m.emplace(filename, sharedData);
+        sharedDataLookupMap.m.emplace(_filename, sharedData);
         return *sharedData;
     } else {
         // Otherwise, use the existing one.
@@ -266,7 +266,8 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _hctree(validateDBFormat(_filename, hctree)),
     _db(initializeDB(_filename, mmapSizeGB, _hctree)),
     _journalNames(initializeJournal(_db, minJournalTables)),
-    _sharedData(initializeSharedData(_db, _filename, _journalNames, _hctree)),
+    // Note that it's significant that _sharedData is initialized after _hctree, _db, and _journalNames. Re-ordereing these initialzations will break this.
+    _sharedData(initializeSharedData()),
     _transactionTimer("transaction timer"),
     _cacheSize(cacheSize),
     _mmapSizeGB(mmapSizeGB),
@@ -1097,33 +1098,24 @@ void SQLite::logLastTransactionTiming(const string& message, const string& comma
     });
 }
 
-bool SQLite::getCommit(uint64_t id, string& query, string& hash)
+bool SQLite::getCommit(uint64_t id, string* query, string* hash)
 {
-    return getCommit(_db, _journalNames, id, query, hash);
-}
-
-bool SQLite::getCommit(sqlite3* db, const vector<string>& journalNames, uint64_t id, string& query, string& hash)
-{
-    // TODO: This can fail if called after `BEGIN TRANSACTION`, if the id we want to look up was committed by another
-    // thread. We may or may never need to handle this case.
-    // Look up the query and hash for the given commit
-    string internalQuery = _getJournalQuery(journalNames, {"SELECT decompress(query), hash FROM", "WHERE id = " + SQ(id)});
+    // Look up the query and/or hash (whichever are supplied) for the given commit
+    string firstQueryPart = "SELECT "s + (query ? "decompress(query)" : "1") + ", " + (hash ? "hash" : "1") +  " FROM";
+    string internalQuery = _getJournalQuery(_journalNames, {firstQueryPart, "WHERE id = " + SQ(id)});
     SQResult result;
-    SASSERT(!SQuery(db, internalQuery, result));
-    if (!result.empty()) {
-        query = result[0][0];
-        hash = result[0][1];
-    } else {
-        query = "";
-        hash = "";
+    SASSERT(!SQuery(_db, internalQuery, result));
+    if (result.empty()) {
+        return false;
     }
-    if (id) {
-        SASSERTWARN(!query.empty());
-        SASSERTWARN(!hash.empty());
+    if (query) {
+        *query = result[0][0];
+    }
+    if (hash) {
+        *hash = result[0][1];
     }
 
-    // If we found a hash, we assume this was a good commit, as we'll allow an empty commit.
-    return !hash.empty();
+    return true;
 }
 
 string SQLite::getCommittedHash()

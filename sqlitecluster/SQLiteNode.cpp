@@ -1328,8 +1328,8 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             bool hashesMatch = true;
             peer->getCommit(peerCommitCount, peerCommitHash);
             if (!peerCommitHash.empty() && peerCommitCount <= getCommitCount()) {
-                string query, hash;
-                _db.getCommit(peerCommitCount, query, hash);
+                string hash;
+                _db.getCommit(peerCommitCount, nullptr, &hash);
                 hashesMatch = (peerCommitHash == hash);
             }
 
@@ -2055,8 +2055,8 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
     }
     if (peerCommitCount) {
         // It has some data -- do we agree on what we share?
-        string myHash, ignore;
-        if (!db.getCommit(peerCommitCount, ignore, myHash)) {
+        string myHash;
+        if (!db.getCommit(peerCommitCount, nullptr, &myHash)) {
             PWARN("Error getting commit for peer's commit: " << peerCommitCount << ", my commit count is: " << db.getCommitCount());
             STHROW("error getting hash");
         } else if (myHash != peerHash) {
