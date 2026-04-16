@@ -270,8 +270,8 @@ public:
     // Returns true on success, false on error or if the commit is not found.
     bool getCommit(uint64_t index, string* query = nullptr, string* hash = nullptr);
 
-    // Looks up a range of commits.
-    int getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS = 0);
+    // Looks up a range of commits. Returns raw query data which may be compressed.
+    int getCompressedCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS = 0);
 
     // Set a time limit for this transaction, in US from the current time.
     void setTimeout(uint64_t timeLimitUS);

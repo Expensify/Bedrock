@@ -1125,11 +1125,11 @@ string SQLite::getCommittedHash()
     return _sharedData.lastCommittedHash.load();
 }
 
-int SQLite::getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS)
+int SQLite::getCompressedCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS)
 {
-    // Look up all the queries within that range
+    // Look up all the queries within that range. Returns raw query data which may be compressed.
     SASSERTWARN(SWITHIN(1, fromIndex, toIndex));
-    string query = _getJournalQuery({"SELECT id, hash, decompress(query) AS query FROM", "WHERE id >= " + SQ(fromIndex) +
+    string query = _getJournalQuery({"SELECT id, hash, query FROM", "WHERE id >= " + SQ(fromIndex) +
                                      (toIndex ? " AND id <= " + SQ(toIndex) : "")});
     SDEBUG("Getting commits #" << fromIndex << "-" << toIndex);
     query = "SELECT hash, query FROM (" + query + ") ORDER BY id";

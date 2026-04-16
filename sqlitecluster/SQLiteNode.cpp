@@ -11,6 +11,7 @@
 #include <sqlitecluster/SQLiteCommand.h>
 #include <sqlitecluster/SQLitePeer.h>
 #include <sqlitecluster/SQLiteServer.h>
+#include <plugins/Compression.h>
 
 // Convenience class for maintaining connections with a mesh of peers
 #define PDEBUG(_MSG_) SDEBUG("->{" << peer->name << "} " << _MSG_)
@@ -1527,7 +1528,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             if (message.isSet("hashMismatchValue") || message.isSet("hashMismatchNumber")) {
                 SQResult result;
                 uint64_t commitNum = SToUInt64(message["hashMismatchNumber"]);
-                _db.getCommits(commitNum, commitNum, result);
+                _db.getCompressedCommits(commitNum, commitNum, result);
                 peer->forked = true;
 
                 SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << message["hashMismatchNumber"]
@@ -2095,7 +2096,7 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
         } else {
             toIndex = min(toIndex, fromIndex + 100); // 100 transactions at a time
         }
-        int resultCode = db.getCommits(fromIndex, toIndex, result, timeoutAfterUS);
+        int resultCode = db.getCompressedCommits(fromIndex, toIndex, result, timeoutAfterUS);
         if (resultCode) {
             if (resultCode == SQLITE_INTERRUPT) {
                 STHROW("synchronization query timeout");
@@ -2164,7 +2165,7 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
         if (!_db.beginTransaction()) {
             STHROW("failed to begin transaction");
         }
-        if (!_db.writeUnmodified(commit.content)) {
+        if (!_db.writeUnmodified(BedrockPlugin_Zstd::decompress(commit.content))) {
             STHROW("failed to write transaction");
         }
         if (!_db.prepare()) {
