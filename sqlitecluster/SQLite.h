@@ -304,6 +304,9 @@ public:
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
 
+    // The zstd dictionary ID to use when compressing journal entries. 0 means no compression.
+    static atomic<int64_t> journalZstdDictionaryID;
+
     // public read-only accessor for _dbCountAtStart.
     uint64_t getDBCountAtStart() const;
 

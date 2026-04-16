@@ -333,6 +333,7 @@ int main(int argc, char* argv[])
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
     SETDEFAULT("-enableMultiWrite", "true");
+    SETDEFAULT("-journalZstdDictionaryID", "0");
 
     // We default to PASSIVE checkpoint everywhere as that has been the value proven to work fine for many years.
     SETDEFAULT("-checkpointMode", "PASSIVE");

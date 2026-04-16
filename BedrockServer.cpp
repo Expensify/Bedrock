@@ -106,6 +106,7 @@ void BedrockServer::sync()
 
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
+    SQLite::journalZstdDictionaryID = args.calc("-journalZstdDictionaryID");
     SINFO("Setting dbPool size to: " << _dbPoolSize);
     _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"]);
     SQLite& db = _dbPool->getBase();

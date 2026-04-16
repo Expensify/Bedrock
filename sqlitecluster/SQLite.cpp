@@ -14,6 +14,7 @@
 
 // Tracing can only be enabled or disabled globally, not per object.
 atomic<bool> SQLite::enableTrace(false);
+atomic<int64_t> SQLite::journalZstdDictionaryID(0);
 
 sqlite3* SQLite::getDBHandle()
 {
@@ -843,8 +844,9 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
         *transactionhash = _uncommittedHash;
     }
 
-    // Create our query.
-    string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", " + SQ(_uncommittedQuery) + ", " + SQ(_uncommittedHash) + " )";
+    // Create our query. Wrap _uncommittedQuery with compress() for zstd compression.
+    // When journalZstdDictionaryID is 0 (the default), compress() returns data unchanged.
+    string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", compress(" + SQ(_uncommittedQuery) + ", " + SQ(journalZstdDictionaryID.load()) + "), " + SQ(_uncommittedHash) + " )";
 
     // These are the values we're currently operating on, until we either commit or rollback.
     _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
@@ -1101,7 +1103,7 @@ void SQLite::logLastTransactionTiming(const string& message, const string& comma
 bool SQLite::getCommit(uint64_t id, string* query, string* hash)
 {
     // Look up the query and/or hash (whichever are supplied) for the given commit
-    string firstQueryPart = "SELECT "s + (query ? "decompress(query)" : "1") + ", " + (hash ? "hash" : "1") +  " FROM";
+    string firstQueryPart = "SELECT "s + (query ? "decompress(query)" : "1") + ", " + (hash ? "hash" : "1") + " FROM";
     string internalQuery = _getJournalQuery(_journalNames, {firstQueryPart, "WHERE id = " + SQ(id)});
     SQResult result;
     SASSERT(!SQuery(_db, internalQuery, result));
