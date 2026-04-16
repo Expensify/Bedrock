@@ -10,7 +10,8 @@ struct CompressionTest : tpunit::TestFixture
         : tpunit::TestFixture("Compression",
                               BEFORE_CLASS(CompressionTest::setup),
                               AFTER_CLASS(CompressionTest::teardown),
-                              TEST(CompressionTest::testCompressionDisabled))
+                              TEST(CompressionTest::testCompressionDisabled),
+                              TEST(CompressionTest::testCompressionEnabled))
     {
     }
 
@@ -83,25 +84,55 @@ struct CompressionTest : tpunit::TestFixture
         return SToUInt64(json["commitCount"]);
     }
 
-    // Read a journal entry by commit ID from a node's DB. Searches all journal tables.
-    string readJournalEntry(BedrockTester& node, uint64_t commitID)
+    // Run a SELECT query against the journal tables via the bedrock server's DB plugin.
+    // All reads go through the server so that UDFs and dictionaries are available.
+    string queryJournal(BedrockTester& node, const string& selectExpr, uint64_t commitID)
     {
-        // Try the base journal table first.
-        string result = node.readDB("SELECT query FROM journal WHERE id = " + SQ(commitID));
-        if (!result.empty()) {
-            return result;
-        }
-
-        // Check numbered journal tables.
+        // Build a UNION query across all journal tables.
+        // First, get the list of journal table names from the server.
+        SData tableCmd("Query");
+        tableCmd["Format"] = "json";
+        tableCmd["Query"] = "SELECT tbl_name FROM sqlite_master WHERE tbl_name LIKE 'journal%' ORDER BY tbl_name;";
+        auto tableResults = node.executeWaitMultipleData({tableCmd});
         SQResult tables;
-        node.readDB("SELECT tbl_name FROM sqlite_master WHERE tbl_name LIKE 'journal0%' ORDER BY tbl_name;", tables);
+        tables.deserialize(tableResults[0].content);
+
+        // Build UNION query across all journal tables.
+        string sql;
         for (size_t i = 0; i < tables.size(); i++) {
-            result = node.readDB("SELECT query FROM " + tables[i][0] + " WHERE id = " + SQ(commitID));
+            if (!sql.empty()) {
+                sql += " UNION ";
+            }
+            sql += "SELECT " + selectExpr + " FROM " + tables[i][0] + " WHERE id = " + SQ(commitID);
+        }
+        sql += ";";
+
+        SData command("Query");
+        command["Format"] = "json";
+        command["Query"] = sql;
+        auto results = node.executeWaitMultipleData({command});
+        if (results[0].methodLine == "200 OK" && !results[0].content.empty()) {
+            SQResult result;
+            result.deserialize(results[0].content);
             if (!result.empty()) {
-                return result;
+                return result[0][0];
             }
         }
         return "";
+    }
+
+    // Get the byte length of the raw query column (may be compressed binary).
+    // We use LENGTH(CAST(...AS BLOB)) because compressed data is binary and can't round-trip through JSON.
+    size_t readRawJournalEntrySize(BedrockTester& node, uint64_t commitID)
+    {
+        string result = queryJournal(node, "LENGTH(CAST(query AS BLOB))", commitID);
+        return result.empty() ? 0 : SToUInt64(result);
+    }
+
+    // Read the query column with decompression applied (returns text, safe for JSON).
+    string readDecompressedJournalEntry(BedrockTester& node, uint64_t commitID)
+    {
+        return queryJournal(node, "decompress(query)", commitID);
     }
 
     void testCompressionDisabled()
@@ -127,14 +158,59 @@ struct CompressionTest : tpunit::TestFixture
         ASSERT_EQUAL(commitBefore + 1, commitAfter);
 
         // Read the journal entry by ID on the leader and verify it matches.
-        string leaderJournalEntry = readJournalEntry(leader, commitAfter);
-        ASSERT_FALSE(leaderJournalEntry.empty());
-        ASSERT_EQUAL(leaderJournalEntry, longQuery);
+        // With compression disabled, raw size should equal the original and decompressed content should match.
+        size_t leaderRawSize = readRawJournalEntrySize(leader, commitAfter);
+        ASSERT_EQUAL(leaderRawSize, longQuery.size());
+        string leaderDecompressed = readDecompressedJournalEntry(leader, commitAfter);
+        ASSERT_EQUAL(leaderDecompressed, longQuery);
 
         // Wait for the follower to replicate, then verify its journal entry matches too.
         follower.waitForStatusTerm("commitCount", to_string(commitAfter));
-        string followerJournalEntry = readJournalEntry(follower, commitAfter);
-        ASSERT_FALSE(followerJournalEntry.empty());
-        ASSERT_EQUAL(followerJournalEntry, longQuery);
+        size_t followerRawSize = readRawJournalEntrySize(follower, commitAfter);
+        ASSERT_EQUAL(followerRawSize, longQuery.size());
+        string followerDecompressed = readDecompressedJournalEntry(follower, commitAfter);
+        ASSERT_EQUAL(followerDecompressed, longQuery);
+    }
+
+    void testCompressionEnabled()
+    {
+        BedrockTester& leader = tester->getTester(0);
+        BedrockTester& follower = tester->getTester(1);
+
+        // Stop the leader and restart it with compression enabled.
+        tester->stopNode(0);
+        leader.updateArgs({{"-journalZstdDictionaryID", "1"}});
+        tester->startNode(0);
+        ASSERT_TRUE(leader.waitForState("LEADING"));
+
+        // Record the commit count before our write.
+        uint64_t commitBefore = getCommitCount(leader);
+
+        // Generate and execute a long query on the leader.
+        string longQuery = generateLongQuery();
+        SData command("Query");
+        command["Query"] = longQuery;
+        leader.executeWaitVerifyContent(command, "200");
+
+        // The new commit should be commitBefore + 1.
+        uint64_t commitAfter = getCommitCount(leader);
+        ASSERT_EQUAL(commitBefore + 1, commitAfter);
+
+        // Read the raw journal entry size on the leader. It should be compressed and thus shorter than the original.
+        size_t leaderRawSize = readRawJournalEntrySize(leader, commitAfter);
+        ASSERT_GREATER_THAN(leaderRawSize, (size_t) 0);
+        ASSERT_LESS_THAN(leaderRawSize, longQuery.size());
+
+        // Read with decompress() and verify the content matches the original query.
+        string leaderDecompressed = readDecompressedJournalEntry(leader, commitAfter);
+        ASSERT_EQUAL(leaderDecompressed, longQuery);
+
+        // Wait for the follower to replicate.
+        follower.waitForStatusTerm("commitCount", to_string(commitAfter));
+
+        // The follower does not have compression enabled, so its journal stores uncompressed data.
+        // Verify the follower's decompressed journal entry still matches (decompress is a no-op on uncompressed data).
+        string followerDecompressed = readDecompressedJournalEntry(follower, commitAfter);
+        ASSERT_EQUAL(followerDecompressed, longQuery);
     }
 } __CompressionTest;
