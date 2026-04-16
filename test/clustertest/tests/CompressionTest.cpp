@@ -11,7 +11,8 @@ struct CompressionTest : tpunit::TestFixture
                               BEFORE_CLASS(CompressionTest::setup),
                               AFTER_CLASS(CompressionTest::teardown),
                               TEST(CompressionTest::testCompressionDisabled),
-                              TEST(CompressionTest::testCompressionEnabled))
+                              TEST(CompressionTest::testCompressionEnabled),
+                              TEST(CompressionTest::testAllNodesCompressed))
     {
     }
 
@@ -62,17 +63,32 @@ struct CompressionTest : tpunit::TestFixture
     }
 
     // Generate a long query string (~10KB) of repeated INSERT statements.
-    string generateLongQuery()
+    // startID offsets the IDs so different tests don't overwrite each other's data.
+    string generateLongQuery(int startID = 0)
     {
         string query;
         for (int i = 0; i < 200; i++) {
             if (!query.empty()) {
                 query += ";";
             }
-            query += "INSERT OR REPLACE INTO test VALUES(" + SQ(i) + ", " + SQ("value_" + to_string(i) + "_padding_data_to_make_this_longer_" + string(20, 'x')) + ")";
+            query += "INSERT INTO test VALUES(" + SQ(startID + i) + ", " + SQ("value_" + to_string(startID + i) + "_padding_data_to_make_this_longer_" + string(20, 'x')) + ")";
         }
         query += ";";
         return query;
+    }
+
+    // Run a query via the DB plugin and return the result as an SQResult.
+    SQResult queryServer(BedrockTester& node, const string& sql)
+    {
+        SData command("Query");
+        command["Format"] = "json";
+        command["Query"] = sql;
+        auto results = node.executeWaitMultipleData({command});
+        SQResult result;
+        if (results[0].methodLine == "200 OK" && !results[0].content.empty()) {
+            result.deserialize(results[0].content);
+        }
+        return result;
     }
 
     // Get the current commit count from a node via the Status command.
@@ -147,8 +163,8 @@ struct CompressionTest : tpunit::TestFixture
         // Record the commit count before our write.
         uint64_t commitBefore = getCommitCount(leader);
 
-        // Generate and execute a long query on the leader.
-        string longQuery = generateLongQuery();
+        // Generate and execute a long query on the leader. Use startID=0 for test 1.
+        string longQuery = generateLongQuery(0);
         SData command("Query");
         command["Query"] = longQuery;
         leader.executeWaitVerifyContent(command, "200");
@@ -186,8 +202,8 @@ struct CompressionTest : tpunit::TestFixture
         // Record the commit count before our write.
         uint64_t commitBefore = getCommitCount(leader);
 
-        // Generate and execute a long query on the leader.
-        string longQuery = generateLongQuery();
+        // Generate and execute a long query on the leader. Use startID=1000 for test 2 to avoid collisions.
+        string longQuery = generateLongQuery(1000);
         SData command("Query");
         command["Query"] = longQuery;
         leader.executeWaitVerifyContent(command, "200");
@@ -212,5 +228,71 @@ struct CompressionTest : tpunit::TestFixture
         // Verify the follower's decompressed journal entry still matches (decompress is a no-op on uncompressed data).
         string followerDecompressed = readDecompressedJournalEntry(follower, commitAfter);
         ASSERT_EQUAL(followerDecompressed, longQuery);
+    }
+
+    void testAllNodesCompressed()
+    {
+        // Stop all remaining nodes (node 0 is running with compression, node 1 without, node 2 was stopped in test 1).
+        tester->stopNode(0);
+        tester->stopNode(1);
+
+        // Restart all three nodes with compression enabled.
+        // Use startNodeDontWait to avoid blocking — a node can't open its command port
+        // until it has quorum, which requires its peers to be running.
+        for (int i = 0; i < 3; i++) {
+            tester->getTester(i).updateArgs({{"-journalZstdDictionaryID", "1"}});
+            tester->startNodeDontWait(i);
+        }
+        ASSERT_TRUE(tester->getTester(0).waitForState("LEADING"));
+        ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
+        ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
+
+        BedrockTester& leader = tester->getTester(0);
+        BedrockTester& follower1 = tester->getTester(1);
+        BedrockTester& follower2 = tester->getTester(2);
+
+        // Record the commit count before our write.
+        uint64_t commitBefore = getCommitCount(leader);
+
+        // Insert a simple, verifiable row. Use ID 9999 to avoid collision with earlier tests.
+        SData command("Query");
+        command["Query"] = "INSERT INTO test VALUES(9999, 'Verifying test 3');";
+        leader.executeWaitVerifyContent(command, "200");
+
+        uint64_t commitAfter = getCommitCount(leader);
+        ASSERT_EQUAL(commitBefore + 1, commitAfter);
+
+        // Wait for both followers to replicate.
+        follower1.waitForStatusTerm("commitCount", to_string(commitAfter));
+        follower2.waitForStatusTerm("commitCount", to_string(commitAfter));
+
+        // Verify the journal entry is compressed on all three nodes.
+        string originalQuery = "INSERT INTO test VALUES(9999, 'Verifying test 3');";
+        for (int i = 0; i < 3; i++) {
+            BedrockTester& node = tester->getTester(i);
+            size_t rawSize = readRawJournalEntrySize(node, commitAfter);
+            ASSERT_GREATER_THAN(rawSize, (size_t) 0);
+            ASSERT_LESS_THAN(rawSize, originalQuery.size());
+
+            string decompressed = readDecompressedJournalEntry(node, commitAfter);
+            ASSERT_EQUAL(decompressed, originalQuery);
+        }
+
+        // Verify the actual DB content on all three nodes.
+        for (int i = 0; i < 3; i++) {
+            BedrockTester& node = tester->getTester(i);
+            SQResult result = queryServer(node, "SELECT id, value FROM test WHERE id = 9999;");
+            ASSERT_EQUAL(result.size(), (size_t) 1);
+            ASSERT_EQUAL(result[0][0], "9999");
+            ASSERT_EQUAL(result[0][1], "Verifying test 3");
+        }
+
+        // Sanity check: verify total row count in the test table across all tests.
+        // Test 1 inserted 200 rows (IDs 0-199), test 2 inserted 200 rows (IDs 1000-1199), test 3 inserted 1 row (ID 9999).
+        for (int i = 0; i < 3; i++) {
+            BedrockTester& node = tester->getTester(i);
+            SQResult result = queryServer(node, "SELECT COUNT(*) FROM test;");
+            ASSERT_EQUAL(result[0][0], "401");
+        }
     }
 } __CompressionTest;
