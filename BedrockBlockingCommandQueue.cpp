@@ -69,14 +69,7 @@ unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
         }
     }
 
-    // Track when the queue becomes empty for auto-clearing blocks.
-    // We iterate _queue directly rather than calling size() because size() acquires _queueMutex,
-    // which would deadlock here since _dequeue() is called by get() with that lock already held.
-    size_t queueSize = 0;
-    for (const auto& q : _queue) {
-        queueSize += q.second.size();
-    }
-    if (queueSize == 0 && _emptyTime.load() == 0) {
+    if (_queue.empty() && _emptyTime.load() == 0) {
         _emptyTime.store(STimeNow());
     }
 
@@ -102,6 +95,13 @@ size_t BedrockBlockingCommandQueue::clearRateLimits()
 STable BedrockBlockingCommandQueue::getState()
 {
     lock_guard<decltype(_queueMutex)> lock(_queueMutex);
+
+    uint64_t emptyTime = _emptyTime.load();
+    if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
+        _blockedIdentifiers.clear();
+        _identifierCounts.clear();
+    }
+
     STable content;
     content["blockingRateLimitThreshold"] = to_string(_maxPerIdentifier.load());
     content["blockedIdentifiers"] = to_string(_blockedIdentifiers.size());
