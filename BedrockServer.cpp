@@ -1089,6 +1089,10 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             if (command->processCount > maxRetries) {
                 SINFO("Max retries (" << maxRetries << ") hit in worker, sending '" << command->request.methodLine << "' to blocking queue with size " << _blockingCommandQueue.size());
                 try {
+                    // BedrockBlockingCommandQueue::push() guarantees that any exception (e.g., rate
+                    // limiting) is thrown before the underlying move() into the queue occurs. This
+                    // means `command` has not been moved-from when we enter the catch block and the
+                    // unique_ptr is still valid for building the error response.
                     _blockingCommandQueue.push(move(command));
                 } catch (const SException& e) {
                     command->response.methodLine = e.what();
