@@ -104,7 +104,7 @@ set<string> loadPlugins(SData& args)
     BedrockPlugin::g_registeredPluginList.emplace(make_pair("MYSQL", [](BedrockServer& s){
         return new BedrockPlugin_MySQL(s);
     }));
-    BedrockPlugin::g_registeredPluginList.emplace(make_pair("ZSTD", [](BedrockServer& s){
+    BedrockPlugin::g_registeredPluginList.emplace(make_pair("COMPRESSION", [](BedrockServer& s){
         return new BedrockPlugin_Compression(s);
     }));
 
