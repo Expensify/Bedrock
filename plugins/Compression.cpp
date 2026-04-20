@@ -4,20 +4,20 @@
 #include <libstuff/SQResult.h>
 #include <libstuff/sqlite3.h>
 
-const string BedrockPlugin_Zstd::name("Zstd");
-map<size_t, BedrockPlugin_Zstd::ZDictionaries> BedrockPlugin_Zstd::_dictionaries;
+const string BedrockPlugin_Compression::name("Compression");
+map<size_t, BedrockPlugin_Compression::ZDictionaries> BedrockPlugin_Compression::_dictionaries;
 
-const string& BedrockPlugin_Zstd::getName() const
+const string& BedrockPlugin_Compression::getName() const
 {
     return name;
 }
 
-BedrockPlugin_Zstd::BedrockPlugin_Zstd(BedrockServer& s) :
+BedrockPlugin_Compression::BedrockPlugin_Compression(BedrockServer& s) :
     BedrockPlugin(s)
 {
 }
 
-BedrockPlugin_Zstd::~BedrockPlugin_Zstd()
+BedrockPlugin_Compression::~BedrockPlugin_Compression()
 {
     for (auto& [id, dicts] : _dictionaries) {
         if (dicts.compression) {
@@ -30,17 +30,17 @@ BedrockPlugin_Zstd::~BedrockPlugin_Zstd()
     _dictionaries.clear();
 }
 
-unique_ptr<BedrockCommand> BedrockPlugin_Zstd::getCommand(SQLiteCommand&& baseCommand)
+unique_ptr<BedrockCommand> BedrockPlugin_Compression::getCommand(SQLiteCommand&& baseCommand)
 {
     return nullptr;
 }
 
-void BedrockPlugin_Zstd::initializeFromDB(SQLite& db)
+void BedrockPlugin_Compression::initializeFromDB(SQLite& db)
 {
     loadDictionariesFromDB(db);
 }
 
-void BedrockPlugin_Zstd::upgradeDatabase(SQLite& db)
+void BedrockPlugin_Compression::upgradeDatabase(SQLite& db)
 {
     bool created;
     SASSERT(db.verifyTable("zstdDictionaries",
@@ -52,7 +52,7 @@ void BedrockPlugin_Zstd::upgradeDatabase(SQLite& db)
         created));
 }
 
-ZSTD_CDict* BedrockPlugin_Zstd::getCompressionDictionary(size_t id)
+ZSTD_CDict* BedrockPlugin_Compression::getCompressionDictionary(size_t id)
 {
     auto it = _dictionaries.find(id);
     if (it != _dictionaries.end()) {
@@ -61,7 +61,7 @@ ZSTD_CDict* BedrockPlugin_Zstd::getCompressionDictionary(size_t id)
     return nullptr;
 }
 
-ZSTD_DDict* BedrockPlugin_Zstd::getDecompressionDictionary(size_t id)
+ZSTD_DDict* BedrockPlugin_Compression::getDecompressionDictionary(size_t id)
 {
     auto it = _dictionaries.find(id);
     if (it != _dictionaries.end()) {
@@ -70,7 +70,7 @@ ZSTD_DDict* BedrockPlugin_Zstd::getDecompressionDictionary(size_t id)
     return nullptr;
 }
 
-void BedrockPlugin_Zstd::loadDictionariesFromDB(SQLite& db)
+void BedrockPlugin_Compression::loadDictionariesFromDB(SQLite& db)
 {
     SQResult result;
     if (!db.read("SELECT dictionaryID, dictionary FROM zstdDictionaries;", result)) {
@@ -136,7 +136,7 @@ static void sqliteCompress(sqlite3_context* ctx, int argc, sqlite3_value** argv)
     }
 
     // Look up the compiled compression dictionary.
-    ZSTD_CDict* cdict = BedrockPlugin_Zstd::getCompressionDictionary(dictId);
+    ZSTD_CDict* cdict = BedrockPlugin_Compression::getCompressionDictionary(dictId);
     if (!cdict) {
         string err = "compress(): no dictionary found for ID " + to_string(dictId);
         sqlite3_result_error(ctx, err.c_str(), -1);
@@ -211,7 +211,7 @@ static void sqliteDecompress(sqlite3_context* ctx, int argc, sqlite3_value** arg
     unsigned dictId = ZSTD_getDictID_fromFrame(src, srcLen);
     ZSTD_DDict* ddict = nullptr;
     if (dictId != 0) {
-        ddict = BedrockPlugin_Zstd::getDecompressionDictionary(dictId);
+        ddict = BedrockPlugin_Compression::getDecompressionDictionary(dictId);
         if (!ddict) {
             string err = "decompress(): no dictionary found for ID " + to_string(dictId);
             sqlite3_result_error(ctx, err.c_str(), -1);
@@ -254,7 +254,7 @@ static void sqliteDecompress(sqlite3_context* ctx, int argc, sqlite3_value** arg
     sqlite3_result_blob(ctx, dst, (int) actualSize, sqlite3_free);
 }
 
-void BedrockPlugin_Zstd::registerSQLite(sqlite3* db)
+void BedrockPlugin_Compression::registerSQLite(sqlite3* db)
 {
     sqlite3_create_function_v2(db, "compress", 2, SQLITE_UTF8 | SQLITE_DETERMINISTIC,
                                nullptr, ::sqliteCompress, nullptr, nullptr, nullptr);
@@ -262,7 +262,7 @@ void BedrockPlugin_Zstd::registerSQLite(sqlite3* db)
                                nullptr, ::sqliteDecompress, nullptr, nullptr, nullptr);
 }
 
-string BedrockPlugin_Zstd::decompress(const string& input)
+string BedrockPlugin_Compression::decompress(const string& input)
 {
     if (input.empty()) {
         return input;
@@ -277,7 +277,7 @@ string BedrockPlugin_Zstd::decompress(const string& input)
     unsigned dictId = ZSTD_getDictID_fromFrame(input.data(), input.size());
     ZSTD_DDict* ddict = nullptr;
     if (dictId != 0) {
-        ddict = BedrockPlugin_Zstd::getDecompressionDictionary(dictId);
+        ddict = BedrockPlugin_Compression::getDecompressionDictionary(dictId);
         if (!ddict) {
             SWARN("decompress(): no dictionary found for ID " << dictId);
             return input;

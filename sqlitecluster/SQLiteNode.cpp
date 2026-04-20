@@ -2165,7 +2165,7 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
         if (!_db.beginTransaction()) {
             STHROW("failed to begin transaction");
         }
-        if (!_db.writeUnmodified(BedrockPlugin_Zstd::decompress(commit.content))) {
+        if (!_db.writeUnmodified(BedrockPlugin_Compression::decompress(commit.content))) {
             STHROW("failed to write transaction");
         }
         if (!_db.prepare()) {

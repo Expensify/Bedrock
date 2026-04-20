@@ -7,10 +7,10 @@
 // Forward-declare sqlite3 types to avoid forcing all consumers to include sqlite3 headers.
 struct sqlite3;
 
-class BedrockPlugin_Zstd : public BedrockPlugin {
+class BedrockPlugin_Compression : public BedrockPlugin {
 public:
-    BedrockPlugin_Zstd(BedrockServer& s);
-    ~BedrockPlugin_Zstd();
+    BedrockPlugin_Compression(BedrockServer& s);
+    ~BedrockPlugin_Compression();
 
     virtual const string& getName() const;
     virtual void upgradeDatabase(SQLite& db);

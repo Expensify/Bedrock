@@ -244,7 +244,7 @@ void SQLite::commonConstructorInitialization(bool hctree)
     SDeburr::registerSQLite(_db);
 
     // Register compress/decompress functions for zstd compression.
-    BedrockPlugin_Zstd::registerSQLite(_db);
+    BedrockPlugin_Compression::registerSQLite(_db);
 
     // We saw queries where the progress counter never exceeds 551,000, so we're setting it to a lower number
     // based on Richard Hipp's recommendation.
