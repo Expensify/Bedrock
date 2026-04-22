@@ -30,7 +30,6 @@ public:
     // Register the compress(data, dictID) and decompress(data) SQLite UDFs.
     static void registerSQLite(sqlite3* db);
 
-    // Non-SQL decompression for use in the synchronization path.
     // Returns decompressed data if input is a zstd frame, otherwise returns input unchanged.
     static string decompress(const string& input);
 

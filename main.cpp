@@ -328,7 +328,7 @@ int main(int argc, char* argv[])
     SETDEFAULT("-controlPort", "localhost:9999");
     SETDEFAULT("-nodeName", SGetHostName());
     SETDEFAULT("-cacheSize", SToStr(0));
-    SETDEFAULT("-plugins", "db,jobs,cache,mysql,zstd");
+    SETDEFAULT("-plugins", "db,jobs,cache,mysql,compression");
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
