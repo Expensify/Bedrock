@@ -267,7 +267,9 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     _hctree(validateDBFormat(_filename, hctree)),
     _db(initializeDB(_filename, mmapSizeGB, _hctree)),
     _journalNames(initializeJournal(_db, minJournalTables)),
-    // Note that it's significant that _sharedData is initialized after _hctree, _db, and _journalNames. Re-ordereing these initialzations will break this.
+    // Note that it's significant that _sharedData is initialized after _hctree, _db, and _journalNames.
+    // initializeSharedData is a member function, and it will operate on these member variables. If they are not set when it's called,
+    // initialization will not be correct.
     _sharedData(initializeSharedData()),
     _transactionTimer("transaction timer"),
     _cacheSize(cacheSize),
