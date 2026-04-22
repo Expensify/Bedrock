@@ -79,8 +79,8 @@ void BedrockPlugin_Compression::loadDictionariesFromDB(SQLite& db)
     }
 
     for (size_t i = 0; i < result.size(); i++) {
-        size_t id = SToUInt64(result[i][0]);
-        const string dictData = result[i][1];
+        size_t id = SToUInt64(result[i]["dictionaryID"]);
+        const string dictData = result[i]["dictionary"];
 
         if (dictData.empty()) {
             SWARN("Empty dictionary data for dictionaryID " << id << ", skipping.");
