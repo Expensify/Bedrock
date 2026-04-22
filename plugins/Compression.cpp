@@ -109,7 +109,7 @@ void BedrockPlugin_Compression::loadDictionariesFromDB(SQLite& db)
     SINFO("Loaded " << _dictionaries.size() << " zstd dictionaries from DB.");
 }
 
-// SQLite UDF implementations
+// SQLite User Defined Functions implementations
 
 static void sqliteCompress(sqlite3_context* ctx, int argc, sqlite3_value** argv)
 {
