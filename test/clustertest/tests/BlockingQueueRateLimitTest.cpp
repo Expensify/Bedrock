@@ -38,18 +38,14 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         ASSERT_EQUAL(json["blockingRateLimitThreshold"], "5");
 
         // Force conflicts to push commands into the blocking queue and trigger rate limiting.
-        // Set MaxConflictRetries=1 and MaxPerIdentifier=1 on all nodes so the 2nd command
-        // for the same identifier triggers a block after one conflict retry.
-        for (int i : {0, 1, 2}) {
-            BedrockTester& node = tester->getTester(i);
-            SData setConflict("SetConflictParams");
-            setConflict["MaxConflictRetries"] = "1";
-            node.executeWaitVerifyContent(setConflict, "200", true);
+        // Only the leader processes writes (followers escalate), so only the leader needs these settings.
+        SData setConflict("SetConflictParams");
+        setConflict["MaxConflictRetries"] = "1";
+        leader.executeWaitVerifyContent(setConflict, "200", true);
 
-            SData setLimitLow("SetBlockingRateLimit");
-            setLimitLow["MaxPerIdentifier"] = "1";
-            node.executeWaitVerifyContent(setLimitLow, "200", true);
-        }
+        SData setLimitLow("SetBlockingRateLimit");
+        setLimitLow["MaxPerIdentifier"] = "1";
+        leader.executeWaitVerifyContent(setLimitLow, "200", true);
 
         // Send commands from multiple threads to all nodes. Cross-node escalation generates
         // enough concurrent writes to reliably pile up 2+ commands in the blocking queue.
@@ -83,37 +79,28 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
         ASSERT_EQUAL(json["blockedIdentifiers"], "0");
 
-        // Reset state on all nodes.
-        for (int i : {0, 1, 2}) {
-            BedrockTester& node = tester->getTester(i);
-            SData resetConflict("SetConflictParams");
-            resetConflict["MaxConflictRetries"] = "3";
-            node.executeWaitVerifyContent(resetConflict, "200", true);
+        // Reset state on leader.
+        SData resetConflict("SetConflictParams");
+        resetConflict["MaxConflictRetries"] = "3";
+        leader.executeWaitVerifyContent(resetConflict, "200", true);
 
-            SData resetLimit("SetBlockingRateLimit");
-            resetLimit["MaxPerIdentifier"] = "0";
-            node.executeWaitVerifyContent(resetLimit, "200", true);
-        }
+        SData resetLimit("SetBlockingRateLimit");
+        resetLimit["MaxPerIdentifier"] = "0";
+        leader.executeWaitVerifyContent(resetLimit, "200", true);
     }
 
     void testRateLimiting()
     {
-        // Set MaxConflictRetries=1 on all nodes so commands enter the blocking queue after 1 conflict.
-        for (int i : {0, 1, 2}) {
-            BedrockTester& node = tester->getTester(i);
-            SData setConflict("SetConflictParams");
-            setConflict["MaxConflictRetries"] = "1";
-            node.executeWaitVerifyContent(setConflict, "200", true);
-        }
+        // Only the leader processes writes (followers escalate), so only the leader needs these settings.
+        BedrockTester& leader = tester->getTester(0);
 
-        // Set MaxPerIdentifier=2 on all nodes. Low threshold so rate limiting triggers quickly
-        // once commands start entering the blocking queue.
-        for (int i : {0, 1, 2}) {
-            BedrockTester& node = tester->getTester(i);
-            SData setLimit("SetBlockingRateLimit");
-            setLimit["MaxPerIdentifier"] = "2";
-            node.executeWaitVerifyContent(setLimit, "200", true);
-        }
+        SData setConflict("SetConflictParams");
+        setConflict["MaxConflictRetries"] = "1";
+        leader.executeWaitVerifyContent(setConflict, "200", true);
+
+        SData setLimit("SetBlockingRateLimit");
+        setLimit["MaxPerIdentifier"] = "2";
+        leader.executeWaitVerifyContent(setLimit, "200", true);
 
         // Spawn 3 threads, each sending 200 idcollision commands to a different node,
         // all with the same blockingIdentifier. This generates write conflicts that push
@@ -154,27 +141,19 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         ASSERT_TRUE(count503.load() >= 1);
 
         // Verify the leader shows blocked users.
-        BedrockTester& leader = tester->getTester(0);
         SData status("Status");
         STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
         int blockedCount = SToInt(json["blockedIdentifiers"]);
         ASSERT_TRUE(blockedCount >= 1);
 
-        // Clear blocks on all nodes.
-        for (int i : {0, 1, 2}) {
-            BedrockTester& node = tester->getTester(i);
-            SData clearBlocks("SetBlockingRateLimit");
-            clearBlocks["ClearBlocks"] = "true";
-            node.executeWaitVerifyContent(clearBlocks, "200", true);
-        }
+        // Clear blocks and reset on leader.
+        SData clearBlocks("SetBlockingRateLimit");
+        clearBlocks["ClearBlocks"] = "true";
+        leader.executeWaitVerifyContent(clearBlocks, "200", true);
 
-        // Reset MaxConflictRetries back to default on all nodes.
-        for (int i : {0, 1, 2}) {
-            BedrockTester& node = tester->getTester(i);
-            SData resetConflict("SetConflictParams");
-            resetConflict["MaxConflictRetries"] = "3";
-            node.executeWaitVerifyContent(resetConflict, "200", true);
-        }
+        SData resetConflict("SetConflictParams");
+        resetConflict["MaxConflictRetries"] = "3";
+        leader.executeWaitVerifyContent(resetConflict, "200", true);
 
         // Verify the previously blocked user can send commands again.
         SData cmd("idcollision");
