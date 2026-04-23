@@ -162,7 +162,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
                 transaction.s = nullptr;
             } else {
                 // No response data at all - this is a genuine failure
-                SWARN("Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
+                SHMMM("Connection " << ((transaction.s->state.load() > Socket::CONNECTED) ? "died prematurely" : "timed out"));
                 transaction.response = transaction.s->sendBufferEmpty() ? 501 : 500;
             }
         } else {
