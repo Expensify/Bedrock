@@ -65,7 +65,7 @@ unique_ptr<STCPManager::Socket> SSocketPool::getSocket()
         if (socket->state.load() != STCPManager::Socket::CLOSED) {
             struct pollfd pfd = {socket->s, POLLIN | POLLOUT, 0};
             int ret = poll(&pfd, 1, 0);
-            if (ret >= 0 && !(pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+            if (ret >= 0 && !(pfd.revents & (POLLERR | POLLHUP | POLLNVAL | POLLIN))) {
                 return socket;
             }
         }
