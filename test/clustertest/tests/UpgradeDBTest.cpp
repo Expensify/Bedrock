@@ -35,7 +35,7 @@ struct UpgradeDBTest : tpunit::TestFixture
         // replicate asynchronously, so without waiting they might not yet have the row.
         string leaderCommitCount = SParseJSONObject(
             tester->getTester(0).executeWaitVerifyContent(SData("Status"), "200", true)
-        )["CommitCount"];
+            )["CommitCount"];
         for (auto i : {1, 2}) {
             ASSERT_TRUE(tester->getTester(i).waitForStatusTerm("CommitCount", leaderCommitCount));
         }
