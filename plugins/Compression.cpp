@@ -83,16 +83,14 @@ void BedrockPlugin_Compression::loadDictionariesFromDB(SQLite& db)
         const string dictData = result[i]["dictionary"];
 
         if (dictData.empty()) {
-            SWARN("Empty dictionary data for dictionaryID " << id << ", skipping.");
-            continue;
+            STHROW("Empty dictionary data for dictionaryID " + to_string(id) + ", skipping.");
         }
 
-        int compressionLevel = 3;
-        ZSTD_CDict* cdict = ZSTD_createCDict(dictData.data(), dictData.size(), compressionLevel);
+        ZSTD_CDict* cdict = ZSTD_createCDict(dictData.data(), dictData.size(), COMPRESSION_LEVEL);
         ZSTD_DDict* ddict = ZSTD_createDDict(dictData.data(), dictData.size());
 
         if (!cdict || !ddict) {
-            SWARN("Failed to compile dictionary " << id);
+            STHROW("Failed to compile dictionary " + to_string(id));
             if (cdict) {
                 ZSTD_freeCDict(cdict);
             }

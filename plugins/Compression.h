@@ -35,6 +35,8 @@ public:
 
     static const string name;
 
+    static constexpr int COMPRESSION_LEVEL = 3;
+
 private:
     struct ZDictionaries
     {

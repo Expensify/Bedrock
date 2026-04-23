@@ -102,7 +102,7 @@ struct CompressionTest : tpunit::TestFixture
 
     // Run a SELECT query against the journal tables via the bedrock server's DB plugin.
     // All reads go through the server so that UDFs and dictionaries are available.
-    string queryJournal(BedrockTester& node, const string& selectExpr, uint64_t commitID)
+    string queryJournal(BedrockTester& node, const string& selectExpression, uint64_t commitID)
     {
         // Build a UNION query across all journal tables.
         // First, get the list of journal table names from the server.
@@ -119,7 +119,7 @@ struct CompressionTest : tpunit::TestFixture
             if (!sql.empty()) {
                 sql += " UNION ";
             }
-            sql += "SELECT " + selectExpr + " FROM " + tables[i][0] + " WHERE id = " + SQ(commitID);
+            sql += "SELECT " + selectExpression + " FROM " + tables[i][0] + " WHERE id = " + SQ(commitID);
         }
         sql += ";";
 
@@ -256,7 +256,8 @@ struct CompressionTest : tpunit::TestFixture
 
         // Insert a simple, verifiable row. Use ID 9999 to avoid collision with earlier tests.
         SData command("Query");
-        command["Query"] = "INSERT INTO test VALUES(9999, 'Verifying test 3');";
+        string originalQuery = "INSERT INTO test VALUES(9999, 'Verifying test 3');";
+        command["Query"] = originalQuery;
         leader.executeWaitVerifyContent(command, "200");
 
         uint64_t commitAfter = getCommitCount(leader);
@@ -267,7 +268,6 @@ struct CompressionTest : tpunit::TestFixture
         follower2.waitForStatusTerm("commitCount", to_string(commitAfter));
 
         // Verify the journal entry is compressed on all three nodes.
-        string originalQuery = "INSERT INTO test VALUES(9999, 'Verifying test 3');";
         for (int i = 0; i < 3; i++) {
             BedrockTester& node = tester->getTester(i);
             size_t rawSize = readRawJournalEntrySize(node, commitAfter);
