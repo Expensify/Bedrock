@@ -265,15 +265,12 @@ public:
         return _insideTransaction;
     }
 
-    // Looks up the exact SQL of a paricular commit to the database, as well as gets the SHA1 hash of the database
-    // immediately following tha commit.
-    bool getCommit(uint64_t index, string& query, string& hash);
+    // Get the SQL and/or hash of a particular commit to the DB.
+    // Returns true on success, false on error or if the commit is not found.
+    bool getCommit(uint64_t index, string* query = nullptr, string* hash = nullptr);
 
-    // A static version of the above that can be used in initializers.
-    static bool getCommit(sqlite3* db, const vector<string>& journalNames, uint64_t index, string& query, string& hash);
-
-    // Looks up a range of commits.
-    int getCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS = 0);
+    // Looks up a range of commits. Returns raw query data which may be compressed.
+    int getCompressedCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS = 0);
 
     // Set a time limit for this transaction, in US from the current time.
     void setTimeout(uint64_t timeLimitUS);
@@ -305,6 +302,9 @@ public:
 
     // Enable/disable SQL statement tracing.
     static atomic<bool> enableTrace;
+
+    // The zstd dictionary ID to use when compressing journal entries. 0 means no compression.
+    static atomic<int64_t> journalZstdDictionaryID;
 
     // public read-only accessor for _dbCountAtStart.
     uint64_t getDBCountAtStart() const;
@@ -413,12 +413,15 @@ private:
 
     // Initializers to support RAII-style allocation in constructors.
     static string initializeFilename(const string& filename);
-    static SharedData& initializeSharedData(sqlite3* db, const string& filename, const vector<string>& journalNames, bool hctree);
     static bool validateDBFormat(const string& filename, bool hctree);
     static sqlite3* initializeDB(const string& filename, int64_t mmapSizeGB, bool hctree);
     static vector<string> initializeJournal(sqlite3* db, int minJournalTables);
     void commonConstructorInitialization(bool hctree = false);
     static int getCheckpointModeFromString(const string& checkpointModeString);
+
+    // This is also an initializer to support RAII-style allocation in the constructor but is pulled out separately as
+    // it's not static and depends on several other members being initialized before it.
+    SharedData& initializeSharedData();
 
     // The filename of this DB, canonicalized to its full path on disk.
     const string _filename;
