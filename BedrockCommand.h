@@ -7,15 +7,6 @@ class BedrockPlugin;
 class BedrockCommand : public SQLiteCommand {
     friend class BedrockCore;
 public:
-    enum Priority
-    {
-        PRIORITY_MIN = 0,
-        PRIORITY_LOW = 250,
-        PRIORITY_NORMAL = 500,
-        PRIORITY_HIGH = 750,
-        PRIORITY_MAX = 1000
-    };
-
     enum TIMING_INFO
     {
         INVALID,
@@ -207,9 +198,6 @@ private:
     };
 
     GrowOnlyList<unique_ptr<SHTTPSManager::Transaction>> httpsRequests;
-
-    // Each command is assigned a priority.
-    Priority priority;
 
     // We track how many times we `prePeek`, `peek` and `process` each command.
     int prePeekCount;
