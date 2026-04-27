@@ -7,6 +7,17 @@ class BedrockPlugin;
 class BedrockCommand : public SQLiteCommand {
     friend class BedrockCore;
 public:
+    // Retained only so plugins that reference these names still compile. Bedrock no longer schedules commands by
+    // priority — the values have no effect on queue ordering.
+    enum Priority
+    {
+        PRIORITY_MIN = 0,
+        PRIORITY_LOW = 250,
+        PRIORITY_NORMAL = 500,
+        PRIORITY_HIGH = 750,
+        PRIORITY_MAX = 1000
+    };
+
     enum TIMING_INFO
     {
         INVALID,
