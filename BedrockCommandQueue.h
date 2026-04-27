@@ -17,7 +17,7 @@ public:
 
     // Thrown by `get` if no work becomes available within the wait window.
     class timeout_error : exception {
-    public:
+public:
         const char* what() const noexcept
         {
             return "timeout";
@@ -65,7 +65,8 @@ public:
 private:
     // Associate the item with its timeout so that when we dequeue an item to return, we can also remove its entry in
     // our set of timeouts.
-    struct ItemTimeoutPair {
+    struct ItemTimeoutPair
+    {
         ItemTimeoutPair(unique_ptr<BedrockCommand>&& _item, Timeout _timeout) : item(move(_item)), timeout(_timeout)
         {
         }
