@@ -38,6 +38,10 @@ public:
     // Called at some point during initiation to allow the plugin to verify/change the database schema.
     virtual void upgradeDatabase(SQLite& db);
 
+    // Called once after upgradeDatabase has completed, allowing plugins to read from the DB at startup.
+    // This runs on the sync thread before any commands are processed.
+    virtual void initializeFromDB(SQLite& db);
+
     // The plugin can register any number of timers it wants. When any of them `ding`, then the `timerFired`
     // function will be called, and passed the timer that is dinging.
     set<SStopwatch*> timers;
