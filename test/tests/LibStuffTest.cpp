@@ -41,7 +41,8 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::SQResultTest),
                                      TEST(LibStuff::testReturningClause),
                                      TEST(LibStuff::SRedactSensitiveValuesTest),
-                                     TEST(LibStuff::SComposeHTTPTest)
+                                     TEST(LibStuff::SComposeHTTPTest),
+                                     TEST(LibStuff::testEncodeDecodeURIComponent)
     )
     {
     }
@@ -991,5 +992,24 @@ struct LibStuff : tpunit::TestFixture
         // Verify that control characters are not allowed in methodLine
         string methodLineWithControlChars = "500 Internal Server Error\r\nContent-Type: application/json";
         ASSERT_THROW(SComposeHTTP(methodLineWithControlChars, {}, ""), SException);
+    }
+
+    void testEncodeDecodeURIComponent()
+    {
+        // ASCII passthrough
+        ASSERT_EQUAL(SEncodeURIComponent("hello"), "hello");
+        ASSERT_EQUAL(SDecodeURIComponent(SEncodeURIComponent("hello")), "hello");
+
+        // Space → +
+        ASSERT_EQUAL(SEncodeURIComponent("hello world"), "hello+world");
+        ASSERT_EQUAL(SDecodeURIComponent(SEncodeURIComponent("hello world")), "hello world");
+
+        // UTF-8: ā (U+0101) = bytes 0xC4 0x81 → %C4%81
+        ASSERT_EQUAL(SEncodeURIComponent("Sh\xC4\x81hrukh"), "Sh%C4%81hrukh");
+        ASSERT_EQUAL(SDecodeURIComponent(SEncodeURIComponent("Sh\xC4\x81hrukh")), "Sh\xC4\x81hrukh");
+
+        // UTF-8: ü (U+00FC) = bytes 0xC3 0xBC → %C3%BC
+        ASSERT_EQUAL(SEncodeURIComponent("\xC3\xBC"), "%C3%BC");
+        ASSERT_EQUAL(SDecodeURIComponent(SEncodeURIComponent("\xC3\xBC")), "\xC3\xBC");
     }
 } __LibStuff;

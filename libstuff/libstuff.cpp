@@ -1433,9 +1433,7 @@ string SEncodeURIComponent(const string& value)
     // it "escapes all characters except the following: alphabetic, decimal digits, - _ . ! ~ * ' ( )"
     const char* hexChars = "0123456789ABCDEF";
     string working;
-    for (int c = 0; c < (int) value.size(); ++c) {
-        // Test this character
-        char ch = value[c];
+    for (const char8_t ch : value) {
         // Why isn't this just isalnum(ch)?
         // http://cplusplus.com/reference/clibrary/cctype/isalnum/
         if (SWITHIN('a', ch, 'z') || SWITHIN('A', ch, 'Z') || SWITHIN('0', ch, '9')) {
