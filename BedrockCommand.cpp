@@ -14,7 +14,6 @@ const string BedrockCommand::defaultPluginName("NO_PLUGIN");
 
 BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin, bool escalateImmediately_) :
     SQLiteCommand(move(baseCommand)),
-    priority(PRIORITY_NORMAL),
     prePeekCount(0),
     peekCount(0),
     processCount(0),
@@ -31,26 +30,6 @@ BedrockCommand::BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugi
     _timeout(_getTimeout(request, scheduledTime)),
     _lastContiguousCompletedTransaction(httpsRequests.end())
 {
-    // Initialize the priority, if supplied.
-    if (request.isSet("priority")) {
-        int tempPriority = request.calc("priority");
-        switch (tempPriority) {
-            // For any valid case, we just set the value directly.
-            case BedrockCommand::PRIORITY_MIN:
-            case BedrockCommand::PRIORITY_LOW:
-            case BedrockCommand::PRIORITY_NORMAL:
-            case BedrockCommand::PRIORITY_HIGH:
-            case BedrockCommand::PRIORITY_MAX:
-                priority = static_cast<Priority>(tempPriority);
-                break;
-
-            default:
-                // But an invalid case gets set to NORMAL, and a warning is logged.
-                SWARN("'" << request.methodLine << "' requested invalid priority: " << tempPriority);
-                priority = PRIORITY_NORMAL;
-                break;
-        }
-    }
     _commandCount++;
 }
 
