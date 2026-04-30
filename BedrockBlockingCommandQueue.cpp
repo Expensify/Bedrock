@@ -35,7 +35,6 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
         if (_blockedIdentifiers.count(identifier)) {
             SINFO("Blocking queue rate limit: rejecting '" << command->request.methodLine
                   << "' for identifier '" << identifier << "'");
-            STHROW("503 Blocking queue rate limited");
         }
 
         size_t& count = _identifierCounts[identifier];
