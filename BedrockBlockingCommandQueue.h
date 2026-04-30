@@ -39,6 +39,10 @@ protected:
     unique_ptr<BedrockCommand> _dequeue() override;
 
 private:
+    // Guards rate limit state (`_identifierCounts`, `_blockedIdentifiers`). Separate from the base
+    // class `_queueMutex` because the base mutex is non-recursive and is held while `_dequeue` runs.
+    mutex _rateLimitMutex;
+
     map<string, size_t> _identifierCounts;
     set<string> _blockedIdentifiers;
     atomic<size_t> _maxPerIdentifier{0};

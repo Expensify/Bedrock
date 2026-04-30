@@ -62,6 +62,8 @@ jobs:
     - name: Mark failure if debugging
       if: runner.debug == '1'
       run: exit 1
+    - name: Install zstd
+      run: apt-get update -y && apt-get install -y libzstd-dev
     - name: Build Bedrock
       run: "./ci_build.sh"
     - name: Upload binaries
@@ -94,6 +96,8 @@ jobs:
       with:
         repository: Expensify/Bedrock
         path: .
+    - name: Install zstd
+      run: apt-get update -y && apt-get install -y libzstd-dev
     - name: Download binaries
       uses: ./.github/actions/composite/download-binaries
     - name: Setup tmate session
@@ -129,6 +133,8 @@ jobs:
       with:
         repository: Expensify/Bedrock
         path: .
+    - name: Install zstd
+      run: apt-get update -y && apt-get install -y libzstd-dev
     - name: Download binaries
       uses: ./.github/actions/composite/download-binaries
     - name: Setup tmate session

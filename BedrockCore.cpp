@@ -80,7 +80,7 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
 
     try {
         try {
-            SDEBUG("prePeeking at '" << request.methodLine << "' with priority: " << command->priority);
+            SDEBUG("prePeeking at '" << request.methodLine << "'");
             command->prePeekCount++;
             _db.setTimeout(_getRemainingTime(command, false));
             _db.setAbortRef(command->shouldAbort);
@@ -140,7 +140,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     // We catch any exception and handle in `_handleCommandException`.
     RESULT returnValue = RESULT::COMPLETE;
     try {
-        SDEBUG("Peeking at '" << request.methodLine << "' with priority: " << command->priority);
+        SDEBUG("Peeking at '" << request.methodLine << "'");
         command->peekCount++;
         _db.setTimeout(_getRemainingTime(command, false));
         _db.setAbortRef(command->shouldAbort);
@@ -350,7 +350,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
     // We catch any exception and handle in `_handleCommandException`.
     try {
         try {
-            SDEBUG("postProcessing at '" << request.methodLine << "' with priority: " << command->priority);
+            SDEBUG("postProcessing at '" << request.methodLine << "'");
             command->postProcessCount++;
             _db.setTimeout(_getRemainingTime(command, false));
             _db.setAbortRef(command->shouldAbort);

@@ -50,7 +50,7 @@ do
     fi
 
     # Counts occurrences of std:: that aren't in comments and have a leading space (except if it's inside pointer brackets, eg: <std::thing>)
-    RETURN_VAL=$(sed -n '/^.*\/\/.*/!s/ std:://p; /^.* std::.*\/\//s/ std:://p; /^.*\<.*std::.*\>/s/std:://p;' "${FILENAME}" | wc -l)
+    RETURN_VAL=$(sed -n '/^.*\/\/.*/!s/ std:://p; /^.* std::.*\/\//s/ std:://p; /^.*\<.* std::.*\>/s/ std:://p;' "${FILENAME}" | wc -l)
     if [[ $RETURN_VAL -gt 0 ]] && [[ "$FAILED" != "true" ]]; then
         echo -e "${RED}${OUT} failed style checks, do not use std:: prefix.${RESET}"
         EXIT_VAL=$RETURN_VAL

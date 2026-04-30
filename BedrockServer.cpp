@@ -106,9 +106,15 @@ void BedrockServer::sync()
 
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
+    SQLite::journalZstdDictionaryID = args.calc("-journalZstdDictionaryID");
     SINFO("Setting dbPool size to: " << _dbPoolSize);
     _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"]);
     SQLite& db = _dbPool->getBase();
+
+    // Allow plugins to read from the DB at startup.
+    for (auto plugin : plugins) {
+        plugin.second->initializeFromDB(db);
+    }
 
     // Initialize the command processor.
     BedrockCore core(db, *this);
@@ -1832,6 +1838,21 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             _syncNodeCopy = nullptr;
         } else {
             content["syncNodeAvailable"] = "false";
+        }
+
+        auto dbPoolCopy = _dbPool;
+        if (dbPoolCopy) {
+            SQLiteScopedHandle dbScope(*dbPoolCopy, dbPoolCopy->getIndex());
+            SQLite& db = dbScope.db();
+            SQResult freelistResult, pageCountResult;
+            db.read("PRAGMA freelist_count;", freelistResult);
+            if (!freelistResult.empty()) {
+                content["freelistCount"] = freelistResult[0][0];
+            }
+            db.read("PRAGMA page_count;", pageCountResult);
+            if (!pageCountResult.empty()) {
+                content["pageCount"] = pageCountResult[0][0];
+            }
         }
 
         // Done, compose the response.

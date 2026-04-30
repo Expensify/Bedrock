@@ -18,10 +18,13 @@ BedrockBlockingCommandQueue::BedrockBlockingCommandQueue() :
 
 void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
 {
-    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
+    const string identifier = command->blockingIdentifier;
+    const size_t maxPerIdentifier = _maxPerIdentifier.load();
+    const bool checking = maxPerIdentifier > 0 && !identifier.empty();
 
-    size_t maxPerIdentifier = _maxPerIdentifier.load();
-    if (maxPerIdentifier > 0 && !command->blockingIdentifier.empty()) {
+    if (checking) {
+        lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
+
         // Clear blocks if the blocking queue has been empty for 30 seconds.
         uint64_t emptyTime = _emptyTime.load();
         if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
@@ -29,17 +32,17 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
             _identifierCounts.clear();
         }
 
-        if (_blockedIdentifiers.count(command->blockingIdentifier)) {
+        if (_blockedIdentifiers.count(identifier)) {
             SINFO("Blocking queue rate limit: rejecting '" << command->request.methodLine
-                  << "' for identifier '" << command->blockingIdentifier << "'");
+                  << "' for identifier '" << identifier << "'");
             STHROW("503 Blocking queue rate limited");
         }
 
-        size_t& count = _identifierCounts[command->blockingIdentifier];
+        size_t& count = _identifierCounts[identifier];
         count++;
         if (count > maxPerIdentifier) {
-            _blockedIdentifiers.insert(command->blockingIdentifier);
-            SWARN("Blocking queue rate limit: blocking identifier '" << command->blockingIdentifier
+            _blockedIdentifiers.insert(identifier);
+            SWARN("Blocking queue rate limit: blocking identifier '" << identifier
                   << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
         }
     }
@@ -48,17 +51,36 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
     // the 30-second auto-reset window doesn't fire until the queue drains again.
     _emptyTime.store(0);
 
-    // Delegate to parent; _queueMutex is recursive so this re-acquisition is safe.
-    BedrockCommandQueue::push(move(command));
+    try {
+        // Base class acquires its own (non-recursive) `_queueMutex`.
+        BedrockCommandQueue::push(move(command));
+    } catch (...) {
+        // Roll back the increment so a base-class enqueue failure can't permanently inflate counts
+        // and falsely block this identifier.
+        if (checking) {
+            lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
+            auto it = _identifierCounts.find(identifier);
+            if (it != _identifierCounts.end()) {
+                if (it->second <= 1) {
+                    _identifierCounts.erase(it);
+                } else {
+                    it->second--;
+                }
+            }
+        }
+        throw;
+    }
 }
 
 unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
 {
-    // Called by get() with _queueMutex held, so access to rate limit state is safe without locking.
-    auto command = SScheduledPriorityQueue<unique_ptr<BedrockCommand>>::_dequeue();
+    // Called by `BedrockCommandQueue::get()` with the base `_queueMutex` held. Inspect `_queue` directly here;
+    // calling any base method that reacquires `_queueMutex` would deadlock.
+    auto command = BedrockCommandQueue::_dequeue();
 
     // Decrement rate limit count when a command leaves the queue.
     if (!command->blockingIdentifier.empty() && _maxPerIdentifier.load() > 0) {
+        lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
         auto it = _identifierCounts.find(command->blockingIdentifier);
         if (it != _identifierCounts.end()) {
             if (it->second <= 1) {
@@ -84,7 +106,7 @@ void BedrockBlockingCommandQueue::clear()
 
 size_t BedrockBlockingCommandQueue::clearRateLimits()
 {
-    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
+    lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
     size_t cleared = _blockedIdentifiers.size();
     _identifierCounts.clear();
     _blockedIdentifiers.clear();
@@ -94,7 +116,7 @@ size_t BedrockBlockingCommandQueue::clearRateLimits()
 
 STable BedrockBlockingCommandQueue::getState()
 {
-    lock_guard<decltype(_queueMutex)> lock(_queueMutex);
+    lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
 
     uint64_t emptyTime = _emptyTime.load();
     if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
