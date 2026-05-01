@@ -35,6 +35,10 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
         if (_blockedIdentifiers.count(identifier)) {
             SINFO("Blocking queue rate limit: rejecting '" << command->request.methodLine
                   << "' for identifier '" << identifier << "'");
+            // TODO: re-enable enforcement after monitoring confirms thresholds and identifier coverage
+            // are correct in production. Restoring this line also requires re-enabling the static
+            // instance in BlockingQueueRateLimitTest.cpp.
+            // STHROW("503 Blocking queue rate limited");
         }
 
         size_t& count = _identifierCounts[identifier];
