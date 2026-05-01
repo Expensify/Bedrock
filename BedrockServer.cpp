@@ -2012,6 +2012,8 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             cmd->complete = true;
             _reply(cmd);
         }
+        // `getAll` bypasses `_dequeue`, so reset identifier counts to match the now-empty queue.
+        _blockingCommandQueue.clearRateLimits();
         response["flushedCount"] = to_string(commands.size());
     } else if (SIEquals(command->request.methodLine, "SetConflictParams")) {
         int64_t maxConflictRetries = command->request.calc64("MaxConflictRetries");
