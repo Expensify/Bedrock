@@ -1,5 +1,6 @@
 #include "libstuff.h"
 #include <execinfo.h> // for backtrace*
+#include <memory>
 
 // Global logging state shared between all threads
 atomic<int> _g_SLogMask(LOG_INFO);
@@ -48,34 +49,38 @@ void SLogStackTrace(int level)
 }
 
 // If the param name is not in this whitelist, we will log <REDACTED> in addLogParams.
-static set<string> PARAMS_WHITELIST = {
-    "beginElapsed",
-    "chatID",
-    "command",
-    "commitElapsed",
-    "commitLockElapsed",
-    "Connection",
-    "Content-Length",
-    "count",
-    "indexName",
-    "isUnique",
-    "logParam",
-    "message",
-    "peer",
-    "prepareElapsed",
-    "query",
-    "readElapsed",
-    "reason",
-    "requestID",
-    "rollbackElapsed",
-    "rowNum",
-    "status",
-    "topic",
-    "totalElapsed",
-    "totalTransactionElapsed",
-    "userID",
-    "what",
-    "writeElapsed",
+// Held as an immutable snapshot so readers (every parameterized log call) are lock-free;
+// SWhitelistLogParams swaps in a new snapshot via copy-on-write CAS.
+static atomic<shared_ptr<const set<string>>> PARAMS_WHITELIST{
+    make_shared<const set<string>>(set<string>{
+        "beginElapsed",
+        "chatID",
+        "command",
+        "commitElapsed",
+        "commitLockElapsed",
+        "Connection",
+        "Content-Length",
+        "count",
+        "indexName",
+        "isUnique",
+        "logParam",
+        "message",
+        "peer",
+        "prepareElapsed",
+        "query",
+        "readElapsed",
+        "reason",
+        "requestID",
+        "rollbackElapsed",
+        "rowNum",
+        "status",
+        "topic",
+        "totalElapsed",
+        "totalTransactionElapsed",
+        "userID",
+        "what",
+        "writeElapsed",
+    })
 };
 
 string addLogParams(string&& message, const STable& params)
@@ -85,10 +90,11 @@ string addLogParams(string&& message, const STable& params)
     }
 
     message += " ~~";
+    auto whitelist = PARAMS_WHITELIST.load();
     for (const auto& [key, value] : params) {
         message += " ";
         string valueToLog = value;
-        if (!SContains(PARAMS_WHITELIST, key)) {
+        if (!SContains(*whitelist, key)) {
             if (!GLOBAL_IS_LIVE) {
                 STHROW("500 Log param " + key + " not in the whitelist, either do not log that or add it to PARAMS_WHITELIST if it's not sensitive");
             }
@@ -102,10 +108,17 @@ string addLogParams(string&& message, const STable& params)
 
 void SWhitelistLogParams(const set<string>& params)
 {
-    PARAMS_WHITELIST.insert(params.begin(), params.end());
+    auto current = PARAMS_WHITELIST.load();
+    while (true) {
+        auto next = make_shared<set<string>>(*current);
+        next->insert(params.begin(), params.end());
+        if (PARAMS_WHITELIST.compare_exchange_weak(current, next)) {
+            return;
+        }
+    }
 }
 
 bool SIsLogParamWhitelisted(const string& key)
 {
-    return SContains(PARAMS_WHITELIST, key);
+    return SContains(*PARAMS_WHITELIST.load(), key);
 }
