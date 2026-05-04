@@ -112,7 +112,7 @@ void SWhitelistLogParams(const set<string>& params)
     while (true) {
         auto next = make_shared<set<string>>(*current);
         next->insert(params.begin(), params.end());
-        if (PARAMS_WHITELIST.compare_exchange_weak(current, next)) {
+        if (PARAMS_WHITELIST.compare_exchange_strong(current, next)) {
             return;
         }
     }
