@@ -137,7 +137,8 @@ void BedrockCommandQueue::abandonFutureCommands(int msInFuture)
 {
     uint64_t timeLimit = STimeNow() + msInFuture * 1000;
 
-    unique_lock<mutex> queueLock(_queueMutex);
+    // Lock around changes to the queue.
+    unique_lock<decltype(_queueMutex)> queueLock(_queueMutex);
 
     auto it = _queue.lower_bound(timeLimit);
     size_t numberToErase = distance(it, _queue.end());
