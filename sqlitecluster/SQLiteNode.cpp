@@ -2168,17 +2168,19 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
         if (!_db.writeUnmodified(BedrockPlugin_Compression::decompress(commit.content))) {
             STHROW("failed to write transaction");
         }
-        if (!_db.prepare()) {
+        string newHash;
+        if (!_db.prepare(nullptr, &newHash)) {
             STHROW("failed to prepare transaction");
+        }
+        if (newHash != commit["Hash"]) {
+            _db.rollback();
+            STHROW("potential hash mismatch");
         }
 
         // Transaction succeeded, commit and go to the next
         SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
         _db.commit(stateName(_state));
 
-        if (_db.getCommittedHash() != commit["Hash"]) {
-            STHROW("potential hash mismatch");
-        }
         --commitsRemaining;
     }
 
