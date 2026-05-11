@@ -77,7 +77,6 @@ struct TimeoutTest : tpunit::TestFixture
 
         // Run one long query.
         SData slow("slowprocessquery");
-        slow["processTimeout"] = "200"; // 0.2s
         slow["size"] = "1000000";
         slow["count"] = "1";
         brtester.executeWaitVerifyContent(slow, "555 Timeout processing command");
