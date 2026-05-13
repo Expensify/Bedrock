@@ -29,6 +29,7 @@ public:
         function<void(unique_ptr<BedrockCommand>& item)> startFunction,
         function<void(unique_ptr<BedrockCommand>& item)> endFunction
     );
+    virtual ~BedrockCommandQueue() = default;
 
     // Functions to start and stop timing on the commands when they're inserted/removed from the queue.
     static void startTiming(unique_ptr<BedrockCommand>& command);
@@ -51,7 +52,7 @@ public:
     unique_ptr<BedrockCommand> get(uint64_t waitUS = 0, bool loggingEnabled = false);
 
     // Add an item to the queue. The queue takes ownership of the item and the caller's copy is invalidated.
-    void push(unique_ptr<BedrockCommand>&& command);
+    virtual void push(unique_ptr<BedrockCommand>&& command);
 
     // Add an item to the queue with a custom scheduled time. The queue takes ownership of the item.
     void push(unique_ptr<BedrockCommand>&& command, Scheduled time);
@@ -62,7 +63,7 @@ public:
     // Discards all commands scheduled more than msInFuture milliseconds after right now.
     void abandonFutureCommands(int msInFuture);
 
-private:
+protected:
     // Associate the item with its timeout so that when we dequeue an item to return, we can also remove its entry in
     // our set of timeouts.
     struct ItemTimeoutPair
@@ -76,14 +77,17 @@ private:
     };
 
     // Removes an item from the queue and returns it, if a suitable item is available. Throws `out_of_range` otherwise.
-    unique_ptr<BedrockCommand> _dequeue();
+    // Called with `_queueMutex` held by the caller.
+    virtual unique_ptr<BedrockCommand> _dequeue();
 
+    // Items sorted by scheduled time. Exposed to subclasses so overrides of `_dequeue` can inspect emptiness while
+    // `_queueMutex` is held.
+    multimap<Scheduled, ItemTimeoutPair> _queue;
+
+private:
     // Synchronization primitives for managing access to the queue.
     mutex _queueMutex;
     condition_variable _queueCondition;
-
-    // Items sorted by scheduled time.
-    multimap<Scheduled, ItemTimeoutPair> _queue;
 
     // A map of timeouts back into the main queue to find the item with the given timeout.
     multimap<Timeout, Scheduled> _lookupByTimeout;

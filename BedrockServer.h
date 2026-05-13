@@ -215,8 +215,15 @@ public:
     // Returns if we are detached and the sync thread has exited.
     bool isDetached();
 
-    // Returns if all plugins have completed calling UpgradeDB
-    bool isUpgradeComplete();
+    // If a node is LEADING (or STANDINGDOWN) and has, at some point, completed a DB upgrade,
+    // OR if the node is FOLLOWING, it is ready to handle requests.
+    bool dbReadyToHandleRequests();
+
+    // Legacy name for dbReadyToHandleRequests, retained for backwards compatibility.
+    inline bool isUpgradeComplete()
+    {
+        return dbReadyToHandleRequests();
+    }
 
     // See if there's a plugin that can turn this request into a command.
     // If not, we'll create a command that returns `430 Unrecognized command`.
@@ -258,9 +265,6 @@ private:
 
     // Each time we read a new request from a client, we give it a unique ID.
     atomic<uint64_t> _requestCount;
-
-    // This gets set to true when a database upgrade is in progress, letting workers know not to try to start any work.
-    atomic<bool> _upgradeInProgress;
 
     // This is the current version of the leader node, updated after every SQLiteNode::update() iteration. A
     // reference to this object is passed to the sync thread to allow this update.

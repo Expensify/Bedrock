@@ -1974,6 +1974,11 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             // We send any unsent transactions here before we finish switching states, we need to make sure these are
             // all sent to the new leader before we complete the transition.
             _sendOutstandingTransactions();
+
+            // If we are not leading, then peers cannot be subscribed to us.
+            for (auto& peer : _peerList) {
+                peer->subscribed = false;
+            }
         }
 
         // Clear some state if we can
