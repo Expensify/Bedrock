@@ -126,7 +126,27 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
             _onRecv(transaction);
         } else {
             // Coercing anything that's not 200 to 500 makes no sense, and should be abandoned with the above.
-            SWARN("Message failed: '" << transaction.fullResponse.methodLine << "'");
+
+            // Build a single-line, bounded snippet of the response body to aid diagnosis without flooding logs.
+            // Avoid logging the full request URL because external service paths can carry auth tokens; the Host
+            // header plus the request methodLine (verb + path) is usually enough to identify the upstream call.
+            string bodySnippet = transaction.fullResponse.content.substr(0, 256);
+            for (char& c : bodySnippet) {
+                if (c == '\n' || c == '\r' || c == '\t') {
+                    c = ' ';
+                }
+            }
+            if (transaction.fullResponse.content.size() > 256) {
+                bodySnippet += "...";
+            }
+            const string& host = transaction.fullRequest.nameValueMap.contains("Host") ? transaction.fullRequest.nameValueMap.at("Host") : "(unknown)";
+            SWARN("Message failed: response='" << transaction.fullResponse.methodLine
+                  << "' statusCode=" << statusCode
+                  << " requestHost='" << host
+                  << "' requestLine='" << transaction.fullRequest.methodLine
+                  << "' requestID='" << transaction.requestID
+                  << "' bodySnippet='" << bodySnippet
+                  << "' bodySize=" << transaction.fullResponse.content.size());
             transaction.response = getHTTPResponseCode(transaction.fullResponse.methodLine, 500);
         }
 
