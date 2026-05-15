@@ -846,10 +846,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
         *transactionhash = _uncommittedHash;
     }
 
-    // Compress _uncommittedQuery in place so the same bytes can be written to the journal and shipped to peers in
-    // BEGIN_TRANSACTION, avoiding a second compression on the wire. Skip when empty so an empty transaction stays
-    // an empty string rather than a zstd frame. After this point _uncommittedQuery may be a binary zstd frame, so
-    // anything that needs the raw SQL (hash, keyword checks) must have run before now.
     if (!_uncommittedQuery.empty()) {
         _uncommittedQuery = BedrockPlugin_Compression::compress(_uncommittedQuery, journalZstdDictionaryID.load());
     } else {
