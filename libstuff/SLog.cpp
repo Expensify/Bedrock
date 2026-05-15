@@ -61,6 +61,7 @@ static atomic<shared_ptr<const set<string>>> PARAMS_WHITELIST{
         "Connection",
         "Content-Length",
         "count",
+        "hctstats",
         "indexName",
         "isUnique",
         "logParam",

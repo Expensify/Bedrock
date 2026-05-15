@@ -958,10 +958,21 @@ int SQLite::commit(const string& description, const string& commandName, functio
         _insideTransaction = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
+
+        // To diagnose slow commits on HC-Tree, we add this query before the DB is unlocked.
+        // Only check for commits over 100ms.
+        if (_commitElapsed > 100'000 && _hctree) {
+            SQResult stats;
+            if(read("SELECT * FROM hctstats", stats)) {
+                for(const auto & row : stats) {
+                    SINFO("slow HC-Tree commit", {{"hctstats", SComposeList(row)}});
+                }
+            }
+        }
+
         _sharedData.commitLock.unlock();
         _mutexLocked = false;
         _queryCache.clear();
-
         _sharedData.openTransactionCount--;
 
         if (preCheckpointCallback != nullptr) {
