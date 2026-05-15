@@ -846,17 +846,32 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
         *transactionhash = _uncommittedHash;
     }
 
-    // Create our query. Wrap _uncommittedQuery with compress() for zstd compression.
-    // When journalZstdDictionaryID is 0 (the default), compress() returns data unchanged.
-    string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", compress(" + SQ(_uncommittedQuery) + ", " + SQ(journalZstdDictionaryID.load()) + "), " + SQ(_uncommittedHash) + " )";
-
-    // These are the values we're currently operating on, until we either commit or rollback.
-    _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
-    if (_uncommittedQuery.empty()) {
+    // Compress _uncommittedQuery in place so the same bytes can be written to the journal and shipped to peers in
+    // BEGIN_TRANSACTION, avoiding a second compression on the wire. Skip when empty so an empty transaction stays
+    // an empty string rather than a zstd frame. After this point _uncommittedQuery may be a binary zstd frame, so
+    // anything that needs the raw SQL (hash, keyword checks) must have run before now.
+    if (!_uncommittedQuery.empty()) {
+        _uncommittedQuery = BedrockPlugin_Compression::compress(_uncommittedQuery, journalZstdDictionaryID.load());
+    } else {
         SINFO("Will commmit blank query");
     }
 
-    int result = SQuery(_db, query);
+    // Stash the (now possibly compressed) query so SQLiteNode can ship it to peers without re-compressing.
+    _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
+
+    string query = "INSERT INTO " + _journalName + " VALUES (?, ?, ?)";
+    sqlite3_stmt* stmt = nullptr;
+    int result = sqlite3_prepare_v2(_db, query.c_str(), -1, &stmt, nullptr);
+    if (result == SQLITE_OK) {
+        sqlite3_bind_int64(stmt, 1, commitCount + 1);
+        sqlite3_bind_blob(stmt, 2, _uncommittedQuery.data(),
+                          _uncommittedQuery.size(), SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 3, _uncommittedHash.data(),
+                          _uncommittedHash.size(), SQLITE_STATIC);
+        int stepResult = sqlite3_step(stmt);
+        result = (stepResult == SQLITE_DONE) ? SQLITE_OK : stepResult;
+    }
+    sqlite3_finalize(stmt);
     _prepareElapsed += STimeNow() - before;
     if (result) {
         // Couldn't insert into the journal; roll back the original commit

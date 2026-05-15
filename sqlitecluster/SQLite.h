@@ -241,7 +241,9 @@ public:
     }
 
     // Returns a concatenated string containing all the 'write' queries executed within the current, uncommitted
-    // transaction.
+    // transaction. Before prepare() runs this is the raw SQL; after prepare() runs it holds the same bytes that were
+    // written to the journal — a zstd frame when journalZstdDictionaryID is non-zero, or the raw SQL otherwise. The
+    // post-prepare form is what gets shipped to followers in BEGIN_TRANSACTION.
     string getUncommittedQuery()
     {
         return _uncommittedQuery;
@@ -288,7 +290,8 @@ public:
 
     // This atomically removes and returns committed transactions from our internal list. SQLiteNode can call this, and
     // it will return a map of transaction IDs to tuples of (query, hash, dbCountAtTransactionStart), so that those
-    // transactions can be replicated out to peers.
+    // transactions can be replicated out to peers. The query is in its post-prepare() form (a zstd frame when
+    // journalZstdDictionaryID is non-zero, otherwise the raw SQL) and is shipped to followers as-is.
     map<uint64_t, tuple<string, string, uint64_t>> popCommittedTransactions();
 
     // The whitelist is either nullptr, in which case the feature is disabled, or it's a map of table names to sets of
@@ -362,7 +365,9 @@ public:
         atomic<int64_t> nextJournalCount;
 
         // When `SQLite::prepare` is called, we need to save a set of info that will be broadcast to peers when the
-        // transaction is ultimately committed. This should be cleared out if the transaction is rolled back.
+        // transaction is ultimately committed. This should be cleared out if the transaction is rolled back. The
+        // query is in its post-prepare() form (a zstd frame when compression is enabled, raw SQL otherwise) and is
+        // shipped directly to followers in BEGIN_TRANSACTION.
         void prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash, uint64_t dbCountAtTransactionStart);
 
         // When a transaction that was prepared is committed, we move the data from the prepared list to the committed
@@ -450,7 +455,9 @@ private:
     bool _insideTransaction = false;
 
     // The new query and new hash to add to the journal for a transaction that's nearing completion, before we commit
-    // it.
+    // it. During query execution _uncommittedQuery is the raw concatenated SQL; prepare() replaces it in place with
+    // the same bytes that are written to the journal — a zstd frame when journalZstdDictionaryID is non-zero,
+    // otherwise unchanged. This single representation is then both stored on disk and shipped to followers.
     string _uncommittedQuery;
     string _uncommittedHash;
 
