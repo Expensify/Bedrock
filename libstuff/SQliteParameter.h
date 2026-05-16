@@ -20,9 +20,28 @@ public:
     double doubleValue = 0.0;
     string stringValue;
 
-    static SQliteParameter null()                  { return {}; }
-    static SQliteParameter i(int64_t v)            { SQliteParameter p; p.type = Type::Int64;  p.intValue = v;            return p; }
-    static SQliteParameter d(double v)             { SQliteParameter p; p.type = Type::Double; p.doubleValue = v;         return p; }
-    static SQliteParameter text(string v)          { SQliteParameter p; p.type = Type::Text;   p.stringValue = std::move(v); return p; }
-    static SQliteParameter blob(string v)          { SQliteParameter p; p.type = Type::Blob;   p.stringValue = std::move(v); return p; }
+    static SQliteParameter null()
+    {
+        return {};
+    }
+
+    static SQliteParameter i(int64_t v)
+    {
+        SQliteParameter p; p.type = Type::Int64;  p.intValue = v;            return p;
+    }
+
+    static SQliteParameter d(double v)
+    {
+        SQliteParameter p; p.type = Type::Double; p.doubleValue = v;         return p;
+    }
+
+    static SQliteParameter text(string v)
+    {
+        SQliteParameter p; p.type = Type::Text;   p.stringValue = move(v); return p;
+    }
+
+    static SQliteParameter blob(string v)
+    {
+        SQliteParameter p; p.type = Type::Blob;   p.stringValue = move(v); return p;
+    }
 };

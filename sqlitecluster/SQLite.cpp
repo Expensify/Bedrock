@@ -850,10 +850,10 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
     // (the default), compress() returns data unchanged.
     string query = "INSERT INTO " + _journalName + " VALUES (:commitID, compress(:query, :dictID), :hash)";
     map<string, SQLite::Parameter> params = {
-        {":commitID", SQLite::Parameter::i((int64_t)(commitCount + 1))},
-        {":query",    SQLite::Parameter::text(_uncommittedQuery)},
-        {":dictID",   SQLite::Parameter::i(journalZstdDictionaryID.load())},
-        {":hash",     SQLite::Parameter::text(_uncommittedHash)},
+        {":commitID", SQLite::Parameter::i((int64_t) (commitCount + 1))},
+        {":query", SQLite::Parameter::text(_uncommittedQuery)},
+        {":dictID", SQLite::Parameter::i(journalZstdDictionaryID.load())},
+        {":hash", SQLite::Parameter::text(_uncommittedHash)},
     };
 
     // These are the values we're currently operating on, until we either commit or rollback.
@@ -969,8 +969,8 @@ int SQLite::commit(const string& description, const string& commandName, functio
         // Only check for commits over 100ms.
         if (_commitElapsed > 100'000 && _hctree) {
             SQResult stats;
-            if(read("SELECT * FROM hctstats", stats)) {
-                for(const auto & row : stats) {
+            if (read("SELECT * FROM hctstats", stats)) {
+                for (const auto& row : stats) {
                     SINFO("slow HC-Tree commit", {{"hctstats", SComposeList(row)}});
                 }
             }

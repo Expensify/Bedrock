@@ -12,7 +12,6 @@ public:
     // The class itself lives in libstuff alongside the SQuery overloads that consume it.
     using Parameter = SQliteParameter;
 
-
     class timeout_error : public exception {
 public:
         timeout_error(const string& e, uint64_t time) : _what(e), _time(time)

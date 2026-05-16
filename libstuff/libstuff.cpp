@@ -2879,17 +2879,21 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                         case SQliteParameter::Type::Null:
                             bindResult = sqlite3_bind_null(preparedStatement, paramIndex);
                             break;
+
                         case SQliteParameter::Type::Int64:
                             bindResult = sqlite3_bind_int64(preparedStatement, paramIndex, p.intValue);
                             break;
+
                         case SQliteParameter::Type::Double:
                             bindResult = sqlite3_bind_double(preparedStatement, paramIndex, p.doubleValue);
                             break;
+
                         case SQliteParameter::Type::Text:
                             // SQLITE_STATIC: the bytes are owned by `params` and stable until SQuery returns.
                             bindResult = sqlite3_bind_text(preparedStatement, paramIndex, p.stringValue.data(),
                                                            (int) p.stringValue.size(), SQLITE_STATIC);
                             break;
+
                         case SQliteParameter::Type::Blob:
                             bindResult = sqlite3_bind_blob(preparedStatement, paramIndex, p.stringValue.data(),
                                                            (int) p.stringValue.size(), SQLITE_STATIC);
