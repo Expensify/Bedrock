@@ -2802,7 +2802,7 @@ void SQueryLogClose()
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec)
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const vector<SQliteParameter>& params)
 {
 #define MAX_TRIES 3
     // Execute the query and get the results
@@ -2859,6 +2859,46 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                 // If we get a null statement (from parsing a blank string) we can skip, this isn't an error.
                 error = SQLITE_OK;
                 break;
+            }
+
+            // Bind parameters to the first statement only. Multi-statement SQL with bound params is ambiguous
+            // (which `?` placeholders does each value apply to?) so we explicitly do not propagate the same
+            // params across subsequent statements parsed from the same SQL string.
+            if (!params.empty() && numLoops == 1) {
+                for (size_t i = 0; i < params.size(); i++) {
+                    const SQliteParameter& p = params[i];
+                    int paramIndex = (int) i + 1;
+                    int bindResult = SQLITE_OK;
+                    switch (p.type) {
+                        case SQliteParameter::Type::Null:
+                            bindResult = sqlite3_bind_null(preparedStatement, paramIndex);
+                            break;
+                        case SQliteParameter::Type::Int64:
+                            bindResult = sqlite3_bind_int64(preparedStatement, paramIndex, p.intValue);
+                            break;
+                        case SQliteParameter::Type::Double:
+                            bindResult = sqlite3_bind_double(preparedStatement, paramIndex, p.doubleValue);
+                            break;
+                        case SQliteParameter::Type::Text:
+                            // SQLITE_STATIC: the bytes are owned by `params` and stable until SQuery returns.
+                            bindResult = sqlite3_bind_text(preparedStatement, paramIndex, p.stringValue.data(),
+                                                           (int) p.stringValue.size(), SQLITE_STATIC);
+                            break;
+                        case SQliteParameter::Type::Blob:
+                            bindResult = sqlite3_bind_blob(preparedStatement, paramIndex, p.stringValue.data(),
+                                                           (int) p.stringValue.size(), SQLITE_STATIC);
+                            break;
+                    }
+                    if (bindResult != SQLITE_OK) {
+                        SWARN("Failed to bind parameter #" << paramIndex << " (error " << bindResult << "): " << sqlite3_errmsg(db));
+                        error = bindResult;
+                        sqlite3_finalize(preparedStatement);
+                        break;
+                    }
+                }
+                if (error != SQLITE_OK) {
+                    break;
+                }
             }
 
             // This block will handle running formatted queries. If it executes, nothing else is currently checked, we're just done.
@@ -3540,15 +3580,15 @@ int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec)
     return SQuery(db, sql, ignore, 0, true, spec);
 }
 
-int SQuery(sqlite3* db, const char* ignore, const string& sql, int64_t warnThreshold, bool skipInfoWarn)
+int SQuery(sqlite3* db, const string& sql, const vector<SQliteParameter>& params, int64_t warnThreshold, bool skipInfoWarn)
 {
-    SQResult ignoreResult;
-    return SQuery(db, sql, ignoreResult, warnThreshold, skipInfoWarn);
+    SQResult ignore;
+    return SQuery(db, sql, ignore, warnThreshold, skipInfoWarn, nullptr, params);
 }
 
-int SQuery(sqlite3* db, const char* ignore, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn)
+int SQuery(sqlite3* db, const string& sql, const vector<SQliteParameter>& params, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec)
 {
-    return SQuery(db, sql, result, warnThreshold, skipInfoWarn);
+    return SQuery(db, sql, result, warnThreshold, skipInfoWarn, spec, params);
 }
 
 string SUNQUOTED_TIMESTAMP(uint64_t when)

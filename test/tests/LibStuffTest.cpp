@@ -40,6 +40,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testSReplaceAllBut),
                                      TEST(LibStuff::SQResultTest),
                                      TEST(LibStuff::testReturningClause),
+                                     TEST(LibStuff::testSQueryBoundParameters),
                                      TEST(LibStuff::SRedactSensitiveValuesTest),
                                      TEST(LibStuff::SComposeHTTPTest),
                                      TEST(LibStuff::testEncodeDecodeURIComponent)
@@ -966,6 +967,54 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(1, result.size());
         ASSERT_EQUAL(result[0]["name"], "name1");
         ASSERT_EQUAL(result[0]["value"], "value1");
+    }
+
+    void testSQueryBoundParameters()
+    {
+        SQLite db(":memory:", 1000, 1000, 1);
+        sqlite3* handle = db.getDBHandle();
+
+        // Create a table with one column of each type we support.
+        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "CREATE TABLE params(i INTEGER, d REAL, t TEXT, b BLOB, n INTEGER);"));
+
+        // INSERT one row with bound parameters, including a BLOB containing embedded null bytes
+        // (the case that motivated this work — string concatenation can't safely round-trip binary data).
+        string blobWithNulls("hello\0world\0\xff\xfe", 13);
+        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "INSERT INTO params VALUES (?, ?, ?, ?, ?);", {
+            SQLite::Parameter::i(42),
+            SQLite::Parameter::d(3.14),
+            SQLite::Parameter::text("hello"),
+            SQLite::Parameter::blob(blobWithNulls),
+            SQLite::Parameter::null(),
+        }));
+
+        // Read the row back and verify every value round-tripped correctly.
+        SQResult result;
+        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "SELECT i, d, t, b, n FROM params;", result));
+        ASSERT_EQUAL((size_t) 1, result.size());
+        ASSERT_EQUAL((size_t) 5, result[0].size());
+        ASSERT_EQUAL("42", result[0][0]);
+        ASSERT_EQUAL("3.14", result[0][1]);
+        ASSERT_EQUAL("hello", result[0][2]);
+        ASSERT_EQUAL(blobWithNulls, result[0][3]);
+        // The NULL column returns an empty string via SQResult's string conversion.
+        ASSERT_EQUAL("", result[0][4]);
+
+        // Bound parameters can also be used with SELECT to filter.
+        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "SELECT i FROM params WHERE i = ? AND t = ?;", {
+            SQLite::Parameter::i(42),
+            SQLite::Parameter::text("hello"),
+        }, result));
+        ASSERT_EQUAL((size_t) 1, result.size());
+        ASSERT_EQUAL("42", result[0][0]);
+
+        // Querying for a value that doesn't match returns no rows.
+        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "SELECT i FROM params WHERE i = ?;", {SQLite::Parameter::i(999)}, result));
+        ASSERT_EQUAL((size_t) 0, result.size());
+
+        // Empty params vector with a parameter-free statement still works.
+        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "SELECT COUNT(*) FROM params;", {}, result));
+        ASSERT_EQUAL("1", result[0][0]);
     }
 
     void SRedactSensitiveValuesTest()

@@ -846,9 +846,15 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
         *transactionhash = _uncommittedHash;
     }
 
-    // Create our query. Wrap _uncommittedQuery with compress() for zstd compression.
-    // When journalZstdDictionaryID is 0 (the default), compress() returns data unchanged.
-    string query = "INSERT INTO " + _journalName + " VALUES (" + SQ(commitCount + 1) + ", compress(" + SQ(_uncommittedQuery) + ", " + SQ(journalZstdDictionaryID.load()) + "), " + SQ(_uncommittedHash) + " )";
+    // Wrap the bound query value with compress() for zstd compression. When journalZstdDictionaryID is 0
+    // (the default), compress() returns data unchanged.
+    string query = "INSERT INTO " + _journalName + " VALUES (?, compress(?, ?), ?)";
+    vector<SQLite::Parameter> params = {
+        SQLite::Parameter::i((int64_t)(commitCount + 1)),
+        SQLite::Parameter::text(_uncommittedQuery),
+        SQLite::Parameter::i(journalZstdDictionaryID.load()),
+        SQLite::Parameter::text(_uncommittedHash),
+    };
 
     // These are the values we're currently operating on, until we either commit or rollback.
     _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
@@ -856,7 +862,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
         SINFO("Will commmit blank query");
     }
 
-    int result = SQuery(_db, query);
+    int result = SQuery(_db, query, params);
     _prepareElapsed += STimeNow() - before;
     if (result) {
         // Couldn't insert into the journal; roll back the original commit
