@@ -587,9 +587,13 @@ bool SQLite::addColumn(const string& tableName, const string& column, const stri
 
 string SQLite::read(const string& query) const
 {
-    // Execute the read-only query
+    return read(query, map<string, Parameter>{});
+}
+
+string SQLite::read(const string& query, const map<string, Parameter>& params) const
+{
     SQResult result;
-    if (!read(query, result)) {
+    if (!read(query, params, result)) {
         return "";
     }
     if (result.empty() || result[0].empty()) {
@@ -600,9 +604,15 @@ string SQLite::read(const string& query) const
 
 int SQLite::read(const string& query, sqlite3_qrf_spec* spec) const
 {
+    return read(query, {}, spec);
+}
+
+int SQLite::read(const string& query, const map<string, Parameter>& params, sqlite3_qrf_spec* spec) const
+{
     // Execute the read-only query. Skips caching.
     uint64_t before = STimeNow();
-    int queryResult = SQuery(_db, query, spec);
+    SQResult ignore;
+    int queryResult = SQuery(_db, query, ignore, 0, true, spec, params);
     _checkInterruptErrors("SQLite::read"s);
     _readElapsed += STimeNow() - before;
     return queryResult;
@@ -610,18 +620,25 @@ int SQLite::read(const string& query, sqlite3_qrf_spec* spec) const
 
 bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) const
 {
+    return read(query, {}, result, skipInfoWarn);
+}
+
+bool SQLite::read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn) const
+{
     uint64_t before = STimeNow();
     bool queryResult = false;
     _readQueryCount++;
-    auto foundQuery = _queryCache.find(query);
+    // The query cache is keyed on SQL text only — different bound-parameter values for the same SQL would
+    // share a cache entry. Skip the cache entirely when params are present.
+    auto foundQuery = params.empty() ? _queryCache.find(query) : _queryCache.end();
     if (foundQuery != _queryCache.end()) {
         result = foundQuery->second;
         _cacheHits++;
         queryResult = true;
     } else {
         _isDeterministicQuery = true;
-        queryResult = !SQuery(_db, query, result, 2000 * STIME_US_PER_MS, skipInfoWarn);
-        if (_isDeterministicQuery && queryResult && insideTransaction()) {
+        queryResult = !SQuery(_db, query, result, 2000 * STIME_US_PER_MS, skipInfoWarn, nullptr, params);
+        if (params.empty() && _isDeterministicQuery && queryResult && insideTransaction()) {
             _queryCache.emplace(make_pair(query, result));
         }
     }
@@ -672,6 +689,11 @@ void SQLite::_checkInterruptErrors(const string& error) const
 
 bool SQLite::write(const string& query)
 {
+    return write(query, {});
+}
+
+bool SQLite::write(const string& query, const map<string, Parameter>& params)
+{
     if (_noopUpdateMode) {
         SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
         return true;
@@ -679,38 +701,58 @@ bool SQLite::write(const string& query)
 
     // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
     SQResult ignore;
-    return _writeIdempotent(query, ignore);
+    return _writeIdempotent(query, params, ignore);
 }
 
 bool SQLite::write(const string& query, SQResult& result)
 {
+    return write(query, {}, result);
+}
+
+bool SQLite::write(const string& query, const map<string, Parameter>& params, SQResult& result)
+{
     if (_noopUpdateMode) {
         SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
         return true;
     }
 
     // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
-    return _writeIdempotent(query, result);
+    return _writeIdempotent(query, params, result);
 }
 
 bool SQLite::writeIdempotent(const string& query)
 {
+    return writeIdempotent(query, map<string, Parameter>{});
+}
+
+bool SQLite::writeIdempotent(const string& query, const map<string, Parameter>& params)
+{
     SQResult ignore;
-    return _writeIdempotent(query, ignore);
+    return _writeIdempotent(query, params, ignore);
 }
 
 bool SQLite::writeIdempotent(const string& query, SQResult& result)
 {
-    return _writeIdempotent(query, result);
+    return writeIdempotent(query, {}, result);
+}
+
+bool SQLite::writeIdempotent(const string& query, const map<string, Parameter>& params, SQResult& result)
+{
+    return _writeIdempotent(query, params, result);
 }
 
 bool SQLite::writeUnmodified(const string& query)
 {
-    SQResult ignore;
-    return _writeIdempotent(query, ignore, true);
+    return writeUnmodified(query, {});
 }
 
-bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries)
+bool SQLite::writeUnmodified(const string& query, const map<string, Parameter>& params)
+{
+    SQResult ignore;
+    return _writeIdempotent(query, params, ignore, true);
+}
+
+bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>& params, SQResult& result, bool alwaysKeepQueries)
 {
     if (!_insideTransaction) {
         STHROW("500 Attempted to write outside of transaction");
@@ -737,17 +779,18 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
     {
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         if (_enableRewrite) {
-            resultCode = SQuery(_db, query, result, 2'000'000, true);
+            resultCode = SQuery(_db, query, result, 2'000'000, true, nullptr, params);
             if (resultCode == SQLITE_AUTH) {
-                // Run re-written query.
+                // Run re-written query. The rewrite is expected to preserve placeholder names so the
+                // same bound params bind to it as well.
                 _currentlyRunningRewritten = true;
                 SASSERT(SEndsWith(_rewrittenQuery, ";"));
-                resultCode = SQuery(_db, _rewrittenQuery);
+                resultCode = SQuery(_db, _rewrittenQuery, params);
                 usedRewrittenQuery = true;
                 _currentlyRunningRewritten = false;
             }
         } else {
-            resultCode = SQuery(_db, query, result);
+            resultCode = SQuery(_db, query, params, result);
         }
     }
 
