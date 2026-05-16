@@ -848,12 +848,12 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
 
     // Wrap the bound query value with compress() for zstd compression. When journalZstdDictionaryID is 0
     // (the default), compress() returns data unchanged.
-    string query = "INSERT INTO " + _journalName + " VALUES (?, compress(?, ?), ?)";
-    vector<SQLite::Parameter> params = {
-        SQLite::Parameter::i((int64_t)(commitCount + 1)),
-        SQLite::Parameter::text(_uncommittedQuery),
-        SQLite::Parameter::i(journalZstdDictionaryID.load()),
-        SQLite::Parameter::text(_uncommittedHash),
+    string query = "INSERT INTO " + _journalName + " VALUES (:commitID, compress(:query, :dictID), :hash)";
+    map<string, SQLite::Parameter> params = {
+        {":commitID", SQLite::Parameter::i((int64_t)(commitCount + 1))},
+        {":query",    SQLite::Parameter::text(_uncommittedQuery)},
+        {":dictID",   SQLite::Parameter::i(journalZstdDictionaryID.load())},
+        {":hash",     SQLite::Parameter::text(_uncommittedHash)},
     };
 
     // These are the values we're currently operating on, until we either commit or rollback.

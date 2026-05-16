@@ -977,15 +977,15 @@ struct LibStuff : tpunit::TestFixture
         // Create a table with one column of each type we support.
         ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "CREATE TABLE params(i INTEGER, d REAL, t TEXT, b BLOB, n INTEGER);"));
 
-        // INSERT one row with bound parameters, including a BLOB containing embedded null bytes
+        // INSERT one row with named bound parameters, including a BLOB containing embedded null bytes
         // (the case that motivated this work — string concatenation can't safely round-trip binary data).
         string blobWithNulls("hello\0world\0\xff\xfe", 13);
-        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "INSERT INTO params VALUES (?, ?, ?, ?, ?);", {
-            SQLite::Parameter::i(42),
-            SQLite::Parameter::d(3.14),
-            SQLite::Parameter::text("hello"),
-            SQLite::Parameter::blob(blobWithNulls),
-            SQLite::Parameter::null(),
+        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "INSERT INTO params VALUES (:i, :d, :t, :b, :n);", {
+            {":i", SQLite::Parameter::i(42)},
+            {":d", SQLite::Parameter::d(3.14)},
+            {":t", SQLite::Parameter::text("hello")},
+            {":b", SQLite::Parameter::blob(blobWithNulls)},
+            {":n", SQLite::Parameter::null()},
         }));
 
         // Read the row back and verify every value round-tripped correctly.
@@ -1000,21 +1000,26 @@ struct LibStuff : tpunit::TestFixture
         // The NULL column returns an empty string via SQResult's string conversion.
         ASSERT_EQUAL("", result[0][4]);
 
-        // Bound parameters can also be used with SELECT to filter.
-        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "SELECT i FROM params WHERE i = ? AND t = ?;", {
-            SQLite::Parameter::i(42),
-            SQLite::Parameter::text("hello"),
+        // Bound parameters can also be used with SELECT to filter. The `@` and `$` prefixes also work.
+        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "SELECT i FROM params WHERE i = @i AND t = $t;", {
+            {"@i", SQLite::Parameter::i(42)},
+            {"$t", SQLite::Parameter::text("hello")},
         }, result));
         ASSERT_EQUAL((size_t) 1, result.size());
         ASSERT_EQUAL("42", result[0][0]);
 
         // Querying for a value that doesn't match returns no rows.
-        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "SELECT i FROM params WHERE i = ?;", {SQLite::Parameter::i(999)}, result));
+        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "SELECT i FROM params WHERE i = :target;",
+                                       {{":target", SQLite::Parameter::i(999)}}, result));
         ASSERT_EQUAL((size_t) 0, result.size());
 
-        // Empty params vector with a parameter-free statement still works.
-        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "SELECT COUNT(*) FROM params;", {}, result));
+        // Empty params map with a parameter-free statement still works.
+        ASSERT_EQUAL(SQLITE_OK, SQuery(handle, "SELECT COUNT(*) FROM params;", map<string, SQliteParameter>{}, result));
         ASSERT_EQUAL("1", result[0][0]);
+
+        // Naming a parameter that's not in the SQL is rejected with an error.
+        ASSERT_NOT_EQUAL(SQLITE_OK, SQuery(handle, "SELECT 1;",
+                                           {{":nope", SQLite::Parameter::i(0)}}, result));
     }
 
     void SRedactSensitiveValuesTest()

@@ -2802,7 +2802,7 @@ void SQueryLogClose()
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const vector<SQliteParameter>& params)
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const map<string, SQliteParameter>& params)
 {
 #define MAX_TRIES 3
     // Execute the query and get the results
@@ -2862,12 +2862,18 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
             }
 
             // Bind parameters to the first statement only. Multi-statement SQL with bound params is ambiguous
-            // (which `?` placeholders does each value apply to?) so we explicitly do not propagate the same
-            // params across subsequent statements parsed from the same SQL string.
+            // (which statement does each value belong to?) so we explicitly do not propagate the same params
+            // across subsequent statements parsed from the same SQL string. Map keys must include the prefix
+            // character (`:`, `@`, or `$`) used by the named placeholder in the SQL.
             if (!params.empty() && numLoops == 1) {
-                for (size_t i = 0; i < params.size(); i++) {
-                    const SQliteParameter& p = params[i];
-                    int paramIndex = (int) i + 1;
+                for (const auto& [name, p] : params) {
+                    int paramIndex = sqlite3_bind_parameter_index(preparedStatement, name.c_str());
+                    if (paramIndex == 0) {
+                        SWARN("Bound parameter '" << name << "' not found in SQL: " << sql.substr(0, MAX_LOG_QUERY_SIZE));
+                        error = SQLITE_ERROR;
+                        sqlite3_finalize(preparedStatement);
+                        break;
+                    }
                     int bindResult = SQLITE_OK;
                     switch (p.type) {
                         case SQliteParameter::Type::Null:
@@ -2890,7 +2896,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                             break;
                     }
                     if (bindResult != SQLITE_OK) {
-                        SWARN("Failed to bind parameter #" << paramIndex << " (error " << bindResult << "): " << sqlite3_errmsg(db));
+                        SWARN("Failed to bind parameter '" << name << "' (error " << bindResult << "): " << sqlite3_errmsg(db));
                         error = bindResult;
                         sqlite3_finalize(preparedStatement);
                         break;
@@ -3580,13 +3586,13 @@ int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec)
     return SQuery(db, sql, ignore, 0, true, spec);
 }
 
-int SQuery(sqlite3* db, const string& sql, const vector<SQliteParameter>& params, int64_t warnThreshold, bool skipInfoWarn)
+int SQuery(sqlite3* db, const string& sql, const map<string, SQliteParameter>& params, int64_t warnThreshold, bool skipInfoWarn)
 {
     SQResult ignore;
     return SQuery(db, sql, ignore, warnThreshold, skipInfoWarn, nullptr, params);
 }
 
-int SQuery(sqlite3* db, const string& sql, const vector<SQliteParameter>& params, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec)
+int SQuery(sqlite3* db, const string& sql, const map<string, SQliteParameter>& params, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec)
 {
     return SQuery(db, sql, result, warnThreshold, skipInfoWarn, spec, params);
 }

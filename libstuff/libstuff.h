@@ -702,14 +702,16 @@ void SQueryLogOpen(const string& logFilename);
 void SQueryLogClose();
 
 // Returns an SQLite result code.
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr, const vector<SQliteParameter>& params = {});
+// Bound parameters use SQLite's named-parameter syntax (`:name`, `@name`, or `$name`) — positional `?`/`?NNN`
+// is not supported. Map keys must include the prefix character that appears in the SQL.
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr, const map<string, SQliteParameter>& params = {});
 int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
 int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec);
 
 // Convenience overloads that put bound parameters right after the SQL — useful for write queries that don't return rows.
 // These forward to the canonical SQuery above.
-int SQuery(sqlite3* db, const string& sql, const vector<SQliteParameter>& params, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
-int SQuery(sqlite3* db, const string& sql, const vector<SQliteParameter>& params, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr);
+int SQuery(sqlite3* db, const string& sql, const map<string, SQliteParameter>& params, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
+int SQuery(sqlite3* db, const string& sql, const map<string, SQliteParameter>& params, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr);
 
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
 bool SQVerifyTableExists(sqlite3* db, const string& tableName);
