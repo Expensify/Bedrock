@@ -58,4 +58,14 @@ public:
         p.stringValue = move(v);
         return p;
     }
+
+    // Serialize to a single string suitable for stuffing into an SData header value. Format is a single
+    // type-tag byte followed by an encoded payload: 'N' (null, empty payload); 'I' (int64, decimal); 'D'
+    // (double, %.17g for round-trip exactness); 'T' / 'B' (text / blob, base64 — needed because SData
+    // values are line-oriented and the bytes may contain newlines or NULs).
+    string serialize() const;
+
+    // Inverse of serialize(). Returns Null on any format error rather than throwing, since the inputs come
+    // from the wire and a malformed value should bind as NULL rather than crash the receiver.
+    static SQliteParameter deserialize(const string& encoded);
 };

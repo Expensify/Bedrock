@@ -610,6 +610,11 @@ string BedrockTester::readDB(const string& query, bool online, int64_t timeoutMS
 
 bool BedrockTester::readDB(const string& query, SQResult& result, bool online, int64_t timeoutMS)
 {
+    return readDB(query, {}, result, online, timeoutMS);
+}
+
+bool BedrockTester::readDB(const string& query, const map<string, SQliteParameter>& params, SQResult& result, bool online, int64_t timeoutMS)
+{
     if (remoteMode && online) {
         string fixedQuery = query;
         if (!SEndsWith(query, ";")) {
@@ -621,6 +626,9 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
         command["ReadDBFlags"] = "-json";
         if (timeoutMS) {
             command["timeout"] = to_string(timeoutMS);
+        }
+        for (const auto& [name, value] : params) {
+            command["sql-param-" + name] = value.serialize();
         }
         auto commandResult = executeWaitMultipleData({command}, 1);
         if (commandResult[0].methodLine == "400 Unique Constraints Violation") {
@@ -636,7 +644,7 @@ bool BedrockTester::readDB(const string& query, SQResult& result, bool online, i
         }
         SQLite& localDB = optionalDB ? *optionalDB : getSQLiteDB();
         localDB.beginTransaction();
-        bool success = localDB.read(query, result);
+        bool success = localDB.read(query, params, result);
         localDB.rollback();
         return success;
     }

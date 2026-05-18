@@ -1,4 +1,5 @@
 #pragma once
+#include <libstuff/SQliteParameter.h>
 #include <libstuff/libstuff.h>
 #include "../BedrockPlugin.h"
 
@@ -41,6 +42,12 @@ public:
 
 private:
     string query;
+
+    // Named bound parameters extracted from `sql-param-<name>` request headers in the constructor and
+    // threaded through to db.read/db.write so the server binds the values rather than executing the raw
+    // `:placeholder` text. Used by RemoteSQLite for HCTree-style tests where the client can't expand
+    // params locally because it has no schema.
+    map<string, SQliteParameter> params;
 
     // Callback for SQLite output formatter.
     static int SQLiteFormatAppend(void* destString, const char* appendString, sqlite3_int64 length);

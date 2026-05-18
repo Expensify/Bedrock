@@ -1,6 +1,7 @@
 #pragma once
 #include <signal.h>
 
+#include <libstuff/SQliteParameter.h>
 #include <test/lib/PortMap.h>
 #include <test/lib/tpunit++.hpp>
 
@@ -84,6 +85,11 @@ public:
     // Note that timeoutMS only applies in HC-Tree mode. It is ignored in WAL2 mode.
     string readDB(const string& query, bool online = true, int64_t timeoutMS = 0);
     bool readDB(const string& query, SQResult& result, bool online = true, int64_t timeoutMS = 0);
+
+    // Params-aware variant. When forwarding to a remote server (`online`), the params map is serialized
+    // into `sql-param-<name>` headers on the Query command and the server rebuilds the map on the other
+    // side. When running against a local SQLite (`!online`), the params are passed straight through.
+    bool readDB(const string& query, const map<string, SQliteParameter>& params, SQResult& result, bool online = true, int64_t timeoutMS = 0);
 
     // Closes and releases any existing DB file.
     virtual void freeDB();

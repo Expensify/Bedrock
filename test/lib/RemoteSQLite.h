@@ -9,9 +9,9 @@ class BedrockTester;
 // and forwards them to a remote server for execution. Consequently, the actual database logic is handled by the remote host.
 // This is particularly useful for testing in environments where multiple processes cannot access the database simultaneously (HCTree).
 //
-// Bound-parameter caveat: the forwarding wire format is just `query` text — it does not carry the params map. Overrides that take
-// a params map below ignore it (with a SWARN if non-empty). If a remote-mode test ever needs bound-param semantics, expand the
-// params into SQL literals locally first (sqlite3_expanded_sql) before reaching SQLite::read/write.
+// Bound-parameter caveat: the forwarding wire format carries the params map as `sql-param-<name>` headers on the Query command,
+// and the server-side DB plugin reassembles it before calling into SQLite. The leg that lacks schema-aware expansion (this side)
+// never has to bind values itself — binding happens on the server where the real database lives.
 class RemoteSQLite : public SQLite {
 public:
     RemoteSQLite(BedrockTester* tester);
