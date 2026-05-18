@@ -77,13 +77,13 @@ struct TimeoutTest : tpunit::TestFixture
 
         // One large INSERT that exceeds the default 5s processTimeout on its own.
         SData slow("slowprocessquery");
-        slow["size"] = "10000000";
+        slow["size"] = "100000000";
         slow["count"] = "1";
         brtester.executeWaitVerifyContent(slow, "555 Timeout processing command");
 
         // Many medium INSERTs that cumulatively exceed the default 5s processTimeout.
         slow["size"] = "100000";
-        slow["count"] = "100";
+        slow["count"] = "1000";
         brtester.executeWaitVerifyContent(slow, "555 Timeout processing command");
     }
 
