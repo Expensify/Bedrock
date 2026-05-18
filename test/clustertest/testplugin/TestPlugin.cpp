@@ -102,6 +102,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "exceptioninprocess",
         "generatesegfaultprocess",
         "idcollision",
+        "writebound",
         "slowprocessquery",
         "bigquery",
         "prepeekcommand",
@@ -541,6 +542,19 @@ void TestPluginCommand::process(SQLite& db)
             response.methodLine = "200 OK";
         }
 
+        return;
+    } else if (SStartsWith(request.methodLine, "writebound")) {
+        // Same shape as idcollision but uses named bound parameters so we can exercise the
+        // expandedSql journaling path on the leader and verify followers receive the inlined-value form.
+        SQResult result;
+        db.read("SELECT MAX(id) FROM test", result);
+        SASSERT(result.size());
+        int nextID = SToInt(result[0][0]) + 1;
+        SASSERT(db.write("INSERT INTO test VALUES (:id, :value);", {
+            {":id", SQLite::Parameter::i(nextID)},
+            {":value", SQLite::Parameter::text(request["value"])},
+        }));
+        response.methodLine = "200 OK";
         return;
     } else if (SStartsWith(request.methodLine, "slowprocessquery")) {
         SQResult result;
