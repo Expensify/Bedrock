@@ -540,15 +540,12 @@ void TestPluginCommand::process(SQLite& db)
 
         return;
     } else if (SStartsWith(request.methodLine, "slowprocessquery")) {
-        // Do a small write so this command goes through the process phase.
         SQResult result;
         db.read("SELECT MAX(id) FROM test", result);
         SASSERT(result.size());
         int nextID = SToInt(result[0][0]) + 1;
-        db.write("INSERT INTO test (id, value) VALUES (" + to_string(nextID) + ", " + to_string(nextID) + ");");
 
-        // Burn time with a computationally expensive recursive CTE.
-        int size = 1000000;
+        int size = 1;
         int count = 1;
         if (request.isSet("size")) {
             size = SToInt(request["size"]);
@@ -556,9 +553,18 @@ void TestPluginCommand::process(SQLite& db)
         if (request.isSet("count")) {
             count = SToInt(request["count"]);
         }
+
         for (int i = 0; i < count; i++) {
-            string query = "WITH RECURSIVE cnt(x) AS ( SELECT random() UNION ALL SELECT x+1 FROM cnt LIMIT " + SQ(size) + ") SELECT MAX(x) FROM cnt;";
-            db.read(query, result);
+            string query = "INSERT INTO test (id, value) VALUES ";
+            for (int j = 0; j < size; j++) {
+                if (j) {
+                    query += ", ";
+                }
+                query += "(" + to_string(nextID) + ", " + to_string(nextID) + ")";
+                nextID++;
+            }
+            query += ";";
+            db.write(query);
         }
     } else if (SStartsWith(request.methodLine, "exceptioninprocess")) {
         throw 2;
