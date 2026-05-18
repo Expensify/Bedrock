@@ -774,23 +774,28 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     _currentlyWriting = true;
     // Try to execute the query
     uint64_t before = STimeNow();
-    bool usedRewrittenQuery = false;
     int resultCode = 0;
+    // The executed-statement text with bound parameters expanded as SQL literals. We journal this rather
+    // than the raw `query` because followers replay journal SQL via writeUnmodified() with no params map,
+    // so placeholders would bind to NULL on the replica. See PR #2600 discussion.
+    string expandedSql;
     {
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         if (_enableRewrite) {
-            resultCode = SQuery(_db, query, result, 2'000'000, true, nullptr, params);
+            resultCode = SQuery(_db, query, result, 2'000'000, true, nullptr, params, &expandedSql);
             if (resultCode == SQLITE_AUTH) {
                 // Run re-written query. The rewrite is expected to preserve placeholder names so the
-                // same bound params bind to it as well.
+                // same bound params bind to it as well. Discard the failed original's partial expansion
+                // and capture the rewritten form instead.
                 _currentlyRunningRewritten = true;
                 SASSERT(SEndsWith(_rewrittenQuery, ";"));
-                resultCode = SQuery(_db, _rewrittenQuery, params);
-                usedRewrittenQuery = true;
+                expandedSql.clear();
+                SQResult rewrittenResult;
+                resultCode = SQuery(_db, _rewrittenQuery, rewrittenResult, 2'000'000, true, nullptr, params, &expandedSql);
                 _currentlyRunningRewritten = false;
             }
         } else {
-            resultCode = SQuery(_db, query, params, result);
+            resultCode = SQuery(_db, query, result, 2000 * STIME_US_PER_MS, false, nullptr, params, &expandedSql);
         }
     }
 
@@ -813,9 +818,11 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     uint64_t schemaAfter = SToUInt64(results[0][0]);
     uint64_t changesAfter = sqlite3_total_changes(_db);
 
-    // If something changed, or we're always keeping queries, then save this.
+    // If something changed, or we're always keeping queries, then save this. expandedSql contains exactly
+    // what was executed (original or rewritten, with bound values inlined) and is safe to replay on a
+    // follower without any parameter map.
     if (alwaysKeepQueries || (schemaAfter > schemaBefore) || (changesAfter > changesBefore)) {
-        _uncommittedQuery += usedRewrittenQuery ? _rewrittenQuery : query;
+        _uncommittedQuery += expandedSql;
     }
 
     _currentlyWriting = false;

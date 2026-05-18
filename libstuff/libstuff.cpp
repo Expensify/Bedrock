@@ -2802,7 +2802,7 @@ void SQueryLogClose()
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const map<string, SQliteParameter>& params)
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const map<string, SQliteParameter>& params, string* expandedSql)
 {
 #define MAX_TRIES 3
     // Execute the query and get the results
@@ -3007,6 +3007,24 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                 sleep(1);
             }
         }
+
+        // If the caller wants the executed SQL (for journaling replicated writes), capture it with bound
+        // parameters expanded as SQL literals. sqlite3_expanded_sql() preserves the statement's trailing
+        // `;` (which our write paths require via SASSERT), so we don't add a separator ourselves — adding
+        // one would produce `;;` between statements, and the parser absorbs the second `;` into the next
+        // statement's saved SQL, which when re-expanded by a follower's writeUnmodified() yields `;;;` and
+        // a hash divergence between leader and follower.
+        if (error == SQLITE_OK && expandedSql) {
+            char* expanded = sqlite3_expanded_sql(preparedStatement);
+            if (expanded) {
+                *expandedSql += expanded;
+                sqlite3_free(expanded);
+            } else {
+                SWARN("sqlite3_expanded_sql returned NULL for: " << sql.substr(0, MAX_LOG_QUERY_SIZE));
+                error = SQLITE_NOMEM;
+            }
+        }
+
         sqlite3_finalize(preparedStatement);
     }
 

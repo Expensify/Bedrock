@@ -704,7 +704,11 @@ void SQueryLogClose();
 // Returns an SQLite result code.
 // Bound parameters use SQLite's named-parameter syntax (`:name`, `@name`, or `$name`) — positional `?`/`?NNN`
 // is not supported. Map keys must include the prefix character that appears in the SQL.
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr, const map<string, SQliteParameter>& params = {});
+// If `expandedSql` is non-null, each successfully-executed statement's SQL text (with bound parameters
+// expanded as SQL literals via sqlite3_expanded_sql) is appended to the string. Write paths use this to
+// journal a self-contained, replay-safe form of the query for replication; followers run the journaled
+// SQL via writeUnmodified() with no params map, so placeholders must already be inlined.
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr, const map<string, SQliteParameter>& params = {}, string* expandedSql = nullptr);
 int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
 int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec);
 
