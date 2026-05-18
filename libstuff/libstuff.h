@@ -702,8 +702,9 @@ void SQueryLogOpen(const string& logFilename);
 void SQueryLogClose();
 
 // Returns an SQLite result code.
-// Bound parameters use SQLite's named-parameter syntax (`:name`, `@name`, or `$name`) — positional `?`/`?NNN`
-// is not supported. Map keys must include the prefix character that appears in the SQL.
+// Bound parameters use SQLite's named-parameter syntax (`:name`, `@name`, or `$name`)
+// (positional `?`/`?NNN` // is not supported)
+// Map keys must include the prefix character that appears in the SQL.
 // If `expandedSql` is non-null, each successfully-executed statement's SQL text (with bound parameters
 // expanded as SQL literals via sqlite3_expanded_sql) is appended to the string. Write paths use this to
 // journal a self-contained, replay-safe form of the query for replication; followers run the journaled

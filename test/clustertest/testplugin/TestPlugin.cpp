@@ -544,7 +544,7 @@ void TestPluginCommand::process(SQLite& db)
 
         return;
     } else if (SStartsWith(request.methodLine, "writebound")) {
-        // Same shape as idcollision but uses named bound parameters so we can exercise the
+        // Just like idcollision but uses named bound parameters so we can exercise the
         // expandedSql journaling path on the leader and verify followers receive the inlined-value form.
         SQResult result;
         db.read("SELECT MAX(id) FROM test", result);

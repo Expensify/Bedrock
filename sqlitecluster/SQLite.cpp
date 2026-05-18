@@ -722,7 +722,7 @@ bool SQLite::write(const string& query, const map<string, Parameter>& params, SQ
 
 bool SQLite::writeIdempotent(const string& query)
 {
-    return writeIdempotent(query, map<string, Parameter>{});
+    return writeIdempotent(query, {});
 }
 
 bool SQLite::writeIdempotent(const string& query, const map<string, Parameter>& params)
@@ -775,6 +775,7 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     // Try to execute the query
     uint64_t before = STimeNow();
     int resultCode = 0;
+
     // The executed-statement text with bound parameters expanded as SQL literals. We journal this rather
     // than the raw `query` because followers replay journal SQL via writeUnmodified() with no params map,
     // so placeholders would bind to NULL on the replica. See PR #2600 discussion.
@@ -818,9 +819,7 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     uint64_t schemaAfter = SToUInt64(results[0][0]);
     uint64_t changesAfter = sqlite3_total_changes(_db);
 
-    // If something changed, or we're always keeping queries, then save this. expandedSql contains exactly
-    // what was executed (original or rewritten, with bound values inlined) and is safe to replay on a
-    // follower without any parameter map.
+    // If something changed, or we're always keeping queries, then save this.
     if (alwaysKeepQueries || (schemaAfter > schemaBefore) || (changesAfter > changesBefore)) {
         _uncommittedQuery += expandedSql;
     }

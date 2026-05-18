@@ -122,6 +122,7 @@ struct BoundParametersTest : tpunit::TestFixture
             ASSERT_TRUE(SContains(journalSql, "'" + distinctiveValue + "'"));
             ASSERT_FALSE(SContains(journalSql, ":id"));
             ASSERT_FALSE(SContains(journalSql, ":value"));
+            cout << journalSql << endl;
         }
     }
 } __BoundParametersTest;

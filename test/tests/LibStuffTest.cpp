@@ -994,12 +994,12 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_TRUE(db.read("SELECT i, d, t, b, n FROM params;", result));
         ASSERT_EQUAL((size_t) 1, result.size());
         ASSERT_EQUAL((size_t) 5, result[0].size());
-        ASSERT_EQUAL("42", result[0][0]);
-        ASSERT_EQUAL("3.14", result[0][1]);
-        ASSERT_EQUAL("hello", result[0][2]);
-        ASSERT_EQUAL(blobWithNulls, result[0][3]);
+        ASSERT_EQUAL("42", result[0]["i"]);
+        ASSERT_EQUAL("3.14", result[0]["d"]);
+        ASSERT_EQUAL("hello", result[0]["t"]);
+        ASSERT_EQUAL(blobWithNulls, result[0]["b"]);
         // The NULL column returns an empty string via SQResult's string conversion.
-        ASSERT_EQUAL("", result[0][4]);
+        ASSERT_EQUAL("", result[0]["n"]);
 
         // Bound parameters can also be used with SELECT to filter. The `@` and `$` prefixes also work.
         ASSERT_TRUE(db.read("SELECT i FROM params WHERE i = @i AND t = $t;", {

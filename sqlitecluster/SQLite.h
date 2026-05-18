@@ -9,7 +9,6 @@
 class SQLite {
 public:
     // Re-export SQliteParameter as SQLite::Parameter so callers can write SQLite::Parameter::text("foo") etc.
-    // The class itself lives in libstuff alongside the SQuery overloads that consume it.
     using Parameter = SQliteParameter;
 
     class timeout_error : public exception {
