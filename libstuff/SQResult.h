@@ -54,7 +54,7 @@ public:
     // Mutators
     void clear();
     void emplace_back(SQResultRow&& row);
-    void resize(size_t newSize);
+    void resize(const size_t newSize);
 
     // Operators
     const SQResultRow& operator[](size_t rowNum) const;
