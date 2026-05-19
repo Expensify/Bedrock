@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 #include <string>
-#include <utility>
 
 using namespace std;
 
@@ -22,42 +21,11 @@ public:
     double doubleValue = 0.0;
     string stringValue;
 
-    static SQliteParameter null()
-    {
-        return {};
-    }
-
-    static SQliteParameter i(int64_t v)
-    {
-        SQliteParameter p;
-        p.type = Type::Int64;
-        p.intValue = v;
-        return p;
-    }
-
-    static SQliteParameter d(double v)
-    {
-        SQliteParameter p;
-        p.type = Type::Double;
-        p.doubleValue = v;
-        return p;
-    }
-
-    static SQliteParameter text(string v)
-    {
-        SQliteParameter p;
-        p.type = Type::Text;
-        p.stringValue = move(v);
-        return p;
-    }
-
-    static SQliteParameter blob(string v)
-    {
-        SQliteParameter p;
-        p.type = Type::Blob;
-        p.stringValue = move(v);
-        return p;
-    }
+    static SQliteParameter null();
+    static SQliteParameter i(int64_t v);
+    static SQliteParameter d(double v);
+    static SQliteParameter text(string v);
+    static SQliteParameter blob(string v);
 
     // Serialize to a single string suitable for stuffing into an SData header value. Format is a single
     // type-tag byte followed by an encoded payload: 'N' (null, empty payload); 'I' (int64, decimal); 'D'

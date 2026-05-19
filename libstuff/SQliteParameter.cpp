@@ -5,6 +5,44 @@
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <utility>
+
+SQliteParameter SQliteParameter::null()
+{
+    return {};
+}
+
+SQliteParameter SQliteParameter::i(int64_t v)
+{
+    SQliteParameter p;
+    p.type = Type::Int64;
+    p.intValue = v;
+    return p;
+}
+
+SQliteParameter SQliteParameter::d(double v)
+{
+    SQliteParameter p;
+    p.type = Type::Double;
+    p.doubleValue = v;
+    return p;
+}
+
+SQliteParameter SQliteParameter::text(string v)
+{
+    SQliteParameter p;
+    p.type = Type::Text;
+    p.stringValue = move(v);
+    return p;
+}
+
+SQliteParameter SQliteParameter::blob(string v)
+{
+    SQliteParameter p;
+    p.type = Type::Blob;
+    p.stringValue = move(v);
+    return p;
+}
 
 string SQliteParameter::serialize() const
 {
