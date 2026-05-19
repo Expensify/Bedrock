@@ -2,6 +2,7 @@
 
 #include "libstuff.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 
@@ -27,6 +28,39 @@ string SQliteParameter::serialize() const
             return "B" + SEncodeBase64(stringValue);
     }
     return "N";
+}
+
+string SQliteParameter::uriEncodeParamName(const string& name)
+{
+    string out;
+    out.reserve(name.size());
+    for (char c : name) {
+        if (c == ':' || c == '@' || c == '$' || c == '#') {
+            char buf[4];
+            snprintf(buf, sizeof(buf), "#%02X", (unsigned char) c);
+            out += buf;
+        } else {
+            out += c;
+        }
+    }
+    return out;
+}
+
+string SQliteParameter::uriDecodeParamName(const string& encoded)
+{
+    string out;
+    out.reserve(encoded.size());
+    for (size_t i = 0; i < encoded.size(); i++) {
+        if (encoded[i] == '#' && i + 2 < encoded.size()
+            && isxdigit((unsigned char) encoded[i + 1]) && isxdigit((unsigned char) encoded[i + 2])) {
+            char hex[3] = {encoded[i + 1], encoded[i + 2], 0};
+            out += (char) strtol(hex, nullptr, 16);
+            i += 2;
+        } else {
+            out += encoded[i];
+        }
+    }
+    return out;
 }
 
 SQliteParameter SQliteParameter::deserialize(const string& encoded)

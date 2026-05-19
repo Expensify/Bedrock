@@ -68,4 +68,12 @@ public:
     // Inverse of serialize(). Returns Null on any format error rather than throwing, since the inputs come
     // from the wire and a malformed value should bind as NULL rather than crash the receiver.
     static SQliteParameter deserialize(const string& encoded);
+
+    // Encode a parameter name (including its leading `:` / `@` / `$` prefix) so it can ride safely in an
+    // SData header name. The placeholder prefix is a colon for the common case, and SParseHTTP splits
+    // headers on the first `:` — so any param name placed verbatim into a header name would corrupt the
+    // wire format. Encoding replaces `:`, `@`, `$`, and `#` with `#XX` where XX is the uppercase hex of
+    // the byte. The companion decode reverses it.
+    static string uriEncodeParamName(const string& name);
+    static string uriDecodeParamName(const string& encoded);
 };

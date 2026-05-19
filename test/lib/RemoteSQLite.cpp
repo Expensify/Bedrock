@@ -18,12 +18,7 @@ bool RemoteSQLite::_runRemoteQuery(const string& query, const map<string, Parame
     command["Format"] = "json";
     command["ReadDBFlags"] = "-json";
     for (const auto& [name, value] : params) {
-        // Strip the placeholder prefix off the header name (SParseHTTP splits on the first `:` so a
-        // header name containing `:id` would mangle); stash it as the first byte of the value instead.
-        if (name.empty() || (name[0] != ':' && name[0] != '@' && name[0] != '$')) {
-            continue;
-        }
-        command["sql-param-" + name.substr(1)] = name[0] + value.serialize();
+        command["sql-param-" + SQliteParameter::uriEncodeParamName(name)] = value.serialize();
     }
     auto responses = _tester->executeWaitMultipleData({command});
     if (responses[0].methodLine == "400 Unique Constraints Violation") {
