@@ -89,8 +89,8 @@ string SQliteParameter::uriDecodeParamName(const string& encoded)
     string out;
     out.reserve(encoded.size());
     for (size_t i = 0; i < encoded.size(); i++) {
-        if (encoded[i] == '#' && i + 2 < encoded.size()
-            && isxdigit((unsigned char) encoded[i + 1]) && isxdigit((unsigned char) encoded[i + 2])) {
+        if (encoded[i] == '#' && i + 2 < encoded.size() &&
+            isxdigit((unsigned char) encoded[i + 1]) && isxdigit((unsigned char) encoded[i + 2])) {
             char hex[3] = {encoded[i + 1], encoded[i + 2], 0};
             out += (char) strtol(hex, nullptr, 16);
             i += 2;
