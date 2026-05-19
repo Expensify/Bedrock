@@ -260,6 +260,44 @@ void BedrockPlugin_Compression::registerSQLite(sqlite3* db)
                                nullptr, ::sqliteDecompress, nullptr, nullptr, nullptr);
 }
 
+string BedrockPlugin_Compression::compress(const string& input, size_t dictID)
+{
+    if (dictID == 0 || input.empty()) {
+        return input;
+    }
+
+    ZSTD_CDict* cdict = getCompressionDictionary(dictID);
+    if (!cdict) {
+        SWARN("compress(): no dictionary found for ID " << dictID);
+        return input;
+    }
+
+    ZSTD_CCtx* cctx = ZSTD_createCCtx();
+    if (!cctx) {
+        SWARN("compress(): failed to create compression context");
+        return input;
+    }
+
+    // Match the SQL UDF's frame parameters so on-disk and on-wire bytes are interchangeable.
+    ZSTD_CCtx_setParameter(cctx, ZSTD_c_dictIDFlag, 1);
+    ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 0);
+
+    size_t dstCap = ZSTD_compressBound(input.size());
+    string output(dstCap, '\0');
+
+    size_t compressedSize = ZSTD_compress_usingCDict(cctx, output.data(), dstCap,
+                                                     input.data(), input.size(), cdict);
+    ZSTD_freeCCtx(cctx);
+
+    if (ZSTD_isError(compressedSize)) {
+        SWARN("compress(): " << ZSTD_getErrorName(compressedSize));
+        return input;
+    }
+
+    output.resize(compressedSize);
+    return output;
+}
+
 string BedrockPlugin_Compression::decompress(const string& input)
 {
     if (input.empty()) {
