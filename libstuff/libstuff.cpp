@@ -2816,7 +2816,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
     size_t stepTimeUS = 0;
     size_t longestStepTimeUS = 0;
 
-    SDEBUG(sql.substr(0, 20000));
+    SDEBUG(sql.substr(0, MAX_LOG_QUERY_SIZE));
 
     // Retry the whole query (prepare + bind + step) on SQLITE_BUSY. Prepare and step both can return
     // BUSY (e.g. when a writer holds the write lock on sqlite_master), so we wrap the entire statement
