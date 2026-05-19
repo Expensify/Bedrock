@@ -751,8 +751,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
     {
         auto _syncNodeCopy = atomic_load(&_syncNode);
-        if (!_syncNodeCopy || _command->request.calcU64("commandExecuteTime") > STimeNow()) {
-            _commandQueue.push(move(_command));
+        if (!_syncNodeCopy || command->request.calcU64("commandExecuteTime") > STimeNow()) {
+            _commandQueue.push(move(command));
             return;
         }
     }
