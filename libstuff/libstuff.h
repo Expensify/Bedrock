@@ -1,6 +1,7 @@
 #ifndef LIBSTUFF_H
 #define LIBSTUFF_H
 #include "libstuff/qrf.h"
+#include "libstuff/SQliteParameter.h"
 
 #include <netinet/in.h>
 #include <poll.h>
@@ -701,13 +702,21 @@ void SQueryLogOpen(const string& logFilename);
 void SQueryLogClose();
 
 // Returns an SQLite result code.
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr);
+// Bound parameters use SQLite's named-parameter syntax (`:name`, `@name`, or `$name`)
+// (positional `?`/`?NNN` // is not supported)
+// Map keys must include the prefix character that appears in the SQL.
+// If `expandedSql` is non-null, each successfully-executed statement's SQL text (with bound parameters
+// expanded as SQL literals via sqlite3_expanded_sql) is appended to the string. Write paths use this to
+// journal a self-contained, replay-safe form of the query for replication; followers run the journaled
+// SQL via writeUnmodified() with no params map, so placeholders must already be inlined.
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr, const map<string, SQliteParameter>& params = {}, string* expandedSql = nullptr);
 int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
 int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec);
 
-// Compatibility functions: Remove when nothing calls these.
-int SQuery(sqlite3* db, const char* ignore, const string& sql, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
-int SQuery(sqlite3* db, const char* ignore, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
+// Convenience overloads that put bound parameters right after the SQL — useful for write queries that don't return rows.
+// These forward to the canonical SQuery above.
+int SQuery(sqlite3* db, const string& sql, const map<string, SQliteParameter>& params, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
+int SQuery(sqlite3* db, const string& sql, const map<string, SQliteParameter>& params, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr);
 
 bool SQVerifyTable(sqlite3* db, const string& tableName, const string& sql);
 bool SQVerifyTableExists(sqlite3* db, const string& tableName);

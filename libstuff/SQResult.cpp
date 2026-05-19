@@ -302,3 +302,8 @@ void SQResult::emplace_back(SQResultRow&& row)
 {
     rows.emplace_back(move(row));
 }
+
+void SQResult::resize(size_t newSize)
+{
+    rows.resize(newSize);
+}

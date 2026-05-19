@@ -2802,7 +2802,7 @@ void SQueryLogClose()
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec)
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const map<string, SQliteParameter>& params, string* expandedSql)
 {
 #define MAX_TRIES 3
     // Execute the query and get the results
@@ -2816,13 +2816,20 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
     size_t stepTimeUS = 0;
     size_t longestStepTimeUS = 0;
 
+    SDEBUG(sql.substr(0, 20000));
+
+    // Retry the whole query (prepare + bind + step) on SQLITE_BUSY. Prepare and step both can return
+    // BUSY (e.g. when a writer holds the write lock on sqlite_master), so we wrap the entire statement
+    // walk rather than just the step loop. Each try re-prepares and re-binds; the bind state is on a
+    // brand-new prepared statement so there's nothing to preserve across the retry.
     for (int tries = 0; tries < MAX_TRIES; tries++) {
         result.clear();
-        SDEBUG(sql.substr(0, 20000));
-
+        if (expandedSql) {
+            expandedSql->clear();
+        }
+        error = SQLITE_OK;
         const char* statementRemainder = sql.c_str();
-        do
-        {
+        while (*statementRemainder != 0 && error == SQLITE_OK) {
             numLoops++;
             sqlite3_stmt* preparedStatement = nullptr;
             size_t beforePrepare = 0;
@@ -2858,7 +2865,57 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
             } else if (!preparedStatement) {
                 // If we get a null statement (from parsing a blank string) we can skip, this isn't an error.
                 error = SQLITE_OK;
-                break;
+                continue;
+            }
+
+            // Bind parameters once per prepared statement. The bind state survives sqlite3_reset, so we never
+            // need to rebind on a SQLITE_BUSY retry. Map keys must include the prefix character (`:`, `@`, or
+            // `$`) used by the named placeholder in the SQL. We require that every supplied parameter is
+            // referenced by this statement — multi-statement SQL with bound params must use placeholders that
+            // apply to every statement.
+            if (!params.empty()) {
+                for (const auto& [name, p] : params) {
+                    int paramIndex = sqlite3_bind_parameter_index(preparedStatement, name.c_str());
+                    if (paramIndex == 0) {
+                        SWARN("Bound parameter '" << name << "' not found in SQL: " << sql.substr(0, MAX_LOG_QUERY_SIZE));
+                        error = SQLITE_ERROR;
+                        break;
+                    }
+                    int bindResult = SQLITE_OK;
+                    switch (p.type) {
+                        case SQliteParameter::Type::Null:
+                            bindResult = sqlite3_bind_null(preparedStatement, paramIndex);
+                            break;
+
+                        case SQliteParameter::Type::Int64:
+                            bindResult = sqlite3_bind_int64(preparedStatement, paramIndex, p.intValue);
+                            break;
+
+                        case SQliteParameter::Type::Double:
+                            bindResult = sqlite3_bind_double(preparedStatement, paramIndex, p.doubleValue);
+                            break;
+
+                        case SQliteParameter::Type::Text:
+                            // SQLITE_STATIC: the bytes are owned by `params` and stable until SQuery returns.
+                            bindResult = sqlite3_bind_text(preparedStatement, paramIndex, p.stringValue.data(),
+                                                           (int) p.stringValue.size(), SQLITE_STATIC);
+                            break;
+
+                        case SQliteParameter::Type::Blob:
+                            bindResult = sqlite3_bind_blob(preparedStatement, paramIndex, p.stringValue.data(),
+                                                           (int) p.stringValue.size(), SQLITE_STATIC);
+                            break;
+                    }
+                    if (bindResult != SQLITE_OK) {
+                        SWARN("Failed to bind parameter '" << name << "' (error " << bindResult << "): " << sqlite3_errmsg(db));
+                        error = bindResult;
+                        break;
+                    }
+                }
+                if (error != SQLITE_OK) {
+                    sqlite3_finalize(preparedStatement);
+                    break;
+                }
             }
 
             // This block will handle running formatted queries. If it executes, nothing else is currently checked, we're just done.
@@ -2934,8 +2991,20 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                     break;
                 }
             }
+
+            if (error == SQLITE_OK && expandedSql) {
+                char* expanded = sqlite3_expanded_sql(preparedStatement);
+                if (expanded) {
+                    *expandedSql += expanded;
+                    sqlite3_free(expanded);
+                } else {
+                    SWARN("sqlite3_expanded_sql returned NULL for: " << sql.substr(0, MAX_LOG_QUERY_SIZE));
+                    error = SQLITE_NOMEM;
+                }
+            }
+
             sqlite3_finalize(preparedStatement);
-        } while (*statementRemainder != 0 && error == SQLITE_OK);
+        }
 
         extErr = sqlite3_extended_errcode(db);
         if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
@@ -2943,7 +3012,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
         }
         SWARN("sqlite3 returned SQLITE_BUSY on try #"
               << (tries + 1) << " of " << MAX_TRIES << ". "
-              << "Extended error code: " << sqlite3_extended_errcode(db) << ". "
+              << "Extended error code: " << extErr << ". "
               << (((tries + 1) < MAX_TRIES) ? "Sleeping 1 second and re-trying." : "No more retries."));
 
         // Avoid the sleep after the last try.
@@ -3540,15 +3609,15 @@ int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec)
     return SQuery(db, sql, ignore, 0, true, spec);
 }
 
-int SQuery(sqlite3* db, const char* ignore, const string& sql, int64_t warnThreshold, bool skipInfoWarn)
+int SQuery(sqlite3* db, const string& sql, const map<string, SQliteParameter>& params, int64_t warnThreshold, bool skipInfoWarn)
 {
-    SQResult ignoreResult;
-    return SQuery(db, sql, ignoreResult, warnThreshold, skipInfoWarn);
+    SQResult ignore;
+    return SQuery(db, sql, ignore, warnThreshold, skipInfoWarn, nullptr, params);
 }
 
-int SQuery(sqlite3* db, const char* ignore, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn)
+int SQuery(sqlite3* db, const string& sql, const map<string, SQliteParameter>& params, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec)
 {
-    return SQuery(db, sql, result, warnThreshold, skipInfoWarn);
+    return SQuery(db, sql, result, warnThreshold, skipInfoWarn, spec, params);
 }
 
 string SUNQUOTED_TIMESTAMP(uint64_t when)

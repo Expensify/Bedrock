@@ -1,4 +1,5 @@
 #pragma once
+#include <libstuff/SQliteParameter.h>
 #include <libstuff/libstuff.h>
 #include "../BedrockPlugin.h"
 
@@ -41,6 +42,9 @@ public:
 
 private:
     string query;
+
+    // Named bound parameters extracted from `sql-param-<name>` request headers.
+    map<string, SQliteParameter> params;
 
     // Callback for SQLite output formatter.
     static int SQLiteFormatAppend(void* destString, const char* appendString, sqlite3_int64 length);
