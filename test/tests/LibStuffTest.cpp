@@ -1094,7 +1094,7 @@ struct LibStuff : tpunit::TestFixture
         db.prepare();
         db.commit();
         ASSERT_EQUAL("O'Brien", db.read("SELECT name FROM users WHERE id = :id;",
-                                       {{":id", SQLite::Parameter::i(3)}}));
+                                        {{":id", SQLite::Parameter::i(3)}}));
     }
 
     void SRedactSensitiveValuesTest()
