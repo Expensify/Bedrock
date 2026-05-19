@@ -2870,16 +2870,15 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
 
             // Bind parameters once per prepared statement. The bind state survives sqlite3_reset, so we never
             // need to rebind on a SQLITE_BUSY retry. Map keys must include the prefix character (`:`, `@`, or
-            // `$`) used by the named placeholder in the SQL. We require that every supplied parameter is
-            // referenced by this statement — multi-statement SQL with bound params must use placeholders that
-            // apply to every statement.
+            // `$`) used by the named placeholder in the SQL. Params not referenced by this statement are
+            // silently skipped, so callers can pass a superset across multi-statement SQL. Placeholders that
+            // appear in the SQL but aren't supplied bind to NULL — sqlite3 will surface that as an error if
+            // the query can't tolerate it (e.g. NOT NULL constraint).
             if (!params.empty()) {
                 for (const auto& [name, p] : params) {
                     int paramIndex = sqlite3_bind_parameter_index(preparedStatement, name.c_str());
                     if (paramIndex == 0) {
-                        SWARN("Bound parameter '" << name << "' not found in SQL: " << sql.substr(0, MAX_LOG_QUERY_SIZE));
-                        error = SQLITE_ERROR;
-                        break;
+                        continue;
                     }
                     int bindResult = SQLITE_OK;
                     switch (p.type) {

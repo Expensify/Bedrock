@@ -68,9 +68,10 @@ string RemoteSQLite::read(const string& query, const map<string, Parameter>& par
 
 int RemoteSQLite::read(const string& query, const map<string, Parameter>& params, sqlite3_qrf_spec* spec) const
 {
-    SQResult ignore;
-    _runRemoteQuery(query, params, ignore);
-    return SQLITE_OK;
+    // TODO: implement formatted-output read for RemoteSQLite. The remote Query command returns JSON, so
+    // supporting sqlite3_qrf_spec means either fetching rows and driving spec->xWriter ourselves, or teaching
+    // the server to honor a format spec. Until then, fail loudly rather than silently dropping output.
+    SERROR("RemoteSQLite::read with sqlite3_qrf_spec is not implemented");
 }
 
 bool RemoteSQLite::writeIdempotent(const string& query, const map<string, Parameter>& params)
