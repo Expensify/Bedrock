@@ -2816,123 +2816,127 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
     size_t stepTimeUS = 0;
     size_t longestStepTimeUS = 0;
 
-    result.clear();
     SDEBUG(sql.substr(0, 20000));
 
-    const char* statementRemainder = sql.c_str();
-    while (*statementRemainder != 0 && error == SQLITE_OK) {
-        numLoops++;
-        sqlite3_stmt* preparedStatement = nullptr;
-        size_t beforePrepare = 0;
-        if (isSyncThread) {
-            beforePrepare = STimeNow();
+    // Retry the whole query (prepare + bind + step) on SQLITE_BUSY. Prepare and step both can return
+    // BUSY (e.g. when a writer holds the write lock on sqlite_master), so we wrap the entire statement
+    // walk rather than just the step loop. Each try re-prepares and re-binds; the bind state is on a
+    // brand-new prepared statement so there's nothing to preserve across the retry.
+    for (int tries = 0; tries < MAX_TRIES; tries++) {
+        result.clear();
+        if (expandedSql) {
+            expandedSql->clear();
         }
-
-        // sql.size() is the number of bytes in the string, excluding the null terminator.
-        // statementRemainder points to the first unused byte in this string, meaning `statementRemainder - sql.c_str()` is the number of already-used bytes.
-        // sql.size() minus the already-used bytes, is the number of bytes remaining, and we add one more for the null terminator.
-        //
-        // The null-terminator here is MASSIVELY IMPORTANT.
-        // The docs here: https://www.sqlite.org/c3ref/prepare.html, indicate:
-        // "there is a small performance advantage to passing an nByte parameter that is the number of bytes in the input string including the null-terminator."
-        //
-        // This is a massive understatement in some situations. Namely, this seems to avoid a call to strlen() on the whole string.
-        // For long queries (say 100mb+), this can save 50ms per query. Further, if these queries are actually a large number of small queries concatenated together,
-        // then this saves that 50ms for each of the smaller queries, which means those savings could be multiplied thousands of times.
-        //
-        // Calling strlen() or any function that iterates across the whole string here is a giant performance problem, and all the operations chosen here have
-        // been picked specifically to avoid that.
-        size_t maxLength = sql.size() - (statementRemainder - sql.c_str()) + 1;
-        error = sqlite3_prepare_v2(db, statementRemainder, (int) maxLength, &preparedStatement, &statementRemainder);
-        if (isSyncThread) {
-            prepareTimeUS += STimeNow() - beforePrepare;
-        }
-        if (error) {
-            // Delete our statement.
-            sqlite3_finalize(preparedStatement);
-
-            // This will just drop through to the general error handling below.
-            break;
-        } else if (!preparedStatement) {
-            // If we get a null statement (from parsing a blank string) we can skip, this isn't an error.
-            error = SQLITE_OK;
-            continue;
-        }
-
-        // Bind parameters once per prepared statement. The bind state survives sqlite3_reset, so we never
-        // need to rebind on a SQLITE_BUSY retry. Map keys must include the prefix character (`:`, `@`, or
-        // `$`) used by the named placeholder in the SQL. We require that every supplied parameter is
-        // referenced by this statement — multi-statement SQL with bound params must use placeholders that
-        // apply to every statement.
-        if (!params.empty()) {
-            for (const auto& [name, p] : params) {
-                int paramIndex = sqlite3_bind_parameter_index(preparedStatement, name.c_str());
-                if (paramIndex == 0) {
-                    SWARN("Bound parameter '" << name << "' not found in SQL: " << sql.substr(0, MAX_LOG_QUERY_SIZE));
-                    error = SQLITE_ERROR;
-                    break;
-                }
-                int bindResult = SQLITE_OK;
-                switch (p.type) {
-                    case SQliteParameter::Type::Null:
-                        bindResult = sqlite3_bind_null(preparedStatement, paramIndex);
-                        break;
-
-                    case SQliteParameter::Type::Int64:
-                        bindResult = sqlite3_bind_int64(preparedStatement, paramIndex, p.intValue);
-                        break;
-
-                    case SQliteParameter::Type::Double:
-                        bindResult = sqlite3_bind_double(preparedStatement, paramIndex, p.doubleValue);
-                        break;
-
-                    case SQliteParameter::Type::Text:
-                        // SQLITE_STATIC: the bytes are owned by `params` and stable until SQuery returns.
-                        bindResult = sqlite3_bind_text(preparedStatement, paramIndex, p.stringValue.data(),
-                                                       (int) p.stringValue.size(), SQLITE_STATIC);
-                        break;
-
-                    case SQliteParameter::Type::Blob:
-                        bindResult = sqlite3_bind_blob(preparedStatement, paramIndex, p.stringValue.data(),
-                                                       (int) p.stringValue.size(), SQLITE_STATIC);
-                        break;
-                }
-                if (bindResult != SQLITE_OK) {
-                    SWARN("Failed to bind parameter '" << name << "' (error " << bindResult << "): " << sqlite3_errmsg(db));
-                    error = bindResult;
-                    break;
-                }
+        error = SQLITE_OK;
+        const char* statementRemainder = sql.c_str();
+        while (*statementRemainder != 0 && error == SQLITE_OK) {
+            numLoops++;
+            sqlite3_stmt* preparedStatement = nullptr;
+            size_t beforePrepare = 0;
+            if (isSyncThread) {
+                beforePrepare = STimeNow();
             }
-            if (error != SQLITE_OK) {
-                sqlite3_finalize(preparedStatement);
-                break;
-            }
-        }
 
-        // This block will handle running formatted queries. If it executes, nothing else is currently checked, we're just done.
-        if (spec) {
-            char* errorMsg = nullptr;
-            error = sqlite3_format_query_result(preparedStatement, spec, &errorMsg);
+            // sql.size() is the number of bytes in the string, excluding the null terminator.
+            // statementRemainder points to the first unused byte in this string, meaning `statementRemainder - sql.c_str()` is the number of already-used bytes.
+            // sql.size() minus the already-used bytes, is the number of bytes remaining, and we add one more for the null terminator.
+            //
+            // The null-terminator here is MASSIVELY IMPORTANT.
+            // The docs here: https://www.sqlite.org/c3ref/prepare.html, indicate:
+            // "there is a small performance advantage to passing an nByte parameter that is the number of bytes in the input string including the null-terminator."
+            //
+            // This is a massive understatement in some situations. Namely, this seems to avoid a call to strlen() on the whole string.
+            // For long queries (say 100mb+), this can save 50ms per query. Further, if these queries are actually a large number of small queries concatenated together,
+            // then this saves that 50ms for each of the smaller queries, which means those savings could be multiplied thousands of times.
+            //
+            // Calling strlen() or any function that iterates across the whole string here is a giant performance problem, and all the operations chosen here have
+            // been picked specifically to avoid that.
+            size_t maxLength = sql.size() - (statementRemainder - sql.c_str()) + 1;
+            error = sqlite3_prepare_v2(db, statementRemainder, (int) maxLength, &preparedStatement, &statementRemainder);
+            if (isSyncThread) {
+                prepareTimeUS += STimeNow() - beforePrepare;
+            }
             if (error) {
-                SWARN("Error running formatted query: " << errorMsg);
-                sqlite3_free(errorMsg);
+                // Delete our statement.
+                sqlite3_finalize(preparedStatement);
+
+                // This will just drop through to the general error handling below.
+                break;
+            } else if (!preparedStatement) {
+                // If we get a null statement (from parsing a blank string) we can skip, this isn't an error.
+                error = SQLITE_OK;
+                continue;
             }
-            sqlite3_finalize(preparedStatement);
-            return error;
-        }
 
-        int numColumns = sqlite3_column_count(preparedStatement);
-        result.headers.resize(numColumns);
+            // Bind parameters once per prepared statement. The bind state survives sqlite3_reset, so we never
+            // need to rebind on a SQLITE_BUSY retry. Map keys must include the prefix character (`:`, `@`, or
+            // `$`) used by the named placeholder in the SQL. We require that every supplied parameter is
+            // referenced by this statement — multi-statement SQL with bound params must use placeholders that
+            // apply to every statement.
+            if (!params.empty()) {
+                for (const auto& [name, p] : params) {
+                    int paramIndex = sqlite3_bind_parameter_index(preparedStatement, name.c_str());
+                    if (paramIndex == 0) {
+                        SWARN("Bound parameter '" << name << "' not found in SQL: " << sql.substr(0, MAX_LOG_QUERY_SIZE));
+                        error = SQLITE_ERROR;
+                        break;
+                    }
+                    int bindResult = SQLITE_OK;
+                    switch (p.type) {
+                        case SQliteParameter::Type::Null:
+                            bindResult = sqlite3_bind_null(preparedStatement, paramIndex);
+                            break;
 
-        for (int i = 0; i < numColumns; i++) {
-            result.headers[i] = sqlite3_column_name(preparedStatement, i);
-        }
+                        case SQliteParameter::Type::Int64:
+                            bindResult = sqlite3_bind_int64(preparedStatement, paramIndex, p.intValue);
+                            break;
 
-        // Step this statement to completion. If it returns SQLITE_BUSY (other than BUSY_SNAPSHOT, which
-        // requires aborting the whole transaction), reset and retry — bind state is preserved across
-        // reset. Any rows accumulated during a failed attempt are rolled back before the retry.
-        const size_t rowsBeforeStatement = result.size();
-        for (int tries = 0; tries < MAX_TRIES; tries++) {
+                        case SQliteParameter::Type::Double:
+                            bindResult = sqlite3_bind_double(preparedStatement, paramIndex, p.doubleValue);
+                            break;
+
+                        case SQliteParameter::Type::Text:
+                            // SQLITE_STATIC: the bytes are owned by `params` and stable until SQuery returns.
+                            bindResult = sqlite3_bind_text(preparedStatement, paramIndex, p.stringValue.data(),
+                                                           (int) p.stringValue.size(), SQLITE_STATIC);
+                            break;
+
+                        case SQliteParameter::Type::Blob:
+                            bindResult = sqlite3_bind_blob(preparedStatement, paramIndex, p.stringValue.data(),
+                                                           (int) p.stringValue.size(), SQLITE_STATIC);
+                            break;
+                    }
+                    if (bindResult != SQLITE_OK) {
+                        SWARN("Failed to bind parameter '" << name << "' (error " << bindResult << "): " << sqlite3_errmsg(db));
+                        error = bindResult;
+                        break;
+                    }
+                }
+                if (error != SQLITE_OK) {
+                    sqlite3_finalize(preparedStatement);
+                    break;
+                }
+            }
+
+            // This block will handle running formatted queries. If it executes, nothing else is currently checked, we're just done.
+            if (spec) {
+                char* errorMsg = nullptr;
+                error = sqlite3_format_query_result(preparedStatement, spec, &errorMsg);
+                if (error) {
+                    SWARN("Error running formatted query: " << errorMsg);
+                    sqlite3_free(errorMsg);
+                }
+                sqlite3_finalize(preparedStatement);
+                return error;
+            }
+
+            int numColumns = sqlite3_column_count(preparedStatement);
+            result.headers.resize(numColumns);
+
+            for (int i = 0; i < numColumns; i++) {
+                result.headers[i] = sqlite3_column_name(preparedStatement, i);
+            }
+
             while (true) {
                 size_t beforeStep = 0;
                 if (isSyncThread) {
@@ -2988,38 +2992,33 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                 }
             }
 
-            extErr = sqlite3_extended_errcode(db);
-            if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
-                break;
+            if (error == SQLITE_OK && expandedSql) {
+                char* expanded = sqlite3_expanded_sql(preparedStatement);
+                if (expanded) {
+                    *expandedSql += expanded;
+                    sqlite3_free(expanded);
+                } else {
+                    SWARN("sqlite3_expanded_sql returned NULL for: " << sql.substr(0, MAX_LOG_QUERY_SIZE));
+                    error = SQLITE_NOMEM;
+                }
             }
-            SWARN("sqlite3 returned SQLITE_BUSY on try #"
-                  << (tries + 1) << " of " << MAX_TRIES << ". "
-                  << "Extended error code: " << sqlite3_extended_errcode(db) << ". "
-                  << (((tries + 1) < MAX_TRIES) ? "Sleeping 1 second and re-trying." : "No more retries."));
 
-            // Roll back any partial rows from this attempt and reset the statement so we can re-step.
-            // sqlite3_reset preserves bound parameters.
-            result.resize(rowsBeforeStatement);
-            sqlite3_reset(preparedStatement);
-
-            // Avoid the sleep after the last try.
-            if ((tries + 1) < MAX_TRIES) {
-                sleep(1);
-            }
+            sqlite3_finalize(preparedStatement);
         }
 
-        if (error == SQLITE_OK && expandedSql) {
-            char* expanded = sqlite3_expanded_sql(preparedStatement);
-            if (expanded) {
-                *expandedSql += expanded;
-                sqlite3_free(expanded);
-            } else {
-                SWARN("sqlite3_expanded_sql returned NULL for: " << sql.substr(0, MAX_LOG_QUERY_SIZE));
-                error = SQLITE_NOMEM;
-            }
+        extErr = sqlite3_extended_errcode(db);
+        if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
+            break;
         }
+        SWARN("sqlite3 returned SQLITE_BUSY on try #"
+              << (tries + 1) << " of " << MAX_TRIES << ". "
+              << "Extended error code: " << extErr << ". "
+              << (((tries + 1) < MAX_TRIES) ? "Sleeping 1 second and re-trying." : "No more retries."));
 
-        sqlite3_finalize(preparedStatement);
+        // Avoid the sleep after the last try.
+        if ((tries + 1) < MAX_TRIES) {
+            sleep(1);
+        }
     }
 
     if (error == SQLITE_CORRUPT) {
