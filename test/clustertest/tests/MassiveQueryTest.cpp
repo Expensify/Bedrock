@@ -13,7 +13,6 @@ struct MassiveQueryTest : tpunit::TestFixture
         // We're going to send a command to a follower, it should run on leader and get replicated.
         BedrockTester& brtester = tester.getTester(1);
         SData cmd("bigquery");
-        cmd["processTimeout"] = "290000";
         cmd["writeConsistency"] = "ASYNC";
         auto r1 = brtester.executeWaitMultipleData({cmd})[0];
         uint64_t commitCount = 0;
