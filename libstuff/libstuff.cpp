@@ -2816,6 +2816,12 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
     size_t stepTimeUS = 0;
     size_t longestStepTimeUS = 0;
 
+    // When bound parameters are supplied, accumulate the SQL with placeholders substituted by
+    // their actual values so the slow/failed query logs below show real data instead of
+    // ":name" placeholders. Stays empty when no params were supplied, in which case the logs
+    // fall back to the raw template (no values to inline).
+    string boundExpandedSql;
+
     SDEBUG(sql.substr(0, MAX_LOG_QUERY_SIZE));
 
     // Retry the whole query (prepare + bind + step) on SQLITE_BUSY. Prepare and step both can return
@@ -2827,6 +2833,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
         if (expandedSql) {
             expandedSql->clear();
         }
+        boundExpandedSql.clear();
         error = SQLITE_OK;
         const char* statementRemainder = sql.c_str();
         while (*statementRemainder != 0 && error == SQLITE_OK) {
@@ -2991,15 +2998,24 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
                 }
             }
 
-            if (error == SQLITE_OK && expandedSql) {
-                char* expanded = sqlite3_expanded_sql(preparedStatement);
-                if (expanded) {
+            // Expand all query parameters so that we have complete queries for replication and logging.
+            char* expanded = sqlite3_expanded_sql(preparedStatement);
+            if (!expanded) {
+                // Error out if expansion failed.
+                SWARN("sqlite3_expanded_sql failed for: " << sql.substr(0, MAX_LOG_QUERY_SIZE));
+                error = SQLITE_NOMEM;
+            } else {
+                // Expansion suceeded.
+                // If the query succeeded and we were passed a string to store the expanded version in, do that now.
+                if (expandedSql && error == SQLITE_OK) {
                     *expandedSql += expanded;
-                    sqlite3_free(expanded);
-                } else {
-                    SWARN("sqlite3_expanded_sql returned NULL for: " << sql.substr(0, MAX_LOG_QUERY_SIZE));
-                    error = SQLITE_NOMEM;
                 }
+
+                // We store boundExpandedSql regardless, as we will use it for logging even if queries failed.
+                boundExpandedSql += expanded;
+
+                // Done.
+                sqlite3_free(expanded);
             }
 
             sqlite3_finalize(preparedStatement);
@@ -3020,10 +3036,12 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
         }
     }
 
+    const string& sqlForLogging = boundExpandedSql.empty() ? sql : boundExpandedSql;
+
     if (error == SQLITE_CORRUPT) {
         if (extErr == SQLITE_CORRUPT_INDEX) {
             // Avoid logging queries so long that we need dozens of lines to log them.
-            string sqlToLog = sql.substr(0, MAX_LOG_QUERY_SIZE);
+            string sqlToLog = sqlForLogging.substr(0, MAX_LOG_QUERY_SIZE);
             SRedactSensitiveValues(sqlToLog);
             SALERT("ENSURE_BUGBOT Database index corruption was detected.", {{"query", sqlToLog}});
         } else {
@@ -3034,7 +3052,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
     uint64_t elapsed = STimeNow() - startTime;
     if (!skipInfoWarn && ((int64_t) elapsed > warnThreshold || (int64_t) elapsed > 10000)) {
         // Avoid logging queries so long that we need dozens of lines to log them.
-        string sqlToLog = sql.substr(0, MAX_LOG_QUERY_SIZE);
+        string sqlToLog = sqlForLogging.substr(0, MAX_LOG_QUERY_SIZE);
         SRedactSensitiveValues(sqlToLog);
 
         if ((int64_t) elapsed > warnThreshold) {
@@ -3058,7 +3076,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
 
     // Log this if enabled
     if (_g_sQueryLogFP) {
-        string sqlToLog = sql.substr(0, MAX_LOG_QUERY_SIZE);
+        string sqlToLog = sqlForLogging.substr(0, MAX_LOG_QUERY_SIZE);
 
         // Log this query as an SQL statement ready for insertion
         const string& dbFilename = sqlite3_db_filename(db, "main");
@@ -3070,7 +3088,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
     // Only OK and commit conflicts are allowed without warning because they're the only "successful" results that we expect here.
     // OK means it succeeds, conflicts will get retried further up the call stack.
     if (error != SQLITE_OK && extErr != SQLITE_BUSY_SNAPSHOT && !skipInfoWarn) {
-        string sqlToLog = sql.substr(0, MAX_LOG_QUERY_SIZE);
+        string sqlToLog = sqlForLogging.substr(0, MAX_LOG_QUERY_SIZE);
         SRedactSensitiveValues(sqlToLog);
 
         // We don't warn for constraints errors because sometimes they're allowed, and BedrockCore.cpp will warn for the ones that aren't.
