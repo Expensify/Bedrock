@@ -736,8 +736,18 @@ bool BedrockServer::isShuttingDown()
 
 void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlocking, bool hasDedicatedThread)
 {
-    // If there's no sync node (because we're detaching/attaching), we can only queue a command for later.
-    // Also,if this command is scheduled in the future, we can't just run it, we need to enqueue it to run at that point.
+    // This takes ownership of the passed command. By calling the move constructor, the caller's unique_ptr is now empty, and so when the one here goes out of scope (i.e., this function
+    // returns), the command is destroyed.
+    unique_ptr<BedrockCommand> command(move(_command));
+
+    // If the command has already timed out, reply as such.
+    if (BedrockCore::isTimedOut(command, nullptr, this)) {
+        _reply(command);
+        return;
+    }
+
+    // If there's no sync node (because we're detaching/attaching), we can't run a command right now.
+    // Also, if this command is scheduled in the future, we can't run it either, we need to enqueue it to run at that point.
     // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
     {
         auto _syncNodeCopy = atomic_load(&_syncNode);
@@ -746,10 +756,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             return;
         }
     }
-
-    // This takes ownership of the passed command. By calling the move constructor, the caller's unique_ptr is now empty, and so when the one here goes out of scope (i.e., this function
-    // returns), the command is destroyed.
-    unique_ptr<BedrockCommand> command(move(_command));
 
     SAUTOPREFIX(command->request);
 
