@@ -1,6 +1,7 @@
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/clustertest/BedrockClusterTester.h>
+#include <test/lib/RemoteSQLite.h>
 
 // Verifies that a leader write using named bound parameters replicates correctly to followers — both
 // that the row contents round-trip identically and that the journal text on each follower contains the
@@ -13,7 +14,8 @@ struct BoundParametersTest : tpunit::TestFixture
         : tpunit::TestFixture("BoundParameters",
                               BEFORE_CLASS(BoundParametersTest::setup),
                               AFTER_CLASS(BoundParametersTest::teardown),
-                              TEST(BoundParametersTest::testBoundParamReplication))
+                              TEST(BoundParametersTest::testBoundParamReplication),
+                              TEST(BoundParametersTest::testRemoteSQLiteForwardsParams))
     {
     }
 
@@ -124,5 +126,32 @@ struct BoundParametersTest : tpunit::TestFixture
             ASSERT_FALSE(SContains(journalSql, ":value"));
             cout << journalSql << endl;
         }
+    }
+
+    // Exercises the RemoteSQLite forwarding path end-to-end with named bound parameters: write through
+    // RemoteSQLite, read back through RemoteSQLite, and verify the value didn't bind to NULL on the
+    // server. If the `sql-param-<name>` header plumbing breaks (or if the DB plugin stops threading
+    // params into db.read/db.write) the row inserts as NULL and this asserts immediately.
+    void testRemoteSQLiteForwardsParams()
+    {
+        BedrockTester& leader = tester->getTester(0);
+        RemoteSQLite remote(&leader);
+
+        const int64_t id = 424242;
+        const string value = "remote-sqlite-bound-params-marker";
+        map<string, SQliteParameter> params = {
+            {":id", SQliteParameter::i(id)},
+            {":value", SQliteParameter::text(value)},
+        };
+        ASSERT_TRUE(remote.write("INSERT INTO test (id, value) VALUES (:id, :value);", params));
+
+        // Read it back through RemoteSQLite with a param-bound WHERE — exercises the read forwarding
+        // leg too, not just the write leg.
+        SQResult result;
+        ASSERT_TRUE(remote.read("SELECT id, value FROM test WHERE id = :id;",
+                                {{":id", SQliteParameter::i(id)}}, result));
+        ASSERT_EQUAL(result.size(), (size_t) 1);
+        ASSERT_EQUAL(result[0]["id"], to_string(id));
+        ASSERT_EQUAL(result[0]["value"], value);
     }
 } __BoundParametersTest;

@@ -32,4 +32,10 @@ public:
 
 private:
     mutable BedrockTester* _tester;
+
+    // Build a Query command with named bound parameters serialized into `sql-param-<name>` headers and
+    // send it via the tester's executeWaitMultipleData. This bypasses BedrockTester::readDB's
+    // remoteMode/HCTree gate so RemoteSQLite always forwards to the server, which is the only behavior
+    // that makes sense for a class named "Remote".
+    bool _runRemoteQuery(const string& query, const map<string, Parameter>& params, SQResult& result) const;
 };

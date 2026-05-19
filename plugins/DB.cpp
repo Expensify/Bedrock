@@ -37,9 +37,18 @@ BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB
 {
     const string prefix = "sql-param-";
     for (const auto& [headerName, headerValue] : request.nameValueMap) {
-        if (SStartsWith(headerName, prefix)) {
-            params.emplace(headerName.substr(prefix.size()), SQliteParameter::deserialize(headerValue));
+        if (!SStartsWith(headerName, prefix) || headerValue.empty()) {
+            continue;
         }
+        // The wire format encodes the placeholder prefix char (`:`, `@`, or `$`) as the first byte of the
+        // value because we can't put a colon in the header name. Pull it back out to rebuild the key the
+        // way SQuery's binder expects to see it.
+        const char placeholderPrefix = headerValue[0];
+        if (placeholderPrefix != ':' && placeholderPrefix != '@' && placeholderPrefix != '$') {
+            continue;
+        }
+        const string paramName = string(1, placeholderPrefix) + headerName.substr(prefix.size());
+        params.emplace(paramName, SQliteParameter::deserialize(headerValue.substr(1)));
     }
 }
 
