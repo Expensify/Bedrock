@@ -75,15 +75,16 @@ struct TimeoutTest : tpunit::TestFixture
         // Test write commands.
         BedrockTester& brtester = tester->getTester(0);
 
-        // One large INSERT that exceeds the default 5s processTimeout on its own.
+        // Run one long query.
         SData slow("slowprocessquery");
-        slow["size"] = "100000000";
+        slow["processTimeout"] = "200"; // 0.2s
+        slow["size"] = "1000000";
         slow["count"] = "1";
         brtester.executeWaitVerifyContent(slow, "555 Timeout processing command");
 
-        // Many medium INSERTs that cumulatively exceed the default 5s processTimeout.
-        slow["size"] = "100000";
-        slow["count"] = "1000";
+        // And a bunch of faster ones.
+        slow["size"] = "100";
+        slow["count"] = "10000";
         brtester.executeWaitVerifyContent(slow, "555 Timeout processing command");
     }
 
