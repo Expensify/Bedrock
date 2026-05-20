@@ -40,8 +40,8 @@ uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& comman
     // This is what's left for the "absolute" time. If it's negative, we've already timed out.
     int64_t adjustedTimeout = timeout - now;
 
-    // processTimeout caps how long any single process phase can run. It is not configurable per-command.
-    int64_t processTimeout = BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
+    // We also want to know the processTimeout, because we'll return early if we get stuck processing for too long.
+    int64_t processTimeout = command->request.isSet("processTimeout") ? command->request.calc("processTimeout") : BedrockCommand::DEFAULT_PROCESS_TIMEOUT;
 
     // Since timeouts are specified in ms, we convert to us.
     processTimeout *= 1000;
