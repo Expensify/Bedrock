@@ -268,14 +268,12 @@ string BedrockPlugin_Compression::compress(const string& input, size_t dictID)
 
     ZSTD_CDict* cdict = getCompressionDictionary(dictID);
     if (!cdict) {
-        SWARN("compress(): no dictionary found for ID " << dictID);
-        return input;
+        SERROR("compress(): no dictionary found for ID " << dictID << " — configured dictionary is missing from the database");
     }
 
     ZSTD_CCtx* cctx = ZSTD_createCCtx();
     if (!cctx) {
-        SWARN("compress(): failed to create compression context");
-        return input;
+        SERROR("compress(): failed to create compression context");
     }
 
     // Match the SQL UDF's frame parameters so on-disk and on-wire bytes are interchangeable.
@@ -290,8 +288,7 @@ string BedrockPlugin_Compression::compress(const string& input, size_t dictID)
     ZSTD_freeCCtx(cctx);
 
     if (ZSTD_isError(compressedSize)) {
-        SWARN("compress(): " << ZSTD_getErrorName(compressedSize));
-        return input;
+        SERROR("compress(): " << ZSTD_getErrorName(compressedSize));
     }
 
     output.resize(compressedSize);
