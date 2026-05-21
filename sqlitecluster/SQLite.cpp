@@ -349,8 +349,13 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg)
     // This is sort of hacky to parse this from the logging info. If it works we could ask sqlite for a better interface to get this info.
     if (SStartsWith(zMsg, "cannot commit")) {
         // 17 is the length of "conflict at page" and the following space.
-        const char* pageOffset = strstr(zMsg, "conflict at page") + 17;
-        _conflictPage = atol(pageOffset);
+        _conflictPage = 0;
+        const char* conflictAt = strstr(zMsg, "conflict at page");
+        if (conflictAt) {
+            _conflictPage = atol(conflictAt + 17);
+        } else {
+            SINFO("no conflict at page found");
+        }
 
         // Sample conflict log lines:
         // {SQLITE} Code: 0, Message: cannot commit CONCURRENT transaction - conflict at page 1854553 (read/write page; part of db table reports; content=0D00000009007100...)
