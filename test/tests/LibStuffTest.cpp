@@ -40,6 +40,8 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testSReplaceAllBut),
                                      TEST(LibStuff::SQResultTest),
                                      TEST(LibStuff::testReturningClause),
+                                     TEST(LibStuff::testSQueryBoundParameters),
+                                     TEST(LibStuff::testSQueryBoundParameterInjections),
                                      TEST(LibStuff::SRedactSensitiveValuesTest),
                                      TEST(LibStuff::SComposeHTTPTest),
                                      TEST(LibStuff::testEncodeDecodeURIComponent)
@@ -966,6 +968,133 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(1, result.size());
         ASSERT_EQUAL(result[0]["name"], "name1");
         ASSERT_EQUAL(result[0]["value"], "value1");
+    }
+
+    void testSQueryBoundParameters()
+    {
+        SQLite db(":memory:", 1000, 1000, 1);
+
+        // CREATE TABLE and INSERT one row with named bound parameters, including a BLOB containing embedded
+        // null bytes (the case that motivated this work — string concatenation can't safely round-trip binary data).
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        db.write("CREATE TABLE params(i INTEGER, d REAL, t TEXT, b BLOB, n INTEGER);");
+
+        string blobWithNulls("hello\0world\0\xff\xfe", 13);
+        ASSERT_TRUE(db.write("INSERT INTO params VALUES (:i, :d, :t, :b, :n);", {
+            {":i", SQLite::Parameter::i(42)},
+            {":d", SQLite::Parameter::d(3.14)},
+            {":t", SQLite::Parameter::text("hello")},
+            {":b", SQLite::Parameter::blob(blobWithNulls)},
+            {":n", SQLite::Parameter::null()},
+        }));
+        db.prepare();
+        db.commit();
+
+        // Read the row back via SQLite::read and verify every value round-tripped correctly.
+        SQResult result;
+        ASSERT_TRUE(db.read("SELECT i, d, t, b, n FROM params;", result));
+        ASSERT_EQUAL((size_t) 1, result.size());
+        ASSERT_EQUAL((size_t) 5, result[0].size());
+        ASSERT_EQUAL("42", result[0]["i"]);
+        ASSERT_EQUAL("3.14", result[0]["d"]);
+        ASSERT_EQUAL("hello", result[0]["t"]);
+        ASSERT_EQUAL(blobWithNulls, result[0]["b"]);
+        // The NULL column returns an empty string via SQResult's string conversion.
+        ASSERT_EQUAL("", result[0]["n"]);
+
+        // Bound parameters can also be used with SELECT to filter. The `@` and `$` prefixes also work.
+        ASSERT_TRUE(db.read("SELECT i FROM params WHERE i = @i AND t = $t;", {
+            {"@i", SQLite::Parameter::i(42)},
+            {"$t", SQLite::Parameter::text("hello")},
+        }, result));
+        ASSERT_EQUAL((size_t) 1, result.size());
+        ASSERT_EQUAL("42", result[0][0]);
+
+        // Querying for a value that doesn't match returns no rows.
+        ASSERT_TRUE(db.read("SELECT i FROM params WHERE i = :target;",
+                            {{":target", SQLite::Parameter::i(999)}}, result));
+        ASSERT_EQUAL((size_t) 0, result.size());
+
+        // The single-value read overload also takes bound parameters.
+        ASSERT_EQUAL("hello", db.read("SELECT t FROM params WHERE i = :i;",
+                                      {{":i", SQLite::Parameter::i(42)}}));
+
+        // Empty params with a parameter-free statement still works (existing zero-arg behavior unchanged).
+        ASSERT_TRUE(db.read("SELECT COUNT(*) FROM params;", result));
+        ASSERT_EQUAL("1", result[0][0]);
+
+        // Supplying a parameter name that isn't referenced by the SQL is allowed — extra entries are silently
+        // skipped so callers can pass a superset map across multi-statement SQL where each statement only
+        // references a subset of the placeholders.
+        ASSERT_TRUE(db.read("SELECT 1;", {{":nope", SQLite::Parameter::i(0)}}, result));
+        ASSERT_EQUAL("1", result[0][0]);
+    }
+
+    void testSQueryBoundParameterInjections()
+    {
+        SQLite db(":memory:", 1000, 1000, 1);
+
+        // Seed a table with two rows so an "always true" injection would expose extra data if it succeeded.
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        db.write("CREATE TABLE users(id INTEGER PRIMARY KEY, name TEXT, secret TEXT);");
+        db.write("INSERT INTO users VALUES (1, 'alice', 'alice-secret');");
+        db.write("INSERT INTO users VALUES (2, 'bob', 'bob-secret');");
+        db.prepare();
+        db.commit();
+
+        SQResult result;
+
+        // Classic tautology: as a bound parameter this must be matched as a literal string, not interpreted as SQL.
+        // A successful injection would return both rows; a properly-bound value returns zero.
+        ASSERT_TRUE(db.read("SELECT id, name FROM users WHERE name = :name;",
+                            {{":name", SQLite::Parameter::text("alice' OR '1'='1")}}, result));
+        ASSERT_EQUAL((size_t) 0, result.size());
+
+        // Statement-terminator + piggybacked statement. SQLite's prepare() only compiles the first statement,
+        // and bound text can't escape its quoting, so the trailing DROP must not execute.
+        ASSERT_TRUE(db.read("SELECT id FROM users WHERE name = :name;",
+                            {{":name", SQLite::Parameter::text("alice'; DROP TABLE users; --")}}, result));
+        ASSERT_EQUAL((size_t) 0, result.size());
+        // Verify the table still exists and is intact.
+        ASSERT_TRUE(db.read("SELECT COUNT(*) FROM users;", result));
+        ASSERT_EQUAL("2", result[0][0]);
+
+        // Comment-out injection: the trailing `--` must be part of the literal, not SQL.
+        ASSERT_TRUE(db.read("SELECT id FROM users WHERE name = :name AND secret = :secret;", {
+            {":name", SQLite::Parameter::text("alice' --")},
+            {":secret", SQLite::Parameter::text("wrong")},
+        }, result));
+        ASSERT_EQUAL((size_t) 0, result.size());
+
+        // UNION SELECT injection: must be matched literally, not unioned in.
+        ASSERT_TRUE(db.read("SELECT name FROM users WHERE name = :name;",
+                            {{":name", SQLite::Parameter::text("x' UNION SELECT secret FROM users --")}}, result));
+        ASSERT_EQUAL((size_t) 0, result.size());
+
+        // Embedded NUL byte in a TEXT parameter: SQLite preserves the full byte sequence rather than truncating at NUL,
+        // and it can't be used to terminate or hijack the SQL string.
+        string nameWithNul("alice\0' OR '1'='1", 17);
+        ASSERT_TRUE(db.read("SELECT id FROM users WHERE name = :name;",
+                            {{":name", SQLite::Parameter::text(nameWithNul)}}, result));
+        ASSERT_EQUAL((size_t) 0, result.size());
+
+        // Numeric-context injection: passing a non-numeric string as an integer-typed parameter must not be reinterpreted
+        // as SQL — Parameter::i takes an int64_t, so a malicious string literally can't be supplied through that path.
+        // Confirm the integer comparison only matches the real row.
+        ASSERT_TRUE(db.read("SELECT name FROM users WHERE id = :id;",
+                            {{":id", SQLite::Parameter::i(1)}}, result));
+        ASSERT_EQUAL((size_t) 1, result.size());
+        ASSERT_EQUAL("alice", result[0][0]);
+
+        // A legitimate value that happens to contain a single quote round-trips correctly when bound, proving the
+        // protection isn't just "reject anything suspicious" — quotes inside data are preserved verbatim.
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        ASSERT_TRUE(db.write("INSERT INTO users VALUES (3, :name, 'x');",
+                             {{":name", SQLite::Parameter::text("O'Brien")}}));
+        db.prepare();
+        db.commit();
+        ASSERT_EQUAL("O'Brien", db.read("SELECT name FROM users WHERE id = :id;",
+                                        {{":id", SQLite::Parameter::i(3)}}));
     }
 
     void SRedactSensitiveValuesTest()

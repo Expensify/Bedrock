@@ -587,9 +587,13 @@ bool SQLite::addColumn(const string& tableName, const string& column, const stri
 
 string SQLite::read(const string& query) const
 {
-    // Execute the read-only query
+    return read(query, map<string, Parameter>{});
+}
+
+string SQLite::read(const string& query, const map<string, Parameter>& params) const
+{
     SQResult result;
-    if (!read(query, result)) {
+    if (!read(query, params, result)) {
         return "";
     }
     if (result.empty() || result[0].empty()) {
@@ -600,9 +604,15 @@ string SQLite::read(const string& query) const
 
 int SQLite::read(const string& query, sqlite3_qrf_spec* spec) const
 {
+    return read(query, {}, spec);
+}
+
+int SQLite::read(const string& query, const map<string, Parameter>& params, sqlite3_qrf_spec* spec) const
+{
     // Execute the read-only query. Skips caching.
     uint64_t before = STimeNow();
-    int queryResult = SQuery(_db, query, spec);
+    SQResult ignore;
+    int queryResult = SQuery(_db, query, ignore, 0, true, spec, params);
     _checkInterruptErrors("SQLite::read"s);
     _readElapsed += STimeNow() - before;
     return queryResult;
@@ -610,18 +620,25 @@ int SQLite::read(const string& query, sqlite3_qrf_spec* spec) const
 
 bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) const
 {
+    return read(query, {}, result, skipInfoWarn);
+}
+
+bool SQLite::read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn) const
+{
     uint64_t before = STimeNow();
     bool queryResult = false;
     _readQueryCount++;
-    auto foundQuery = _queryCache.find(query);
+    // The query cache is keyed on SQL text only — different bound-parameter values for the same SQL would
+    // share a cache entry. Skip the cache entirely when params are present.
+    auto foundQuery = params.empty() ? _queryCache.find(query) : _queryCache.end();
     if (foundQuery != _queryCache.end()) {
         result = foundQuery->second;
         _cacheHits++;
         queryResult = true;
     } else {
         _isDeterministicQuery = true;
-        queryResult = !SQuery(_db, query, result, 2000 * STIME_US_PER_MS, skipInfoWarn);
-        if (_isDeterministicQuery && queryResult && insideTransaction()) {
+        queryResult = !SQuery(_db, query, result, 2000 * STIME_US_PER_MS, skipInfoWarn, nullptr, params);
+        if (params.empty() && _isDeterministicQuery && queryResult && insideTransaction()) {
             _queryCache.emplace(make_pair(query, result));
         }
     }
@@ -672,6 +689,11 @@ void SQLite::_checkInterruptErrors(const string& error) const
 
 bool SQLite::write(const string& query)
 {
+    return write(query, {});
+}
+
+bool SQLite::write(const string& query, const map<string, Parameter>& params)
+{
     if (_noopUpdateMode) {
         SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
         return true;
@@ -679,38 +701,58 @@ bool SQLite::write(const string& query)
 
     // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
     SQResult ignore;
-    return _writeIdempotent(query, ignore);
+    return _writeIdempotent(query, params, ignore);
 }
 
 bool SQLite::write(const string& query, SQResult& result)
 {
+    return write(query, {}, result);
+}
+
+bool SQLite::write(const string& query, const map<string, Parameter>& params, SQResult& result)
+{
     if (_noopUpdateMode) {
         SALERT("Non-idempotent write in _noopUpdateMode. Query: " << query);
         return true;
     }
 
     // This is literally identical to the idempotent version except for the check for _noopUpdateMode.
-    return _writeIdempotent(query, result);
+    return _writeIdempotent(query, params, result);
 }
 
 bool SQLite::writeIdempotent(const string& query)
 {
+    return writeIdempotent(query, {});
+}
+
+bool SQLite::writeIdempotent(const string& query, const map<string, Parameter>& params)
+{
     SQResult ignore;
-    return _writeIdempotent(query, ignore);
+    return _writeIdempotent(query, params, ignore);
 }
 
 bool SQLite::writeIdempotent(const string& query, SQResult& result)
 {
-    return _writeIdempotent(query, result);
+    return writeIdempotent(query, {}, result);
+}
+
+bool SQLite::writeIdempotent(const string& query, const map<string, Parameter>& params, SQResult& result)
+{
+    return _writeIdempotent(query, params, result);
 }
 
 bool SQLite::writeUnmodified(const string& query)
 {
-    SQResult ignore;
-    return _writeIdempotent(query, ignore, true);
+    return writeUnmodified(query, {});
 }
 
-bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool alwaysKeepQueries)
+bool SQLite::writeUnmodified(const string& query, const map<string, Parameter>& params)
+{
+    SQResult ignore;
+    return _writeIdempotent(query, params, ignore, true);
+}
+
+bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>& params, SQResult& result, bool alwaysKeepQueries)
 {
     if (!_insideTransaction) {
         STHROW("500 Attempted to write outside of transaction");
@@ -732,22 +774,29 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
     _currentlyWriting = true;
     // Try to execute the query
     uint64_t before = STimeNow();
-    bool usedRewrittenQuery = false;
     int resultCode = 0;
+
+    // The executed-statement text with bound parameters expanded as SQL literals. We journal this rather
+    // than the raw `query` because followers replay journal SQL via writeUnmodified() with no params map,
+    // so placeholders would bind to NULL on the replica. See PR #2600 discussion.
+    string expandedSql;
     {
         shared_lock<shared_mutex> lock(_sharedData.writeLock);
         if (_enableRewrite) {
-            resultCode = SQuery(_db, query, result, 2'000'000, true);
+            resultCode = SQuery(_db, query, result, 2'000'000, true, nullptr, params, &expandedSql);
             if (resultCode == SQLITE_AUTH) {
-                // Run re-written query.
+                // Run re-written query. The rewrite is expected to preserve placeholder names so the
+                // same bound params bind to it as well. Discard the failed original's partial expansion
+                // and capture the rewritten form instead.
                 _currentlyRunningRewritten = true;
                 SASSERT(SEndsWith(_rewrittenQuery, ";"));
-                resultCode = SQuery(_db, _rewrittenQuery);
-                usedRewrittenQuery = true;
+                expandedSql.clear();
+                SQResult rewrittenResult;
+                resultCode = SQuery(_db, _rewrittenQuery, rewrittenResult, 2'000'000, true, nullptr, params, &expandedSql);
                 _currentlyRunningRewritten = false;
             }
         } else {
-            resultCode = SQuery(_db, query, result);
+            resultCode = SQuery(_db, query, result, 2000 * STIME_US_PER_MS, false, nullptr, params, &expandedSql);
         }
     }
 
@@ -772,7 +821,7 @@ bool SQLite::_writeIdempotent(const string& query, SQResult& result, bool always
 
     // If something changed, or we're always keeping queries, then save this.
     if (alwaysKeepQueries || (schemaAfter > schemaBefore) || (changesAfter > changesBefore)) {
-        _uncommittedQuery += usedRewrittenQuery ? _rewrittenQuery : query;
+        _uncommittedQuery += expandedSql;
     }
 
     _currentlyWriting = false;
@@ -855,19 +904,13 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
     // Stash the (now possibly compressed) query so SQLiteNode can ship it to peers without re-compressing.
     _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
 
-    string query = "INSERT INTO " + _journalName + " VALUES (?, ?, ?)";
-    sqlite3_stmt* stmt = nullptr;
-    int result = sqlite3_prepare_v2(_db, query.c_str(), -1, &stmt, nullptr);
-    if (result == SQLITE_OK) {
-        sqlite3_bind_int64(stmt, 1, commitCount + 1);
-        sqlite3_bind_blob(stmt, 2, _uncommittedQuery.data(),
-                          _uncommittedQuery.size(), SQLITE_STATIC);
-        sqlite3_bind_text(stmt, 3, _uncommittedHash.data(),
-                          _uncommittedHash.size(), SQLITE_STATIC);
-        int stepResult = sqlite3_step(stmt);
-        result = (stepResult == SQLITE_DONE) ? SQLITE_OK : stepResult;
-    }
-    sqlite3_finalize(stmt);
+    string query = "INSERT INTO " + _journalName + " VALUES (:commitID, :query, :hash)";
+    map<string, SQLite::Parameter> params = {
+        {":commitID", SQLite::Parameter::i((int64_t) (commitCount + 1))},
+        {":query", SQLite::Parameter::blob(_uncommittedQuery)},
+        {":hash", SQLite::Parameter::text(_uncommittedHash)},
+    };
+    int result = SQuery(_db, query, params);
     _prepareElapsed += STimeNow() - before;
     if (result) {
         // Couldn't insert into the journal; roll back the original commit
@@ -974,8 +1017,8 @@ int SQLite::commit(const string& description, const string& commandName, functio
         // Only check for commits over 100ms.
         if (_commitElapsed > 100'000 && _hctree) {
             SQResult stats;
-            if(read("SELECT * FROM hctstats", stats)) {
-                for(const auto & row : stats) {
+            if (read("SELECT * FROM hctstats", stats)) {
+                for (const auto& row : stats) {
                     SINFO("slow HC-Tree commit", {{"hctstats", SComposeList(row)}});
                 }
             }
