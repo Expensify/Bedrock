@@ -35,6 +35,14 @@ BedrockDBCommand::BedrockDBCommand(SQLiteCommand&& baseCommand, BedrockPlugin_DB
     //      Query: ...sql...
     query(STrim(SStartsWith(SToLower(request.methodLine), "query:") ? request.methodLine.substr(strlen("query:")) : request["query"]))
 {
+    const string prefix = "sql-param-";
+    for (const auto& [headerName, headerValue] : request.nameValueMap) {
+        if (!SStartsWith(headerName, prefix)) {
+            continue;
+        }
+        params.emplace(SQliteParameter::uriDecodeParamName(headerName.substr(prefix.size())),
+                       SQliteParameter::deserialize(headerValue));
+    }
 }
 
 unique_ptr<BedrockCommand> BedrockPlugin_DB::getCommand(SQLiteCommand&& baseCommand)
@@ -143,14 +151,14 @@ bool BedrockDBCommand::peek(SQLite& db)
     // Attempt the read-only query
     if (SIEquals(request["Format"], "json")) {
         SQResult result;
-        if (!db.read(query, result)) {
+        if (!db.read(query, params, result)) {
             response["error"] = db.getLastError();
             STHROW("402 Bad query");
         }
 
         response.content = SQResultFormatter::format(result, SQResultFormatter::FORMAT::JSON);
     } else {
-        int queryResult = db.read(query, &wrapper.spec);
+        int queryResult = db.read(query, params, &wrapper.spec);
         if (queryResult) {
             response["error"] = to_string(queryResult) + " " + sqlite3_errstr(queryResult);
             STHROW("402 Bad query");
@@ -180,7 +188,7 @@ void BedrockDBCommand::process(SQLite& db)
     }
 
     // Attempt the query
-    if (!db.write(query)) {
+    if (!db.write(query, params)) {
         // Query failed
         SALERT("Query failed: '" << query << "'");
         response["error"] = db.getLastError();
