@@ -348,13 +348,13 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg)
 
     // This is sort of hacky to parse this from the logging info. If it works we could ask sqlite for a better interface to get this info.
     if (SStartsWith(zMsg, "cannot commit")) {
-        // 17 is the length of "conflict at page" and the following space.
+        // Page conflicts are reported on SQLite versions which handle conflict at the page level.
+        // Other versions of SQLite report conflict at the row level, but we don't handle that yet. These versions are experimental as of May 2026.
         _conflictPage = 0;
         const char* conflictAt = strstr(zMsg, "conflict at page");
         if (conflictAt) {
+            // 17 is the length of "conflict at page" and the following space.
             _conflictPage = atol(conflictAt + 17);
-        } else {
-            SINFO("no conflict at page found");
         }
 
         // Sample conflict log lines:
