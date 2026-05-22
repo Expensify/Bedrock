@@ -2338,7 +2338,8 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
     }
 
     // Inside transaction; get ready to back out on error
-    if (!db.writeUnmodified(message.content)) {
+    //  decompress() is a no-op for non-zstd-framed input, so this works whether or not the leader is compressing.
+    if (!db.writeUnmodified(BedrockPlugin_Compression::decompress(message.content))) {
         STHROW("failed to write transaction");
     }
 }
