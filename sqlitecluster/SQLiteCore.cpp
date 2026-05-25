@@ -17,9 +17,9 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
 
         // This will fail only if we can't acquire the commit lock respecting the command timeout, which 
         // likely means our cluster health is not optimal. In this case, we want to roll back and 
-        // return a failure, which will cause SQLiteNode to re-run the command and return the
-        // appropriate timeout exception.
+        // return false, which will make the caller return the appropriate exception.
         if (!_db.prepare(&commitID, &transactionHash, commitLockTimeout)) {
+            _db.rollback(commandName);
             return false;
         }
     }
