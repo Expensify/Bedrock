@@ -19,7 +19,7 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
         // likely means our cluster health is not optimal. In this case, we want to roll back and 
         // return a failure, which will cause SQLiteNode to re-run the command and return the
         // appropriate timeout exception.
-        if (_db.prepare(&commitID, &transactionHash, commitLockTimeout)) {
+        if (!_db.prepare(&commitID, &transactionHash, commitLockTimeout)) {
             return false;
         }
     }
