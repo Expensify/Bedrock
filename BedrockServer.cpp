@@ -1021,14 +1021,14 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         bool commitSuccess = false;
                         uint64_t transactionID = 0;
                         string transactionHash;
-                        
+
                         // Let's use a default value of 0 for the time to acquire the lock, which would work as a try_lock.
                         chrono::microseconds timeToCommit = chrono::microseconds(0);
                         {
                             BedrockCore::AutoTimer timer(command, isBlocking ? BedrockCommand::BLOCKING_COMMIT_WORKER : BedrockCommand::COMMIT_WORKER);
                             void (* onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
                             bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
-                            
+
                             // We want to calculate the remaining time for this command before we try to commit. It's possible that it will throw.
                             // If that's the case, we will still allow the commit flow to happen passing a 0 timeout, making it behave as a try_lock
                             // and still commit it if there's no wait time for the mutex.

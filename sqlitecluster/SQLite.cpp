@@ -865,7 +865,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         if (!_sharedData.commitLock.try_lock_for(commitLockTimeout)) {
             // Couldn't get the lock in time. Roll back the open transaction.
             SINFO("Timed out after " << chrono::duration_cast<chrono::microseconds>(commitLockTimeout).count()
-                << "us waiting for commit lock.");
+                  << "us waiting for commit lock.");
             return false;
         }
         auto end = STimeNow();
