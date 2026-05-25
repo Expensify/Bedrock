@@ -1021,21 +1021,22 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         bool commitSuccess = false;
                         uint64_t transactionID = 0;
                         string transactionHash;
-                        chrono::microseconds timeToCommit = chrono::microseconds::max();
+                        
+                        // Let's use a default value of 0 for the time to acquire the lock, which would work as a try_lock.
+                        chrono::microseconds timeToCommit = chrono::microseconds(0);
                         {
                             BedrockCore::AutoTimer timer(command, isBlocking ? BedrockCommand::BLOCKING_COMMIT_WORKER : BedrockCommand::COMMIT_WORKER);
                             void (* onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
                             bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
                             
                             // We want to calculate the remaining time for this command before we try to commit. It's possible that it will throw.
-                            // If that's the case, we will still allow the commit flow to happen passing a 0 timeout, which will cause it to fail
-                            // immediately and we'll deal with the consequences below instead of creating new if/else flows here.
+                            // If that's the case, we will still allow the commit flow to happen passing a 0 timeout, making it behave as a try_lock
+                            // and still commit it if there's no wait time for the mutex.
                             try {
                                 // We can use false for isProcessing here since we want to use the total command timeout.
                                 timeToCommit = chrono::microseconds(core.getRemainingTime(command, false));
                             } catch (const SException& e) {
                                 SINFO("Command '" << command->getMethodName() << "' timed out before commit.");
-                                timeToCommit = chrono::microseconds(0);
                             }
                             commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit);
 
