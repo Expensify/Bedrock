@@ -1021,11 +1021,23 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         bool commitSuccess = false;
                         uint64_t transactionID = 0;
                         string transactionHash;
+                        chrono::microseconds timeToCommit = chrono::microseconds::max();
                         {
                             BedrockCore::AutoTimer timer(command, isBlocking ? BedrockCommand::BLOCKING_COMMIT_WORKER : BedrockCommand::COMMIT_WORKER);
                             void (* onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
                             bool enableOnPrepareNotifications = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
-                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler);
+                            
+                            // We want to calculate the remaining time for this command before we try to commit. It's possible that it will throw.
+                            // If that's the case, we will still allow the commit flow to happen passing a 0 timeout, which will cause it to fail
+                            // immediately and we'll deal with the consequences below instead of creating new if/else flows here.
+                            try {
+                                // We can use false for isProcessing here since we want to use the total command timeout.
+                                timeToCommit = chrono::microseconds(core.getRemainingTime(command, false));
+                            } catch (const SException& e) {
+                                SINFO("Command '" << command->getMethodName() << "' timed out before commit.");
+                                timeToCommit = chrono::microseconds(0);
+                            }
+                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit);
 
                             if (getState() != SQLiteNodeState::LEADING) {
                                 SINFO("Stopped leading while trying to commit, will retry.");
@@ -1047,7 +1059,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             // mark it as complete. We add the currentCommit count here as well.
                             command->response["commitCount"] = to_string(db.getCommitCount());
                             command->complete = true;
-                        } else {
+                        } else if (!core.isTimedOut(command, &db, this)) {
+                            // One of the reasons the commit failed might be because of a timeout. If that's the case,
+                            // then we skip this part since everything will be done in the method call above.
                             SINFO("Conflict or state change committing " << command->request.methodLine);
                             if (_enableConflictPageLocks) {
                                 lastConflictLocation = db.getLastConflictLocation();
