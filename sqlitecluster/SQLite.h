@@ -285,8 +285,6 @@ public:
     // Looks up a range of commits. Returns raw query data which may be compressed.
     int getCompressedCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS = 0);
 
-    
-    
     // Set a time limit for this transaction, in US from the current time.
     void setTimeout(uint64_t timeLimitUS);
 
