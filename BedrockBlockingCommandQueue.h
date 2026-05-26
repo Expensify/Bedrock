@@ -48,6 +48,6 @@ private:
     mutex _rateLimitMutex;
 
     map<string, size_t> _identifierCounts;
-    atomic<size_t> _maxPerIdentifier{0};
+    atomic<size_t> _maxPerIdentifier{10};
     atomic<uint64_t> _emptyTime{0};
 };
