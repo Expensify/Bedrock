@@ -32,18 +32,15 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
         }
 
         size_t& count = _identifierCounts[identifier];
+        count++;
 
         if (count > maxPerIdentifier) {
             SINFO("Blocking queue rate limit: rejecting '" << command->request.methodLine
-                  << "' for identifier '" << identifier << "'");
+                  << "' for identifier '" << identifier << "' (count=" << count
+                  << ", threshold=" << maxPerIdentifier << ")");
             // TODO: enable enforcement after monitoring confirms thresholds are correct in production.
+            // count--;
             // STHROW("503 Blocking queue rate limited");
-        }
-
-        count++;
-        if (count > maxPerIdentifier) {
-            SWARN("Blocking queue rate limit: blocking identifier '" << identifier
-                  << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
         }
     }
 
