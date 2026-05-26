@@ -1413,6 +1413,11 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
     return SQLITE_DENY;
 }
 
+void SQLite::setTimeout(chrono::microseconds timeLimit)
+{
+    setTimeout(timeLimit.count());
+}
+
 void SQLite::setTimeout(uint64_t timeLimitUS)
 {
     _timeoutStart = STimeNow();

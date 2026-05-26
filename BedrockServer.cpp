@@ -1034,7 +1034,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             // and still commit it if there's no wait time for the mutex.
                             try {
                                 // We can use false for isProcessing here since we want to use the total command timeout.
-                                timeToCommit = chrono::microseconds(core.getRemainingTime(command, false));
+                                timeToCommit = core.getRemainingTime(command, false);
                             } catch (const SException& e) {
                                 SINFO("Command '" << command->getMethodName() << "' timed out before commit.");
                             }

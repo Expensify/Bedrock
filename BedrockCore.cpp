@@ -32,7 +32,7 @@ private:
     bool (*_handler)(int, const char*, string&);
 };
 
-uint64_t BedrockCore::getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing)
+chrono::microseconds BedrockCore::getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing)
 {
     int64_t timeout = command->timeout();
     int64_t now = STimeNow();
@@ -53,7 +53,7 @@ uint64_t BedrockCore::getRemainingTime(const unique_ptr<BedrockCommand>& command
     }
 
     // Both of these are positive, return the lowest remaining.
-    return isProcessing ? min(processTimeout, adjustedTimeout) : adjustedTimeout;
+    return chrono::microseconds(isProcessing ? min(processTimeout, adjustedTimeout) : adjustedTimeout);
 }
 
 bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db, const BedrockServer* server)
@@ -444,11 +444,11 @@ void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, c
 
 void BedrockCore::decreaseCommandTimeout(unique_ptr<BedrockCommand>& command, uint64_t timeoutMS)
 {
-    const uint64_t remainingTimeUS = getRemainingTime(command, false);
-    if ((timeoutMS * 1000ull) < remainingTimeUS) {
+    const auto remainingTimeUS = getRemainingTime(command, false);
+    if (chrono::microseconds(timeoutMS * 1000ull) < remainingTimeUS) {
         command->setTimeout(timeoutMS);
-        const int64_t newRemainingTimeUS = getRemainingTime(command, false);
+        const auto newRemainingTimeUS = getRemainingTime(command, false);
         _db.setTimeout(newRemainingTimeUS);
-        SINFO("Decreased command timeout from " << STIMESTAMP(STimeNow() + remainingTimeUS) << " to " << STIMESTAMP(STimeNow() + newRemainingTimeUS));
+        SINFO("Decreased command timeout from " << STIMESTAMP(STimeNow() + remainingTimeUS.count()) << " to " << STIMESTAMP(STimeNow() + newRemainingTimeUS.count()));
     }
 }

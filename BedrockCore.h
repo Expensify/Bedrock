@@ -73,7 +73,7 @@ private:
     // Gets the amount of time remaining until this command times out. This is the difference between the command's
     // 'timeout' value (or the default timeout, if not set) and the time the command was initially scheduled to run. If
     // this time is already expired, this throws `555 Timeout`
-    static uint64_t getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing);
+    static chrono::microseconds getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing);
 
 private:
     // When called in the context of handling an exception, returns the demangled (if possible) name of the exception.

@@ -285,8 +285,13 @@ public:
     // Looks up a range of commits. Returns raw query data which may be compressed.
     int getCompressedCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS = 0);
 
+    
+    
     // Set a time limit for this transaction, in US from the current time.
     void setTimeout(uint64_t timeLimitUS);
+
+    // Overload of function above to accept microseconds directly.
+    void setTimeout(chrono::microseconds timeLimit);
 
     // Reset all timeout information to 0, to be ready for the next operation.
     void clearTimeout();
