@@ -126,7 +126,7 @@ void SStandaloneHTTPSManager::postPoll(fd_map& fdm, SStandaloneHTTPSManager::Tra
             _onRecv(transaction);
         } else {
             // Coercing anything that's not 200 to 500 makes no sense, and should be abandoned with the above.
-            SWARN("Message failed: '" << transaction.fullResponse.methodLine << "'");
+            SHMMM("Message failed: '" << transaction.fullResponse.methodLine << "'");
             transaction.response = getHTTPResponseCode(transaction.fullResponse.methodLine, 500);
         }
 
