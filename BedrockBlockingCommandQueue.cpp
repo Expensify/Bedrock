@@ -35,16 +35,13 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
 
         if (count > maxPerIdentifier) {
             SINFO("Blocking queue rate limit: rejecting '" << command->request.methodLine
-                  << "' for identifier '" << identifier << "'");
+                  << "' for identifier '" << identifier << "' (count=" << count
+                  << ", threshold=" << maxPerIdentifier << ")");
             // TODO: enable enforcement after monitoring confirms thresholds are correct in production.
             // STHROW("503 Blocking queue rate limited");
         }
 
         count++;
-        if (count > maxPerIdentifier) {
-            SWARN("Blocking queue rate limit: blocking identifier '" << identifier
-                  << "' with " << count << " commands in blocking queue (threshold: " << maxPerIdentifier << ")");
-        }
     }
 
     // A command is entering the queue, so it is no longer empty. Clear the empty timestamp so
