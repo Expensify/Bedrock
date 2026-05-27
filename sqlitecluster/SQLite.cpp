@@ -828,7 +828,7 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     return true;
 }
 
-bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
+bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout)
 {
     SASSERT(_insideTransaction);
 
@@ -862,7 +862,12 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     if (!_mutexLocked) {
         auto start = STimeNow();
-        _sharedData.commitLock.lock();
+        if (!_sharedData.commitLock.try_lock_for(commitLockTimeout)) {
+            // Couldn't get the lock in time. Roll back the open transaction.
+            SINFO("Timed out after " << chrono::duration_cast<chrono::microseconds>(commitLockTimeout).count()
+                  << "us waiting for commit lock.");
+            return false;
+        }
         auto end = STimeNow();
         if (end - start > 5'000) {
             SINFO("Waited " << (end - start) << "us for commit lock.");
@@ -1406,6 +1411,11 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
         }
     }
     return SQLITE_DENY;
+}
+
+void SQLite::setTimeout(chrono::microseconds timeLimit)
+{
+    setTimeout(timeLimit.count());
 }
 
 void SQLite::setTimeout(uint64_t timeLimitUS)
