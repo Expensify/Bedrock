@@ -8,13 +8,17 @@
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
 
-struct TempDBFile {
+struct TempDBFile
+{
     char filename[17] = "br_sync_dbXXXXXX";
-    TempDBFile() {
+    TempDBFile()
+    {
         int fd = mkstemp(filename);
         close(fd);
     }
-    ~TempDBFile() {
+
+    ~TempDBFile()
+    {
         unlink(filename);
     }
 };
