@@ -1,4 +1,5 @@
 #include <cstring>
+#include <unistd.h>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SData.h>
@@ -6,6 +7,21 @@
 #include <libstuff/SRandom.h>
 #include <sqlitecluster/SQLite.h>
 #include <test/lib/BedrockTester.h>
+
+struct TempDBFile
+{
+    char filename[17] = "br_sync_dbXXXXXX";
+    TempDBFile()
+    {
+        int fd = mkstemp(filename);
+        close(fd);
+    }
+
+    ~TempDBFile()
+    {
+        unlink(filename);
+    }
+};
 
 struct LibStuff : tpunit::TestFixture
 {
@@ -903,7 +919,8 @@ struct LibStuff : tpunit::TestFixture
 
     void SQResultTest()
     {
-        SQLite db(":memory:", 1000, 1000, 1);
+        TempDBFile dbFile;
+        SQLite db(dbFile.filename, 1000, 1000, 1);
         db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
         db.write("CREATE TABLE testTable(id INTEGER PRIMARY KEY, name STRING, value STRING, created DATE);");
         db.write("INSERT INTO testTable VALUES(1, 'name1', 'value1', '2023-12-20');");
@@ -941,7 +958,8 @@ struct LibStuff : tpunit::TestFixture
     void testReturningClause()
     {
         // Given a sqlite DB with a table and pre inserted values
-        SQLite db(":memory:", 1000, 1000, 1);
+        TempDBFile dbFile;
+        SQLite db(dbFile.filename, 1000, 1000, 1);
         db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
         db.write("CREATE TABLE testReturning(id INTEGER PRIMARY KEY, name STRING, value STRING, created DATE);");
         db.write("INSERT INTO testReturning VALUES(11, 'name1', 'value1', '2024-12-02');");
@@ -972,7 +990,8 @@ struct LibStuff : tpunit::TestFixture
 
     void testSQueryBoundParameters()
     {
-        SQLite db(":memory:", 1000, 1000, 1);
+        TempDBFile dbFile;
+        SQLite db(dbFile.filename, 1000, 1000, 1);
 
         // CREATE TABLE and INSERT one row with named bound parameters, including a BLOB containing embedded
         // null bytes (the case that motivated this work — string concatenation can't safely round-trip binary data).
@@ -1032,7 +1051,8 @@ struct LibStuff : tpunit::TestFixture
 
     void testSQueryBoundParameterInjections()
     {
-        SQLite db(":memory:", 1000, 1000, 1);
+        TempDBFile dbFile;
+        SQLite db(dbFile.filename, 1000, 1000, 1);
 
         // Seed a table with two rows so an "always true" injection would expose extra data if it succeeded.
         db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
