@@ -828,7 +828,7 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     return true;
 }
 
-bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
+bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout)
 {
     SASSERT(_insideTransaction);
 
@@ -862,7 +862,12 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     if (!_mutexLocked) {
         auto start = STimeNow();
-        _sharedData.commitLock.lock();
+        if (!_sharedData.commitLock.try_lock_for(commitLockTimeout)) {
+            // Couldn't get the lock in time. Roll back the open transaction.
+            SINFO("Timed out after " << chrono::duration_cast<chrono::microseconds>(commitLockTimeout).count()
+                  << "us waiting for commit lock.");
+            return false;
+        }
         auto end = STimeNow();
         if (end - start > 5'000) {
             SINFO("Waited " << (end - start) << "us for commit lock.");
@@ -895,22 +900,21 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash)
         *transactionhash = _uncommittedHash;
     }
 
-    // Wrap the bound query value with compress() for zstd compression. When journalZstdDictionaryID is 0
-    // (the default), compress() returns data unchanged.
-    string query = "INSERT INTO " + _journalName + " VALUES (:commitID, compress(:query, :dictID), :hash)";
-    map<string, SQLite::Parameter> params = {
-        {":commitID", SQLite::Parameter::i((int64_t) (commitCount + 1))},
-        {":query", SQLite::Parameter::text(_uncommittedQuery)},
-        {":dictID", SQLite::Parameter::i(journalZstdDictionaryID.load())},
-        {":hash", SQLite::Parameter::text(_uncommittedHash)},
-    };
-
-    // These are the values we're currently operating on, until we either commit or rollback.
-    _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
-    if (_uncommittedQuery.empty()) {
+    if (!_uncommittedQuery.empty()) {
+        _uncommittedQuery = BedrockPlugin_Compression::compress(_uncommittedQuery, journalZstdDictionaryID.load());
+    } else {
         SINFO("Will commmit blank query");
     }
 
+    // Stash the (now possibly compressed) query so SQLiteNode can ship it to peers without re-compressing.
+    _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
+
+    string query = "INSERT INTO " + _journalName + " VALUES (:commitID, :query, :hash)";
+    map<string, SQLite::Parameter> params = {
+        {":commitID", SQLite::Parameter::i((int64_t) (commitCount + 1))},
+        {":query", SQLite::Parameter::blob(_uncommittedQuery)},
+        {":hash", SQLite::Parameter::text(_uncommittedHash)},
+    };
     int result = SQuery(_db, query, params);
     _prepareElapsed += STimeNow() - before;
     if (result) {
@@ -1406,6 +1410,11 @@ int SQLite::_authorize(int actionCode, const char* detail1, const char* detail2,
         }
     }
     return SQLITE_DENY;
+}
+
+void SQLite::setTimeout(chrono::microseconds timeLimit)
+{
+    setTimeout(timeLimit.count());
 }
 
 void SQLite::setTimeout(uint64_t timeLimitUS)

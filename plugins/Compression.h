@@ -30,6 +30,10 @@ public:
     // Register the compress(data, dictID) and decompress(data) SQLite UDFs.
     static void registerSQLite(sqlite3* db);
 
+    // Returns input compressed with the given dictionary ID. If dictID is 0 or input is empty,
+    // returns input unchanged. Produces a byte-identical zstd frame to the compress() SQL UDF.
+    static string compress(const string& input, size_t dictID);
+
     // Returns decompressed data if input is a zstd frame, otherwise returns input unchanged.
     static string decompress(const string& input);
 

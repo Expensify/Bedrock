@@ -32,7 +32,7 @@ private:
     bool (*_handler)(int, const char*, string&);
 };
 
-uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing)
+chrono::microseconds BedrockCore::getRemainingTime(const unique_ptr<BedrockCommand>& command, bool isProcessing)
 {
     int64_t timeout = command->timeout();
     int64_t now = STimeNow();
@@ -53,13 +53,13 @@ uint64_t BedrockCore::_getRemainingTime(const unique_ptr<BedrockCommand>& comman
     }
 
     // Both of these are positive, return the lowest remaining.
-    return isProcessing ? min(processTimeout, adjustedTimeout) : adjustedTimeout;
+    return chrono::microseconds(isProcessing ? min(processTimeout, adjustedTimeout) : adjustedTimeout);
 }
 
 bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db, const BedrockServer* server)
 {
     try {
-        _getRemainingTime(command, false);
+        getRemainingTime(command, false);
     } catch (const SException& e) {
         // Yep, timed out.
         _handleCommandException(command, e, db, server);
@@ -82,7 +82,7 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
         try {
             SDEBUG("prePeeking at '" << request.methodLine << "'");
             command->prePeekCount++;
-            _db.setTimeout(_getRemainingTime(command, false));
+            _db.setTimeout(getRemainingTime(command, false));
             _db.setAbortRef(command->shouldAbort);
 
             // Make sure no writes happen while in prePeek command
@@ -142,7 +142,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     try {
         SDEBUG("Peeking at '" << request.methodLine << "'");
         command->peekCount++;
-        _db.setTimeout(_getRemainingTime(command, false));
+        _db.setTimeout(getRemainingTime(command, false));
         _db.setAbortRef(command->shouldAbort);
 
         try {
@@ -240,7 +240,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     try {
         SDEBUG("Processing '" << request.methodLine << "'");
         command->processCount++;
-        _db.setTimeout(_getRemainingTime(command, true));
+        _db.setTimeout(getRemainingTime(command, true));
         _db.setAbortRef(command->shouldAbort);
         if (!_db.insideTransaction()) {
             // If a transaction was already begun in `peek`, then this won't run. We call it here to support the case where
@@ -352,7 +352,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
         try {
             SDEBUG("postProcessing at '" << request.methodLine << "'");
             command->postProcessCount++;
-            _db.setTimeout(_getRemainingTime(command, false));
+            _db.setTimeout(getRemainingTime(command, false));
             _db.setAbortRef(command->shouldAbort);
 
             // Make sure no writes happen while in postProcess command
@@ -444,11 +444,11 @@ void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, c
 
 void BedrockCore::decreaseCommandTimeout(unique_ptr<BedrockCommand>& command, uint64_t timeoutMS)
 {
-    const uint64_t remainingTimeUS = _getRemainingTime(command, false);
-    if ((timeoutMS * 1000ull) < remainingTimeUS) {
+    const auto remainingTimeUS = getRemainingTime(command, false);
+    if (chrono::microseconds(timeoutMS * 1000ull) < remainingTimeUS) {
         command->setTimeout(timeoutMS);
-        const int64_t newRemainingTimeUS = _getRemainingTime(command, false);
+        const auto newRemainingTimeUS = getRemainingTime(command, false);
         _db.setTimeout(newRemainingTimeUS);
-        SINFO("Decreased command timeout from " << STIMESTAMP(STimeNow() + remainingTimeUS) << " to " << STIMESTAMP(STimeNow() + newRemainingTimeUS));
+        SINFO("Decreased command timeout from " << STIMESTAMP(STimeNow() + remainingTimeUS.count()) << " to " << STIMESTAMP(STimeNow() + newRemainingTimeUS.count()));
     }
 }
