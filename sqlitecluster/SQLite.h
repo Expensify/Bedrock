@@ -171,10 +171,10 @@ public:
     // Prepare to commit or rollback the transaction. This also inserts the current uncommitted query into the
     // journal; no additional writes are allowed until the next transaction has begun.
     // The transactionID and transactionHash, if passed, will be updated with the values prepared for this transaction.
-    // The commitLockTimeout, if passed, will limit the time we wait for the lock. If not, we'll use the max value, which
+    // The commitLockTimeout, if passed, will limit the time we wait for the lock. If not, we'll use 24 hours, which
     // is effectively no timeout.
     // Note that if this transaction fails to commit, these will not ultimately be accurate.
-    bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::microseconds::max());
+    bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24));
 
     // This enables or disables automatic re-writing. This feature is to support mocked requests and load testing. This
     // overloads set_authorizer to allow a plugin to deny certain queries from running (currently based only on the
