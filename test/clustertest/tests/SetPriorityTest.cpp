@@ -157,5 +157,23 @@ struct SetPriorityTest : tpunit::TestFixture
         ASSERT_TRUE(node5.waitForState("LEADING"));
         ASSERT_TRUE(node0.waitForState("FOLLOWING"));
         ASSERT_TRUE(node5.waitForStatusTerm("priority", "200"));
+
+        // Scenario 6: priority conflict rejection
+        // Trying to set a priority that another peer already has must fail.
+        // node1 is at 90 (still); try to make node3 also 90.
+        ASSERT_TRUE(node1.waitForStatusTerm("priority", "90"));
+        SData conflict("SetPriority");
+        conflict["priority"] = "90";
+        node3.executeWaitVerifyContent(conflict, "409", true);
+
+        // node3's priority must not have changed.
+        ASSERT_TRUE(node3.waitForStatusTerm("priority", "70"));
+
+        // But two permafollowers (priority 0) are fine, so let's set multiple followers
+        // to priority 0.
+        setPriority(node3, 0);
+        ASSERT_TRUE(node3.waitForStatusTerm("priority", "0"));
+        setPriority(node4, 0);
+        ASSERT_TRUE(node4.waitForStatusTerm("priority", "0"));
     }
 } __SetPriorityTest;
