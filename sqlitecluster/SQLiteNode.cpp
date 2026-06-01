@@ -548,7 +548,7 @@ bool SQLiteNode::update()
             // If no peers, we're the leader, unless we're shutting down.
             if (_peerList.empty()) {
                 SHMMM("No peers configured, jumping to LEADING");
-                _priority = _originalPriority;
+                _priority = _originalPriority.load();
                 _changeState(SQLiteNodeState::LEADING);
 
                 // Run `update` again immediately.
@@ -1319,7 +1319,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             if (!_haveSeenPeerOnSameVersion && peer->version.load() == _version) {
                 _haveSeenPeerOnSameVersion = true;
                 if (_haveBeenWAITING) {
-                    _priority = _originalPriority;
+                    _priority = _originalPriority.load();
                     _reconnectAll();
                 }
             }
@@ -2021,7 +2021,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             if (!_haveBeenWAITING) {
                 _haveBeenWAITING = true;
                 if (_haveSeenPeerOnSameVersion) {
-                    _priority = _originalPriority;
+                    _priority = _originalPriority.load();
                     _reconnectAll();
                 }
             }
