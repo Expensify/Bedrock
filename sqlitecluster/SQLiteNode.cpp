@@ -1291,12 +1291,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             if (!message.isSet("Version")) {
                 STHROW("missing Version");
             }
-            if (peer->permaFollower && (message["Permafollower"] != "true" || message.calc("Priority") > 0)) {
-                STHROW("you're supposed to be a 0-priority permafollower");
-            }
-            if (!peer->permaFollower && (message["Permafollower"] == "true" || message.calc("Priority") == 0)) {
-                STHROW("you're *not* supposed to be a 0-priority permafollower");
-            }
 
             // It's an error to have two peers configured with the same priority, except 0 and -1
             // Priority -1 is the special case "we are starting up and haven't set priority yet"
@@ -1314,6 +1308,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             peer->priority = message.calc("Priority");
             peer->version = message["Version"];
             peer->state = stateFromName(message["State"]);
+            peer->permaFollower = peer->priority == 0;
 
             // Is it on the same version as us?
             if (!_haveSeenPeerOnSameVersion && peer->version.load() == _version) {
