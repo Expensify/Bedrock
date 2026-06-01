@@ -2909,6 +2909,18 @@ int SQLiteNode::setPriority(int newPriority)
         STHROW("Priority must be non-negative");
     }
 
+    // Priorities other than 0 must be unique across the cluster (the LOGIN handler enforces
+    // this at connect-time, but we should reject at change-time too so we never put the
+    // cluster into a conflicting state). Priority 0 is the permafollower marker — multiple
+    // permafollowers are fine.
+    if (newPriority > 0) {
+        for (auto peer : _peerList) {
+            if (peer->loggedIn && peer->priority == newPriority) {
+                STHROW("409 Priority " + to_string(newPriority) + " already in use by " + peer->name);
+            }
+        }
+    }
+
     const int oldPriority = _priority;
     SINFO("Changing node priority", {{"oldPriority", to_string(oldPriority)}, {"newPriority", to_string(newPriority)}});
     _priority.store(newPriority);

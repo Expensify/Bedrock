@@ -2142,10 +2142,14 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             } else if (!_syncNode) {
                 response.methodLine = "500 No sync node";
             } else {
-                int oldPriority = _syncNode->setPriority(newPriority);
-                response["oldPriority"] = to_string(oldPriority);
-                response["newPriority"] = to_string(newPriority);
-                response.methodLine = "200 OK";
+                try {
+                    int oldPriority = _syncNode->setPriority(newPriority);
+                    response["oldPriority"] = to_string(oldPriority);
+                    response["newPriority"] = to_string(newPriority);
+                    response.methodLine = "200 OK";
+                } catch (const SException& e) {
+                    response.methodLine = e.what();
+                }
             }
         }
     }
