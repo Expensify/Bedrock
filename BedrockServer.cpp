@@ -2143,7 +2143,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
                 response.methodLine = "500 No sync node";
             } else {
                 int64_t priority = command->request.calc64("priority");
-                // _syncNode->setPriority(priority);
+                _syncNode->setPriority(priority);
             }
         }
     }

@@ -2906,6 +2906,8 @@ void SQLiteNode::_dieIfForkedFromCluster()
 }
 
 int SQLiteNode::setPriority(int newPriority) {
+    // Let's lock _stateMutex here since we'll be changing the priority, which
+    // can change the state to SEARCHING.
     unique_lock<decltype(_stateMutex)> lock(_stateMutex);
     if (newPriority < 0 || newPriority == 1) {
         STHROW("Priority must be non-negative");
@@ -2923,6 +2925,32 @@ int SQLiteNode::setPriority(int newPriority) {
     
     // All peers will receive the new state and priority.
     _sendToAllPeers(state);
-    
+
+    // Let's force a transition if we were leading and there's a following peer with
+    // higher priority than ours. We'll also force a transition if we're following
+    // and there's a leader with lower priority.
+    if (_state == SQLiteNodeState::LEADING) {
+        for (auto peer : _peerList) {
+            if (peer->loggedIn &&
+                peer->priority > newPriority &&
+                peer->state == SQLiteNodeState::FOLLOWING
+            ) {
+                // If it comes down to this, there's at least one peer that has a higher
+                // priority than this node, so let's make it stand down
+                SINFO("Forcing state transition to STANDINGDOWN because peer '" << peer->name << "' has higher priority (" << peer->priority << " > " << newPriority << ").");
+                _changeState(SQLiteNodeState::STANDINGDOWN);
+                break;
+            }
+        }
+    } else if (_state == SQLiteNodeState::FOLLOWING && _leadPeer) {
+        auto leadPeer = _leadPeer.load();
+        if (leadPeer->loggedIn &&
+            leadPeer->state == SQLiteNodeState::LEADING &&
+            leadPeer->priority < newPriority
+        ) {
+            SINFO("Forcing state transition to STANDINGUP because I should be leader with new priority (" << newPriority << " > "<< leadPeer->priority << ")");
+            _changeState(SQLiteNodeState::STANDINGUP);
+        }
+    }
     return oldPriority;
 }
