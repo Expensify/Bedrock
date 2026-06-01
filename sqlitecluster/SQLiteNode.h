@@ -301,7 +301,7 @@ private:
 
     // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
-    const int _originalPriority;
+    atomic<int> _originalPriority;
 
     // Tracks whether this node has seen at least one peer running the same version as itself.
     // We use this along with _haveBeenWAITING to determine when to restore the node's original priority after startup.
