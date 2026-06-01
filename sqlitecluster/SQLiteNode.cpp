@@ -2900,7 +2900,8 @@ void SQLiteNode::_dieIfForkedFromCluster()
     }
 }
 
-int SQLiteNode::setPriority(int newPriority) {
+int SQLiteNode::setPriority(int newPriority)
+{
     // Let's lock _stateMutex here since we'll be changing the priority, which
     // can change the state to SEARCHING.
     unique_lock<decltype(_stateMutex)> lock(_stateMutex);
@@ -2917,7 +2918,7 @@ int SQLiteNode::setPriority(int newPriority) {
     state["Priority"] = SToStr(newPriority);
     state["State"] = stateName(_state);
     state["StateChangeCount"] = SToStr(_stateChangeCount);
-    
+
     // All peers will receive the new state and priority.
     _sendToAllPeers(state);
 
@@ -2945,7 +2946,7 @@ int SQLiteNode::setPriority(int newPriority) {
         ) {
             // Re-traverse via SEARCHING so the WAITING state can reset every peer's
             // standupResponse to NONE before STANDINGUP counts approvals.
-            SINFO("Forcing state transition to SEARCHING because I should be leader with new priority (" << newPriority << " > "<< leadPeer->priority << ")");
+            SINFO("Forcing state transition to SEARCHING because I should be leader with new priority (" << newPriority << " > " << leadPeer->priority << ")");
             _changeState(SQLiteNodeState::SEARCHING);
         }
     }
