@@ -2130,6 +2130,22 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         } else {
             response.methodLine = "401 Don't Use Zero";
         }
+    } else if (SIEquals(command->request.methodLine, "SetPriorty")) {
+        if (!command->request.isSet("priority")) {
+            response.methodLine = "400 Missing priority";
+        } else {
+            int64_t newPriority  = command->request.calc64("priority");
+
+            // Priority 1 is reserverd for shutdown.
+            if (newPriority < 0 || newPriority == 1) {
+                response.methodLine = "400 Invalid priority";
+            } else if (!_syncNode) {
+                response.methodLine = "500 No sync node";
+            } else {
+                int64_t priority = command->request.calc64("priority");
+                // _syncNode->setPriority(priority);
+            }
+        }
     }
 }
 
