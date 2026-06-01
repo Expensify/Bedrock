@@ -132,6 +132,12 @@ struct SetPriorityTest : tpunit::TestFixture
         ASSERT_TRUE(node2.waitForStatusTerm("priority", "150"));
 
         // Restore node2 to 80; node0 should retake leadership.
+        // Wait for node2's view of node0 to reach FOLLOWING — setPriority's
+        // LEADING branch scans for a higher-priority FOLLOWING peer to force
+        // stand-down, and that peer is node0 here. Without this wait, node0
+        // may still appear SUBSCRIBING from node2's view right after the
+        // scenario-3 election, leaving no peer to trigger stand-down.
+        ASSERT_TRUE(waitForPeerField(node2, "cluster_node_0", "state", "FOLLOWING"));
         setPriority(node2, 80);
         ASSERT_TRUE(node0.waitForState("LEADING"));
         ASSERT_TRUE(node2.waitForState("FOLLOWING"));
@@ -160,8 +166,10 @@ struct SetPriorityTest : tpunit::TestFixture
 
         // Scenario 6: priority conflict rejection
         // Trying to set a priority that another peer already has must fail.
-        // node1 is at 90 (still); try to make node3 also 90.
-        ASSERT_TRUE(node1.waitForStatusTerm("priority", "90"));
+        // node1 is at 90 (still); try to make node3 also 90. Wait for node3's
+        // view of node1 to actually reflect 90 — the conflict check reads from
+        // the local peer list, so we need the value to be propagated first.
+        ASSERT_TRUE(waitForPeerField(node3, "cluster_node_1", "priority", "90"));
         SData conflict("SetPriority");
         conflict["priority"] = "90";
         node3.executeWaitVerifyContent(conflict, "409", true);
@@ -184,7 +192,12 @@ struct SetPriorityTest : tpunit::TestFixture
         ASSERT_TRUE(node2.waitForStatusTerm("priority", "0"));
 
         // Now demoting any remaining full peer would drop us to 2 — below quorum.
-        // node1 is at 90 and FOLLOWING; demoting it must be rejected with 409.
+        // node1's quorum check counts non-permafollower peers, so wait for node1's
+        // view of nodes 2/3/4 to reflect their priority=0 (and thus permafollower
+        // status) before issuing the demotion that must be rejected.
+        ASSERT_TRUE(waitForPeerField(node1, "cluster_node_2", "priority", "0"));
+        ASSERT_TRUE(waitForPeerField(node1, "cluster_node_3", "priority", "0"));
+        ASSERT_TRUE(waitForPeerField(node1, "cluster_node_4", "priority", "0"));
         SData breakQuorum("SetPriority");
         breakQuorum["priority"] = "0";
         node1.executeWaitVerifyContent(breakQuorum, "409", true);
