@@ -2948,8 +2948,10 @@ int SQLiteNode::setPriority(int newPriority) {
             leadPeer->state == SQLiteNodeState::LEADING &&
             leadPeer->priority < newPriority
         ) {
-            SINFO("Forcing state transition to STANDINGUP because I should be leader with new priority (" << newPriority << " > "<< leadPeer->priority << ")");
-            _changeState(SQLiteNodeState::STANDINGUP);
+            // Re-traverse via SEARCHING so the WAITING state can reset every peer's
+            // standupResponse to NONE before STANDINGUP counts approvals.
+            SINFO("Forcing state transition to SEARCHING because I should be leader with new priority (" << newPriority << " > "<< leadPeer->priority << ")");
+            _changeState(SQLiteNodeState::SEARCHING);
         }
     }
     return oldPriority;
