@@ -2921,6 +2921,25 @@ int SQLiteNode::setPriority(int newPriority)
         }
     }
 
+    // If demoting self to permafollower, ensure the remaining full peers still
+    // satisfy quorum. Minimum full peers required is ceil(totalClusterSize / 2):
+    // a 6-node cluster needs ≥3, a 4-node cluster needs ≥2, etc.
+    if (newPriority == 0 && _priority > 0) {
+        const int totalClusterSize = static_cast<int>(_peerList.size()) + 1;
+        const int minFullPeersForQuorum = (totalClusterSize + 1) / 2;
+        int otherFullPeers = 0;
+        for (auto peer : _peerList) {
+            if (!peer->permaFollower) {
+                ++otherFullPeers;
+            }
+        }
+        if (otherFullPeers < minFullPeersForQuorum) {
+            STHROW("409 Demoting would leave " + to_string(otherFullPeers) +
+                   " full peer(s); cluster of size " + to_string(totalClusterSize) +
+                   " needs at least " + to_string(minFullPeersForQuorum) + " for quorum");
+        }
+    }
+
     const int oldPriority = _priority;
     SINFO("Changing node priority", {{"oldPriority", to_string(oldPriority)}, {"newPriority", to_string(newPriority)}});
     _priority.store(newPriority);
