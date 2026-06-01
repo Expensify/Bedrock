@@ -2903,3 +2903,25 @@ void SQLiteNode::_dieIfForkedFromCluster()
         SERROR("I have forked from over half the cluster (" << forkedFullPeerCount << " nodes). This is unrecoverable." << _getLostQuorumLogMessage());
     }
 }
+
+int SQLiteNode::setPriority(int newPriority) {
+    unique_lock<decltype(_stateMutex)> lock(_stateMutex);
+    if (newPriority < 0 || newPriority == 1) {
+        STHROW("Priority must be non-negative");
+    }
+
+    const int oldPriority = _priority;
+    SINFO("Changing node priority", {{"oldPriority", to_string(oldPriority)}, {"newPriority", to_string(newPriority)}});
+    _priority.store(newPriority);
+    _originalPriority.store(newPriority);
+
+    SData state("STATE");
+    state["Priority"] = SToStr(newPriority);
+    state["State"] = stateName(_state);
+    state["StateChangeCount"] = SToStr(_stateChangeCount);
+    
+    // All peers will receive the new state and priority.
+    _sendToAllPeers(state);
+    
+    return oldPriority;
+}

@@ -203,6 +203,9 @@ public:
     void (*onPrepareHandler)(SQLite& _db, int64_t tableID);
     bool onPrepareHandlerEnabled;
 
+    // This changes the current node priority and broadcasts that to all other nodes.
+    int setPriority(int newPriority);
+
 private:
     // Utility class that can decrement _replicationThreadCount when objects go out of scope.
     template<typename CounterType>
