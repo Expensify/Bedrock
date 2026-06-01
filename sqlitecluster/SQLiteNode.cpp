@@ -1370,6 +1370,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             }
             const SQLiteNodeState from = peer->state;
             peer->priority = message.calc("Priority");
+            peer->permaFollower = peer->priority == 0;
             peer->state = stateFromName(message["State"]);
             const SQLiteNodeState to = peer->state;
             if (from == to) {
