@@ -2909,15 +2909,29 @@ int SQLiteNode::setPriority(int newPriority)
         STHROW("Priority must be non-negative");
     }
 
-    // Priorities other than 0 must be unique across the cluster (the LOGIN handler enforces
-    // this at connect-time, but we should reject at change-time too so we never put the
-    // cluster into a conflicting state). Priority 0 is the permafollower marker — multiple
-    // permafollowers are fine.
-    if (newPriority > 0) {
-        for (auto peer : _peerList) {
-            if (peer->loggedIn && peer->priority == newPriority) {
-                STHROW("409 Priority " + to_string(newPriority) + " already in use by " + peer->name);
-            }
+    // Single pass over the peer list to gather everything we need:
+    //   - otherFullPeers: count of non-permafollower peers (used for quorum check on demotion)
+    //   - higherPriorityFollowingPeer: a peer currently FOLLOWING us with priority > newPriority
+    //     (used below to force a stand-down if we end up no longer the highest-priority node)
+    SQLitePeer* higherPriorityFollowingPeer = nullptr;
+    int otherFullPeers = 0;
+    for (auto peer : _peerList) {
+        if (!peer->permaFollower) {
+            ++otherFullPeers;
+        }
+        if (!peer->loggedIn) {
+            continue;
+        }
+        
+        // Priorities other than 0 must be unique across the cluster (the LOGIN handler enforces
+        // this at connect-time, but we should reject at change-time too so we never put the
+        // cluster into a conflicting state). Priority 0 is the permafollower marker — multiple
+        // permafollowers are fine.
+        if (newPriority > 0 && peer->priority == newPriority) {
+            STHROW("409 Priority " + to_string(newPriority) + " already in use by " + peer->name);
+        }
+        if (peer->priority > newPriority && peer->state == SQLiteNodeState::FOLLOWING) {
+            higherPriorityFollowingPeer = peer;
         }
     }
 
@@ -2927,16 +2941,8 @@ int SQLiteNode::setPriority(int newPriority)
     if (newPriority == 0 && _priority > 0) {
         const int totalClusterSize = static_cast<int>(_peerList.size()) + 1;
         const int minFullPeersForQuorum = (totalClusterSize + 1) / 2;
-        int otherFullPeers = 0;
-        for (auto peer : _peerList) {
-            if (!peer->permaFollower) {
-                ++otherFullPeers;
-            }
-        }
         if (otherFullPeers < minFullPeersForQuorum) {
-            STHROW("409 Demoting would leave " + to_string(otherFullPeers) +
-                   " full peer(s); cluster of size " + to_string(totalClusterSize) +
-                   " needs at least " + to_string(minFullPeersForQuorum) + " for quorum");
+            STHROW("409 Demoting would break quorym");
         }
     }
 
@@ -2953,22 +2959,13 @@ int SQLiteNode::setPriority(int newPriority)
     // All peers will receive the new state and priority.
     _sendToAllPeers(state);
 
-    // Let's force a transition if we were leading and there's a following peer with
-    // higher priority than ours. We'll also force a transition if we're following
+    // Force a transition if we were leading and there's a following peer with
+    // higher priority than ours. Also force a transition if we're following
     // and there's a leader with lower priority.
-    if (_state == SQLiteNodeState::LEADING) {
-        for (auto peer : _peerList) {
-            if (peer->loggedIn &&
-                peer->priority > newPriority &&
-                peer->state == SQLiteNodeState::FOLLOWING
-            ) {
-                // If it comes down to this, there's at least one peer that has a higher
-                // priority than this node, so let's make it stand down
-                SINFO("Forcing state transition to STANDINGDOWN because peer '" << peer->name << "' has higher priority (" << peer->priority << " > " << newPriority << ").");
-                _changeState(SQLiteNodeState::STANDINGDOWN);
-                break;
-            }
-        }
+    if (_state == SQLiteNodeState::LEADING && higherPriorityFollowingPeer) {
+        SINFO("Forcing state transition to STANDINGDOWN because peer '" << higherPriorityFollowingPeer->name
+              << "' has higher priority (" << higherPriorityFollowingPeer->priority << " > " << newPriority << ").");
+        _changeState(SQLiteNodeState::STANDINGDOWN);
     } else if (_state == SQLiteNodeState::FOLLOWING && _leadPeer) {
         auto leadPeer = _leadPeer.load();
         if (leadPeer->loggedIn &&
