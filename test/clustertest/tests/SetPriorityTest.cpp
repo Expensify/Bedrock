@@ -86,6 +86,7 @@ struct SetPriorityTest : tpunit::TestFixture
         BedrockTester& node1 = tester.getTester(1);
         BedrockTester& node2 = tester.getTester(2);
         BedrockTester& node3 = tester.getTester(3);
+        BedrockTester& node4 = tester.getTester(4);
         BedrockTester& node5 = tester.getTester(5);
 
         // Initial roles. Priorities at startup: 100, 90, 80, 70, 60, 0 (node5 perma).
@@ -93,10 +94,10 @@ struct SetPriorityTest : tpunit::TestFixture
         ASSERT_TRUE(node1.waitForState("FOLLOWING"));
         ASSERT_TRUE(node2.waitForState("FOLLOWING"));
         ASSERT_TRUE(node3.waitForState("FOLLOWING"));
-        ASSERT_TRUE(tester.getTester(4).waitForState("FOLLOWING"));
+        ASSERT_TRUE(node4.waitForState("FOLLOWING"));
         ASSERT_TRUE(node5.waitForState("FOLLOWING"));
 
-        // --- Scenario 1: pure priority change, no re-election ---
+        // Scenario 1: pure priority change, no re-election
         // node3 goes 70 -> 65. Still lower than the leader, no transition.
         setPriority(node3, 65);
         ASSERT_TRUE(node3.waitForStatusTerm("priority", "65"));
@@ -108,7 +109,7 @@ struct SetPriorityTest : tpunit::TestFixture
         setPriority(node3, 70);
         ASSERT_TRUE(node3.waitForStatusTerm("priority", "70"));
 
-        // --- Scenario 2: lower leader below a follower forces stand-down ---
+        // Scenario 2: lower leader below a follower forces stand-down
         // node0 drops 100 -> 50. node1 (still 90) takes over.
         setPriority(node0, 50);
         ASSERT_TRUE(node1.waitForState("LEADING"));
@@ -121,7 +122,9 @@ struct SetPriorityTest : tpunit::TestFixture
         ASSERT_TRUE(node0.waitForState("LEADING"));
         ASSERT_TRUE(node1.waitForState("FOLLOWING"));
 
-        // --- Scenario 3: raise a follower above the leader forces re-election ---
+        // Scenario 3: raise a follower above the leader forces re-election
+        // Be sure that node2 is following (and not SUBSCRIBING) before changing it's priority
+        ASSERT_TRUE(node2.waitForState("FOLLOWING"));
         // node2 jumps 80 -> 150. node2 takes over from node0 (100).
         setPriority(node2, 150);
         ASSERT_TRUE(node2.waitForState("LEADING"));
@@ -133,7 +136,7 @@ struct SetPriorityTest : tpunit::TestFixture
         ASSERT_TRUE(node0.waitForState("LEADING"));
         ASSERT_TRUE(node2.waitForState("FOLLOWING"));
 
-        // --- Scenario 4: demote leader to permafollower ---
+        // Scenario 4: demote leader to permafollower
         // node0 drops to 0; node1 (90) takes over. Peers see node0 with priority 0.
         setPriority(node0, 0);
         ASSERT_TRUE(node1.waitForState("LEADING"));
@@ -145,12 +148,10 @@ struct SetPriorityTest : tpunit::TestFixture
         setPriority(node0, 100);
         ASSERT_TRUE(node0.waitForState("LEADING"));
         ASSERT_TRUE(node1.waitForState("FOLLOWING"));
-        // node5 was knocked into SUBSCRIBING by the prior re-election. Wait for
-        // it to settle back into FOLLOWING — otherwise setPriority's FOLLOWING
-        // branch won't trigger.
-        ASSERT_TRUE(node5.waitForState("FOLLOWING"));
 
-        // --- Scenario 5: promote the permafollower above everyone ---
+        // Scenario 5: promote the permafollower above everyone
+        // Be sure that node2 is following (and not SUBSCRIBING) before changing it's priority
+        ASSERT_TRUE(node5.waitForState("FOLLOWING"));
         // node5 jumps 0 -> 200, becomes leader.
         setPriority(node5, 200);
         ASSERT_TRUE(node5.waitForState("LEADING"));
