@@ -175,5 +175,21 @@ struct SetPriorityTest : tpunit::TestFixture
         ASSERT_TRUE(node3.waitForStatusTerm("priority", "0"));
         setPriority(node4, 0);
         ASSERT_TRUE(node4.waitForStatusTerm("priority", "0"));
+
+        // Scenario 7: quorum-preserving rejection
+        // 6-node cluster needs at least 3 full peers for quorum.
+        // Current full peers: node0 (100), node1 (90), node2 (80), node5 (200) — 4 total.
+        // Demoting node2 leaves 3 full peers — exactly at the minimum, should succeed.
+        setPriority(node2, 0);
+        ASSERT_TRUE(node2.waitForStatusTerm("priority", "0"));
+
+        // Now demoting any remaining full peer would drop us to 2 — below quorum.
+        // node1 is at 90 and FOLLOWING; demoting it must be rejected with 409.
+        SData breakQuorum("SetPriority");
+        breakQuorum["priority"] = "0";
+        node1.executeWaitVerifyContent(breakQuorum, "409", true);
+
+        // node1's priority must not have changed.
+        ASSERT_TRUE(node1.waitForStatusTerm("priority", "90"));
     }
 } __SetPriorityTest;
