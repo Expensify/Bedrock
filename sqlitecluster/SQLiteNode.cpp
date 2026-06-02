@@ -563,7 +563,7 @@ bool SQLiteNode::update()
             for (const auto& peer : _peerList) {
                 // Count how many full peers (non-permafollowers) we have, and how many are logged in.
                 // Note that the `permaFollower` property is const and this value will always be the same for a given peer.
-                if (!peer->permaFollower) {
+                if (peer->priority) {
                     numFullPeers++;
                     if (peer->loggedIn) {
                         numLoggedInFullPeers++;
@@ -698,7 +698,7 @@ bool SQLiteNode::update()
             SQLitePeer* freshestPeer = nullptr;
             SQLitePeer* currentLeader = nullptr;
             for (auto peer : _peerList) {
-                if (peer->permaFollower) {
+                if (!peer->priority) {
                     // Permafollowers are treated as ineligible for leader, etc.
                     continue;
                 }
@@ -815,7 +815,7 @@ bool SQLiteNode::update()
 
             for (auto peer : _peerList) {
                 // Check this peer; if not logged in, tacit approval
-                if (!peer->permaFollower) {
+                if (peer->priority) {
                     ++numFullPeers;
                     if (peer->loggedIn) {
                         // Connected and logged in.
@@ -906,7 +906,7 @@ bool SQLiteNode::update()
                 int numFullDenied = 0; // Num full peers that have denied
                 for (auto peer : _peerList) {
                     // Check this peer to see if it's full or a permafollower
-                    if (!peer->permaFollower) {
+                    if (peer->priority) {
                         // It's a full peer -- is it subscribed, and if so, how did it respond?
                         ++numFullPeers;
                         if (peer->subscribed) {
@@ -1308,7 +1308,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             peer->priority = message.calc("Priority");
             peer->version = message["Version"];
             peer->state = stateFromName(message["State"]);
-            peer->permaFollower = peer->priority == 0;
 
             // Is it on the same version as us?
             if (!_haveSeenPeerOnSameVersion && peer->version.load() == _version) {
@@ -1365,7 +1364,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             }
             const SQLiteNodeState from = peer->state;
             peer->priority = message.calc("Priority");
-            peer->permaFollower = peer->priority == 0;
             peer->state = stateFromName(message["State"]);
             const SQLiteNodeState to = peer->state;
             if (from == to) {
@@ -1704,7 +1702,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                             STHROW("commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: "
                                    + to_string(_db.getCommitCount() + 1));
                         }
-                        if (peer->permaFollower) {
+                        if (!peer->priority) {
                             STHROW("permafollowers shouldn't approve/deny");
                         }
                         PINFO("Peer " << response << " transaction #" << message["NewCount"] << " (" << message["NewHash"] << ")");
@@ -1832,7 +1830,7 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer)
                 continue;
             }
             // Make sure we're a full peer
-            if (!otherPeer->permaFollower) {
+            if (otherPeer->priority) {
                 // Verify we're logged in
                 ++numFullPeers;
                 if (otherPeer->loggedIn) {
@@ -1855,7 +1853,7 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer)
             // Store the time at which this happened for diagnostic purposes.
             _lastLostQuorum = STimeNow();
             for (const auto* p : _peerList) {
-                SINFO("[clustersync] Peer " << p->name << " logged in? " << (p->loggedIn ? "TRUE" : "FALSE") << (p->permaFollower ? " (permaFollower)" : ""));
+                SINFO("[clustersync] Peer " << p->name << " logged in? " << (p->loggedIn ? "TRUE" : "FALSE") << (!p->priority ? " (permaFollower)" : ""));
             }
             _changeState(SQLiteNodeState::SEARCHING);
         }
@@ -2301,7 +2299,7 @@ bool SQLiteNode::_majoritySubscribed() const
     int numFullPeers = 0;
     int numFullFollowers = 0;
     for (auto peer : _peerList) {
-        if (!peer->permaFollower) {
+        if (peer->priority) {
             ++numFullPeers;
             if (peer->subscribed) {
                 ++numFullFollowers;
@@ -2501,7 +2499,7 @@ bool SQLiteNode::hasQuorum() const
     int numFullPeers = 0;
     int numFullFollowers = 0;
     for (auto peer : _peerList) {
-        if (!peer->permaFollower) {
+        if (peer->priority) {
             ++numFullPeers;
             if (peer->subscribed) {
                 numFullFollowers++;
@@ -2801,7 +2799,7 @@ void SQLiteNode::_sendStandupResponse(SQLitePeer* peer, const SData& message)
     response["StateChangeCount"] = message["StateChangeCount"];
 
     // Reason we would deny, if we do.
-    if (peer->permaFollower) {
+    if (!peer->priority) {
         // We think it's a permafollower, deny
         PHMMM("Permafollower trying to stand up, denying.");
         response["Response"] = "deny";
@@ -2882,7 +2880,7 @@ void SQLiteNode::_dieIfForkedFromCluster()
     size_t quorumNodeCount = 0;
     size_t forkedFullPeerCount = 0;
     for (const auto& p : _peerList) {
-        if (!p->permaFollower) {
+        if (p->priority) {
             quorumNodeCount++;
             if (p->forked) {
                 forkedFullPeerCount++;
@@ -2916,7 +2914,7 @@ int SQLiteNode::setPriority(int newPriority)
     SQLitePeer* higherPriorityFollowingPeer = nullptr;
     int otherFullPeers = 0;
     for (auto peer : _peerList) {
-        if (!peer->permaFollower) {
+        if (peer->priority) {
             ++otherFullPeers;
         }
         if (!peer->loggedIn) {

@@ -17,7 +17,6 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     id(id_),
     name(name_),
     params(params_),
-    permaFollower(isPermafollower(params)),
     latency(0),
     loggedIn(false),
     nextReconnect(0),
@@ -283,15 +282,6 @@ STable SQLitePeer::getData() const
     result["commandAddress"] = commandAddress;
 
     return result;
-}
-
-bool SQLitePeer::isPermafollower(const STable& params)
-{
-    auto it = params.find("Permafollower");
-    if (it != params.end() && it->second == "true") {
-        return true;
-    }
-    return false;
 }
 
 void SQLitePeer::sendMessage(const SData& message)
