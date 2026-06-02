@@ -76,9 +76,6 @@ struct SetPriorityTest : tpunit::TestFixture
     }
 
     // All 6-node scenarios run in one method so we only spin up a single cluster.
-    // The test framework hits port/PID-reuse issues after roughly 5 back-to-back
-    // 6-node cluster startups, so spreading these scenarios across separate TEST()
-    // methods causes the later clusters to time out at startup.
     void testPriorityScenarios()
     {
         BedrockClusterTester tester = BedrockClusterTester(ClusterSize::SIX_NODE_CLUSTER);
@@ -145,7 +142,7 @@ struct SetPriorityTest : tpunit::TestFixture
 
         // Scenario 4: demote leader to permafollower
         // Wait for node0's view of node1 to be FOLLOWING before demoting so
-        // node1 correctly takes over as leader. 
+        // node1 correctly takes over as leader.
         ASSERT_TRUE(waitForPeerField(node0, "cluster_node_1", "state", "FOLLOWING"));
         // node0 drops to 0; node1 (90) takes over. Peers see node0 with priority 0.
         setPriority(node0, 0);
@@ -160,7 +157,7 @@ struct SetPriorityTest : tpunit::TestFixture
         ASSERT_TRUE(node1.waitForState("FOLLOWING"));
 
         // Scenario 5: promote the permafollower above everyone
-        // Be sure that node2 is following (and not SUBSCRIBING) before changing 
+        // Be sure that node2 is following (and not SUBSCRIBING) before changing
         // it's priority to remove flakiness
         ASSERT_TRUE(node5.waitForState("FOLLOWING"));
         // node5 jumps 0 -> 200, becomes leader.

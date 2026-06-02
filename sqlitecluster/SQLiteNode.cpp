@@ -2922,7 +2922,7 @@ int SQLiteNode::setPriority(int newPriority)
         if (!peer->loggedIn) {
             continue;
         }
-        
+
         // Priorities other than 0 must be unique across the cluster (the LOGIN handler enforces
         // this at connect-time, but we should reject at change-time too so we never put the
         // cluster into a conflicting state). Priority 0 is the permafollower marker — multiple
