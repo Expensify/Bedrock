@@ -2946,11 +2946,27 @@ int SQLiteNode::setPriority(int newPriority)
         }
     }
 
-    const int oldPriority = _priority;
-    SINFO("Changing node priority", {{"oldPriority", to_string(oldPriority)}, {"newPriority", to_string(newPriority)}});
-    _priority.store(newPriority);
+    const int oldConfiguredPriority = _configuredPriority;
+    if (oldConfiguredPriority == newPriority) {
+        SINFO("Priority unchanged at " << newPriority);
+        return oldConfiguredPriority;
+    }
+    SINFO("Changing node configuredPriority", {{"oldPriority", to_string(oldConfiguredPriority)}, {"newPriority", to_string(newPriority)}});
     _configuredPriority.store(newPriority);
 
+    const int oldPriority = _priority;
+    
+    // When oldPriority is -1 or 1, it means we're in a transitional state (STANDDOWN or WAITING) where priority doesn't 
+    // matter we'll rewrite it with configuredPriority. Let's keep the old _priority until we transition out of that state.
+    // This prevents weird cases where we would broadcast to other peers that we have a high priority when we're not ready
+    // to lead, and get stuck in a loop of trying to stand up and then immediately standing down again.
+    if (oldPriority == -1 || oldPriority == 1) {
+        SINFO("Previous priority indicates that we're either in STANDDOWN or WAITING. Do not change it, it will be changed later.", {{"oldPriority", to_string(oldPriority)}});
+        return oldConfiguredPriority;
+    }
+    
+    _priority.store(newPriority);
+    
     SData state("STATE");
     state["Priority"] = SToStr(newPriority);
     state["State"] = stateName(_state);
@@ -2978,5 +2994,5 @@ int SQLiteNode::setPriority(int newPriority)
             _changeState(SQLiteNodeState::SEARCHING);
         }
     }
-    return oldPriority;
+    return oldConfiguredPriority;
 }
