@@ -79,6 +79,7 @@ public:
     const uint64_t id;
     const string name;
     const STable params;
+    atomic<bool> permaFollower;
 
     // An address on which this peer can accept commands. (a.k.a. "private command port")
     atomic<string> commandAddress;
@@ -97,6 +98,9 @@ public:
     atomic<bool> forked;
 
 private:
+    // For initializing the permafollower value from the params list.
+    static bool isPermafollower(const STable& params);
+
     // The hash corresponding to commitCount.
     atomic<string> hash;
 
