@@ -123,7 +123,8 @@ struct SetPriorityTest : tpunit::TestFixture
         ASSERT_TRUE(node1.waitForState("FOLLOWING"));
 
         // Scenario 3: raise a follower above the leader forces re-election
-        // Be sure that node2 is following (and not SUBSCRIBING) before changing it's priority
+        // Be sure that node2 is following (and not SUBSCRIBING) before changing
+        // it's priority to remove flakiness
         ASSERT_TRUE(node2.waitForState("FOLLOWING"));
         // node2 jumps 80 -> 150. node2 takes over from node0 (100).
         setPriority(node2, 150);
@@ -132,8 +133,8 @@ struct SetPriorityTest : tpunit::TestFixture
         ASSERT_TRUE(node2.waitForStatusTerm("priority", "150"));
 
         // Restore node2 to 80; node0 should retake leadership.
-        // Wait for node2's view of node0 to reach FOLLOWING — setPriority's
-        // LEADING branch scans for a higher-priority FOLLOWING peer to force
+        // Wait for node2's view of node0 to reach FOLLOWING — setPriority
+        // scans for a higher-priority FOLLOWING peer to force
         // stand-down, and that peer is node0 here. Without this wait, node0
         // may still appear SUBSCRIBING from node2's view right after the
         // scenario-3 election, leaving no peer to trigger stand-down.
@@ -143,6 +144,9 @@ struct SetPriorityTest : tpunit::TestFixture
         ASSERT_TRUE(node2.waitForState("FOLLOWING"));
 
         // Scenario 4: demote leader to permafollower
+        // Wait for node0's view of node1 to be FOLLOWING before demoting so
+        // node1 correctly takes over as leader. 
+        ASSERT_TRUE(waitForPeerField(node0, "cluster_node_1", "state", "FOLLOWING"));
         // node0 drops to 0; node1 (90) takes over. Peers see node0 with priority 0.
         setPriority(node0, 0);
         ASSERT_TRUE(node1.waitForState("LEADING"));
@@ -156,7 +160,8 @@ struct SetPriorityTest : tpunit::TestFixture
         ASSERT_TRUE(node1.waitForState("FOLLOWING"));
 
         // Scenario 5: promote the permafollower above everyone
-        // Be sure that node2 is following (and not SUBSCRIBING) before changing it's priority
+        // Be sure that node2 is following (and not SUBSCRIBING) before changing 
+        // it's priority to remove flakiness
         ASSERT_TRUE(node5.waitForState("FOLLOWING"));
         // node5 jumps 0 -> 200, becomes leader.
         setPriority(node5, 200);
