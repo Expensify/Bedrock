@@ -2135,15 +2135,15 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             response.methodLine = "400 Missing priority";
         } else {
             int64_t newPriority = command->request.calc64("priority");
-
+            auto _syncNodeCopy = atomic_load(&_syncNode);
             // Priority 1 is reserved for shutdown.
             if (newPriority < 0 || newPriority == 1) {
                 response.methodLine = "400 Invalid priority";
-            } else if (!_syncNode) {
+            } else if (!_syncNodeCopy) {
                 response.methodLine = "500 No sync node";
             } else {
                 try {
-                    int oldPriority = _syncNode->setPriority(newPriority);
+                    int oldPriority = _syncNodeCopy->setPriority(newPriority);
                     response["oldPriority"] = to_string(oldPriority);
                     response["newPriority"] = to_string(newPriority);
                     response.methodLine = "200 OK";
