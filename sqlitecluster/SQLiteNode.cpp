@@ -119,7 +119,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
     _name(name),
     _host(host),
     _peerList(_initPeers(peerList)),
-    _originalPriority(priority),
+    _configuredPriority(priority),
     _port(_host.empty() ? nullptr : openPort(_host)),
     _version(version),
     _commitState(CommitState::UNINITIALIZED),
@@ -137,7 +137,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
     _replicateThreadShouldExitTime(0)
 {
     KILLABLE_SQLITE_NODE = this;
-    SASSERT(_originalPriority >= 0);
+    SASSERT(_configuredPriority >= 0);
     onPrepareHandlerEnabled = false;
 
     // We create a copy of the database handle here so that the sync node can operate on its handle and the plugin gets
@@ -548,7 +548,7 @@ bool SQLiteNode::update()
             // If no peers, we're the leader, unless we're shutting down.
             if (_peerList.empty()) {
                 SHMMM("No peers configured, jumping to LEADING");
-                _priority = _originalPriority.load();
+                _priority = _configuredPriority.load();
                 _changeState(SQLiteNodeState::LEADING);
 
                 // Run `update` again immediately.
@@ -1314,7 +1314,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             if (!_haveSeenPeerOnSameVersion && peer->version.load() == _version) {
                 _haveSeenPeerOnSameVersion = true;
                 if (_haveBeenWAITING) {
-                    _priority = _originalPriority.load();
+                    _priority = _configuredPriority.load();
                     _reconnectAll();
                 }
             }
@@ -1768,7 +1768,7 @@ void SQLiteNode::_onConnect(SQLitePeer* peer)
     login["Priority"] = to_string(_priority);
     login["State"] = stateName(_state);
     login["Version"] = _version;
-    login["Permafollower"] = _originalPriority ? "false" : "true";
+    login["Permafollower"] = _configuredPriority ? "false" : "true";
     PINFO("Sending " << login.serialize());
 
     // NOTE: the following call adds CommitCount, Hash, and commandAddress fields.
@@ -2016,7 +2016,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             if (!_haveBeenWAITING) {
                 _haveBeenWAITING = true;
                 if (_haveSeenPeerOnSameVersion) {
-                    _priority = _originalPriority.load();
+                    _priority = _configuredPriority.load();
                     _reconnectAll();
                 }
             }
@@ -2891,7 +2891,7 @@ void SQLiteNode::_dieIfForkedFromCluster()
     }
 
     // Increase quorumNodeCount if *I* am not a permafollower
-    if (_originalPriority != 0) {
+    if (_configuredPriority != 0) {
         quorumNodeCount++;
     }
 
@@ -2949,7 +2949,7 @@ int SQLiteNode::setPriority(int newPriority)
     const int oldPriority = _priority;
     SINFO("Changing node priority", {{"oldPriority", to_string(oldPriority)}, {"newPriority", to_string(newPriority)}});
     _priority.store(newPriority);
-    _originalPriority.store(newPriority);
+    _configuredPriority.store(newPriority);
 
     SData state("STATE");
     state["Priority"] = SToStr(newPriority);
