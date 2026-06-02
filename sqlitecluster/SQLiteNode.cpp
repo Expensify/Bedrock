@@ -164,6 +164,12 @@ SQLiteNode::~SQLiteNode()
         delete peer;
     }
 
+    // Close the listening peer port before deleting pluginDB. pluginDB is a separate handle on the database, so closing
+    // it unmaps that handle's memory-mapped pages, which can take a long time when the database is large. _port is a
+    // member and would otherwise only be destroyed after this destructor body returns, leaving the kernel holding the
+    // listening port bound for the duration of that unmap.
+    _port = nullptr;
+
     if (pluginDB != nullptr) {
         delete pluginDB;
     }
@@ -259,6 +265,14 @@ bool SQLiteNode::beginShutdown()
         // Start graceful shutdown
         SINFO("Beginning graceful shutdown.");
         _isShuttingDown = true;
+
+        // Free the listening peer port now rather than waiting for the node to be destroyed during DB teardown. A
+        // shutting-down node won't accept new peer connections (established peer connections are independent of this
+        // listening socket), and the database teardown that follows can take a long time when the memory-mapped
+        // database is large. Until the FD is closed, the kernel keeps the listening port bound while it unmaps that
+        // memory, which prevents a restarted node from rebinding the port.
+        _port = nullptr;
+
         return true;
     }
 
@@ -516,8 +530,9 @@ bool SQLiteNode::update()
     }
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
 
-    // If we failed to open the port at creation time, try again on each upate.
-    if (_port == nullptr) {
+    // If we failed to open the port at creation time, try again on each update. We skip this while shutting down,
+    // because we intentionally close the listening port at that point and don't want to reopen it.
+    if (_port == nullptr && !_isShuttingDown) {
         _port = openPort(_host);
     }
 
