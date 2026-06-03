@@ -2906,7 +2906,7 @@ int SQLiteNode::setPriority(int newPriority)
     // can change the state to SEARCHING.
     unique_lock<decltype(_stateMutex)> lock(_stateMutex);
     if (newPriority < 0 || newPriority == 1) {
-        STHROW("Priority must be non-negative");
+        STHROW("400 Invalid priority");
     }
 
     // Single pass over the peer list to gather everything we need:
@@ -2942,7 +2942,7 @@ int SQLiteNode::setPriority(int newPriority)
         const int totalClusterSize = static_cast<int>(_peerList.size()) + 1;
         const int minFullPeersForQuorum = (totalClusterSize + 1) / 2;
         if (otherFullPeers < minFullPeersForQuorum) {
-            STHROW("409 Demoting would break quorym");
+            STHROW("409 Demoting would break quorum");
         }
     }
 
