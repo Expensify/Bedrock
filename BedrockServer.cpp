@@ -2081,6 +2081,18 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         if (command->request.test("ClearBlocks")) {
             _blockingCommandQueue.clearRateLimits();
         }
+    } else if (SIEquals(command->request.methodLine, "SetBlockingQueueTimeRateLimit")) {
+        if (command->request.isSet("MaxTimePerIdentifierMs")) {
+            int64_t maxTimeMs = command->request.calc64("MaxTimePerIdentifierMs");
+            if (maxTimeMs >= 0) {
+                uint64_t previousMicros = _blockingCommandQueue.setMaxTimePerIdentifier(static_cast<uint64_t>(maxTimeMs) * 1000);
+                response["previousMaxBlockingQueueTimePerIdentifierMs"] = to_string(previousMicros / 1000);
+                SINFO("Setting blocking queue max time per identifier to " << maxTimeMs << "ms");
+            }
+        }
+        if (command->request.test("ClearBlocks")) {
+            _blockingCommandQueue.clearRateLimits();
+        }
     } else if (SIEquals(command->request.methodLine, "BlockWrites")) {
         atomic<bool> locked(false);
         lock_guard lock(__quiesceLock);
