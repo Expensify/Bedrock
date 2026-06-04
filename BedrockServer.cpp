@@ -712,7 +712,16 @@ void BedrockServer::worker(int threadId)
             SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
                   << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
 
+            // Capture the identifier and start time so we can attribute worker-0 execution time
+            // back to the per-identifier rate-limit accumulator after the command finishes.
+            const string blockingIdentifier = (threadId == 0) ? command->blockingQueueRateLimitIdentifier : "";
+            const uint64_t blockingStart = (threadId == 0 && !blockingIdentifier.empty()) ? STimeNow() : 0;
+
             runCommand(move(command), threadId == 0, false);
+
+            if (blockingStart) {
+                _blockingCommandQueue.recordExecutionTime(blockingIdentifier, STimeNow() - blockingStart);
+            }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
             // If the sync node has shut down, we can return now, there will be no more work to do.
