@@ -8,6 +8,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
                               BEFORE_CLASS(BlockingQueueRateLimitTest::setup),
                               TEST(BlockingQueueRateLimitTest::testControlCommands),
                               TEST(BlockingQueueRateLimitTest::testRateLimiting),
+                              TEST(BlockingQueueRateLimitTest::testTimeRateLimiting),
                               AFTER_CLASS(BlockingQueueRateLimitTest::teardown))
     {
     }
@@ -158,6 +159,71 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         SData cmd("idcollision");
         cmd["blockingQueueRateLimitIdentifier"] = "testuser";
         leader.executeWaitVerifyContent(cmd, "200");
+    }
+
+    void testTimeRateLimiting()
+    {
+        BedrockTester& leader = tester->getTester(0);
+
+        // Verify the time threshold round-trips through Status.
+        SData setTimeLimit("SetBlockingQueueTimeRateLimit");
+        setTimeLimit["MaxTimePerIdentifierMs"] = "1";
+        leader.executeWaitVerifyContent(setTimeLimit, "200", true);
+
+        SData status("Status");
+        STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["blockingTimeRateLimitThresholdMs"], "1");
+
+        // Force conflicts so commands escalate to the blocking queue and run on worker 0,
+        // which is what accumulates per-identifier time.
+        SData setConflict("SetConflictParams");
+        setConflict["MaxConflictRetries"] = "1";
+        leader.executeWaitVerifyContent(setConflict, "200", true);
+
+        atomic<int> count503(0);
+        list<thread> threads;
+        for (int i : {0, 1, 2}) {
+            threads.emplace_back([this, i, &count503]() {
+                BedrockTester& node = tester->getTester(i);
+                vector<SData> requests;
+                for (int j = 0; j < 200; j++) {
+                    SData cmd("idcollision");
+                    cmd["blockingQueueRateLimitIdentifier"] = "timeuser";
+                    cmd["value"] = "node" + to_string(i) + "-" + to_string(j);
+                    requests.push_back(cmd);
+                }
+                auto results = node.executeWaitMultipleData(requests);
+                for (auto& result : results) {
+                    if (SToInt(result.methodLine) == 503) {
+                        count503.fetch_add(1);
+                    }
+                }
+            });
+        }
+        for (thread& t : threads) {
+            t.join();
+        }
+
+        // After traffic, the identifier's accumulated time should be visible in Status.
+        json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_TRUE(json.find("blockingQueueIdentifierTimesMs") != json.end());
+
+        // ClearBlocks resets time and count state together.
+        SData clearBlocks("SetBlockingQueueTimeRateLimit");
+        clearBlocks["ClearBlocks"] = "true";
+        leader.executeWaitVerifyContent(clearBlocks, "200", true);
+
+        json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
+        ASSERT_EQUAL(json["blockedTimeIdentifiers"], "0");
+
+        // Reset leader state.
+        SData resetConflict("SetConflictParams");
+        resetConflict["MaxConflictRetries"] = "3";
+        leader.executeWaitVerifyContent(resetConflict, "200", true);
+
+        SData resetLimit("SetBlockingQueueTimeRateLimit");
+        resetLimit["MaxTimePerIdentifierMs"] = "0";
+        leader.executeWaitVerifyContent(resetLimit, "200", true);
     }
 };
 // Disabled while rate limiting is log-only. Re-enable enforcement (the STHROW in
