@@ -1940,6 +1940,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "SetMaxSocketThreads") ||
         SIEquals(command->request.methodLine, "SetBlockingQueueRateLimit") ||
         SIEquals(command->request.methodLine, "ClearBlockingQueue") ||
+        SIEquals(command->request.methodLine, "SetPriority") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
     ) {
         return true;
@@ -2128,6 +2129,28 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             _maxSocketThreads = newMax;
         } else {
             response.methodLine = "401 Don't Use Zero";
+        }
+    } else if (SIEquals(command->request.methodLine, "SetPriority")) {
+        if (!command->request.isSet("priority")) {
+            response.methodLine = "400 Missing priority";
+        } else {
+            int64_t newPriority = command->request.calc64("priority");
+            auto _syncNodeCopy = atomic_load(&_syncNode);
+            // Priority 1 is reserved for shutdown.
+            if (newPriority < 0 || newPriority == 1) {
+                response.methodLine = "400 Invalid priority";
+            } else if (!_syncNodeCopy) {
+                response.methodLine = "500 No sync node";
+            } else {
+                try {
+                    int oldPriority = _syncNodeCopy->setPriority(newPriority);
+                    response["oldPriority"] = to_string(oldPriority);
+                    response["newPriority"] = to_string(newPriority);
+                    response.methodLine = "200 OK";
+                } catch (const SException& e) {
+                    response.methodLine = e.what();
+                }
+            }
         }
     }
 }

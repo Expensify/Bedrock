@@ -203,6 +203,9 @@ public:
     void (*onPrepareHandler)(SQLite& _db, int64_t tableID);
     bool onPrepareHandlerEnabled;
 
+    // This changes the current node priority and broadcasts that to all other nodes.
+    int setPriority(int newPriority);
+
 private:
     // Utility class that can decrement _replicationThreadCount when objects go out of scope.
     template<typename CounterType>
@@ -301,7 +304,7 @@ private:
 
     // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
     // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
-    const int _originalPriority;
+    atomic<int> _configuredPriority;
 
     // Tracks whether this node has seen at least one peer running the same version as itself.
     // We use this along with _haveBeenWAITING to determine when to restore the node's original priority after startup.
@@ -367,7 +370,7 @@ private:
 
     // Our priority, with respect to other nodes in the cluster. This is passed in to our constructor. The node with
     // the highest priority in the cluster will attempt to become the leader.
-    // This is the same as `_originalPriority` most of the time except when we're first starting up and synchronizing,
+    // This is the same as `_configuredPriority` most of the time except when we're first starting up and synchronizing,
     // or when we're standingdown.
     // Remove. See: https://github.com/Expensify/Expensify/issues/208449
     atomic<int> _priority;

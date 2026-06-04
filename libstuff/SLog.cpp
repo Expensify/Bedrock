@@ -66,6 +66,8 @@ static atomic<shared_ptr<const set<string>>> PARAMS_WHITELIST{
         "isUnique",
         "logParam",
         "message",
+        "newPriority",
+        "oldPriority",
         "peer",
         "prepareElapsed",
         "query",

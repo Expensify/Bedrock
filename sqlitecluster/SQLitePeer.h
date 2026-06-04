@@ -79,7 +79,7 @@ public:
     const uint64_t id;
     const string name;
     const STable params;
-    const bool permaFollower;
+    atomic<bool> permaFollower;
 
     // An address on which this peer can accept commands. (a.k.a. "private command port")
     atomic<string> commandAddress;

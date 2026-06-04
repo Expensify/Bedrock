@@ -119,7 +119,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
     _name(name),
     _host(host),
     _peerList(_initPeers(peerList)),
-    _originalPriority(priority),
+    _configuredPriority(priority),
     _port(_host.empty() ? nullptr : openPort(_host)),
     _version(version),
     _commitState(CommitState::UNINITIALIZED),
@@ -137,7 +137,7 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
     _replicateThreadShouldExitTime(0)
 {
     KILLABLE_SQLITE_NODE = this;
-    SASSERT(_originalPriority >= 0);
+    SASSERT(_configuredPriority >= 0);
     onPrepareHandlerEnabled = false;
 
     // We create a copy of the database handle here so that the sync node can operate on its handle and the plugin gets
@@ -548,7 +548,7 @@ bool SQLiteNode::update()
             // If no peers, we're the leader, unless we're shutting down.
             if (_peerList.empty()) {
                 SHMMM("No peers configured, jumping to LEADING");
-                _priority = _originalPriority;
+                _priority = _configuredPriority.load();
                 _changeState(SQLiteNodeState::LEADING);
 
                 // Run `update` again immediately.
@@ -1291,12 +1291,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             if (!message.isSet("Version")) {
                 STHROW("missing Version");
             }
-            if (peer->permaFollower && (message["Permafollower"] != "true" || message.calc("Priority") > 0)) {
-                STHROW("you're supposed to be a 0-priority permafollower");
-            }
-            if (!peer->permaFollower && (message["Permafollower"] == "true" || message.calc("Priority") == 0)) {
-                STHROW("you're *not* supposed to be a 0-priority permafollower");
-            }
 
             // It's an error to have two peers configured with the same priority, except 0 and -1
             // Priority -1 is the special case "we are starting up and haven't set priority yet"
@@ -1314,12 +1308,13 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             peer->priority = message.calc("Priority");
             peer->version = message["Version"];
             peer->state = stateFromName(message["State"]);
+            peer->permaFollower = peer->priority == 0;
 
             // Is it on the same version as us?
             if (!_haveSeenPeerOnSameVersion && peer->version.load() == _version) {
                 _haveSeenPeerOnSameVersion = true;
                 if (_haveBeenWAITING) {
-                    _priority = _originalPriority;
+                    _priority = _configuredPriority.load();
                     _reconnectAll();
                 }
             }
@@ -1370,6 +1365,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             }
             const SQLiteNodeState from = peer->state;
             peer->priority = message.calc("Priority");
+            peer->permaFollower = peer->priority == 0;
             peer->state = stateFromName(message["State"]);
             const SQLiteNodeState to = peer->state;
             if (from == to) {
@@ -1772,7 +1768,7 @@ void SQLiteNode::_onConnect(SQLitePeer* peer)
     login["Priority"] = to_string(_priority);
     login["State"] = stateName(_state);
     login["Version"] = _version;
-    login["Permafollower"] = _originalPriority ? "false" : "true";
+    login["Permafollower"] = _configuredPriority ? "false" : "true";
     PINFO("Sending " << login.serialize());
 
     // NOTE: the following call adds CommitCount, Hash, and commandAddress fields.
@@ -2020,7 +2016,7 @@ void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCance
             if (!_haveBeenWAITING) {
                 _haveBeenWAITING = true;
                 if (_haveSeenPeerOnSameVersion) {
-                    _priority = _originalPriority;
+                    _priority = _configuredPriority.load();
                     _reconnectAll();
                 }
             }
@@ -2895,11 +2891,108 @@ void SQLiteNode::_dieIfForkedFromCluster()
     }
 
     // Increase quorumNodeCount if *I* am not a permafollower
-    if (_originalPriority != 0) {
+    if (_configuredPriority != 0) {
         quorumNodeCount++;
     }
 
     if (forkedFullPeerCount >= (quorumNodeCount + 1) / 2) {
         SERROR("I have forked from over half the cluster (" << forkedFullPeerCount << " nodes). This is unrecoverable." << _getLostQuorumLogMessage());
     }
+}
+
+int SQLiteNode::setPriority(int newPriority)
+{
+    // Let's lock _stateMutex here since we'll be changing the priority, which
+    // can change the state to SEARCHING.
+    unique_lock<decltype(_stateMutex)> lock(_stateMutex);
+    if (newPriority < 0 || newPriority == 1) {
+        STHROW("400 Invalid priority");
+    }
+
+    // Single pass over the peer list to gather everything we need:
+    //   - otherFullPeers: count of non-permafollower peers (used for quorum check on demotion)
+    //   - higherPriorityFollowingPeer: a peer currently FOLLOWING us with priority > newPriority
+    //     (used below to force a stand-down if we end up no longer the highest-priority node)
+    SQLitePeer* higherPriorityFollowingPeer = nullptr;
+    int otherFullPeers = 0;
+    for (auto peer : _peerList) {
+        if (!peer->permaFollower) {
+            ++otherFullPeers;
+        }
+        if (!peer->loggedIn) {
+            continue;
+        }
+
+        // Priorities other than 0 must be unique across the cluster (the LOGIN handler enforces
+        // this at connect-time, but we should reject at change-time too so we never put the
+        // cluster into a conflicting state). Priority 0 is the permafollower marker — multiple
+        // permafollowers are fine.
+        if (newPriority > 0 && peer->priority == newPriority) {
+            STHROW("409 Priority " + to_string(newPriority) + " already in use by " + peer->name);
+        }
+        if (peer->priority > newPriority && peer->state == SQLiteNodeState::FOLLOWING) {
+            higherPriorityFollowingPeer = peer;
+        }
+    }
+
+    // If demoting self to permafollower, ensure the remaining full peers still
+    // satisfy quorum. Minimum full peers required is ceil(totalClusterSize / 2):
+    // a 6-node cluster needs ≥3, a 4-node cluster needs ≥2, etc.
+    if (newPriority == 0 && _priority > 0) {
+        const int totalClusterSize = static_cast<int>(_peerList.size()) + 1;
+        const int minFullPeersForQuorum = (totalClusterSize + 1) / 2;
+        if (otherFullPeers < minFullPeersForQuorum) {
+            STHROW("409 Demoting would break quorum");
+        }
+    }
+
+    const int oldConfiguredPriority = _configuredPriority;
+    if (oldConfiguredPriority == newPriority) {
+        SINFO("Priority unchanged at " << newPriority);
+        return oldConfiguredPriority;
+    }
+    SINFO("Changing node configuredPriority", {{"oldPriority", to_string(oldConfiguredPriority)}, {"newPriority", to_string(newPriority)}});
+    _configuredPriority.store(newPriority);
+
+    const int oldPriority = _priority;
+
+    // When oldPriority is -1 or 1, it means we're in a transitional state (STANDDOWN or WAITING) where priority doesn't
+    // matter we'll rewrite it with configuredPriority. Let's keep the old _priority until we transition out of that state.
+    // This prevents weird cases where we would broadcast to other peers that we have a high priority when we're not ready
+    // to lead, and get stuck in a loop of trying to stand up and then immediately standing down again.
+    if (oldPriority == -1 || oldPriority == 1) {
+        SINFO("Previous priority indicates that we're either in STANDDOWN or WAITING. Do not change it, it will be changed later.", {{"oldPriority", to_string(oldPriority)}});
+        return oldConfiguredPriority;
+    }
+
+    _priority.store(newPriority);
+
+    SData state("STATE");
+    state["Priority"] = SToStr(newPriority);
+    state["State"] = stateName(_state);
+    state["StateChangeCount"] = SToStr(_stateChangeCount);
+
+    // All peers will receive the new state and priority.
+    _sendToAllPeers(state);
+
+    // Force a transition if we were leading and there's a following peer with
+    // higher priority than ours. Also force a transition if we're following
+    // and there's a leader with lower priority.
+    if (_state == SQLiteNodeState::LEADING && higherPriorityFollowingPeer) {
+        SINFO("Forcing state transition to STANDINGDOWN because peer '" << higherPriorityFollowingPeer->name
+              << "' has higher priority (" << higherPriorityFollowingPeer->priority << " > " << newPriority << ").");
+        _changeState(SQLiteNodeState::STANDINGDOWN);
+    } else if (_state == SQLiteNodeState::FOLLOWING && _leadPeer) {
+        auto leadPeer = _leadPeer.load();
+        if (leadPeer->loggedIn &&
+            leadPeer->state == SQLiteNodeState::LEADING &&
+            leadPeer->priority < newPriority
+        ) {
+            // Re-traverse via SEARCHING so the WAITING state can reset every peer's
+            // standupResponse to NONE before STANDINGUP counts approvals.
+            SINFO("Forcing state transition to SEARCHING because I should be leader with new priority (" << newPriority << " > " << leadPeer->priority << ")");
+            _changeState(SQLiteNodeState::SEARCHING);
+        }
+    }
+    return oldConfiguredPriority;
 }
