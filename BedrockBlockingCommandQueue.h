@@ -33,6 +33,13 @@ public:
     // Set the max commands per identifier threshold. Returns the previous value.
     size_t setMaxRequestsPerIdentifier(size_t value);
 
+    // Set the max accumulated worker-0 execution time (microseconds) per identifier. Returns the previous value.
+    uint64_t setMaxTimePerIdentifier(uint64_t valueMicros);
+
+    // Accumulate elapsed worker-0 execution time for `identifier`. Called by the blockingCommit worker
+    // after each command finishes running. No-op when the time threshold is disabled (== 0).
+    void recordExecutionTime(const string& identifier, uint64_t elapsedMicros);
+
 protected:
     // Called by get() while _queueMutex is held; atomically decrements per-identifier counts
     // and records when the queue becomes empty.
@@ -48,6 +55,8 @@ private:
     mutex _rateLimitMutex;
 
     map<string, size_t> _identifierCounts;
+    map<string, uint64_t> _identifierTimes;
     atomic<size_t> _maxPerIdentifier{10};
+    atomic<uint64_t> _maxTimePerIdentifier{0};
     atomic<uint64_t> _emptyTime{0};
 };
