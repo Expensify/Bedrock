@@ -359,15 +359,15 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg)
             // {SQLITE} Code: 0, Message: cannot commit CONCURRENT transaction - conflict at page 1594810 (read/write page; part of db index reportActions.reportActionsAccountIDCreatedComment; content=0A045B006A00EB00...)
             _conflictLocation = SREReplace("^.*part of db (table|index) (.*?);.*$", zMsg, "$2");
             _conflictIdentifier = atol(conflictAtPagePtr + char_traits<char>::length(conflictAtPageString));
-        } else if (strstr(zMsg, "conflict on ")) {
-            // HC-Tree conflicts specify "table" or "index", we accept both in our first search here.
-            // Sample conflict log lines:
-            // {SQLITE} Code: 517, Message: write/write conflict on index nameValuePairs.nameValuePairsAccountIDName (root=30440763), key=(20539758,lastIP), conflicting=(116607308) (mytid=116607309)
-            // {SQLITE} Code: 517, Message: write/write conflict on table notifications (root=1025), key=[362854362], conflicting=(116607499) (mytid=116607500)
-            _conflictLocation = SREReplace("^.*conflict on (?:index|table) (\\S+).*$", zMsg, "$1");
-            string identifier = SREReplace("^.*key=(\\S+).*$", zMsg, "$1");
-            _conflictIdentifier = hash<string>{}(_conflictLocation + identifier);
         }
+    } else if (SStartsWith(zMsg, "write/write conflict on") || SStartsWith(zMsg, "read/write conflict on")) {
+        // HC-Tree conflicts specify "table" or "index", we accept both in our first search here.
+        // Sample conflict log lines:
+        // {SQLITE} Code: 517, Message: write/write conflict on index nameValuePairs.nameValuePairsAccountIDName (root=30440763), key=(20539758,lastIP), conflicting=(116607308) (mytid=116607309)
+        // {SQLITE} Code: 517, Message: write/write conflict on table notifications (root=1025), key=[362854362], conflicting=(116607499) (mytid=116607500)
+        _conflictLocation = SREReplace("^.*conflict on (?:index|table) (\\S+).*$", zMsg, "$1");
+        string identifier = SREReplace("^.*key=(\\S+).*$", zMsg, "$1");
+        _conflictIdentifier = hash<string>{}(_conflictLocation + identifier);
     }
 }
 
