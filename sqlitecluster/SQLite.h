@@ -335,12 +335,6 @@ public:
     // This is the callback function we use to log SQLite's internal errors.
     static void _sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg);
 
-    // Parses a "cannot commit CONCURRENT transaction" conflict log message into an opaque, non-zero lock key and the
-    // conflicting table/index name. Different SQLite backends report conflicts in different formats (WAL2 reports a
-    // page, HC-Tree reports a table+rowid or index+key), and this normalizes them so PageLockGuard can serialize
-    // retries against whatever conflicted. Returns {0, ""} for messages it doesn't recognize. Exposed for testing.
-    static pair<int64_t, string> parseConflictMessage(const string& message);
-
     // If commits are disabled, calling commit() will return an error without committing. This can be used to guarantee
     // no commits can happen "late" from slow threads that could otherwise write to a DB being shutdown.
     void setCommitEnabled(bool enable);
@@ -510,7 +504,7 @@ private:
 
     atomic<int64_t> _lastConflictPage = 0;
     atomic<string> _lastConflictLocation;
-    static thread_local int64_t _conflictPage;
+    static thread_local int64_t _conflictIdentifier;
     static thread_local string _conflictLocation;
 
     bool _writeIdempotent(const string& query, const map<string, Parameter>& params, SQResult& result, bool alwaysKeepQueries = false);

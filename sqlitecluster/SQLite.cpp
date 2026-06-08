@@ -9,6 +9,7 @@
 #include <libstuff/SQResult.h>
 #include <string>
 #include <format>
+#include <cstdlib>
 
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
@@ -22,7 +23,7 @@ sqlite3* SQLite::getDBHandle()
 }
 
 thread_local string SQLite::_mostRecentSQLiteErrorLog;
-thread_local int64_t SQLite::_conflictPage;
+thread_local int64_t SQLite::_conflictIdentifier;
 thread_local string SQLite::_conflictLocation;
 
 const string SQLite::getMostRecentSQLiteErrorLog() const
@@ -335,54 +336,6 @@ int SQLite::_walHookCallback(void* sqliteObject, sqlite3* db, const char* name, 
     return SQLITE_OK;
 }
 
-// Produce a stable, non-zero 64-bit key identifying the thing two transactions conflicted on, so that PageLockGuard
-// can serialize the retry of a conflicting command against others touching the same thing. The key is advisory and
-// process-local: a hash collision only costs a little extra serialization, never correctness. Scoping the key by
-// location (table/index name) keeps the same rowid/key in different tables from sharing a lock.
-static int64_t SLockKeyFromConflict(const string& location, const string& key)
-{
-    const uint64_t h = hash<string>{}(location + "\x1f" + key);
-
-    // 0 is reserved by PageLockGuard to mean "no lock", so never return it.
-    return static_cast<int64_t>(h ? h : 1);
-}
-
-pair<int64_t, string> SQLite::parseConflictMessage(const string& message)
-{
-    // This is sort of hacky to parse this from the logging info. If it works we could ask sqlite for a better interface to get this info.
-    if (!SStartsWith(message, "cannot commit")) {
-        return {0, ""};
-    }
-
-    if (strstr(message.c_str(), "conflict at page")) {
-        // WAL2 / page-level backend. The page itself is the lock key.
-        // Sample conflict log lines:
-        // cannot commit CONCURRENT transaction - conflict at page 1854553 (read/write page; part of db table reports; content=0D00000009007100...)
-        // cannot commit CONCURRENT transaction - conflict at page 1594810 (read/write page; part of db index reportActions.reportActionsAccountIDCreatedComment; content=0A045B006A00EB00...)
-        const int64_t page = atol(strstr(message.c_str(), "conflict at page") + 17);
-        return {page, SREReplace("^.*part of db (table|index) (.*?);.*$", message, "$2")};
-    } else if (strstr(message.c_str(), "conflict in table")) {
-        // HC-Tree table conflict. Lock at row granularity on the conflicting rowid.
-        // Sample: cannot commit CONCURRENT transaction - conflict in table reports - range (1,5) conflicts with write to rowid 3
-        const string table = SREReplace("^.*conflict in table (.*?) - .*$", message, "$1");
-        const string rowid = SREReplace("^.*write to rowid (-?[0-9]+).*$", message, "$1");
-        if (!table.empty()) {
-            return {SLockKeyFromConflict(table, rowid), table};
-        }
-    } else if (strstr(message.c_str(), "conflict in index")) {
-        // HC-Tree index conflict. Lock on the conflicting index key. The key is a textual record blob, so we hash the
-        // whole thing rather than trying to sub-parse it.
-        // Sample: cannot commit CONCURRENT transaction - conflict in index reportActions.someIndex - range (...) conflicts with write to key X'0A045B00...'
-        const string index = SREReplace("^.*conflict in index (.*?) - .*$", message, "$1");
-        const string key = SREReplace("^.*write to key (.*)$", message, "$1");
-        if (!index.empty()) {
-            return {SLockKeyFromConflict(index, key), index};
-        }
-    }
-
-    return {0, ""};
-}
-
 void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg)
 {
     // Skip logging this as it generates a lot of noise and we don't use it.
@@ -394,11 +347,20 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg)
     SRedactSensitiveValues(_mostRecentSQLiteErrorLog);
     SINFO(_mostRecentSQLiteErrorLog);
 
+    // Update conflict location for subsequent attempts.
     if (SStartsWith(zMsg, "cannot commit")) {
-        const auto [page, location] = parseConflictMessage(zMsg);
-        _conflictPage = page;
-        if (!location.empty()) {
-            _conflictLocation = location;
+        if (strstr(zMsg, "conflict at page")) {
+            // WAL 2 conflicts are per-page, which are unique across the DB.
+            _conflictLocation = SREReplace("^.*part of db (table|index) (.*?);.*$", zMsg, "$2");;
+            _conflictIdentifier = atol(strstr(zMsg, "conflict at page") + 17);
+        } else if (strstr(zMsg, "conflict on ")) {
+            // HC-Tree conflicts specify "table" or "index", we accept both in our first search here.
+            // Example logs:
+            // {SQLITE} Code: 517, Message: write/write conflict on index nameValuePairs.nameValuePairsAccountIDName (root=30440763), key=(20539758,lastIP), conflicting=(116607308) (mytid=116607309)
+            // {SQLITE} Code: 517, Message: write/write conflict on table notifications (root=1025), key=[362854362], conflicting=(116607499) (mytid=116607500)
+            _conflictLocation = SREReplace("^.*conflict on (?:index|table) (\\S+).*$", zMsg, "$1");
+            string identifier = SREReplace("^.*key=(\\S+).*$", zMsg, "$1");
+            _conflictIdentifier = hash<string>{}(_conflictLocation + identifier);
         }
     }
 }
@@ -990,7 +952,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
     int startPages, dummy;
     sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &startPages, &dummy, 0);
 
-    _conflictPage = 0;
+    _conflictIdentifier = 0;
     _conflictLocation = "";
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
@@ -1029,7 +991,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
      * }
      */
 
-    _lastConflictPage = _conflictPage;
+    _lastConflictPage = _conflictIdentifier;
     _lastConflictLocation = _conflictLocation;
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT

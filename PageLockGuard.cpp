@@ -1,13 +1,13 @@
 #include "PageLockGuard.h"
-mutex PageLockGuard::controlMutex;
-map<int64_t, mutex> PageLockGuard::mutexes;
-list<int64_t> PageLockGuard::mutexOrder;
-map<int64_t, list<int64_t>::iterator> PageLockGuard::mutexOrderFastLookup;
-map<int64_t, int64_t> PageLockGuard::mutexCounts;
+mutex ConflictLockGuard::controlMutex;
+map<uint64_t, mutex> ConflictLockGuard::mutexes;
+list<uint64_t> ConflictLockGuard::mutexOrder;
+map<uint64_t, list<uint64_t>::iterator> ConflictLockGuard::mutexOrderFastLookup;
+map<uint64_t, int64_t> ConflictLockGuard::mutexCounts;
 
-PageLockGuard::PageLockGuard(int64_t pageNumber) : _pageNumber(pageNumber)
+ConflictLockGuard::ConflictLockGuard(uint64_t identifier) : _identifier(identifier)
 {
-    if (_pageNumber == 0) {
+    if (_identifier == 0) {
         return;
     }
 
@@ -15,32 +15,32 @@ PageLockGuard::PageLockGuard(int64_t pageNumber) : _pageNumber(pageNumber)
     mutex* m;
     {
         lock_guard<mutex> lock(controlMutex);
-        auto mutexPair = mutexes.find(_pageNumber);
+        auto mutexPair = mutexes.find(_identifier);
         if (mutexPair == mutexes.end()) {
             // If there's no mutex for this page, create one. The weird `piecewise_construct` syntax here allows us to create a mutex directly in the map,
             // since mutexes are neither movable nor copyable.
-            mutexPair = mutexes.emplace(piecewise_construct, forward_as_tuple(_pageNumber), forward_as_tuple()).first;
+            mutexPair = mutexes.emplace(piecewise_construct, forward_as_tuple(_identifier), forward_as_tuple()).first;
 
             // Set the reference count to 1.
-            mutexCounts.emplace(make_pair(_pageNumber, 1l));
+            mutexCounts.emplace(make_pair(_identifier, 1l));
 
             // Set this as the most recently acccessed mutex.
-            mutexOrder.push_front(_pageNumber);
+            mutexOrder.push_front(_identifier);
 
             // Store a reference to this item in the list, so that we can quickly find it later.
-            mutexOrderFastLookup.emplace(make_pair(_pageNumber, mutexOrder.begin()));
+            mutexOrderFastLookup.emplace(make_pair(_identifier, mutexOrder.begin()));
         } else {
             // If the mutex already exists, increment the reference count.
-            mutexCounts[_pageNumber]++;
+            mutexCounts[_identifier]++;
 
             // If the current mutex was already at the front of the order list, no updates are needed.
-            if (mutexOrder.front() != _pageNumber) {
+            if (mutexOrder.front() != _identifier) {
                 // Erase the old location of this mutex in the order list and move it to the front.
-                mutexOrder.erase(mutexOrderFastLookup.at(_pageNumber));
-                mutexOrder.push_front(_pageNumber);
+                mutexOrder.erase(mutexOrderFastLookup.at(_identifier));
+                mutexOrder.push_front(_identifier);
 
                 // And save the new fast lookup at the front.
-                mutexOrderFastLookup[_pageNumber] = mutexOrder.begin();
+                mutexOrderFastLookup[_identifier] = mutexOrder.begin();
             }
         }
 
@@ -89,16 +89,16 @@ PageLockGuard::PageLockGuard(int64_t pageNumber) : _pageNumber(pageNumber)
     m->lock();
 }
 
-PageLockGuard::~PageLockGuard()
+ConflictLockGuard::~ConflictLockGuard()
 {
-    if (_pageNumber == 0) {
+    if (_identifier == 0) {
         return;
     }
 
     lock_guard<mutex> lock(controlMutex);
-    auto mutexPair = mutexes.find(_pageNumber);
+    auto mutexPair = mutexes.find(_identifier);
     mutexPair->second.unlock();
 
-    auto mutexCount = mutexCounts.find(_pageNumber);
+    auto mutexCount = mutexCounts.find(_identifier);
     mutexCount->second--;
 }

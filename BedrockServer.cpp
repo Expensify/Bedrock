@@ -867,7 +867,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             (_blacklistedParallelCommands.find(command->request.methodLine) == _blacklistedParallelCommands.end());
     }
 
-    int64_t lastConflictPage = 0;
+    int64_t lastConflictIdentifier = 0;
     string lastConflictLocation;
     while (true) {
         // More checks for parallel writing.
@@ -933,13 +933,13 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
             auto* timer = new BedrockCore::AutoTimer(command, BedrockCommand::QUEUE_PAGE_LOCK);
             uint64_t conflictLockStartTime = 0;
-            if (lastConflictPage) {
+            if (lastConflictIdentifier) {
                 conflictLockStartTime = STimeNow();
             }
             {
-                PageLockGuard pageLock(lastConflictPage);
-                if (lastConflictPage) {
-                    SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on conflict key " << lastConflictPage << " (" << lastConflictLocation << ").");
+                ConflictLockGuard pageLock(lastConflictIdentifier);
+                if (lastConflictIdentifier) {
+                    SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on conflict key " << lastConflictIdentifier << " (" << lastConflictLocation << ").");
                 }
                 delete timer;
 
@@ -1072,7 +1072,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 // don't need to lock our next commit on this page conflict.
                                 // Plugins may define other tables on which we should not lock our next commit.
                                 if (!SStartsWith(lastConflictLocation, "journal") && (command->getPlugin() == nullptr || command->getPlugin()->shouldLockCommitPageOnConflict(lastConflictLocation))) {
-                                    lastConflictPage = db.getLastConflictPage();
+                                    lastConflictIdentifier = db.getLastConflictPage();
                                 }
                             }
                         }
