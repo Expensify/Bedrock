@@ -349,14 +349,19 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg)
 
     // Update conflict location for subsequent attempts.
     if (SStartsWith(zMsg, "cannot commit")) {
-        const char* conflictAtPagePtr = strstr(zMsg, "conflict at page");
+        // Find if and where this string exists in our logline.
+        static constexpr auto conflictAtPageString = "conflict at page ";
+        const char* conflictAtPagePtr = strstr(zMsg, conflictAtPageString);
         if (conflictAtPagePtr) {
             // WAL 2 conflicts are per-page, which are unique across the DB.
+            // Sample conflict log lines:
+            // {SQLITE} Code: 0, Message: cannot commit CONCURRENT transaction - conflict at page 1854553 (read/write page; part of db table reports; content=0D00000009007100...)
+            // {SQLITE} Code: 0, Message: cannot commit CONCURRENT transaction - conflict at page 1594810 (read/write page; part of db index reportActions.reportActionsAccountIDCreatedComment; content=0A045B006A00EB00...)
             _conflictLocation = SREReplace("^.*part of db (table|index) (.*?);.*$", zMsg, "$2");
-            _conflictIdentifier = atol(conflictAtPagePtr + 17);
+            _conflictIdentifier = atol(conflictAtPagePtr + char_traits<char>::length(conflictAtPageString));
         } else if (strstr(zMsg, "conflict on ")) {
             // HC-Tree conflicts specify "table" or "index", we accept both in our first search here.
-            // Example logs:
+            // Sample conflict log lines:
             // {SQLITE} Code: 517, Message: write/write conflict on index nameValuePairs.nameValuePairsAccountIDName (root=30440763), key=(20539758,lastIP), conflicting=(116607308) (mytid=116607309)
             // {SQLITE} Code: 517, Message: write/write conflict on table notifications (root=1025), key=[362854362], conflicting=(116607499) (mytid=116607500)
             _conflictLocation = SREReplace("^.*conflict on (?:index|table) (\\S+).*$", zMsg, "$1");
