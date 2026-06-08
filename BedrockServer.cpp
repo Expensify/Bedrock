@@ -939,7 +939,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             {
                 PageLockGuard pageLock(lastConflictPage);
                 if (lastConflictPage) {
-                    SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on db page " << lastConflictPage << ".");
+                    SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on conflict key " << lastConflictPage << " (" << lastConflictLocation << ").");
                 }
                 delete timer;
 
