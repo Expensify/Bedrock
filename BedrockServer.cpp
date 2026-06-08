@@ -17,7 +17,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 #include <libstuff/AutoTimer.h>
-#include <PageLockGuard.h>
+#include <ConflictLockGuard.h>
 #include <sqlitecluster/SQLitePeer.h>
 
 set<string> BedrockServer::_blacklistedParallelCommands;

@@ -1,4 +1,4 @@
-#include "PageLockGuard.h"
+#include "ConflictLockGuard.h"
 mutex ConflictLockGuard::controlMutex;
 map<uint64_t, mutex> ConflictLockGuard::mutexes;
 list<uint64_t> ConflictLockGuard::mutexOrder;
@@ -11,7 +11,7 @@ ConflictLockGuard::ConflictLockGuard(uint64_t identifier) : _identifier(identifi
         return;
     }
 
-    // We need access to the mutex outside of the control lock, so that we aren't blocking other PageLockGuard users while we wait for the page.
+    // We need access to the mutex outside of the control lock, so that we aren't blocking other ConflictLockGuard users while we wait for the page.
     mutex* m;
     {
         lock_guard<mutex> lock(controlMutex);

@@ -351,7 +351,7 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg)
     if (SStartsWith(zMsg, "cannot commit")) {
         if (strstr(zMsg, "conflict at page")) {
             // WAL 2 conflicts are per-page, which are unique across the DB.
-            _conflictLocation = SREReplace("^.*part of db (table|index) (.*?);.*$", zMsg, "$2");;
+            _conflictLocation = SREReplace("^.*part of db (table|index) (.*?);.*$", zMsg, "$2");
             _conflictIdentifier = atol(strstr(zMsg, "conflict at page") + 17);
         } else if (strstr(zMsg, "conflict on ")) {
             // HC-Tree conflicts specify "table" or "index", we accept both in our first search here.
