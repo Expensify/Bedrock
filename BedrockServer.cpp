@@ -937,7 +937,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 conflictLockStartTime = STimeNow();
             }
             {
-                ConflictLockGuard pageLock(lastConflictIdentifier);
+                ConflictLockGuard conflictLock(lastConflictIdentifier);
                 if (lastConflictIdentifier) {
                     SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on conflict key " << lastConflictIdentifier << " (" << lastConflictLocation << ").");
                 }
@@ -1072,7 +1072,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 // don't need to lock our next commit on this page conflict.
                                 // Plugins may define other tables on which we should not lock our next commit.
                                 if (!SStartsWith(lastConflictLocation, "journal") && (command->getPlugin() == nullptr || command->getPlugin()->shouldLockCommitPageOnConflict(lastConflictLocation))) {
-                                    lastConflictIdentifier = db.getLastConflictPage();
+                                    lastConflictIdentifier = db.getLastConflictIdentifier();
                                 }
                             }
                         }

@@ -328,7 +328,7 @@ public:
     // public read-only accessor for _dbCountAtStart.
     uint64_t getDBCountAtStart() const;
 
-    int64_t getLastConflictPage() const;
+    int64_t getLastConflictIdentifier() const;
 
     string getLastConflictLocation() const;
 

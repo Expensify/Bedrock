@@ -366,8 +366,12 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg)
         // {SQLITE} Code: 517, Message: write/write conflict on index nameValuePairs.nameValuePairsAccountIDName (root=30440763), key=(20539758,lastIP), conflicting=(116607308) (mytid=116607309)
         // {SQLITE} Code: 517, Message: write/write conflict on table notifications (root=1025), key=[362854362], conflicting=(116607499) (mytid=116607500)
         _conflictLocation = SREReplace("^.*conflict on (?:index|table) (\\S+).*$", zMsg, "$1");
-        string identifier = SREReplace("^.*key=(\\S+).*$", zMsg, "$1");
-        _conflictIdentifier = hash<string>{}(_conflictLocation + identifier);
+        if (strstr(zMsg, "key=")) {
+            string identifier = SREReplace("^.*key=(\\S+).*$", zMsg, "$1");
+            _conflictIdentifier = hash<string>{}(_conflictLocation + identifier);
+        } else {
+            _conflictIdentifier = 0;
+        }
     }
 }
 
@@ -1509,7 +1513,7 @@ void SQLite::setQueryOnly(bool enabled)
     SQuery(_db, query, result);
 }
 
-int64_t SQLite::getLastConflictPage() const
+int64_t SQLite::getLastConflictIdentifier() const
 {
     return _lastConflictPage;
 }
