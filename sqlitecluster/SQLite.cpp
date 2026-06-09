@@ -1106,7 +1106,7 @@ void SQLite::rollback(const string& commandName)
 
         // Cancel this transaction
         if (sqlite3_get_autocommit(_db)) {
-            // Some failures will cancel the current transcation and do an automatic rollback.
+            // Some failures will cancel the current transaction and do an automatic rollback.
             // See: https://sqlite.org/c3ref/interrupt.html
             // and: https://www.sqlite.org/lang_transaction.html ("Response To Errors Within A Transaction")
             // In these cases, we can test that we are no longer in a transaction using `sqlite3_get_autocommit()`.
