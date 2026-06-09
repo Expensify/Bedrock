@@ -481,9 +481,6 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
         STHROW("Attempted to begin transaction while in invalid state: _uncommittedQuery not empty");
     }
 
-    // Reset before the query, as it's possible the query sets these.
-    _autoRolledBack = false;
-
     // We actively track transaction counts incrementing and decrementing to log the number of active open transactions at any given moment.
     _sharedData.openTransactionCount++;
 
@@ -672,13 +669,6 @@ void SQLite::_checkInterruptErrors(const string& error) const
 
     if (_shouldAbortPtr && _shouldAbortPtr->load()) {
         errorCode = 2;
-    }
-
-    // If we had an interrupt error, and were inside a transaction, and autocommit is now on, we have been auto-rolled
-    // back, we won't need to actually do a rollback for this transaction.
-    if (errorCode && _insideTransaction && sqlite3_get_autocommit(_db)) {
-        SHMMM("Transaction automatically rolled back. Setting _autoRolledBack = true");
-        _autoRolledBack = true;
     }
 
     if (errorCode == 1) {
@@ -1115,9 +1105,16 @@ void SQLite::rollback(const string& commandName)
         _totalTransactionElapsed = _transactionTimer.stop();
 
         // Cancel this transaction
-        if (_autoRolledBack || sqlite3_get_autocommit(_db)) {
+        if (sqlite3_get_autocommit(_db)) {
+            // Some failures will cancel the current transcation and do an automatic rollback.
+            // See: https://sqlite.org/c3ref/interrupt.html
+            // and: https://www.sqlite.org/lang_transaction.html ("Response To Errors Within A Transaction")
+            // In these cases, we can test that we are no longer in a transaction using `sqlite3_get_autocommit()`.
+            // If we are in autocommit mode, our transaction has been rolled back.
+            // When this happens, we do not do a rollback here. This allows the externally visible SQLite API to be
+            // consistent and not have to handle this special case. Consumers can just always call `rollback` after a
+            // failed query, regardless of whether or not it was already rolled back internally.
             SINFO("Transaction was automatically rolled back, not sending 'ROLLBACK'.");
-            _autoRolledBack = false;
         } else {
             if (_uncommittedQuery.size()) {
                 SINFO("Rolling back transaction: " << _uncommittedQuery.substr(0, 100));
