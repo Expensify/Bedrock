@@ -1115,7 +1115,7 @@ void SQLite::rollback(const string& commandName)
         _totalTransactionElapsed = _transactionTimer.stop();
 
         // Cancel this transaction
-        if (_autoRolledBack) {
+        if (_autoRolledBack || sqlite3_get_autocommit(_db)) {
             SINFO("Transaction was automatically rolled back, not sending 'ROLLBACK'.");
             _autoRolledBack = false;
         } else {
