@@ -592,14 +592,6 @@ private:
     // second.
     int _authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4);
 
-    // It's possible for certain transactions (namely, timing out a write operation, see here:
-    // https://sqlite.org/c3ref/interrupt.html) to cause a transaction to be automatically rolled back. If this
-    // happens, we store a flag internally indicating that we don't need to perform the rollback ourselves. Then when
-    // `rollback` is called, we don't double-rollback, generating an error. This allows the externally visible SQLite
-    // API to be consistent and not have to handle this special case. Consumers can just always call `rollback` after a
-    // failed query, regardless of whether or not it was already rolled back internally.
-    mutable bool _autoRolledBack = false;
-
     bool _noopUpdateMode = false;
 
     // A map of queries to their cached results. This is populated only with deterministic queries, and is reset on any
