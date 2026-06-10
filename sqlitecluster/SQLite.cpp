@@ -364,7 +364,7 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg)
         // HC-Tree conflicts specify "table" or "index", we accept both in our first search here.
         // Sample conflict log lines:
         // {SQLITE} Code: 517, Message: write/write conflict on index nameValuePairs.nameValuePairsAccountIDName (root=30440763), key=(20539758,lastIP), conflicting=(116607308) (mytid=116607309)
-        // {SQLITE} Code: 517, Message: write/write conflict on table notifications (root=1025), key=[362854362], conflicting=(116607499) (mytid=116607500)
+        // {SQLITE} Code: 517, Message: read/write conflict on table test (root=60), key=[574], conflicting=(2881) (mytid=0)
         _conflictLocation = SREReplace("^.*conflict on (?:index|table) (\\S+).*$", zMsg, "$1");
         if (strstr(zMsg, "key=")) {
             string identifier = SREReplace("^.*key=(\\S+).*$", zMsg, "$1");
