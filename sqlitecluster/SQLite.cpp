@@ -9,6 +9,7 @@
 #include <libstuff/SQResult.h>
 #include <string>
 #include <format>
+#include <cstdlib>
 
 #define DBINFO(_MSG_) SINFO("{" << _filename << "} " << _MSG_)
 
@@ -22,7 +23,7 @@ sqlite3* SQLite::getDBHandle()
 }
 
 thread_local string SQLite::_mostRecentSQLiteErrorLog;
-thread_local int64_t SQLite::_conflictPage;
+thread_local int64_t SQLite::_conflictIdentifier;
 thread_local string SQLite::_conflictLocation;
 
 const string SQLite::getMostRecentSQLiteErrorLog() const
@@ -346,23 +347,30 @@ void SQLite::_sqliteLogCallback(void* pArg, int iErrCode, const char* zMsg)
     SRedactSensitiveValues(_mostRecentSQLiteErrorLog);
     SINFO(_mostRecentSQLiteErrorLog);
 
-    // This is sort of hacky to parse this from the logging info. If it works we could ask sqlite for a better interface to get this info.
+    // Update conflict location for subsequent attempts.
     if (SStartsWith(zMsg, "cannot commit")) {
-        // Page conflicts are reported on SQLite versions which handle conflict at the page level.
-        // Other versions of SQLite report conflict at the row level, but we don't handle that yet. These versions are experimental as of May 2026.
-        _conflictPage = 0;
-        const char* conflictAt = strstr(zMsg, "conflict at page");
-        if (conflictAt) {
-            // 17 is the length of "conflict at page" and the following space.
-            _conflictPage = atol(conflictAt + 17);
+        // Find if and where this string exists in our logline.
+        static constexpr auto conflictAtPageString = "conflict at page ";
+        const char* conflictAtPagePtr = strstr(zMsg, conflictAtPageString);
+        if (conflictAtPagePtr) {
+            // WAL 2 conflicts are per-page, which are unique across the DB.
+            // Sample conflict log lines:
+            // {SQLITE} Code: 0, Message: cannot commit CONCURRENT transaction - conflict at page 1854553 (read/write page; part of db table reports; content=0D00000009007100...)
+            // {SQLITE} Code: 0, Message: cannot commit CONCURRENT transaction - conflict at page 1594810 (read/write page; part of db index reportActions.reportActionsAccountIDCreatedComment; content=0A045B006A00EB00...)
+            _conflictLocation = SREReplace("^.*part of db (table|index) (.*?);.*$", zMsg, "$2");
+            _conflictIdentifier = atol(conflictAtPagePtr + char_traits<char>::length(conflictAtPageString));
         }
-
+    } else if (SStartsWith(zMsg, "write/write conflict on") || SStartsWith(zMsg, "read/write conflict on")) {
+        // HC-Tree conflicts specify "table" or "index", we accept both in our first search here.
         // Sample conflict log lines:
-        // {SQLITE} Code: 0, Message: cannot commit CONCURRENT transaction - conflict at page 1854553 (read/write page; part of db table reports; content=0D00000009007100...)
-        // {SQLITE} Code: 0, Message: cannot commit CONCURRENT transaction - conflict at page 1594810 (read/write page; part of db index reportActions.reportActionsAccountIDCreatedComment; content=0A045B006A00EB00...)
-        const string tableOrIndexName = SREReplace("^.*part of db (table|index) (.*?);.*$", zMsg, "$2");
-        if (!tableOrIndexName.empty()) {
-            _conflictLocation = tableOrIndexName;
+        // {SQLITE} Code: 517, Message: write/write conflict on index nameValuePairs.nameValuePairsAccountIDName (root=30440763), key=(20539758,lastIP), conflicting=(116607308) (mytid=116607309)
+        // {SQLITE} Code: 517, Message: read/write conflict on table test (root=60), key=[574], conflicting=(2881) (mytid=0)
+        _conflictLocation = SREReplace("^.*conflict on (?:index|table) (\\S+).*$", zMsg, "$1");
+        if (strstr(zMsg, "key=")) {
+            string identifier = SREReplace("^.*key=(\\S+).*$", zMsg, "$1");
+            _conflictIdentifier = hash<string>{}(_conflictLocation + identifier);
+        } else {
+            _conflictIdentifier = 0;
         }
     }
 }
@@ -944,7 +952,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
     int startPages, dummy;
     sqlite3_db_status(_db, SQLITE_DBSTATUS_CACHE_WRITE, &startPages, &dummy, 0);
 
-    _conflictPage = 0;
+    _conflictIdentifier = 0;
     _conflictLocation = "";
     uint64_t before = STimeNow();
     uint64_t beforeCommit = STimeNow();
@@ -983,7 +991,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
      * }
      */
 
-    _lastConflictPage = _conflictPage;
+    _lastConflictPage = _conflictIdentifier;
     _lastConflictLocation = _conflictLocation;
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
@@ -1502,7 +1510,7 @@ void SQLite::setQueryOnly(bool enabled)
     SQuery(_db, query, result);
 }
 
-int64_t SQLite::getLastConflictPage() const
+int64_t SQLite::getLastConflictIdentifier() const
 {
     return _lastConflictPage;
 }
