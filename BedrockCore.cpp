@@ -76,6 +76,13 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db, co
 
 bool BedrockCore::isAborted(unique_ptr<BedrockCommand>& command, SQLite* db, const BedrockServer* server)
 {
+    // A command with no socket has nobody awaiting a reply (it's fire-and-forget, escalated, or internally
+    // generated), so there's no connection to drop and it must never be abandoned. The abort flag is only ever set
+    // for commands that have a socket, but we guard explicitly here so the invariant doesn't depend on that.
+    if (!command->socket) {
+        return false;
+    }
+
     if (!command->shouldAbort.load()) {
         return false;
     }
@@ -115,7 +122,7 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
             command->_inDBReadOperation = true;
             command->prePeek(_db);
             command->_inDBReadOperation = false;
-            if (command->shouldAbort.load()) {
+            if (command->socket && command->shouldAbort.load()) {
                 STHROW("556 Aborted");
             }
             SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
@@ -193,7 +200,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             command->_inDBReadOperation = true;
             bool completed = command->peek(_db);
             command->_inDBReadOperation = false;
-            if (command->shouldAbort.load()) {
+            if (command->socket && command->shouldAbort.load()) {
                 STHROW("556 Aborted");
             }
             SDEBUG("Plugin '" << command->getName() << "' peeked command '" << request.methodLine << "'");
@@ -305,7 +312,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                 command->_inDBWriteOperation = true;
                 command->process(_db);
                 command->_inDBWriteOperation = false;
-                if (command->shouldAbort.load()) {
+                if (command->socket && command->shouldAbort.load()) {
                     STHROW("556 Aborted");
                 }
                 SDEBUG("Plugin '" << command->getName() << "' processed command '" << request.methodLine << "'");
@@ -403,7 +410,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
             command->_inDBReadOperation = true;
             command->postProcess(_db);
             command->_inDBReadOperation = false;
-            if (command->shouldAbort.load()) {
+            if (command->socket && command->shouldAbort.load()) {
                 STHROW("556 Aborted");
             }
             SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
