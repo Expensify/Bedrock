@@ -41,13 +41,6 @@ private:
     // the command hasn't timed out.
     static bool isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db = nullptr, const BedrockServer* server = nullptr);
 
-    // Checks if a command's originating connection has dropped, signalled via `command->shouldAbort`. Like
-    // `isTimedOut`, returns `true` and sets the command's response/complete state (to "556 Aborted") if it should be
-    // abandoned, and returns `false` and does nothing otherwise. Intended to be called at the start and end of each
-    // command phase so a command can be abandoned between phases (or before one begins), in addition to the
-    // mid-query aborts handled by SQLite's progress handler.
-    static bool isAborted(unique_ptr<BedrockCommand>& command, SQLite* db = nullptr, const BedrockServer* server = nullptr);
-
     void prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread);
 
     // Peek lets you pre-process a command. It will be called on each command before `process` is called on the same
@@ -87,6 +80,14 @@ private:
     string _getExceptionName();
 
     static void _handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db = nullptr, const BedrockServer* server = nullptr);
+
+    // Throws "556 Aborted" if the command's originating connection has dropped (signalled via `command->shouldAbort`).
+    // Called at the start and end of each command phase so a command can be abandoned between phases (or before one
+    // begins), in addition to the mid-query aborts handled by SQLite's progress handler. Must be called from inside a
+    // phase's `try` block: the phase's existing `catch` handler performs the appropriate rollback/cleanup. It's a
+    // no-op for commands with no socket (fire-and-forget, escalated, or internally generated), which have nobody
+    // awaiting a reply and so must never be abandoned on connection loss.
+    static void _throwIfAborted(const unique_ptr<BedrockCommand>& command);
 
     const BedrockServer& _server;
 };
