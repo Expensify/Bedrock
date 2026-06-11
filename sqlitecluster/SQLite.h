@@ -328,7 +328,7 @@ public:
     // public read-only accessor for _dbCountAtStart.
     uint64_t getDBCountAtStart() const;
 
-    int64_t getLastConflictPage() const;
+    int64_t getLastConflictIdentifier() const;
 
     string getLastConflictLocation() const;
 
@@ -504,7 +504,7 @@ private:
 
     atomic<int64_t> _lastConflictPage = 0;
     atomic<string> _lastConflictLocation;
-    static thread_local int64_t _conflictPage;
+    static thread_local int64_t _conflictIdentifier;
     static thread_local string _conflictLocation;
 
     bool _writeIdempotent(const string& query, const map<string, Parameter>& params, SQResult& result, bool alwaysKeepQueries = false);
