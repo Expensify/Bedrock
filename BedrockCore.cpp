@@ -77,8 +77,7 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db, co
 void BedrockCore::_throwIfAborted(const unique_ptr<BedrockCommand>& command)
 {
     // A command with no socket has nobody awaiting a reply (it's fire-and-forget, escalated, or internally
-    // generated), so there's no connection to drop and it must never be abandoned. The abort flag is only ever set
-    // for commands that have a socket, but we guard explicitly here so the invariant doesn't depend on that.
+    // generated), so there's no connection to drop and it must never be abandoned.
     if (command->socket && command->shouldAbort.load()) {
         STHROW("556 Aborted");
     }
