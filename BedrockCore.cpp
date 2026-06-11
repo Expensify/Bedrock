@@ -275,11 +275,15 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
 
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
-    if (isAborted(command, &_db, &_server)) {
-        return RESULT::NO_COMMIT_REQUIRED;
-    }
     try {
         SDEBUG("Processing '" << request.methodLine << "'");
+
+        // If the originating connection has dropped, abandon the command before doing any work. Unlike the other
+        // phases, `process` is entered with the transaction that `peekCommand` left open on the `SHOULD_PROCESS` path,
+        // so we throw (rather than returning early) to route through the catch below, which rolls that back.
+        if (command->socket && command->shouldAbort.load()) {
+            STHROW("556 Aborted");
+        }
         command->processCount++;
         _db.setTimeout(getRemainingTime(command, true));
         _db.setAbortRef(command->shouldAbort);
