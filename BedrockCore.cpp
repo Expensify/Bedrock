@@ -74,6 +74,19 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db, co
     return false;
 }
 
+bool BedrockCore::isAborted(unique_ptr<BedrockCommand>& command, SQLite* db, const BedrockServer* server)
+{
+    if (!command->shouldAbort.load()) {
+        return false;
+    }
+
+    // The connection that started this command has dropped, so there's nobody left to receive the response. Abandon
+    // it the same way a timeout would: route through the standard exception handler and mark it complete.
+    _handleCommandException(command, SException(__FILE__, __LINE__, false, "556 Aborted"), db, server);
+    command->complete = true;
+    return true;
+}
+
 void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread)
 {
     AutoTimer timer(command, isBlockingCommitThread ? BedrockCommand::BLOCKING_PREPEEK : BedrockCommand::PREPEEK);
@@ -82,6 +95,10 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
     const SData& request = command->request;
     SData& response = command->response;
     STable& content = command->jsonContent;
+
+    if (isAborted(command, &_db, &_server)) {
+        return;
+    }
 
     try {
         try {
@@ -98,6 +115,9 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
             command->_inDBReadOperation = true;
             command->prePeek(_db);
             command->_inDBReadOperation = false;
+            if (command->shouldAbort.load()) {
+                STHROW("556 Aborted");
+            }
             SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
 
             if (!content.empty()) {
@@ -144,6 +164,9 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
 
     // We catch any exception and handle in `_handleCommandException`.
     RESULT returnValue = RESULT::COMPLETE;
+    if (isAborted(command, &_db, &_server)) {
+        return RESULT::COMPLETE;
+    }
     try {
         SDEBUG("Peeking at '" << request.methodLine << "'");
         command->peekCount++;
@@ -170,6 +193,9 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             command->_inDBReadOperation = true;
             bool completed = command->peek(_db);
             command->_inDBReadOperation = false;
+            if (command->shouldAbort.load()) {
+                STHROW("556 Aborted");
+            }
             SDEBUG("Plugin '" << command->getName() << "' peeked command '" << request.methodLine << "'");
 
             if (!completed) {
@@ -242,6 +268,9 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
 
     // Keep track of whether we've modified the database and need to perform a `commit`.
     bool needsCommit = false;
+    if (isAborted(command, &_db, &_server)) {
+        return RESULT::NO_COMMIT_REQUIRED;
+    }
     try {
         SDEBUG("Processing '" << request.methodLine << "'");
         command->processCount++;
@@ -276,6 +305,9 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                 command->_inDBWriteOperation = true;
                 command->process(_db);
                 command->_inDBWriteOperation = false;
+                if (command->shouldAbort.load()) {
+                    STHROW("556 Aborted");
+                }
                 SDEBUG("Plugin '" << command->getName() << "' processed command '" << request.methodLine << "'");
             } catch (const SQLite::timeout_error& e) {
                 if (!command->shouldSuppressTimeoutWarnings()) {
@@ -352,6 +384,10 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
     SData& response = command->response;
     STable& content = command->jsonContent;
 
+    if (isAborted(command, &_db, &_server)) {
+        return;
+    }
+
     // We catch any exception and handle in `_handleCommandException`.
     try {
         try {
@@ -367,6 +403,9 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
             command->_inDBReadOperation = true;
             command->postProcess(_db);
             command->_inDBReadOperation = false;
+            if (command->shouldAbort.load()) {
+                STHROW("556 Aborted");
+            }
             SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
 
             // Success. If a command has set "content", encode it in the response.

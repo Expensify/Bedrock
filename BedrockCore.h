@@ -41,6 +41,13 @@ private:
     // the command hasn't timed out.
     static bool isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db = nullptr, const BedrockServer* server = nullptr);
 
+    // Checks if a command's originating connection has dropped, signalled via `command->shouldAbort`. Like
+    // `isTimedOut`, returns `true` and sets the command's response/complete state (to "556 Aborted") if it should be
+    // abandoned, and returns `false` and does nothing otherwise. Intended to be called at the start and end of each
+    // command phase so a command can be abandoned between phases (or before one begins), in addition to the
+    // mid-query aborts handled by SQLite's progress handler.
+    static bool isAborted(unique_ptr<BedrockCommand>& command, SQLite* db = nullptr, const BedrockServer* server = nullptr);
+
     void prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread);
 
     // Peek lets you pre-process a command. It will be called on each command before `process` is called on the same
