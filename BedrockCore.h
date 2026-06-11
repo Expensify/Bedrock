@@ -82,11 +82,6 @@ private:
     static void _handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db = nullptr, const BedrockServer* server = nullptr);
 
     // Throws "556 Aborted" if the command's originating connection has dropped (signalled via `command->shouldAbort`).
-    // Called at the start and end of each command phase so a command can be abandoned between phases (or before one
-    // begins), in addition to the mid-query aborts handled by SQLite's progress handler. Must be called from inside a
-    // phase's `try` block: the phase's existing `catch` handler performs the appropriate rollback/cleanup. It's a
-    // no-op for commands with no socket (fire-and-forget, escalated, or internally generated), which have nobody
-    // awaiting a reply and so must never be abandoned on connection loss.
     static void _throwIfAborted(const unique_ptr<BedrockCommand>& command);
 
     const BedrockServer& _server;
