@@ -48,7 +48,12 @@ chrono::microseconds BedrockCore::getRemainingTime(const unique_ptr<BedrockComma
 
     // Already expired.
     if (adjustedTimeout <= 0 || (isProcessing && processTimeout <= 0)) {
-        SALERT("Command " << command->request.methodLine << " timed out.");
+        // Some plugins want to alert timeout errors themselves, and make them silent on bedrock.
+        if (command->shouldSuppressTimeoutWarnings()) {
+            SWARN("Command " << command->request.methodLine << " timed out.");
+        } else {
+            SALERT("Command " << command->request.methodLine << " timed out.");
+        }
         STHROW("555 Timeout");
     }
 
