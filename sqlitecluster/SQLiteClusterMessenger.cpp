@@ -21,7 +21,7 @@ void SQLiteClusterMessenger::setErrorResponse(BedrockCommand& command)
 }
 
 // Returns true on ready or false on error or timeout.
-SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) const
+SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(pollfd& fdspec, const BedrockCommand& command) const
 {
     static const map<int, string> labels = {
         {POLLOUT, "send"},
@@ -40,7 +40,14 @@ SQLiteClusterMessenger::WaitForReadyResult SQLiteClusterMessenger::waitForReady(
         fdspec.events |= POLLRDHUP;
     }
 
+    const uint64_t timeoutTimestamp = command.timeout();
     while (true) {
+        // If the client that originated this command has disconnected, abandon the escalation.
+        if (command.socket && command.shouldAbort.load()) {
+            SINFO("[HTTPESC] Command aborted (originating connection dropped) while waiting (" << type << ").");
+            return WaitForReadyResult::ABORTED;
+        }
+
         int result = poll(&fdspec, 1, 100); // 100 is timeout in ms.
         if (!result) {
             if (timeoutTimestamp && timeoutTimestamp < STimeNow()) {
@@ -153,7 +160,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
     // We only have one FD to poll.
     pollfd fdspec = {socket.s, POLLOUT, 0};
     while (true) {
-        WaitForReadyResult result = waitForReady(fdspec, command.timeout());
+        WaitForReadyResult result = waitForReady(fdspec, command);
         if (result != WaitForReadyResult::OK) {
             return false;
         }
@@ -193,7 +200,7 @@ bool SQLiteClusterMessenger::_sendCommandOnSocket(SHTTPSManager::Socket& socket,
     string responseStr;
     char response[4096] = {0};
     while (true) {
-        if (waitForReady(fdspec, command.timeout()) != WaitForReadyResult::OK) {
+        if (waitForReady(fdspec, command) != WaitForReadyResult::OK) {
             setErrorResponse(command);
             return false;
         }
@@ -292,6 +299,16 @@ bool SQLiteClusterMessenger::runOnPeer(BedrockCommand& command, bool runOnLeader
         sent = _sendCommandOnSocket(*s, command);
         if (!sent) {
             command.escalationTimeUS = STimeNow() - command.escalationTimeUS;
+
+            // If the originating client disconnected, the command was aborted. We deliberately do not return the
+            // socket to the pool below, so `s` is destroyed here and our connection to the peer is closed, which
+            // signals the peer to abort the escalated command too.
+            if (command.socket && command.shouldAbort.load()) {
+                SINFO("[HTTPESC] Abandoning escalation of '" << command.request.methodLine << "', originating connection dropped.");
+                command.response.methodLine = "556 Aborted";
+                command.complete = true;
+                return true;
+            }
             return false;
         }
     }
