@@ -74,6 +74,15 @@ bool BedrockCore::isTimedOut(unique_ptr<BedrockCommand>& command, SQLite* db, co
     return false;
 }
 
+void BedrockCore::_throwIfAborted(const unique_ptr<BedrockCommand>& command)
+{
+    // A command with no socket has nobody awaiting a reply (it's fire-and-forget, escalated, or internally
+    // generated), so there's no connection to drop and it must never be abandoned.
+    if (command->socket && command->shouldAbort.load()) {
+        STHROW("556 Aborted");
+    }
+}
+
 void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlockingCommitThread)
 {
     AutoTimer timer(command, isBlockingCommitThread ? BedrockCommand::BLOCKING_PREPEEK : BedrockCommand::PREPEEK);
@@ -86,6 +95,7 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
     try {
         try {
             SDEBUG("prePeeking at '" << request.methodLine << "'");
+            _throwIfAborted(command);
             command->prePeekCount++;
             _db.setTimeout(getRemainingTime(command, false));
             _db.setAbortRef(command->shouldAbort);
@@ -98,6 +108,7 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
             command->_inDBReadOperation = true;
             command->prePeek(_db);
             command->_inDBReadOperation = false;
+            _throwIfAborted(command);
             SDEBUG("Plugin '" << command->getName() << "' prePeeked command '" << request.methodLine << "'");
 
             if (!content.empty()) {
@@ -146,6 +157,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
     RESULT returnValue = RESULT::COMPLETE;
     try {
         SDEBUG("Peeking at '" << request.methodLine << "'");
+        _throwIfAborted(command);
         command->peekCount++;
         _db.setTimeout(getRemainingTime(command, false));
         _db.setAbortRef(command->shouldAbort);
@@ -170,6 +182,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             command->_inDBReadOperation = true;
             bool completed = command->peek(_db);
             command->_inDBReadOperation = false;
+            _throwIfAborted(command);
             SDEBUG("Plugin '" << command->getName() << "' peeked command '" << request.methodLine << "'");
 
             if (!completed) {
@@ -244,6 +257,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
     bool needsCommit = false;
     try {
         SDEBUG("Processing '" << request.methodLine << "'");
+        _throwIfAborted(command);
         command->processCount++;
         _db.setTimeout(getRemainingTime(command, true));
         _db.setAbortRef(command->shouldAbort);
@@ -276,6 +290,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                 command->_inDBWriteOperation = true;
                 command->process(_db);
                 command->_inDBWriteOperation = false;
+                _throwIfAborted(command);
                 SDEBUG("Plugin '" << command->getName() << "' processed command '" << request.methodLine << "'");
             } catch (const SQLite::timeout_error& e) {
                 if (!command->shouldSuppressTimeoutWarnings()) {
@@ -356,6 +371,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
     try {
         try {
             SDEBUG("postProcessing at '" << request.methodLine << "'");
+            _throwIfAborted(command);
             command->postProcessCount++;
             _db.setTimeout(getRemainingTime(command, false));
             _db.setAbortRef(command->shouldAbort);
@@ -367,6 +383,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
             command->_inDBReadOperation = true;
             command->postProcess(_db);
             command->_inDBReadOperation = false;
+            _throwIfAborted(command);
             SDEBUG("Plugin '" << command->getName() << "' postProcess command '" << request.methodLine << "'");
 
             // Success. If a command has set "content", encode it in the response.
