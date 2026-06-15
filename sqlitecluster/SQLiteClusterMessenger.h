@@ -17,6 +17,7 @@ public:
         DISCONNECTED_OUT,
         UNSPECIFIED,
         POLL_ERROR,
+        ABORTED,
     };
 
     SQLiteClusterMessenger(const shared_ptr<const SQLiteNode>& node);
@@ -47,9 +48,9 @@ public:
 
 private:
     // This takes a pollfd with either POLLIN or POLLOUT set, and waits for the socket to be ready to read or write,
-    // respectively. It returns true if ready, or false if error or timeout. The timeout is specified as a timestamp in
-    // microseconds.
-    WaitForReadyResult waitForReady(pollfd& fdspec, uint64_t timeoutTimestamp) const;
+    // respectively. It returns OK if ready, or another result on error, timeout, peer disconnect, or if the command
+    // was aborted because its originating client disconnected (ABORTED). The command's timeout is used as the deadline.
+    WaitForReadyResult waitForReady(pollfd& fdspec, const BedrockCommand& command) const;
 
     // This sets a command as a 500 and marks it as complete.
     static void setErrorResponse(BedrockCommand& command);
