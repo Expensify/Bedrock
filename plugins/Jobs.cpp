@@ -7,6 +7,10 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
 
+// Only SCHEDULED repeats shorter than this re-anchor to now after a missed window; longer intervals
+// keep their scheduled time since they may need to run on a specific calendar date.
+static constexpr int64_t REPEAT_REANCHOR_THRESHOLD_SECONDS = 4 * 60 * 60;
+
 const int64_t BedrockPlugin_Jobs::JOBS_DEFAULT_PRIORITY = 500;
 const string BedrockPlugin_Jobs::name("Jobs");
 const string& BedrockPlugin_Jobs::getName() const
@@ -1382,41 +1386,75 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
     }
 
     // Make sure the first part indicates the base (eg, what we are modifying)
-    string nextRun = parts.front();
+    const string base = parts.front();
     parts.pop_front();
-    if (nextRun == "SCHEDULED") {
-        nextRun = SQ(lastScheduled);
-    } else if (nextRun == "STARTED") {
-        nextRun = SQ(lastRun);
-    } else if (nextRun == "FINISHED") {
-        nextRun = SCURRENT_TIMESTAMP();
+    string baseExpr;
+    if (base == "SCHEDULED") {
+        baseExpr = SQ(lastScheduled);
+    } else if (base == "STARTED") {
+        baseExpr = SQ(lastRun);
+    } else if (base == "FINISHED") {
+        baseExpr = SCURRENT_TIMESTAMP();
     } else {
-        SWARN("Syntax error, failed parsing repeat '" << repeat << "': missing base (" << nextRun << ")");
+        SWARN("Syntax error, failed parsing repeat '" << repeat << "': missing base (" << base << ")");
         return "";
     }
 
-    for (const string& part : parts) {
-        // This isn't supported natively by SQLite, so do it manually here instead.
-        if (SToUpper(part) == "START OF HOUR") {
-            SQResult result;
-            if (!db.read("SELECT STRFTIME('%Y-%m-%d %H:00:00', " + nextRun + ");", result) || result.empty()) {
+    // Apply the repeat's date modifiers to a base timestamp, returning the result as a quoted SQL
+    // literal (or "" on a syntax error).
+    auto applyModifiers = [&](const string& startExpr) -> string {
+        string nextRun = startExpr;
+        for (const string& part : parts) {
+            // This isn't supported natively by SQLite, so do it manually here instead.
+            if (SToUpper(part) == "START OF HOUR") {
+                SQResult result;
+                if (!db.read("SELECT STRFTIME('%Y-%m-%d %H:00:00', " + nextRun + ");", result) || result.empty()) {
+                    SWARN("Syntax error, failed parsing repeat " + part);
+                    return "";
+                }
+
+                nextRun = SQ(result[0][0]);
+            } else if (!SIsValidSQLiteDateModifier(part)) {
+                // Validate the sqlite date modifiers
                 SWARN("Syntax error, failed parsing repeat " + part);
                 return "";
-            }
+            } else {
+                SQResult result;
+                if (!db.read("SELECT DATETIME(" + nextRun + ", " + SQ(part) + ");", result) || result.empty()) {
+                    SWARN("Syntax error, failed parsing repeat " + part);
+                    return "";
+                }
 
-            nextRun = SQ(result[0][0]);
-        } else if (!SIsValidSQLiteDateModifier(part)) {
-            // Validate the sqlite date modifiers
-            SWARN("Syntax error, failed parsing repeat " + part);
+                nextRun = SQ(result[0][0]);
+            }
+        }
+        return nextRun;
+    };
+
+    string nextRun = applyModifiers(baseExpr);
+    if (nextRun.empty()) {
+        return "";
+    }
+
+    // A SCHEDULED repeat anchors the next run to the job's previously scheduled time. After an outage that
+    // anchor can be far enough in the past that scheduled+interval is also in the past, making every job
+    // immediately runnable at once (thundering herd). For short-interval jobs, skip the missed window and
+    // re-anchor to now so inter-job stagger survives a restart; long intervals are left untouched since they
+    // may need to run on a specific calendar date.
+    if (base == "SCHEDULED") {
+        const string nowExpr = SCURRENT_TIMESTAMP();
+        SQResult result;
+        if (!db.read("SELECT " + nextRun + " <= " + nowExpr + ", STRFTIME('%s', " + nextRun + ") - STRFTIME('%s', " + SQ(lastScheduled) + ");", result) || result.empty()) {
+            SWARN("Failed evaluating SCHEDULED repeat staleness for '" << repeat << "'");
             return "";
-        } else {
-            SQResult result;
-            if (!db.read("SELECT DATETIME(" + nextRun + ", " + SQ(part) + ");", result) || result.empty()) {
-                SWARN("Syntax error, failed parsing repeat " + part);
+        }
+        const bool missedWindow = result[0][0] == "1";
+        const int64_t intervalSeconds = SToInt64(result[0][1]);
+        if (missedWindow && intervalSeconds > 0 && intervalSeconds < REPEAT_REANCHOR_THRESHOLD_SECONDS) {
+            nextRun = applyModifiers(nowExpr);
+            if (nextRun.empty()) {
                 return "";
             }
-
-            nextRun = SQ(result[0][0]);
         }
     }
 
