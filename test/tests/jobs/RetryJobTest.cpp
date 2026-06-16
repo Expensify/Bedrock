@@ -21,6 +21,7 @@ struct RetryJobTest : tpunit::TestFixture
                               TEST(RetryJobTest::hasRepeatStartOfHourNotLast),
                               TEST(RetryJobTest::hasRepeatScheduledMissedWindowReanchors),
                               TEST(RetryJobTest::hasRepeatScheduledLongIntervalNotReanchored),
+                              TEST(RetryJobTest::hasRetryAfterScheduledMissedWindowReanchors),
                               TEST(RetryJobTest::inRunqueuedState),
                               TEST(RetryJobTest::simplyRetryWithNextRun),
                               TEST(RetryJobTest::changeNameAndPriority),
@@ -496,6 +497,50 @@ struct RetryJobTest : tpunit::TestFixture
         time_t firstRunTime = JobTestHelper::getTimestampForDateTimeString(firstRun);
         time_t actualNextRun = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
         ASSERT_EQUAL(difftime(actualNextRun, firstRunTime), 5 * 3600);
+    }
+
+    // A ReceiptScan-shaped job (retryAfter + a short SCHEDULED repeat) re-anchors off its original scheduled
+    // time. GetJob stashes the original (past) nextRun in data, so the missed window must be detected against
+    // that rather than the failure-check time GetJob wrote to nextRun.
+    void hasRetryAfterScheduledMissedWindowReanchors()
+    {
+        uint64_t now = STimeNow();
+
+        // Create the job scheduled an hour in the past.
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "SCHEDULED, +30 SECONDS";
+        command["retryAfter"] = "+10 MINUTES";
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", now - 3600 * STIME_US_PER_S);
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job; for retryAfter + SCHEDULED this stores the original (past) nextRun in data.
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Get a timestamp from before we reschedule.
+        SQResult result;
+        tester->readDB("SELECT DATETIME();", result);
+        time_t minimumTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // Get a timestamp from after we reschedule.
+        tester->readDB("SELECT DATETIME();", result);
+        time_t maximumTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
+
+        // nextRun is now + 30 seconds, not the missed original nextRun + 30 seconds (~an hour in the past).
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        time_t actualNextRun = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
+        ASSERT_TRUE(difftime(actualNextRun, minimumTime) >= 30);
+        ASSERT_TRUE(difftime(actualNextRun, maximumTime) <= 30);
     }
 
     // Retry job in RUNQUEUED state
