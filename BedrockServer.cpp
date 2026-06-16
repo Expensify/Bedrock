@@ -1716,6 +1716,11 @@ list<STable> BedrockServer::getPeerInfo()
     return peerData;
 }
 
+const string& BedrockServer::getVersion() const
+{
+    return _version;
+}
+
 void BedrockServer::setDetach(bool detach)
 {
     if (detach) {
