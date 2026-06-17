@@ -15,9 +15,14 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture
         BedrockTester& follower = tester.getTester(1);
         vector<string> results(2);
 
+        // While the leader is down the follower loses its lead peer, so its known leader version is empty. All nodes in
+        // this cluster share the same version, so a "Mismatched version" response is always wrong here: an empty leader
+        // version must be reported as the node's actual state, not as a mismatch.
+        atomic<bool> foundMismatch(false);
+
         leader.stopServer();
 
-        thread healthCheckThread([&results, &follower](){
+        thread healthCheckThread([&results, &follower, &foundMismatch](){
             SData cmd("GET /status/handlingCommands HTTP/1.1");
             string result;
             bool foundLeader = false;
@@ -27,6 +32,9 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture
 
             while (chrono::steady_clock::now() < start + 60s && (!foundLeader || !foundFollower || !foundStandingdown)) {
                 result = follower.executeWaitMultipleData({cmd}, 1, false)[0].methodLine;
+                if (SContains(result, "Mismatched version")) {
+                    foundMismatch = true;
+                }
                 if (result == "HTTP/1.1 200 LEADING") {
                     results[0] = result;
                     foundLeader = true;
@@ -46,6 +54,7 @@ struct StatusHandlingCommandsTest : tpunit::TestFixture
 
         ASSERT_EQUAL(results[0], "HTTP/1.1 200 LEADING")
         ASSERT_EQUAL(results[1], "HTTP/1.1 200 FOLLOWING")
+        ASSERT_FALSE(foundMismatch)
         // We don't test STANDINGDOWN because it's unreliable to get it to show up in the status, we can move straight through it too quickly.
     }
 } __StatusHandlingCommandsTest;
