@@ -100,6 +100,10 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
             _db.setTimeout(getRemainingTime(command, false));
             _db.setAbortRef(command->shouldAbort);
 
+            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
+                STHROW("501 Failed to begin shared transaction");
+            }
+
             // Make sure no writes happen while in prePeek command
             _db.setQueryOnly(true);
 
@@ -139,6 +143,7 @@ void BedrockCore::prePeekCommand(unique_ptr<BedrockCommand>& command, bool isBlo
         command->complete = true;
         command->_inDBReadOperation = false;
     }
+    _db.rollback(command->getMethodName());
     _db.clearTimeout();
     _db.clearAbortRef();
 
@@ -376,6 +381,10 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
             _db.setTimeout(getRemainingTime(command, false));
             _db.setAbortRef(command->shouldAbort);
 
+            if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED)) {
+                STHROW("501 Failed to begin shared transaction");
+            }
+
             // Make sure no writes happen while in postProcess command
             _db.setQueryOnly(true);
 
@@ -417,6 +426,7 @@ void BedrockCore::postProcessCommand(unique_ptr<BedrockCommand>& command, bool i
 
     // The command is complete.
     command->complete = true;
+    _db.rollback(command->getMethodName());
     _db.clearTimeout();
     _db.clearAbortRef();
 

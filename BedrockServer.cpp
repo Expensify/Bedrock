@@ -441,11 +441,6 @@ void BedrockServer::sync()
             // Record the time spent.
             command->stopTiming(BedrockCommand::COMMIT_SYNC);
 
-            if (command->shouldPostProcess() && command->response.methodLine == "200 OK") {
-                // PostProcess if the command should run postProcess, and there have been no errors thrown thus far.
-                core.postProcessCommand(command, false);
-            }
-
             if (_syncNode->commitSucceeded()) {
                 SINFO("Sync thread finished committing command " << command->request.methodLine);
                 _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
@@ -453,7 +448,6 @@ void BedrockServer::sync()
                 // Otherwise, save the commit count, mark this command as complete, and reply.
                 command->response["commitCount"] = to_string(db.getCommitCount());
                 command->complete = true;
-                _reply(command);
             } else {
                 // This should only happen if the cluster becomes largely disconnected while we were in the process of
                 // committing a QUORUM command - if we no longer have enough peers to reach QUORUM, we'll fall out of
@@ -465,6 +459,16 @@ void BedrockServer::sync()
                       << " after failed sync commit. Sync thread has " << _syncNodeQueuedCommands.size()
                       << " queued commands.");
                 _syncNodeQueuedCommands.push(move(command));
+            }
+
+            // If the command was completed above, then we'll go ahead and respond.
+            if (command->complete) {
+                if (command->shouldPostProcess() && command->response.methodLine == "200 OK") {
+                    // PostProcess if the command should run postProcess, and there have been no errors thrown thus far.
+                    core.postProcessCommand(command, false);
+                }
+
+                _reply(command);
             }
         }
 
