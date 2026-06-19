@@ -1452,10 +1452,8 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
         // Realized delta as a proxy for the repeat interval; calendar modifiers make the exact period vary.
         const int64_t intervalSeconds = SToInt64(result[0][1]);
         if (missedWindow && intervalSeconds > 0 && intervalSeconds < REPEAT_REANCHOR_THRESHOLD_SECONDS) {
+            // Re-applies the already-validated modifiers from now, so this cannot fail.
             nextRun = applyModifiers(nowExpr);
-            if (nextRun.empty()) {
-                return "";
-            }
         }
     }
 
