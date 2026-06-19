@@ -1403,32 +1403,32 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
     // Apply the repeat's date modifiers to a base timestamp, returning the result as a quoted SQL
     // literal (or "" on a syntax error).
     auto applyModifiers = [&](const string& startExpr) -> string {
-        string nextRun = startExpr;
+        string current = startExpr;
         for (const string& part : parts) {
             // This isn't supported natively by SQLite, so do it manually here instead.
             if (SToUpper(part) == "START OF HOUR") {
                 SQResult result;
-                if (!db.read("SELECT STRFTIME('%Y-%m-%d %H:00:00', " + nextRun + ");", result) || result.empty()) {
+                if (!db.read("SELECT STRFTIME('%Y-%m-%d %H:00:00', " + current + ");", result) || result.empty()) {
                     SWARN("Syntax error, failed parsing repeat " + part);
                     return "";
                 }
 
-                nextRun = SQ(result[0][0]);
+                current = SQ(result[0][0]);
             } else if (!SIsValidSQLiteDateModifier(part)) {
                 // Validate the sqlite date modifiers
                 SWARN("Syntax error, failed parsing repeat " + part);
                 return "";
             } else {
                 SQResult result;
-                if (!db.read("SELECT DATETIME(" + nextRun + ", " + SQ(part) + ");", result) || result.empty()) {
+                if (!db.read("SELECT DATETIME(" + current + ", " + SQ(part) + ");", result) || result.empty()) {
                     SWARN("Syntax error, failed parsing repeat " + part);
                     return "";
                 }
 
-                nextRun = SQ(result[0][0]);
+                current = SQ(result[0][0]);
             }
         }
-        return nextRun;
+        return current;
     };
 
     string nextRun = applyModifiers(baseExpr);
