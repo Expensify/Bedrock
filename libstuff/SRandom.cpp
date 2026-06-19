@@ -31,3 +31,8 @@ string SRandom::randStr(unsigned length)
     }
     return newstr;
 }
+
+const mt19937_64& SRandom::getGenerator()
+{
+    return _generator;
+}

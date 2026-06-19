@@ -12,6 +12,8 @@ public:
     static uint64_t limitedRand64(uint64_t min, uint64_t max);
     static string randStr(unsigned length);
 
+    static const mt19937_64& getGenerator();
+
 private:
     static mt19937_64 _generator;
     static uniform_int_distribution<uint64_t> _distribution64;
