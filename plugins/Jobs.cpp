@@ -1436,11 +1436,8 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
         return "";
     }
 
-    // A SCHEDULED repeat anchors the next run to the job's previously scheduled time. After an outage that
-    // anchor can be far enough in the past that scheduled+interval is also in the past, making every job
-    // immediately runnable at once (thundering herd). For short-interval jobs, skip the missed window and
-    // re-anchor to now so inter-job stagger survives a restart; long intervals are left untouched since they
-    // may need to run on a specific calendar date.
+    // After an outage, every missed SCHEDULED job becomes runnable at once (thundering herd). Re-anchor
+    // short-interval ones to now to preserve stagger; leave long intervals for jobs tied to a calendar date.
     if (base == "SCHEDULED") {
         const string nowExpr = SCURRENT_TIMESTAMP();
         SQResult result;
