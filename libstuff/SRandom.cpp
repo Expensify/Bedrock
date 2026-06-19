@@ -32,7 +32,7 @@ string SRandom::randStr(unsigned length)
     return newstr;
 }
 
-const mt19937_64& SRandom::getGenerator()
+bool SRandom::randBool(const double probability)
 {
-    return _generator;
+    return bernoulli_distribution(probability)(_generator);
 }
