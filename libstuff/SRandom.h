@@ -11,6 +11,7 @@ public:
     static uint64_t rand64();
     static uint64_t limitedRand64(uint64_t min, uint64_t max);
     static string randStr(unsigned length);
+    static bool randBool(const double probability);
 
 private:
     static mt19937_64 _generator;
