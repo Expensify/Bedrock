@@ -1436,21 +1436,29 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
         return "";
     }
 
-    // After an outage, every missed SCHEDULED job becomes runnable at once (thundering herd). Re-anchor
-    // short-interval ones to now to preserve stagger; leave long intervals for jobs tied to a calendar date.
+    // After an outage, every missed SCHEDULED job becomes runnable at once (thundering herd). Skip the missed
+    // cycles to each job's next phase slot to preserve stagger; leave long intervals for calendar-bound jobs.
     if (base == "SCHEDULED") {
         const string nowExpr = SCURRENT_TIMESTAMP();
         SQResult result;
-        if (!db.read("SELECT " + nextRun + " <= " + nowExpr + ", STRFTIME('%s', " + nextRun + ") - STRFTIME('%s', " + SQ(lastScheduled) + ");", result) || result.empty()) {
+        if (!db.read("SELECT " + nextRun + " <= " + nowExpr + ", "
+                     "STRFTIME('%s', " + nextRun + ") - STRFTIME('%s', " + SQ(lastScheduled) + "), "
+                     "STRFTIME('%s', " + nowExpr + ") - STRFTIME('%s', " + SQ(lastScheduled) + ");", result) || result.empty()) {
             SWARN("Failed evaluating SCHEDULED repeat staleness for '" << repeat << "'");
             return "";
         }
         const bool missedWindow = result[0][0] == "1";
-        // Realized delta as a proxy for the repeat interval; calendar modifiers make the exact period vary.
         const int64_t intervalSeconds = SToInt64(result[0][1]);
+        const int64_t secondsBehind = SToInt64(result[0][2]);
         if (missedWindow && intervalSeconds > 0 && intervalSeconds < REPEAT_REANCHOR_THRESHOLD_SECONDS) {
-            // Re-applies the already-validated modifiers from now, so this cannot fail.
-            nextRun = applyModifiers(nowExpr);
+            // Jump whole intervals past lastScheduled to the first slot after now, keeping each job's phase.
+            // intervalSeconds is the realized delta, so calendar modifiers would vary the exact period.
+            const int64_t skipSeconds = (secondsBehind / intervalSeconds + 1) * intervalSeconds;
+            if (!db.read("SELECT DATETIME(" + SQ(lastScheduled) + ", '+" + SToStr(skipSeconds) + " SECONDS');", result) || result.empty()) {
+                SWARN("Failed re-anchoring SCHEDULED repeat for '" << repeat << "'");
+                return "";
+            }
+            nextRun = SQ(result[0][0]);
         }
     }
 

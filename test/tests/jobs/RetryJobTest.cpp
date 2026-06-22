@@ -422,17 +422,18 @@ struct RetryJobTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0][0], SComposeTime("%Y-%m-%d 00:05:00", now));
     }
 
-    // A short-interval SCHEDULED repeat whose window was missed (eg, after an outage) skips the missed run
-    // and re-anchors to now instead of running again in the past.
+    // A short-interval SCHEDULED repeat whose window was missed (eg, after an outage) skips the missed cycles
+    // and re-anchors to the next slot on its own phase, not to a single bunched-up "now".
     void hasRepeatScheduledMissedWindowReanchors()
     {
         uint64_t now = STimeNow();
+        const string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", now - 3600 * STIME_US_PER_S);
 
         // Create the job scheduled an hour in the past.
         SData command("CreateJob");
         command["name"] = "job";
         command["repeat"] = "SCHEDULED, +30 SECONDS";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", now - 3600 * STIME_US_PER_S);
+        command["firstRun"] = firstRun;
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
@@ -457,11 +458,14 @@ struct RetryJobTest : tpunit::TestFixture
         tester->readDB("SELECT DATETIME();", result);
         time_t maximumTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
 
-        // nextRun is now + 30 seconds, not the missed firstRun + 30 seconds (which is ~an hour in the past).
+        // nextRun is the first future slot (in (now, now + 30]) and stays on firstRun's 30-second phase,
+        // rather than being left in the past or bunched onto a single second.
         tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         time_t actualNextRun = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
-        ASSERT_TRUE(difftime(actualNextRun, minimumTime) >= 30);
+        time_t firstRunTime = JobTestHelper::getTimestampForDateTimeString(firstRun);
+        ASSERT_TRUE(difftime(actualNextRun, minimumTime) > 0);
         ASSERT_TRUE(difftime(actualNextRun, maximumTime) <= 30);
+        ASSERT_EQUAL(static_cast<int64_t>(difftime(actualNextRun, firstRunTime)) % 30, 0);
     }
 
     // A SCHEDULED repeat longer than the re-anchor threshold keeps its scheduled time even when missed,
@@ -505,13 +509,14 @@ struct RetryJobTest : tpunit::TestFixture
     void hasRetryAfterScheduledMissedWindowReanchors()
     {
         uint64_t now = STimeNow();
+        const string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", now - 3600 * STIME_US_PER_S);
 
         // Create the job scheduled an hour in the past.
         SData command("CreateJob");
         command["name"] = "job";
         command["repeat"] = "SCHEDULED, +30 SECONDS";
         command["retryAfter"] = "+10 MINUTES";
-        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", now - 3600 * STIME_US_PER_S);
+        command["firstRun"] = firstRun;
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
 
@@ -536,11 +541,13 @@ struct RetryJobTest : tpunit::TestFixture
         tester->readDB("SELECT DATETIME();", result);
         time_t maximumTime = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
 
-        // nextRun is now + 30 seconds, not the missed original nextRun + 30 seconds (~an hour in the past).
+        // nextRun is the first future slot on the original nextRun's phase, not left in the past or bunched on now.
         tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
         time_t actualNextRun = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
-        ASSERT_TRUE(difftime(actualNextRun, minimumTime) >= 30);
+        time_t firstRunTime = JobTestHelper::getTimestampForDateTimeString(firstRun);
+        ASSERT_TRUE(difftime(actualNextRun, minimumTime) > 0);
         ASSERT_TRUE(difftime(actualNextRun, maximumTime) <= 30);
+        ASSERT_EQUAL(static_cast<int64_t>(difftime(actualNextRun, firstRunTime)) % 30, 0);
     }
 
     // Retry job in RUNQUEUED state
