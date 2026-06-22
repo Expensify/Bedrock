@@ -485,7 +485,7 @@ private:
     SSynchronizedQueue<bool> _notifyDone;
     SSynchronizedQueue<bool> _notifyDoneSync;
 
-    static const size_t DEFAULT_POOL_SIZE = 25'000;
+    static const size_t DEFAULT_POOL_SIZE = 5'000;
     atomic<size_t> _maxSocketThreads{DEFAULT_POOL_SIZE};
     atomic<size_t> _dbPoolSize{DEFAULT_POOL_SIZE};
 };
