@@ -21,6 +21,7 @@ struct RetryJobTest : tpunit::TestFixture
                               TEST(RetryJobTest::hasRepeatStartOfHourNotLast),
                               TEST(RetryJobTest::hasRepeatScheduledMissedWindowReanchors),
                               TEST(RetryJobTest::hasRepeatScheduledLongIntervalNotReanchored),
+                              TEST(RetryJobTest::hasRepeatScheduledSnappingModifierNotReanchored),
                               TEST(RetryJobTest::hasRetryAfterScheduledMissedWindowReanchors),
                               TEST(RetryJobTest::inRunqueuedState),
                               TEST(RetryJobTest::simplyRetryWithNextRun),
@@ -501,6 +502,42 @@ struct RetryJobTest : tpunit::TestFixture
         time_t firstRunTime = JobTestHelper::getTimestampForDateTimeString(firstRun);
         time_t actualNextRun = JobTestHelper::getTimestampForDateTimeString(result[0][0]);
         ASSERT_EQUAL(difftime(actualNextRun, firstRunTime), 5 * 3600);
+    }
+
+    // A SCHEDULED repeat with a snapping modifier (eg START OF HOUR) keeps its rounded cadence; arithmetic
+    // re-anchoring would shift it off the hour, so it is left to catch up on its own.
+    void hasRepeatScheduledSnappingModifierNotReanchored()
+    {
+        uint64_t now = STimeNow();
+        // Pin the minutes to :30 so the snapped scheduled run differs from any arithmetic re-anchor.
+        const string firstRun = SComposeTime("%Y-%m-%d %H", now - 2 * 3600 * STIME_US_PER_S) + ":30:00";
+
+        // Create the job scheduled in the past.
+        SData command("CreateJob");
+        command["name"] = "job";
+        command["repeat"] = "SCHEDULED, +1 HOUR, START OF HOUR";
+        command["firstRun"] = firstRun;
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+
+        // Get the job
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "job";
+        tester->executeWaitVerifyContent(command);
+
+        // Retry it
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        tester->executeWaitVerifyContent(command);
+
+        // nextRun is the snapped scheduled time (top of the hour after firstRun), not an off-hour arithmetic slot.
+        SQResult result;
+        tester->readDB("SELECT STRFTIME('%Y-%m-%d %H:00:00', DATETIME('" + firstRun + "', '+1 HOUR'));", result);
+        const string expectedNextRun = result[0][0];
+        tester->readDB("SELECT nextRun FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], expectedNextRun);
     }
 
     // A ReceiptScan-shaped job (retryAfter + a short SCHEDULED repeat) re-anchors off its original scheduled

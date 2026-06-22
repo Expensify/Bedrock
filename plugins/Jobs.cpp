@@ -1450,9 +1450,20 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
         const bool missedWindow = result[0][0] == "1";
         const int64_t intervalSeconds = SToInt64(result[0][1]);
         const int64_t secondsBehind = SToInt64(result[0][2]);
-        if (missedWindow && intervalSeconds > 0 && intervalSeconds < REPEAT_REANCHOR_THRESHOLD_SECONDS) {
+
+        // Only fixed-offset modifiers (eg "+30 SECONDS") have a constant period we can skip by arithmetic.
+        // Snapping modifiers like "START OF HOUR" round the result, so their realized delta isn't the period;
+        // leave those to their own (coarse, low-volume) catch-up rather than re-anchor them off-schedule.
+        bool fixedInterval = true;
+        for (const string& part : parts) {
+            if (part.empty() || (part.front() != '+' && part.front() != '-')) {
+                fixedInterval = false;
+                break;
+            }
+        }
+
+        if (fixedInterval && missedWindow && intervalSeconds > 0 && intervalSeconds < REPEAT_REANCHOR_THRESHOLD_SECONDS) {
             // Jump whole intervals past lastScheduled to the first slot after now, keeping each job's phase.
-            // intervalSeconds is the realized delta, so calendar modifiers would vary the exact period.
             const int64_t skipSeconds = (secondsBehind / intervalSeconds + 1) * intervalSeconds;
             if (!db.read("SELECT DATETIME(" + SQ(lastScheduled) + ", '+" + SToStr(skipSeconds) + " SECONDS');", result) || result.empty()) {
                 SWARN("Failed re-anchoring SCHEDULED repeat for '" << repeat << "'");
