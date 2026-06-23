@@ -249,7 +249,10 @@ static void sqliteDecompress(sqlite3_context* ctx, int argc, sqlite3_value** arg
         return;
     }
 
-    sqlite3_result_blob(ctx, dst, (int) actualSize, sqlite3_free);
+    // Return the decompressed payload as TEXT. Compressed columns hold UTF-8 text (e.g. JSON), and returning a BLOB
+    // would make SQLite's JSON functions treat the bytes as binary JSONB, breaking JSON_EXTRACT/JSON_VALID and
+    // causing "JSON cannot hold BLOB values" when the result flows into JSON_OBJECT/JSON_GROUP_OBJECT.
+    sqlite3_result_text(ctx, (const char*) dst, (int) actualSize, sqlite3_free);
 }
 
 void BedrockPlugin_Compression::registerSQLite(sqlite3* db)
