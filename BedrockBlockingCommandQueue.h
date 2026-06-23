@@ -57,6 +57,6 @@ private:
     map<string, size_t> _identifierCounts;
     map<string, uint64_t> _identifierTimes;
     atomic<size_t> _maxPerIdentifier{10};
-    atomic<uint64_t> _maxTimePerIdentifier{0};
+    atomic<uint64_t> _maxTimePerIdentifier{120'000'000}; // 120 seconds, in microseconds
     atomic<uint64_t> _emptyTime{0};
 };
