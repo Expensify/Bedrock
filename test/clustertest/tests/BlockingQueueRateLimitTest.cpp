@@ -204,9 +204,14 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
             t.join();
         }
 
-        // After traffic, the identifier's accumulated time should be visible in Status.
+        // Enforcement is log-only, so no command should be rejected with a 503.
+        ASSERT_EQUAL(count503.load(), 0);
+
+        // After traffic, the identifier's accumulated time should be visible in Status, and with the
+        // threshold at 1ms the active identifier must register as over the time limit.
         json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
         ASSERT_TRUE(json.find("blockingQueueIdentifierTimesMs") != json.end());
+        ASSERT_TRUE(SToInt(json["blockedTimeIdentifiers"]) >= 1);
 
         // ClearBlocks resets time and count state together.
         SData clearBlocks("SetBlockingQueueTimeRateLimit");
