@@ -34,12 +34,12 @@ public:
     size_t setMaxRequestsPerIdentifier(size_t value);
 
     // Set the max accumulated worker-0 execution time (microseconds) per identifier. Returns the previous value.
-    uint64_t setMaxTimePerIdentifier(uint64_t valueMicros);
+    uint64_t setMaxTimePerIdentifier(uint64_t valueUS);
 
     // Accumulate elapsed worker-0 execution time for `identifier`. Called by the blockingCommit worker
     // after each command finishes running. No-op when the time threshold is disabled (== 0). Time is
     // cumulative per identifier until the empty-queue reset clears it — it is never decremented per command.
-    void recordExecutionTime(const string& identifier, uint64_t elapsedMicros);
+    void recordExecutionTime(const string& identifier, uint64_t elapsedUS);
 
 protected:
     // Called by get() while _queueMutex is held; atomically decrements per-identifier counts

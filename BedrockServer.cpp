@@ -2086,8 +2086,8 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         if (command->request.isSet("MaxTimePerIdentifierMs")) {
             int64_t maxTimeMs = command->request.calc64("MaxTimePerIdentifierMs");
             if (maxTimeMs >= 0) {
-                uint64_t previousMicros = _blockingCommandQueue.setMaxTimePerIdentifier(static_cast<uint64_t>(maxTimeMs) * 1000);
-                response["previousMaxBlockingQueueTimePerIdentifierMs"] = to_string(previousMicros / 1000);
+                uint64_t previousUS = _blockingCommandQueue.setMaxTimePerIdentifier(static_cast<uint64_t>(maxTimeMs) * 1000);
+                response["previousMaxBlockingQueueTimePerIdentifierMs"] = to_string(previousUS / 1000);
                 SINFO("Setting blocking queue max time per identifier to " << maxTimeMs << "ms");
             }
         }

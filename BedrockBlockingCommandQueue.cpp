@@ -50,10 +50,10 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
 
         if (shouldCheckTime) {
             auto it = _identifierTimes.find(identifier);
-            const uint64_t timeMicros = (it == _identifierTimes.end()) ? 0 : it->second;
-            if (timeMicros > maxTimePerIdentifier) {
+            const uint64_t timeUS = (it == _identifierTimes.end()) ? 0 : it->second;
+            if (timeUS > maxTimePerIdentifier) {
                 SINFO("Blocking queue rate limit (time): rejecting '" << command->request.methodLine
-                      << "' for identifier '" << identifier << "' (timeMs=" << (timeMicros / 1000)
+                      << "' for identifier '" << identifier << "' (timeMs=" << (timeUS / 1000)
                       << ", thresholdMs=" << (maxTimePerIdentifier / 1000) << ")");
                 // TODO: enable enforcement after monitoring confirms thresholds are correct in production.
                 // Time-based rollback is not symmetric with count — the rejected command's
@@ -177,18 +177,18 @@ size_t BedrockBlockingCommandQueue::setMaxRequestsPerIdentifier(size_t value)
     return _maxPerIdentifier.exchange(value);
 }
 
-uint64_t BedrockBlockingCommandQueue::setMaxTimePerIdentifier(uint64_t valueMicros)
+uint64_t BedrockBlockingCommandQueue::setMaxTimePerIdentifier(uint64_t valueUS)
 {
-    return _maxTimePerIdentifier.exchange(valueMicros);
+    return _maxTimePerIdentifier.exchange(valueUS);
 }
 
-void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, uint64_t elapsedMicros)
+void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, uint64_t elapsedUS)
 {
     if (_maxTimePerIdentifier.load() == 0 || identifier.empty()) {
         return;
     }
     lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
-    _identifierTimes[identifier] += elapsedMicros;
+    _identifierTimes[identifier] += elapsedUS;
 }
 
 void BedrockBlockingCommandQueue::_decrementIdentifierCount(const string& identifier)
