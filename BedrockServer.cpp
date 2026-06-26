@@ -1042,7 +1042,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             } catch (const SException& e) {
                                 SINFO("Command '" << command->getMethodName() << "' timed out before commit.");
                             }
-                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit);
+                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit, &command->shouldAbort);
 
                             if (getState() != SQLiteNodeState::LEADING) {
                                 SINFO("Stopped leading while trying to commit, will retry.");
