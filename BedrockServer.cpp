@@ -1042,7 +1042,12 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             } catch (const SException& e) {
                                 SINFO("Command '" << command->getMethodName() << "' timed out before commit.");
                             }
+
+                            // We set the abortRef here, rather than inside `commit`, because commit is only aware of the transaction, not the command,
+                            // and thus does not have access to the command's properties.
+                            db.setAbortRef(command->shouldAbort);
                             commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit);
+                            db.clearAbortRef();
 
                             if (getState() != SQLiteNodeState::LEADING) {
                                 SINFO("Stopped leading while trying to commit, will retry.");

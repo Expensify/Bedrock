@@ -876,6 +876,11 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
                 break;
             }
 
+            if (_shouldAbortPtr && *_shouldAbortPtr) {
+                SINFO("Transaction was aborted while waiting for commitLock acquisition");
+                break;
+            }
+
             nextLockTimeout += 1s;
             if (nextLockTimeout > finalLockTimeout) {
                 nextLockTimeout = finalLockTimeout;
@@ -884,7 +889,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
         if (!lockAcquired) {
             // Couldn't get the lock in time. Roll back the open transaction.
-            SINFO("Timed out after " << chrono::duration_cast<chrono::microseconds>(commitLockTimeout).count()
+            SINFO("Timed out or aborted after " << chrono::duration_cast<chrono::microseconds>(commitLockTimeout).count()
                   << "us waiting for commit lock.");
             return false;
         }
