@@ -890,11 +890,12 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
             }
         }
 
+        bool abortPtrWasSet = _shouldAbortPtr && *_shouldAbortPtr;
         if (abortPtr) {
             clearAbortRef();
         }
 
-        if (_shouldAbortPtr && *_shouldAbortPtr) {
+        if (abortPtrWasSet) {
             SINFO("Transaction was aborted while waiting for commitLock acquisition.");
 
             // It's possible for us to get the lock, and also the caller sets the abort flag at the same time.
