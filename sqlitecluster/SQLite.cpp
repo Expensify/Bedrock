@@ -1018,7 +1018,8 @@ int SQLite::commit(const string& description, const string& commandName, functio
     _lastConflictLocation = _conflictLocation;
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
-    SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
+    // If there was a timeout, will return SQLITE_INTERRUPT.
+    SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT || result == SQLITE_INTERRUPT);
     if (result == SQLITE_OK) {
         char time[16];
         snprintf(time, 16, "%.2fms", (double) (STimeNow() - beforeCommit) / 1000.0);
@@ -1101,7 +1102,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
         // The commit failed, we will rollback.
     }
 
-    // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
+    // if we did not get SQLITE_OK, then we're *still* holding commitLock, and it will need to be unlocked by
     // calling rollback().
     return result;
 }
