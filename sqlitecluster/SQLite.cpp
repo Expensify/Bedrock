@@ -832,7 +832,7 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     return true;
 }
 
-bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout)
+bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr)
 {
     SASSERT(_insideTransaction);
 
@@ -869,6 +869,10 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         auto finalLockTimeout = start + commitLockTimeout;
         auto nextLockTimeout = start + min(commitLockTimeout, 1'000'000us);
 
+        if (abortPtr) {
+            setAbortRef(*abortPtr);
+        }
+
         bool lockAcquired = false;
         while (true) {
             lockAcquired = _sharedData.commitLock.try_lock_until(nextLockTimeout);
@@ -885,6 +889,10 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
             if (nextLockTimeout > finalLockTimeout) {
                 nextLockTimeout = finalLockTimeout;
             }
+        }
+
+        if (abortPtr) {
+            clearAbortRef();
         }
 
         if (!lockAcquired) {
