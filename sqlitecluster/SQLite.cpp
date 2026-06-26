@@ -1,5 +1,6 @@
 #include "SQLite.h"
 
+#include <chrono>
 #include <linux/limits.h>
 #include <string.h>
 
@@ -864,16 +865,33 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     if (!_mutexLocked) {
-        auto start = STimeNow();
-        if (!_sharedData.commitLock.try_lock_for(commitLockTimeout)) {
+        auto start = chrono::steady_clock::now();
+        auto finalLockTimeout = start + commitLockTimeout;
+        auto nextLockTimeout = start + min(commitLockTimeout, 1'000'000us);
+
+        bool lockAcquired = false;
+        while (true) {
+            lockAcquired = _sharedData.commitLock.try_lock_until(nextLockTimeout);
+            if (lockAcquired || chrono::steady_clock::now() >= finalLockTimeout) {
+                break;
+            }
+
+            nextLockTimeout += 1s;
+            if (nextLockTimeout > finalLockTimeout) {
+                nextLockTimeout = finalLockTimeout;
+            }
+        }
+
+        if (!lockAcquired) {
             // Couldn't get the lock in time. Roll back the open transaction.
             SINFO("Timed out after " << chrono::duration_cast<chrono::microseconds>(commitLockTimeout).count()
                   << "us waiting for commit lock.");
             return false;
         }
-        auto end = STimeNow();
-        if (end - start > 5'000) {
-            SINFO("Waited " << (end - start) << "us for commit lock.");
+
+        auto elapsed = chrono::steady_clock::now() - start;
+        if (elapsed > 5ms) {
+            SINFO("Waited " << chrono::duration_cast<chrono::microseconds>(elapsed) << "us for commit lock.");
         }
         _sharedData._commitLockTimer.start("SHARED");
         _mutexLocked = true;
