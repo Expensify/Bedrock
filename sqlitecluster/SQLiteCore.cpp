@@ -3,6 +3,7 @@
 #include "SQLiteCore.h"
 #include "SQLite.h"
 #include "SQLiteNode.h"
+#include "libstuff/sqlite3.h"
 
 SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 {
@@ -39,11 +40,14 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
 
     // Perform the actual commit, rollback if it fails.
     int errorCode = _db.commit(SQLiteNode::stateName(node.getState()), commandName);
-    if (errorCode == SQLITE_BUSY_SNAPSHOT) {
-        _db.rollback(commandName);
-        return false;
-    } else if (errorCode == SQLite::COMMIT_DISABLED) {
-        SINFO("Commits currently disabled, rolling back.");
+    if (errorCode) {
+        if (errorCode == SQLITE_BUSY_SNAPSHOT || errorCode == SQLITE_INTERRUPT) {
+            // No extra logging needed for expected cases.
+        } else if (errorCode == SQLite::COMMIT_DISABLED) {
+            SINFO("Commits currently disabled, rolling back.");
+        } else {
+            SWARN("Unexpected commit error: " << errorCode << ", rolling back.");
+        }
         _db.rollback(commandName);
         return false;
     }
