@@ -16,23 +16,10 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
     {
         AutoScopeOnPrepare onPrepare(needsPluginNotification, _db, notificationHandler);
 
-        // Allow commands to aport in prepare(), particularly, while waiting for the mutex.
-        if (abortPtr) {
-            _db.setAbortRef(*abortPtr);
-        }
-
-        bool prepareSuccess = false;
-        try {
-            // This will fail if we can't acquire the commit lock or the command has been aborted.
-            prepareSuccess = _db.prepare(&commitID, &transactionHash, commitLockTimeout);
-        } catch (const exception& e) {
-            // _onPrepareHandler can potentially throw, depending on what it does. Particularly if the abortPtr's value has become true.
-            // Since this function is noexcept, we convert this to a warning. The command will stil fail.
-            SWARN("Exception " << e.what() << " caught in prepare()");
-        }
-        _db.clearAbortRef();
-
-        if (!prepareSuccess) {
+        // This will fail only if we can't acquire the commit lock respecting the command timeout, which
+        // likely means our cluster health is not optimal. In this case, we want to roll back and
+        // return false, which will make the caller return the appropriate exception.
+        if (!_db.prepare(&commitID, &transactionHash, commitLockTimeout)) {
             _db.rollback(commandName);
             return false;
         }
@@ -54,8 +41,8 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
     // Perform the actual commit, rollback if it fails.
     int errorCode = _db.commit(SQLiteNode::stateName(node.getState()), commandName);
     if (errorCode) {
-        if (errorCode == SQLITE_BUSY_SNAPSHOT || errorCode == SQLITE_INTERRUPT) {
-            // No extra logging needed for expected cases.
+        if (errorCode == SQLITE_BUSY_SNAPSHOT) {
+            // No extra logging needed for expected case.
         } else if (errorCode == SQLite::COMMIT_DISABLED) {
             SINFO("Commits currently disabled, rolling back.");
         } else {

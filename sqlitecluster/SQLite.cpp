@@ -965,7 +965,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     return true;
 }
 
-int SQLite::commit(const string& description, const string& commandName, function<void()>* preCheckpointCallback) noexcept
+int SQLite::commit(const string& description, const string& commandName, function<void()>* preCheckpointCallback)
 {
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
@@ -1026,8 +1026,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
     _lastConflictLocation = _conflictLocation;
 
     // If there were conflicting commits, will return SQLITE_BUSY_SNAPSHOT
-    // If there was a timeout, will return SQLITE_INTERRUPT.
-    SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT || result == SQLITE_INTERRUPT);
+    SASSERT(result == SQLITE_OK || result == SQLITE_BUSY_SNAPSHOT);
     if (result == SQLITE_OK) {
         char time[16];
         snprintf(time, 16, "%.2fms", (double) (STimeNow() - beforeCommit) / 1000.0);
@@ -1057,15 +1056,10 @@ int SQLite::commit(const string& description, const string& commandName, functio
         // Only check for commits over 100ms.
         if (_commitElapsed > 100'000 && _hctree) {
             SQResult stats;
-            try {
-                if (read("SELECT * FROM hctstats", stats)) {
-                    for (const auto& row : stats) {
-                        SINFO("slow HC-Tree commit", {{"hctstats", SComposeList(row)}});
-                    }
+            if (read("SELECT * FROM hctstats", stats)) {
+                for (const auto& row : stats) {
+                    SINFO("slow HC-Tree commit", {{"hctstats", SComposeList(row)}});
                 }
-            } catch (const SException& e) {
-                // It's possible for the read to hit the timeout or abort flag, in which case, we need to handle that as this function is `noexcept`.
-                SINFO("Timeout or about gettings HC-Tree stats after commit. Ignoring.");
             }
         }
 
@@ -1115,7 +1109,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
         // The commit failed, we will rollback.
     }
 
-    // if we did not get SQLITE_OK, then we're *still* holding commitLock, and it will need to be unlocked by
+    // if we got SQLITE_BUSY_SNAPSHOT, then we're *still* holding commitLock, and it will need to be unlocked by
     // calling rollback().
     return result;
 }
