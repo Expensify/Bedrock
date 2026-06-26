@@ -881,7 +881,6 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
             }
 
             if (_shouldAbortPtr && *_shouldAbortPtr) {
-                SINFO("Transaction was aborted while waiting for commitLock acquisition");
                 break;
             }
 
@@ -895,9 +894,18 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
             clearAbortRef();
         }
 
-        if (!lockAcquired) {
-            // Couldn't get the lock in time. Roll back the open transaction.
-            SINFO("Timed out or aborted after " << chrono::duration_cast<chrono::microseconds>(commitLockTimeout).count()
+        if (_shouldAbortPtr && *_shouldAbortPtr) {
+            SINFO("Transaction was aborted while waiting for commitLock acquisition.");
+
+            // It's possible for us to get the lock, and also the caller sets the abort flag at the same time.
+            // In this case, we still abort, but we need to make sure that the lock isn't held, as _mutexLocked is
+            // not yet set and so won't get reset in a call to rollback().
+            if (lockAcquired) {
+                _sharedData.commitLock.unlock();
+            }
+            return false;
+        } else if (!lockAcquired) {
+            SINFO("Timed out after " << chrono::duration_cast<chrono::microseconds>(commitLockTimeout).count()
                   << "us waiting for commit lock.");
             return false;
         }
