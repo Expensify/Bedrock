@@ -957,7 +957,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     return true;
 }
 
-int SQLite::commit(const string& description, const string& commandName, function<void()>* preCheckpointCallback)
+int SQLite::commit(const string& description, const string& commandName, function<void()>* preCheckpointCallback) noexcept
 {
     // If commits have been disabled, return an error without attempting the commit.
     if (!_sharedData._commitEnabled) {
@@ -1049,10 +1049,15 @@ int SQLite::commit(const string& description, const string& commandName, functio
         // Only check for commits over 100ms.
         if (_commitElapsed > 100'000 && _hctree) {
             SQResult stats;
-            if (read("SELECT * FROM hctstats", stats)) {
-                for (const auto& row : stats) {
-                    SINFO("slow HC-Tree commit", {{"hctstats", SComposeList(row)}});
+            try {
+                if (read("SELECT * FROM hctstats", stats)) {
+                    for (const auto& row : stats) {
+                        SINFO("slow HC-Tree commit", {{"hctstats", SComposeList(row)}});
+                    }
                 }
+            } catch (const SException& e) {
+                // It's possible for the read to hit the timeout or abort flag, in which case, we need to handle that as this function is `noexcept`.
+                SINFO("Timeout or about gettings HC-Tree stats after commit. Ignoring.");
             }
         }
 
