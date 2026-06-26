@@ -225,7 +225,7 @@ void _SSignal_StackTrace(int signum, siginfo_t* info, void* ucontext)
                 if (callstack) {
                     free(callstack);
                 }
-                callstack = (void**) malloc(sizeof(void*) * max_depth);
+                callstack = (void**) calloc(max_depth, sizeof(void*));
                 depth = backtrace(callstack, max_depth);
                 if (depth == max_depth) {
                     max_depth *= 2;
