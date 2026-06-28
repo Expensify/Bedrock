@@ -1,5 +1,6 @@
 #include "SQLite.h"
 
+#include <chrono>
 #include <linux/limits.h>
 #include <string.h>
 
@@ -831,7 +832,7 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     return true;
 }
 
-bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout)
+bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr)
 {
     SASSERT(_insideTransaction);
 
@@ -864,16 +865,55 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
     // We lock this here, so that we can guarantee the order in which commits show up in the database.
     if (!_mutexLocked) {
-        auto start = STimeNow();
-        if (!_sharedData.commitLock.try_lock_for(commitLockTimeout)) {
-            // Couldn't get the lock in time. Roll back the open transaction.
+        auto start = chrono::steady_clock::now();
+        auto finalLockTimeout = start + commitLockTimeout;
+        auto nextLockTimeout = start + min(commitLockTimeout, 1'000'000us);
+
+        if (abortPtr) {
+            setAbortRef(*abortPtr);
+        }
+
+        bool lockAcquired = false;
+        while (true) {
+            lockAcquired = _sharedData.commitLock.try_lock_until(nextLockTimeout);
+            if (lockAcquired || chrono::steady_clock::now() >= finalLockTimeout) {
+                break;
+            }
+
+            if (_shouldAbortPtr && *_shouldAbortPtr) {
+                break;
+            }
+
+            nextLockTimeout += 1s;
+            if (nextLockTimeout > finalLockTimeout) {
+                nextLockTimeout = finalLockTimeout;
+            }
+        }
+
+        bool abortPtrWasSet = _shouldAbortPtr && *_shouldAbortPtr;
+        if (abortPtr) {
+            clearAbortRef();
+        }
+
+        if (abortPtrWasSet) {
+            SINFO("Transaction was aborted while waiting for commitLock acquisition.");
+
+            // It's possible for us to get the lock, and also the caller sets the abort flag at the same time.
+            // In this case, we still abort, but we need to make sure that the lock isn't held, as _mutexLocked is
+            // not yet set and so won't get reset in a call to rollback().
+            if (lockAcquired) {
+                _sharedData.commitLock.unlock();
+            }
+            return false;
+        } else if (!lockAcquired) {
             SINFO("Timed out after " << chrono::duration_cast<chrono::microseconds>(commitLockTimeout).count()
                   << "us waiting for commit lock.");
             return false;
         }
-        auto end = STimeNow();
-        if (end - start > 5'000) {
-            SINFO("Waited " << (end - start) << "us for commit lock.");
+
+        auto elapsed = chrono::steady_clock::now() - start;
+        if (elapsed > 5ms) {
+            SINFO("Waited " << chrono::duration_cast<chrono::microseconds>(elapsed) << "us for commit lock.");
         }
         _sharedData._commitLockTimer.start("SHARED");
         _mutexLocked = true;

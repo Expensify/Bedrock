@@ -3,22 +3,22 @@
 #include "SQLiteCore.h"
 #include "SQLite.h"
 #include "SQLiteNode.h"
+#include "libstuff/sqlite3.h"
 
 SQLiteCore::SQLiteCore(SQLite& db) : _db(db)
 {
 }
 
-bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, const string& commandName, bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID), chrono::microseconds commitLockTimeout) noexcept
+bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& transactionHash, const string& commandName, bool needsPluginNotification, void (*notificationHandler)(SQLite& _db, int64_t tableID), chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr) noexcept
 {
     // This handler only needs to exist in prepare so we scope it here to automatically unset
     // the handler function once we are done with prepare.
     {
         AutoScopeOnPrepare onPrepare(needsPluginNotification, _db, notificationHandler);
 
-        // This will fail only if we can't acquire the commit lock respecting the command timeout, which
-        // likely means our cluster health is not optimal. In this case, we want to roll back and
-        // return false, which will make the caller return the appropriate exception.
-        if (!_db.prepare(&commitID, &transactionHash, commitLockTimeout)) {
+        // This will fail only if we can't acquire the commit lock respecting the command timeout, or the command is aborted while waiting for it.
+        // In this case, we want to roll back and return false, which will make the caller return the appropriate exception.
+        if (!_db.prepare(&commitID, &transactionHash, commitLockTimeout, abortPtr)) {
             _db.rollback(commandName);
             return false;
         }
@@ -39,11 +39,14 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
 
     // Perform the actual commit, rollback if it fails.
     int errorCode = _db.commit(SQLiteNode::stateName(node.getState()), commandName);
-    if (errorCode == SQLITE_BUSY_SNAPSHOT) {
-        _db.rollback(commandName);
-        return false;
-    } else if (errorCode == SQLite::COMMIT_DISABLED) {
-        SINFO("Commits currently disabled, rolling back.");
+    if (errorCode) {
+        if (errorCode == SQLITE_BUSY_SNAPSHOT) {
+            // No extra logging needed for expected case.
+        } else if (errorCode == SQLite::COMMIT_DISABLED) {
+            SINFO("Commits currently disabled, rolling back.");
+        } else {
+            SWARN("Unexpected commit error: " << errorCode << ", rolling back.");
+        }
         _db.rollback(commandName);
         return false;
     }

@@ -1042,7 +1042,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             } catch (const SException& e) {
                                 SINFO("Command '" << command->getMethodName() << "' timed out before commit.");
                             }
-                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit);
+                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit, &command->shouldAbort);
 
                             if (getState() != SQLiteNodeState::LEADING) {
                                 SINFO("Stopped leading while trying to commit, will retry.");
@@ -1067,7 +1067,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         } else if (!core.isTimedOut(command, &db, this)) {
                             // One of the reasons the commit failed might be because of a timeout. If that's the case,
                             // then we skip this part since everything will be done in the method call above.
-                            SINFO("Conflict or state change committing " << command->request.methodLine);
+                            SINFO("Conflict, abort, or state change committing " << command->request.methodLine);
                             if (_enableConflictPageLocks) {
                                 lastConflictLocation = db.getLastConflictLocation();
 
