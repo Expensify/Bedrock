@@ -716,7 +716,16 @@ void BedrockServer::worker(int threadId)
             SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
                   << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
 
+            // Capture the identifier and start time so we can attribute worker-0 execution time
+            // back to the per-identifier rate-limit accumulator after the command finishes.
+            const string blockingIdentifier = (threadId == 0) ? command->blockingQueueRateLimitIdentifier : "";
+            const uint64_t blockingStart = (threadId == 0 && !blockingIdentifier.empty()) ? STimeNow() : 0;
+
             runCommand(move(command), threadId == 0, false);
+
+            if (blockingStart) {
+                _blockingCommandQueue.recordExecutionTime(blockingIdentifier, STimeNow() - blockingStart);
+            }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
             // If the sync node has shut down, we can return now, there will be no more work to do.
@@ -1951,6 +1960,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "UnblockWrites") ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads") ||
         SIEquals(command->request.methodLine, "SetBlockingQueueRateLimit") ||
+        SIEquals(command->request.methodLine, "SetBlockingQueueTimeRateLimit") ||
         SIEquals(command->request.methodLine, "ClearBlockingQueue") ||
         SIEquals(command->request.methodLine, "SetPriority") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
@@ -2079,6 +2089,18 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
                 size_t previous = _blockingCommandQueue.setMaxRequestsPerIdentifier(maxPerIdentifier);
                 response["previousMaxBlockingQueuePerIdentifier"] = to_string(previous);
                 SINFO("Setting blocking queue max per identifier to " << maxPerIdentifier);
+            }
+        }
+        if (command->request.test("ClearBlocks")) {
+            _blockingCommandQueue.clearRateLimits();
+        }
+    } else if (SIEquals(command->request.methodLine, "SetBlockingQueueTimeRateLimit")) {
+        if (command->request.isSet("MaxTimePerIdentifierMs")) {
+            int64_t maxTimeMs = command->request.calc64("MaxTimePerIdentifierMs");
+            if (maxTimeMs >= 0) {
+                uint64_t previousUS = _blockingCommandQueue.setMaxTimePerIdentifier(static_cast<uint64_t>(maxTimeMs) * 1000);
+                response["previousMaxBlockingQueueTimePerIdentifierMs"] = to_string(previousUS / 1000);
+                SINFO("Setting blocking queue max time per identifier to " << maxTimeMs << "ms");
             }
         }
         if (command->request.test("ClearBlocks")) {
