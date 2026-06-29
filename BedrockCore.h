@@ -81,5 +81,8 @@ private:
 
     static void _handleCommandException(unique_ptr<BedrockCommand>& command, const SException& e, SQLite* db = nullptr, const BedrockServer* server = nullptr);
 
+    // Throws "556 Aborted" if the command's originating connection has dropped (signalled via `command->shouldAbort`).
+    static void _throwIfAborted(const unique_ptr<BedrockCommand>& command);
+
     const BedrockServer& _server;
 };

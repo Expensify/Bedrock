@@ -17,7 +17,7 @@
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 #include <libstuff/AutoTimer.h>
-#include <PageLockGuard.h>
+#include <ConflictLockGuard.h>
 #include <sqlitecluster/SQLitePeer.h>
 
 set<string> BedrockServer::_blacklistedParallelCommands;
@@ -441,11 +441,6 @@ void BedrockServer::sync()
             // Record the time spent.
             command->stopTiming(BedrockCommand::COMMIT_SYNC);
 
-            if (command->shouldPostProcess() && command->response.methodLine == "200 OK") {
-                // PostProcess if the command should run postProcess, and there have been no errors thrown thus far.
-                core.postProcessCommand(command, false);
-            }
-
             if (_syncNode->commitSucceeded()) {
                 SINFO("Sync thread finished committing command " << command->request.methodLine);
                 _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
@@ -453,7 +448,6 @@ void BedrockServer::sync()
                 // Otherwise, save the commit count, mark this command as complete, and reply.
                 command->response["commitCount"] = to_string(db.getCommitCount());
                 command->complete = true;
-                _reply(command);
             } else {
                 // This should only happen if the cluster becomes largely disconnected while we were in the process of
                 // committing a QUORUM command - if we no longer have enough peers to reach QUORUM, we'll fall out of
@@ -465,6 +459,16 @@ void BedrockServer::sync()
                       << " after failed sync commit. Sync thread has " << _syncNodeQueuedCommands.size()
                       << " queued commands.");
                 _syncNodeQueuedCommands.push(move(command));
+            }
+
+            // If the command was completed above, then we'll go ahead and respond.
+            if (command->complete) {
+                if (command->shouldPostProcess() && command->response.methodLine == "200 OK") {
+                    // PostProcess if the command should run postProcess, and there have been no errors thrown thus far.
+                    core.postProcessCommand(command, false);
+                }
+
+                _reply(command);
             }
         }
 
@@ -876,7 +880,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             (_blacklistedParallelCommands.find(command->request.methodLine) == _blacklistedParallelCommands.end());
     }
 
-    int64_t lastConflictPage = 0;
+    int64_t lastConflictIdentifier = 0;
     string lastConflictLocation;
     while (true) {
         // More checks for parallel writing.
@@ -942,13 +946,13 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
             auto* timer = new BedrockCore::AutoTimer(command, BedrockCommand::QUEUE_PAGE_LOCK);
             uint64_t conflictLockStartTime = 0;
-            if (lastConflictPage) {
+            if (lastConflictIdentifier) {
                 conflictLockStartTime = STimeNow();
             }
             {
-                PageLockGuard pageLock(lastConflictPage);
-                if (lastConflictPage) {
-                    SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on db page " << lastConflictPage << ".");
+                ConflictLockGuard conflictLock(lastConflictIdentifier);
+                if (lastConflictIdentifier) {
+                    SINFO("Waited " << (STimeNow() - conflictLockStartTime) << "us for lock on conflict key " << lastConflictIdentifier << " (" << lastConflictLocation << ").");
                 }
                 delete timer;
 
@@ -1047,7 +1051,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             } catch (const SException& e) {
                                 SINFO("Command '" << command->getMethodName() << "' timed out before commit.");
                             }
-                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit);
+                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit, &command->shouldAbort);
 
                             if (getState() != SQLiteNodeState::LEADING) {
                                 SINFO("Stopped leading while trying to commit, will retry.");
@@ -1072,7 +1076,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         } else if (!core.isTimedOut(command, &db, this)) {
                             // One of the reasons the commit failed might be because of a timeout. If that's the case,
                             // then we skip this part since everything will be done in the method call above.
-                            SINFO("Conflict or state change committing " << command->request.methodLine);
+                            SINFO("Conflict, abort, or state change committing " << command->request.methodLine);
                             if (_enableConflictPageLocks) {
                                 lastConflictLocation = db.getLastConflictLocation();
 
@@ -1081,7 +1085,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                                 // don't need to lock our next commit on this page conflict.
                                 // Plugins may define other tables on which we should not lock our next commit.
                                 if (!SStartsWith(lastConflictLocation, "journal") && (command->getPlugin() == nullptr || command->getPlugin()->shouldLockCommitPageOnConflict(lastConflictLocation))) {
-                                    lastConflictPage = db.getLastConflictPage();
+                                    lastConflictIdentifier = db.getLastConflictIdentifier();
                                 }
                             }
                         }
@@ -1391,7 +1395,7 @@ BedrockServer::BedrockServer(const SData& args_)
     if (args.isSet("-dbPoolSize")) {
         _dbPoolSize = args.calcU64("-dbPoolSize");
     } else {
-        _dbPoolSize = args.isSet("-live") ? 25'000 : 250;
+        _dbPoolSize = args.isSet("-live") ? DEFAULT_POOL_SIZE : 250;
     }
 
     if (args.isSet("-maxSocketThreads")) {
@@ -1725,6 +1729,11 @@ list<STable> BedrockServer::getPeerInfo()
     return peerData;
 }
 
+const string& BedrockServer::getVersion() const
+{
+    return _version;
+}
+
 void BedrockServer::setDetach(bool detach)
 {
     if (detach) {
@@ -1776,11 +1785,14 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
     } else if (SIEquals(request.methodLine, STATUS_HANDLING_COMMANDS)) {
         // This is similar to the above check, and is used for letting HAProxy load-balance commands.
 
+        const string leaderVersion = _leaderVersion.load();
         if (_shouldBackup) {
             response.methodLine = "HTTP/1.1 503 Backup In Progress";
         } else if (_detach) {
             response.methodLine = "HTTP/1.1 503 Detached";
-        } else if (_version != _leaderVersion.load()) {
+        } else if (!leaderVersion.empty() && _version != leaderVersion) {
+            // Only a genuine mismatch when the leader's version is known. While SYNCHRONIZING/SEARCHING the leader
+            // version is empty, so fall through to the state-based check below to report the accurate state.
             response.methodLine = "HTTP/1.1 500 Mismatched version. Version=" + _version;
         } else {
             string method = "HTTP/1.1 ";

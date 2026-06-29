@@ -174,7 +174,7 @@ public:
     // The commitLockTimeout, if passed, will limit the time we wait for the lock. If not, we'll use 24 hours, which
     // is effectively no timeout.
     // Note that if this transaction fails to commit, these will not ultimately be accurate.
-    bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24));
+    bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr);
 
     // This enables or disables automatic re-writing. This feature is to support mocked requests and load testing. This
     // overloads set_authorizer to allow a plugin to deny certain queries from running (currently based only on the
@@ -328,7 +328,7 @@ public:
     // public read-only accessor for _dbCountAtStart.
     uint64_t getDBCountAtStart() const;
 
-    int64_t getLastConflictPage() const;
+    int64_t getLastConflictIdentifier() const;
 
     string getLastConflictLocation() const;
 
@@ -504,7 +504,7 @@ private:
 
     atomic<int64_t> _lastConflictPage = 0;
     atomic<string> _lastConflictLocation;
-    static thread_local int64_t _conflictPage;
+    static thread_local int64_t _conflictIdentifier;
     static thread_local string _conflictLocation;
 
     bool _writeIdempotent(const string& query, const map<string, Parameter>& params, SQResult& result, bool alwaysKeepQueries = false);
@@ -591,14 +591,6 @@ private:
     // by one. That is, the first paramter passed to the callback funciton is actually the integer action code, not the
     // second.
     int _authorize(int actionCode, const char* detail1, const char* detail2, const char* detail3, const char* detail4);
-
-    // It's possible for certain transactions (namely, timing out a write operation, see here:
-    // https://sqlite.org/c3ref/interrupt.html) to cause a transaction to be automatically rolled back. If this
-    // happens, we store a flag internally indicating that we don't need to perform the rollback ourselves. Then when
-    // `rollback` is called, we don't double-rollback, generating an error. This allows the externally visible SQLite
-    // API to be consistent and not have to handle this special case. Consumers can just always call `rollback` after a
-    // failed query, regardless of whether or not it was already rolled back internally.
-    mutable bool _autoRolledBack = false;
 
     bool _noopUpdateMode = false;
 

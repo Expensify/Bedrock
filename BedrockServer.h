@@ -204,6 +204,9 @@ public:
     // peers, or no sync node.
     list<STable> getPeerInfo();
 
+    // Returns our own version string, as advertised to peers when we log in.
+    const string& getVersion() const;
+
     // Send a command to all of our peers. It will be wrapped appropriately.
     // If peerName is specified, command will be sent to only that peer.
     void broadcastCommand(const SData& message, const string& peerName = "");
@@ -482,7 +485,7 @@ private:
     SSynchronizedQueue<bool> _notifyDone;
     SSynchronizedQueue<bool> _notifyDoneSync;
 
-    static const size_t DEFAULT_POOL_SIZE = 25'000;
+    static const size_t DEFAULT_POOL_SIZE = 5'000;
     atomic<size_t> _maxSocketThreads{DEFAULT_POOL_SIZE};
     atomic<size_t> _dbPoolSize{DEFAULT_POOL_SIZE};
 };

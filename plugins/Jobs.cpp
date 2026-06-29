@@ -7,6 +7,10 @@
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << getName() << "} "
 
+// Only SCHEDULED repeats shorter than this re-anchor to now after a missed window; longer intervals
+// keep their scheduled time since they may need to run on a specific calendar date.
+static constexpr int64_t REPEAT_REANCHOR_THRESHOLD_SECONDS = 4 * 60 * 60;
+
 const int64_t BedrockPlugin_Jobs::JOBS_DEFAULT_PRIORITY = 500;
 const string BedrockPlugin_Jobs::name("Jobs");
 const string& BedrockPlugin_Jobs::getName() const
@@ -1382,41 +1386,93 @@ string BedrockJobsCommand::_constructNextRunDATETIME(SQLite& db, const string& l
     }
 
     // Make sure the first part indicates the base (eg, what we are modifying)
-    string nextRun = parts.front();
+    const string base = parts.front();
     parts.pop_front();
-    if (nextRun == "SCHEDULED") {
-        nextRun = SQ(lastScheduled);
-    } else if (nextRun == "STARTED") {
-        nextRun = SQ(lastRun);
-    } else if (nextRun == "FINISHED") {
-        nextRun = SCURRENT_TIMESTAMP();
+    string baseExpr;
+    if (base == "SCHEDULED") {
+        baseExpr = SQ(lastScheduled);
+    } else if (base == "STARTED") {
+        baseExpr = SQ(lastRun);
+    } else if (base == "FINISHED") {
+        baseExpr = SCURRENT_TIMESTAMP();
     } else {
-        SWARN("Syntax error, failed parsing repeat '" << repeat << "': missing base (" << nextRun << ")");
+        SWARN("Syntax error, failed parsing repeat '" << repeat << "': missing base (" << base << ")");
         return "";
     }
 
-    for (const string& part : parts) {
-        // This isn't supported natively by SQLite, so do it manually here instead.
-        if (SToUpper(part) == "START OF HOUR") {
-            SQResult result;
-            if (!db.read("SELECT STRFTIME('%Y-%m-%d %H:00:00', " + nextRun + ");", result) || result.empty()) {
+    // Apply the repeat's date modifiers to a base timestamp, returning the result as a quoted SQL
+    // literal (or "" on a syntax error).
+    auto applyModifiers = [&](const string& startExpr) -> string {
+        string current = startExpr;
+        for (const string& part : parts) {
+            // This isn't supported natively by SQLite, so do it manually here instead.
+            if (SToUpper(part) == "START OF HOUR") {
+                SQResult result;
+                if (!db.read("SELECT STRFTIME('%Y-%m-%d %H:00:00', " + current + ");", result) || result.empty()) {
+                    SWARN("Syntax error, failed parsing repeat " + part);
+                    return "";
+                }
+
+                current = SQ(result[0][0]);
+            } else if (!SIsValidSQLiteDateModifier(part)) {
+                // Validate the sqlite date modifiers
                 SWARN("Syntax error, failed parsing repeat " + part);
                 return "";
-            }
+            } else {
+                SQResult result;
+                if (!db.read("SELECT DATETIME(" + current + ", " + SQ(part) + ");", result) || result.empty()) {
+                    SWARN("Syntax error, failed parsing repeat " + part);
+                    return "";
+                }
 
-            nextRun = SQ(result[0][0]);
-        } else if (!SIsValidSQLiteDateModifier(part)) {
-            // Validate the sqlite date modifiers
-            SWARN("Syntax error, failed parsing repeat " + part);
+                current = SQ(result[0][0]);
+            }
+        }
+        return current;
+    };
+
+    string nextRun = applyModifiers(baseExpr);
+    if (nextRun.empty()) {
+        return "";
+    }
+
+    // After an outage, every missed SCHEDULED job becomes runnable at once (thundering herd). Skip the missed
+    // cycles to each job's next phase slot to preserve stagger; leave long intervals for calendar-bound jobs.
+    if (base == "SCHEDULED") {
+        const string nowExpr = SCURRENT_TIMESTAMP();
+        SQResult result;
+        if (!db.read("SELECT " + nextRun + " <= " + nowExpr + ", "
+                     "STRFTIME('%s', " + nextRun + ") - STRFTIME('%s', " + SQ(lastScheduled) + "), "
+                     "STRFTIME('%s', " + nowExpr + ") - STRFTIME('%s', " + SQ(lastScheduled) + ");", result) || result.empty()) {
+            SWARN("Failed evaluating SCHEDULED repeat staleness for '" << repeat << "'");
             return "";
-        } else {
-            SQResult result;
-            if (!db.read("SELECT DATETIME(" + nextRun + ", " + SQ(part) + ");", result) || result.empty()) {
-                SWARN("Syntax error, failed parsing repeat " + part);
-                return "";
+        }
+        const bool missedWindow = result[0][0] == "1";
+        const int64_t intervalSeconds = SToInt64(result[0][1]);
+        const int64_t secondsBehind = SToInt64(result[0][2]);
+
+        // Only worth re-anchoring if the window was missed and the interval is short enough.
+        if (missedWindow && intervalSeconds > 0 && intervalSeconds < REPEAT_REANCHOR_THRESHOLD_SECONDS) {
+            // Only fixed-offset modifiers (eg "+30 SECONDS") have a constant period we can skip by arithmetic.
+            // Snapping modifiers like "START OF HOUR" round the result, so their realized delta isn't the period;
+            // leave those to their own (coarse, low-volume) catch-up rather than re-anchor them off-schedule.
+            bool fixedInterval = true;
+            for (const string& part : parts) {
+                if (part.empty() || (part.front() != '+' && part.front() != '-')) {
+                    fixedInterval = false;
+                    break;
+                }
             }
 
-            nextRun = SQ(result[0][0]);
+            if (fixedInterval) {
+                // Jump whole intervals past lastScheduled to the first slot after now, keeping each job's phase.
+                const int64_t skipSeconds = (secondsBehind / intervalSeconds + 1) * intervalSeconds;
+                if (!db.read("SELECT DATETIME(" + SQ(lastScheduled) + ", '+" + SToStr(skipSeconds) + " SECONDS');", result) || result.empty()) {
+                    SWARN("Failed re-anchoring SCHEDULED repeat for '" << repeat << "'");
+                    return "";
+                }
+                nextRun = SQ(result[0][0]);
+            }
         }
     }
 

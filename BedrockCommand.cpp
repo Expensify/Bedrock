@@ -123,15 +123,21 @@ void BedrockCommand::_waitForHTTPSRequests()
         // from the the point of the list of known completed request.
         auto requestIt = (_lastContiguousCompletedTransaction == httpsRequests.end()) ? httpsRequests.begin() : _lastContiguousCompletedTransaction;
 
-        // Wait until the command's timeout, or break early if the command has timed out.
+        // Wait until the command's timeout, or break early if the command has timed out or the connection that
+        // originated this command has dropped (in which case there's nobody left to receive the response).
         uint64_t maxWaitUs = 0;
         uint64_t now = STimeNow();
         if (!startTime) {
             startTime = now;
         }
-        if (now < timeout()) {
+        bool aborted = socket && shouldAbort.load();
+        if (now < timeout() && !aborted) {
             maxWaitUs = timeout() - now;
         } else {
+            if (aborted) {
+                SINFO("Abandoning in-flight HTTPS requests, originating connection dropped.");
+            }
+
             // Look at all our uncompleted requests, mark them failed.
             while (requestIt != httpsRequests.end()) {
                 if (!(*requestIt)->response) {
@@ -140,7 +146,7 @@ void BedrockCommand::_waitForHTTPSRequests()
                 requestIt++;
             }
 
-            // Timed everything out, can return.
+            // Timed everything out (or abandoned them), can return.
             break;
         }
 

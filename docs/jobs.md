@@ -27,6 +27,7 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
    * *data* - New data object to associate with the job
    * *repeat* - A description of how often to repeat this job (optional)
    * *jobPriority* - New priority of the job (optional)
+   * *nextRun* - When to next run the job, as a `YYYY-MM-DD HH:MM:SS` UTC datetime (optional); takes priority over the schedule computed from *repeat*
 
  * **QueryJob( jobID )** - Retrieves the current state and data associated with a job.
    * *jobID* - Identifier of the job to query

@@ -31,3 +31,8 @@ string SRandom::randStr(unsigned length)
     }
     return newstr;
 }
+
+bool SRandom::randBool(const double probability)
+{
+    return bernoulli_distribution(probability)(_generator);
+}
