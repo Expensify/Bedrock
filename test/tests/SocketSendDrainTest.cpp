@@ -34,7 +34,9 @@ struct SocketSendDrainTest : tpunit::TestFixture
     // A no-op handler is all that's needed here: the point isn't to do anything on receipt, it's to interrupt
     // whatever blocking syscall is in flight. Registered without SA_RESTART (see below) so the interrupted
     // send() doesn't get silently resumed by the kernel/libc.
-    static void noopSignalHandler(int) {}
+    static void noopSignalHandler(int)
+    {
+    }
 
     // Mirrors the fixed pattern in BedrockServer::_reply(): loop send() until the socket's sendBuffer is
     // fully drained (or a hard error occurs) before shutting down, instead of assuming a single send() call
