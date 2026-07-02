@@ -596,12 +596,12 @@ bool SQLite::addColumn(const string& tableName, const string& column, const stri
     return false;
 }
 
-string SQLite::read(const string& query)
+string SQLite::read(const string& query) const
 {
     return read(query, map<string, Parameter>{});
 }
 
-string SQLite::read(const string& query, const map<string, Parameter>& params)
+string SQLite::read(const string& query, const map<string, Parameter>& params) const
 {
     SQResult result;
     if (!read(query, params, result)) {
@@ -613,12 +613,12 @@ string SQLite::read(const string& query, const map<string, Parameter>& params)
     return result[0][0];
 }
 
-int SQLite::read(const string& query, sqlite3_qrf_spec* spec)
+int SQLite::read(const string& query, sqlite3_qrf_spec* spec) const
 {
     return read(query, {}, spec);
 }
 
-int SQLite::read(const string& query, const map<string, Parameter>& params, sqlite3_qrf_spec* spec) 
+int SQLite::read(const string& query, const map<string, Parameter>& params, sqlite3_qrf_spec* spec) const
 {
     // Execute the read-only query. Skips caching.
     uint64_t before = STimeNow();
@@ -629,12 +629,12 @@ int SQLite::read(const string& query, const map<string, Parameter>& params, sqli
     return queryResult;
 }
 
-bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn)
+bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) const
 {
     return read(query, {}, result, skipInfoWarn);
 }
 
-bool SQLite::read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn)
+bool SQLite::read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn) const
 {
     uint64_t before = STimeNow();
     bool queryResult = false;
