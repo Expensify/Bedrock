@@ -1,5 +1,6 @@
 #include "STCPManager.h"
 
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>
@@ -276,6 +277,10 @@ bool STCPManager::Socket::send(const string& buffer, size_t* bytesSentCount)
 
 bool STCPManager::Socket::sendAll(const string& buffer)
 {
+    // A non-blocking socket would make this loop busy-spin retrying send() while waiting for the kernel's send
+    // buffer to drain, instead of blocking like it's meant to. Catch that misuse here rather than burning CPU.
+    SASSERT(!(fcntl(s, F_GETFL) & O_NONBLOCK));
+
     bool sendSucceeded = send(buffer);
     while (sendSucceeded && !sendBufferEmpty()) {
         sendSucceeded = send();
