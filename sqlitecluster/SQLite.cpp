@@ -624,8 +624,8 @@ int SQLite::read(const string& query, const map<string, Parameter>& params, sqli
     uint64_t before = STimeNow();
     SQResult ignore;
     int queryResult = SQuery(_db, query, ignore, 0, true, spec, params);
-    _checkInterruptErrors("SQLite::read"s);
     _readElapsed += STimeNow() - before;
+    _checkInterruptErrors("SQLite::read"s);
     return queryResult;
 }
 
@@ -653,8 +653,8 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
             _queryCache.emplace(make_pair(query, result));
         }
     }
-    _checkInterruptErrors("SQLite::read"s);
     _readElapsed += STimeNow() - before;
+    _checkInterruptErrors("SQLite::read"s);
     return queryResult;
 }
 
@@ -810,8 +810,8 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
         throw constraint_error();
     }
 
-    _checkInterruptErrors("SQLite::write"s);
     _writeElapsed += STimeNow() - before;
+    _checkInterruptErrors("SQLite::write"s);
     if (resultCode) {
         _currentlyWriting = false;
         return false;
