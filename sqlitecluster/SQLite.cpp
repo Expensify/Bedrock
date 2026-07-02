@@ -640,15 +640,6 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
     bool queryResult = false;
     _readQueryCount++;
 
-    // If we're not inside a transaction, let's start one so we know exaclty how long we're holding transactions for.
-    // SQLite will automatically start a transaction if we don't do so, and by doing so, it will also continue to hold
-    // WAL files. So let's keep control of our transactions, and log when we roll it back so we can actually see the
-    // impact those queries are doing.
-    bool shouldBeginTransaction = !_insideTransaction;
-    if(shouldBeginTransaction) {
-        beginTransaction();
-    }
-
     // The query cache is keyed on SQL text only — different bound-parameter values for the same SQL would
     // share a cache entry. Skip the cache entirely when params are present.
     auto foundQuery = params.empty() ? _queryCache.find(query) : _queryCache.end();
@@ -663,9 +654,15 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
             _queryCache.emplace(make_pair(query, result));
         }
     }
-    _readElapsed += STimeNow() - before;
-    if(shouldBeginTransaction) {
-        rollback();
+    uint64_t timeSpent = STimeNow() - before;
+    _readElapsed += timeSpent;
+
+    // If we're not inside a transaction, SQLite will automatically start a transaction when we execute the read,
+    // and it will also hold the WAL files with those. Let's add a specific log line for this case.
+    if(!_insideTransaction) {
+        SINFO("Read with auto-transaction timing info", {
+            {"totalTransactionElapsed", to_string(timeSpent / 1000)},
+        });
     }
     _checkInterruptErrors("SQLite::read"s);
     return queryResult;
