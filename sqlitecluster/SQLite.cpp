@@ -596,12 +596,12 @@ bool SQLite::addColumn(const string& tableName, const string& column, const stri
     return false;
 }
 
-string SQLite::read(const string& query) const
+string SQLite::read(const string& query)
 {
     return read(query, map<string, Parameter>{});
 }
 
-string SQLite::read(const string& query, const map<string, Parameter>& params) const
+string SQLite::read(const string& query, const map<string, Parameter>& params)
 {
     SQResult result;
     if (!read(query, params, result)) {
@@ -613,12 +613,12 @@ string SQLite::read(const string& query, const map<string, Parameter>& params) c
     return result[0][0];
 }
 
-int SQLite::read(const string& query, sqlite3_qrf_spec* spec) const
+int SQLite::read(const string& query, sqlite3_qrf_spec* spec)
 {
     return read(query, {}, spec);
 }
 
-int SQLite::read(const string& query, const map<string, Parameter>& params, sqlite3_qrf_spec* spec) const
+int SQLite::read(const string& query, const map<string, Parameter>& params, sqlite3_qrf_spec* spec) 
 {
     // Execute the read-only query. Skips caching.
     uint64_t before = STimeNow();
@@ -629,16 +629,26 @@ int SQLite::read(const string& query, const map<string, Parameter>& params, sqli
     return queryResult;
 }
 
-bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn) const
+bool SQLite::read(const string& query, SQResult& result, bool skipInfoWarn)
 {
     return read(query, {}, result, skipInfoWarn);
 }
 
-bool SQLite::read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn) const
+bool SQLite::read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn)
 {
     uint64_t before = STimeNow();
     bool queryResult = false;
     _readQueryCount++;
+
+    // If we're not inside a transaction, let's start one so we know exaclty how long we're holding transactions for.
+    // SQLite will automatically start a transaction if we don't do so, and by doing so, it will also continue to hold
+    // WAL files. So let's keep control of our transactions, and log when we roll it back so we can actually see the
+    // impact those queries are doing.
+    bool shouldBeginTransaction = !_insideTransaction;
+    if(shouldBeginTransaction) {
+        beginTransaction();
+    }
+
     // The query cache is keyed on SQL text only — different bound-parameter values for the same SQL would
     // share a cache entry. Skip the cache entirely when params are present.
     auto foundQuery = params.empty() ? _queryCache.find(query) : _queryCache.end();
@@ -654,6 +664,9 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
         }
     }
     _readElapsed += STimeNow() - before;
+    if(shouldBeginTransaction) {
+        rollback();
+    }
     _checkInterruptErrors("SQLite::read"s);
     return queryResult;
 }

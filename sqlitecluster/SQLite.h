@@ -99,16 +99,16 @@ public:
 
     // Performs a read-only query (eg, SELECT). This can be done inside or outside a transaction. Returns true on
     // success, and fills the 'result' with the result of the query.
-    virtual bool read(const string& query, SQResult& result, bool skipInfoWarn = false) const;
-    virtual bool read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn = false) const;
+    virtual bool read(const string& query, SQResult& result, bool skipInfoWarn = false);
+    virtual bool read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn = false);
 
     // Performs a read-only query (eg, SELECT) that returns a single value.
-    virtual string read(const string& query) const;
-    virtual string read(const string& query, const map<string, Parameter>& params) const;
+    virtual string read(const string& query);
+    virtual string read(const string& query, const map<string, Parameter>& params);
 
     // Performs a read-only query (eg, SELECT) that uses a query result formatter to format the response.
-    virtual int read(const string& query, sqlite3_qrf_spec* spec) const;
-    virtual int read(const string& query, const map<string, Parameter>& params, sqlite3_qrf_spec* spec) const;
+    virtual int read(const string& query, sqlite3_qrf_spec* spec);
+    virtual int read(const string& query, const map<string, Parameter>& params, sqlite3_qrf_spec* spec);
 
     // Types of transactions that we can begin.
     enum class TRANSACTION_TYPE
