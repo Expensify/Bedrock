@@ -44,6 +44,7 @@ struct GetJobTest : tpunit::TestFixture
                               TEST(GetJobTest::testInvalidJobPriority),
                               TEST(GetJobTest::testRetryableParentJobs),
                               TEST(GetJobTest::testInvalidNextRun),
+                              TEST(GetJobTest::testCrashBedrockJobBlacklist),
                               AFTER(GetJobTest::tearDown),
                               AFTER_CLASS(GetJobTest::tearDownClass))
     {
@@ -62,6 +63,10 @@ struct GetJobTest : tpunit::TestFixture
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
+
+        // Clear any job blacklist a test may have set so it doesn't leak into later tests.
+        SData clearCommand("ClearCrashedBedrockJobs");
+        tester->executeWaitVerifyContent(clearCommand);
     }
 
     void tearDownClass()
@@ -857,5 +862,67 @@ struct GetJobTest : tpunit::TestFixture
         SQResult jobData;
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", jobData);
         ASSERT_EQUAL(jobData[0][0], "FAILED");
+    }
+
+    // A job whose name matches a CrashBedrockJob GLOB pattern is failed at GetJob time instead of running.
+    void testCrashBedrockJobBlacklist()
+    {
+        // Create two jobs under the blacklisted prefix (one with a param suffix, one a "V2" sibling) and one
+        // unrelated job that must still run.
+        SData command("CreateJob");
+        command["name"] = "www-prod/UserActivityEvaluator?accountID=856";
+        string paramJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "www-prod/UserActivityEvaluatorV2";
+        string siblingJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "www-prod/SomeOtherJob";
+        string otherJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // Blacklist the prefix with a GLOB wildcard.
+        command.clear();
+        command.methodLine = "CrashBedrockJob";
+        command["names"] = "www-prod/UserActivityEvaluator*";
+        tester->executeWaitVerifyContent(command);
+
+        // GetJobs returns the matching candidates in one call, so both the ?param form and the V2 sibling are failed
+        // together and none are returned to the worker.
+        command.clear();
+        command.methodLine = "GetJobs";
+        command["name"] = "www-prod/UserActivityEvaluator*";
+        command["numResults"] = "10";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(SParseJSONArray(response["jobs"]).size(), 0);
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + paramJobID + ";"), "FAILED");
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + siblingJobID + ";"), "FAILED");
+
+        // The unrelated job doesn't match the pattern and still runs normally.
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "www-prod/SomeOtherJob";
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["jobID"], otherJobID);
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + otherJobID + ";"), "RUNNING");
+
+        // After clearing the blacklist, a freshly created matching job runs again.
+        command.clear();
+        command.methodLine = "ClearCrashedBedrockJobs";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "www-prod/UserActivityEvaluator?accountID=857";
+        string afterClearJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "www-prod/UserActivityEvaluator?accountID=857";
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["jobID"], afterClearJobID);
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + afterClearJobID + ";"), "RUNNING");
     }
 } __GetJobTest;
