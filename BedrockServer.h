@@ -447,6 +447,9 @@ private:
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const unique_ptr<BedrockCommand>& command);
 
+    // Broadcast a locally-originated bedrock job blacklist change to peers, tagging it so recipients don't re-broadcast.
+    void _propagateBedrockJobBlacklistCommand(const SData& request);
+
     // The number of seconds to wait between forcing a command to QUORUM.
     uint64_t _quorumCheckpointSeconds;
 

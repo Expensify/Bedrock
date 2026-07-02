@@ -1982,8 +1982,6 @@ bool BedrockServer::_isNonSecureControlCommand(const unique_ptr<BedrockCommand>&
     // sent from other nodes on the private command port.
     return SIEquals(command->request.methodLine, "SuppressCommandPort") ||
            SIEquals(command->request.methodLine, "ClearCommandPort") ||
-           SIEquals(command->request.methodLine, "CrashBedrockJob") ||
-           SIEquals(command->request.methodLine, "ClearCrashedBedrockJobs") ||
            SIEquals(command->request.methodLine, "CRASH_COMMAND");
 }
 
@@ -2078,21 +2076,13 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             }
             SALERT("Blacklisting bedrock jobs (now have " << _crashedBedrockJobPatterns.size() << " patterns): " << SComposeList(names));
         }
-
-        // If this originated locally (from an operator on this node), propagate it to the rest of the cluster so a new
-        // leader still enforces the blacklist after a failover. Commands arriving from a peer have a non-empty _source,
-        // so they update this node only and don't re-broadcast, which prevents an infinite broadcast loop.
-        if (command->request["_source"].empty()) {
-            broadcastCommand(command->request);
-        }
+        _propagateBedrockJobBlacklistCommand(command->request);
     } else if (SIEquals(command->request.methodLine, "ClearCrashedBedrockJobs")) {
         {
             unique_lock<decltype(_crashedBedrockJobPatternMutex)> lock(_crashedBedrockJobPatternMutex);
             _crashedBedrockJobPatterns.clear();
         }
-        if (command->request["_source"].empty()) {
-            broadcastCommand(command->request);
-        }
+        _propagateBedrockJobBlacklistCommand(command->request);
     } else if (SIEquals(command->request.methodLine, "ClearBlockingQueue")) {
         auto commands = _blockingCommandQueue.getAll();
         list<string> methodLines;
@@ -2302,6 +2292,20 @@ set<string> BedrockServer::getCrashedBedrockJobPatterns()
     return _crashedBedrockJobPatterns;
 }
 
+void BedrockServer::_propagateBedrockJobBlacklistCommand(const SData& request)
+{
+    // Propagate a locally-originated blacklist change to the rest of the cluster so a new leader still enforces it
+    // after a failover. Every intra-cluster command arrives via the private command port with an empty _source, so
+    // _source can't distinguish a local command from a propagated one; instead we tag propagated commands with
+    // "isPropagated" and skip re-broadcasting those, which prevents an infinite broadcast loop between peers.
+    if (request.isSet("isPropagated")) {
+        return;
+    }
+    SData propagated = request;
+    propagated["isPropagated"] = "true";
+    broadcastCommand(propagated);
+}
+
 SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& command)
 {
     SHMMM("Generating CRASH_COMMAND command for " << command->request.methodLine);
@@ -2373,6 +2377,9 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
         SData crashJobCommand("CrashBedrockJob");
         crashJobCommand["names"] = SComposeList(jobPatterns);
         crashJobCommand["timeout"] = "5000";
+
+        // Tag as propagated so the joining peer stores it locally without re-broadcasting to the whole cluster.
+        crashJobCommand["isPropagated"] = "true";
         auto _clusterMessengerCopy = _clusterMessenger;
         auto peerName = peer->name;
         if (_clusterMessengerCopy) {
