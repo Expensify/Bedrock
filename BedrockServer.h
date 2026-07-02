@@ -180,7 +180,7 @@ public:
     // Exposes the replication state to plugins.
     SQLiteNodeState getState() const;
 
-    // When a peer node logs in, we'll send it our crash command list.
+    // When a peer node logs in, we'll send it our crash command list and our blacklisted bedrock job patterns.
     void onNodeLogin(SQLitePeer* peer) override;
 
     // You must block and unblock the command port with *identical strings*.
