@@ -38,6 +38,11 @@ public:
         void* data;
         virtual bool send(size_t* bytesSentCount = nullptr);
         virtual bool send(const string& buffer, size_t* bytesSentCount = nullptr);
+
+        // Like send(), but loops until the entire buffer has been queued to the kernel (or a hard error
+        // occurs), rather than leaving whatever a single send() call didn't accept sitting in sendBuffer.
+        bool sendAll(const string& buffer);
+
         virtual bool recv();
         void shutdown(State toState = SHUTTINGDOWN);
 

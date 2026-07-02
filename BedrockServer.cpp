@@ -1639,14 +1639,9 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command)
                 SERROR("Couldn't find plugin '" << pluginName << ".");
             }
         } else {
-            // Otherwise we send the standard response. A single send() call can queue fewer bytes than the
-            // whole response (e.g. if a signal interrupts the blocking wait), so loop until the socket's
-            // sendBuffer is fully drained before considering the reply sent.
-            bool sendSucceeded = command->socket->send(command->response.serialize());
-            while (sendSucceeded && !command->socket->sendBufferEmpty()) {
-                sendSucceeded = command->socket->send();
-            }
-            if (!sendSucceeded) {
+            // Otherwise we send the standard response. sendAll() loops until the whole response is queued to
+            // the kernel (or a hard error occurs), rather than assuming a single send() call queued everything.
+            if (!command->socket->sendAll(command->response.serialize())) {
                 // If we can't send (client closed the socket?), alert our plugin it's response was never sent.
                 SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
                 command->handleFailedReply();

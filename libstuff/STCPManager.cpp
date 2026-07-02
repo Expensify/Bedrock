@@ -274,6 +274,15 @@ bool STCPManager::Socket::send(const string& buffer, size_t* bytesSentCount)
     return send(bytesSentCount);
 }
 
+bool STCPManager::Socket::sendAll(const string& buffer)
+{
+    bool sendSucceeded = send(buffer);
+    while (sendSucceeded && !sendBufferEmpty()) {
+        sendSucceeded = send();
+    }
+    return sendSucceeded;
+}
+
 bool STCPManager::Socket::sendBufferEmpty()
 {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
