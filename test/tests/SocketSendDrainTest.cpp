@@ -12,16 +12,15 @@
 #include <libstuff/STCPManager.h>
 #include <test/lib/BedrockTester.h>
 
-// Regression test for a latent truncation bug in Bedrock's command-response send path: BedrockServer::_reply()
-// sends a response with a single blocking socket->send() call and then immediately shuts the socket down, with
-// no loop to confirm the entire response was actually queued to the kernel first. If that single send() queues
-// fewer bytes than the full response (which can happen when a signal interrupts the blocking wait), the
-// remainder is silently discarded instead of retried. See the "Bedrock response send-drain fix" plan for the
-// full writeup.
+// Regression test guarding against a latent truncation bug in Bedrock's command-response send path:
+// BedrockServer::_reply() used to send a response with a single blocking socket->send() call and then
+// immediately shut the socket down, with no loop to confirm the entire response was actually queued to the
+// kernel first. If that single send() queued fewer bytes than the full response (which can happen when a
+// signal interrupts the blocking wait), the remainder was silently discarded instead of retried.
 //
 // This test forces that exact condition deterministically (a signal interrupting a blocking send() partway
-// through a large payload) so the bug reproduces every run, rather than relying on it happening to occur under
-// real-world timing.
+// through a large payload), rather than relying on it happening to occur under real-world timing, so a
+// regression back to the single-send pattern would reliably fail this test.
 struct SocketSendDrainTest : tpunit::TestFixture
 {
     SocketSendDrainTest()
@@ -37,12 +36,15 @@ struct SocketSendDrainTest : tpunit::TestFixture
     // send() doesn't get silently resumed by the kernel/libc.
     static void noopSignalHandler(int) {}
 
-    // Mirrors the current (buggy) pattern in BedrockServer::_reply(): hand the whole response to
-    // Socket::send(), which makes exactly one send() syscall and queues however much of it the kernel
-    // accepts, then shut down immediately regardless of whether everything was actually queued.
-    static void sendOnceThenShutdown(STCPManager::Socket& socket, const string& data)
+    // Mirrors the fixed pattern in BedrockServer::_reply(): loop send() until the socket's sendBuffer is
+    // fully drained (or a hard error occurs) before shutting down, instead of assuming a single send() call
+    // queued the entire response.
+    static void sendAndDrainThenShutdown(STCPManager::Socket& socket, const string& data)
     {
-        socket.send(data);
+        bool sendSucceeded = socket.send(data);
+        while (sendSucceeded && !socket.sendBufferEmpty()) {
+            sendSucceeded = socket.send();
+        }
         socket.shutdown();
     }
 
@@ -140,7 +142,7 @@ struct SocketSendDrainTest : tpunit::TestFixture
             }
         });
 
-        sendOnceThenShutdown(serverSocket, payload);
+        sendAndDrainThenShutdown(serverSocket, payload);
 
         stopInterrupter = true;
         interrupter.join();
