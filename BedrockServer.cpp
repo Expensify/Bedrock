@@ -1846,6 +1846,13 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             content["crashCommandList"] = SComposeJSONArray(crashCommandListArray);
         }
 
+        {
+            // Make it known which bedrock jobs are blacklisted from running.
+            shared_lock<decltype(_crashedBedrockJobPatternMutex)> lock(_crashedBedrockJobPatternMutex);
+            content["crashedBedrockJobs"] = _crashedBedrockJobPatterns.size();
+            content["crashedBedrockJobList"] = SComposeJSONArray(vector<string>(_crashedBedrockJobPatterns.begin(), _crashedBedrockJobPatterns.end()));
+        }
+
         for (auto& p : _blockingCommandQueue.getState()) {
             content[p.first] = p.second;
         }
