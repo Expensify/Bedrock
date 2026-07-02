@@ -762,12 +762,49 @@ void BedrockJobsCommand::process(SQLite& db)
         // There should only be at most one result if GetJob
         SASSERT(!SIEquals(requestVerb, "GetJob") || result.size() <= 1);
 
+        // Fail (rather than run) any candidate job whose name matches a GLOB pattern blacklisted via CrashBedrockJob.
+        // This lets us surgically disable a misbehaving job without stopping BWM for everyone.
+        set<string> crashedJobIDs;
+        const set<string> crashedJobPatterns = _plugin->server.getCrashedBedrockJobPatterns();
+        if (!crashedJobPatterns.empty()) {
+            list<string> candidateJobIDs;
+            for (size_t c = 0; c < result.size(); ++c) {
+                candidateJobIDs.push_back(result[c][0]);
+            }
+
+            list<string> globClauses;
+            for (const auto& pattern : crashedJobPatterns) {
+                globClauses.push_back("name GLOB " + SQ(pattern));
+            }
+
+            SQResult crashed;
+            if (!db.read("SELECT jobID FROM jobs WHERE jobID IN (" + SQList(candidateJobIDs) + ") AND (" + SComposeList(globClauses, " OR ") + ");", crashed)) {
+                STHROW("502 Failed to select blacklisted jobs");
+            }
+            for (const auto& row : crashed) {
+                crashedJobIDs.insert(row[0]);
+            }
+
+            if (!crashedJobIDs.empty()) {
+                const list<string> failIDs(crashedJobIDs.begin(), crashedJobIDs.end());
+                SALERT("Failing blacklisted bedrock jobs: " << SComposeList(failIDs));
+                if (!db.writeIdempotent("UPDATE jobs SET state='FAILED' WHERE jobID IN (" + SQList(failIDs) + ");")) {
+                    STHROW("502 Failed to fail blacklisted jobs");
+                }
+            }
+        }
+
         // Prepare to update the rows, while also creating all the child objects
         list<string> nonRetriableJobs;
         list<STable> retriableJobs;
         list<string> jobList;
         for (size_t c = 0; c < result.size(); ++c) {
             SASSERT(result[c].size() == 10); // jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority
+
+            // Skip any job we just failed for matching the blacklist so it's never returned to the worker.
+            if (crashedJobIDs.count(result[c][0])) {
+                continue;
+            }
 
             // Add this object to our output
             STable job;
