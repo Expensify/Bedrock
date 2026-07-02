@@ -889,23 +889,18 @@ struct GetJobTest : tpunit::TestFixture
         command["names"] = "www-prod/UserActivityEvaluator*";
         tester->executeWaitVerifyContent(command);
 
-        // GetJobs returns the matching candidates in one call, so both the ?param form and the V2 sibling are failed
-        // together and none are returned to the worker.
+        // A single GetJobs across the whole www-prod/* space fails both matching jobs (the ?param form and the V2
+        // sibling) and still backfills the unrelated job, so workers aren't starved of runnable work.
         command.clear();
         command.methodLine = "GetJobs";
-        command["name"] = "www-prod/UserActivityEvaluator*";
+        command["name"] = "www-prod/*";
         command["numResults"] = "10";
         STable response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(SParseJSONArray(response["jobs"]).size(), 0);
+        list<string> returnedJobs = SParseJSONArray(response["jobs"]);
+        ASSERT_EQUAL(returnedJobs.size(), 1);
+        ASSERT_EQUAL(SParseJSONObject(returnedJobs.front())["jobID"], otherJobID);
         ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + paramJobID + ";"), "FAILED");
         ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + siblingJobID + ";"), "FAILED");
-
-        // The unrelated job doesn't match the pattern and still runs normally.
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "www-prod/SomeOtherJob";
-        response = tester->executeWaitVerifyContentTable(command);
-        ASSERT_EQUAL(response["jobID"], otherJobID);
         ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + otherJobID + ";"), "RUNNING");
 
         // After clearing the blacklist, a freshly created matching job runs again.

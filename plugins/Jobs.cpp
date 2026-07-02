@@ -661,6 +661,35 @@ void BedrockJobsCommand::process(SQLite& db)
         const list<string> nameList = SParseList(request["name"]);
         string safeNumResults = SQ(max(request.calc("numResults"), 1));
         mockRequest = mockRequest || request.isSet("getMockedJobs");
+
+        // Fail (rather than run) any matching job whose name matches a GLOB pattern blacklisted via CrashBedrockJob.
+        // This lets us surgically disable a misbehaving job without stopping BWM for everyone. We do this before the
+        // candidate query below so those jobs are no longer QUEUED/RUNQUEUED and the query backfills past them, so a
+        // worker still receives up to numResults runnable jobs.
+        bool failedBlacklistedJobs = false;
+        const set<string> crashedJobPatterns = _plugin->server.getCrashedBedrockJobPatterns();
+        if (!crashedJobPatterns.empty()) {
+            const string nameFilter = nameList.size() > 1 ? "name IN (" + SQList(nameList) + ")" : "name GLOB " + SQ(request["name"]);
+            list<string> globClauses;
+            for (const auto& pattern : crashedJobPatterns) {
+                globClauses.push_back("name GLOB " + SQ(pattern));
+            }
+            string failQuery = "UPDATE jobs "
+                "SET state='FAILED' "
+                "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                "AND " + nameFilter + " "
+                "AND (" + SComposeList(globClauses, " OR ") + ")" +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL" : "") + ";";
+            if (!db.writeIdempotent(failQuery)) {
+                STHROW("502 Failed to fail blacklisted jobs");
+            }
+            const size_t failedCount = db.getLastWriteChangeCount();
+            if (failedCount) {
+                failedBlacklistedJobs = true;
+                SALERT("Failed " << failedCount << " blacklisted bedrock jobs matching '" << request["name"] << "'");
+            }
+        }
+
         string selectQuery;
         if (request.isSet("jobPriority")) {
             selectQuery =
@@ -750,49 +779,21 @@ void BedrockJobsCommand::process(SQLite& db)
 
         // Are there any results?
         if (result.empty()) {
-            // Ah, there were before, but aren't now -- nothing found
-            // **FIXME: If "Connection: wait" should re-apply the hold.  However, this is super edge
-            //          as we could only get here if the job somehow got consumed between the peek
-            //          and process -- which could happen during heavy load.  But it'd just return
-            //          no results (which is correct) faster than it would otherwise time out.  Either
-            //          way the worker will likely just loop, so it doesn't really matter.
-            STHROW("404 No job found");
+            // If we just failed blacklisted jobs above, fall through and return an empty result so those FAILED updates
+            // commit -- throwing here would roll back the whole transaction and leave the jobs QUEUED.
+            if (!failedBlacklistedJobs) {
+                // Ah, there were before, but aren't now -- nothing found
+                // **FIXME: If "Connection: wait" should re-apply the hold.  However, this is super edge
+                //          as we could only get here if the job somehow got consumed between the peek
+                //          and process -- which could happen during heavy load.  But it'd just return
+                //          no results (which is correct) faster than it would otherwise time out.  Either
+                //          way the worker will likely just loop, so it doesn't really matter.
+                STHROW("404 No job found");
+            }
         }
 
         // There should only be at most one result if GetJob
         SASSERT(!SIEquals(requestVerb, "GetJob") || result.size() <= 1);
-
-        // Fail (rather than run) any candidate job whose name matches a GLOB pattern blacklisted via CrashBedrockJob.
-        // This lets us surgically disable a misbehaving job without stopping BWM for everyone.
-        set<string> crashedJobIDs;
-        const set<string> crashedJobPatterns = _plugin->server.getCrashedBedrockJobPatterns();
-        if (!crashedJobPatterns.empty()) {
-            list<string> candidateJobIDs;
-            for (size_t c = 0; c < result.size(); ++c) {
-                candidateJobIDs.push_back(result[c][0]);
-            }
-
-            list<string> globClauses;
-            for (const auto& pattern : crashedJobPatterns) {
-                globClauses.push_back("name GLOB " + SQ(pattern));
-            }
-
-            SQResult crashed;
-            if (!db.read("SELECT jobID FROM jobs WHERE jobID IN (" + SQList(candidateJobIDs) + ") AND (" + SComposeList(globClauses, " OR ") + ");", crashed)) {
-                STHROW("502 Failed to select blacklisted jobs");
-            }
-            for (const auto& row : crashed) {
-                crashedJobIDs.insert(row[0]);
-            }
-
-            if (!crashedJobIDs.empty()) {
-                const list<string> failIDs(crashedJobIDs.begin(), crashedJobIDs.end());
-                SALERT("Failing blacklisted bedrock jobs: " << SComposeList(failIDs));
-                if (!db.writeIdempotent("UPDATE jobs SET state='FAILED' WHERE jobID IN (" + SQList(failIDs) + ");")) {
-                    STHROW("502 Failed to fail blacklisted jobs");
-                }
-            }
-        }
 
         // Prepare to update the rows, while also creating all the child objects
         list<string> nonRetriableJobs;
@@ -800,11 +801,6 @@ void BedrockJobsCommand::process(SQLite& db)
         list<string> jobList;
         for (size_t c = 0; c < result.size(); ++c) {
             SASSERT(result[c].size() == 10); // jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority
-
-            // Skip any job we just failed for matching the blacklist so it's never returned to the worker.
-            if (crashedJobIDs.count(result[c][0])) {
-                continue;
-            }
 
             // Add this object to our output
             STable job;
