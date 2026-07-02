@@ -2257,6 +2257,12 @@ bool BedrockServer::shouldBackup()
     return _shouldBackup;
 }
 
+set<string> BedrockServer::getCrashedBedrockJobPatterns()
+{
+    shared_lock<decltype(_crashedBedrockJobPatternMutex)> lock(_crashedBedrockJobPatternMutex);
+    return _crashedBedrockJobPatterns;
+}
+
 SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& command)
 {
     SHMMM("Generating CRASH_COMMAND command for " << command->request.methodLine);
