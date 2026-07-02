@@ -2423,7 +2423,9 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
         SINFO("Firing and forgetting '" << request.methodLine << "'");
         SData response("202 Successfully queued");
         response["Connection"] = "close";
-        socket.send(response.serialize());
+        // sendAll() loops until the whole response is queued to the kernel (or a hard error occurs); we're about to
+        // shut down the socket, so we won't get another chance to send anything left behind by a partial send().
+        socket.sendAll(response.serialize());
         socket.shutdown(Socket::CLOSED);
         fireAndForget = true;
 
