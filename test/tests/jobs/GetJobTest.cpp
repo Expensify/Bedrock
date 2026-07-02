@@ -45,6 +45,7 @@ struct GetJobTest : tpunit::TestFixture
                               TEST(GetJobTest::testRetryableParentJobs),
                               TEST(GetJobTest::testInvalidNextRun),
                               TEST(GetJobTest::testCrashBedrockJobBlacklist),
+                              TEST(GetJobTest::testCrashBedrockJobBlacklistBatchLimit),
                               AFTER(GetJobTest::tearDown),
                               AFTER_CLASS(GetJobTest::tearDownClass))
     {
@@ -919,5 +920,42 @@ struct GetJobTest : tpunit::TestFixture
         response = tester->executeWaitVerifyContentTable(command);
         ASSERT_EQUAL(response["jobID"], afterClearJobID);
         ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + afterClearJobID + ";"), "RUNNING");
+    }
+
+    // With a backlog larger than the per-call batch, each GetJobs fails at most the batch (1000), and the still-QUEUED
+    // blacklisted jobs are excluded from the candidate query so none are ever returned/run while draining.
+    void testCrashBedrockJobBlacklistBatchLimit()
+    {
+        // Create 1001 jobs under one blacklisted prefix in a single batch (one more than the 1000 per-call fail limit).
+        vector<string> jobs;
+        for (int i = 0; i < 1001; i++) {
+            STable job;
+            job["name"] = "www-prod/BatchBad?n=" + to_string(i);
+            jobs.push_back(SComposeJSONObject(job));
+        }
+        SData command("CreateJobs");
+        command["jobs"] = SComposeJSONArray(jobs);
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "CrashBedrockJob";
+        command["names"] = "www-prod/BatchBad*";
+        tester->executeWaitVerifyContent(command);
+
+        // One GetJobs fails at most 1000 and returns none: the one still-QUEUED job is excluded, not run.
+        command.clear();
+        command.methodLine = "GetJobs";
+        command["name"] = "www-prod/BatchBad*";
+        command["numResults"] = "10";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(SParseJSONArray(response["jobs"]).size(), 0);
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='FAILED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "1000");
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='QUEUED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "1");
+
+        // A second GetJobs drains the remaining job.
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(SParseJSONArray(response["jobs"]).size(), 0);
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='FAILED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "1001");
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='QUEUED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "0");
     }
 } __GetJobTest;

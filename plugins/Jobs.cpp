@@ -662,24 +662,32 @@ void BedrockJobsCommand::process(SQLite& db)
         string safeNumResults = SQ(max(request.calc("numResults"), 1));
         mockRequest = mockRequest || request.isSet("getMockedJobs");
 
-        // Fail (rather than run) any matching job whose name matches a GLOB pattern blacklisted via CrashBedrockJob.
-        // This lets us surgically disable a misbehaving job without stopping BWM for everyone. We do this before the
-        // candidate query below so those jobs are no longer QUEUED/RUNQUEUED and the query backfills past them, so a
-        // worker still receives up to numResults runnable jobs.
+        // Handle jobs whose name matches a GLOB pattern blacklisted via CrashBedrockJob. This lets us surgically
+        // disable a misbehaving job without stopping BWM for everyone. Two things happen:
+        //   - blacklistExclusion is appended to the candidate query below so a blacklisted job is never selected or
+        //     run, even ones we haven't converted to FAILED yet.
+        //   - a bounded batch of matching QUEUED/RUNQUEUED jobs is failed here. We cap the batch (rather than failing
+        //     every match) so a large backlog drains over successive GetJob(s) calls instead of one huge commit that
+        //     would lock the table on the hot dequeue path.
         bool failedBlacklistedJobs = false;
+        string blacklistExclusion;
         const set<string> crashedJobPatterns = _plugin->server.getCrashedBedrockJobPatterns();
         if (!crashedJobPatterns.empty()) {
-            const string nameFilter = nameList.size() > 1 ? "name IN (" + SQList(nameList) + ")" : "name GLOB " + SQ(request["name"]);
             list<string> globClauses;
             for (const auto& pattern : crashedJobPatterns) {
                 globClauses.push_back("name GLOB " + SQ(pattern));
             }
+            const string blacklistMatch = "(" + SComposeList(globClauses, " OR ") + ")";
+            blacklistExclusion = " AND NOT " + blacklistMatch + " ";
+
+            const string nameFilter = nameList.size() > 1 ? "name IN (" + SQList(nameList) + ")" : "name GLOB " + SQ(request["name"]);
             string failQuery = "UPDATE jobs "
                 "SET state='FAILED' "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND " + nameFilter + " "
-                "AND (" + SComposeList(globClauses, " OR ") + ")" +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL" : "") + ";";
+                "AND " + blacklistMatch +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL" : "") +
+                " LIMIT 1000;";
             if (!db.writeIdempotent(failQuery)) {
                 STHROW("502 Failed to fail blacklisted jobs");
             }
@@ -699,7 +707,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=" + SQ(request.calc("jobPriority")) + " "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND +name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults + ";";
         } else {
             selectQuery =
@@ -711,7 +719,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=1000 "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
                 "UNION ALL "
@@ -722,7 +730,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=850 "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
                 "UNION ALL "
@@ -733,7 +741,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=750 "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
                 "UNION ALL "
@@ -744,7 +752,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=500 "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
                 "UNION ALL "
@@ -755,7 +763,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=250 "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
                 "UNION ALL "
@@ -766,7 +774,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=0 "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
                 ") "
