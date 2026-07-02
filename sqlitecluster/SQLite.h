@@ -99,7 +99,7 @@ public:
 
     // Performs a read-only query (eg, SELECT). This can be done inside or outside a transaction. Returns true on
     // success, and fills the 'result' with the result of the query.
-    virtual bool read(const string& query, SQResult& result, bool skipInfoWarn = false) const; 
+    virtual bool read(const string& query, SQResult& result, bool skipInfoWarn = false) const;
     virtual bool read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn = false) const;
 
     // Performs a read-only query (eg, SELECT) that returns a single value.
