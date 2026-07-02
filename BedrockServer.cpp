@@ -1615,9 +1615,7 @@ unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLit
 
 void BedrockServer::_reply(unique_ptr<BedrockCommand>& command)
 {
-    // Some callers reply to a command from outside the scope that originally set the log prefix for it (e.g. a
-    // completed-command drain loop), so re-assert it here to make sure the timing/reply logging below is tagged
-    // with the right command.
+    // Some control commands like Status go through a different flow where its SAUTOPREFIX scope has already closed, so we re-set it here so it handles those commands properly.
     SAUTOPREFIX(command->request);
 
     // Finalize timing info even for commands we won't respond to (this makes this data available in logs).
