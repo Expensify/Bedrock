@@ -639,6 +639,16 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
     uint64_t before = STimeNow();
     bool queryResult = false;
     _readQueryCount++;
+
+    // If we're not inside a transaction, let's start one so we know exaclty how long we're holding transactions for.
+    // SQLite will automatically start a transaction if we don't do so, and by doing so, it will also continue to hold
+    // WAL files. So let's keep control of our transactions, and log when we roll it back so we can actually see the
+    // impact those queries are doing.
+    bool shouldBeginTransaction = !_insideTransaction;
+    if(shouldBeginTransaction) {
+        beginTransaction();
+    }
+
     // The query cache is keyed on SQL text only — different bound-parameter values for the same SQL would
     // share a cache entry. Skip the cache entirely when params are present.
     auto foundQuery = params.empty() ? _queryCache.find(query) : _queryCache.end();
@@ -648,23 +658,15 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
         queryResult = true;
     } else {
         _isDeterministicQuery = true;
-        // If we're not inside a transaction, let's start one so we know exaclty how long we're holding transactions for.
-        // SQLite will automatically start a transaction if we don't do so, and by doing so, it will also continue to hold
-        // WAL files. So let's keep control of our transactions, and log when we roll it back so we can actually see the
-        // impact those queries are doing.
-        bool shouldBeginTransaction = !_insideTransaction;
-        if(shouldBeginTransaction) {
-            beginTransaction();
-        }
         queryResult = !SQuery(_db, query, result, 2000 * STIME_US_PER_MS, skipInfoWarn, nullptr, params);
-        if(shouldBeginTransaction) {
-            rollback();
-        }
         if (params.empty() && _isDeterministicQuery && queryResult && insideTransaction()) {
             _queryCache.emplace(make_pair(query, result));
         }
     }
     _readElapsed += STimeNow() - before;
+    if(shouldBeginTransaction) {
+        rollback();
+    }
     _checkInterruptErrors("SQLite::read"s);
     return queryResult;
 }
