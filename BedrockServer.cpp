@@ -1959,6 +1959,8 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "SetBlockingQueueTimeRateLimit") ||
         SIEquals(command->request.methodLine, "ClearBlockingQueue") ||
         SIEquals(command->request.methodLine, "SetPriority") ||
+        SIEquals(command->request.methodLine, "CrashBedrockJob") ||
+        SIEquals(command->request.methodLine, "ClearCrashedBedrockJobs") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
     ) {
         return true;
@@ -2054,6 +2056,20 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             totalCount += s.second.size();
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
+    } else if (SIEquals(command->request.methodLine, "CrashBedrockJob")) {
+        const list<string> names = SParseList(command->request["names"]);
+        if (names.empty()) {
+            SINFO("Got CrashBedrockJob with no 'names'. Nothing to blacklist.");
+            return;
+        }
+        unique_lock<decltype(_crashedBedrockJobPatternMutex)> lock(_crashedBedrockJobPatternMutex);
+        for (const auto& name : names) {
+            _crashedBedrockJobPatterns.insert(name);
+        }
+        SALERT("Blacklisting bedrock jobs (now have " << _crashedBedrockJobPatterns.size() << " patterns): " << SComposeList(names));
+    } else if (SIEquals(command->request.methodLine, "ClearCrashedBedrockJobs")) {
+        unique_lock<decltype(_crashedBedrockJobPatternMutex)> lock(_crashedBedrockJobPatternMutex);
+        _crashedBedrockJobPatterns.clear();
     } else if (SIEquals(command->request.methodLine, "ClearBlockingQueue")) {
         auto commands = _blockingCommandQueue.getAll();
         list<string> methodLines;
