@@ -337,7 +337,16 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
         needsCommit = false;
         command->_inDBWriteOperation = false;
     } catch (const SQLite::constraint_error& e) {
-        SWARN("Unique Constraints Violation, command: " << request.methodLine);
+        // For whitelisted commands, include the client-reported origin (e.g. '/api.php',
+        // '/partners/mailgun/api.php') so log alerting can group these violations into separate issues per
+        // entry point.
+        static const set<string> commandsLoggingOrigin = {"TrackExpense"};
+        string originSuffix;
+        if (commandsLoggingOrigin.count(command->getMethodName())) {
+            const string& requestOrigin = request["requestOrigin"];
+            originSuffix = ", origin: " + (requestOrigin.empty() ? "unknown"s : requestOrigin);
+        }
+        SWARN("Unique Constraints Violation, command: " << request.methodLine << originSuffix);
         command->response.methodLine = "400 Unique Constraints Violation";
         _db.rollback(command->getMethodName());
         needsCommit = false;
