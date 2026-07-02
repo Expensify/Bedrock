@@ -12,15 +12,10 @@
 #include <libstuff/STCPManager.h>
 #include <test/lib/BedrockTester.h>
 
-// Regression test guarding against a latent truncation bug in Bedrock's command-response send path:
-// BedrockServer::_reply() used to send a response with a single blocking socket->send() call and then
-// immediately shut the socket down, with no loop to confirm the entire response was actually queued to the
-// kernel first. If that single send() queued fewer bytes than the full response (which can happen when a
-// signal interrupts the blocking wait), the remainder was silently discarded instead of retried.
-//
-// This test forces that exact condition deterministically (a signal interrupting a blocking send() partway
-// through a large payload), rather than relying on it happening to occur under real-world timing, so a
-// regression back to the single-send pattern would reliably fail this test.
+// Regression test for a truncation bug in BedrockServer::_reply(): a single socket->send() call can queue
+// fewer bytes than the full response, and the old code shut the socket down immediately afterward
+// regardless, silently dropping the rest. This forces that condition deterministically by interrupting a
+// blocking send() with a signal partway through a large payload.
 struct SocketSendDrainTest : tpunit::TestFixture
 {
     SocketSendDrainTest()
@@ -31,16 +26,12 @@ struct SocketSendDrainTest : tpunit::TestFixture
     static const size_t PAYLOAD_SIZE = 20 * 1024 * 1024;
     static const int SOCKET_BUFFER_SIZE = 8 * 1024;
 
-    // A no-op handler is all that's needed here: the point isn't to do anything on receipt, it's to interrupt
-    // whatever blocking syscall is in flight. Registered without SA_RESTART (see below) so the interrupted
-    // send() doesn't get silently resumed by the kernel/libc.
+    // No-op: we only need the signal to interrupt the blocking send() below, nothing more.
     static void noopSignalHandler(int)
     {
     }
 
-    // Mirrors the fixed pattern in BedrockServer::_reply(): loop send() until the socket's sendBuffer is
-    // fully drained (or a hard error occurs) before shutting down, instead of assuming a single send() call
-    // queued the entire response.
+    // Mirrors the fixed _reply(): loop send() until sendBuffer is drained before shutting down.
     static void sendAndDrainThenShutdown(STCPManager::Socket& socket, const string& data)
     {
         bool sendSucceeded = socket.send(data);
@@ -52,17 +43,15 @@ struct SocketSendDrainTest : tpunit::TestFixture
 
     void testLargeResponseSurvivesInterruptedSend()
     {
-        // Deterministic, easy-to-verify payload: large enough that a single blocking send() call takes a
-        // while (so an injected signal has time to land mid-transfer), with distinct byte values so any
-        // truncation or corruption is obvious.
+        // Large enough that a signal has time to land mid-send; distinct bytes make truncation obvious.
         string payload;
         payload.reserve(PAYLOAD_SIZE);
         for (size_t i = 0; i < PAYLOAD_SIZE; i++) {
             payload.push_back(static_cast<char>('A' + (i % 26)));
         }
 
-        // Ignore SIGPIPE so a half-closed socket can't kill the test process; install a SIGALRM handler
-        // without SA_RESTART so we can use it to interrupt the blocking send() below.
+        // Ignore SIGPIPE so a half-closed socket doesn't kill the test; SIGALRM without SA_RESTART lets us
+        // interrupt the blocking send() below.
         signal(SIGPIPE, SIG_IGN);
         struct sigaction sa {};
         sa.sa_handler = noopSignalHandler;
@@ -87,9 +76,8 @@ struct SocketSendDrainTest : tpunit::TestFixture
         atomic<size_t> bytesReceived(0);
         atomic<bool> receivedPrefixMatches(true);
 
-        // Stands in for whatever's on the other end of a real command port connection. Reads slowly for a
-        // short initial window so the server's blocking send() call stays busy in the kernel long enough for
-        // the injected signal to interrupt it mid-transfer, then drains as fast as possible.
+        // Reads slowly at first to keep the server's send() blocked long enough for the signal to land,
+        // then drains as fast as possible.
         thread client([port, &bytesReceived, &receivedPrefixMatches, &payload]() {
             int fd = socket(AF_INET, SOCK_STREAM, 0);
             int rcvBuf = SOCKET_BUFFER_SIZE;
@@ -127,14 +115,10 @@ struct SocketSendDrainTest : tpunit::TestFixture
         int sndBuf = SOCKET_BUFFER_SIZE;
         setsockopt(acceptedFD, SOL_SOCKET, SO_SNDBUF, &sndBuf, sizeof(sndBuf));
 
-        // Wrap the real fd in the real production Socket class -- this is the same class BedrockServer::_reply()
-        // uses, not a reimplementation.
+        // The same Socket class BedrockServer::_reply() uses -- not a reimplementation.
         STCPManager::Socket serverSocket(acceptedFD, STCPManager::Socket::CONNECTED);
 
-        // Interrupt the sending thread's blocking send() call partway through, simulating the kind of
-        // transient condition (signal, network hiccup) called out in the plan as the realistic trigger for
-        // this bug. pthread_kill (rather than alarm()/setitimer()) guarantees the signal targets this specific
-        // thread, since POSIX doesn't guarantee a process-wide timer signal lands on any particular thread.
+        // pthread_kill targets this specific thread; a process-wide timer signal isn't guaranteed to.
         pthread_t sendingThread = pthread_self();
         atomic<bool> stopInterrupter(false);
         thread interrupter([&sendingThread, &stopInterrupter]() {
@@ -151,8 +135,7 @@ struct SocketSendDrainTest : tpunit::TestFixture
         close(listenFD);
         client.join();
 
-        // The client must receive the complete, byte-for-byte correct response -- not just however much
-        // happened to be queued before the interrupted send() call returned.
+        // Must receive the complete response, not just whatever was queued before send() was interrupted.
         ASSERT_EQUAL(bytesReceived.load(), payload.size());
         ASSERT_TRUE(receivedPrefixMatches.load());
     }
