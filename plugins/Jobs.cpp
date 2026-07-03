@@ -662,43 +662,7 @@ void BedrockJobsCommand::process(SQLite& db)
         string safeNumResults = SQ(max(request.calc("numResults"), 1));
         mockRequest = mockRequest || request.isSet("getMockedJobs");
 
-        // Handle jobs whose name matches a GLOB pattern blacklisted via CrashBedrockJob. This lets us surgically
-        // disable a misbehaving job without stopping BWM for everyone. Two things happen:
-        //   - blacklistExclusion is appended to the candidate query below so a blacklisted job is never selected or
-        //     run, even ones we haven't converted to FAILED yet.
-        //   - a bounded batch of matching QUEUED/RUNQUEUED jobs that are due to run (nextRun in the past) is failed
-        //     here. We cap the batch (rather than failing every match) so a large backlog drains over successive
-        //     GetJob(s) calls instead of one huge commit that would lock the table on the hot dequeue path. Jobs
-        //     scheduled in the future are left alone until they're due, mirroring the candidate query below.
-        bool failedBlacklistedJobs = false;
-        string blacklistExclusion;
         const set<string> crashedJobPatterns = _plugin->server.getCrashedBedrockJobPatterns();
-        if (!crashedJobPatterns.empty()) {
-            list<string> globClauses;
-            for (const auto& pattern : crashedJobPatterns) {
-                globClauses.push_back("name GLOB " + SQ(pattern));
-            }
-            const string blacklistMatch = "(" + SComposeList(globClauses, " OR ") + ")";
-            blacklistExclusion = " AND NOT " + blacklistMatch + " ";
-
-            const string nameFilter = nameList.size() > 1 ? "name IN (" + SQList(nameList) + ")" : "name GLOB " + SQ(request["name"]);
-            string failQuery = "UPDATE jobs "
-                "SET state='FAILED' "
-                "WHERE state IN ('QUEUED', 'RUNQUEUED') "
-                "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
-                "AND " + nameFilter + " "
-                "AND " + blacklistMatch +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL" : "") +
-                " LIMIT 100;";
-            if (!db.writeIdempotent(failQuery)) {
-                STHROW("502 Failed to fail blacklisted jobs");
-            }
-            const size_t failedCount = db.getLastWriteChangeCount();
-            if (failedCount) {
-                failedBlacklistedJobs = true;
-                SALERT("Failed " << failedCount << " blacklisted bedrock jobs matching '" << request["name"] << "'");
-            }
-        }
 
         string selectQuery;
         if (request.isSet("jobPriority")) {
@@ -709,7 +673,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=" + SQ(request.calc("jobPriority")) + " "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND +name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults + ";";
         } else {
             selectQuery =
@@ -721,7 +685,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=1000 "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
                 "UNION ALL "
@@ -732,7 +696,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=850 "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
                 "UNION ALL "
@@ -743,7 +707,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=750 "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
                 "UNION ALL "
@@ -754,7 +718,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=500 "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
                 "UNION ALL "
@@ -765,7 +729,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=250 "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
                 "UNION ALL "
@@ -776,7 +740,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND priority=0 "
                 "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
-                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") + blacklistExclusion +
+                string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
                 ") "
                 ") "
@@ -789,16 +753,42 @@ void BedrockJobsCommand::process(SQLite& db)
 
         // Are there any results?
         if (result.empty()) {
-            // If we just failed blacklisted jobs above, fall through and return an empty result so those FAILED updates
-            // commit -- throwing here would roll back the whole transaction and leave the jobs QUEUED.
-            if (!failedBlacklistedJobs) {
-                // Ah, there were before, but aren't now -- nothing found
-                // **FIXME: If "Connection: wait" should re-apply the hold.  However, this is super edge
-                //          as we could only get here if the job somehow got consumed between the peek
-                //          and process -- which could happen during heavy load.  But it'd just return
-                //          no results (which is correct) faster than it would otherwise time out.  Either
-                //          way the worker will likely just loop, so it doesn't really matter.
-                STHROW("404 No job found");
+            // Ah, there were before, but aren't now -- nothing found
+            // **FIXME: If "Connection: wait" should re-apply the hold.  However, this is super edge
+            //          as we could only get here if the job somehow got consumed between the peek
+            //          and process -- which could happen during heavy load.  But it'd just return
+            //          no results (which is correct) faster than it would otherwise time out.  Either
+            //          way the worker will likely just loop, so it doesn't really matter.
+            STHROW("404 No job found");
+        }
+
+        // Fail (rather than run) any candidate whose name matches a GLOB pattern blacklisted via CrashBedrockJob. This
+        // lets us surgically disable a misbehaving job without stopping BWM for everyone. We only touch the candidates
+        // this query already selected (all due to run), so it's a small write by jobID rather than a scan of the whole
+        // table, and future-scheduled jobs are never candidates so they're left alone until they're due.
+        set<string> crashedJobIDs;
+        if (!crashedJobPatterns.empty()) {
+            list<string> candidateJobIDs;
+            for (size_t c = 0; c < result.size(); ++c) {
+                candidateJobIDs.push_back(result[c][0]);
+            }
+            list<string> globClauses;
+            for (const auto& pattern : crashedJobPatterns) {
+                globClauses.push_back("name GLOB " + SQ(pattern));
+            }
+            SQResult crashed;
+            if (!db.read("SELECT jobID FROM jobs WHERE jobID IN (" + SQList(candidateJobIDs) + ") AND (" + SComposeList(globClauses, " OR ") + ");", crashed)) {
+                STHROW("502 Failed to select blacklisted jobs");
+            }
+            for (const auto& row : crashed) {
+                crashedJobIDs.insert(row[0]);
+            }
+            if (!crashedJobIDs.empty()) {
+                const list<string> failIDs(crashedJobIDs.begin(), crashedJobIDs.end());
+                SALERT("Failing blacklisted bedrock jobs: " << SComposeList(failIDs));
+                if (!db.writeIdempotent("UPDATE jobs SET state='FAILED' WHERE jobID IN (" + SQList(failIDs) + ");")) {
+                    STHROW("502 Failed to fail blacklisted jobs");
+                }
             }
         }
 
@@ -811,6 +801,11 @@ void BedrockJobsCommand::process(SQLite& db)
         list<string> jobList;
         for (size_t c = 0; c < result.size(); ++c) {
             SASSERT(result[c].size() == 10); // jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority
+
+            // Skip any candidate we just failed for matching the blacklist so it's never returned to the worker.
+            if (crashedJobIDs.count(result[c][0])) {
+                continue;
+            }
 
             // Add this object to our output
             STable job;
