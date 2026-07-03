@@ -1611,6 +1611,9 @@ unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLit
 
 void BedrockServer::_reply(unique_ptr<BedrockCommand>& command)
 {
+    // Some control commands like Status go through a different flow where its SAUTOPREFIX scope has already closed, so we re-set it here so it handles those commands properly.
+    SAUTOPREFIX(command->request);
+
     // Finalize timing info even for commands we won't respond to (this makes this data available in logs).
     command->finalizeTimingInfo();
 

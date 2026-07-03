@@ -88,7 +88,12 @@ static atomic<shared_ptr<const set<string>>> PARAMS_WHITELIST{
 
 string addLogParams(string&& message, const STable& params)
 {
-    if (params.empty()) {
+    // Every log line emitted while a command is running gets tagged with that command's name, unless the call
+    // site already passed its own `command` param (e.g. logging about a *different* command than the one
+    // currently executing on this thread).
+    const bool addCommand = !SThreadLogCommand.empty() && !params.count("command");
+
+    if (params.empty() && !addCommand) {
         return message;
     }
 
@@ -104,6 +109,10 @@ string addLogParams(string&& message, const STable& params)
             valueToLog = "<REDACTED>";
         }
         message += key + ": '" + valueToLog + "'";
+    }
+
+    if (addCommand) {
+        message += " command: '" + SThreadLogCommand + "'";
     }
 
     return message;
