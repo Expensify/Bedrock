@@ -666,9 +666,10 @@ void BedrockJobsCommand::process(SQLite& db)
         // disable a misbehaving job without stopping BWM for everyone. Two things happen:
         //   - blacklistExclusion is appended to the candidate query below so a blacklisted job is never selected or
         //     run, even ones we haven't converted to FAILED yet.
-        //   - a bounded batch of matching QUEUED/RUNQUEUED jobs is failed here. We cap the batch (rather than failing
-        //     every match) so a large backlog drains over successive GetJob(s) calls instead of one huge commit that
-        //     would lock the table on the hot dequeue path.
+        //   - a bounded batch of matching QUEUED/RUNQUEUED jobs that are due to run (nextRun in the past) is failed
+        //     here. We cap the batch (rather than failing every match) so a large backlog drains over successive
+        //     GetJob(s) calls instead of one huge commit that would lock the table on the hot dequeue path. Jobs
+        //     scheduled in the future are left alone until they're due, mirroring the candidate query below.
         bool failedBlacklistedJobs = false;
         string blacklistExclusion;
         const set<string> crashedJobPatterns = _plugin->server.getCrashedBedrockJobPatterns();
@@ -684,6 +685,7 @@ void BedrockJobsCommand::process(SQLite& db)
             string failQuery = "UPDATE jobs "
                 "SET state='FAILED' "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
+                "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
                 "AND " + nameFilter + " "
                 "AND " + blacklistMatch +
                 string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL" : "") +

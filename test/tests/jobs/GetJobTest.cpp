@@ -884,6 +884,13 @@ struct GetJobTest : tpunit::TestFixture
         command["name"] = "www-prod/SomeOtherJob";
         string otherJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
+        // A blacklisted job scheduled in the future must not be failed until it's due.
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "www-prod/UserActivityEvaluatorFuture";
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 3600ull * 1'000'000);
+        string futureJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
         // Blacklist the prefix with a GLOB wildcard.
         command.clear();
         command.methodLine = "CrashBedrockJob";
@@ -903,6 +910,9 @@ struct GetJobTest : tpunit::TestFixture
         ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + paramJobID + ";"), "FAILED");
         ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + siblingJobID + ";"), "FAILED");
         ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + otherJobID + ";"), "RUNNING");
+
+        // The future-scheduled blacklisted job is untouched -- neither failed nor run.
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + futureJobID + ";"), "QUEUED");
 
         // After clearing the blacklist, a freshly created matching job runs again.
         command.clear();
