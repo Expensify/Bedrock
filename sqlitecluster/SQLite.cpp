@@ -659,7 +659,7 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
 
     // If we're not inside a transaction, SQLite will automatically start a transaction when we execute the read,
     // and it will also hold the WAL files with those. Let's add a specific log line for this case.
-    if(!_insideTransaction) {
+    if (!_insideTransaction) {
         SINFO("Read with auto-transaction timing info", {
             {"totalTransactionElapsed", to_string(timeSpent / 1000)},
         });
