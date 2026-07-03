@@ -639,6 +639,7 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
     uint64_t before = STimeNow();
     bool queryResult = false;
     _readQueryCount++;
+
     // The query cache is keyed on SQL text only — different bound-parameter values for the same SQL would
     // share a cache entry. Skip the cache entirely when params are present.
     auto foundQuery = params.empty() ? _queryCache.find(query) : _queryCache.end();
@@ -653,7 +654,15 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
             _queryCache.emplace(make_pair(query, result));
         }
     }
-    _readElapsed += STimeNow() - before;
+    uint64_t timeSpent = STimeNow() - before;
+    _readElapsed += timeSpent;
+
+    // If we're not inside a transaction, this doesn't get added to our normal transaction timing.
+    if (!_insideTransaction) {
+        SINFO("Read with auto-transaction timing info", {
+            {"totalTransactionElapsed", to_string(timeSpent / 1000)},
+        });
+    }
     _checkInterruptErrors("SQLite::read"s);
     return queryResult;
 }
