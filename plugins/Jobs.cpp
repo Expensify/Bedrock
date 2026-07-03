@@ -687,7 +687,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "AND " + nameFilter + " "
                 "AND " + blacklistMatch +
                 string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL" : "") +
-                " LIMIT 1000;";
+                " LIMIT 100;";
             if (!db.writeIdempotent(failQuery)) {
                 STHROW("502 Failed to fail blacklisted jobs");
             }
