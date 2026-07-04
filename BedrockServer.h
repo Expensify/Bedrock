@@ -233,6 +233,12 @@ public:
     unique_ptr<BedrockCommand> getCommandFromPlugins(SData&& request);
     unique_ptr<BedrockCommand> getCommandFromPlugins(unique_ptr<SQLiteCommand>&& baseCommand);
 
+    // Returns a new cluster-unique command ID of the form "<nodeName>#<count>". Every command passed through the
+    // cluster must have a unique ID so it gets routed correctly between follower and leader, so any code that creates a
+    // command not originating from a client request (which is assigned an ID in buildCommandFromRequest) should use
+    // this to stamp the request's "ID" header before constructing the command.
+    string generateCommandID();
+
     // If you want to exit from the detached state, set this to true and the server will exit after the next loop.
     // It has no effect when not detached (except that it will cause the server to exit immediately upon becoming
     // detached), and shouldn't need to be reset, because the server exits immediately upon seeing this.

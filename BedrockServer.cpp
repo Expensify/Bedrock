@@ -2433,6 +2433,11 @@ void BedrockServer::_acceptSockets()
     }
 }
 
+string BedrockServer::generateCommandID()
+{
+    return args["-nodeName"] + "#" + to_string(_requestCount++);
+}
+
 unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& request, Socket& socket, bool shouldTreatAsLocalhost)
 {
     SAUTOPREFIX(request);
@@ -2470,6 +2475,15 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     request.erase("httpsRequests");
     request.erase("serializedData");
 
+    // This is important! All commands passed through the entire cluster must have unique IDs, or they won't get routed
+    // properly from follower to leader and back. We generate the ID here, before constructing the command, and stash it
+    // on the request so it's available during construction (some commands reference their own id in their constructor).
+    // If the command already specifies an ID header (for HTTP escalations) we leave it, so the id is preserved as the
+    // command travels across nodes.
+    if (!request.isSet("ID")) {
+        request["ID"] = generateCommandID();
+    }
+
     // Create a command.
     unique_ptr<BedrockCommand> command = getCommandFromPlugins(move(request));
 
@@ -2504,16 +2518,6 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
         command->writeConsistency = SQLiteNode::QUORUM;
         _lastQuorumCommandTime = STimeNow();
         SINFO("Forcing QUORUM consistency for command " << command->request.methodLine);
-    }
-
-    // This is important! All commands passed through the entire cluster must have unique IDs, or they
-    // won't get routed properly from follower to leader and back.
-    // If the command specifies an ID header (for HTTP escalations) use that, otherwise generate one.
-    auto existingID = command->request.nameValueMap.find("ID");
-    if (existingID != command->request.nameValueMap.end()) {
-        command->id = existingID->second;
-    } else {
-        command->id = args["-nodeName"] + "#" + to_string(_requestCount++);
     }
 
     return command;
