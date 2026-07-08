@@ -121,8 +121,15 @@ bool BedrockJobsCommand::peek(SQLite& db)
 {
     const string& requestVerb = request.getVerb();
 
-    // Jobs commands can only crash if they look identical.
+    // Jobs commands can only crash if they look identical. We key the crash blacklist on the
+    // semantically meaningful request fields, but exclude volatile, per-request fields that are
+    // never identical across two requests (e.g. `requestID`). Including them would make the
+    // blacklist entry impossible to match, rendering the poison-pill protection a no-op.
+    static const set<string, STableComp> volatileFields = {"requestID", "ID", "lastIP", "_source"};
     for (const auto& name : request.nameValueMap) {
+        if (volatileFields.count(name.first)) {
+            continue;
+        }
         crashIdentifyingValues.insert(name.first);
     }
 
