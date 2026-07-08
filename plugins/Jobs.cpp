@@ -117,12 +117,12 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db)
 }
 
 // ==========================================================================
-bool BedrockJobsCommand::peek(SQLite& db)
+void BedrockJobsCommand::populateCrashIdentifyingValues()
 {
-    const string& requestVerb = request.getVerb();
-
-    // Jobs commands can only crash if they look identical. 
-    // We exclude unique request fields so blacklist entries can be matched
+    // We key the crash blacklist on the semantically meaningful request fields, but exclude
+    // volatile, per-request fields that are never identical across two requests (e.g. `requestID`).
+    // Including them would make the blacklist entry impossible to match, rendering the poison-pill
+    // protection a no-op.
     static const set<string, STableComp> volatileFields = {"requestID", "ID", "lastIP", "_source"};
     for (const auto& name : request.nameValueMap) {
         if (volatileFields.count(name.first)) {
@@ -130,6 +130,15 @@ bool BedrockJobsCommand::peek(SQLite& db)
         }
         crashIdentifyingValues.insert(name.first);
     }
+}
+
+// ==========================================================================
+bool BedrockJobsCommand::peek(SQLite& db)
+{
+    const string& requestVerb = request.getVerb();
+
+    // Jobs commands can only crash if they look identical.
+    populateCrashIdentifyingValues();
 
     // We can potentially change this, so we set it here.
     mockRequest = request.isSet("mockRequest");

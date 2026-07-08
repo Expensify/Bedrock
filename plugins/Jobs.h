@@ -27,6 +27,12 @@ private:
 class BedrockJobsCommand : public BedrockCommand {
 public:
     BedrockJobsCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin);
+
+    // Populates crashIdentifyingValues with the request fields that identify this command for the
+    // crash blacklist ("poison-pill" protection), excluding volatile per-request fields (e.g.
+    // requestID) that would otherwise make the blacklist entry impossible to ever match.
+    void populateCrashIdentifyingValues();
+
     virtual bool peek(SQLite& db);
     virtual void process(SQLite& db);
     virtual void handleFailedReply();
