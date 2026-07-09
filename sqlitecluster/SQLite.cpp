@@ -658,7 +658,8 @@ bool SQLite::read(const string& query, const map<string, Parameter>& params, SQR
     _readElapsed += timeSpent;
 
     // If we're not inside a transaction, this doesn't get added to our normal transaction timing.
-    if (!_insideTransaction) {
+    // This log line will happen a lot. Let's log only when it takes more than 100ms to complete.
+    if (!_insideTransaction && _readElapsed > 100'000) {
         SINFO("Read with auto-transaction timing info", {
             {"totalTransactionElapsed", to_string(timeSpent / 1000)},
         });
