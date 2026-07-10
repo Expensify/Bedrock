@@ -119,16 +119,25 @@ void BedrockPlugin_Jobs::upgradeDatabase(SQLite& db)
 // ==========================================================================
 void BedrockJobsCommand::populateCrashIdentifyingValues()
 {
-    // We key the crash blacklist on the semantically meaningful request fields, but exclude
-    // volatile, per-request fields that are never identical across two requests (e.g. `requestID`).
-    // Including them would make the blacklist entry impossible to match, rendering the poison-pill
-    // protection a no-op.
-    static const set<string, STableComp> volatileFields = {"requestID", "ID", "lastIP", "_source"};
-    for (const auto& name : request.nameValueMap) {
-        if (volatileFields.count(name.first)) {
-            continue;
-        }
-        crashIdentifyingValues.insert(name.first);
+    // We key the crash blacklist ("poison-pill" protection) on an explicit whitelist of the request
+    // fields that semantically identify a Jobs command: `name` and `data`. Everything else (e.g.
+    // `requestID`, `ID`, `lastIP`, `_source`) is volatile per-request data that is never identical
+    // across two requests.
+    //
+    // Whitelisting matters because of how BedrockServer::_wouldCrash treats multiple crashes of the
+    // same methodLine: if a command crashes with more than one distinct set of identifying values, it
+    // assumes we've already lost more than one node and fully blocks the command for everyone. If we
+    // keyed on volatile fields, two crashes of the *same* command would record two different sets
+    // (because e.g. `requestID` differs) and wrongly trip that block-everyone safeguard. Keying on
+    // just `name` and `data` means the same command crashing twice matches a single blacklist entry
+    // (blocking only that command), while two genuinely different commands crashing correctly trips
+    // the block-everyone safeguard.
+    //
+    // CrashMap::insert only records a field if it's actually set on the request, so listing a field
+    // that's absent is a no-op.
+    static const set<string, STableComp> crashIdentifyingFields = {"name", "data"};
+    for (const auto& field : crashIdentifyingFields) {
+        crashIdentifyingValues.insert(field);
     }
 }
 

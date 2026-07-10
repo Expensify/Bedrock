@@ -4,26 +4,31 @@
 
 // Unit tests for BedrockJobsCommand::populateCrashIdentifyingValues(). The crash blacklist
 // ("poison-pill" protection) refuses any future command whose methodLine and crashIdentifyingValues
-// exactly match a command that previously crashed a node. If a volatile, per-request field such as
-// `requestID` is included, the entry can never match a future command (no two requests share a
-// requestID), making the protection a no-op. These tests verify those volatile fields are excluded
-// while the semantically meaningful fields are retained.
+// exactly match a command that previously crashed a node. crashIdentifyingValues is keyed on an
+// explicit whitelist of the fields that semantically identify a Jobs command -- `name` and `data`.
+// Everything else (e.g. `requestID`, `jobID`, `priority`, `lastIP`) is volatile or non-identifying
+// per-request data. Keying only on `name`/`data` keeps the same command's repeated crashes on a
+// single blacklist entry, and lets BedrockServer::_wouldCrash's "more than one identifying set ->
+// block everyone" safeguard fire only when genuinely different commands crash. These tests verify
+// only the whitelisted fields are kept and everything else is dropped.
 struct JobsCrashIdentifyingValuesTest : tpunit::TestFixture
 {
     JobsCrashIdentifyingValuesTest()
         : tpunit::TestFixture("JobsCrashIdentifyingValues",
-                              TEST(JobsCrashIdentifyingValuesTest::excludesVolatileFields),
-                              TEST(JobsCrashIdentifyingValuesTest::retainsAllFieldsWhenNoneAreVolatile))
+                              TEST(JobsCrashIdentifyingValuesTest::onlyKeepsWhitelistedFields),
+                              TEST(JobsCrashIdentifyingValuesTest::keepsOnlyPresentWhitelistedFields))
     {
     }
 
-    // Volatile per-request fields are dropped; meaningful fields (and their values) are kept.
-    void excludesVolatileFields()
+    // Only the whitelisted fields (`name`, `data`) and their values are kept; every other field --
+    // including per-request volatile fields -- is dropped.
+    void onlyKeepsWhitelistedFields()
     {
         SData request("GetJob");
         request["name"] = "TestJob";
         request["data"] = "{\"key\":\"value\"}";
         request["jobID"] = "12345";
+        request["priority"] = "500";
         request["requestID"] = "abc123";
         request["ID"] = "999";
         request["lastIP"] = "127.0.0.1";
@@ -32,27 +37,26 @@ struct JobsCrashIdentifyingValuesTest : tpunit::TestFixture
         BedrockJobsCommand command(SQLiteCommand(move(request)), nullptr);
         command.populateCrashIdentifyingValues();
 
-        // Volatile per-request fields must be excluded so the blacklist entry can actually match a
-        // genuinely repeated command.
+        // Only the whitelisted fields are kept, with their original values.
+        ASSERT_EQUAL(command.crashIdentifyingValues.size(), 2u);
+        ASSERT_TRUE(command.crashIdentifyingValues.count("name"));
+        ASSERT_TRUE(command.crashIdentifyingValues.count("data"));
+        ASSERT_EQUAL(command.crashIdentifyingValues["name"], "TestJob");
+        ASSERT_EQUAL(command.crashIdentifyingValues["data"], "{\"key\":\"value\"}");
+
+        // Every non-whitelisted field must be excluded -- including non-volatile-but-non-identifying
+        // fields like jobID/priority, so the same command crashing twice stays on one blacklist entry.
+        ASSERT_FALSE(command.crashIdentifyingValues.count("jobID"));
+        ASSERT_FALSE(command.crashIdentifyingValues.count("priority"));
         ASSERT_FALSE(command.crashIdentifyingValues.count("requestID"));
         ASSERT_FALSE(command.crashIdentifyingValues.count("ID"));
         ASSERT_FALSE(command.crashIdentifyingValues.count("lastIP"));
         ASSERT_FALSE(command.crashIdentifyingValues.count("_source"));
-
-        // Semantically meaningful fields must be retained, with their original values.
-        ASSERT_TRUE(command.crashIdentifyingValues.count("name"));
-        ASSERT_TRUE(command.crashIdentifyingValues.count("data"));
-        ASSERT_TRUE(command.crashIdentifyingValues.count("jobID"));
-        ASSERT_EQUAL(command.crashIdentifyingValues["name"], "TestJob");
-        ASSERT_EQUAL(command.crashIdentifyingValues["data"], "{\"key\":\"value\"}");
-        ASSERT_EQUAL(command.crashIdentifyingValues["jobID"], "12345");
-
-        // Only the three non-volatile fields should be present.
-        ASSERT_EQUAL(command.crashIdentifyingValues.size(), 3u);
     }
 
-    // A command with no volatile fields keeps every field.
-    void retainsAllFieldsWhenNoneAreVolatile()
+    // A whitelisted field that isn't set on the request is not recorded (CrashMap::insert skips
+    // fields the request doesn't have).
+    void keepsOnlyPresentWhitelistedFields()
     {
         SData request("CreateJob");
         request["name"] = "AnotherJob";
@@ -61,8 +65,10 @@ struct JobsCrashIdentifyingValuesTest : tpunit::TestFixture
         BedrockJobsCommand command(SQLiteCommand(move(request)), nullptr);
         command.populateCrashIdentifyingValues();
 
-        ASSERT_EQUAL(command.crashIdentifyingValues.size(), 2u);
+        // `data` was never set, so only `name` should be present; `priority` is not whitelisted.
+        ASSERT_EQUAL(command.crashIdentifyingValues.size(), 1u);
         ASSERT_TRUE(command.crashIdentifyingValues.count("name"));
-        ASSERT_TRUE(command.crashIdentifyingValues.count("priority"));
+        ASSERT_FALSE(command.crashIdentifyingValues.count("data"));
+        ASSERT_FALSE(command.crashIdentifyingValues.count("priority"));
     }
 } __JobsCrashIdentifyingValuesTest;
