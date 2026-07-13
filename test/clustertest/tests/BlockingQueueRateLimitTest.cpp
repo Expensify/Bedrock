@@ -17,7 +17,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
     BedrockClusterTester* tester;
 
     void setup()
-    { 
+    {
         tester = new BedrockClusterTester();
     }
 
@@ -26,7 +26,8 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         delete tester;
     }
 
-    void before() {
+    void before()
+    {
         BedrockTester& leader = tester->getTester(0);
 
         // ClearBlocks should reset all identifier counts.
@@ -34,7 +35,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         resetBlockingQueue["ClearBlocks"] = "true";
         resetBlockingQueue["MaxRequestsPerIdentifier"] = "0";
         leader.executeWaitVerifyContent(resetBlockingQueue, "200", true);
-        
+
         // Reset state on leader.
         SData resetConflict("SetConflictParams");
         resetConflict["MaxConflictRetries"] = "3";
@@ -61,7 +62,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         SData setBlockingQueueRateLimit("SetBlockingQueueRateLimit");
         setBlockingQueueRateLimit["MaxRequestsPerIdentifier"] = "1";
         leader.executeWaitVerifyContent(setBlockingQueueRateLimit, "200", true);
-        
+
         SData setBlockingQueueTimeRateLimit("SetBlockingQueueTimeRateLimit");
         setBlockingQueueTimeRateLimit["MaxTimePerIdentifierMs"] = "1";
         leader.executeWaitVerifyContent(setBlockingQueueTimeRateLimit, "200", true);
@@ -126,7 +127,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         }
 
         ASSERT_EQUAL(count200.load() + count503.load(), 600);
-        
+
         // We're not rejecting for counts right now, so this should return 0
         ASSERT_EQUAL(count503.load(), 0);
     }
@@ -144,13 +145,13 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         SData setBlockingQueueTimeRateLimit("SetBlockingQueueTimeRateLimit");
         setBlockingQueueTimeRateLimit["MaxTimePerIdentifierMs"] = "10";
         leader.executeWaitVerifyContent(setBlockingQueueTimeRateLimit, "200", true);
-        
+
         // Force conflicts so commands escalate to the blocking queue and run on worker 0,
         // which is what accumulates per-identifier time.
         SData setConflict("SetConflictParams");
         setConflict["MaxConflictRetries"] = "1";
         leader.executeWaitVerifyContent(setConflict, "200", true);
-        
+
         SData status("Status");
         STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
         ASSERT_EQUAL(json["blockingTimeRateLimitThresholdMs"], "10");
@@ -184,7 +185,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         }
         // Confirm all requests finished
         ASSERT_EQUAL(count200.load() + count503.load(), 600);
-        
+
         // Enforcement is now happening, so we should see some 503s.
         ASSERT_TRUE(count503.load() > 0);
 

@@ -54,7 +54,7 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
             const uint64_t timeUS = (it == _identifierTimes.end()) ? 0 : it->second;
             if (timeUS > maxTimePerIdentifier) {
                 SINFO("Blocking queue rate limit (time), rejecting", {
-                    {"command", command->request.methodLine}, 
+                    {"command", command->request.methodLine},
                     {"identifier", identifier},
                     {"timeMS", to_string(timeUS / 1000)},
                     {"thresholdMS", to_string(maxTimePerIdentifier / 1000)}
@@ -63,7 +63,7 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
             }
             if (timeUS > maxTimePerIdentifierToLog) {
                 SINFO("Blocking queue rate limit (time), logging", {
-                    {"command", command->request.methodLine}, 
+                    {"command", command->request.methodLine},
                     {"identifier", identifier},
                     {"timeMS", to_string(timeUS / 1000)},
                     {"thresholdMS", to_string(maxTimePerIdentifier / 1000)}
