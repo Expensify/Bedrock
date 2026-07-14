@@ -21,6 +21,7 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
     const string identifier = command->blockingQueueRateLimitIdentifier;
     const size_t maxPerIdentifier = _maxPerIdentifier.load();
     const uint64_t maxTimePerIdentifier = _maxTimePerIdentifier.load();
+    const uint64_t maxTimePerIdentifierToLog = _maxTimePerIdentifierToLog.load();
     const bool shouldCheckCount = maxPerIdentifier > 0 && !identifier.empty();
     const bool shouldCheckTime = maxTimePerIdentifier > 0 && !identifier.empty();
 
@@ -52,14 +53,21 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
             auto it = _identifierTimes.find(identifier);
             const uint64_t timeUS = (it == _identifierTimes.end()) ? 0 : it->second;
             if (timeUS > maxTimePerIdentifier) {
-                SINFO("Blocking queue rate limit (time): rejecting '" << command->request.methodLine
-                      << "' for identifier '" << identifier << "' (timeMs=" << (timeUS / 1000)
-                      << ", thresholdMs=" << (maxTimePerIdentifier / 1000) << ")");
-                // TODO: enable enforcement after monitoring confirms thresholds are correct in production.
-                // Time-based rollback is not symmetric with count — the rejected command's
-                // execution time is not known at push, but the accumulator simply won't grow
-                // (the rejected command never runs).
-                // STHROW("503 Blocking queue rate limited (time)");
+                SINFO("Blocking queue rate limit (time), rejecting", {
+                    {"command", command->request.methodLine},
+                    {"identifier", identifier},
+                    {"timeMS", to_string(timeUS / 1000)},
+                    {"thresholdMS", to_string(maxTimePerIdentifier / 1000)}
+                });
+                STHROW("503 Blocking queue rate limited (time)");
+            }
+            if (timeUS > maxTimePerIdentifierToLog) {
+                SINFO("Blocking queue rate limit (time), logging", {
+                    {"command", command->request.methodLine},
+                    {"identifier", identifier},
+                    {"timeMS", to_string(timeUS / 1000)},
+                    {"thresholdMS", to_string(maxTimePerIdentifier / 1000)}
+                });
             }
         }
     }
