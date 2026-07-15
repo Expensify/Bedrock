@@ -47,7 +47,7 @@ void BedrockPlugin_Jobs::onNodeLogin(SQLitePeer* peer)
 
     // Send the current blacklist to the joining peer so it enforces the same patterns if it becomes leader. Tag it as
     // propagated so the peer stores it without re-broadcasting, and set a timeout so this send can't block for long.
-    SALERT("Sending " << jobPatterns.size() << " blacklisted bedrock job patterns to node " << peer->name << " on login");
+    SINFO("Sending " << jobPatterns.size() << " blacklisted bedrock job patterns to node " << peer->name << " on login");
     SData crashJobCommand("CrashBedrockJob");
     crashJobCommand["names"] = SComposeList(jobPatterns);
     crashJobCommand["isPropagated"] = "true";
@@ -186,7 +186,7 @@ bool BedrockJobsCommand::peek(SQLite& db)
                 for (const auto& name : names) {
                     jobsPlugin->_crashedBedrockJobPatterns.insert(name);
                 }
-                SALERT("Blacklisting bedrock jobs (now have " << jobsPlugin->_crashedBedrockJobPatterns.size() << " patterns): " << SComposeList(names));
+                SINFO("Blacklisting bedrock jobs (now have " << jobsPlugin->_crashedBedrockJobPatterns.size() << " patterns): " << SComposeList(names));
             }
         } else {
             unique_lock<decltype(jobsPlugin->_crashedBedrockJobPatternMutex)> lock(jobsPlugin->_crashedBedrockJobPatternMutex);
@@ -861,7 +861,7 @@ void BedrockJobsCommand::process(SQLite& db)
             }
             if (!crashedJobIDs.empty()) {
                 const list<string> failIDs(crashedJobIDs.begin(), crashedJobIDs.end());
-                SALERT("Failing blacklisted bedrock jobs: " << SComposeList(failIDs));
+                SINFO("Failing blacklisted bedrock jobs: " << SComposeList(failIDs));
                 if (!db.writeIdempotent("UPDATE jobs SET state='FAILED' WHERE jobID IN (" + SQList(failIDs) + ");")) {
                     STHROW("502 Failed to fail blacklisted jobs");
                 }
