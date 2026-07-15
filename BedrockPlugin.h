@@ -1,6 +1,7 @@
 #pragma once
 #include "BedrockCommand.h"
 class BedrockServer;
+class SQLitePeer;
 
 // Simple plugin system to add functionality to a node at runtime.
 class BedrockPlugin {
@@ -91,6 +92,12 @@ public:
 
     // Called when a node changes state
     virtual void stateChanged(SQLite& db, SQLiteNodeState newState)
+    {
+    }
+
+    // Called when a peer node logs in, so a plugin can send it any state it needs to replicate (e.g. in-memory data
+    // that isn't stored in the database).
+    virtual void onNodeLogin(SQLitePeer* peer)
     {
     }
 

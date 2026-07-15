@@ -2389,6 +2389,11 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
             }).detach();
         }
     }
+
+    // Let each plugin send the joining peer any of its own state that needs to replicate.
+    for (auto& p : plugins) {
+        p.second->onNodeLogin(peer);
+    }
 }
 
 void BedrockServer::_acceptSockets()
