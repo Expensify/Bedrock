@@ -5,11 +5,20 @@ runs:
   using: composite
   steps:
     - name: Download binaries
-      uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.10.0
       with:
-        name: bedrock-binaries
+        key: bedrock-binaries-${{ github.sha }}
+        # Fail on cache miss to avoid odd chmod errors as the only visible error if this part
+        # of the workflow fails.
+        fail-on-cache-miss: true
+        path: |
+          bedrock
+          test/test
+          test/clustertest/clustertest
+          test/clustertest/testplugin/testplugin.so
+          test/sample_data/lottoNumbers.json
 
     - name: Set permissions of the new binary files
       run: |
-        sudo chmod +x bedrock test/test test/clustertest/clustertest test/sample_data/lottoNumbers.json test/clustertest/testplugin/testplugin.so
+        sudo chmod +x bedrock test/test test/clustertest/clustertest
       shell: bash
