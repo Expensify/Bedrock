@@ -1846,13 +1846,6 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             content["crashCommandList"] = SComposeJSONArray(crashCommandListArray);
         }
 
-        {
-            // Make it known which bedrock jobs are blacklisted from running.
-            shared_lock<decltype(_crashedBedrockJobPatternMutex)> lock(_crashedBedrockJobPatternMutex);
-            content["crashedBedrockJobs"] = _crashedBedrockJobPatterns.size();
-            content["crashedBedrockJobList"] = SComposeJSONArray(vector<string>(_crashedBedrockJobPatterns.begin(), _crashedBedrockJobPatterns.end()));
-        }
-
         for (auto& p : _blockingCommandQueue.getState()) {
             content[p.first] = p.second;
         }
@@ -1966,8 +1959,6 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "SetBlockingQueueTimeRateLimit") ||
         SIEquals(command->request.methodLine, "ClearBlockingQueue") ||
         SIEquals(command->request.methodLine, "SetPriority") ||
-        SIEquals(command->request.methodLine, "CrashBedrockJob") ||
-        SIEquals(command->request.methodLine, "ClearCrashedBedrockJobs") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
     ) {
         return true;
@@ -2063,26 +2054,6 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             totalCount += s.second.size();
         }
         SALERT("Blacklisting command (now have " << totalCount << " blacklisted commands): " << request.serialize());
-    } else if (SIEquals(command->request.methodLine, "CrashBedrockJob")) {
-        const list<string> names = SParseList(command->request["names"]);
-        if (names.empty()) {
-            SINFO("Got CrashBedrockJob with no 'names'. Nothing to blacklist.");
-            return;
-        }
-        {
-            unique_lock<decltype(_crashedBedrockJobPatternMutex)> lock(_crashedBedrockJobPatternMutex);
-            for (const auto& name : names) {
-                _crashedBedrockJobPatterns.insert(name);
-            }
-            SALERT("Blacklisting bedrock jobs (now have " << _crashedBedrockJobPatterns.size() << " patterns): " << SComposeList(names));
-        }
-        _propagateBedrockJobBlacklistCommand(command->request);
-    } else if (SIEquals(command->request.methodLine, "ClearCrashedBedrockJobs")) {
-        {
-            unique_lock<decltype(_crashedBedrockJobPatternMutex)> lock(_crashedBedrockJobPatternMutex);
-            _crashedBedrockJobPatterns.clear();
-        }
-        _propagateBedrockJobBlacklistCommand(command->request);
     } else if (SIEquals(command->request.methodLine, "ClearBlockingQueue")) {
         auto commands = _blockingCommandQueue.getAll();
         list<string> methodLines;
@@ -2286,26 +2257,6 @@ bool BedrockServer::shouldBackup()
     return _shouldBackup;
 }
 
-set<string> BedrockServer::getCrashedBedrockJobPatterns()
-{
-    shared_lock<decltype(_crashedBedrockJobPatternMutex)> lock(_crashedBedrockJobPatternMutex);
-    return _crashedBedrockJobPatterns;
-}
-
-void BedrockServer::_propagateBedrockJobBlacklistCommand(const SData& request)
-{
-    // Propagate a locally-originated blacklist change to the rest of the cluster so a new leader still enforces it
-    // after a failover. Every intra-cluster command arrives via the private command port with an empty _source, so
-    // _source can't distinguish a local command from a propagated one; instead we tag propagated commands with
-    // "isPropagated" and skip re-broadcasting those, which prevents an infinite broadcast loop between peers.
-    if (request.isSet("isPropagated")) {
-        return;
-    }
-    SData propagated = request;
-    propagated["isPropagated"] = "true";
-    broadcastCommand(propagated);
-}
-
 SData BedrockServer::_generateCrashMessage(const unique_ptr<BedrockCommand>& command)
 {
     SHMMM("Generating CRASH_COMMAND command for " << command->request.methodLine);
@@ -2362,30 +2313,6 @@ void BedrockServer::onNodeLogin(SQLitePeer* peer)
         if (_clusterMessengerCopy) {
             thread([command = move(peerCommand), _clusterMessengerCopy, peerName]() {
                 _clusterMessengerCopy->runOnPeer(*command, peerName);
-            }).detach();
-        }
-    }
-
-    // Send the bedrock job blacklist to the newly logged-in peer so it enforces the same patterns if it becomes leader.
-    list<string> jobPatterns;
-    {
-        shared_lock<decltype(_crashedBedrockJobPatternMutex)> jobLock(_crashedBedrockJobPatternMutex);
-        jobPatterns.assign(_crashedBedrockJobPatterns.begin(), _crashedBedrockJobPatterns.end());
-    }
-    if (!jobPatterns.empty()) {
-        SALERT("Sending " << jobPatterns.size() << " blacklisted bedrock job patterns to node " << peer->name << " on login");
-        SData crashJobCommand("CrashBedrockJob");
-        crashJobCommand["names"] = SComposeList(jobPatterns);
-        crashJobCommand["timeout"] = "5000";
-
-        // Tag as propagated so the joining peer stores it locally without re-broadcasting to the whole cluster.
-        crashJobCommand["isPropagated"] = "true";
-        auto _clusterMessengerCopy = _clusterMessenger;
-        auto peerName = peer->name;
-        if (_clusterMessengerCopy) {
-            thread([command = move(crashJobCommand), _clusterMessengerCopy, peerName]() {
-                BedrockCommand cmd(SQLiteCommand(SData(command)), nullptr);
-                _clusterMessengerCopy->runOnPeer(cmd, peerName);
             }).detach();
         }
     }

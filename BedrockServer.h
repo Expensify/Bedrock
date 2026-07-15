@@ -211,10 +211,6 @@ public:
     // If peerName is specified, command will be sent to only that peer.
     void broadcastCommand(const SData& message, const string& peerName = "");
 
-    // Returns a copy of the set of GLOB patterns for jobs that have been blacklisted via CrashBedrockJob. The Jobs
-    // plugin uses these to fail matching jobs at GetJob time instead of running them.
-    set<string> getCrashedBedrockJobPatterns();
-
     // Set the detach state of the server. Setting to true will cause the server to detach from the database and go
     // into a sleep loop until this is called again with false
     void setDetach(bool detach);
@@ -429,14 +425,6 @@ private:
     // particular command for it count as a match likely to cause a crash.
     map<string, set<STable>> _crashCommands;
 
-    // A shared mutex to control access to the list of blacklisted bedrock jobs.
-    shared_timed_mutex _crashedBedrockJobPatternMutex;
-
-    // GLOB patterns for bedrock jobs that have been blacklisted via CrashBedrockJob. A job whose name matches any of
-    // these patterns is failed at GetJob time instead of being run. This lets us surgically disable a misbehaving job
-    // without stopping BWM for everyone.
-    set<string> _crashedBedrockJobPatterns;
-
     // Returns whether or not the command was a status or control command. If it was, it will have already been handled
     // and responded to upon return
     bool _handleIfStatusOrControlCommand(unique_ptr<BedrockCommand>& command);
@@ -446,9 +434,6 @@ private:
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const unique_ptr<BedrockCommand>& command);
-
-    // Broadcast a locally-originated bedrock job blacklist change to peers, tagging it so recipients don't re-broadcast.
-    void _propagateBedrockJobBlacklistCommand(const SData& request);
 
     // The number of seconds to wait between forcing a command to QUORUM.
     uint64_t _quorumCheckpointSeconds;
