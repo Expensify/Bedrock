@@ -3,6 +3,7 @@
 #include "libstuff/STCPManager.h"
 #include "libstuff/libstuff.h"
 #include <libstuff/SSSLState.h>
+#include <unistd.h>
 #include <mutex>
 
 SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID)
@@ -117,7 +118,7 @@ bool SHTTPSProxySocket::recv()
                         ssl = new SSSLState(hostname, s);
                     } else {
                         SWARN("Proxy server " << proxyAddress << " returned methodLine: " << connectionEstablished.methodLine);
-                        close(s);
+                        ::close(s);
                         s = -1;
                         state = STCPManager::Socket::CLOSED;
                     }
