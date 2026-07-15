@@ -337,6 +337,10 @@ extern thread_local string SThreadLogPrefix;
 extern thread_local string SThreadLogParam;
 extern thread_local string SThreadLogName;
 
+// The command currently being processed on this thread (methodLine of the request), if any. Read by
+// `addLogParams` so every log line emitted while a command is running automatically gets tagged with it.
+extern thread_local string SThreadLogCommand;
+
 extern thread_local bool isSyncThread;
 
 // Thread-local log prefix
@@ -354,6 +358,7 @@ private:
     // Attributes
     string oldPrefix;
     string oldLogParam;
+    string oldCommand;
 };
 #define SAUTOPREFIX(_PREFIX_) SAutoThreadPrefix __SAUTOPREFIX ## __LINE__(_PREFIX_)
 

@@ -1564,7 +1564,22 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity)
 
 unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(SData&& request)
 {
-    return getCommandFromPlugins(make_unique<SQLiteCommand>(move(request)));
+    auto baseCommand = make_unique<SQLiteCommand>(move(request));
+
+    // Assign the command a cluster-unique id up front, so the plugin's command constructor can rely on command.id
+    // being populated (it's moved into the constructed command before that command's constructor body runs). An
+    // escalated command carries its originating id in the request's ID header, so we reuse that; otherwise we mint a
+    // new one. The id is stored only on the command object, never written back into the request, so it can't leak into
+    // request logging or into commands that build crash fingerprints from their request headers.
+    const string commandID = baseCommand->request.isSet("ID") ? baseCommand->request["ID"] : generateCommandID();
+    baseCommand->id = commandID;
+
+    auto command = getCommandFromPlugins(move(baseCommand));
+
+    // A plugin may return a freshly-built command rather than the base we passed in (e.g. an error command created
+    // when a command's constructor throws), so make sure the returned command carries the id regardless.
+    command->id = commandID;
+    return command;
 }
 
 unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLiteCommand>&& baseCommand)
@@ -1611,6 +1626,9 @@ unique_ptr<BedrockCommand> BedrockServer::getCommandFromPlugins(unique_ptr<SQLit
 
 void BedrockServer::_reply(unique_ptr<BedrockCommand>& command)
 {
+    // Some control commands like Status go through a different flow where its SAUTOPREFIX scope has already closed, so we re-set it here so it handles those commands properly.
+    SAUTOPREFIX(command->request);
+
     // Finalize timing info even for commands we won't respond to (this makes this data available in logs).
     command->finalizeTimingInfo();
 
@@ -2435,6 +2453,11 @@ void BedrockServer::_acceptSockets()
     }
 }
 
+string BedrockServer::generateCommandID()
+{
+    return args["-nodeName"] + "#" + to_string(_requestCount++);
+}
+
 unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& request, Socket& socket, bool shouldTreatAsLocalhost)
 {
     SAUTOPREFIX(request);
@@ -2506,16 +2529,6 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
         command->writeConsistency = SQLiteNode::QUORUM;
         _lastQuorumCommandTime = STimeNow();
         SINFO("Forcing QUORUM consistency for command " << command->request.methodLine);
-    }
-
-    // This is important! All commands passed through the entire cluster must have unique IDs, or they
-    // won't get routed properly from follower to leader and back.
-    // If the command specifies an ID header (for HTTP escalations) use that, otherwise generate one.
-    auto existingID = command->request.nameValueMap.find("ID");
-    if (existingID != command->request.nameValueMap.end()) {
-        command->id = existingID->second;
-    } else {
-        command->id = args["-nodeName"] + "#" + to_string(_requestCount++);
     }
 
     return command;

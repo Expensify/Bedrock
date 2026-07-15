@@ -91,6 +91,7 @@
 thread_local string SThreadLogPrefix{"xxxxxx"};
 thread_local string SThreadLogParam{"we@dont.know"};
 thread_local string SThreadLogName;
+thread_local string SThreadLogCommand;
 thread_local bool isSyncThread;
 
 // We store the process name passed in `SInitialize` to use in logging.
@@ -302,6 +303,7 @@ void SFluentdLog(int priority, const char* typeTag, string&& message, const char
     record["source"] = "bedrock";
     record["request_id"] = SThreadLogPrefix;
     record["log_param"] = SThreadLogParam;
+    record["command"] = SThreadLogCommand;
     record["type_tag"] = typeTag;
     record["thread_name"] = SThreadLogName;
     record["file"] = file;
@@ -3365,15 +3367,20 @@ SAutoThreadPrefix::SAutoThreadPrefix(const SData& request)
     // Retain the old values
     oldPrefix = SThreadLogPrefix;
     oldLogParam = SThreadLogParam;
+    oldCommand = SThreadLogCommand;
     const string requestID = request.isSet("requestID") ? request["requestID"] : "xxxxxx";
     SThreadLogPrefix = requestID;
     SThreadLogParam = request.isSet("logParam") ? request["logParam"] : "we@dont.know";
+    SThreadLogCommand = request.methodLine;
 }
 
 SAutoThreadPrefix::SAutoThreadPrefix(const string& rID)
 {
+    // This overload is used for sub-scopes (e.g. an individual HTTPS transaction) that have their own request ID
+    // but aren't themselves a command, so we leave SThreadLogCommand as whatever the enclosing command set it to.
     oldPrefix = SThreadLogPrefix;
     oldLogParam = SThreadLogParam;
+    oldCommand = SThreadLogCommand;
     SThreadLogPrefix = rID.empty() ? "xxxxxx" : rID;
     SThreadLogParam = "we@dont.know";
 }
@@ -3382,6 +3389,7 @@ SAutoThreadPrefix::~SAutoThreadPrefix()
 {
     SThreadLogPrefix = move(oldPrefix);
     SThreadLogParam = move(oldLogParam);
+    SThreadLogCommand = move(oldCommand);
 }
 
 float SToFloat(const string& val)
