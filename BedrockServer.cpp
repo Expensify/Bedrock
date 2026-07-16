@@ -1839,6 +1839,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
         content["host"] = args["-nodeHost"];
         content["commandCount"] = BedrockCommand::getCommandCount();
         content["isDetached"] = isDetached() ? "true" : "false";
+        content["duplicateEscalatedRequestCount"] = _duplicateEscalatedRequestCount.load();
 
         {
             // Make it known if anything is known to cause crashes.
@@ -2630,6 +2631,21 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             command->response.methodLine = "500 Server Shutting Down";
                             _reply(command);
                         } else {
+                            // Escalated requests arrive on the private command port. Track each one by its cluster-unique
+                            // id so we can spot duplicates: the same request arriving again while a previous copy is still
+                            // being processed on the leader, causing write amplification. For now we only log these, we
+                            // don't drop them.
+                            string escalatedID;
+                            if (fromPrivateCommandPort) {
+                                escalatedID = command->id;
+                                lock_guard<mutex> lock(_inFlightEscalatedRequestsMutex);
+                                if (!_inFlightEscalatedRequests.insert(escalatedID).second) {
+                                    _duplicateEscalatedRequestCount++;
+                                    SWARN("Duplicate escalated request in flight on leader. command:" << command->request.methodLine
+                                          << ", id:" << escalatedID);
+                                }
+                            }
+
                             // If it's not handled by `_handleIfStatusOrControlCommand` we fall into the queuing logic.
                             // If the command has a socket (it's this socket) then we need to wait for it to finish before
                             // we can dequeue the next command, so that the responses all end up delivered in order.
@@ -2687,6 +2703,12 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             }
 
                             commandThread.join();
+
+                            // The escalated request is done, stop tracking it.
+                            if (fromPrivateCommandPort) {
+                                lock_guard<mutex> lock(_inFlightEscalatedRequestsMutex);
+                                _inFlightEscalatedRequests.erase(escalatedID);
+                            }
                         }
                     }
                 }

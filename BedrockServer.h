@@ -373,6 +373,15 @@ private:
     multimap<uint64_t, uint64_t> _futureCommitCommandTimeouts;
     recursive_mutex _futureCommitCommandMutex;
 
+    // Tracks the ids of escalated requests currently in flight on the leader. It's used to detect (and, for now, only
+    // log) a duplicate escalated request that arrives at the leader while the same request is still being processed,
+    // which causes write amplification.
+    set<string> _inFlightEscalatedRequests;
+    mutex _inFlightEscalatedRequestsMutex;
+
+    // A cumulative count of the duplicate escalated requests detected since startup, reported in the `Status` command.
+    atomic<uint64_t> _duplicateEscalatedRequestCount{0};
+
     // A set of command names that will always be run with QUORUM consistency level.
     // Specified by the `-synchronousCommands` command-line switch.
     set<string> _syncCommands;

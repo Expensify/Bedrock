@@ -9,7 +9,8 @@ struct EscalateTest : tpunit::TestFixture
                                          TEST(EscalateTest::test),
                                          TEST(EscalateTest::testSerializedData),
                                          TEST(EscalateTest::testSerializedDataException),
-                                         TEST(EscalateTest::socketReuse))
+                                         TEST(EscalateTest::socketReuse),
+                                         TEST(EscalateTest::duplicateEscalatedRequestDetected))
     {
     }
 
@@ -105,5 +106,49 @@ struct EscalateTest : tpunit::TestFixture
         // Send the command again. It shouldn't fail with a broken socket.
         results = brtester.executeWaitMultipleData({cmd});
         ASSERT_EQUAL(results[0].methodLine, "200 OK");
+    }
+
+    // A follower that escalates the same request to the leader more than once while a copy is still being processed
+    // causes write amplification. The leader detects these duplicates (matching on the command id) and reports a
+    // running count via `Status`. Here we escalate two copies of one request sharing the same id, overlapping in time
+    // via a slow process step, and verify the leader noticed the duplicate.
+    void duplicateEscalatedRequestDetected()
+    {
+        // Find the leader (which tracks duplicates) and a follower (which we escalate from).
+        BedrockTester* leader = nullptr;
+        BedrockTester* follower = nullptr;
+        for (size_t i = 0; i < 3; i++) {
+            BedrockTester& node = tester->getTester(i);
+            string state = SParseJSONObject(node.executeWaitVerifyContent(SData("Status"), "200", true))["state"];
+            if (state == "LEADING") {
+                leader = &node;
+            } else if (state == "FOLLOWING" && !follower) {
+                follower = &node;
+            }
+        }
+        ASSERT_TRUE(leader);
+        ASSERT_TRUE(follower);
+
+        // Read the leader's current duplicate count so the assertion is independent of any earlier tests.
+        uint64_t countBefore = SToUInt64(SParseJSONObject(leader->executeWaitVerifyContent(SData("Status"), "200", true))["duplicateEscalatedRequestCount"]);
+
+        // Two identical write commands sharing one id. The leader reuses the escalated request's id, so both copies
+        // land under the same id. The slow process step keeps the first copy in flight long enough for the second to
+        // arrive while the first is still being processed on the leader.
+        SData cmd("idcollision");
+        cmd["writeConsistency"] = "ASYNC";
+        cmd["ID"] = "duplicate_escalation_test";
+        cmd["ProcessSleep"] = "1000";
+        cmd["value"] = "duplicate";
+
+        // Send both at once (one per connection) so they escalate to the leader concurrently.
+        auto results = follower->executeWaitMultipleData({cmd, cmd}, 2);
+        ASSERT_EQUAL(results.size(), 2);
+        ASSERT_EQUAL(results[0].methodLine, "200 OK");
+        ASSERT_EQUAL(results[1].methodLine, "200 OK");
+
+        // The leader should have detected at least one duplicate.
+        uint64_t countAfter = SToUInt64(SParseJSONObject(leader->executeWaitVerifyContent(SData("Status"), "200", true))["duplicateEscalatedRequestCount"]);
+        ASSERT_GREATER_THAN(countAfter, countBefore);
     }
 } __EscalateTest;
