@@ -2631,10 +2631,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             command->response.methodLine = "500 Server Shutting Down";
                             _reply(command);
                         } else {
-                            // Escalated requests arrive on the private command port. Track each one by its cluster-unique
-                            // id so we can spot duplicates: the same request arriving again while a previous copy is still
-                            // being processed on the leader, causing write amplification. For now we only log these, we
-                            // don't drop them.
+                            // Track each request by its cluster-unique id so we can spot if we have a duplicates problem
                             string escalatedID;
                             if (fromPrivateCommandPort) {
                                 escalatedID = command->id;
