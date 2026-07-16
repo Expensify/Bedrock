@@ -114,23 +114,14 @@ struct EscalateTest : tpunit::TestFixture
     // via a slow process step, and verify the leader noticed the duplicate.
     void duplicateEscalatedRequestDetected()
     {
-        // Find the leader (which tracks duplicates) and a follower (which we escalate from).
-        BedrockTester* leader = nullptr;
-        BedrockTester* follower = nullptr;
-        for (size_t i = 0; i < 3; i++) {
-            BedrockTester& node = tester->getTester(i);
-            string state = SParseJSONObject(node.executeWaitVerifyContent(SData("Status"), "200", true))["state"];
-            if (state == "LEADING") {
-                leader = &node;
-            } else if (state == "FOLLOWING" && !follower) {
-                follower = &node;
-            }
-        }
-        ASSERT_TRUE(leader);
-        ASSERT_TRUE(follower);
+        // Node 0 is the leader (which tracks duplicates), node 1 a follower (which we escalate from).
+        BedrockTester& leader = tester->getTester(0);
+        BedrockTester& follower = tester->getTester(1);
+        ASSERT_TRUE(leader.waitForState("LEADING"));
+        ASSERT_TRUE(follower.waitForState("FOLLOWING"));
 
         // Read the leader's current duplicate count so the assertion is independent of any earlier tests.
-        uint64_t countBefore = SToUInt64(SParseJSONObject(leader->executeWaitVerifyContent(SData("Status"), "200", true))["duplicateEscalatedRequestCount"]);
+        uint64_t countBefore = SToUInt64(SParseJSONObject(leader.executeWaitVerifyContent(SData("Status"), "200", true))["duplicateEscalatedRequestCount"]);
 
         // Two identical write commands sharing one id. The leader reuses the escalated request's id, so both copies
         // land under the same id. The slow process step keeps the first copy in flight long enough for the second to
@@ -142,13 +133,13 @@ struct EscalateTest : tpunit::TestFixture
         cmd["value"] = "duplicate";
 
         // Send both at once (one per connection) so they escalate to the leader concurrently.
-        auto results = follower->executeWaitMultipleData({cmd, cmd}, 2);
+        auto results = follower.executeWaitMultipleData({cmd, cmd}, 2);
         ASSERT_EQUAL(results.size(), 2);
         ASSERT_EQUAL(results[0].methodLine, "200 OK");
         ASSERT_EQUAL(results[1].methodLine, "200 OK");
 
         // The leader should have detected at least one duplicate.
-        uint64_t countAfter = SToUInt64(SParseJSONObject(leader->executeWaitVerifyContent(SData("Status"), "200", true))["duplicateEscalatedRequestCount"]);
+        uint64_t countAfter = SToUInt64(SParseJSONObject(leader.executeWaitVerifyContent(SData("Status"), "200", true))["duplicateEscalatedRequestCount"]);
         ASSERT_GREATER_THAN(countAfter, countBefore);
     }
 } __EscalateTest;
