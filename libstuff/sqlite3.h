@@ -148,10 +148,10 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.54.0"
 #define SQLITE_VERSION_NUMBER 3054000
-#define SQLITE_SOURCE_ID      "2026-07-09 16:12:25 45f6fccc2ed3e0b6d6f72cf3aeb849a77eace5f8675f40d3fff-experimental"
-#define SQLITE_SCM_BRANCH     "unknown"
-#define SQLITE_SCM_TAGS       "unknown"
-#define SQLITE_SCM_DATETIME   "2026-07-09T16:12:25.329Z"
+#define SQLITE_SOURCE_ID      "2026-05-12 17:42:11 012a04edd0ab7001f2635eeb766089201cbe372d54e5008e7138a5dbe522bf06"
+#define SQLITE_SCM_BRANCH     "hctree-bedrock"
+#define SQLITE_SCM_TAGS       ""
+#define SQLITE_SCM_DATETIME   "2026-05-12T17:42:11.503Z"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -2210,19 +2210,6 @@ struct sqlite3_mem_methods {
 ** recommended case) then the integer is always filled with zero, regardless
 ** if its initial value.
 ** </dl>
-**
-** [[SQLITE_CONFIG_SHAREDLOG_MAXSIZE]]
-** <dt>SQLITE_CONFIG_SHAREDLOG_MAXSIZE
-** <dd>This option is used to set the maximum size of a BEGIN CONCURRENT
-** shared-log in bytes. The default value is 1GiB (1*1024*1024*1024). The
-** argument to this configuration option must be a 64-bit signed integer
-** (type sqlite3_int64) to use as the new limit. A negative parameter
-** restores the default value, a value of zero disabled shared-logs
-** altogether. There is no way to configure unlimited memory usage, but
-** applications may instead configure a very large value (e.g. 1TiB).
-** Shared-log entries are automatically discarded when their associated
-** transactions are checkpointed, which prevents the shared-log from growing
-** indefinitely in this case.
 */
 #define SQLITE_CONFIG_SINGLETHREAD         1  /* nil */
 #define SQLITE_CONFIG_MULTITHREAD          2  /* nil */
@@ -2254,7 +2241,6 @@ struct sqlite3_mem_methods {
 #define SQLITE_CONFIG_SORTERREF_SIZE      28  /* int nByte */
 #define SQLITE_CONFIG_MEMDB_MAXSIZE       29  /* sqlite3_int64 */
 #define SQLITE_CONFIG_ROWID_IN_VIEW       30  /* int* */
-#define SQLITE_CONFIG_SHAREDLOG_MAXSIZE   31  /* sqlite3_int64 */
 
 /*
 ** CAPI3REF: Database Connection Configuration Options
