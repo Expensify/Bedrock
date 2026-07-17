@@ -35,6 +35,7 @@ bool RemoteSQLite::_runRemoteQuery(const string& query, const map<string, Parame
 
 bool RemoteSQLite::read(const string& query, SQResult& result, bool skipInfoWarn) const
 {
+    _forwardedReadCount++;
     return _runRemoteQuery(query, {}, result);
 }
 
@@ -51,11 +52,13 @@ bool RemoteSQLite::writeIdempotent(const string& query, SQResult& result)
 
 bool RemoteSQLite::read(const string& query, const map<string, Parameter>& params, SQResult& result, bool skipInfoWarn) const
 {
+    _forwardedReadCount++;
     return _runRemoteQuery(query, params, result);
 }
 
 string RemoteSQLite::read(const string& query, const map<string, Parameter>& params) const
 {
+    _forwardedReadCount++;
     SQResult result;
     if (!_runRemoteQuery(query, params, result)) {
         return "";
@@ -94,4 +97,9 @@ bool RemoteSQLite::write(const string& query, const map<string, Parameter>& para
 bool RemoteSQLite::write(const string& query, const map<string, Parameter>& params, SQResult& result)
 {
     return _runRemoteQuery(query, params, result);
+}
+
+int64_t RemoteSQLite::getReadQueryCount() const
+{
+    return _forwardedReadCount;
 }
