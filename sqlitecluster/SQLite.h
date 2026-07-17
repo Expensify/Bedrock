@@ -328,6 +328,10 @@ public:
     // public read-only accessor for _dbCountAtStart.
     uint64_t getDBCountAtStart() const;
 
+    // Read-only accessor for the number of read queries attempted in the current transaction (metrics/tests only).
+    // Virtual so RemoteSQLite can report the reads it forwards to the server instead of the local (unused) counter.
+    virtual int64_t getReadQueryCount() const;
+
     int64_t getLastConflictIdentifier() const;
 
     string getLastConflictLocation() const;

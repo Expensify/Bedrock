@@ -1519,6 +1519,11 @@ uint64_t SQLite::getDBCountAtStart() const
     return _dbCountAtStart;
 }
 
+int64_t SQLite::getReadQueryCount() const
+{
+    return _readQueryCount;
+}
+
 void SQLite::setCommitEnabled(bool enable)
 {
     _sharedData.setCommitEnabled(enable);
