@@ -108,10 +108,11 @@ struct EscalateTest : tpunit::TestFixture
         ASSERT_EQUAL(results[0].methodLine, "200 OK");
     }
 
-    // A follower that escalates the same request to the leader more than once while a copy is still being processed
-    // causes write amplification. The leader detects these duplicates (matching on the command id) and reports a
-    // running count via `Status`. Here we escalate two copies of one request sharing the same id, overlapping in time
-    // via a slow process step, and verify the leader noticed the duplicate.
+    // In production, PHP re-sends the same write to a different follower when one times out, so the leader can receive
+    // two escalations of one logical write - identical `requestID` and payload but distinct command ids - while the
+    // first is still processing, causing write amplification. The leader detects these by content fingerprint and
+    // reports a running count via `Status`. Here we escalate two identical copies of one write sharing a `requestID`,
+    // overlapping in time via a slow process step, and verify the leader noticed the duplicate.
     void duplicateEscalatedRequestDetected()
     {
         // Node 0 is the leader (which tracks duplicates), node 1 a follower (which we escalate from).
@@ -123,12 +124,11 @@ struct EscalateTest : tpunit::TestFixture
         // Read the leader's current duplicate count so the assertion is independent of any earlier tests.
         uint64_t countBefore = SToUInt64(SParseJSONObject(leader.executeWaitVerifyContent(SData("Status"), "200", true))["duplicateEscalatedRequestCount"]);
 
-        // Two identical write commands sharing one id. The leader reuses the escalated request's id, so both copies
-        // land under the same id. The slow process step keeps the first copy in flight long enough for the second to
-        // arrive while the first is still being processed on the leader.
+        // Two identical writes sharing one `requestID`. Their command ids differ, but the content fingerprint matches.
+        // The slow process step keeps the first copy in flight long enough for the second to arrive while the first is still being processed.
         SData cmd("idcollision");
         cmd["writeConsistency"] = "ASYNC";
-        cmd["ID"] = "duplicate_escalation_test";
+        cmd["requestID"] = "duplicate_escalation_test";
         cmd["ProcessSleep"] = "1000";
         cmd["value"] = "duplicate";
 

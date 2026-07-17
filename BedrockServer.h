@@ -373,9 +373,11 @@ private:
     multimap<uint64_t, uint64_t> _futureCommitCommandTimeouts;
     recursive_mutex _futureCommitCommandMutex;
 
-    // Tracks the ids of escalated requests currently in flight on the leader. It's used to
-    // detect a duplicate escalated request that arrives at the leader while the same request is still being processed
-    set<string> _inFlightEscalatedRequests;
+    // Tracks a content fingerprint for each escalated request currently in flight on the leader. It's used to detect a
+    // duplicate escalated request that arrives while the same request is still being processed. Duplicates happen
+    // because PHP re-sends the same write to a different follower when one times out (see Client.php::call), and each
+    // follower mints its own command id, so the id can't identify the duplicate; the request's content can.
+    set<size_t> _inFlightEscalatedRequests;
     mutex _inFlightEscalatedRequestsMutex;
 
     // A cumulative count of the duplicate escalated requests detected since startup, reported in the `Status` command.
@@ -465,6 +467,19 @@ private:
 
     // Setup a new command from a bare request.
     unique_ptr<BedrockCommand> buildCommandFromRequest(SData&& request, Socket& s, bool shouldTreatAsLocalhost);
+
+    // Computes a content fingerprint for a request, used to detect duplicate writes on the leader. It hashes the
+    // method line, the request headers, and the body, but skips the transport headers a follower stamps on while
+    // escalating (which differ between two copies of the same write). Two copies of one logical write - same
+    // `requestID` and payload - produce the same fingerprint, whether one was escalated and the other sent directly.
+    static size_t escalatedRequestFingerprint(const SData& request);
+
+    // Tracks/untracks an in-flight write on the leader by content fingerprint, so we can detect a duplicate copy
+    // arriving while the first is still being processed (write amplification). trackInFlightWrite returns the
+    // fingerprint - pass it to untrackInFlightWrite once the write completes - and logs plus counts a duplicate. Both
+    // are called for escalated (private command port) and direct-to-leader (public command port) arrivals.
+    size_t trackInFlightWrite(const SData& request);
+    void untrackInFlightWrite(size_t fingerprint);
 
     // This is a monotonically incrementing integer just used to uniquely identify socket threads.
     atomic<uint64_t> _socketThreadNumber;
