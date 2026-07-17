@@ -333,7 +333,10 @@ public:
 
 protected:
     // For subclasses that override read() to record a read against the shared counter.
-    void incrementReadQueryCount() const { _readQueryCount++; }
+    void incrementReadQueryCount() const
+    {
+        _readQueryCount++;
+    }
 
 public:
     int64_t getLastConflictIdentifier() const;
