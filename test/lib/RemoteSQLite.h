@@ -30,15 +30,8 @@ public:
     bool write(const string& query, const map<string, Parameter>& params) override;
     bool write(const string& query, const map<string, Parameter>& params, SQResult& result) override;
 
-    // Reads run on the remote server, so the base class counter never advances. Report the number of
-    // read queries this proxy has forwarded instead, so tests can assert on read round-trips.
-    int64_t getReadQueryCount() const override;
-
 private:
     mutable BedrockTester* _tester;
-
-    // Number of read queries forwarded to the server; each forwarded read is one round-trip.
-    mutable int64_t _forwardedReadCount = 0;
 
     // Build a Query command with named bound parameters serialized into `sql-param-<name>` headers and
     // send it via the tester's executeWaitMultipleData. This bypasses BedrockTester::readDB's
