@@ -108,11 +108,6 @@ struct EscalateTest : tpunit::TestFixture
         ASSERT_EQUAL(results[0].methodLine, "200 OK");
     }
 
-    // In production, PHP re-sends the same write to a different follower when one times out, so the leader can receive
-    // two escalations of one logical write - identical `requestID` and payload but distinct command ids - while the
-    // first is still processing, causing write amplification. The leader detects these by content fingerprint and
-    // reports a running count via `Status`. Here we escalate two identical copies of one write sharing a `requestID`,
-    // overlapping in time via a slow process step, and verify the leader noticed the duplicate.
     void duplicateEscalatedRequestDetected()
     {
         // Node 0 is the leader (which tracks duplicates), node 1 a follower (which we escalate from).

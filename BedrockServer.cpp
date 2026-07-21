@@ -2456,12 +2456,7 @@ string BedrockServer::generateCommandID()
 
 size_t BedrockServer::escalatedRequestFingerprint(const SData& request)
 {
-    // A follower stamps these transport headers onto the request while escalating (see
-    // SQLiteClusterMessenger::_sendCommandOnSocket), and they differ between two escalations of the same write: `ID`
-    // is the follower's own command id, `timeout` is the recomputed remaining time, and the rest carry per-escalation
-    // state. We skip them so retries of one write (identical `requestID` and payload, re-sent by PHP to a different
-    // follower) fingerprint the same. Keep this list in sync with the headers set in _sendCommandOnSocket. Note that
-    // missing an entry here only causes us to under-count duplicates, never to flag distinct requests as duplicates.
+    // Headers that can be different between duplicate requests from a client
     static const set<string, STableComp> excludedHeaders = {
         "ID", "timeout", "serializedData", "httpsRequests", "Content-Length",
     };
@@ -2483,7 +2478,6 @@ size_t BedrockServer::escalatedRequestFingerprint(const SData& request)
 
 size_t BedrockServer::trackInFlightWrite(const SData& request)
 {
-    // Compute the fingerprint before taking the lock so hashing never serializes across socket threads.
     const size_t fingerprint = escalatedRequestFingerprint(request);
     bool isDuplicate = false;
     {
@@ -2684,9 +2678,7 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
                             // Detect duplicate writes reaching this leader: the same write arriving again while a
                             // previous copy is still being processed, causing write amplification. A duplicate can
                             // arrive escalated from a follower (private command port) or sent directly by a client that
-                            // connected to the leader (public command port). PHP re-sends the same write to a different
-                            // host when one times out, and each escalation mints its own command id, so only the
-                            // content identifies the duplicate. For now we only log these, we don't drop them.
+                            // connected to the leader (public command port).
                             size_t inFlightFingerprint = 0;
                             const bool trackInFlight = fromPrivateCommandPort || (fromPublicCommandPort && getState() == SQLiteNodeState::LEADING);
                             if (trackInFlight) {
