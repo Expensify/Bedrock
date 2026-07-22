@@ -203,6 +203,13 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_creat
 
 unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy)
 {
+    // The blockingCommit thread runs commands under an exclusive transaction, serialized against the whole blocking
+    // queue. Firing an HTTPS request here would block that thread for the full network round-trip, stalling every
+    // command behind it. Refuse before opening the socket so the command fails instead of blocking.
+    if (isBlockingCommitThread) {
+        STHROW("500 Refused - HTTPS request attempted on blockingCommit thread");
+    }
+
     // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, then just return a
     // completed transaction with an error response.
     string host, path;

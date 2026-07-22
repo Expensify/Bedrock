@@ -343,6 +343,10 @@ extern thread_local string SThreadLogCommand;
 
 extern thread_local bool isSyncThread;
 
+// True on worker 0, the serialized `blockingCommit` thread. Read by `SStandaloneHTTPSManager::_httpsSend` to refuse
+// starting an HTTPS request there, since blocking that thread on a network round-trip serializes the whole blocking queue.
+extern thread_local bool isBlockingCommitThread;
+
 // Thread-local log prefix
 void SLogSetThreadPrefix(const string& logPrefix);
 void SLogSetThreadName(const string& name);
