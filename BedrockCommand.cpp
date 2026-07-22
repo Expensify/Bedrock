@@ -116,14 +116,6 @@ bool BedrockCommand::areHttpsRequestsComplete() const
 
 void BedrockCommand::_waitForHTTPSRequests()
 {
-    // The blockingCommit thread (worker 0) runs commands under an exclusive transaction, serialized against the whole
-    // blocking queue. Waiting on an HTTPS request here would block that thread for the full network round-trip,
-    // stalling every command behind it. This will guarantee that we're throwing an error if the command calls
-    // waitForHTTPSRequests(db) in peek. If this is running between peek/process, the check will be in runCommand.
-    if (isBlockingCommitThread && !areHttpsRequestsComplete()) {
-        STHROW("500 Refused - HTTPS request attempted on blockingCommit thread");
-    }
-
     uint64_t startTime = 0;
     while (!areHttpsRequestsComplete()) {
         // This uses the same starting point as in areHttpsRequestsComplete, for efficiency.

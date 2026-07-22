@@ -885,14 +885,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
 
         // If there are outstanding HTTPS requests on this command (from a previous call to `peek`) we process them here.
-        // The blockingCommit thread (worker 0) must not stall the serialized blocking queue on a network round-trip, so
-        // if this command has pending HTTPS requests, fail it cleanly here instead of waiting on them.
-        if (isBlockingCommitThread && !command->areHttpsRequestsComplete()) {
-            command->response.methodLine = "500 Refused - HTTPS request attempted on blockingCommit thread";
-            command->complete = true;
-            _reply(command);
-            return;
-        }
         command->waitForHTTPSRequests();
 
         // Get a DB handle to work on. This will automatically be returned when dbScope goes out of scope.
