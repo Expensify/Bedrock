@@ -2,6 +2,7 @@
 
 #include <BedrockServer.h>
 #include <libstuff/SQResult.h>
+#include <sqlitecluster/SQLitePeer.h>
 #include <sqlitecluster/SQLiteUtils.h>
 
 #undef SLOGPREFIX
@@ -18,6 +19,42 @@ const string& BedrockPlugin_Jobs::getName() const
     return name;
 }
 
+set<string> BedrockPlugin_Jobs::getCrashedBedrockJobPatterns()
+{
+    shared_lock<decltype(_crashedBedrockJobPatternMutex)> lock(_crashedBedrockJobPatternMutex);
+    return _crashedBedrockJobPatterns;
+}
+
+STable BedrockPlugin_Jobs::getInfo()
+{
+    STable info;
+    shared_lock<decltype(_crashedBedrockJobPatternMutex)> lock(_crashedBedrockJobPatternMutex);
+    info["crashedBedrockJobs"] = _crashedBedrockJobPatterns.size();
+    info["crashedBedrockJobList"] = SComposeJSONArray(vector<string>(_crashedBedrockJobPatterns.begin(), _crashedBedrockJobPatterns.end()));
+    return info;
+}
+
+void BedrockPlugin_Jobs::onNodeLogin(SQLitePeer* peer)
+{
+    list<string> jobPatterns;
+    {
+        shared_lock<decltype(_crashedBedrockJobPatternMutex)> lock(_crashedBedrockJobPatternMutex);
+        jobPatterns.assign(_crashedBedrockJobPatterns.begin(), _crashedBedrockJobPatterns.end());
+    }
+    if (jobPatterns.empty()) {
+        return;
+    }
+
+    // Send the current blacklist to the joining peer so it enforces the same patterns if it becomes leader. Tag it as
+    // propagated so the peer stores it without re-broadcasting, and set a timeout so this send can't block for long.
+    SINFO("Sending " << jobPatterns.size() << " blacklisted bedrock job patterns to node " << peer->name << " on login");
+    SData crashJobCommand("CrashBedrockJob");
+    crashJobCommand["names"] = SComposeList(jobPatterns);
+    crashJobCommand["isPropagated"] = "true";
+    crashJobCommand["timeout"] = "5000";
+    server.broadcastCommand(crashJobCommand, peer->name);
+}
+
 const set<string, STableComp> BedrockPlugin_Jobs::supportedRequestVerbs = {
     "GetJob",
     "GetJobs",
@@ -31,6 +68,8 @@ const set<string, STableComp> BedrockPlugin_Jobs::supportedRequestVerbs = {
     "FailJob",
     "DeleteJob",
     "RequeueJobs",
+    "CrashBedrockJob",
+    "ClearCrashedBedrockJobs",
 };
 
 bool BedrockJobsCommand::canEscalateImmediately(SQLiteCommand& baseCommand)
@@ -151,6 +190,43 @@ bool BedrockJobsCommand::peek(SQLite& db)
 
     // We can potentially change this, so we set it here.
     mockRequest = request.isSet("mockRequest");
+
+    if (SIEquals(requestVerb, "CrashBedrockJob") || SIEquals(requestVerb, "ClearCrashedBedrockJobs")) {
+        // These change this node's in-memory job blacklist and don't touch the DB, so we complete them here in peek.
+        // They must originate locally (an operator on this node) or from a peer over the private command port -- both
+        // have an empty _source -- so reject anything from the public command port.
+        if (!request["_source"].empty()) {
+            STHROW("401 Unauthorized");
+        }
+
+        BedrockPlugin_Jobs* jobsPlugin = static_cast<BedrockPlugin_Jobs*>(_plugin);
+        if (SIEquals(requestVerb, "CrashBedrockJob")) {
+            const list<string> names = SParseList(request["names"]);
+            if (names.empty()) {
+                SINFO("Got CrashBedrockJob with no 'names'. Nothing to blacklist.");
+            } else {
+                unique_lock<decltype(jobsPlugin->_crashedBedrockJobPatternMutex)> lock(jobsPlugin->_crashedBedrockJobPatternMutex);
+                for (const auto& name : names) {
+                    jobsPlugin->_crashedBedrockJobPatterns.insert(name);
+                }
+                SINFO("Blacklisting bedrock jobs (now have " << jobsPlugin->_crashedBedrockJobPatterns.size() << " patterns): " << SComposeList(names));
+            }
+        } else {
+            unique_lock<decltype(jobsPlugin->_crashedBedrockJobPatternMutex)> lock(jobsPlugin->_crashedBedrockJobPatternMutex);
+            jobsPlugin->_crashedBedrockJobPatterns.clear();
+        }
+
+        // Propagate a locally-originated change to the rest of the cluster so a new leader still enforces it after a
+        // failover. Peer-delivered commands arrive with "isPropagated" set so recipients update locally without
+        // re-broadcasting -- every intra-cluster command has an empty _source, so _source can't distinguish a local
+        // command from a propagated one, which would otherwise loop forever.
+        if (!request.isSet("isPropagated")) {
+            SData propagated = request;
+            propagated["isPropagated"] = "true";
+            _plugin->server.broadcastCommand(propagated);
+        }
+        return true;
+    }
 
     if (SIEquals(requestVerb, "GetJob") || SIEquals(requestVerb, "GetJobs")) {
         // - GetJob( name )
@@ -684,6 +760,9 @@ void BedrockJobsCommand::process(SQLite& db)
         const list<string> nameList = SParseList(request["name"]);
         string safeNumResults = SQ(max(request.calc("numResults"), 1));
         mockRequest = mockRequest || request.isSet("getMockedJobs");
+
+        const set<string> crashedJobPatterns = static_cast<BedrockPlugin_Jobs*>(_plugin)->getCrashedBedrockJobPatterns();
+
         string selectQuery;
         if (request.isSet("jobPriority")) {
             selectQuery =
@@ -782,6 +861,36 @@ void BedrockJobsCommand::process(SQLite& db)
             STHROW("404 No job found");
         }
 
+        // Fail (rather than run) any candidate whose name matches a GLOB pattern blacklisted via CrashBedrockJob. This
+        // lets us surgically disable a misbehaving job without stopping BWM for everyone. We only touch the candidates
+        // this query already selected (all due to run), so it's a small write by jobID rather than a scan of the whole
+        // table, and future-scheduled jobs are never candidates so they're left alone until they're due.
+        set<string> crashedJobIDs;
+        if (!crashedJobPatterns.empty()) {
+            list<string> candidateJobIDs;
+            for (size_t c = 0; c < result.size(); ++c) {
+                candidateJobIDs.push_back(result[c][0]);
+            }
+            list<string> globClauses;
+            for (const auto& pattern : crashedJobPatterns) {
+                globClauses.push_back("name GLOB " + SQ(pattern));
+            }
+            SQResult crashed;
+            if (!db.read("SELECT jobID FROM jobs WHERE jobID IN (" + SQList(candidateJobIDs) + ") AND (" + SComposeList(globClauses, " OR ") + ");", crashed)) {
+                STHROW("502 Failed to select blacklisted jobs");
+            }
+            for (const auto& row : crashed) {
+                crashedJobIDs.insert(row[0]);
+            }
+            if (!crashedJobIDs.empty()) {
+                const list<string> failIDs(crashedJobIDs.begin(), crashedJobIDs.end());
+                SINFO("Failing blacklisted bedrock jobs: " << SComposeList(failIDs));
+                if (!db.writeIdempotent("UPDATE jobs SET state='FAILED' WHERE jobID IN (" + SQList(failIDs) + ");")) {
+                    STHROW("502 Failed to fail blacklisted jobs");
+                }
+            }
+        }
+
         // There should only be at most one result if GetJob
         SASSERT(!SIEquals(requestVerb, "GetJob") || result.size() <= 1);
 
@@ -791,6 +900,11 @@ void BedrockJobsCommand::process(SQLite& db)
         list<string> jobList;
         for (size_t c = 0; c < result.size(); ++c) {
             SASSERT(result[c].size() == 10); // jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority
+
+            // Skip any candidate we just failed for matching the blacklist so it's never returned to the worker.
+            if (crashedJobIDs.count(result[c][0])) {
+                continue;
+            }
 
             // Add this object to our output
             STable job;

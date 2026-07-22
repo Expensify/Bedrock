@@ -44,6 +44,8 @@ struct GetJobTest : tpunit::TestFixture
                               TEST(GetJobTest::testInvalidJobPriority),
                               TEST(GetJobTest::testRetryableParentJobs),
                               TEST(GetJobTest::testInvalidNextRun),
+                              TEST(GetJobTest::testCrashBedrockJobBlacklist),
+                              TEST(GetJobTest::testCrashBedrockJobBlacklistDrainsAcrossCalls),
                               AFTER(GetJobTest::tearDown),
                               AFTER_CLASS(GetJobTest::tearDownClass))
     {
@@ -62,6 +64,10 @@ struct GetJobTest : tpunit::TestFixture
         SData command("Query");
         command["query"] = "DELETE FROM jobs WHERE jobID > 0;";
         tester->executeWaitVerifyContent(command);
+
+        // Clear any job blacklist a test may have set so it doesn't leak into later tests.
+        SData clearCommand("ClearCrashedBedrockJobs");
+        tester->executeWaitVerifyContent(clearCommand);
     }
 
     void tearDownClass()
@@ -857,5 +863,109 @@ struct GetJobTest : tpunit::TestFixture
         SQResult jobData;
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", jobData);
         ASSERT_EQUAL(jobData[0][0], "FAILED");
+    }
+
+    // A job whose name matches a CrashBedrockJob GLOB pattern is failed at GetJob time instead of running.
+    void testCrashBedrockJobBlacklist()
+    {
+        // Create two jobs under the blacklisted prefix (one with a param suffix, one a "V2" sibling) and one
+        // unrelated job that must still run.
+        SData command("CreateJob");
+        command["name"] = "www-prod/UserActivityEvaluator?accountID=856";
+        string paramJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "www-prod/UserActivityEvaluatorV2";
+        string siblingJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "www-prod/SomeOtherJob";
+        string otherJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // A blacklisted job scheduled in the future must not be failed until it's due.
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "www-prod/UserActivityEvaluatorFuture";
+        command["firstRun"] = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() + 3600ull * 1'000'000);
+        string futureJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // Blacklist the prefix with a GLOB wildcard.
+        command.clear();
+        command.methodLine = "CrashBedrockJob";
+        command["names"] = "www-prod/UserActivityEvaluator*";
+        tester->executeWaitVerifyContent(command);
+
+        // A single GetJobs across the whole www-prod/* space fails both matching jobs (the ?param form and the V2
+        // sibling) and still backfills the unrelated job, so workers aren't starved of runnable work.
+        command.clear();
+        command.methodLine = "GetJobs";
+        command["name"] = "www-prod/*";
+        command["numResults"] = "10";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        list<string> returnedJobs = SParseJSONArray(response["jobs"]);
+        ASSERT_EQUAL(returnedJobs.size(), 1);
+        ASSERT_EQUAL(SParseJSONObject(returnedJobs.front())["jobID"], otherJobID);
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + paramJobID + ";"), "FAILED");
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + siblingJobID + ";"), "FAILED");
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + otherJobID + ";"), "RUNNING");
+
+        // The future-scheduled blacklisted job is untouched -- neither failed nor run.
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + futureJobID + ";"), "QUEUED");
+
+        // After clearing the blacklist, a freshly created matching job runs again.
+        command.clear();
+        command.methodLine = "ClearCrashedBedrockJobs";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "www-prod/UserActivityEvaluator?accountID=857";
+        string afterClearJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "www-prod/UserActivityEvaluator?accountID=857";
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(response["jobID"], afterClearJobID);
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID = " + afterClearJobID + ";"), "RUNNING");
+    }
+
+    // Each GetJob(s) only fails the candidates it actually selected (bounded by numResults); the still-QUEUED
+    // blacklisted jobs behind them are never returned/run and get failed on later calls as they surface.
+    void testCrashBedrockJobBlacklistDrainsAcrossCalls()
+    {
+        // Create 15 jobs under one blacklisted prefix, more than the numResults=10 we'll request per call.
+        vector<string> jobs;
+        for (int i = 0; i < 15; i++) {
+            STable job;
+            job["name"] = "www-prod/BatchBad?n=" + to_string(i);
+            jobs.push_back(SComposeJSONObject(job));
+        }
+        SData command("CreateJobs");
+        command["jobs"] = SComposeJSONArray(jobs);
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "CrashBedrockJob";
+        command["names"] = "www-prod/BatchBad*";
+        tester->executeWaitVerifyContent(command);
+
+        // One GetJobs fails only its 10 candidates and returns none; the other 5 stay QUEUED and are not run.
+        command.clear();
+        command.methodLine = "GetJobs";
+        command["name"] = "www-prod/BatchBad*";
+        command["numResults"] = "10";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(SParseJSONArray(response["jobs"]).size(), 0);
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='FAILED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "10");
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='QUEUED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "5");
+
+        // A second GetJobs drains the remaining jobs.
+        response = tester->executeWaitVerifyContentTable(command);
+        ASSERT_EQUAL(SParseJSONArray(response["jobs"]).size(), 0);
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='FAILED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "15");
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE name GLOB 'www-prod/BatchBad*' AND state='QUEUED' AND JSON_EXTRACT(data, '$.mockRequest') IS NULL;"), "0");
     }
 } __GetJobTest;
