@@ -343,8 +343,9 @@ extern thread_local string SThreadLogCommand;
 
 extern thread_local bool isSyncThread;
 
-// True on worker 0, the serialized `blockingCommit` thread. Read by `SStandaloneHTTPSManager::_httpsSend` to refuse
-// starting an HTTPS request there, since blocking that thread on a network round-trip holds the whole blocking queue.
+// True on worker 0, the serialized `blockingCommit` thread. Read by the HTTPS request paths
+// (`SStandaloneHTTPSManager::_httpsSend` and `BedrockCommand::_waitForHTTPSRequests`) to refuse starting an HTTPS
+// request there, since blocking that thread on a network round-trip holds the whole blocking queue.
 extern thread_local bool isBlockingCommitThread;
 
 // Thread-local log prefix
