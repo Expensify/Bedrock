@@ -161,8 +161,10 @@ bool BedrockJobsCommand::peek(SQLite& db)
     const string& requestVerb = request.getVerb();
 
     // Jobs commands can only crash if their name and data are identical
-    crashIdentifyingValues.insert("name");
-    crashIdentifyingValues.insert("data");
+    if (request.isSet("name") && request.isSet("data")) {
+        crashIdentifyingValues.insert("name");
+        crashIdentifyingValues.insert("data");
+    }
 
     // We can potentially change this, so we set it here.
     mockRequest = request.isSet("mockRequest");
