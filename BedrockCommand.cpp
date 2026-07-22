@@ -118,11 +118,13 @@ void BedrockCommand::_waitForHTTPSRequests()
 {
     // The blockingCommit thread (worker 0) runs commands under an exclusive transaction, serialized against the whole
     // blocking queue. Waiting on an HTTPS request here would block that thread for the full network round-trip,
-    // stalling every command behind it. This is the common funnel for every manager (including Stripe and Hubspot,
-    // which bypass SStandaloneHTTPSManager::_httpsSend with their own implementations), so refuse here. We only throw
-    // when there is genuine pending network work: most blocking-queue commands carry no HTTPS requests and must pass
-    // through untouched. Scheduled requests are started from the loop below, so throwing now stops them before the
-    // socket opens.
+    // stalling every command behind it. This catches commands that wait from within `peek()` (the throw propagates
+    // out and `BedrockCore::peekCommand` turns it into a clean failure), including Stripe and Hubspot, which bypass
+    // `SStandaloneHTTPSManager::_httpsSend` with their own implementations. The worker loop's own call to
+    // `waitForHTTPSRequests` pre-checks this same condition and fails the command without relying on the throw.
+    // We only refuse when there is genuine pending network work; blocking-queue commands with no HTTPS request must
+    // pass through untouched. Scheduled requests are started from the loop below, so throwing now stops them before
+    // the socket opens.
     if (isBlockingCommitThread && !areHttpsRequestsComplete()) {
         STHROW("500 Refused - HTTPS request attempted on blockingCommit thread");
     }
