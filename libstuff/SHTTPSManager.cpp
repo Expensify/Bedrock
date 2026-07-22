@@ -183,13 +183,12 @@ SStandaloneHTTPSManager::Transaction::Transaction(SStandaloneHTTPSManager& manag
     manager(manager_),
     requestID(requestID.empty() ? SThreadLogPrefix : requestID)
 {
-    // The blockingCommit thread (worker 0) runs commands under an exclusive transaction, serialized against the whole
-    // blocking queue. Starting an HTTPS request there would block that thread for the full network round-trip,
-    // stalling every command behind it. Every outbound request builds exactly one Transaction before opening its
-    // socket (base _httpsSend, Stripe/Hubspot socketStarter, and so on), so refusing here covers every manager
-    // uniformly, and the throw propagates out of peek to a clean failure. Reconstructing already-completed requests in
-    // BedrockCommand::deserializeHTTPSRequests happens on the command-reception thread, never worker 0, so this does
-    // not reject those.
+    // The blockingCommit thread runs commands under an exclusive transaction, serialized against the whole blocking 
+    // queue. Starting an HTTPS request there would block that thread for the full network round-trip, stalling
+    // every command behind it. Every outbound request builds exactly one Transaction before opening its
+    // socket, so refusing here covers every manager uniformly, and the throw propagates out of peek to a clean failure.
+    // Reconstructing already-completed requests in BedrockCommand::deserializeHTTPSRequests happens on the
+    // command-reception thread, never worker 0, so this does not reject those.
     if (isBlockingCommitThread) {
         STHROW("500 Refused - HTTPS request attempted on blockingCommit thread");
     }
