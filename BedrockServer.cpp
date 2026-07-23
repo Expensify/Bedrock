@@ -689,6 +689,7 @@ void BedrockServer::worker(int threadId)
 {
     // Worker 0 is the "blockingCommit" thread.
     SInitialize(threadId ? "worker" + to_string(threadId) : "blockingCommit");
+    isBlockingCommitThread = (threadId == 0);
 
     // Command to work on. This default command is replaced when we find work to do.
     unique_ptr<BedrockCommand> command(nullptr);

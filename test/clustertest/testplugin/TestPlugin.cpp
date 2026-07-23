@@ -113,7 +113,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "testPostProcessTimeout",
         "EscalateSerializedData",
         "ThreadException",
-        "httpswait"
+        "httpswait",
+        "httpsblockingcommit"
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -385,6 +386,24 @@ bool TestPluginCommand::peek(SQLite& db)
         }
         response.content = httpsRequests.back()->fullResponse.content;
         return true;
+    } else if (SStartsWith(request.methodLine, "httpsblockingcommit")) {
+        // Only queue an HTTPS request when we're running on the serialized blockingCommit thread (worker 0). On the
+        // normal worker threads this command is just a conflicting write (see `process`), which is what escalates it
+        // to the blocking queue. This mirrors commands like SendDataToHubspot, whose peek only queues a request once
+        // it re-runs on the blockingCommit thread. `httpsDontSend` leaves the request pending (no response), so it
+        // exercises the guard without any real network activity.
+        if (isBlockingCommitThread) {
+            SData newRequest("GET / HTTP/1.1");
+            newRequest["Host"] = "127.0.0.1";
+            httpsRequests.push_back(plugin().httpsManager->httpsDontSend("https://127.0.0.1:9999/", newRequest));
+
+            // With `waitInPeek`, wait here so the guard throws from within peek (caught by peekCommand). Otherwise
+            // return without waiting so the worker loop's pre-check refuses the command instead.
+            if (request["waitInPeek"] == "true") {
+                waitForHTTPSRequests(db);
+            }
+        }
+        return false;
     } else if (SStartsWith(request.methodLine, "chainedrequest")) {
         // Let's see what the user wanted to request.
         if (pendingResult) {
@@ -542,6 +561,16 @@ void TestPluginCommand::process(SQLite& db)
             response.methodLine = "200 OK";
         }
 
+        return;
+    } else if (SStartsWith(request.methodLine, "httpsblockingcommit")) {
+        // Conflict-generating write (like idcollision) so concurrent copies escalate to the blocking queue. Reaching
+        // `process` at all means peek did not queue an HTTPS request, i.e. we ran on a normal worker thread.
+        SQResult result;
+        db.read("SELECT MAX(id) FROM test", result);
+        SASSERT(result.size());
+        int nextID = SToInt(result[0][0]) + 1;
+        SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(request["value"]) + ");"));
+        response.methodLine = "200 OK";
         return;
     } else if (SStartsWith(request.methodLine, "writebound")) {
         // Just like idcollision but uses named bound parameters so we can exercise the
