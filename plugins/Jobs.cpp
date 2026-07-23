@@ -160,9 +160,10 @@ bool BedrockJobsCommand::peek(SQLite& db)
 {
     const string& requestVerb = request.getVerb();
 
-    // Jobs commands can only crash if they look identical.
-    for (const auto& name : request.nameValueMap) {
-        crashIdentifyingValues.insert(name.first);
+    // Jobs commands can only crash if their name and data are identical
+    if (request.isSet("name") && request.isSet("data")) {
+        crashIdentifyingValues.insert("name");
+        crashIdentifyingValues.insert("data");
     }
 
     // We can potentially change this, so we set it here.
