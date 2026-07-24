@@ -1663,8 +1663,9 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command)
                 SERROR("Couldn't find plugin '" << pluginName << ".");
             }
         } else {
-            // Otherwise we send the standard response.
-            if (!command->socket->send(command->response.serialize())) {
+            // Otherwise we send the standard response. sendAll() loops until the whole response is queued to
+            // the kernel (or a hard error occurs), rather than assuming a single send() call queued everything.
+            if (!command->socket->sendAll(command->response.serialize())) {
                 // If we can't send (client closed the socket?), alert our plugin it's response was never sent.
                 SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
                 command->handleFailedReply();
@@ -2469,7 +2470,9 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
         SINFO("Firing and forgetting '" << request.methodLine << "'");
         SData response("202 Successfully queued");
         response["Connection"] = "close";
-        socket.send(response.serialize());
+        // sendAll() loops until the whole response is queued to the kernel (or a hard error occurs); we're about to
+        // shut down the socket, so we won't get another chance to send anything left behind by a partial send().
+        socket.sendAll(response.serialize());
         socket.shutdown(Socket::CLOSED);
         fireAndForget = true;
 
