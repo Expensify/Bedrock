@@ -343,7 +343,7 @@ private:
     // until all references to it go out of scope. Since an STCPNode never deletes `Peer` objects until it's being
     // destroyed, we are also guaranteed that all peers are accessible as long as we hold a shared pointer to this
     // object.
-    shared_ptr<SQLiteNode> _syncNode;
+    atomic<shared_ptr<SQLiteNode>> _syncNode;
 
     // SStandaloneHTTPSManager for communication between SQLiteNodes for anything other than cluster state and
     // synchronization.
