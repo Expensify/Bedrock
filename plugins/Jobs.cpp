@@ -603,7 +603,7 @@ void BedrockJobsCommand::process(SQLite& db)
             const string& currentTime = SCURRENT_TIMESTAMP();
 
             // If no "firstRun" was provided, use right now
-            const string& safeFirstRun = !SContains(job, "firstRun") || job["firstRun"].empty() ? currentTime : SQ(job["firstRun"]);
+            const string& safeFirstRun = !SContains(job, "firstRun") || job["firstRun"].empty() ? SQ(SCURRENT_TIMESTAMP_MS()) : SQ(job["firstRun"]);
 
             // If no data was provided, use an empty object
             const string& safeData = !SContains(job, "data") || job["data"].empty() ? SQ("{}") : SQ(job["data"]);
