@@ -3,6 +3,7 @@
 #include <chrono>
 #include <linux/limits.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SDeburr.h>
@@ -161,7 +162,25 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool h
         // We only need to specify the full URL when creating new DBs. Existing DBs will be auto-detected as HC-Tree or not.
         completeFilename = "file://" + completeFilename + "?hctree=1";
     }
-    int result = sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL);
+    // A stale lock held by a dying predecessor process (e.g. one that was force-killed but is
+    // still dumping core) makes sqlite3_open_v2 return SQLITE_BUSY (code 5). That's transient and
+    // self-healing, so poll every 5s for up to 15 minutes rather than aborting immediately. Any
+    // other error, or a SQLITE_BUSY that outlasts the timeout, stays fatal below.
+    static constexpr int retryIntervalSeconds = 5;
+    static constexpr int maxRetrySeconds = 15 * 60;
+    int result;
+    int elapsedSeconds = 0;
+    while (true) {
+        result = sqlite3_open_v2(completeFilename.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX | SQLITE_OPEN_URI, NULL);
+        if (result != SQLITE_BUSY || elapsedSeconds >= maxRetrySeconds) {
+            break;
+        }
+        SWARN("sqlite3_open_v2 returned SQLITE_BUSY opening '" << filename << "' (database locked), retrying in "
+              << retryIntervalSeconds << "s (waited " << elapsedSeconds << "s so far).");
+        sqlite3_close_v2(db);
+        sleep(retryIntervalSeconds);
+        elapsedSeconds += retryIntervalSeconds;
+    }
     if (result) {
         SERROR("sqlite3_open_v2 returned " << result << ", Extended error code: " << sqlite3_extended_errcode(db));
     }
