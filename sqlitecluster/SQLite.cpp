@@ -890,7 +890,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
             // If we never waited at all, we record that.
             waited = false;
         }
-        while (true && !lockAcquired) {
+        while (!lockAcquired) {
             lockAcquired = _sharedData.commitLock.try_lock_until(nextLockTimeout);
             if (lockAcquired || chrono::steady_clock::now() >= finalLockTimeout) {
                 break;
