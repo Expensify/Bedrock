@@ -923,7 +923,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
         auto elapsed = chrono::steady_clock::now() - start;
         if (elapsed > 5ms) {
-            SINFO("Waited " << chrono::duration_cast<chrono::microseconds>(elapsed) << "us for commit lock.");
+            SINFO("Waited " << chrono::duration_cast<chrono::microseconds>(elapsed) << " for commit lock.");
         }
         _sharedData._commitLockTimer.start("SHARED");
         _mutexLocked = true;
