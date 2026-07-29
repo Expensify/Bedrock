@@ -68,8 +68,8 @@ struct CreateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
         ASSERT_EQUAL(originalJob[0][2], "QUEUED");
         ASSERT_EQUAL(originalJob[0][3], jobName);
-        // nextRun should equal created but without the ms precision
-        ASSERT_EQUAL(originalJob[0][4].substr(0, 19), originalJob[0][0]);
+        // nextRun should equal created
+        ASSERT_EQUAL(originalJob[0][4], originalJob[0][0]);
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], "");
         ASSERT_EQUAL(originalJob[0][7], "{}");
@@ -92,8 +92,8 @@ struct CreateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
         ASSERT_EQUAL(originalJob[0][2], "QUEUED");
         ASSERT_EQUAL(originalJob[0][3], jobName);
-        // nextRun should equal created but without the ms precision
-        ASSERT_EQUAL(originalJob[0][4].substr(0, 19), originalJob[0][0]);
+        // nextRun should equal created
+        ASSERT_EQUAL(originalJob[0][4], originalJob[0][0]);
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], "");
         ASSERT_EQUAL(originalJob[0][7], "{}");
@@ -118,8 +118,8 @@ struct CreateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
         ASSERT_EQUAL(originalJob[0][2], "QUEUED");
         ASSERT_EQUAL(originalJob[0][3], jobName);
-        // nextRun should equal created but without the ms precision
-        ASSERT_EQUAL(originalJob[0][4].substr(0, 19), originalJob[0][0]);
+        // nextRun should equal created
+        ASSERT_EQUAL(originalJob[0][4], originalJob[0][0]);
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], "");
         ASSERT_EQUAL(originalJob[0][7], "{}");
@@ -172,8 +172,8 @@ struct CreateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(originalJob[0][1], response["jobID"]);
         ASSERT_EQUAL(originalJob[0][2], "QUEUED");
         ASSERT_EQUAL(originalJob[0][3], jobName);
-        // nextRun should equal created but without the ms precision
-        ASSERT_EQUAL(originalJob[0][4].substr(0, 19), originalJob[0][0]);
+        // nextRun should equal created
+        ASSERT_EQUAL(originalJob[0][4], originalJob[0][0]);
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], repeat);
         ASSERT_EQUAL(originalJob[0][7], "{}");
@@ -379,8 +379,7 @@ struct CreateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(originalJob[0][1], jobID);
         ASSERT_EQUAL(originalJob[0][2], "QUEUED");
         ASSERT_EQUAL(originalJob[0][3], jobName);
-        // nextRun should equal created but without the ms precision
-        ASSERT_EQUAL(originalJob[0][4].substr(0, 19), originalJob[0][0]);
+        ASSERT_EQUAL(originalJob[0][4], originalJob[0][0]);
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], repeatValue);
         ASSERT_EQUAL(originalJob[0][7], "{}");
@@ -494,8 +493,8 @@ struct CreateJobTest : tpunit::TestFixture
         tester->readDB("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, priority, parentJobID, retryAfter FROM jobs WHERE jobID = " + jobID + ";", originalJob);
         ASSERT_EQUAL(originalJob[0][1], jobID);
         ASSERT_EQUAL(originalJob[0][2], "QUEUED");
-        // nextRun should equal created but without the ms precision
-        ASSERT_EQUAL(originalJob[0][4].substr(0, 19), originalJob[0][0]);
+        ASSERT_EQUAL(originalJob[0][3], jobName);
+        ASSERT_EQUAL(originalJob[0][4], originalJob[0][0]);
         ASSERT_EQUAL(originalJob[0][5], "");
         ASSERT_EQUAL(originalJob[0][6], "");
         ASSERT_EQUAL(originalJob[0][7], "{}");
