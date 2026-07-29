@@ -162,10 +162,7 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool h
         // We only need to specify the full URL when creating new DBs. Existing DBs will be auto-detected as HC-Tree or not.
         completeFilename = "file://" + completeFilename + "?hctree=1";
     }
-    // A stale lock held by a dying predecessor process (e.g. one that was force-killed but is
-    // still dumping core) makes sqlite3_open_v2 return SQLITE_BUSY (code 5). That's transient and
-    // self-healing, so poll every 5s for up to 15 minutes rather than aborting immediately. Any
-    // other error, or a SQLITE_BUSY that outlasts the timeout, stays fatal below.
+
     static constexpr int retryIntervalSeconds = 5;
     static constexpr int maxRetrySeconds = 15 * 60;
     int result;
