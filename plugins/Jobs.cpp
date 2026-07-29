@@ -748,7 +748,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=" + SQ(request.calc("jobPriority")) + " "
-                "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                "AND " + SQ(SCURRENT_TIMESTAMP_MS()) + ">=nextRun "
                 "AND +name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                 string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults + ";";
@@ -760,7 +760,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=1000 "
-                "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                "AND " + SQ(SCURRENT_TIMESTAMP_MS()) + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                 string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
@@ -771,7 +771,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=850 "
-                "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                "AND " + SQ(SCURRENT_TIMESTAMP_MS()) + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                 string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
@@ -782,7 +782,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=750 "
-                "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                "AND " + SQ(SCURRENT_TIMESTAMP_MS()) + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                 string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
@@ -793,7 +793,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=500 "
-                "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                "AND " + SQ(SCURRENT_TIMESTAMP_MS()) + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                 string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
@@ -804,7 +804,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=250 "
-                "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                "AND " + SQ(SCURRENT_TIMESTAMP_MS()) + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                 string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
@@ -815,7 +815,7 @@ void BedrockJobsCommand::process(SQLite& db)
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=0 "
-                "AND " + SCURRENT_TIMESTAMP() + ">=nextRun "
+                "AND " + SQ(SCURRENT_TIMESTAMP_MS()) + ">=nextRun "
                 "AND name " + (nameList.size() > 1 ? "IN (" + SQList(nameList) + ")" : "GLOB " + SQ(request["name"])) + " " +
                 string(!mockRequest ? " AND JSON_EXTRACT(data, '$.mockRequest') IS NULL " : "") +
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults +
