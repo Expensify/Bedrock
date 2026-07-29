@@ -929,7 +929,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         }
 
         if (waited) {
-            SINFO("Waited " << chrono::duration_cast<chrono::microseconds>(elapsed) << "us for commit lock.");
+            SINFO("Waited " << chrono::duration_cast<chrono::microseconds>(elapsed) << " for commit lock.");
         } else {
             SINFO("Acquired commit lock immediately.");
         }
@@ -1183,7 +1183,7 @@ void SQLite::rollback(const string& commandName)
             SINFO("Transaction was automatically rolled back, not sending 'ROLLBACK'.");
         } else {
             if (_uncommittedQuery.size()) {
-                SINFO("Rolling back transaction: " << _uncommittedQuery.substr(0, 100));
+                SINFO("Rolling back transaction: " << BedrockPlugin_Compression::decompress(_uncommittedQuery).substr(0, 100));
             }
             uint64_t before = STimeNow();
             SASSERT(!SQuery(_db, "ROLLBACK"));
