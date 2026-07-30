@@ -884,7 +884,13 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         }
 
         bool lockAcquired = false;
-        while (true) {
+        lockAcquired = _sharedData.commitLock.try_lock();
+        bool waited = true;
+        if (lockAcquired) {
+            // If we never waited at all, we record that.
+            waited = false;
+        }
+        while (!lockAcquired) {
             lockAcquired = _sharedData.commitLock.try_lock_until(nextLockTimeout);
             if (lockAcquired || chrono::steady_clock::now() >= finalLockTimeout) {
                 break;
@@ -899,6 +905,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
                 nextLockTimeout = finalLockTimeout;
             }
         }
+        auto elapsed = chrono::steady_clock::now() - start;
 
         bool abortPtrWasSet = _shouldAbortPtr && *_shouldAbortPtr;
         if (abortPtr) {
@@ -921,9 +928,10 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
             return false;
         }
 
-        auto elapsed = chrono::steady_clock::now() - start;
-        if (elapsed > 5ms) {
+        if (waited) {
             SINFO("Waited " << chrono::duration_cast<chrono::microseconds>(elapsed) << " for commit lock.");
+        } else {
+            SINFO("Acquired commit lock immediately.");
         }
         _sharedData._commitLockTimer.start("SHARED");
         _mutexLocked = true;
