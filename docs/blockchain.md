@@ -11,7 +11,7 @@ To be clear, Bedrock is not a "public" blockchain, like Bitcoin -- it is not des
 ## The Journal
 Under the hood it works like this:
 
-* There is an internal table named `journal`, that has three columns:
+* Journal entries have three columns:
     * `id` - Simple monotonic index
     * `query` - The query to commit to the database
     * `hash` - A SHA1 hash of `query`, combined with the previous `hash`
@@ -32,5 +32,7 @@ The sum of all this ensures that all of the cluster stays in perfect sync (and r
 The above skips over a couple important details:
 
 * There are actually multiple `journal` tables, one for each thread (which by default, is equal to the number of cores on the machine).  This is because Bedrock does multi-threaded writes, and given that every commit adds a row to the end of this table, it is very prone to write conflicts.  We address this by "sharding" the table, and then querying them all in a `UNION` whenever we need to view it as one.
+
+* Bedrock exposes the read-only `journalEntries` view for querying all physical journal tables together. For example, use `SELECT * FROM journalEntries WHERE id = 123;` instead of manually building a `UNION ALL` across `journal`, `journal0000`, `journal0001`, and the remaining shards.
 
 * We don't actually retain all 4B+ rows to the journal.  Rather, we do full backups at least nightly, and instead just keep several days of history in the journal, trimming as we go. 
