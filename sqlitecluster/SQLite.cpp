@@ -213,7 +213,6 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables)
         }
     }
 
-    // Expose one read-only surface for ad-hoc journal queries without changing the critical internal journal queries.
     string journalEntriesQuery;
     for (const string& journalName : journalNames) {
         if (!journalEntriesQuery.empty()) {
