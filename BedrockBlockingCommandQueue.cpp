@@ -199,6 +199,46 @@ void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, 
     _identifierTimes[identifier] += elapsedUS;
 }
 
+bool BedrockBlockingCommandQueue::isIdentifierOverTimeLimit(const string& identifier, const string& methodLine)
+{
+    const uint64_t maxTimePerIdentifier = _maxTimePerIdentifier.load();
+    if (maxTimePerIdentifier == 0 || identifier.empty()) {
+        return false;
+    }
+
+    lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
+
+    // Clear accumulated times if the blocking queue has been empty for 30 seconds.
+    uint64_t emptyTime = _emptyTime.load();
+    if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
+        _identifierTimes.clear();
+    }
+
+    auto it = _identifierTimes.find(identifier);
+    const uint64_t timeUS = (it == _identifierTimes.end()) ? 0 : it->second;
+
+    if (timeUS > maxTimePerIdentifier) {
+        SINFO("Blocking queue rate limit (time), rejecting", {
+            {"command", methodLine},
+            {"identifier", identifier},
+            {"timeMS", to_string(timeUS / 1000)},
+            {"thresholdMS", to_string(maxTimePerIdentifier / 1000)}
+        });
+        return true;
+    }
+
+    if (timeUS > _maxTimePerIdentifierToLog.load()) {
+        SINFO("Blocking queue rate limit (time), logging", {
+            {"command", methodLine},
+            {"identifier", identifier},
+            {"timeMS", to_string(timeUS / 1000)},
+            {"thresholdMS", to_string(maxTimePerIdentifier / 1000)}
+        });
+    }
+
+    return false;
+}
+
 void BedrockBlockingCommandQueue::_decrementIdentifierCount(const string& identifier)
 {
     auto it = _identifierCounts.find(identifier);
