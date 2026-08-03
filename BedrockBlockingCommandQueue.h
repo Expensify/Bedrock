@@ -1,4 +1,7 @@
 #pragma once
+#include <memory>
+#include <unordered_map>
+
 #include "BedrockCommandQueue.h"
 
 class BedrockCommand;
@@ -48,9 +51,26 @@ protected:
     unique_ptr<BedrockCommand> _dequeue() override;
 
 private:
+    // Per-identifier rate-limit state, each entry guarded by its own mutex so that different identifiers
+    // don't serialize on one global lock. `_identifiersMutex` guards only the map: hold it just long enough
+    // to find-or-insert an entry and copy out the shared_ptr, then release it and take the per-identifier
+    // `m` for the actual work. The shared_ptr keeps an entry alive even if another thread erases it from the
+    // map between those two locks.
+    struct IdentifierState
+    {
+        mutex m;
+        uint64_t timeUS = 0;
+    };
+
+    // Find or create the state for `identifier`, returning a shared_ptr copy. Briefly holds `_identifiersMutex`.
+    shared_ptr<IdentifierState> _getOrCreateIdentifierState(const string& identifier);
+
     // Guards `_identifierTimes`. Separate from the base class `_queueMutex` because the base
     // mutex is non-recursive and is held while `_dequeue` runs.
     mutex _rateLimitMutex;
+
+    mutable mutex _identifiersMutex;
+    unordered_map<string, shared_ptr<IdentifierState>> _identifiers;
 
     map<string, uint64_t> _identifierTimes;
     atomic<uint64_t> _maxTimePerIdentifier{60'000'000}; // 60 seconds, in microseconds
