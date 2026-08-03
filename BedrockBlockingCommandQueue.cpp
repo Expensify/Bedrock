@@ -20,55 +20,32 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
 {
     const string identifier = command->blockingQueueRateLimitIdentifier;
     const size_t maxPerIdentifier = _maxPerIdentifier.load();
-    const uint64_t maxTimePerIdentifier = _maxTimePerIdentifier.load();
-    const uint64_t maxTimePerIdentifierToLog = _maxTimePerIdentifierToLog.load();
     const bool shouldCheckCount = maxPerIdentifier > 0 && !identifier.empty();
-    const bool shouldCheckTime = maxTimePerIdentifier > 0 && !identifier.empty();
 
-    if (shouldCheckCount || shouldCheckTime) {
+    // Reject before enqueuing if this identifier is already over the accumulated worker-0 time limit.
+    if (isIdentifierOverTimeLimit(identifier, command->request.methodLine)) {
+        STHROW("503 Blocking queue rate limited (time)");
+    }
+
+    if (shouldCheckCount) {
         lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
 
-        // Clear counts and times if the blocking queue has been empty for 30 seconds.
+        // Clear counts if the blocking queue has been empty for 30 seconds.
         uint64_t emptyTime = _emptyTime.load();
         if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
             _identifierCounts.clear();
-            _identifierTimes.clear();
         }
 
-        if (shouldCheckCount) {
-            size_t& count = _identifierCounts[identifier];
-            count++;
+        size_t& count = _identifierCounts[identifier];
+        count++;
 
-            if (count > maxPerIdentifier) {
-                SINFO("Blocking queue rate limit: rejecting '" << command->request.methodLine
-                      << "' for identifier '" << identifier << "' (count=" << count
-                      << ", threshold=" << maxPerIdentifier << ")");
-                // TODO: enable enforcement after monitoring confirms thresholds are correct in production.
-                // count--;
-                // STHROW("503 Blocking queue rate limited");
-            }
-        }
-
-        if (shouldCheckTime) {
-            auto it = _identifierTimes.find(identifier);
-            const uint64_t timeUS = (it == _identifierTimes.end()) ? 0 : it->second;
-            if (timeUS > maxTimePerIdentifier) {
-                SINFO("Blocking queue rate limit (time), rejecting", {
-                    {"command", command->request.methodLine},
-                    {"identifier", identifier},
-                    {"timeMS", to_string(timeUS / 1000)},
-                    {"thresholdMS", to_string(maxTimePerIdentifier / 1000)}
-                });
-                STHROW("503 Blocking queue rate limited (time)");
-            }
-            if (timeUS > maxTimePerIdentifierToLog) {
-                SINFO("Blocking queue rate limit (time), logging", {
-                    {"command", command->request.methodLine},
-                    {"identifier", identifier},
-                    {"timeMS", to_string(timeUS / 1000)},
-                    {"thresholdMS", to_string(maxTimePerIdentifier / 1000)}
-                });
-            }
+        if (count > maxPerIdentifier) {
+            SINFO("Blocking queue rate limit: rejecting '" << command->request.methodLine
+                  << "' for identifier '" << identifier << "' (count=" << count
+                  << ", threshold=" << maxPerIdentifier << ")");
+            // TODO: enable enforcement after monitoring confirms thresholds are correct in production.
+            // count--;
+            // STHROW("503 Blocking queue rate limited");
         }
     }
 
