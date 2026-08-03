@@ -7,7 +7,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
 {
     BlockingCommandQueueTest() : tpunit::TestFixture("BlockingCommandQueue",
                                                      TEST(BlockingCommandQueueTest::testUnderLimitNotFlagged),
-                                                     TEST(BlockingCommandQueueTest::testTimeAccumulatesAcrossCommands))
+                                                     TEST(BlockingCommandQueueTest::testTimeAccumulatesAcrossCommands),
+                                                     TEST(BlockingCommandQueueTest::testIdentifiersAreIndependent))
     {
     }
 
@@ -34,5 +35,15 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
 
         queue.recordExecutionTime("acct1", 6'000);
         ASSERT_TRUE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
+    }
+
+    void testIdentifiersAreIndependent()
+    {
+        BedrockBlockingCommandQueue queue;
+        queue.setMaxTimePerIdentifier(10'000);
+
+        queue.recordExecutionTime("acct1", 20'000);
+        ASSERT_TRUE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
+        ASSERT_FALSE(queue.isIdentifierOverTimeLimit("acct2", "TestCommand"));
     }
 } __BlockingCommandQueueTest;
