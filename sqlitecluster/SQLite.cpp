@@ -212,6 +212,40 @@ vector<string> SQLite::initializeJournal(sqlite3* db, int minJournalTables)
             break;
         }
     }
+
+    string journalEntriesQuery;
+    for (const string& journalName : journalNames) {
+        if (!journalEntriesQuery.empty()) {
+            journalEntriesQuery += " UNION ALL ";
+        }
+        journalEntriesQuery += "SELECT id, query, hash FROM " + journalName;
+    }
+    const string journalEntriesViewQuery = "CREATE VIEW journalEntries AS " + journalEntriesQuery;
+
+    // Avoid changing the schema on every restart, but refresh the view if the set of journal tables changes.
+    SQResult journalEntriesView;
+    SASSERT(!SQuery(db, "SELECT type, sql FROM sqlite_master WHERE name = 'journalEntries'", journalEntriesView));
+    if (journalEntriesView.empty()) {
+        SASSERT(!SQuery(db, journalEntriesViewQuery));
+        SHMMM("Created journalEntries view.");
+    } else {
+        SASSERT(journalEntriesView.size() == 1);
+        SASSERT(journalEntriesView[0][0] == "view");
+        if (journalEntriesView[0][1] != journalEntriesViewQuery) {
+            SASSERT(!SQuery(db, "BEGIN IMMEDIATE"));
+            int result = SQuery(db, "DROP VIEW journalEntries");
+            if (!result) {
+                result = SQuery(db, journalEntriesViewQuery);
+            }
+            if (result) {
+                SASSERT(!SQuery(db, "ROLLBACK"));
+                SASSERT(!result);
+            }
+            SASSERT(!SQuery(db, "COMMIT"));
+            SHMMM("Updated journalEntries view.");
+        }
+    }
+
     return journalNames;
 }
 
