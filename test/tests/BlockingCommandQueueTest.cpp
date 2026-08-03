@@ -9,7 +9,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
                                                      TEST(BlockingCommandQueueTest::testUnderLimitNotFlagged),
                                                      TEST(BlockingCommandQueueTest::testTimeAccumulatesAcrossCommands),
                                                      TEST(BlockingCommandQueueTest::testIdentifiersAreIndependent),
-                                                     TEST(BlockingCommandQueueTest::testEmptyIdentifierNeverFlagged))
+                                                     TEST(BlockingCommandQueueTest::testEmptyIdentifierNeverFlagged),
+                                                     TEST(BlockingCommandQueueTest::testDisabledThresholdNeverFlags))
     {
     }
 
@@ -56,5 +57,18 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         // An empty identifier means "no known account", so it is never rate limited.
         queue.recordExecutionTime("", 20'000);
         ASSERT_FALSE(queue.isIdentifierOverTimeLimit("", "TestCommand"));
+    }
+
+    void testDisabledThresholdNeverFlags()
+    {
+        BedrockBlockingCommandQueue queue;
+        queue.setMaxTimePerIdentifier(10'000);
+
+        queue.recordExecutionTime("acct1", 20'000);
+        ASSERT_TRUE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
+
+        // A threshold of 0 disables time rate limiting entirely.
+        queue.setMaxTimePerIdentifier(0);
+        ASSERT_FALSE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
     }
 } __BlockingCommandQueueTest;
