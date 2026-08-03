@@ -10,7 +10,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
                                                      TEST(BlockingCommandQueueTest::testTimeAccumulatesAcrossCommands),
                                                      TEST(BlockingCommandQueueTest::testIdentifiersAreIndependent),
                                                      TEST(BlockingCommandQueueTest::testEmptyIdentifierNeverFlagged),
-                                                     TEST(BlockingCommandQueueTest::testDisabledThresholdNeverFlags))
+                                                     TEST(BlockingCommandQueueTest::testDisabledThresholdNeverFlags),
+                                                     TEST(BlockingCommandQueueTest::testClearRateLimitsResets))
     {
     }
 
@@ -69,6 +70,18 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
 
         // A threshold of 0 disables time rate limiting entirely.
         queue.setMaxTimePerIdentifier(0);
+        ASSERT_FALSE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
+    }
+
+    void testClearRateLimitsResets()
+    {
+        BedrockBlockingCommandQueue queue;
+        queue.setMaxTimePerIdentifier(10'000);
+
+        queue.recordExecutionTime("acct1", 20'000);
+        ASSERT_TRUE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
+
+        queue.clearRateLimits();
         ASSERT_FALSE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
     }
 } __BlockingCommandQueueTest;
