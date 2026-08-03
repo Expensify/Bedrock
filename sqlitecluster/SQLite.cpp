@@ -175,6 +175,14 @@ sqlite3* SQLite::initializeDB(const string& filename, int64_t mmapSizeGB, bool h
         SWARN("sqlite3_open_v2 returned SQLITE_BUSY opening '" << filename << "' (database locked), retrying in "
               << retryIntervalSeconds << "s (waited " << elapsedSeconds << "s so far).");
         sqlite3_close_v2(db);
+
+        // Termination signals are blocked and recorded by the signal thread, and nothing inspects them until after the
+        // server is constructed, so we need to check for them here or the process ignores SIGTERM for the whole retry
+        // period.
+        if (STerminationSignalCount()) {
+            SINFO("Received termination signal while waiting for the database lock, exiting.");
+            exit(0);
+        }
         sleep(retryIntervalSeconds);
         elapsedSeconds += retryIntervalSeconds;
     }
