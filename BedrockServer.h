@@ -345,6 +345,9 @@ private:
     // object.
     shared_ptr<SQLiteNode> _syncNode;
 
+    // The configured node priority persists across SQLiteNode instances created by detach/attach cycles.
+    atomic<int> _configuredPriority;
+
     // SStandaloneHTTPSManager for communication between SQLiteNodes for anything other than cluster state and
     // synchronization.
     shared_ptr<SQLiteClusterMessenger> _clusterMessenger;

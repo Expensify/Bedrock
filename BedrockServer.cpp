@@ -124,7 +124,7 @@ void BedrockServer::sync()
 
     // Initialize the shared pointer to our sync node object.
     atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, _dbPool, args["-nodeName"], args["-nodeHost"],
-                                                            args["-peerList"], args.calc("-priority"), firstTimeout,
+                                                            args["-peerList"], _configuredPriority, firstTimeout,
                                                             _version, args["-commandPortPrivate"]));
 
     _clusterMessenger = make_shared<SQLiteClusterMessenger>(_syncNode);
@@ -1287,14 +1287,14 @@ void BedrockServer::_resetServer()
 }
 
 BedrockServer::BedrockServer(SQLiteNodeState state, const SData& args_)
-    : SQLiteServer(), args(args_), _syncNode(nullptr), _clusterMessenger(nullptr)
+    : SQLiteServer(), args(args_), _syncNode(nullptr), _configuredPriority(args.calc("-priority")), _clusterMessenger(nullptr)
 {
 }
 
 BedrockServer::BedrockServer(const SData& args_)
     : SQLiteServer(), shutdownWhileDetached(false), args(args_), _requestCount(0),
     _isCommandPortLikelyBlocked(false),
-    _syncLoopShouldBeRunning(true), _syncNode(nullptr), _clusterMessenger(nullptr), _shutdownState(RUNNING),
+    _syncLoopShouldBeRunning(true), _syncNode(nullptr), _configuredPriority(args.calc("-priority")), _clusterMessenger(nullptr), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _enableConflictPageLocks(args.test("-enableConflictPageLocks")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
     _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
