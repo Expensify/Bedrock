@@ -165,3 +165,13 @@ bool BedrockBlockingCommandQueue::isIdentifierOverTimeLimit(const string& identi
 
     return false;
 }
+
+shared_ptr<BedrockBlockingCommandQueue::IdentifierState> BedrockBlockingCommandQueue::_getOrCreateIdentifierState(const string& identifier)
+{
+    lock_guard<decltype(_identifiersMutex)> lock(_identifiersMutex);
+    auto [it, inserted] = _identifiers.try_emplace(identifier);
+    if (inserted) {
+        it->second = make_shared<IdentifierState>();
+    }
+    return it->second;
+}
