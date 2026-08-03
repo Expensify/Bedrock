@@ -4,13 +4,16 @@ on:
     types: [opened, synchronize]
   release:
     types: [prereleased, published]
+
 concurrency:
   group: "${{ github.ref }}"
   cancel-in-progress: true
+
 env:
   CCACHE_BASEDIR: "/home/runner/.cache/ccache"
   # Use mirror.bastion1.sjc if running locally
   APT_MIRROR_URL: "apt-mirror.expensify.com:843"
+
 jobs:
   Style_Check:
     name: "C++ Styler"
@@ -22,16 +25,16 @@ jobs:
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     steps:
-    - name: Checkout Bedrock
-      # v4.1.0
-      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
-      with:
-        repository: Expensify/Bedrock
-        path: .
-        # Set fetch-depth to 0 so that we can compare HEAD with all git log history
-        fetch-depth: 0
-    - name: Run style checks
-      run: "./ci_style.sh"
+      - name: Checkout Bedrock
+        # v4.1.0
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+        with:
+          repository: Expensify/Bedrock
+          path: .
+          # Set fetch-depth to 0 so that we can compare HEAD with all git log history
+          fetch-depth: 0
+      - name: Run style checks
+        run: "./ci_style.sh"
 
   Build_Bedrock:
     name: "Create Bedrock and Test"
@@ -43,41 +46,40 @@ jobs:
       env:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     steps:
-    - name: Checkout Bedrock
-      # v4.1.0
-      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
-      with:
-        repository: Expensify/Bedrock
-        path: .
+      - name: Checkout Bedrock
+        # v4.1.0
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+        with:
+          repository: Expensify/Bedrock
+          path: .
 
-    - name: Setup tmate session
-      if: runner.debug == '1'
-      # v3
-      uses: mxschmitt/action-tmate@e5c7151931ca95bad1c6f4190c730ecf8c7dde48
-      timeout-minutes: 60
-      with:
-        limit-access-to-actor: true
+      - name: Setup tmate session
+        if: runner.debug == '1'
+        # v3
+        uses: mxschmitt/action-tmate@e5c7151931ca95bad1c6f4190c730ecf8c7dde48
+        timeout-minutes: 60
+        with:
+          limit-access-to-actor: true
 
-    # If tmate was run, we want to mark this step as failed
-    - name: Mark failure if debugging
-      if: runner.debug == '1'
-      run: exit 1
-    - name: Install zstd
-      run: apt-get update -y && apt-get install -y libzstd-dev
-    - name: Build Bedrock
-      run: "./ci_build.sh"
-    - name: Upload binaries
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-      with:
-        name: bedrock-binaries
-        path: |
-          bedrock
-          test/test
-          test/clustertest/clustertest
-          test/clustertest/testplugin/testplugin.so
-          test/sample_data/lottoNumbers.json
-        retention-days: 1
-        compression-level: 1
+      # If tmate was run, we want to mark this step as failed
+      - name: Mark failure if debugging
+        if: runner.debug == '1'
+        run: exit 1
+
+      - name: Build Bedrock
+        run: "./ci_build.sh"
+
+      - name: Upload binaries
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.10.0
+        with:
+          key: bedrock-binaries-${{ github.sha }}
+          path: |
+            bedrock
+            test/test
+            test/clustertest/clustertest
+            test/clustertest/testplugin/testplugin.so
+            test/sample_data/lottoNumbers.json
+
   BedrockTests:
     name: "Bedrock Tests"
     runs-on: blacksmith-32vcpu-ubuntu-2404
@@ -90,31 +92,34 @@ jobs:
     timeout-minutes: 30
     needs: Build_Bedrock
     steps:
-    - name: Checkout Bedrock
-      # v4.1.0
-      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
-      with:
-        repository: Expensify/Bedrock
-        path: .
-    - name: Install zstd
-      run: apt-get update -y && apt-get install -y libzstd-dev
-    - name: Download binaries
-      uses: ./.github/actions/composite/download-binaries
-    - name: Setup tmate session
-      if: runner.debug == '1'
-      # v3
-      uses: mxschmitt/action-tmate@e5c7151931ca95bad1c6f4190c730ecf8c7dde48
-      timeout-minutes: 60
-      with:
-        limit-access-to-actor: true
-    # If tmate was run, we want to mark this step as failed so bedrock tests don't look like they're passing
-    - name: Mark failure if debugging
-      if: runner.debug == '1'
-      run: exit 1
-    - name: Run tests
-      env:
-        ENABLE_HCTREE: "false"
-      run: "./ci_tests.sh"
+      - name: Checkout Bedrock
+        # v4.1.0
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+        with:
+          repository: Expensify/Bedrock
+          path: .
+
+      - name: Download binaries
+        uses: ./.github/actions/composite/download-binaries
+
+      - name: Setup tmate session
+        if: runner.debug == '1'
+        # v3
+        uses: mxschmitt/action-tmate@e5c7151931ca95bad1c6f4190c730ecf8c7dde48
+        timeout-minutes: 60
+        with:
+          limit-access-to-actor: true
+
+          # If tmate was run, we want to mark this step as failed so bedrock tests don't look like they're passing
+      - name: Mark failure if debugging
+        if: runner.debug == '1'
+        run: exit 1
+
+      - name: Run tests
+        env:
+          ENABLE_HCTREE: "false"
+        run: "./ci_tests.sh"
+
   BedrockTestsWithHCTree:
     name: "Bedrock Tests with HCTree"
     runs-on: blacksmith-4vcpu-ubuntu-2404
@@ -127,47 +132,50 @@ jobs:
         GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     needs: Build_Bedrock
     steps:
-    - name: Checkout Bedrock
-      # v4.1.0
-      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
-      with:
-        repository: Expensify/Bedrock
-        path: .
-    - name: Install zstd
-      run: apt-get update -y && apt-get install -y libzstd-dev
-    - name: Download binaries
-      uses: ./.github/actions/composite/download-binaries
-    - name: Setup tmate session
-      if: runner.debug == '1'
-      # v3
-      uses: mxschmitt/action-tmate@e5c7151931ca95bad1c6f4190c730ecf8c7dde48
-      timeout-minutes: 60
-      with:
-        limit-access-to-actor: true
-    # If tmate was run, we want to mark this step as failed so bedrock tests don't look like they're passing
-    - name: Mark failure if debugging
-      if: runner.debug == '1'
-      run: exit 1
-    - name: Run tests
-      run: "ENABLE_HCTREE=true ./ci_tests.sh"
+      - name: Checkout Bedrock
+        # v4.1.0
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
+        with:
+          repository: Expensify/Bedrock
+          path: .
+
+      - name: Download binaries
+        uses: ./.github/actions/composite/download-binaries
+
+      - name: Setup tmate session
+        if: runner.debug == '1'
+        # v3
+        uses: mxschmitt/action-tmate@e5c7151931ca95bad1c6f4190c730ecf8c7dde48
+        timeout-minutes: 60
+        with:
+          limit-access-to-actor: true
+
+      # If tmate was run, we want to mark this step as failed so bedrock tests don't look like they're passing
+      - name: Mark failure if debugging
+        if: runner.debug == '1'
+        run: exit 1
+      
+      - name: Run tests
+        run: "ENABLE_HCTREE=true ./ci_tests.sh"
+
   Upload_Bedrock_Binaries:
     name: "Upload Bedrock Binaries"
     if: "${{ startsWith(github.ref, 'refs/tags/') }}"
     runs-on: blacksmith-32vcpu-ubuntu-2404
     timeout-minutes: 30
-    needs: [BedrockTests,BedrockTestsWithHCTree]
+    needs: [BedrockTests, BedrockTestsWithHCTree]
     steps:
-    - name: Checkout Bedrock
-      uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608
-    - name: Download binaries
-      uses: ./.github/actions/composite/download-binaries
-    - name: Strip bedrock binary
-      run: "strip bedrock"
-    - name: Upload bedrock binary to release
-      uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
-      env:
-        GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
-        GITHUB_REPOSITORY: "${{ github.repository }}"
-      with:
-        files: |-
-          ./bedrock
+      - name: Download binaries
+        uses: ./.github/actions/composite/download-binaries
+        
+      - name: Strip bedrock binary
+        run: "strip bedrock"
+
+      - name: Upload bedrock binary to release
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          GITHUB_REPOSITORY: "${{ github.repository }}"
+        with:
+          files: |-
+            ./bedrock

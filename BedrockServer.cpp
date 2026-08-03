@@ -123,11 +123,12 @@ void BedrockServer::sync()
     uint64_t firstTimeout = STIME_US_PER_M * 2 + SRandom::rand64() % STIME_US_PER_S * 30;
 
     // Initialize the shared pointer to our sync node object.
-    atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, _dbPool, args["-nodeName"], args["-nodeHost"],
-                                                            args["-peerList"], args.calc("-priority"), firstTimeout,
-                                                            _version, args["-commandPortPrivate"]));
+    auto syncNode = make_shared<SQLiteNode>(*this, _dbPool, args["-nodeName"], args["-nodeHost"],
+                                                    args["-peerList"], args.calc("-priority"), firstTimeout,
+                                                    _version, args["-commandPortPrivate"]);
+    _syncNode.store(syncNode);
 
-    _clusterMessenger = make_shared<SQLiteClusterMessenger>(_syncNode);
+    _clusterMessenger = make_shared<SQLiteClusterMessenger>(syncNode);
 
     // The node is now coming up, and should eventually end up in a `LEADING` or `FOLLOWING` state. We can start adding
     // our worker threads now. We don't wait until the node is `LEADING` or `FOLLOWING`, as it's state can change while
@@ -231,7 +232,7 @@ void BedrockServer::sync()
         // commands, and we'll shortly run through the existing queue.
         if (_shutdownState.load() == COMMANDS_FINISHED) {
             SINFO("All clients responded to, " << BedrockCommand::getCommandCount() << " commands remaining.");
-            if (_syncNode->beginShutdown()) {
+            if (syncNode->beginShutdown()) {
                 SINFO("Beginning shuttdown of sync node.");
                 // This will cause us to skip the next `poll` iteration which avoids a 1 second wait.
                 _notifyDoneSync.push(true);
@@ -244,7 +245,7 @@ void BedrockServer::sync()
 
         // Pre-process any sockets the sync node is managing (i.e., communication with peer nodes).
         _notifyDoneSync.prePoll(fdm);
-        _syncNode->prePoll(fdm);
+        syncNode->prePoll(fdm);
 
         // Add our command queues to our fd_map.
         _syncNodeQueuedCommands.prePoll(fdm);
@@ -269,7 +270,7 @@ void BedrockServer::sync()
         // set it just before that call, because it is now also possible for the state to change in postPoll -- for example,
         // if we lose connection to a peer, and that peer was the last one that gave us quorum, then we can drop from
         // LEADING to SEARCHING. This transition triggers our "fall out of leading" logic.
-        SQLiteNodeState preUpdateState = _syncNode->getState();
+        SQLiteNodeState preUpdateState = syncNode->getState();
 
         // Process any network traffic that happened. Scope this so that we can change the log prefix and have it
         // auto-revert when we're finished.
@@ -279,7 +280,7 @@ void BedrockServer::sync()
 
             // Process any activity in our plugins.
             AutoTimerTime postPollTime(postPollTimer);
-            _syncNode->postPoll(fdm, nextActivity);
+            syncNode->postPoll(fdm, nextActivity);
             _syncNodeQueuedCommands.postPoll(fdm);
             _notifyDoneSync.postPoll(fdm);
         }
@@ -288,19 +289,19 @@ void BedrockServer::sync()
             void (*onPrepareHandler)(SQLite& db, int64_t tableID) = nullptr;
             bool enabled = command->shouldEnableOnPrepareNotification(db, &onPrepareHandler);
             if (enabled) {
-                _syncNode->onPrepareHandlerEnabled = enabled;
-                _syncNode->onPrepareHandler = onPrepareHandler;
+                syncNode->onPrepareHandlerEnabled = enabled;
+                syncNode->onPrepareHandler = onPrepareHandler;
             }
         } else {
-            _syncNode->onPrepareHandlerEnabled = false;
-            _syncNode->onPrepareHandler = nullptr;
+            syncNode->onPrepareHandlerEnabled = false;
+            syncNode->onPrepareHandler = nullptr;
         }
 
         // Ok, let the sync node update for as many iterations as it requires. We'll update the replication
         // state when it's finished.
-        while (_syncNode->update()) {
+        while (syncNode->update()) {
         }
-        _leaderVersion.store(_syncNode->getLeaderVersion());
+        _leaderVersion.store(syncNode->getLeaderVersion());
 
         // If we're not leading, move any commands from the blocking queue back to the main queue.
         if (getState() != SQLiteNodeState::LEADING && getState() != preUpdateState) {
@@ -364,7 +365,7 @@ void BedrockServer::sync()
         // Otherwise, if we're leading, let's start the commit.
         // Also, if a commit is in progress, skip it (it's the commit we started on the last loop iteration).
         if (!_upgradeCompleted && getState() == SQLiteNodeState::LEADING && !commitInProgress) {
-            if (!_syncNode->hasQuorum()) {
+            if (!syncNode->hasQuorum()) {
                 // Because we are going to commit the upgrade as a QUORUM commit (i.e., wait until over half of nodes
                 // approve it), we wait until `hasQuorum()` is true before we even attempt to start it.
                 // You might ask "if we are LEADING, how do we not have QUORUM?" and the answer to that is that as soon as
@@ -392,7 +393,7 @@ void BedrockServer::sync()
             }
             if (dbHasChanges) {
                 commitInProgress = true;
-                _syncNode->startCommit(SQLiteNode::QUORUM);
+                syncNode->startCommit(SQLiteNode::QUORUM);
                 _lastQuorumCommandTime = STimeNow();
 
                 // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
@@ -413,7 +414,7 @@ void BedrockServer::sync()
         // stick it back in the appropriate queue.
         if (commitInProgress) {
             // If the sync node's still working on the existing commit, just continue.
-            if (_syncNode->commitInProgress()) {
+            if (syncNode->commitInProgress()) {
                 continue;
             }
             commitInProgress = false;
@@ -422,7 +423,7 @@ void BedrockServer::sync()
             // But if we failed, we just try again. We have no real other options as this is required for
             // the database to be in a usable state.
             if (!_upgradeCompleted) {
-                if (_syncNode->commitSucceeded()) {
+                if (syncNode->commitSucceeded()) {
                     _upgradeCompleted = true;
                     SINFO("UpgradeDB succeeded, done.");
                     _notifyDone.push(true);
@@ -446,7 +447,7 @@ void BedrockServer::sync()
                 core.postProcessCommand(command, false);
             }
 
-            if (_syncNode->commitSucceeded()) {
+            if (syncNode->commitSucceeded()) {
                 SINFO("Sync thread finished committing command " << command->request.methodLine);
                 _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
 
@@ -476,7 +477,7 @@ void BedrockServer::sync()
             // until one of these states changes. This prevents an endless loop of escalating commands, having
             // SQLiteNode re-queue them because leader is standing down, and then escalating them again until leader
             // sorts itself out.
-            if (getState() == SQLiteNodeState::FOLLOWING && _syncNode->leaderState() == SQLiteNodeState::STANDINGDOWN) {
+            if (getState() == SQLiteNodeState::FOLLOWING && syncNode->leaderState() == SQLiteNodeState::STANDINGDOWN) {
                 continue;
             }
 
@@ -574,7 +575,7 @@ void BedrockServer::sync()
                         SINFO("[performance] Sync thread beginning committing command " << command->request.methodLine);
                         // START TIMING.
                         command->startTiming(BedrockCommand::COMMIT_SYNC);
-                        _syncNode->startCommit(command->writeConsistency);
+                        syncNode->startCommit(command->writeConsistency);
 
                         // And we'll start the next main loop.
                         // NOTE: This will cause us to read from the network again. This, in theory, is fine, but we saw
@@ -610,7 +611,7 @@ void BedrockServer::sync()
             // _syncNodeQueuedCommands had no commands to work on, we'll need to re-poll for some.
             continue;
         }
-    } while (!_syncNode->shutdownComplete() || BedrockCommand::getCommandCount());
+    } while (!syncNode->shutdownComplete() || BedrockCommand::getCommandCount());
 
     SSetSignalHandlerDieFunc([]() {
         return "Dying in shutdown";
@@ -619,7 +620,7 @@ void BedrockServer::sync()
     // If we forced a shutdown mid-transaction (this can happen, if, for instance, we hit our graceful timeout between
     // getting a `BEGIN_TRANSACTION` and `COMMIT_TRANSACTION`) then we need to roll back the existing transaction and
     // release the lock.
-    if (_syncNode->commitInProgress()) {
+    if (syncNode->commitInProgress()) {
         SWARN("Shutting down mid-commit. Rolling back.");
         db.rollback();
     }
@@ -666,7 +667,8 @@ void BedrockServer::sync()
 
     // Release our handle to this pointer. Any other functions that are still using it will keep the object alive
     // until they return.
-    atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
+    _syncNode.store(nullptr);
+    syncNode.reset();
 
     // If we're not detaching, save that we're shutting down.
     if (!_detach) {
@@ -737,7 +739,7 @@ void BedrockServer::worker(int threadId)
 bool BedrockServer::isShuttingDown()
 {
     bool shuttingDown = false;
-    auto _syncNodeCopy = atomic_load(&_syncNode);
+    auto _syncNodeCopy = _syncNode.load();
     if (_shutdownState.load() != RUNNING || (_syncNodeCopy && _syncNodeCopy->getState() == SQLiteNodeState::STANDINGDOWN)) {
         shuttingDown = true;
     }
@@ -785,7 +787,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // Also, if this command is scheduled in the future, we can't run it either, we need to enqueue it to run at that point.
     // This functionality will go away as we remove the queues from bedrock, and so this can be removed at that time.
     {
-        auto _syncNodeCopy = atomic_load(&_syncNode);
+        auto _syncNodeCopy = _syncNode.load();
         if (!_syncNodeCopy || command->request.calcU64("commandExecuteTime") > STimeNow()) {
             _commandQueue.push(move(command));
             return;
@@ -1031,6 +1033,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         bool commitSuccess = false;
                         uint64_t transactionID = 0;
                         string transactionHash;
+                        auto syncNode = _syncNode.load();
 
                         // Let's use a default value of 0 for the time to acquire the lock, which would work as a try_lock.
                         chrono::microseconds timeToCommit = chrono::microseconds(0);
@@ -1048,7 +1051,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             } catch (const SException& e) {
                                 SINFO("Command '" << command->getMethodName() << "' timed out before commit.");
                             }
-                            commitSuccess = core.commit(*_syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit, &command->shouldAbort);
+                            commitSuccess = core.commit(*syncNode, transactionID, transactionHash, command->getMethodName(), enableOnPrepareNotifications, onPrepareHandler, timeToCommit, &command->shouldAbort);
 
                             if (getState() != SQLiteNodeState::LEADING) {
                                 SINFO("Stopped leading while trying to commit, will retry.");
@@ -1064,7 +1067,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             // Tell the sync node that there's been a commit so that it can jump out of it's "poll"
                             // loop and send it to followers. NOTE: we don't check for null here, that should be
                             // impossible inside a worker thread.
-                            _syncNode->notifyCommit();
+                            syncNode->notifyCommit();
                             _conflictManager.recordTables(command->request.methodLine, db.getTablesUsed());
                             // So we must still be leading, and at this point our commit has succeeded, let's
                             // mark it as complete. We add the currentCommit count here as well.
@@ -1270,7 +1273,7 @@ void BedrockServer::_resetServer()
         _commandPortBlockReasons.clear();
     }
     _syncLoopShouldBeRunning = true;
-    atomic_store(&_syncNode, shared_ptr<SQLiteNode>(nullptr));
+    _syncNode.store(nullptr);
     _shutdownState = RUNNING;
     _shouldBackup = false;
     _commandPortPublic = nullptr;
@@ -1556,8 +1559,8 @@ void BedrockServer::postPoll(fd_map& fdm, uint64_t& nextActivity)
 
             // This interrupts the sync thread's poll() loop so it doesn't wait for up to an extra second to finish.
             // When it wakes up, it will begin its own shutdown.
-            if (_syncNode) {
-                _syncNode->notifyCommit();
+            if (auto syncNode = _syncNode.load()) {
+                syncNode->notifyCommit();
             }
         }
     }
@@ -1737,7 +1740,7 @@ bool BedrockServer::_isStatusCommand(const unique_ptr<BedrockCommand>& command)
 list<STable> BedrockServer::getPeerInfo()
 {
     list<STable> peerData;
-    auto _syncNodeCopy = atomic_load(&_syncNode);
+    auto _syncNodeCopy = _syncNode.load();
     if (_syncNodeCopy) {
         peerData = _syncNodeCopy->getPeerInfo();
     }
@@ -1899,7 +1902,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
         content["queuedCommandList"] = SComposeJSONArray(_commandQueue.getRequestMethodLines());
         content["syncThreadQueuedCommandList"] = SComposeJSONArray(syncNodeQueuedMethods);
 
-        auto _syncNodeCopy = atomic_load(&_syncNode);
+        auto _syncNodeCopy = _syncNode.load();
         if (_syncNodeCopy) {
             content["syncNodeAvailable"] = "true";
             // Set some information about this node.
@@ -2184,7 +2187,7 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             response.methodLine = "400 Missing priority";
         } else {
             int64_t newPriority = command->request.calc64("priority");
-            auto _syncNodeCopy = atomic_load(&_syncNode);
+            auto _syncNodeCopy = _syncNode.load();
             // Priority 1 is reserved for shutdown.
             if (newPriority < 0 || newPriority == 1) {
                 response.methodLine = "400 Invalid priority";
@@ -2257,7 +2260,7 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach)
             _shutdownState.store(START_SHUTDOWN);
         }
         SQLiteNodeState currentState = SQLiteNodeState::UNKNOWN;
-        auto syncNodeCopy = atomic_load(&_syncNode);
+        auto syncNodeCopy = _syncNode.load();
         if (syncNodeCopy) {
             currentState = syncNodeCopy->getState();
             syncNodeCopy->setShutdownPriority();
@@ -2738,7 +2741,7 @@ void BedrockServer::notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newSt
 
 SQLiteNodeState BedrockServer::getState() const
 {
-    auto _syncNodeCopy = atomic_load(&_syncNode);
+    auto _syncNodeCopy = _syncNode.load();
     if (_syncNodeCopy) {
         return _syncNodeCopy->getState();
     }
