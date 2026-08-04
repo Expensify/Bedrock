@@ -62,6 +62,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
     char filename[17] = "br_sync_dbXXXXXX";
 
     TestServer server;
+    atomic<int> configuredPriority{1};
     string peerList = "host1.fake:15555?nodeName=peer1,host2.fake:16666?nodeName=peer2,host3.fake:17777?nodeName=peer3,host4.fake:18888?nodeName=peer4";
     shared_ptr<SQLitePool> dbPool;
 
@@ -80,7 +81,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
     void testFindSyncPeer()
     {
-        SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, 1, 1000000000, "1.0");
+        SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, configuredPriority, 1000000000, "1.0");
 
         // Do a base test, with one peer with no latency.
         SQLitePeer* fastest = nullptr;
@@ -153,14 +154,14 @@ struct SQLiteNodeTest : tpunit::TestFixture
     void testGetPeerByName()
     {
         {
-            SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, 1, 1000000000, "1.0");
+            SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, configuredPriority, 1000000000, "1.0");
             ASSERT_EQUAL(testNode.getPeerByName("peer3")->name, "peer3");
             ASSERT_EQUAL(testNode.getPeerByName("peer9"), nullptr);
         }
         {
             // It also works when the peer list isn't pre-sorted
             string unsortedPeerList = "host1.fake:15555?nodeName=peerZ,host2.fake:16666?nodeName=peer1,host3.fake:17777?nodeName=peer0,host4.fake:18888?nodeName=peerBanana";
-            SQLiteNode testNode(server, dbPool, "test", "localhost:19998", unsortedPeerList, 1, 1000000000, "1.0");
+            SQLiteNode testNode(server, dbPool, "test", "localhost:19998", unsortedPeerList, configuredPriority, 1000000000, "1.0");
             ASSERT_EQUAL(testNode.getPeerByName("peer1")->name, "peer1");
             ASSERT_EQUAL(testNode.getPeerByName("peerBanana")->name, "peerBanana");
             ASSERT_EQUAL(testNode.getPeerByName("peer9"), nullptr);

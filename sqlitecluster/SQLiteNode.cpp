@@ -112,14 +112,14 @@ const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString)
 }
 
 SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPool, const string& name,
-                       const string& host, const string& peerList, int priority, uint64_t firstTimeout,
+                       const string& host, const string& peerList, atomic<int>& configuredPriority, uint64_t firstTimeout,
                        const string& version, const string& commandPort)
     : STCPManager(),
     _commandAddress(commandPort),
     _name(name),
     _host(host),
     _peerList(_initPeers(peerList)),
-    _configuredPriority(priority),
+    _configuredPriority(configuredPriority),
     _port(_host.empty() ? nullptr : openPort(_host)),
     _version(version),
     _commitState(CommitState::UNINITIALIZED),

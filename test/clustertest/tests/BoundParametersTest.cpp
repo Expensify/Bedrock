@@ -56,25 +56,9 @@ struct BoundParametersTest : tpunit::TestFixture
     // the fly so the returned text is the original SQL regardless of whether journal compression is on.
     string readJournalText(BedrockTester& node, uint64_t commitID)
     {
-        SData listCmd("Query");
-        listCmd["Format"] = "json";
-        listCmd["Query"] = "SELECT tbl_name FROM sqlite_master WHERE tbl_name LIKE 'journal%' ORDER BY tbl_name;";
-        auto listResults = node.executeWaitMultipleData({listCmd});
-        SQResult tables;
-        tables.deserialize(listResults[0].content);
-
-        string sql;
-        for (size_t i = 0; i < tables.size(); i++) {
-            if (!sql.empty()) {
-                sql += " UNION ";
-            }
-            sql += "SELECT decompress(query) FROM " + tables[i][0] + " WHERE id = " + SQ(commitID);
-        }
-        sql += ";";
-
         SData command("Query");
         command["Format"] = "json";
-        command["Query"] = sql;
+        command["Query"] = "SELECT decompress(query) FROM journalEntries WHERE id = " + SQ(commitID) + ";";
         auto results = node.executeWaitMultipleData({command});
         if (results[0].methodLine != "200 OK" || results[0].content.empty()) {
             return "";

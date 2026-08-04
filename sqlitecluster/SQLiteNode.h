@@ -181,7 +181,7 @@ public:
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPool, const string& name, const string& host,
-               const string& peerList, int priority, uint64_t firstTimeout, const string& version,
+               const string& peerList, atomic<int>& configuredPriority, uint64_t firstTimeout, const string& version,
                const string& commandPort = "localhost:8890");
     ~SQLiteNode();
 
@@ -302,9 +302,9 @@ private:
     const string _host;
     const vector<SQLitePeer*> _peerList;
 
-    // When the node starts, it is not ready to serve requests without first connecting to the other nodes, and checking
-    // to make sure it's up-to-date. Store the configured priority here and use "-1" until we're ready to fully join the cluster.
-    atomic<int> _configuredPriority;
+    // When the node starts, it is not ready to serve requests without first connecting to the other nodes and checking
+    // that it is up-to-date. The server owns the configured priority so it survives detach/attach cycles.
+    atomic<int>& _configuredPriority;
 
     // Tracks whether this node has seen at least one peer running the same version as itself.
     // We use this along with _haveBeenWAITING to determine when to restore the node's original priority after startup.
