@@ -716,16 +716,6 @@ void BedrockServer::worker(int threadId)
             // Capture the identifier and start time so we can attribute worker-0 execution time
             // back to the per-identifier rate-limit accumulator after the command finishes.
             const string blockingIdentifier = (threadId == 0) ? command->blockingQueueRateLimitIdentifier : "";
-
-            // If this command has a blocking queue identifier, check if it's over the time limit. If so, respond with 503 and continue.
-            if (!blockingIdentifier.empty() && _blockingCommandQueue.isIdentifierOverTimeLimit(blockingIdentifier, command->request.methodLine)) {
-                command->response.methodLine = "503 Blocking queue rate limited (time)";
-                command->complete = true;
-                _reply(command);
-                command = nullptr;
-                continue;
-            }
-
             const uint64_t blockingStart = (threadId == 0 && !blockingIdentifier.empty()) ? STimeNow() : 0;
 
             runCommand(move(command), threadId == 0, false);

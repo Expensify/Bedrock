@@ -77,14 +77,23 @@ unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
 {
     auto command = BedrockCommandQueue::_dequeue();
 
+    const string blockingIdentifier = command->blockingQueueRateLimitIdentifier;
+
     // Decrement rate limit count when a command leaves the queue.
-    if (!command->blockingQueueRateLimitIdentifier.empty() && _maxPerIdentifier.load() > 0) {
+    if (!blockingIdentifier.empty() && _maxPerIdentifier.load() > 0) {
         lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
         _decrementIdentifierCount(command->blockingQueueRateLimitIdentifier);
     }
 
     if (_queue.empty() && _emptyTime.load() == 0) {
         _emptyTime.store(STimeNow());
+    }
+
+    // If this command has a blocking queue identifier, check if it's over the time limit. If so, fill the response methodLine with 503
+    // and set the command as completed. By doing so, we will skip processing the command in `BedrockServer::runCommand`.
+    if (!blockingIdentifier.empty() && isIdentifierOverTimeLimit(blockingIdentifier, command->request.methodLine)) {
+        command->response.methodLine = "503 Blocking queue rate limited (time)";
+        command->complete = true;
     }
 
     return command;
