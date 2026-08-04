@@ -22,7 +22,7 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
     const size_t maxPerIdentifier = _maxPerIdentifier.load();
     const bool shouldCheckCount = maxPerIdentifier > 0 && !identifier.empty();
 
-    // Reject before enqueuing if this identifier is already over the accumulated worker-0 time limit.
+    // Reject before enqueuing if the identifier is over the allowed time spent in the blocking queue.
     if (isIdentifierOverTimeLimit(identifier, command->request.methodLine)) {
         STHROW("503 Blocking queue rate limited (time)");
     }

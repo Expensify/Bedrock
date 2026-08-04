@@ -41,15 +41,8 @@ public:
     // cumulative per identifier until the empty-queue reset clears it — it is never decremented per command.
     void recordExecutionTime(const string& identifier, uint64_t elapsedUS);
 
-    // Check `identifier`'s accumulated worker-0 execution time against the time thresholds, logging a
-    // "Blocking queue rate limit (time)" line when over the log or enforce threshold. Returns true if
-    // over the enforce threshold, so the caller can reject the command (push() throws; the blockingCommit
-    // worker replies 503). Returns false when the threshold is disabled (== 0) or the identifier is empty.
-    // Applies the same 30-second empty-queue reset as push(). `methodLine` is used only for logging.
-    //
-    // push() checks time that is only recorded after a command finishes, so a burst enqueued before any of
-    // them finishes all pass push() with zero accumulated time. The worker re-checks at dequeue, before
-    // running a command, so the later commands are rejected once earlier ones have accumulated over the limit.
+    // Check the identifier's accumulated blocking queue execution time against our thresholds, logging a tracking
+    // message and returning true if the threshold is exceeded. Returns false if the identifier is not over the limit.
     bool isIdentifierOverTimeLimit(const string& identifier, const string& methodLine);
 
 protected:
