@@ -41,6 +41,10 @@ public:
     // cumulative per identifier until the empty-queue reset clears it — it is never decremented per command.
     void recordExecutionTime(const string& identifier, uint64_t elapsedUS);
 
+    // Check the identifier's accumulated blocking queue execution time against our thresholds, logging a tracking
+    // message and returning true if the threshold is exceeded. Returns false if the identifier is not over the limit.
+    bool isIdentifierOverTimeLimit(const string& identifier, const string& methodLine);
+
 protected:
     // Called by get() while _queueMutex is held; atomically decrements per-identifier counts
     // and records when the queue becomes empty.
@@ -50,10 +54,6 @@ private:
     // Decrement the count for `identifier` in `_identifierCounts`, erasing the entry if it reaches zero.
     // Caller must hold `_rateLimitMutex`.
     void _decrementIdentifierCount(const string& identifier);
-
-    // Check the identifier's accumulated blocking queue execution time against our thresholds, logging a tracking
-    // message and returning true if the threshold is exceeded. Returns false if the identifier is not over the limit.
-    bool _isIdentifierOverTimeLimit(const string& identifier, const string& methodLine);
 
     // Guards `_identifierCounts`. Separate from the base class `_queueMutex` because the base
     // mutex is non-recursive and is held while `_dequeue` runs.

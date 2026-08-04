@@ -23,7 +23,7 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
     const bool shouldCheckCount = maxPerIdentifier > 0 && !identifier.empty();
 
     // Reject before enqueuing if the identifier is over the allowed time spent in the blocking queue.
-    if (_isIdentifierOverTimeLimit(identifier, command->request.methodLine)) {
+    if (isIdentifierOverTimeLimit(identifier, command->request.methodLine)) {
         STHROW("503 Blocking queue rate limited (time)");
     }
 
@@ -91,7 +91,7 @@ unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
 
     // If this command has a blocking queue identifier, check if it's over the time limit. If so, fill the response methodLine with 503
     // and set the command as completed. By doing so, we will skip processing the command in `BedrockServer::runCommand`.
-    if (!blockingIdentifier.empty() && _isIdentifierOverTimeLimit(blockingIdentifier, command->request.methodLine)) {
+    if (!blockingIdentifier.empty() && isIdentifierOverTimeLimit(blockingIdentifier, command->request.methodLine)) {
         command->response.methodLine = "503 Blocking queue rate limited (time)";
         command->complete = true;
     }
@@ -185,7 +185,7 @@ void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, 
     _identifierTimes[identifier] += elapsedUS;
 }
 
-bool BedrockBlockingCommandQueue::_isIdentifierOverTimeLimit(const string& identifier, const string& methodLine)
+bool BedrockBlockingCommandQueue::isIdentifierOverTimeLimit(const string& identifier, const string& methodLine)
 {
     const uint64_t maxTimePerIdentifier = _maxTimePerIdentifier.load();
     if (maxTimePerIdentifier == 0 || identifier.empty()) {
