@@ -1,4 +1,5 @@
 #pragma once
+#include <deque>
 #include <memory>
 #include <unordered_map>
 
@@ -51,6 +52,17 @@ protected:
     unique_ptr<BedrockCommand> _dequeue() override;
 
 private:
+    // One command an identifier finished on the blocking queue. `finishTime` is when it finished.
+    // `elapsedTime` is how long it ran there. Both are in microseconds.
+    struct RecentlyFinishedCommand
+    {
+        uint64_t finishTime = 0;
+        uint64_t elapsedTime = 0;
+    };
+
+    // An identifier's recently finished blocking-queue commands, oldest first.
+    typedef deque<RecentlyFinishedCommand> RecentlyFinishedCommandList;
+
     // Per-identifier rate-limit state. Each entry has its own mutex, so different identifiers never
     // contend on one lock.
     //
@@ -61,7 +73,7 @@ private:
     struct IdentifierState
     {
         mutex m;
-        uint64_t timeUS = 0;
+        RecentlyFinishedCommandList commands;
     };
 
     // Return a shared_ptr to the state for `identifier`, creating it if absent. Hold `_identifiersMutex` only briefly.
