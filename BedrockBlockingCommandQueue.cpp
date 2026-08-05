@@ -19,34 +19,10 @@ BedrockBlockingCommandQueue::BedrockBlockingCommandQueue() :
 void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
 {
     const string identifier = command->blockingQueueRateLimitIdentifier;
-    const size_t maxPerIdentifier = _maxPerIdentifier.load();
-    const bool shouldCheckCount = maxPerIdentifier > 0 && !identifier.empty();
 
     // Reject before enqueuing if the identifier is over the allowed time spent in the blocking queue.
     if (isIdentifierOverTimeLimit(identifier, command->request.methodLine)) {
         STHROW("503 Blocking queue rate limited (time)");
-    }
-
-    if (shouldCheckCount) {
-        lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
-
-        // Clear counts if the blocking queue has been empty for 30 seconds.
-        uint64_t emptyTime = _emptyTime.load();
-        if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
-            _identifierCounts.clear();
-        }
-
-        size_t& count = _identifierCounts[identifier];
-        count++;
-
-        if (count > maxPerIdentifier) {
-            SINFO("Blocking queue rate limit: rejecting '" << command->request.methodLine
-                  << "' for identifier '" << identifier << "' (count=" << count
-                  << ", threshold=" << maxPerIdentifier << ")");
-            // TODO: enable enforcement after monitoring confirms thresholds are correct in production.
-            // count--;
-            // STHROW("503 Blocking queue rate limited");
-        }
     }
 
     // A command is entering the queue, so it is no longer empty. Clear the empty timestamp so
@@ -57,20 +33,15 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
         // Base class acquires its own (non-recursive) `_queueMutex`.
         BedrockCommandQueue::push(move(command));
     } catch (...) {
-        // The command never entered the queue. Roll back the count increment and restore the
-        // empty timestamp so the 30-second auto-reset timer isn't lost. Time accumulator was
-        // not touched on push, so there's nothing to roll back there.
+        // The command never entered the queue. Restore the empty timestamp so the
+        // 30-second auto-reset timer isn't lost.
         _emptyTime.store(previousEmptyTime);
-        if (shouldCheckCount) {
-            lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
-            _decrementIdentifierCount(identifier);
-        }
         throw;
     }
 }
 
 /**
- * Dequeues command and inspects _queue to update rate limit counts and _emptyTime
+ * Dequeues command and inspects _queue to update _emptyTime, and rejects the command if its identifier is over the time limit.
  * Called by `BedrockCommandQueue::get()` with the base `_queueMutex` held. Calling any base method that reacquires `_queueMutex` would deadlock.
  */
 unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
@@ -78,12 +49,6 @@ unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
     auto command = BedrockCommandQueue::_dequeue();
 
     const string blockingIdentifier = command->blockingQueueRateLimitIdentifier;
-
-    // Decrement rate limit count when a command leaves the queue.
-    if (!blockingIdentifier.empty() && _maxPerIdentifier.load() > 0) {
-        lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
-        _decrementIdentifierCount(command->blockingQueueRateLimitIdentifier);
-    }
 
     if (_queue.empty() && _emptyTime.load() == 0) {
         _emptyTime.store(STimeNow());
@@ -108,8 +73,7 @@ void BedrockBlockingCommandQueue::clear()
 size_t BedrockBlockingCommandQueue::clearRateLimits()
 {
     lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
-    size_t size = _identifierCounts.size();
-    _identifierCounts.clear();
+    size_t size = _identifierTimes.size();
     _identifierTimes.clear();
     _emptyTime.store(0);
     return size;
@@ -117,29 +81,16 @@ size_t BedrockBlockingCommandQueue::clearRateLimits()
 
 STable BedrockBlockingCommandQueue::getState()
 {
-    map<string, size_t> countsCopy;
     map<string, uint64_t> timesCopy;
     {
         lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
 
         uint64_t emptyTime = _emptyTime.load();
         if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
-            _identifierCounts.clear();
             _identifierTimes.clear();
         }
 
-        countsCopy = _identifierCounts;
         timesCopy = _identifierTimes;
-    }
-
-    size_t maxPerIdentifier = _maxPerIdentifier.load();
-    size_t blockedCount = 0;
-    STable countsTable;
-    for (const auto& p : countsCopy) {
-        countsTable[p.first] = to_string(p.second);
-        if (p.second > maxPerIdentifier) {
-            blockedCount++;
-        }
     }
 
     uint64_t maxTimePerIdentifier = _maxTimePerIdentifier.load();
@@ -153,22 +104,12 @@ STable BedrockBlockingCommandQueue::getState()
     }
 
     STable content;
-    content["blockingRateLimitThreshold"] = to_string(maxPerIdentifier);
-    content["blockedIdentifiers"] = to_string(blockedCount);
-    if (!countsTable.empty()) {
-        content["blockingQueueIdentifierCounts"] = SComposeJSONObject(countsTable);
-    }
     content["blockingTimeRateLimitThresholdMs"] = to_string(maxTimePerIdentifier / 1000);
     content["blockedTimeIdentifiers"] = to_string(blockedTimeCount);
     if (!timesTable.empty()) {
         content["blockingQueueIdentifierTimesMs"] = SComposeJSONObject(timesTable);
     }
     return content;
-}
-
-size_t BedrockBlockingCommandQueue::setMaxRequestsPerIdentifier(size_t value)
-{
-    return _maxPerIdentifier.exchange(value);
 }
 
 uint64_t BedrockBlockingCommandQueue::setMaxTimePerIdentifier(uint64_t valueUS)
@@ -223,16 +164,4 @@ bool BedrockBlockingCommandQueue::isIdentifierOverTimeLimit(const string& identi
     }
 
     return false;
-}
-
-void BedrockBlockingCommandQueue::_decrementIdentifierCount(const string& identifier)
-{
-    auto it = _identifierCounts.find(identifier);
-    if (it != _identifierCounts.end()) {
-        if (it->second <= 1) {
-            _identifierCounts.erase(it);
-        } else {
-            it->second--;
-        }
-    }
 }
