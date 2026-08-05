@@ -51,18 +51,20 @@ protected:
     unique_ptr<BedrockCommand> _dequeue() override;
 
 private:
-    // Per-identifier rate-limit state, each entry guarded by its own mutex so that different identifiers
-    // don't serialize on one global lock. `_identifiersMutex` guards only the map: hold it just long enough
-    // to find-or-insert an entry and copy out the shared_ptr, then release it and take the per-identifier
-    // `m` for the actual work. The shared_ptr keeps an entry alive even if another thread erases it from the
-    // map between those two locks.
+    // Per-identifier rate-limit state. Each entry has its own mutex, so different identifiers never
+    // contend on one lock.
+    //
+    // `_identifiersMutex` guards only the map. Hold it just long enough to find or insert an entry and
+    // copy its shared_ptr. Then release it and lock the entry's own `m` to do the work.
+    //
+    // The shared_ptr keeps the entry alive if another thread erases it from the map between the two locks.
     struct IdentifierState
     {
         mutex m;
         uint64_t timeUS = 0;
     };
 
-    // Find or create the state for `identifier`, returning a shared_ptr copy. Briefly holds `_identifiersMutex`.
+    // Return a shared_ptr to the state for `identifier`, creating it if absent. Hold `_identifiersMutex` only briefly.
     shared_ptr<IdentifierState> _getOrCreateIdentifierState(const string& identifier);
 
     // Guards `_identifierTimes`. Separate from the base class `_queueMutex` because the base
