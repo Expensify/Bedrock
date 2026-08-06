@@ -60,7 +60,8 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testSQueryBoundParameterInjections),
                                      TEST(LibStuff::SRedactSensitiveValuesTest),
                                      TEST(LibStuff::SComposeHTTPTest),
-                                     TEST(LibStuff::testEncodeDecodeURIComponent)
+                                     TEST(LibStuff::testEncodeDecodeURIComponent),
+                                     TEST(LibStuff::testSGetPeerNamePreservesErrno)
     )
     {
     }
@@ -1160,5 +1161,24 @@ struct LibStuff : tpunit::TestFixture
         // UTF-8: ü (U+00FC) = bytes 0xC3 0xBC → %C3%BC
         ASSERT_EQUAL(SEncodeURIComponent("\xC3\xBC"), "%C3%BC");
         ASSERT_EQUAL(SDecodeURIComponent(SEncodeURIComponent("\xC3\xBC")), "\xC3\xBC");
+    }
+
+    void testSGetPeerNamePreservesErrno()
+    {
+        // Callers pass SGetPeerName(s) and errno as sibling arguments while reporting a failure from send() or
+        // recv(). Argument evaluation order is unspecified, so if getpeername() were allowed to overwrite errno the
+        // caller could report ENOTCONN instead of the real error and treat a recoverable failure as fatal.
+        int s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        ASSERT_TRUE(s >= 0);
+
+        // An unconnected socket makes getpeername() fail, which is the case that sets errno.
+        errno = EAGAIN;
+        const string peerName = SGetPeerName(s);
+        ASSERT_EQUAL(errno, EAGAIN);
+
+        // The failing errno still reaches the description.
+        ASSERT_EQUAL(peerName, "(errno#" + SToStr(ENOTCONN) + ")");
+
+        close(s);
     }
 } __LibStuff;
