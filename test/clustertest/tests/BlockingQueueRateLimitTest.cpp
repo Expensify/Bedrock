@@ -41,7 +41,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
 
         SData status("Status");
         STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingBlockedAccounts"], "0");
+        ASSERT_EQUAL(json["blockingBlockedAccounts"], "");
     }
 
     void testControlCommands()
@@ -122,14 +122,14 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
 
         // The account must register as blocked in Status.
         json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_TRUE(SToInt(json["blockingBlockedAccounts"]) >= 1);
+        ASSERT_TRUE(SContains(json["blockingBlockedAccounts"], "timeuser"));
 
         SData clearBlocks("SetBlockingQueueTimeRateLimit");
         clearBlocks["ClearBlocks"] = "true";
         leader.executeWaitVerifyContent(clearBlocks, "200", true);
 
         json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingBlockedAccounts"], "0");
+        ASSERT_EQUAL(json["blockingBlockedAccounts"], "");
 
         // Reset leader state.
         SData resetConflict("SetConflictParams");
