@@ -74,23 +74,24 @@ STable BedrockBlockingCommandQueue::getState()
 {
     const uint64_t now = _now();
 
-    // Count tracked and currently-blocked identifiers in a map. Holds the map mutex while briefly locking each
-    // entry to read `blockedUntil`; no code path takes an entry lock before the map mutex, so this can't deadlock.
-    auto countBlocked = [now](StateMap& map, size_t& tracked, size_t& blocked) {
+    // Collect the tracked count and the currently-blocked identifiers in a map. Holds the map mutex while briefly
+    // locking each entry to read `blockedUntil`; no code path takes an entry lock before the map mutex, so this
+    // can't deadlock.
+    auto inspect = [now](StateMap& map, size_t& tracked, list<string>& blocked) {
         lock_guard<decltype(map.mapMutex)> lock(map.mapMutex);
         tracked = map.states.size();
-        blocked = 0;
         for (const auto& p : map.states) {
             lock_guard<decltype(p.second->m)> stateLock(p.second->m);
             if (p.second->blockedUntil > now) {
-                blocked++;
+                blocked.push_back(p.first);
             }
         }
     };
 
-    size_t trackedAccounts = 0, blockedAccounts = 0, trackedCommands = 0, blockedCommands = 0;
-    countBlocked(_accountStates, trackedAccounts, blockedAccounts);
-    countBlocked(_commandStates, trackedCommands, blockedCommands);
+    size_t trackedAccounts = 0, trackedCommands = 0;
+    list<string> blockedAccounts, blockedCommands;
+    inspect(_accountStates, trackedAccounts, blockedAccounts);
+    inspect(_commandStates, trackedCommands, blockedCommands);
 
     STable content;
     content["blockingTimeWindowMs"] = to_string(_windowUS.load() / 1000);
@@ -98,9 +99,9 @@ STable BedrockBlockingCommandQueue::getState()
     content["blockingCommandThresholdMs"] = to_string(_commandThresholdUS.load() / 1000);
     content["blockingBlockDurationMs"] = to_string(_blockDurationUS.load() / 1000);
     content["blockingTrackedAccounts"] = to_string(trackedAccounts);
-    content["blockingBlockedAccounts"] = to_string(blockedAccounts);
+    content["blockingBlockedAccounts"] = SComposeList(blockedAccounts);
     content["blockingTrackedCommands"] = to_string(trackedCommands);
-    content["blockingBlockedCommands"] = to_string(blockedCommands);
+    content["blockingBlockedCommands"] = SComposeList(blockedCommands);
     return content;
 }
 
@@ -156,7 +157,7 @@ shared_ptr<BedrockBlockingCommandQueue::IdentifierState> BedrockBlockingCommandQ
     return it == map.states.end() ? nullptr : it->second;
 }
 
-void BedrockBlockingCommandQueue::_recordAndCheck(StateMap& map, const string& key, uint64_t thresholdUS, uint64_t now, uint64_t elapsedUS, const char* dimension)
+void BedrockBlockingCommandQueue::_recordAndCheck(StateMap& map, const string& key, uint64_t thresholdUS, uint64_t now, uint64_t elapsedUS, const string& dimension)
 {
     if (key.empty() || thresholdUS == 0) {
         return;
@@ -193,9 +194,13 @@ void BedrockBlockingCommandQueue::_recordAndCheck(StateMap& map, const string& k
 
     if (total > thresholdUS) {
         state->blockedUntil = now + _blockDurationUS.load();
-        SINFO("Blocking queue rate limit (time), blocking dimension=" << dimension << " identifier=" << key
-              << " timeMS=" << (total / 1000) << " thresholdMS=" << (thresholdUS / 1000)
-              << " blockDurationMS=" << (_blockDurationUS.load() / 1000));
+        SINFO("Blocking queue rate limit (time), blocking", {
+            {"dimension", dimension},
+            {"identifier", key},
+            {"timeMS", to_string(total / 1000)},
+            {"thresholdMS", to_string(thresholdUS / 1000)},
+            {"blockDurationMS", to_string(_blockDurationUS.load() / 1000)}
+        });
     }
 }
 

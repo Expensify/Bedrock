@@ -92,7 +92,7 @@ private:
     // and block `key` for the block duration when its windowed time exceeds `thresholdUS`. A threshold of 0
     // disables the dimension. `dimension` labels the log line emitted when it blocks. This is the O(window)
     // work; it runs off the blocking thread (from recordExecutionTime), never under the base `_queueMutex`.
-    void _recordAndCheck(StateMap& map, const string& key, uint64_t thresholdUS, uint64_t now, uint64_t elapsedUS, const char* dimension);
+    void _recordAndCheck(StateMap& map, const string& key, uint64_t thresholdUS, uint64_t now, uint64_t elapsedUS, const string& dimension);
 
     // True if `key` in `map` is inside an active block at `now`. O(1): reads only the block deadline, so the
     // push and dequeue hot paths stay cheap (dequeue runs under the base `_queueMutex`).
