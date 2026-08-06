@@ -54,6 +54,7 @@ void SLogStackTrace(int level)
 static atomic<shared_ptr<const set<string>>> PARAMS_WHITELIST{
     make_shared<const set<string>>(set<string>{
         "beginElapsed",
+        "blockDurationMS",
         "chatID",
         "command",
         "commitElapsed",
@@ -61,6 +62,7 @@ static atomic<shared_ptr<const set<string>>> PARAMS_WHITELIST{
         "Connection",
         "Content-Length",
         "count",
+        "dimension",
         "hctstats",
         "identifier",
         "indexName",
