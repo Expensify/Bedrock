@@ -29,7 +29,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
     {
         BedrockTester& leader = tester->getTester(0);
 
-        // ClearBlocks should reset all identifier rate limit state.
+        // ClearBlocks should reset all rate limit state.
         SData resetBlockingQueue("SetBlockingQueueTimeRateLimit");
         resetBlockingQueue["ClearBlocks"] = "true";
         leader.executeWaitVerifyContent(resetBlockingQueue, "200", true);
@@ -41,41 +41,51 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
 
         SData status("Status");
         STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockedTimeIdentifiers"], "0");
+        ASSERT_EQUAL(json["blockingBlockedAccounts"], "0");
     }
 
     void testControlCommands()
     {
         BedrockTester& leader = tester->getTester(0);
 
-        // Set the blocking queue time rate limit threshold and verify it shows up in Status.
-        SData setBlockingQueueTimeRateLimit("SetBlockingQueueTimeRateLimit");
-        setBlockingQueueTimeRateLimit["MaxTimePerIdentifierMs"] = "1";
-        leader.executeWaitVerifyContent(setBlockingQueueTimeRateLimit, "200", true);
+        // Set the window and thresholds and verify they show up in Status.
+        SData setLimits("SetBlockingQueueTimeRateLimit");
+        setLimits["WindowMs"] = "180000";
+        setLimits["AccountThresholdMs"] = "20000";
+        setLimits["CommandThresholdMs"] = "40000";
+        setLimits["BlockDurationMs"] = "60000";
+        leader.executeWaitVerifyContent(setLimits, "200", true);
 
         SData status("Status");
         STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingTimeRateLimitThresholdMs"], "1");
+        ASSERT_EQUAL(json["blockingTimeWindowMs"], "180000");
+        ASSERT_EQUAL(json["blockingAccountThresholdMs"], "20000");
+        ASSERT_EQUAL(json["blockingCommandThresholdMs"], "40000");
+        ASSERT_EQUAL(json["blockingBlockDurationMs"], "60000");
     }
 
     void testTimeRateLimiting()
     {
         BedrockTester& leader = tester->getTester(0);
 
-        // Set the time limit to 10ms so that we can trigger it with a few commands.
-        SData setBlockingQueueTimeRateLimit("SetBlockingQueueTimeRateLimit");
-        setBlockingQueueTimeRateLimit["MaxTimePerIdentifierMs"] = "10";
-        leader.executeWaitVerifyContent(setBlockingQueueTimeRateLimit, "200", true);
+        // Small account threshold so a burst of conflicting commands trips it. The command dimension is
+        // disabled so this isolates the account dimension.
+        SData setLimits("SetBlockingQueueTimeRateLimit");
+        setLimits["WindowMs"] = "180000";
+        setLimits["AccountThresholdMs"] = "10";
+        setLimits["CommandThresholdMs"] = "0";
+        setLimits["BlockDurationMs"] = "60000";
+        leader.executeWaitVerifyContent(setLimits, "200", true);
 
-        // Force conflicts so commands escalate to the blocking queue and run on worker 0,
-        // which is what accumulates per-identifier time.
+        // Force conflicts so commands escalate to the blocking queue and run on worker 0, which is what
+        // accumulates per-account time.
         SData setConflict("SetConflictParams");
         setConflict["MaxConflictRetries"] = "1";
         leader.executeWaitVerifyContent(setConflict, "200", true);
 
         SData status("Status");
         STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingTimeRateLimitThresholdMs"], "10");
+        ASSERT_EQUAL(json["blockingAccountThresholdMs"], "10");
 
         atomic<int> count503(0);
         atomic<int> count200(0);
@@ -104,25 +114,24 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         for (thread& t : threads) {
             t.join();
         }
-        // Confirm all requests finished
+
+        // Confirm all requests finished.
         ASSERT_EQUAL(count200.load() + count503.load(), 600);
 
-        // Enforcement is now happening, so we should see some 503s.
+        // Enforcement is happening, so we should see some 503s.
         ASSERT_TRUE(count503.load() > 0);
 
-        // After traffic, the identifier's accumulated time should be visible in Status, and with the
-        // threshold at 1ms the active identifier must register as over the time limit.
+        // The account must register as blocked in Status.
         json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_TRUE(json.find("blockingQueueIdentifierTimesMs") != json.end());
-        ASSERT_TRUE(SToInt(json["blockedTimeIdentifiers"]) >= 1);
+        ASSERT_TRUE(SToInt(json["blockingBlockedAccounts"]) >= 1);
 
-        // ClearBlocks resets the time rate limit state.
+        // ClearBlocks resets the state.
         SData clearBlocks("SetBlockingQueueTimeRateLimit");
         clearBlocks["ClearBlocks"] = "true";
         leader.executeWaitVerifyContent(clearBlocks, "200", true);
 
         json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockedTimeIdentifiers"], "0");
+        ASSERT_EQUAL(json["blockingBlockedAccounts"], "0");
 
         // Reset leader state.
         SData resetConflict("SetConflictParams");
@@ -130,7 +139,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         leader.executeWaitVerifyContent(resetConflict, "200", true);
 
         SData resetLimit("SetBlockingQueueTimeRateLimit");
-        resetLimit["MaxTimePerIdentifierMs"] = "0";
+        resetLimit["AccountThresholdMs"] = "0";
         leader.executeWaitVerifyContent(resetLimit, "200", true);
     }
 } __BlockingQueueRateLimitTest;

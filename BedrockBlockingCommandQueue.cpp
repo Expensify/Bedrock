@@ -16,47 +16,33 @@ BedrockBlockingCommandQueue::BedrockBlockingCommandQueue() :
 {
 }
 
+uint64_t BedrockBlockingCommandQueue::_now() const
+{
+    return STimeNow();
+}
+
 void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
 {
-    const string identifier = command->blockingQueueRateLimitIdentifier;
-
-    // Reject before enqueuing if the identifier is over the allowed time spent in the blocking queue.
-    if (isIdentifierOverTimeLimit(identifier, command->request.methodLine)) {
+    // Reject before enqueuing if this command's account or command name is rate limited.
+    if (isBlocked(command->blockingQueueRateLimitIdentifier, command->request.methodLine)) {
         STHROW("503 Blocking queue rate limited (time)");
     }
 
-    // A command is entering the queue, so it is no longer empty. Clear the empty timestamp so
-    // the 30-second auto-reset window doesn't fire until the queue drains again.
-    uint64_t previousEmptyTime = _emptyTime.exchange(0);
-
-    try {
-        // Base class acquires its own (non-recursive) `_queueMutex`.
-        BedrockCommandQueue::push(move(command));
-    } catch (...) {
-        // The command never entered the queue. Restore the empty timestamp so the
-        // 30-second auto-reset timer isn't lost.
-        _emptyTime.store(previousEmptyTime);
-        throw;
-    }
+    // Base class acquires its own (non-recursive) `_queueMutex`.
+    BedrockCommandQueue::push(move(command));
 }
 
 /**
- * Dequeues command and inspects _queue to update _emptyTime, and rejects the command if its identifier is over the time limit.
+ * Dequeues a command and rejects it if its account or command name is rate limited.
  * Called by `BedrockCommandQueue::get()` with the base `_queueMutex` held. Calling any base method that reacquires `_queueMutex` would deadlock.
  */
 unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
 {
     auto command = BedrockCommandQueue::_dequeue();
 
-    const string blockingIdentifier = command->blockingQueueRateLimitIdentifier;
-
-    if (_queue.empty() && _emptyTime.load() == 0) {
-        _emptyTime.store(STimeNow());
-    }
-
-    // If this command has a blocking queue identifier, check if it's over the time limit. If so, fill the response methodLine with 503
-    // and set the command as completed. By doing so, we will skip processing the command in `BedrockServer::runCommand`.
-    if (!blockingIdentifier.empty() && isIdentifierOverTimeLimit(blockingIdentifier, command->request.methodLine)) {
+    // If the command's account or command name is rate limited, set a 503 response and mark it complete. This
+    // skips processing in `BedrockServer::runCommand`, which replies to already-complete commands.
+    if (isBlocked(command->blockingQueueRateLimitIdentifier, command->request.methodLine)) {
         command->response.methodLine = "503 Blocking queue rate limited (time)";
         command->complete = true;
     }
@@ -72,106 +58,158 @@ void BedrockBlockingCommandQueue::clear()
 
 size_t BedrockBlockingCommandQueue::clearRateLimits()
 {
-    lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
-    size_t size = _identifierTimes.size();
-    _identifierTimes.clear();
-    _emptyTime.store(0);
+    size_t size = 0;
+    {
+        lock_guard<decltype(_accountStates.mapMutex)> lock(_accountStates.mapMutex);
+        size += _accountStates.states.size();
+        _accountStates.states.clear();
+    }
+    {
+        lock_guard<decltype(_commandStates.mapMutex)> lock(_commandStates.mapMutex);
+        size += _commandStates.states.size();
+        _commandStates.states.clear();
+    }
     return size;
 }
 
 STable BedrockBlockingCommandQueue::getState()
 {
-    map<string, uint64_t> timesCopy;
-    {
-        lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
+    const uint64_t now = _now();
 
-        uint64_t emptyTime = _emptyTime.load();
-        if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
-            _identifierTimes.clear();
+    // Count tracked and currently-blocked identifiers in a map. Holds the map mutex while briefly locking each
+    // entry to read `blockedUntil`; no code path takes an entry lock before the map mutex, so this can't deadlock.
+    auto countBlocked = [now](StateMap& map, size_t& tracked, size_t& blocked) {
+        lock_guard<decltype(map.mapMutex)> lock(map.mapMutex);
+        tracked = map.states.size();
+        blocked = 0;
+        for (const auto& p : map.states) {
+            lock_guard<decltype(p.second->m)> stateLock(p.second->m);
+            if (p.second->blockedUntil > now) {
+                blocked++;
+            }
         }
+    };
 
-        timesCopy = _identifierTimes;
-    }
-
-    uint64_t maxTimePerIdentifier = _maxTimePerIdentifier.load();
-    size_t blockedTimeCount = 0;
-    STable timesTable;
-    for (const auto& p : timesCopy) {
-        timesTable[p.first] = to_string(p.second / 1000);
-        if (p.second > maxTimePerIdentifier) {
-            blockedTimeCount++;
-        }
-    }
+    size_t trackedAccounts = 0, blockedAccounts = 0, trackedCommands = 0, blockedCommands = 0;
+    countBlocked(_accountStates, trackedAccounts, blockedAccounts);
+    countBlocked(_commandStates, trackedCommands, blockedCommands);
 
     STable content;
-    content["blockingTimeRateLimitThresholdMs"] = to_string(maxTimePerIdentifier / 1000);
-    content["blockedTimeIdentifiers"] = to_string(blockedTimeCount);
-    if (!timesTable.empty()) {
-        content["blockingQueueIdentifierTimesMs"] = SComposeJSONObject(timesTable);
-    }
+    content["blockingTimeWindowMs"] = to_string(_windowUS.load() / 1000);
+    content["blockingAccountThresholdMs"] = to_string(_accountThresholdUS.load() / 1000);
+    content["blockingCommandThresholdMs"] = to_string(_commandThresholdUS.load() / 1000);
+    content["blockingBlockDurationMs"] = to_string(_blockDurationUS.load() / 1000);
+    content["blockingTrackedAccounts"] = to_string(trackedAccounts);
+    content["blockingBlockedAccounts"] = to_string(blockedAccounts);
+    content["blockingTrackedCommands"] = to_string(trackedCommands);
+    content["blockingBlockedCommands"] = to_string(blockedCommands);
     return content;
 }
 
-uint64_t BedrockBlockingCommandQueue::setMaxTimePerIdentifier(uint64_t valueUS)
+uint64_t BedrockBlockingCommandQueue::setWindow(uint64_t windowUS)
 {
-    return _maxTimePerIdentifier.exchange(valueUS);
+    return _windowUS.exchange(windowUS);
 }
 
-void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, uint64_t elapsedUS)
+uint64_t BedrockBlockingCommandQueue::setAccountThreshold(uint64_t thresholdUS)
 {
-    if (_maxTimePerIdentifier.load() == 0 || identifier.empty()) {
-        return;
-    }
-    lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
-    _identifierTimes[identifier] += elapsedUS;
+    return _accountThresholdUS.exchange(thresholdUS);
 }
 
-bool BedrockBlockingCommandQueue::isIdentifierOverTimeLimit(const string& identifier, const string& methodLine)
+uint64_t BedrockBlockingCommandQueue::setCommandThreshold(uint64_t thresholdUS)
 {
-    const uint64_t maxTimePerIdentifier = _maxTimePerIdentifier.load();
-    if (maxTimePerIdentifier == 0 || identifier.empty()) {
-        return false;
-    }
-
-    lock_guard<decltype(_rateLimitMutex)> lock(_rateLimitMutex);
-
-    // Clear accumulated times if the blocking queue has been empty for 30 seconds.
-    uint64_t emptyTime = _emptyTime.load();
-    if (emptyTime > 0 && STimeNow() - emptyTime >= 30'000'000) {
-        _identifierTimes.clear();
-    }
-
-    auto it = _identifierTimes.find(identifier);
-    const uint64_t timeUS = (it == _identifierTimes.end()) ? 0 : it->second;
-
-    if (timeUS > maxTimePerIdentifier) {
-        SINFO("Blocking queue rate limit (time), rejecting", {
-            {"command", methodLine},
-            {"identifier", identifier},
-            {"timeMS", to_string(timeUS / 1000)},
-            {"thresholdMS", to_string(maxTimePerIdentifier / 1000)}
-        });
-        return true;
-    }
-
-    if (timeUS > _maxTimePerIdentifierToLog.load()) {
-        SINFO("Blocking queue rate limit (time), logging", {
-            {"command", methodLine},
-            {"identifier", identifier},
-            {"timeMS", to_string(timeUS / 1000)},
-            {"thresholdMS", to_string(maxTimePerIdentifier / 1000)}
-        });
-    }
-
-    return false;
+    return _commandThresholdUS.exchange(thresholdUS);
 }
 
-shared_ptr<BedrockBlockingCommandQueue::IdentifierState> BedrockBlockingCommandQueue::_getOrCreateIdentifierState(const string& identifier)
+uint64_t BedrockBlockingCommandQueue::setBlockDuration(uint64_t durationUS)
 {
-    lock_guard<decltype(_identifiersMutex)> lock(_identifiersMutex);
-    auto [it, inserted] = _identifiers.try_emplace(identifier);
+    return _blockDurationUS.exchange(durationUS);
+}
+
+void BedrockBlockingCommandQueue::recordExecutionTime(const string& accountID, const string& commandName, uint64_t elapsedUS)
+{
+    const uint64_t now = _now();
+    _recordAndCheck(_accountStates, accountID, _accountThresholdUS.load(), now, elapsedUS, "account");
+    _recordAndCheck(_commandStates, commandName, _commandThresholdUS.load(), now, elapsedUS, "command");
+}
+
+bool BedrockBlockingCommandQueue::isBlocked(const string& accountID, const string& commandName)
+{
+    // Hot path: called by push() and by _dequeue() under the base `_queueMutex`. Keep it O(1) by reading only
+    // the precomputed block deadline. The windowed time is summed in recordExecutionTime, off the blocking thread.
+    const uint64_t now = _now();
+    return _isBlocked(_accountStates, accountID, now) || _isBlocked(_commandStates, commandName, now);
+}
+
+shared_ptr<BedrockBlockingCommandQueue::IdentifierState> BedrockBlockingCommandQueue::_getOrCreateState(StateMap& map, const string& key)
+{
+    lock_guard<decltype(map.mapMutex)> lock(map.mapMutex);
+    auto [it, inserted] = map.states.try_emplace(key);
     if (inserted) {
         it->second = make_shared<IdentifierState>();
     }
     return it->second;
+}
+
+shared_ptr<BedrockBlockingCommandQueue::IdentifierState> BedrockBlockingCommandQueue::_getState(StateMap& map, const string& key)
+{
+    lock_guard<decltype(map.mapMutex)> lock(map.mapMutex);
+    auto it = map.states.find(key);
+    return it == map.states.end() ? nullptr : it->second;
+}
+
+void BedrockBlockingCommandQueue::_recordAndCheck(StateMap& map, const string& key, uint64_t thresholdUS, uint64_t now, uint64_t elapsedUS, const char* dimension)
+{
+    if (key.empty() || thresholdUS == 0) {
+        return;
+    }
+
+    auto state = _getOrCreateState(map, key);
+    lock_guard<decltype(state->m)> lock(state->m);
+
+    // Already inside an active block: a block lasts a fixed duration and is not extended by further hits, so
+    // there's nothing to record or recompute until it expires.
+    if (state->blockedUntil > now) {
+        return;
+    }
+
+    state->commands.push_back({now, elapsedUS});
+
+    const uint64_t windowUS = _windowUS.load();
+
+    // Drop samples that finished before the window. They're ordered oldest-first, so expired ones are a
+    // contiguous prefix. Guard the subtraction so a future-dated sample (clock skew) can't underflow.
+    while (!state->commands.empty() && now > state->commands.front().finishTime && now - state->commands.front().finishTime >= windowUS) {
+        state->commands.pop_front();
+    }
+
+    // Sum the time spent in the window, crediting each sample only for the part that lies inside it.
+    uint64_t total = 0;
+    for (const auto& command : state->commands) {
+        const uint64_t age = now > command.finishTime ? now - command.finishTime : 0;
+        if (age >= windowUS) {
+            continue;
+        }
+        total += min(command.elapsedTime, windowUS - age);
+    }
+
+    if (total > thresholdUS) {
+        state->blockedUntil = now + _blockDurationUS.load();
+        SINFO("Blocking queue rate limit (time), blocking dimension=" << dimension << " identifier=" << key
+              << " timeMS=" << (total / 1000) << " thresholdMS=" << (thresholdUS / 1000)
+              << " blockDurationMS=" << (_blockDurationUS.load() / 1000));
+    }
+}
+
+bool BedrockBlockingCommandQueue::_isBlocked(StateMap& map, const string& key, uint64_t now)
+{
+    if (key.empty()) {
+        return false;
+    }
+    auto state = _getState(map, key);
+    if (!state) {
+        return false;
+    }
+    lock_guard<decltype(state->m)> lock(state->m);
+    return state->blockedUntil > now;
 }

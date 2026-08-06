@@ -15,41 +15,41 @@ public:
     static void startTiming(unique_ptr<BedrockCommand>& command);
     static void stopTiming(unique_ptr<BedrockCommand>& command);
 
-    // Enforce per-identifier rate limits before enqueuing. Overrides BedrockCommandQueue::push().
-    // Throws SException("503 ...") if the identifier is rate limited; caller should catch and reply.
-    //
-    // Rate limit state auto-resets when the queue has been continuously empty for 30 seconds — this
-    // is a global reset, not per-identifier. A brief drain (even one dequeue that empties the queue)
-    // starts the timer and will unblock all identifiers once 30 seconds elapse. This is intentional:
-    // the primary threat is a sustained burst from one identifier, so a quiet period is a safe signal
-    // to restore normal operation.
+    // Reject a command before enqueuing if its account or command name is rate limited. Overrides
+    // BedrockCommandQueue::push(). Throws SException("503 ...") when blocked; the caller catches and replies.
     void push(unique_ptr<BedrockCommand>&& command) override;
 
     // Clear the queue and all rate limiting state.
     void clear();
 
-    // Reset rate limit counters without emptying the queue. Returns the number of tracked identifiers cleared.
+    // Clear all rate-limit state without emptying the queue. Returns the number of tracked accounts and commands cleared.
     size_t clearRateLimits();
 
     // Return a table of rate limiting status info for the Status command.
     STable getState();
 
-    // Set the max accumulated worker-0 execution time (microseconds) per identifier. Returns the previous value.
-    uint64_t setMaxTimePerIdentifier(uint64_t valueUS);
+    // Configure the sliding window and thresholds, all in microseconds. A threshold of 0 disables that
+    // dimension. Each setter returns the previous value.
+    uint64_t setWindow(uint64_t windowUS);
+    uint64_t setAccountThreshold(uint64_t thresholdUS);
+    uint64_t setCommandThreshold(uint64_t thresholdUS);
+    uint64_t setBlockDuration(uint64_t durationUS);
 
-    // Accumulate elapsed worker-0 execution time for `identifier`. Called by the blockingCommit worker
-    // after each command finishes running. No-op when the time threshold is disabled (== 0). Time is
-    // cumulative per identifier until the empty-queue reset clears it — it is never decremented per command.
-    void recordExecutionTime(const string& identifier, uint64_t elapsedUS);
+    // Record that a command finished on the blocking queue after `elapsedUS` of worker-0 time. Records the
+    // sample against the account (when `accountID` is non-empty) and against the command name.
+    void recordExecutionTime(const string& accountID, const string& commandName, uint64_t elapsedUS);
 
-    // Check the identifier's accumulated blocking queue execution time against our thresholds, logging a tracking
-    // message and returning true if the threshold is exceeded. Returns false if the identifier is not over the limit.
-    bool isIdentifierOverTimeLimit(const string& identifier, const string& methodLine);
+    // True if `accountID` or `commandName` is over its blocking-queue time limit within the window, or is
+    // still inside an active block. When a dimension newly trips, it is blocked for the block duration.
+    // Logs a "Blocking queue rate limit" line when a dimension blocks.
+    bool isBlocked(const string& accountID, const string& commandName);
 
 protected:
-    // Called by get() while _queueMutex is held; records when the queue becomes empty and rejects a
-    // dequeued command whose identifier is over the time limit.
+    // Called by get() while _queueMutex is held; rejects a dequeued command whose account or command name is blocked.
     unique_ptr<BedrockCommand> _dequeue() override;
+
+    // Current time in microseconds. Virtual so tests can control the clock.
+    virtual uint64_t _now() const;
 
 private:
     // One command an identifier finished on the blocking queue. `finishTime` is when it finished.
@@ -63,31 +63,47 @@ private:
     // An identifier's recently finished blocking-queue commands, oldest first.
     typedef deque<RecentlyFinishedCommand> RecentlyFinishedCommandList;
 
-    // Per-identifier rate-limit state. Each entry has its own mutex, so different identifiers never
-    // contend on one lock.
-    //
-    // `_identifiersMutex` guards only the map. Hold it just long enough to find or insert an entry and
-    // copy its shared_ptr. Then release it and lock the entry's own `m` to do the work.
-    //
-    // The shared_ptr keeps the entry alive if another thread erases it from the map between the two locks.
+    // Rate-limit state for one identifier (an account or a command name). Each entry has its own mutex, so
+    // different identifiers never contend on one lock. `blockedUntil` is the time (microseconds) an active
+    // block ends; 0 means not blocked.
     struct IdentifierState
     {
         mutex m;
         RecentlyFinishedCommandList commands;
+        uint64_t blockedUntil = 0;
     };
 
-    // Return a shared_ptr to the state for `identifier`, creating it if absent. Hold `_identifiersMutex` only briefly.
-    shared_ptr<IdentifierState> _getOrCreateIdentifierState(const string& identifier);
+    // A map of identifier -> state plus the mutex guarding the map. Used once for accounts and once for
+    // command names. `mapMutex` guards only the map: hold it just long enough to find or insert an entry and
+    // copy its shared_ptr, then release it and lock the entry's own `m` to do the work. The shared_ptr keeps
+    // the entry alive if another thread erases it from the map between the two locks.
+    struct StateMap
+    {
+        mutable mutex mapMutex;
+        unordered_map<string, shared_ptr<IdentifierState>> states;
+    };
 
-    // Guards `_identifierTimes`. Separate from the base class `_queueMutex` because the base
-    // mutex is non-recursive and is held while `_dequeue` runs.
-    mutex _rateLimitMutex;
+    // Return a shared_ptr to the state for `key` in `map`, creating it if absent. Holds map.mapMutex only briefly.
+    static shared_ptr<IdentifierState> _getOrCreateState(StateMap& map, const string& key);
 
-    mutable mutex _identifiersMutex;
-    unordered_map<string, shared_ptr<IdentifierState>> _identifiers;
+    // Return the state for `key` in `map`, or nullptr if absent. Holds map.mapMutex only briefly.
+    static shared_ptr<IdentifierState> _getState(StateMap& map, const string& key);
 
-    map<string, uint64_t> _identifierTimes;
-    atomic<uint64_t> _maxTimePerIdentifier{60'000'000}; // 60 seconds, in microseconds
-    atomic<uint64_t> _maxTimePerIdentifierToLog{10'000'000}; // 10 seconds, in microseconds
-    atomic<uint64_t> _emptyTime{0};
+    // Append a sample that finished at `now` after `elapsedUS` for `key` in `map`, then re-evaluate the window
+    // and block `key` for the block duration when its windowed time exceeds `thresholdUS`. A threshold of 0
+    // disables the dimension. `dimension` labels the log line emitted when it blocks. This is the O(window)
+    // work; it runs off the blocking thread (from recordExecutionTime), never under the base `_queueMutex`.
+    void _recordAndCheck(StateMap& map, const string& key, uint64_t thresholdUS, uint64_t now, uint64_t elapsedUS, const char* dimension);
+
+    // True if `key` in `map` is inside an active block at `now`. O(1): reads only the block deadline, so the
+    // push and dequeue hot paths stay cheap (dequeue runs under the base `_queueMutex`).
+    static bool _isBlocked(StateMap& map, const string& key, uint64_t now);
+
+    StateMap _accountStates;
+    StateMap _commandStates;
+
+    atomic<uint64_t> _windowUS{180'000'000};          // 180 seconds
+    atomic<uint64_t> _accountThresholdUS{20'000'000}; // 20 seconds
+    atomic<uint64_t> _commandThresholdUS{40'000'000}; // 40 seconds
+    atomic<uint64_t> _blockDurationUS{60'000'000};    // 60 seconds
 };
