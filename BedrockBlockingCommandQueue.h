@@ -30,9 +30,6 @@ public:
     // Return a table of rate limiting status info for the Status command.
     STable getState();
 
-    // Set the max commands per identifier threshold. Returns the previous value.
-    size_t setMaxRequestsPerIdentifier(size_t value);
-
     // Set the max accumulated worker-0 execution time (microseconds) per identifier. Returns the previous value.
     uint64_t setMaxTimePerIdentifier(uint64_t valueUS);
 
@@ -46,22 +43,16 @@ public:
     bool isIdentifierOverTimeLimit(const string& identifier, const string& methodLine);
 
 protected:
-    // Called by get() while _queueMutex is held; atomically decrements per-identifier counts
-    // and records when the queue becomes empty.
+    // Called by get() while _queueMutex is held; records when the queue becomes empty and rejects a
+    // dequeued command whose identifier is over the time limit.
     unique_ptr<BedrockCommand> _dequeue() override;
 
 private:
-    // Decrement the count for `identifier` in `_identifierCounts`, erasing the entry if it reaches zero.
-    // Caller must hold `_rateLimitMutex`.
-    void _decrementIdentifierCount(const string& identifier);
-
-    // Guards `_identifierCounts`. Separate from the base class `_queueMutex` because the base
+    // Guards `_identifierTimes`. Separate from the base class `_queueMutex` because the base
     // mutex is non-recursive and is held while `_dequeue` runs.
     mutex _rateLimitMutex;
 
-    map<string, size_t> _identifierCounts;
     map<string, uint64_t> _identifierTimes;
-    atomic<size_t> _maxPerIdentifier{10};
     atomic<uint64_t> _maxTimePerIdentifier{60'000'000}; // 60 seconds, in microseconds
     atomic<uint64_t> _maxTimePerIdentifierToLog{10'000'000}; // 10 seconds, in microseconds
     atomic<uint64_t> _emptyTime{0};
