@@ -52,8 +52,7 @@ protected:
     virtual uint64_t _now() const;
 
 private:
-    // One command an identifier finished on the blocking queue. `finishTime` is when it finished.
-    // `elapsedTime` is how long it ran there. Both are in microseconds.
+    // One command an identifier finished on the blocking queue. Both times are in microseconds.
     struct RecentlyFinishedCommand
     {
         uint64_t finishTime = 0;

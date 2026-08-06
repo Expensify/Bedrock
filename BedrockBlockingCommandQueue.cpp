@@ -23,7 +23,6 @@ uint64_t BedrockBlockingCommandQueue::_now() const
 
 void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
 {
-    // Reject before enqueuing if this command's account or command name is rate limited.
     if (isBlocked(command->blockingQueueRateLimitIdentifier, command->request.methodLine)) {
         STHROW("503 Blocking queue rate limited (time)");
     }
@@ -40,8 +39,7 @@ unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
 {
     auto command = BedrockCommandQueue::_dequeue();
 
-    // If the command's account or command name is rate limited, set a 503 response and mark it complete. This
-    // skips processing in `BedrockServer::runCommand`, which replies to already-complete commands.
+    // Marking it complete skips processing in `BedrockServer::runCommand`, which replies to already-complete commands.
     if (isBlocked(command->blockingQueueRateLimitIdentifier, command->request.methodLine)) {
         command->response.methodLine = "503 Blocking queue rate limited (time)";
         command->complete = true;

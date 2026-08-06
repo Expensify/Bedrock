@@ -115,7 +115,6 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
             t.join();
         }
 
-        // Confirm all requests finished.
         ASSERT_EQUAL(count200.load() + count503.load(), 600);
 
         // Enforcement is happening, so we should see some 503s.
@@ -125,7 +124,6 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
         ASSERT_TRUE(SToInt(json["blockingBlockedAccounts"]) >= 1);
 
-        // ClearBlocks resets the state.
         SData clearBlocks("SetBlockingQueueTimeRateLimit");
         clearBlocks["ClearBlocks"] = "true";
         leader.executeWaitVerifyContent(clearBlocks, "200", true);
