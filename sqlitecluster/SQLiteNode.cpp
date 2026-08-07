@@ -2497,25 +2497,6 @@ string SQLiteNode::leaderCommandAddress() const
     return "";
 }
 
-bool SQLiteNode::hasQuorum() const
-{
-    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
-    if (_state != SQLiteNodeState::LEADING && _state != SQLiteNodeState::STANDINGDOWN) {
-        return false;
-    }
-    int numFullPeers = 0;
-    int numFullFollowers = 0;
-    for (auto peer : _peerList) {
-        if (!peer->permaFollower) {
-            ++numFullPeers;
-            if (peer->subscribed) {
-                numFullFollowers++;
-            }
-        }
-    }
-    return numFullFollowers * 2 >= numFullPeers;
-}
-
 void SQLiteNode::prePoll(fd_map& fdm) const
 {
     shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);

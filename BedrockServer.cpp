@@ -364,21 +364,6 @@ void BedrockServer::sync()
         // Otherwise, if we're leading, let's start the commit.
         // Also, if a commit is in progress, skip it (it's the commit we started on the last loop iteration).
         if (!_upgradeCompleted && getState() == SQLiteNodeState::LEADING && !commitInProgress) {
-            if (!_syncNode->hasQuorum()) {
-                // Because we are going to commit the upgrade as a QUORUM commit (i.e., wait until over half of nodes
-                // approve it), we wait until `hasQuorum()` is true before we even attempt to start it.
-                // You might ask "if we are LEADING, how do we not have QUORUM?" and the answer to that is that as soon as
-                // we become LEADING, we need nodes to subscribe to us in order to indicate that they are 100% caught up
-                // and ready to accept a transaction stream. basically we go LEADING, and then nodes go SUBSCRIBING for
-                // a second and then they go FOLLOWING.
-                // If we attempt this transaction before we wait for these nodes to go FOLLOWING, they will not participate in
-                // the transaction. This will cause the transaction to fail and be rolled back, but worse, it causes the whole
-                // cluster to reconnect, because a failed QUORUM transaction throws the whole state of the cluster into
-                // question. This then takes a while to resolve as nodes all reconnect to one another, and is at risk for
-                // happening again on the next attempt as well.
-                SINFO("Waiting for quorum availability before running UpgradeDB.");
-                continue;
-            }
             bool dbHasChanges = false;
             try {
                 dbHasChanges = _upgradeDB(db);
@@ -398,7 +383,7 @@ void BedrockServer::sync()
                 _notifyDoneSync.push(true);
                 SDEBUG("Finished sending distributed transaction for db upgrade.");
 
-                // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
+                // Let the commit finish before we do anything else. Let's start the next loop iteration.
                 continue;
             } else {
                 // If we're not doing an upgrade, we don't need to keep suppressing multi-write, and we're done with

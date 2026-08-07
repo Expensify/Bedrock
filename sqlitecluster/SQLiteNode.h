@@ -144,10 +144,6 @@ public:
     // Does not block.
     SQLiteNodeState getState() const;
 
-    // Returns true if we're LEADING with enough FOLLOWERs to commit a quorum transaction.
-    // Can block.
-    bool hasQuorum() const;
-
     // Return the command address of the current leader, if there is one (empty string otherwise).
     // Can block.
     string leaderCommandAddress() const;
