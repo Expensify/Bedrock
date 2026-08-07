@@ -142,6 +142,12 @@ public:
     // Does not block.
     SQLiteNodeState leaderState() const;
 
+    // Returns true if at least half of our full (non-permafollower) peers have subscribed to us. A peer only receives
+    // the transaction stream once it's subscribed, so this answers "would a transaction I commit right now reach most
+    // of the cluster?"
+    // Can block.
+    bool majorityOfFollowersSubscribed() const;
+
     // Tell the node a commit has been made by another thread, so that we can interrupt our poll loop if we're waiting
     // for data, and send the new commit.
     // Does not block.

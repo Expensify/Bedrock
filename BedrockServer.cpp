@@ -364,6 +364,14 @@ void BedrockServer::sync()
         // Otherwise, if we're leading, let's start the commit.
         // Also, if a commit is in progress, skip it (it's the commit we started on the last loop iteration).
         if (!_upgradeCompleted && getState() == SQLiteNodeState::LEADING && !commitInProgress) {
+            if (!_syncNode->majorityOfFollowersSubscribed()) {
+                // We stand up as soon as a majority of peers are logged in, but a peer doesn't receive transactions
+                // until it has gone SUBSCRIBING -> FOLLOWING, which takes a moment longer. Committing the upgrade in
+                // that window means most of the cluster doesn't get the schema change from us and has to pick it up
+                // by synchronizing later, so wait for them instead.
+                SINFO("Waiting for followers to subscribe before running UpgradeDB.");
+                continue;
+            }
             bool dbHasChanges = false;
             try {
                 dbHasChanges = _upgradeDB(db);

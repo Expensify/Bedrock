@@ -2126,6 +2126,14 @@ void SQLiteNode::_reconnectAll()
     }
 }
 
+bool SQLiteNode::majorityOfFollowersSubscribed() const
+{
+    // The lock lives here rather than in `_majoritySubscribed`, which is called from `_sendStandupResponse` with
+    // `_stateMutex` already held.
+    shared_lock<decltype(_stateMutex)> sharedLock(_stateMutex);
+    return _majoritySubscribed();
+}
+
 bool SQLiteNode::_majoritySubscribed() const
 {
     // Count up how may full and subscribed peers we have (A "full" peer is one that *isn't* a permafollower).
