@@ -18,7 +18,6 @@ struct MultipleLeaderSyncTest : tpunit::TestFixture
         SData genericRequest("Query");
         genericRequest["query"] = "UPDATE test SET value=value + 1 WHERE id=12345;";
         genericRequest["connection"] = "forget";
-        genericRequest["writeConsistency"] = "ASYNC";
         vector<SData> genericRequests;
         for (int i = 0; i < 10; i++) {
             genericRequests.push_back(genericRequest);
