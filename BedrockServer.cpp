@@ -713,15 +713,17 @@ void BedrockServer::worker(int threadId)
             SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
                   << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
 
-            // Capture the identifier and start time so we can attribute worker-0 execution time
-            // back to the per-identifier rate-limit accumulator after the command finishes.
+            // Capture the account and command name (before the command is moved) so we can attribute worker-0
+            // execution time back to the blocking-queue rate limiter after the command finishes. We time every
+            // command run on the blocking thread, recording against its command name (always) and account (when set).
             const string blockingIdentifier = (threadId == 0) ? command->blockingQueueRateLimitIdentifier : "";
-            const uint64_t blockingStart = (threadId == 0 && !blockingIdentifier.empty()) ? STimeNow() : 0;
+            const string blockingCommandName = (threadId == 0) ? command->request.methodLine : "";
+            const uint64_t blockingStart = (threadId == 0) ? STimeNow() : 0;
 
             runCommand(move(command), threadId == 0, false);
 
             if (blockingStart) {
-                _blockingCommandQueue.recordExecutionTime(blockingIdentifier, STimeNow() - blockingStart);
+                _blockingCommandQueue.recordExecutionTime(blockingIdentifier, blockingCommandName, STimeNow() - blockingStart);
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
@@ -2097,12 +2099,36 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
     } else if (SIEquals(command->request.methodLine, "SetConflictPageLocks")) {
         _enableConflictPageLocks = command->request.test("enable");
     } else if (SIEquals(command->request.methodLine, "SetBlockingQueueTimeRateLimit")) {
-        if (command->request.isSet("MaxTimePerIdentifierMs")) {
-            int64_t maxTimeMs = command->request.calc64("MaxTimePerIdentifierMs");
-            if (maxTimeMs >= 0) {
-                uint64_t previousUS = _blockingCommandQueue.setMaxTimePerIdentifier(static_cast<uint64_t>(maxTimeMs) * 1000);
-                response["previousMaxBlockingQueueTimePerIdentifierMs"] = to_string(previousUS / 1000);
-                SINFO("Setting blocking queue max time per identifier to " << maxTimeMs << "ms");
+        if (command->request.isSet("WindowMS")) {
+            int64_t windowMS = command->request.calc64("WindowMS");
+            if (windowMS >= 0) {
+                uint64_t previousUS = _blockingCommandQueue.setWindow(static_cast<uint64_t>(windowMS) * 1000);
+                response["previousBlockingQueueWindowMS"] = to_string(previousUS / 1000);
+                SINFO("Setting blocking queue rate limit window to " << windowMS << "ms");
+            }
+        }
+        if (command->request.isSet("AccountThresholdMS")) {
+            int64_t thresholdMS = command->request.calc64("AccountThresholdMS");
+            if (thresholdMS >= 0) {
+                uint64_t previousUS = _blockingCommandQueue.setAccountThreshold(static_cast<uint64_t>(thresholdMS) * 1000);
+                response["previousBlockingQueueAccountThresholdMS"] = to_string(previousUS / 1000);
+                SINFO("Setting blocking queue account threshold to " << thresholdMS << "ms");
+            }
+        }
+        if (command->request.isSet("CommandThresholdMS")) {
+            int64_t thresholdMS = command->request.calc64("CommandThresholdMS");
+            if (thresholdMS >= 0) {
+                uint64_t previousUS = _blockingCommandQueue.setCommandThreshold(static_cast<uint64_t>(thresholdMS) * 1000);
+                response["previousBlockingQueueCommandThresholdMS"] = to_string(previousUS / 1000);
+                SINFO("Setting blocking queue command threshold to " << thresholdMS << "ms");
+            }
+        }
+        if (command->request.isSet("BlockDurationMS")) {
+            int64_t durationMS = command->request.calc64("BlockDurationMS");
+            if (durationMS >= 0) {
+                uint64_t previousUS = _blockingCommandQueue.setBlockDuration(static_cast<uint64_t>(durationMS) * 1000);
+                response["previousBlockingQueueBlockDurationMS"] = to_string(previousUS / 1000);
+                SINFO("Setting blocking queue block duration to " << durationMS << "ms");
             }
         }
         if (command->request.test("ClearBlocks")) {

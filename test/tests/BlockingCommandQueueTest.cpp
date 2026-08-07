@@ -1,85 +1,198 @@
 #include <BedrockBlockingCommandQueue.h>
 #include <test/lib/tpunit++.hpp>
 
+// A queue whose clock the test controls, so window and block behavior is deterministic. All times below are
+// microseconds. The tests drive the public API only (record + isBlocked + the setters).
+struct TestBlockingCommandQueue : public BedrockBlockingCommandQueue
+{
+    void setNow(uint64_t now)
+    {
+        _testNow = now;
+    }
+
+protected:
+    uint64_t _now() const override
+    {
+        return _testNow.load();
+    }
+
+private:
+    atomic<uint64_t> _testNow{0};
+};
+
 struct BlockingCommandQueueTest : tpunit::TestFixture
 {
     BlockingCommandQueueTest() : tpunit::TestFixture("BlockingCommandQueue",
-                                                     TEST(BlockingCommandQueueTest::testUnderLimitNotFlagged),
-                                                     TEST(BlockingCommandQueueTest::testTimeAccumulatesAcrossCommands),
-                                                     TEST(BlockingCommandQueueTest::testIdentifiersAreIndependent),
-                                                     TEST(BlockingCommandQueueTest::testEmptyIdentifierNeverFlagged),
-                                                     TEST(BlockingCommandQueueTest::testDisabledThresholdNeverFlags),
-                                                     TEST(BlockingCommandQueueTest::testClearRateLimitsResets))
+                                                     TEST(BlockingCommandQueueTest::testAccountOverThresholdBlocks),
+                                                     TEST(BlockingCommandQueueTest::testUnderThresholdNotBlocked),
+                                                     TEST(BlockingCommandQueueTest::testAccountsAreIndependent),
+                                                     TEST(BlockingCommandQueueTest::testCommandDimensionIgnoresAccount),
+                                                     TEST(BlockingCommandQueueTest::testEmptyAccountSkipsAccountDimension),
+                                                     TEST(BlockingCommandQueueTest::testWindowExpiry),
+                                                     TEST(BlockingCommandQueueTest::testPartialCredit),
+                                                     TEST(BlockingCommandQueueTest::testBlockDurationHoldsThenClears),
+                                                     TEST(BlockingCommandQueueTest::testDisabledThresholdsNeverBlock),
+                                                     TEST(BlockingCommandQueueTest::testClearResets))
     {
     }
 
-    void testUnderLimitNotFlagged()
+    void testAccountOverThresholdBlocks()
     {
-        BedrockBlockingCommandQueue queue;
-        queue.setMaxTimePerIdentifier(10'000);
+        TestBlockingCommandQueue queue;
+        queue.setWindow(100);
+        queue.setAccountThreshold(50);
+        queue.setCommandThreshold(0);
+        queue.setBlockDuration(1000);
+        queue.setNow(1000);
 
-        ASSERT_FALSE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
+        queue.recordExecutionTime("acct1", "cmd", 30);
+        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
 
-        queue.recordExecutionTime("acct1", 5'000);
-        ASSERT_FALSE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
+        queue.recordExecutionTime("acct1", "cmd", 30);
+        ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
     }
 
-    void testTimeAccumulatesAcrossCommands()
+    void testUnderThresholdNotBlocked()
     {
-        // This is the burst case the dequeue check fixes: no single command is over the limit, but their accumulated
-        // time is. The push-time check only sees time recorded before push, so re-checking at dequeue catches this.
-        BedrockBlockingCommandQueue queue;
-        queue.setMaxTimePerIdentifier(10'000);
+        TestBlockingCommandQueue queue;
+        queue.setWindow(100);
+        queue.setAccountThreshold(50);
+        queue.setCommandThreshold(0);
+        queue.setNow(1000);
 
-        queue.recordExecutionTime("acct1", 6'000);
-        ASSERT_FALSE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
-
-        queue.recordExecutionTime("acct1", 6'000);
-        ASSERT_TRUE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
+        queue.recordExecutionTime("acct1", "cmd", 40);
+        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
     }
 
-    void testIdentifiersAreIndependent()
+    void testAccountsAreIndependent()
     {
-        BedrockBlockingCommandQueue queue;
-        queue.setMaxTimePerIdentifier(10'000);
+        TestBlockingCommandQueue queue;
+        queue.setWindow(100);
+        queue.setAccountThreshold(50);
+        queue.setCommandThreshold(0);
+        queue.setNow(1000);
 
-        queue.recordExecutionTime("acct1", 20'000);
-        ASSERT_TRUE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
-        ASSERT_FALSE(queue.isIdentifierOverTimeLimit("acct2", "TestCommand"));
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_FALSE(queue.isBlocked("acct2", "cmd"));
     }
 
-    void testEmptyIdentifierNeverFlagged()
+    void testCommandDimensionIgnoresAccount()
     {
-        BedrockBlockingCommandQueue queue;
-        queue.setMaxTimePerIdentifier(10'000);
+        // With the account dimension disabled, a command over its threshold blocks for every account.
+        TestBlockingCommandQueue queue;
+        queue.setWindow(100);
+        queue.setAccountThreshold(0);
+        queue.setCommandThreshold(50);
+        queue.setNow(1000);
 
-        // An empty identifier means "no known account", so it is never rate limited.
-        queue.recordExecutionTime("", 20'000);
-        ASSERT_FALSE(queue.isIdentifierOverTimeLimit("", "TestCommand"));
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_TRUE(queue.isBlocked("acct2", "cmd"));
+        ASSERT_FALSE(queue.isBlocked("acct1", "otherCmd"));
     }
 
-    void testDisabledThresholdNeverFlags()
+    void testEmptyAccountSkipsAccountDimension()
     {
-        BedrockBlockingCommandQueue queue;
-        queue.setMaxTimePerIdentifier(10'000);
+        // An empty account is skipped, but the command dimension still applies.
+        TestBlockingCommandQueue queue;
+        queue.setWindow(100);
+        queue.setAccountThreshold(50);
+        queue.setCommandThreshold(50);
+        queue.setNow(1000);
 
-        queue.recordExecutionTime("acct1", 20'000);
-        ASSERT_TRUE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
-
-        // A threshold of 0 disables time rate limiting entirely.
-        queue.setMaxTimePerIdentifier(0);
-        ASSERT_FALSE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
+        queue.recordExecutionTime("", "cmd", 60);
+        ASSERT_TRUE(queue.isBlocked("", "cmd"));
     }
 
-    void testClearRateLimitsResets()
+    void testWindowExpiry()
     {
-        BedrockBlockingCommandQueue queue;
-        queue.setMaxTimePerIdentifier(10'000);
+        // A sample older than the window no longer counts toward the threshold.
+        TestBlockingCommandQueue queue;
+        queue.setWindow(100);
+        queue.setAccountThreshold(50);
+        queue.setCommandThreshold(0);
+        queue.setBlockDuration(1000);
+        queue.setNow(1000);
 
-        queue.recordExecutionTime("acct1", 20'000);
-        ASSERT_TRUE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
+        // One 40us sample, under the 50us threshold on its own.
+        queue.recordExecutionTime("acct1", "cmd", 40);
+        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+
+        // A full window later, record another 40us. The first has aged out, so the window holds only 40us
+        // (< 50). If it still counted, the two would sum to 80 and block.
+        queue.setNow(1150);
+        queue.recordExecutionTime("acct1", "cmd", 40);
+        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+    }
+
+    void testPartialCredit()
+    {
+        // A sample counts only for the part that still lies inside the window.
+        TestBlockingCommandQueue queue;
+        queue.setWindow(100);
+        queue.setAccountThreshold(35);
+        queue.setCommandThreshold(0);
+        queue.setBlockDuration(1000);
+        queue.setNow(1000);
+
+        // 30us sample, under the 35us threshold.
+        queue.recordExecutionTime("acct1", "cmd", 30);
+        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+
+        // 80us later, only window - age = 100 - 80 = 20us of the first sample still counts. With a new 10us
+        // sample the window holds 20 + 10 = 30us (< 35). Counting the full 30 + 10 = 40 would block.
+        queue.setNow(1080);
+        queue.recordExecutionTime("acct1", "cmd", 10);
+        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+    }
+
+    void testBlockDurationHoldsThenClears()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setWindow(100);
+        queue.setAccountThreshold(50);
+        queue.setCommandThreshold(0);
+        queue.setBlockDuration(500);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
+
+        // The sample has aged out of the window, but the block still holds for its fixed duration.
+        queue.setNow(1200);
+        ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
+
+        // After the block duration, with nothing left in the window, it clears.
+        queue.setNow(1600);
+        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+    }
+
+    void testDisabledThresholdsNeverBlock()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setWindow(100);
+        queue.setAccountThreshold(0);
+        queue.setCommandThreshold(0);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 1000000);
+        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+    }
+
+    void testClearResets()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setWindow(100);
+        queue.setAccountThreshold(50);
+        queue.setCommandThreshold(0);
+        queue.setBlockDuration(1000);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
 
         queue.clearRateLimits();
-        ASSERT_FALSE(queue.isIdentifierOverTimeLimit("acct1", "TestCommand"));
+        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
     }
 } __BlockingCommandQueueTest;
