@@ -86,10 +86,6 @@ public:
     // Receive timeout for cluster messages.
     static const uint64_t RECV_TIMEOUT;
 
-    // The minimum frequency of APPROVE_TRANSACTION messages we'll send when following, back to leader, to indicate our own current synchronization state.
-    // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th BEGIN_TRANSACTION message.
-    static const size_t MIN_APPROVE_FREQUENCY;
-
     // Get and SQLiteNode State from it's name.
     static SQLiteNodeState stateFromName(const string& name);
 
@@ -199,6 +195,10 @@ public:
     int setPriority(int newPriority);
 
 private:
+    // The minimum frequency of APPROVE_TRANSACTION messages we'll send when following, back to leader, to indicate our own current synchronization state.
+    // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th BEGIN_TRANSACTION message.
+    static const size_t MIN_APPROVE_FREQUENCY;
+
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
 
     // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
@@ -338,9 +338,6 @@ private:
 
     // Server that implements `SQLiteServer` interface.
     SQLiteServer& _server;
-
-    // Stopwatch to track if we're giving up on the server preventing a standdown.
-    SStopwatch _standDownTimeout;
 
     // Our current State.
     atomic<SQLiteNodeState> _state;

@@ -1016,11 +1016,6 @@ bool SQLiteNode::update()
             // At this point, we're no longer committing. We'll have returned false above, or we'll have completed any
             // outstanding transaction, we can complete standing down if that's what we're doing.
             if (_state == SQLiteNodeState::STANDINGDOWN) {
-                // See if we're done
-                // We can only switch to SEARCHING if the server has no outstanding write work to do.
-                if (_standDownTimeout.ringing()) {
-                    SWARN("Timeout STANDINGDOWN, giving up on server and continuing.");
-                }
                 // Standdown complete
                 SINFO("STANDDOWN complete, SEARCHING");
                 if (_isShuttingDown) {
@@ -1839,10 +1834,6 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
                 _db.popCommittedTransactions();
                 _lastSentTransactionID = _db.getCommitCount();
             }
-        } else if (newState == SQLiteNodeState::STANDINGDOWN) {
-            // start the timeout countdown.
-            _standDownTimeout.alarmDuration = STIME_US_PER_S * 30; // 30s timeout before we give up
-            _standDownTimeout.start();
         } else if (newState == SQLiteNodeState::WAITING) {
             if (!_haveBeenWAITING) {
                 _haveBeenWAITING = true;
