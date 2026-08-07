@@ -439,12 +439,9 @@ void BedrockServer::sync()
                 command->complete = true;
                 _reply(command);
             } else {
-                // This should only happen if the cluster becomes largely disconnected while we were in the process of
-                // committing a QUORUM command - if we no longer have enough peers to reach QUORUM, we'll fall out of
-                // leading. This code won't actually run until the node comes back up in a LEADING or FOLLOWING
-                // state, because this loop is skipped except when LEADING, FOLLOWING, or STANDINGDOWN. It's also
-                // theoretically feasible for this to happen if a follower fails to commit a transaction, but that
-                // probably indicates a bug (or a follower disk failure).
+                // A sync commit fails if it hit a commit conflict, or if we stopped LEADING while it was underway. In
+                // the latter case this code won't actually run until the node comes back up in a LEADING or FOLLOWING
+                // state, because this loop is skipped except when LEADING, FOLLOWING, or STANDINGDOWN.
                 SINFO("requeueing command " << command->request.methodLine
                       << " after failed sync commit. Sync thread has " << _syncNodeQueuedCommands.size()
                       << " queued commands.");
@@ -866,7 +863,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     while (true) {
         // More checks for parallel writing.
         canWriteParallel = canWriteParallel && (getState() == SQLiteNodeState::LEADING);
-        canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
 
         // If there are outstanding HTTPS requests on this command (from a previous call to `peek`) we process them here.
         command->waitForHTTPSRequests();
@@ -881,11 +877,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             BedrockCore core(db, *this);
 
             // If the command has already timed out when we get it, we can return early here without peeking it.
-            // We'd also catch that the command timed out in `peek`, but this can cause some weird side-effects. For
-            // instance, we saw QUORUM commands that make HTTPS requests time out in the sync thread, which caused them
-            // to be returned to the main queue, where they would have timed out in `peek`, but it was never called
-            // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
-            // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
+            // We'd also catch that the command timed out in `peek`, but this can cause some weird side-effects: a
+            // command that already has a HTTPS request attached doesn't get peeked, so anything that re-queues such a
+            // command without checking the timeout first can bounce it between queues indefinitely.
             if (core.isTimedOut(command, &db, this)) {
                 _reply(command);
                 return;
