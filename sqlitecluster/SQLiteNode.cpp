@@ -429,7 +429,7 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
             SINFO("Sending COMMIT for ASYNC transaction " << id << " to followers");
             _sendToAllPeers(transaction, true); // subscribed only
         } else {
-            SINFO("Sending COMMIT for QUORUM transaction " << id << " to followers");
+            SINFO("Sending COMMIT for in-flight transaction " << id << " to followers");
         }
         SData commit("COMMIT_TRANSACTION");
         commit["ID"] = idHeader;
@@ -864,17 +864,15 @@ bool SQLiteNode::update()
         ///     is as follows:
         ///
         ///         if( we're processing a transaction )
-        ///             if( all subscribed followers have responded/approved )
-        ///                 commit this transaction to the local DB
-        ///                 broadcast COMMIT_TRANSACTION to all subscribed followers
-        ///                 send a STATE to show we've committed a new transaction
-        ///                 notify the caller that the command is complete
+        ///             commit this transaction to the local DB
+        ///             broadcast COMMIT_TRANSACTION to all subscribed followers
+        ///             send a STATE to show we've committed a new transaction
+        ///             notify the caller that the command is complete
         ///         if( we're LEADING and not processing a command )
         ///             if( there is another LEADER )         goto STANDINGDOWN
         ///             if( there is a higher priority peer ) goto STANDINGDOWN
         ///             if( a command is queued )
         ///                 if( processing the command affects the database )
-        ///                    clear the transactionResponse of all peers
         ///                    broadcast BEGIN_TRANSACTION to subscribed followers
         ///         if( we're standing down and all followers have unsubscribed )
         ///             goto SEARCHING
@@ -895,78 +893,19 @@ bool SQLiteNode::update()
                 _sendOutstandingTransactions();
             }
 
-            // This means we've started a distributed transaction and need to decide if we should commit it, which can mean
-            // waiting on peers to approve the transaction. We can do this even after we've begun standing down.
+            // This means we've started a distributed transaction, so let's finish it. We can do this even after we've
+            // begun standing down.
             if (_commitState == CommitState::COMMITTING) {
-                // Loop across all peers configured to see how many are:
-                int numFullPeers = 0; // Num non-permafollowers configured
-                int numFullFollowers = 0; // Num full peers that are "subscribed"
-                int numFullResponded = 0; // Num full peers that have responded approve/deny
-                int numFullApproved = 0; // Num full peers that have approved
-                int numFullDenied = 0; // Num full peers that have denied
-                for (auto peer : _peerList) {
-                    // Check this peer to see if it's full or a permafollower
-                    if (!peer->permaFollower) {
-                        // It's a full peer -- is it subscribed, and if so, how did it respond?
-                        ++numFullPeers;
-                        if (peer->subscribed) {
-                            // Subscribed, did it respond?
-                            numFullFollowers++;
-                            if (peer->transactionResponse == SQLitePeer::Response::NONE) {
-                                continue;
-                            }
-                            numFullResponded++;
-                            if (peer->transactionResponse == SQLitePeer::Response::APPROVE) {
-                                SDEBUG("Peer '" << peer->name << "' has approved transaction.");
-                                ++numFullApproved;
-                            } else {
-                                SWARN("Peer '" << peer->name << "' denied transaction.");
-                                ++numFullDenied;
-                            }
-                        }
-                    }
-                }
+                SDEBUG("Committing current transaction: " << _db.getUncommittedQuery());
+                uint64_t beforeCommit = STimeNow();
+                // Only other intersting place we commit and would care about node state.
+                int result = _db.commit(stateName(_state));
+                SINFO("SQLite::commit in SQLiteNode took " << ((STimeNow() - beforeCommit) / 1000) << "ms.");
 
-                // Figure out if we have enough consistency
-                bool consistentEnough = false;
-                switch (_commitConsistency) {
-                    case ASYNC:
-                        // Always consistent enough if we don't care!
-                        consistentEnough = true;
-                        break;
-
-                    case ONE:
-                        // So long at least one full approved (if we have any peers, that is), we're good.
-                        consistentEnough = !numFullPeers || (numFullApproved > 0);
-                        break;
-
-                    case QUORUM:
-                        // This one requires a majority
-                        consistentEnough = (numFullApproved * 2 >= numFullPeers);
-                        break;
-
-                    default:
-                        SERROR("Invalid write consistency.");
-                        break;
-                }
-
-                // See if all active non-permafollowers have responded.
-                // NOTE: This can be true if nobody responds if there are no full followers - this includes machines that
-                // should be followers that are disconnected.
-                bool everybodyResponded = numFullResponded >= numFullFollowers;
-
-                // If anyone denied this transaction, roll this back. Alternatively, roll it back if everyone we're
-                // currently connected to has responded, but that didn't generate enough consistency. This could happen, in
-                // theory, if we were disconnected from enough of the cluster that we could no longer reach QUORUM, but
-                // this should have been detected earlier and forced us out of leading.
-                // TODO: we might want to remove the `numFullDenied` condition here. A single failure shouldn't cause the
-                // entire cluster to break. Imagine a scenario where a follower disk was full, and every write operation
-                // failed with an sqlite3 error.
-                if (numFullDenied || (everybodyResponded && !consistentEnough)) {
-                    SINFO("Rolling back transaction because everybody currently connected responded "
-                      "but not consistent enough. Num denied: " << numFullDenied << ". Follower write failure?");
-
-                    // Notify everybody to rollback
+                // If this is the case, there was a commit conflict.
+                if (result == SQLITE_BUSY_SNAPSHOT) {
+                    // We already sent everyone a BEGIN for this, so we'll have to tell them to roll back.
+                    SINFO("[performance] Conflict committing, rolling back.");
                     SData rollback("ROLLBACK_TRANSACTION");
                     rollback.set("ID", _lastSentTransactionID + 1);
                     _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
@@ -974,58 +913,26 @@ bool SQLiteNode::update()
 
                     // Finished, but failed.
                     _commitState = CommitState::FAILED;
-                } else if (consistentEnough) {
-                    // Commit this distributed transaction. Either we have quorum, or we don't need it.
-                    SDEBUG("Committing current transaction because consistentEnough: " << _db.getUncommittedQuery());
-                    uint64_t beforeCommit = STimeNow();
-                    // Only other intersting place we commit and would care about node state.
-                    int result = _db.commit(stateName(_state));
-                    SINFO("SQLite::commit in SQLiteNode took " << ((STimeNow() - beforeCommit) / 1000) << "ms.");
-
-                    // If this is the case, there was a commit conflict.
-                    if (result == SQLITE_BUSY_SNAPSHOT) {
-                        // We already asked everyone to commit this (even if it was async), so we'll have to tell them to
-                        // roll back.
-                        SINFO("[performance] Conflict committing " << CONSISTENCY_LEVEL_NAMES[_commitConsistency]
-                              << " commit, rolling back.");
-                        SData rollback("ROLLBACK_TRANSACTION");
-                        rollback.set("ID", _lastSentTransactionID + 1);
-                        _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
-                        _db.rollback();
-
-                        // Finished, but failed.
-                        _commitState = CommitState::FAILED;
-                    } else {
-                        // Hey, our commit succeeded! Record how long it took.
-                        _db.logLastTransactionTiming(
-                        format(
-                            "Committed leader transaction for '{} ({}). (consistencyRequired={}), {} of {} approved ({} total).",
-                            _lastSentTransactionID + 1,
-                            _db.getCommittedHash(),
-                            CONSISTENCY_LEVEL_NAMES[_commitConsistency],
-                            numFullApproved,
-                            numFullPeers,
-                            _peerList.size()
-                            ),
-                        "SQLiteNode::update"
-                        );
-                        SINFO("[performance] Successfully committed " << CONSISTENCY_LEVEL_NAMES[_commitConsistency]
-                              << " transaction. Sending COMMIT_TRANSACTION to peers.");
-
-                        // Send our outstanding transactions. Note that this particular transaction will send a COMMIT
-                        // only, although if any other transactions have completed since we released a commit lock, we will
-                        // send those ass well.
-                        _sendOutstandingTransactions({_lastSentTransactionID + 1});
-
-                        // Done!
-                        _commitState = CommitState::SUCCESS;
-                    }
                 } else {
-                    // Not consistent enough, but not everyone's responded yet, so we'll wait.
-                    SINFO("Waiting to commit. consistencyRequired=" << CONSISTENCY_LEVEL_NAMES[_commitConsistency]);
+                    // Hey, our commit succeeded! Record how long it took.
+                    _db.logLastTransactionTiming(
+                    format(
+                        "Committed leader transaction for '{} ({}). {} peers.",
+                        _lastSentTransactionID + 1,
+                        _db.getCommittedHash(),
+                        _peerList.size()
+                        ),
+                    "SQLiteNode::update"
+                    );
+                    SINFO("[performance] Successfully committed transaction. Sending COMMIT_TRANSACTION to peers.");
 
-                    // We're going to need to read from the network to finish this.
-                    return false;
+                    // Send our outstanding transactions. Note that this particular transaction will send a COMMIT
+                    // only, although if any other transactions have completed since we released a commit lock, we will
+                    // send those ass well.
+                    _sendOutstandingTransactions({_lastSentTransactionID + 1});
+
+                    // Done!
+                    _commitState = CommitState::SUCCESS;
                 }
             }
 
@@ -1034,7 +941,7 @@ bool SQLiteNode::update()
             // here. It's up to the server to stop giving us transactions to process if it wants us to stand down.
             if (_commitState == CommitState::WAITING) {
                 _commitState = CommitState::COMMITTING;
-                SINFO("[performance] Beginning " << CONSISTENCY_LEVEL_NAMES[_commitConsistency] << " commit.");
+                SINFO("[performance] Beginning commit.");
 
                 // We should already have locked the DB before getting here, we can safely clear out any outstanding
                 // transactions, no new ones can be added until we release the lock.
@@ -1058,25 +965,17 @@ bool SQLiteNode::update()
                 transaction.set("NewHash", _db.getUncommittedHash());
                 transaction.set("leaderSendTime", to_string(STimeNow()));
                 transaction.set("dbCountAtStart", to_string(_db.getDBCountAtStart()));
-                if (_commitConsistency == ASYNC) {
-                    transaction.set("ID", "ASYNC_" + to_string(_lastSentTransactionID + 1));
-                } else {
-                    transaction.set("ID", _lastSentTransactionID + 1);
-                }
+                // The "ASYNC_" prefix tells followers not to bother approving this transaction. It's load-bearing: a
+                // follower sends a full APPROVE_TRANSACTION for any ID without it.
+                transaction.set("ID", "ASYNC_" + to_string(_lastSentTransactionID + 1));
                 transaction.content = _db.getUncommittedQuery();
-
-                for (auto peer : _peerList) {
-                    // Clear the response flag from the last transaction
-                    peer->transactionResponse = SQLitePeer::Response::NONE;
-                }
 
                 // And send it to everyone who's subscribed.
                 uint64_t beforeSend = STimeNow();
                 _sendToAllPeers(transaction, true);
                 SINFO("[performance] SQLite::_sendToAllPeers in SQLiteNode took " << ((STimeNow() - beforeSend) / 1000) << "ms.");
 
-                // We return `true` here to immediately re-update and thus commit this transaction immediately if it was
-                // asynchronous.
+                // We return `true` here to immediately re-update and thus commit this transaction.
                 return true;
             }
 
