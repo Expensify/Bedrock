@@ -376,9 +376,9 @@ private:
     multimap<uint64_t, uint64_t> _futureCommitCommandTimeouts;
     recursive_mutex _futureCommitCommandMutex;
 
-    // A set of command names that will always be run with QUORUM consistency level.
+    // A set of command names that will always be run on the blocking commit thread.
     // Specified by the `-synchronousCommands` command-line switch.
-    set<string> _syncCommands;
+    set<string> _synchronousCommands;
 
     // This is a list of command names than can be processed and committed in worker threads.
     static set<string> _blacklistedParallelCommands;

@@ -848,6 +848,26 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         SINFO("mockRequest set for command '" << command->request.methodLine << "'.");
     }
 
+    // Commands named in `-synchronousCommands` run on the blocking commit thread. Hand this one off to that queue,
+    // unless we're already on that thread (worker 0 calls us with `isBlocking` set, and re-pushing here would spin).
+    // If we're not LEADING we take the normal path instead, which peeks locally and escalates to leader if it needs to
+    // write; the leader sets this flag again when it builds the escalated command. We also skip this while shutting
+    // down, because the queue gets cleared rather than drained, and anyone waiting on this command would wait forever.
+    if (command->isSynchronous && !isBlocking && getState() == SQLiteNodeState::LEADING && _shutdownState.load() == RUNNING) {
+        SINFO("Sending synchronous command '" << command->request.methodLine << "' to blocking queue with size "
+              << _blockingCommandQueue.size());
+        try {
+            // BedrockBlockingCommandQueue::push() guarantees that any exception (e.g., rate limiting) is thrown before
+            // the underlying move() into the queue occurs, so `command` is still valid in the catch block.
+            _blockingCommandQueue.push(move(command));
+        } catch (const SException& e) {
+            command->response.methodLine = e.what();
+            command->complete = true;
+            _reply(command);
+        }
+        return;
+    }
+
     // See if this is a feasible command to write parallel. If not, then be ready to forward it to the sync
     // thread, if it doesn't finish in peek.
     bool canWriteParallel = _multiWriteEnabled.load();
@@ -1323,12 +1343,12 @@ BedrockServer::BedrockServer(const SData& args_)
         SSyslogFunc = &SSyslogSocketDirect;
     }
 
-    // Check for commands that will be forced to use QUORUM write consistency.
+    // Check for commands that will be forced to run on the blocking commit thread.
     if (args.isSet("-synchronousCommands")) {
-        list<string> syncCommands;
-        SParseList(args["-synchronousCommands"], syncCommands);
-        for (auto& command : syncCommands) {
-            _syncCommands.insert(command);
+        list<string> synchronousCommands;
+        SParseList(args["-synchronousCommands"], synchronousCommands);
+        for (auto& command : synchronousCommands) {
+            _synchronousCommands.insert(command);
         }
     }
 
@@ -2479,9 +2499,9 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     SDEBUG("Deserialized command " << command->request.methodLine);
     command->socket = fireAndForget ? nullptr : &socket;
 
-    if (command->writeConsistency != SQLiteNode::QUORUM && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
-        command->writeConsistency = SQLiteNode::QUORUM;
-        SINFO("Forcing QUORUM consistency for command " << command->request.methodLine);
+    if (_synchronousCommands.find(command->request.methodLine) != _synchronousCommands.end()) {
+        command->isSynchronous = true;
+        SINFO("Running command " << command->request.methodLine << " on the blocking commit thread.");
     }
 
     return command;

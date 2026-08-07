@@ -306,6 +306,11 @@ private:
     // in `process` instead of peek, as it will always be escalated to leader
     const bool escalateImmediately;
 
+    // True if this command was named in `-synchronousCommands`. Such commands run on the blocking commit thread, so
+    // they're serialized against each other and against every other write, and they're exempt from the shortened
+    // process timeout that thread otherwise imposes.
+    bool isSynchronous = false;
+
     // Setting this to `true` will cause this command to abort immediately, even in the middle of a slow database query.
     // NOTE: currently, this will not abort from every case where a command could be stuck, but only in DB queries.
     atomic<bool> shouldAbort = false;
