@@ -1502,25 +1502,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             _sendToPeer(peer, response);
             SASSERTWARN(!peer->subscribed);
             peer->subscribed = true;
-
-            // New follower; are we in the midst of a transaction?
-            if (_commitState == CommitState::COMMITTING) {
-                // Invite the new peer to participate in the transaction
-                SINFO("Inviting peer into distributed transaction already underway (" << _db.getUncommittedHash() << ")");
-
-                // TODO: This duplicates code in `update()`, would be nice to refactor out the common code.
-                uint64_t commitCount = _db.getCommitCount();
-                SData transaction("BEGIN_TRANSACTION");
-                SINFO("beginning distributed transaction for commit #" << commitCount + 1 << " ("
-                      << _db.getUncommittedHash() << ")");
-                transaction.set("NewCount", commitCount + 1);
-                transaction.set("NewHash", _db.getUncommittedHash());
-                transaction.set("leaderSendTime", to_string(STimeNow()));
-                transaction.set("dbCountAtStart", to_string(_db.getDBCountAtStart()));
-                transaction.set("ID", _lastSentTransactionID + 1);
-                transaction.content = _db.getUncommittedQuery();
-                _sendToPeer(peer, transaction);
-            }
         } else if (SIEquals(message.methodLine, "SUBSCRIPTION_APPROVED")) {
             // SUBSCRIPTION_APPROVED: Sent by a follower's new leader to complete the subscription process. Includes zero or
             // more COMMITS that should be immediately applied to the database.
