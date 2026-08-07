@@ -25,7 +25,6 @@ SQLitePeer::SQLitePeer(const string& name_, const string& host_, const STable& p
     state(SQLiteNodeState::SEARCHING),
     standupResponse(Response::NONE),
     subscribed(false),
-    transactionResponse(Response::NONE),
     version(),
     lastPingTime(0),
     forked(false),
@@ -83,7 +82,6 @@ void SQLitePeer::reset()
     state = SQLiteNodeState::SEARCHING;
     standupResponse = Response::NONE;
     subscribed = false;
-    transactionResponse = Response::NONE;
     version = "";
     lastPingTime = 0,
     setCommit(0, "");
@@ -271,7 +269,6 @@ STable SQLitePeer::getData() const
         {"hash", hash},
         {"commitCount", to_string(commitCount)},
         {"standupResponse", responseName(standupResponse)},
-        {"transactionResponse", responseName(transactionResponse)},
         {"subscribed", (subscribed ? "true" : "false")},
     });
 

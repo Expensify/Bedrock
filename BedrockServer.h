@@ -376,9 +376,9 @@ private:
     multimap<uint64_t, uint64_t> _futureCommitCommandTimeouts;
     recursive_mutex _futureCommitCommandMutex;
 
-    // A set of command names that will always be run with QUORUM consistency level.
+    // A set of command names that will always be run on the blocking commit thread.
     // Specified by the `-synchronousCommands` command-line switch.
-    set<string> _syncCommands;
+    set<string> _synchronousCommands;
 
     // This is a list of command names than can be processed and committed in worker threads.
     static set<string> _blacklistedParallelCommands;
@@ -443,12 +443,6 @@ private:
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const unique_ptr<BedrockCommand>& command);
-
-    // The number of seconds to wait between forcing a command to QUORUM.
-    uint64_t _quorumCheckpointSeconds;
-
-    // Timestamp for the last time we promoted a command to QUORUM.
-    atomic<uint64_t> _lastQuorumCommandTime;
 
     // Whether or not all plugins are detached
     bool _pluginsDetached;

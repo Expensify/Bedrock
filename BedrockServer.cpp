@@ -364,19 +364,12 @@ void BedrockServer::sync()
         // Otherwise, if we're leading, let's start the commit.
         // Also, if a commit is in progress, skip it (it's the commit we started on the last loop iteration).
         if (!_upgradeCompleted && getState() == SQLiteNodeState::LEADING && !commitInProgress) {
-            if (!_syncNode->hasQuorum()) {
-                // Because we are going to commit the upgrade as a QUORUM commit (i.e., wait until over half of nodes
-                // approve it), we wait until `hasQuorum()` is true before we even attempt to start it.
-                // You might ask "if we are LEADING, how do we not have QUORUM?" and the answer to that is that as soon as
-                // we become LEADING, we need nodes to subscribe to us in order to indicate that they are 100% caught up
-                // and ready to accept a transaction stream. basically we go LEADING, and then nodes go SUBSCRIBING for
-                // a second and then they go FOLLOWING.
-                // If we attempt this transaction before we wait for these nodes to go FOLLOWING, they will not participate in
-                // the transaction. This will cause the transaction to fail and be rolled back, but worse, it causes the whole
-                // cluster to reconnect, because a failed QUORUM transaction throws the whole state of the cluster into
-                // question. This then takes a while to resolve as nodes all reconnect to one another, and is at risk for
-                // happening again on the next attempt as well.
-                SINFO("Waiting for quorum availability before running UpgradeDB.");
+            if (!_syncNode->majorityOfFollowersSubscribed()) {
+                // We stand up as soon as a majority of peers are logged in, but a peer doesn't receive transactions
+                // until it has gone SUBSCRIBING -> FOLLOWING, which takes a moment longer. Committing the upgrade in
+                // that window means most of the cluster doesn't get the schema change from us and has to pick it up
+                // by synchronizing later, so wait for them instead.
+                SINFO("Waiting for followers to subscribe before running UpgradeDB.");
                 continue;
             }
             bool dbHasChanges = false;
@@ -392,14 +385,13 @@ void BedrockServer::sync()
             }
             if (dbHasChanges) {
                 commitInProgress = true;
-                _syncNode->startCommit(SQLiteNode::QUORUM);
-                _lastQuorumCommandTime = STimeNow();
+                _syncNode->startCommit();
 
                 // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
                 _notifyDoneSync.push(true);
                 SDEBUG("Finished sending distributed transaction for db upgrade.");
 
-                // As it's a quorum commit, we'll need to read from peers. Let's start the next loop iteration.
+                // Let the commit finish before we do anything else. Let's start the next loop iteration.
                 continue;
             } else {
                 // If we're not doing an upgrade, we don't need to keep suppressing multi-write, and we're done with
@@ -455,12 +447,9 @@ void BedrockServer::sync()
                 command->complete = true;
                 _reply(command);
             } else {
-                // This should only happen if the cluster becomes largely disconnected while we were in the process of
-                // committing a QUORUM command - if we no longer have enough peers to reach QUORUM, we'll fall out of
-                // leading. This code won't actually run until the node comes back up in a LEADING or FOLLOWING
-                // state, because this loop is skipped except when LEADING, FOLLOWING, or STANDINGDOWN. It's also
-                // theoretically feasible for this to happen if a follower fails to commit a transaction, but that
-                // probably indicates a bug (or a follower disk failure).
+                // A sync commit fails if it hit a commit conflict, or if we stopped LEADING while it was underway. In
+                // the latter case this code won't actually run until the node comes back up in a LEADING or FOLLOWING
+                // state, because this loop is skipped except when LEADING, FOLLOWING, or STANDINGDOWN.
                 SINFO("requeueing command " << command->request.methodLine
                       << " after failed sync commit. Sync thread has " << _syncNodeQueuedCommands.size()
                       << " queued commands.");
@@ -574,7 +563,7 @@ void BedrockServer::sync()
                         SINFO("[performance] Sync thread beginning committing command " << command->request.methodLine);
                         // START TIMING.
                         command->startTiming(BedrockCommand::COMMIT_SYNC);
-                        _syncNode->startCommit(command->writeConsistency);
+                        _syncNode->startCommit();
 
                         // And we'll start the next main loop.
                         // NOTE: This will cause us to read from the network again. This, in theory, is fine, but we saw
@@ -867,6 +856,25 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         SINFO("mockRequest set for command '" << command->request.methodLine << "'.");
     }
 
+    // Commands named in `-synchronousCommands` run on the blocking commit thread. Hand this one off to that queue,
+    // unless we're already on that thread (worker 0 calls us with `isBlocking` set, and re-pushing here would spin).
+    // If we're not LEADING we take the normal path instead, which peeks locally and escalates to leader if it needs to
+    // write; the leader sets this flag again when it builds the escalated command.
+    if (command->isSynchronous && !isBlocking && getState() == SQLiteNodeState::LEADING) {
+        SINFO("Sending synchronous command '" << command->request.methodLine << "' to blocking queue with size "
+              << _blockingCommandQueue.size());
+        try {
+            // BedrockBlockingCommandQueue::push() guarantees that any exception (e.g., rate limiting) is thrown before
+            // the underlying move() into the queue occurs, so `command` is still valid in the catch block.
+            _blockingCommandQueue.push(move(command));
+        } catch (const SException& e) {
+            command->response.methodLine = e.what();
+            command->complete = true;
+            _reply(command);
+        }
+        return;
+    }
+
     // See if this is a feasible command to write parallel. If not, then be ready to forward it to the sync
     // thread, if it doesn't finish in peek.
     bool canWriteParallel = _multiWriteEnabled.load();
@@ -882,7 +890,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     while (true) {
         // More checks for parallel writing.
         canWriteParallel = canWriteParallel && (getState() == SQLiteNodeState::LEADING);
-        canWriteParallel = canWriteParallel && (command->writeConsistency == SQLiteNode::ASYNC);
 
         // If there are outstanding HTTPS requests on this command (from a previous call to `peek`) we process them here.
         command->waitForHTTPSRequests();
@@ -897,11 +904,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
             BedrockCore core(db, *this);
 
             // If the command has already timed out when we get it, we can return early here without peeking it.
-            // We'd also catch that the command timed out in `peek`, but this can cause some weird side-effects. For
-            // instance, we saw QUORUM commands that make HTTPS requests time out in the sync thread, which caused them
-            // to be returned to the main queue, where they would have timed out in `peek`, but it was never called
-            // because the commands already had a HTTPS request attached, and then they were immediately re-sent to the
-            // sync queue, because of the QUORUM consistency requirement, resulting in an endless loop.
+            // We'd also catch that the command timed out in `peek`, but this can cause some weird side-effects: a
+            // command that already has a HTTPS request attached doesn't get peeked, so anything that re-queues such a
+            // command without checking the timeout first can bounce it between queues indefinitely.
             if (core.isTimedOut(command, &db, this)) {
                 _reply(command);
                 return;
@@ -976,15 +981,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
                             // Jump back to the top of our main `while (true)` loop and run the network activity loop again.
                             continue;
-                        }
-                    } else {
-                        // If we haven't sent a quorum command to the sync thread in a while, auto-promote one.
-                        uint64_t now = STimeNow();
-                        if (now > (_lastQuorumCommandTime + (_quorumCheckpointSeconds * 1'000'000))) {
-                            SINFO("Forcing QUORUM for command '" << command->request.methodLine << "'.");
-                            _lastQuorumCommandTime = now;
-                            command->writeConsistency = SQLiteNode::QUORUM;
-                            canWriteParallel = false;
                         }
                     }
 
@@ -1297,7 +1293,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _syncLoopShouldBeRunning(true), _syncNode(nullptr), _configuredPriority(args.calc("-priority")), _clusterMessenger(nullptr), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _enableConflictPageLocks(args.test("-enableConflictPageLocks")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
-    _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
+    _pluginsDetached(false), _socketThreadNumber(0),
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _upgradeCompleted(false)
 {
     _version = VERSION;
@@ -1354,12 +1350,12 @@ BedrockServer::BedrockServer(const SData& args_)
         SSyslogFunc = &SSyslogSocketDirect;
     }
 
-    // Check for commands that will be forced to use QUORUM write consistency.
+    // Check for commands that will be forced to run on the blocking commit thread.
     if (args.isSet("-synchronousCommands")) {
-        list<string> syncCommands;
-        SParseList(args["-synchronousCommands"], syncCommands);
-        for (auto& command : syncCommands) {
-            _syncCommands.insert(command);
+        list<string> synchronousCommands;
+        SParseList(args["-synchronousCommands"], synchronousCommands);
+        for (auto& command : synchronousCommands) {
+            _synchronousCommands.insert(command);
         }
     }
 
@@ -1385,9 +1381,6 @@ BedrockServer::BedrockServer(const SData& args_)
     if (_detach) {
         SINFO("Bootstrap flag detected, starting sync node in detach mode.");
     }
-
-    // Set the quorum checkpoint, or default if not specified.
-    _quorumCheckpointSeconds = args.isSet("-quorumCheckpointSeconds") ? args.calc("-quorumCheckpointSeconds") : 60;
 
     if (args.isSet("-dbPoolSize")) {
         _dbPoolSize = args.calcU64("-dbPoolSize");
@@ -2513,10 +2506,9 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
     SDEBUG("Deserialized command " << command->request.methodLine);
     command->socket = fireAndForget ? nullptr : &socket;
 
-    if (command->writeConsistency != SQLiteNode::QUORUM && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
-        command->writeConsistency = SQLiteNode::QUORUM;
-        _lastQuorumCommandTime = STimeNow();
-        SINFO("Forcing QUORUM consistency for command " << command->request.methodLine);
+    if (_synchronousCommands.find(command->request.methodLine) != _synchronousCommands.end()) {
+        command->isSynchronous = true;
+        SINFO("Running command " << command->request.methodLine << " on the blocking commit thread.");
     }
 
     return command;
