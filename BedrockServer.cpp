@@ -1979,6 +1979,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "SetBlockingQueueTimeRateLimit") ||
         SIEquals(command->request.methodLine, "ClearBlockingQueue") ||
         SIEquals(command->request.methodLine, "SetPriority") ||
+        SIEquals(command->request.methodLine, "GetCommitHash") ||
         SIEquals(command->request.methodLine, "CRASH_COMMAND")
     ) {
         return true;
@@ -2211,6 +2212,28 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
                     response.methodLine = "200 OK";
                 } catch (const SException& e) {
                     response.methodLine = e.what();
+                }
+            }
+        }
+    } else if (SIEquals(command->request.methodLine, "GetCommitHash")) {
+        if (!command->request.isSet("commitCount")) {
+            response.methodLine = "400 Missing commitCount";
+        } else {
+            // Journal IDs start at 1, so 0 (which is also what we get for anything unparseable) is never valid.
+            uint64_t commitCount = command->request.calcU64("commitCount");
+            shared_ptr<SQLitePool> dbPoolCopy = _dbPool;
+            if (!commitCount) {
+                response.methodLine = "400 Invalid commitCount";
+            } else if (!dbPoolCopy) {
+                response.methodLine = "500 No database";
+            } else {
+                SQLiteScopedHandle dbScope(*dbPoolCopy, dbPoolCopy->getIndex());
+                string hash;
+                if (dbScope.db().getCommit(commitCount, nullptr, &hash)) {
+                    response["commitCount"] = to_string(commitCount);
+                    response["hash"] = hash;
+                } else {
+                    response.methodLine = "404 Commit not found";
                 }
             }
         }
