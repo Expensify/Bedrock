@@ -393,7 +393,6 @@ void BedrockServer::sync()
             if (dbHasChanges) {
                 commitInProgress = true;
                 _syncNode->startCommit(SQLiteNode::QUORUM);
-                _lastQuorumCommandTime = STimeNow();
 
                 // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
                 _notifyDoneSync.push(true);
@@ -977,15 +976,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                             // Jump back to the top of our main `while (true)` loop and run the network activity loop again.
                             continue;
                         }
-                    } else {
-                        // If we haven't sent a quorum command to the sync thread in a while, auto-promote one.
-                        uint64_t now = STimeNow();
-                        if (now > (_lastQuorumCommandTime + (_quorumCheckpointSeconds * 1'000'000))) {
-                            SINFO("Forcing QUORUM for command '" << command->request.methodLine << "'.");
-                            _lastQuorumCommandTime = now;
-                            command->writeConsistency = SQLiteNode::QUORUM;
-                            canWriteParallel = false;
-                        }
                     }
 
                     // Peek wasn't enough to handle this command. See if we think it should be writable in parallel.
@@ -1297,7 +1287,7 @@ BedrockServer::BedrockServer(const SData& args_)
     _syncLoopShouldBeRunning(true), _syncNode(nullptr), _configuredPriority(args.calc("-priority")), _clusterMessenger(nullptr), _shutdownState(RUNNING),
     _multiWriteEnabled(args.test("-enableMultiWrite")), _enableConflictPageLocks(args.test("-enableConflictPageLocks")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
     _controlPort(nullptr), _commandPortPublic(nullptr), _commandPortPrivate(nullptr), _maxConflictRetries(3),
-    _lastQuorumCommandTime(STimeNow()), _pluginsDetached(false), _socketThreadNumber(0),
+    _pluginsDetached(false), _socketThreadNumber(0),
     _outstandingSocketThreads(0), _shouldBlockNewSocketThreads(false), _upgradeCompleted(false)
 {
     _version = VERSION;
@@ -1385,9 +1375,6 @@ BedrockServer::BedrockServer(const SData& args_)
     if (_detach) {
         SINFO("Bootstrap flag detected, starting sync node in detach mode.");
     }
-
-    // Set the quorum checkpoint, or default if not specified.
-    _quorumCheckpointSeconds = args.isSet("-quorumCheckpointSeconds") ? args.calc("-quorumCheckpointSeconds") : 60;
 
     if (args.isSet("-dbPoolSize")) {
         _dbPoolSize = args.calcU64("-dbPoolSize");
@@ -2515,7 +2502,6 @@ unique_ptr<BedrockCommand> BedrockServer::buildCommandFromRequest(SData&& reques
 
     if (command->writeConsistency != SQLiteNode::QUORUM && _syncCommands.find(command->request.methodLine) != _syncCommands.end()) {
         command->writeConsistency = SQLiteNode::QUORUM;
-        _lastQuorumCommandTime = STimeNow();
         SINFO("Forcing QUORUM consistency for command " << command->request.methodLine);
     }
 
