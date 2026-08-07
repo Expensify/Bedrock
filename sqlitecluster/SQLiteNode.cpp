@@ -39,11 +39,15 @@
 //                   and not to communicate any information about a specific transaction in progress.
 // Hash:             The hash corresponding to the value in CommitCount.
 // ID:               The ID of the transaction currently being operated on. It is the same type of information as
-//                   "CommitCount", but not necessarily for the most recent transaction in the DB. It can be prefixed
-//                   with "ASYNC_" for asynchronous transactions.
+//                   "CommitCount", but not necessarily for the most recent transaction in the DB. A leader prefixes it
+//                   with "ASYNC_", which tells the follower not to send a full approval for the transaction. That's
+//                   every transaction a current leader sends; the unprefixed form only arrives from a leader running
+//                   older code.
 // NewHash:          Hash, but for "ID" instead of "CommitCount".
 //                   Proposal: rename to "currentTransactionHash".
 // NewCount:         Same as "ID" except without the "ASYNC_" prefix.
+// AsyncNotification: Set on an APPROVE_TRANSACTION that a follower sends periodically for an "ASYNC_" transaction. It
+//                   marks the message as a commit-count report rather than an approval of anything.
 // State:            The state of the peer sending the message (i.e., SEARCHING, LEADING).
 // Version:          The version string of the node sending the message.
 // Permafollower:    Boolean value (string "true" or "false") indicating if the node sending the message is a
@@ -2195,9 +2199,13 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
         db.rollback();
     }
 
-    // Are we participating in quorum?
+    // Permafollowers never respond. Everyone else does, for one of two reasons.
+    //
+    // For an "ASYNC_" transaction, which is all a current leader sends, we reply to every tenth one purely so the
+    // leader stays roughly current on our commit count; it doesn't wait for or act on the reply. Without the prefix
+    // we send a real approval, because we're following a leader running older code that does wait for one. Once
+    // every node is past that, this can become an unconditional FOLLOWER_STATUS and the prefix can go away.
     if (_priority) {
-        // If the ID is /ASYNC_\d+/, leader will keep going regardless, but we send every 10th response anyway, just so leader keeps relatively current with our commit count.
         string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
         uint64_t currentCommitCount = db.getCommitCount();
         bool isAsync = SStartsWith(message["ID"], "ASYNC_");
