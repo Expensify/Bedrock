@@ -1672,6 +1672,11 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             } else {
                 SINFO("Discarding replication message, stopping FOLLOWING");
             }
+        } else if (SIEquals(message.methodLine, "FOLLOWER_STATUS")) {
+            // FOLLOWER_STATUS: Sent to the leader by a follower to report how much data it has. There's nothing to do
+            // with it here: every message carries CommitCount and Hash, and the code above has already recorded them
+            // via `peer->setCommit()`. This branch exists so that the message is recognized rather than logged as
+            // unrecognized.
         } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
             // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
             // is ready to commit. Note that this peer approves the transaction for use in the LEADING and STANDINGDOWN
