@@ -2262,6 +2262,9 @@ bool S_recvappend(int s, SFastBuffer& recvBuffer)
         }
     }
 
+    // Save errno from the recvfrom() that ended the loop, before the string building below can overwrite it.
+    const int recvErrno = errno;
+
     // See how we finished
     if (numRecv == 0) {
         return false; // Graceful shutdown; socket closed
@@ -2269,7 +2272,7 @@ bool S_recvappend(int s, SFastBuffer& recvBuffer)
     // Some kind of error -- what happened?
     stringstream addrStr;
     addrStr << fromAddr;
-    return SCheckNetworkErrorType("recv", addrStr.str(), S_errno);
+    return SCheckNetworkErrorType("recv", addrStr.str(), recvErrno);
 }
 
 // --------------------------------------------------------------------------
@@ -2291,9 +2294,15 @@ bool S_sendconsume(int s, SFastBuffer& sendBuffer)
 
     // Send as much as we can
     ssize_t numSent = send(s, sendBuffer.c_str(), sendBuffer.size(), MSG_NOSIGNAL);
+
+    // Save errno before anything else runs. Both strerror() and getpeername() can overwrite it, and the order in
+    // which function arguments are evaluated is unspecified, so reading errno inline at a call site can yield the
+    // errno of a sibling argument instead of the one from send().
+    const int sendErrno = errno;
+
     string errorMessage;
     if (numSent == -1) {
-        errorMessage = " Error: "s + strerror(errno);
+        errorMessage = " Error: "s + strerror(sendErrno);
     }
 
     if (numSent > 0) {
@@ -2307,13 +2316,13 @@ bool S_sendconsume(int s, SFastBuffer& sendBuffer)
 
     // If we failed to send with over 1GB in the buffer, return false, even if the error would normally be non-fatal.
     if (sendBuffer.size() > 1024 * 1024 * 1024) {
-        SWARN("send() failed with response '" << strerror(errno) << "' (#" << errno << "), and buffer size: "
+        SWARN("send() failed with response '" << strerror(sendErrno) << "' (#" << sendErrno << "), and buffer size: "
               << sendBuffer.size() << ", closing.");
         return false;
     }
 
     // Error, what kind?
-    return SCheckNetworkErrorType("send", SGetPeerName(s), S_errno);
+    return SCheckNetworkErrorType("send", SGetPeerName(s), sendErrno);
 }
 
 void SFDset(fd_map& fdm, int socket, short evts)
@@ -2383,14 +2392,21 @@ string SGetHostName()
 // --------------------------------------------------------------------------
 string SGetPeerName(int s)
 {
+    // Callers commonly use this to describe a socket while reporting an error from a different syscall, so this
+    // must leave errno exactly as it found it.
+    const int callerErrno = errno;
+
     // Just call the function that does this
     sockaddr_in addr{};
     socklen_t socklen = sizeof(addr);
     int result = getpeername(s, (sockaddr*) &addr, &socklen);
+    const int peerNameErrno = errno;
+    errno = callerErrno;
+
     if (result == 0) {
         return SToStr(addr);
     } else {
-        return "(errno#" + SToStr(S_errno) + ")";
+        return "(errno#" + SToStr(peerNameErrno) + ")";
     }
 }
 
