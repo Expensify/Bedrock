@@ -1993,6 +1993,7 @@ bool BedrockServer::_isNonSecureControlCommand(const unique_ptr<BedrockCommand>&
     // sent from other nodes on the private command port.
     return SIEquals(command->request.methodLine, "SuppressCommandPort") ||
            SIEquals(command->request.methodLine, "ClearCommandPort") ||
+           SIEquals(command->request.methodLine, "GetCommitHash") ||
            SIEquals(command->request.methodLine, "CRASH_COMMAND");
 }
 
