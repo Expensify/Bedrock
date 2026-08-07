@@ -167,8 +167,9 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
 
-            if (exclusive && !command->isSynchronous) {
-                decreaseCommandTimeout(command, BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
+            if (exclusive) {
+                decreaseCommandTimeout(command, command->isSynchronous ? BedrockCommand::BLOCKING_COMMAND_TIMEOUT
+                                                                       : BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
             }
 
             // We start the timer here to avoid including the time spent acquiring the lock _sharedData.commitLock
@@ -269,8 +270,9 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
                 STHROW("501 Failed to begin " + (exclusive ? "exclusive"s : "shared"s) + " transaction");
             }
 
-            if (exclusive && !command->isSynchronous) {
-                decreaseCommandTimeout(command, BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
+            if (exclusive) {
+                decreaseCommandTimeout(command, command->isSynchronous ? BedrockCommand::BLOCKING_COMMAND_TIMEOUT
+                                                                       : BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
             }
         }
 

@@ -859,13 +859,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // Commands named in `-synchronousCommands` run on the blocking commit thread. Hand this one off to that queue,
     // unless we're already on that thread (worker 0 calls us with `isBlocking` set, and re-pushing here would spin).
     // If we're not LEADING we take the normal path instead, which peeks locally and escalates to leader if it needs to
-    // write; the leader sets this flag again when it builds the escalated command. We also skip this while shutting
-    // down, because the queue gets cleared rather than drained, and anyone waiting on this command would wait forever.
-    if (command->isSynchronous && !isBlocking && getState() == SQLiteNodeState::LEADING && _shutdownState.load() == RUNNING) {
-        // Limit the command timeout to 20s. The blocking thread holds the commit lock for the whole transaction, and
-        // `SQLiteNode::_changeState` waits on that same lock with no timeout, so a long command here stalls every node
-        // state change. The cluster gives up on a leader and elects a new one (causing a fork) after 30s.
-        command->setTimeout(20'000);
+    // write; the leader sets this flag again when it builds the escalated command.
+    if (command->isSynchronous && !isBlocking && getState() == SQLiteNodeState::LEADING) {
         SINFO("Sending synchronous command '" << command->request.methodLine << "' to blocking queue with size "
               << _blockingCommandQueue.size());
         try {
