@@ -1735,7 +1735,7 @@ void SQLiteNode::_sendToAllPeers(const SData& message, bool subscribedOnly)
     }
 }
 
-void SQLiteNode::_changeState(SQLiteNodeState newState, uint64_t commitIDToCancelAfter)
+void SQLiteNode::_changeState(SQLiteNodeState newState)
 {
     if (newState != _state) {
         // First, we notify all plugins about the state change

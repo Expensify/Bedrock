@@ -96,7 +96,7 @@ public:
     // Return the string representing an SQLiteNode State
     static const string& stateName(SQLiteNodeState state);
 
-    // True from when we call 'startCommit' until the commit has been sent to peers.
+    // True from when we call 'startCommit' until the commit has finished, successfully or not.
     // Does not block.
     bool commitInProgress() const;
 
@@ -199,23 +199,6 @@ public:
     int setPriority(int newPriority);
 
 private:
-    // Utility class that can decrement _replicationThreadCount when objects go out of scope.
-    template<typename CounterType>
-    class ScopedDecrement {
-public:
-        ScopedDecrement(CounterType& counter) : _counter(counter)
-        {
-        }
-
-        ~ScopedDecrement()
-        {
-            --_counter;
-        }
-
-private:
-        CounterType& _counter;
-    };
-
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
 
     // Queue a SYNCHRONIZE message based on the current state of the node, thread-safe, but you need to pass the
@@ -231,7 +214,7 @@ private:
     // Add required headers for messages being sent to peers.
     SData _addPeerHeaders(SData message);
 
-    void _changeState(SQLiteNodeState newState, uint64_t commitIDToCancelAfter = 0);
+    void _changeState(SQLiteNodeState newState);
 
     string _getLostQuorumLogMessage() const;
 
@@ -253,21 +236,15 @@ private:
     void _reconnectPeer(SQLitePeer* peer);
     void _recvSynchronize(SQLitePeer* peer, const SData& message);
 
-    // This is the main replication loop that's run in the replication threads. It's instantiated in a new thread for
-    // each new relevant replication command received by the sync thread.
+    // This is the main replication loop, run in a single replication thread which consumes messages that the sync
+    // thread queues onto `_replicateQueue`. Handling them in one thread in the order leader sent them is what keeps our
+    // commit order matching leader's.
     //
-    // There are three commands we currently handle here BEGIN_TRANSACTION, ROLLBACK_TRANSACTION, and
-    // COMMIT_TRANSACTION.
-    // ROLLBACK_TRANSACTION and COMMIT_TRANSACTION are trivial, they record the new highest commit number from LEADER,
-    // or instruct the node to go SEARCHING and reconnect if a distributed ROLLBACK happens.
+    // There are three commands we currently handle here: BEGIN_TRANSACTION, ROLLBACK_TRANSACTION, and
+    // COMMIT_TRANSACTION. BEGIN prepares the transaction, COMMIT commits it and records the new highest commit number
+    // from leader, and ROLLBACK discards a prepared transaction that leader decided not to keep.
     //
-    // BEGIN_TRANSACTION is where the interesting case is. This starts all transactions in parallel, and then waits
-    // until each previous transaction is committed such that the final commit order matches LEADER. It also handles
-    // commit conflicts by re-running the transaction from the beginning. Most of the logic for making sure
-    // transactions are ordered correctly is done in `SQLiteSequentialNotifier`, which is worth reading.
-    //
-    // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
-    // which happens when a node stops FOLLOWING.
+    // This thread exits when `_replicateThreadShouldExitTime` passes, which is set when a node stops FOLLOWING.
     void _replicate();
 
     // Replicates any transactions that have been made on our database by other threads to peers.
