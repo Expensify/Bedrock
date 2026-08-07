@@ -420,10 +420,6 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
             transaction["dbCountAtStart"] = to_string(dbCountAtStart);
             transaction["ID"] = idHeader;
             transaction.content = query;
-            for (auto peer : _peerList) {
-                // Clear the response flag from the last transaction
-                peer->transactionResponse = SQLitePeer::Response::NONE;
-            }
 
             // Allows us to easily figure out how far behind followers are by analyzing the logs.
             SINFO("Sending COMMIT for ASYNC transaction " << id << " to followers");
@@ -1328,8 +1324,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                 if (to == SQLiteNodeState::SEARCHING) {
                     // SEARCHING: If anything ever goes wrong, a node reverts to the SEARCHING state. Thus if we see a peer
                     // go SEARCHING, we reset its accumulated state.  Specifically, we mark it is no longer being
-                    // "subscribed", and we clear its last transaction response.
-                    peer->transactionResponse = SQLitePeer::Response::NONE;
+                    // "subscribed".
                     peer->subscribed = false;
                 } else if (to == SQLiteNodeState::STANDINGUP) {
                     _sendStandupResponse(peer, message);
@@ -1552,62 +1547,17 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             } else {
                 SINFO("Discarding replication message, stopping FOLLOWING");
             }
-        } else if (SIEquals(message.methodLine, "FOLLOWER_STATUS")) {
-            // FOLLOWER_STATUS: Sent to the leader by a follower to report how much data it has. There's nothing to do
-            // with it here: every message carries CommitCount and Hash, and the code above has already recorded them
-            // via `peer->setCommit()`. This branch exists so that the message is recognized rather than logged as
-            // unrecognized.
-        } else if (SIEquals(message.methodLine, "APPROVE_TRANSACTION") || SIEquals(message.methodLine, "DENY_TRANSACTION")) {
-            // APPROVE_TRANSACTION: Sent to the leader by a follower when it confirms it was able to begin a transaction and
-            // is ready to commit. Note that this peer approves the transaction for use in the LEADING and STANDINGDOWN
-            // update loop.
-
-            // If it's DENY, or AsyncNotification isn't set, this means that it's not just a simple notification that the follower has some commit number.
-            // It's either a real DENY, or a real APPROVE of a quorum transaction.
-            if (SIEquals(message.methodLine, "DENY_TRANSACTION") || !message.isSet("AsyncNotification")) {
-                if (!message.isSet("ID")) {
-                    STHROW("missing ID");
-                }
-                if (!message.isSet("NewCount")) {
-                    STHROW("missing NewCount");
-                }
-                if (!message.isSet("NewHash")) {
-                    STHROW("missing NewHash");
-                }
-                if (_state != SQLiteNodeState::LEADING && _state != SQLiteNodeState::STANDINGDOWN) {
-                    STHROW("not leading");
-                }
-                SQLitePeer::Response response = SIEquals(message.methodLine, "APPROVE_TRANSACTION") ? SQLitePeer::Response::APPROVE : SQLitePeer::Response::DENY;
-                try {
-                    // We ignore late approvals of commits that have already been finalized. They could have been committed
-                    // already, in which case `_lastSentTransactionID` will have incremented, or they could have been rolled
-                    // back due to a conflict, which would cause them to have the wrong hash (the hash of the previous attempt
-                    // at committing the transaction with this ID).
-                    bool hashMatch = message["NewHash"] == _db.getUncommittedHash();
-                    if (hashMatch && to_string(_lastSentTransactionID + 1) == message["ID"]) {
-                        if (message.calcU64("NewCount") != _db.getCommitCount() + 1) {
-                            STHROW("commit count mismatch. Expected: " + message["NewCount"] + ", but would actually be: "
-                                   + to_string(_db.getCommitCount() + 1));
-                        }
-                        if (peer->permaFollower) {
-                            STHROW("permafollowers shouldn't approve/deny");
-                        }
-                        PINFO("Peer " << response << " transaction #" << message["NewCount"] << " (" << message["NewHash"] << ")");
-                        peer->transactionResponse = response;
-                    }
-                } catch (const SException& e) {
-                    // Doesn't correspond to the outstanding transaction not necessarily fatal. This can happen if, for
-                    // example, a command is escalated from one follower, approved by the second, but where the first follower dies
-                    // before the second's approval is received by the leader. In this case the leader will drop the command
-                    // when the initiating peer is lost, and thus won't have an outstanding transaction (or will be processing
-                    // a new transaction) when the old, outdated approval is received. Furthermore, in this case we will have
-                    // already sent a ROLLBACK, so it will already correct itself. If not, then we'll wait for the follower to
-                    // determine it's screwed and reconnect.
-                    SWARN("Received " << message.methodLine << " for transaction #"
-                          << message.calc("NewCount") << " (" << message["NewHash"] << ", " << message["ID"] << ") but '"
-                          << e.what() << "', ignoring.");
-                }
-            }
+        } else if (SIEquals(message.methodLine, "FOLLOWER_STATUS") ||
+                   SIEquals(message.methodLine, "APPROVE_TRANSACTION") ||
+                   SIEquals(message.methodLine, "DENY_TRANSACTION")) {
+            // These all tell the leader how much data a follower has, and nothing else that we act on. The work is
+            // already done: every message carries CommitCount and Hash, and the code above recorded them with
+            // `peer->setCommit()`. These branches exist only so the messages aren't logged as unrecognized.
+            //
+            // FOLLOWER_STATUS is the message meant for this. APPROVE_TRANSACTION and DENY_TRANSACTION are what
+            // followers actually send today, and are still what a follower sends to a leader running older code, so
+            // they're accepted here too. Deliberately no validation: we no longer act on an approval, and throwing
+            // would cost us the peer connection for a message we're about to ignore either way.
         } else if (SIEquals(message.methodLine, "FORKED")) {
             peer->forked = true;
             PINFO("Peer said we're forked, believing them.");
