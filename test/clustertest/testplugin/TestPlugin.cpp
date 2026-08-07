@@ -114,7 +114,8 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "EscalateSerializedData",
         "ThreadException",
         "httpswait",
-        "httpsblockingcommit"
+        "httpsblockingcommit",
+        "reportcommitthread"
     };
     for (auto& cmdName : supportedCommands) {
         if (SStartsWith(baseCommand.request.methodLine, cmdName)) {
@@ -561,6 +562,17 @@ void TestPluginCommand::process(SQLite& db)
             response.methodLine = "200 OK";
         }
 
+        return;
+    } else if (SStartsWith(request.methodLine, "reportcommitthread")) {
+        // A plain write that reports which thread committed it, so a test can check where `-synchronousCommands`
+        // routed it.
+        SQResult result;
+        db.read("SELECT MAX(id) FROM test", result);
+        SASSERT(result.size());
+        int nextID = SToInt(result[0][0]) + 1;
+        SASSERT(db.write("INSERT INTO TEST VALUES(" + SQ(nextID) + ", " + SQ(request["value"]) + ");"));
+        response["blockingCommitThread"] = isBlockingCommitThread ? "true" : "false";
+        response.methodLine = "200 OK";
         return;
     } else if (SStartsWith(request.methodLine, "httpsblockingcommit")) {
         // Conflict-generating write (like idcollision) so concurrent copies escalate to the blocking queue. Reaching
