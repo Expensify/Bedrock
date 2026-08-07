@@ -32,6 +32,17 @@
 //
 // FIXME: Add test to measure how long it takes for leader to stabilize.
 //
+// *** REPLICATION MESSAGES ***
+// TRANSACTION:         A complete transaction: the follower applies it and commits it, with no second message needed.
+//                      A leader only ever broadcasts a transaction it has already committed itself, so there is nothing
+//                      it could later ask the follower to take back. Nothing sends this yet -- the receiver ships one
+//                      release ahead of the sender so that leaders can switch to it once every node understands it.
+// BEGIN_TRANSACTION:   Apply a transaction but don't commit it; wait to be told which way it went. The older,
+//                      two-message form of the above, and still what every leader sends today.
+// COMMIT_TRANSACTION:  Commit the transaction a BEGIN_TRANSACTION applied.
+// ROLLBACK_TRANSACTION: Discard the transaction a BEGIN_TRANSACTION applied. Nothing in this version sends it; see
+//                      `_handleRollbackTransaction` for why the receiver is still here.
+//
 // *** DOCUMENTATION OF MESSAGE FIELDS ***
 // Note: Yes, two of these fields start with lowercase chars.
 // CommitCount:      The highest committed transaction ID in the DB currently. This can be higher than any transaction
@@ -214,10 +225,27 @@ void SQLiteNode::_replicate()
         }
 
         // At this point, we're guaranteed to have a message. Process it and then run again.
-        if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
+        if (SIEquals(command.methodLine, "TRANSACTION")) {
+            // A whole transaction in one message: apply it, then commit it, with no window in between where we're
+            // holding a prepared transaction waiting to hear what to do with it. Nothing sends this yet -- it's here so
+            // that leaders can start sending it in a later release, once every node can receive it.
             auto start = chrono::steady_clock::now();
             _handleBeginTransaction(db, peer, command);
-            _handlePrepareTransaction(db, peer, command, dequeueTime);
+            if (!_handlePrepareTransaction(db, peer, command, dequeueTime, true)) {
+                // We can't commit what we couldn't apply, and a follower that can't apply leader's transaction is
+                // broken. `_handlePrepareTransaction` has already rolled back and alerted.
+                STHROW("prepare failed");
+            }
+            int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
+            if (result != SQLITE_OK) {
+                STHROW("commit failed");
+            }
+            auto duration = chrono::steady_clock::now() - start;
+            SINFO("[performance] Replicated transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
+        } else if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
+            auto start = chrono::steady_clock::now();
+            _handleBeginTransaction(db, peer, command);
+            _handlePrepareTransaction(db, peer, command, dequeueTime, false);
             auto duration = chrono::steady_clock::now() - start;
             SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
         } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
@@ -1468,7 +1496,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                 _changeState(SQLiteNodeState::SEARCHING);
                 throw e;
             }
-        } else if (SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
+        } else if (SIEquals(message.methodLine, "TRANSACTION") || SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
             if (_state != SQLiteNodeState::FOLLOWING) {
                 // These messages are only valid while following, but we do not throw if we receive them in other states, as
                 // it's not neccesarily an error. Specifically, as we switch away from FOLLOWING, there may still be a stream
@@ -2127,7 +2155,7 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
     }
 }
 
-void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime)
+bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime, bool isMerged)
 {
     uint64_t prepareStartTime = STimeNow();
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
@@ -2157,11 +2185,18 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
 
     // Permafollowers never respond. Everyone else does, for one of two reasons.
     //
-    // For an "ASYNC_" transaction, which is all a current leader sends, we reply to every tenth one purely so the
-    // leader stays roughly current on our commit count; it doesn't wait for or act on the reply. Without the prefix
-    // we send a real approval, because we're following a leader running older code that does wait for one. Once
-    // every node is past that, this can become an unconditional FOLLOWER_STATUS and the prefix can go away.
-    if (_priority) {
+    // A merged TRANSACTION can only come from a leader new enough to understand FOLLOWER_STATUS, so on that path we
+    // report our commit count with the message meant for it, and never send an approval -- there is nothing left to
+    // approve. Every tenth is enough to keep leader roughly current.
+    if (_priority && isMerged) {
+        uint64_t currentCommitCount = db.getCommitCount();
+        if (currentCommitCount % MIN_APPROVE_FREQUENCY == 0) {
+            SData response("FOLLOWER_STATUS");
+            if (_leadPeer) {
+                _sendToPeer(_leadPeer, response);
+            }
+        }
+    } else if (_priority) {
         string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
         uint64_t currentCommitCount = db.getCommitCount();
         bool isAsync = SStartsWith(message["ID"], "ASYNC_");
@@ -2194,7 +2229,8 @@ void SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
     float transitTimeMS = (float) transitTimeUS / 1000.0;
     float applyTimeMS = (float) applyTimeUS / 1000.0;
     PINFO("[performance] Replicated transaction " << message.calcU64("NewCount") << ", sent by leader at " << leaderSentTimestamp
-          << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms, should COMMIT next.");
+          << ", transit/dequeue time: " << transitTimeMS << "ms, applied in: " << applyTimeMS << "ms.");
+    return success;
 }
 
 int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash)
@@ -2242,6 +2278,12 @@ void SQLiteNode::_handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const 
 {
     // ROLLBACK_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
     // outstanding transaction should be rolled back. This completes a given distributed transaction.
+    //
+    // Nothing in this version sends this: a leader only broadcasts a transaction once it has committed it, so there's
+    // never anything to retract. It's retained because an un-upgraded leader still sends it, and dropping the handler
+    // would be worse than useless -- the message would fall through to `_replicate`'s unrecognized-command warning,
+    // the prepared transaction would stay open, and the next BEGIN_TRANSACTION would throw "already in a transaction"
+    // out of a thread with no catch, killing the process. Delete this once no leader can send it.
     if (!message.isSet("ID")) {
         STHROW("missing ID");
     }
