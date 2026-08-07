@@ -60,8 +60,6 @@
 // Response:         Sent in STANDUP_RESPONSE, either "approve" or "deny".
 // NumCommits:       With a "SYNCHRONIZE_RESPONSE" message, indicates the number of commits returned.
 // leaderSendTime:   Timestamp in microseconds that leader sent a message, for performance analysis.
-// dbCountAtStart:   The highest committed transaction in the DB at the start of this transaction on leader, for
-//                   optimizing replication.
 
 #undef SLOGPREFIX
 #define SLOGPREFIX "{" << _name << "/" << SQLiteNode::stateName(_state) << "} "
@@ -375,8 +373,7 @@ bool SQLiteNode::commitInProgress() const
 {
     // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
     // private methods.
-    CommitState commitState = _commitState.load();
-    return commitState == CommitState::WAITING || commitState == CommitState::COMMITTING;
+    return _commitState.load() == CommitState::WAITING;
 }
 
 bool SQLiteNode::commitSucceeded() const
@@ -386,7 +383,7 @@ bool SQLiteNode::commitSucceeded() const
     return _commitState == CommitState::SUCCESS;
 }
 
-void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs)
+void SQLiteNode::_sendOutstandingTransactions()
 {
     auto transactions = _db.popCommittedTransactions();
     if (transactions.empty()) {
@@ -402,27 +399,21 @@ void SQLiteNode::_sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs
         }
         string& query = get<0>(i.second);
         string& hash = get<1>(i.second);
-        uint64_t dbCountAtStart = get<2>(i.second);
-        string idHeader = to_string(id);
+        // Every transaction we send has already committed here, so BEGIN and COMMIT go out together. The "ASYNC_"
+        // prefix tells followers not to bother approving it, which is load-bearing: a follower sends a full
+        // APPROVE_TRANSACTION for any ID without it.
+        string idHeader = "ASYNC_" + to_string(id);
+        SData transaction("BEGIN_TRANSACTION");
+        transaction["NewCount"] = to_string(id);
+        transaction["NewHash"] = hash;
+        transaction["leaderSendTime"] = sendTime;
+        transaction["ID"] = idHeader;
+        transaction.content = query;
 
-        // If this is marked as "commitOnly", we won't send the BEGIN for it.
-        if (commitOnlyIDs.find(id) == commitOnlyIDs.end()) {
-            // Any commit where we can send a BEGIN and a COMMIT without waiting for acknowledgement is ASYNC.
-            idHeader = "ASYNC_" + idHeader;
-            SData transaction("BEGIN_TRANSACTION");
-            transaction["NewCount"] = to_string(id);
-            transaction["NewHash"] = hash;
-            transaction["leaderSendTime"] = sendTime;
-            transaction["dbCountAtStart"] = to_string(dbCountAtStart);
-            transaction["ID"] = idHeader;
-            transaction.content = query;
+        // Allows us to easily figure out how far behind followers are by analyzing the logs.
+        SINFO("Sending COMMIT for ASYNC transaction " << id << " to followers");
+        _sendToAllPeers(transaction, true); // subscribed only
 
-            // Allows us to easily figure out how far behind followers are by analyzing the logs.
-            SINFO("Sending COMMIT for ASYNC transaction " << id << " to followers");
-            _sendToAllPeers(transaction, true); // subscribed only
-        } else {
-            SINFO("Sending COMMIT for in-flight transaction " << id << " to followers");
-        }
         SData commit("COMMIT_TRANSACTION");
         commit["ID"] = idHeader;
         commit["NewCount"] = to_string(id);
@@ -855,18 +846,15 @@ bool SQLiteNode::update()
         ///     concluded in the STANDINGDOWN) state.  The logic for this state
         ///     is as follows:
         ///
-        ///         if( we're processing a transaction )
-        ///             commit this transaction to the local DB
-        ///             broadcast COMMIT_TRANSACTION to all subscribed followers
-        ///             send a STATE to show we've committed a new transaction
+        ///         if( a transaction is waiting )
+        ///             commit it to the local DB
+        ///             if( that succeeded )
+        ///                broadcast BEGIN_TRANSACTION and COMMIT_TRANSACTION to subscribed followers
         ///             notify the caller that the command is complete
         ///         if( we're LEADING and not processing a command )
         ///             if( there is another LEADER )         goto STANDINGDOWN
         ///             if( there is a higher priority peer ) goto STANDINGDOWN
-        ///             if( a command is queued )
-        ///                 if( processing the command affects the database )
-        ///                    broadcast BEGIN_TRANSACTION to subscribed followers
-        ///         if( we're standing down and all followers have unsubscribed )
+        ///         if( we're standing down )
         ///             goto SEARCHING
         ///
         case SQLiteNodeState::LEADING:
@@ -885,28 +873,36 @@ bool SQLiteNode::update()
                 _sendOutstandingTransactions();
             }
 
-            // This means we've started a distributed transaction, so let's finish it. We can do this even after we've
-            // begun standing down.
-            if (_commitState == CommitState::COMMITTING) {
-                SDEBUG("Committing current transaction: " << _db.getUncommittedQuery());
+            // If there's a transaction that's waiting, we'll start it. We do this *before* we check to see if we should
+            // stand down, and since we return true, we'll never stand down as long as we keep adding new transactions
+            // here. It's up to the server to stop giving us transactions to process if it wants us to stand down.
+            if (_commitState == CommitState::WAITING) {
+                SINFO("[performance] Beginning commit.");
+
+                // We should already have locked the DB before getting here, we can safely clear out any outstanding
+                // transactions, no new ones can be added until we release the lock.
+                _sendOutstandingTransactions();
+
+                // There's no handling for a failed prepare. This should only happen if the DB has been corrupted or
+                // something catastrophic like that.
+                {
+                    AutoScopeOnPrepare onPrepare(onPrepareHandlerEnabled, _db, onPrepareHandler);
+                    SASSERT(_db.prepare());
+                }
+
+                SINFO("committing distributed transaction for commit #" << _db.getCommitCount() + 1 << " ("
+                      << _db.getUncommittedHash() << ")");
                 uint64_t beforeCommit = STimeNow();
                 // Only other intersting place we commit and would care about node state.
                 int result = _db.commit(stateName(_state));
                 SINFO("SQLite::commit in SQLiteNode took " << ((STimeNow() - beforeCommit) / 1000) << "ms.");
 
-                // If this is the case, there was a commit conflict.
                 if (result == SQLITE_BUSY_SNAPSHOT) {
-                    // We already sent everyone a BEGIN for this, so we'll have to tell them to roll back.
+                    // We hadn't told anyone about this transaction yet, so there's nothing to take back.
                     SINFO("[performance] Conflict committing, rolling back.");
-                    SData rollback("ROLLBACK_TRANSACTION");
-                    rollback.set("ID", _lastSentTransactionID + 1);
-                    _sendToAllPeers(rollback, true); // true: Only to subscribed peers.
                     _db.rollback();
-
-                    // Finished, but failed.
                     _commitState = CommitState::FAILED;
                 } else {
-                    // Hey, our commit succeeded! Record how long it took.
                     _db.logLastTransactionTiming(
                     format(
                         "Committed leader transaction for '{} ({}). {} peers.",
@@ -916,58 +912,19 @@ bool SQLiteNode::update()
                         ),
                     "SQLiteNode::update"
                     );
-                    SINFO("[performance] Successfully committed transaction. Sending COMMIT_TRANSACTION to peers.");
+                    SINFO("[performance] Successfully committed transaction. Sending it to peers.");
 
-                    // Send our outstanding transactions. Note that this particular transaction will send a COMMIT
-                    // only, although if any other transactions have completed since we released a commit lock, we will
-                    // send those ass well.
-                    _sendOutstandingTransactions({_lastSentTransactionID + 1});
+                    // Ship it. This sends a BEGIN_TRANSACTION and a COMMIT_TRANSACTION back to back, the same as it
+                    // does for any transaction a worker thread committed, and will pick up any others that finished
+                    // while we held the commit lock.
+                    uint64_t beforeSend = STimeNow();
+                    _sendOutstandingTransactions();
+                    SINFO("[performance] SQLite::_sendToAllPeers in SQLiteNode took " << ((STimeNow() - beforeSend) / 1000) << "ms.");
 
-                    // Done!
                     _commitState = CommitState::SUCCESS;
                 }
-            }
 
-            // If there's a transaction that's waiting, we'll start it. We do this *before* we check to see if we should
-            // stand down, and since we return true, we'll never stand down as long as we keep adding new transactions
-            // here. It's up to the server to stop giving us transactions to process if it wants us to stand down.
-            if (_commitState == CommitState::WAITING) {
-                _commitState = CommitState::COMMITTING;
-                SINFO("[performance] Beginning commit.");
-
-                // We should already have locked the DB before getting here, we can safely clear out any outstanding
-                // transactions, no new ones can be added until we release the lock.
-                _sendOutstandingTransactions();
-
-                // We'll send the commit count to peers.
-                uint64_t commitCount = _db.getCommitCount();
-
-                // There's no handling for a failed prepare. This should only happen if the DB has been corrupted or
-                // something catastrophic like that.
-                {
-                    AutoScopeOnPrepare onPrepare(onPrepareHandlerEnabled, _db, onPrepareHandler);
-                    SASSERT(_db.prepare());
-                }
-
-                // Begin the distributed transaction
-                SData transaction("BEGIN_TRANSACTION");
-                SINFO("beginning distributed transaction for commit #" << commitCount + 1 << " ("
-                      << _db.getUncommittedHash() << ")");
-                transaction.set("NewCount", commitCount + 1);
-                transaction.set("NewHash", _db.getUncommittedHash());
-                transaction.set("leaderSendTime", to_string(STimeNow()));
-                transaction.set("dbCountAtStart", to_string(_db.getDBCountAtStart()));
-                // The "ASYNC_" prefix tells followers not to bother approving this transaction. It's load-bearing: a
-                // follower sends a full APPROVE_TRANSACTION for any ID without it.
-                transaction.set("ID", "ASYNC_" + to_string(_lastSentTransactionID + 1));
-                transaction.content = _db.getUncommittedQuery();
-
-                // And send it to everyone who's subscribed.
-                uint64_t beforeSend = STimeNow();
-                _sendToAllPeers(transaction, true);
-                SINFO("[performance] SQLite::_sendToAllPeers in SQLiteNode took " << ((STimeNow() - beforeSend) / 1000) << "ms.");
-
-                // We return `true` here to immediately re-update and thus commit this transaction.
+                // We return `true` here so the caller re-updates immediately rather than going back to the network.
                 return true;
             }
 

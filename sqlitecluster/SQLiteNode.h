@@ -69,7 +69,6 @@ public:
     {
         UNINITIALIZED,
         WAITING,
-        COMMITTING,
         SUCCESS,
         FAILED
     };
@@ -248,7 +247,7 @@ private:
     void _replicate();
 
     // Replicates any transactions that have been made on our database by other threads to peers.
-    void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
+    void _sendOutstandingTransactions();
     void _sendStandupResponse(SQLitePeer* peer, const SData& message);
     void _sendPING(SQLitePeer* peer);
     void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
