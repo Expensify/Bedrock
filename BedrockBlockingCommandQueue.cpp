@@ -94,10 +94,10 @@ STable BedrockBlockingCommandQueue::getState()
     inspect(_commandStates, trackedCommands, blockedCommands);
 
     STable content;
-    content["blockingTimeWindowMs"] = to_string(_windowUS.load() / 1000);
-    content["blockingAccountThresholdMs"] = to_string(_accountThresholdUS.load() / 1000);
-    content["blockingCommandThresholdMs"] = to_string(_commandThresholdUS.load() / 1000);
-    content["blockingBlockDurationMs"] = to_string(_blockDurationUS.load() / 1000);
+    content["blockingTimeWindowMS"] = to_string(_windowUS.load() / 1000);
+    content["blockingAccountThresholdMS"] = to_string(_accountThresholdUS.load() / 1000);
+    content["blockingCommandThresholdMS"] = to_string(_commandThresholdUS.load() / 1000);
+    content["blockingBlockDurationMS"] = to_string(_blockDurationUS.load() / 1000);
     content["blockingTrackedAccounts"] = to_string(trackedAccounts);
     content["blockingBlockedAccounts"] = SComposeList(blockedAccounts);
     content["blockingTrackedCommands"] = to_string(trackedCommands);
@@ -176,20 +176,18 @@ void BedrockBlockingCommandQueue::_recordAndCheck(StateMap& map, const string& k
 
     const uint64_t windowUS = _windowUS.load();
 
-    // Drop samples that finished before the window. They're ordered oldest-first, so expired ones are a
-    // contiguous prefix. Guard the subtraction so a future-dated sample (clock skew) can't underflow.
-    while (!state->commands.empty() && now > state->commands.front().finishTime && now - state->commands.front().finishTime >= windowUS) {
-        state->commands.pop_front();
-    }
-
-    // Sum the time spent in the window, crediting each sample only for the part that lies inside it.
+    // Drop samples that finished before the window and sum the rest in a single pass, crediting each remaining
+    // sample only for the part that lies inside the window. Samples are ordered oldest-first, so expired ones are
+    // a contiguous prefix at the front. Guard the subtraction so a future-dated sample (clock skew) can't underflow.
     uint64_t total = 0;
-    for (const auto& command : state->commands) {
-        const uint64_t age = now > command.finishTime ? now - command.finishTime : 0;
+    for (auto it = state->commands.begin(); it != state->commands.end();) {
+        const uint64_t age = now > it->finishTime ? now - it->finishTime : 0;
         if (age >= windowUS) {
+            it = state->commands.erase(it);
             continue;
         }
-        total += min(command.elapsedTime, windowUS - age);
+        total += min(it->elapsedTime, windowUS - age);
+        ++it;
     }
 
     if (total > thresholdUS) {
@@ -200,6 +198,14 @@ void BedrockBlockingCommandQueue::_recordAndCheck(StateMap& map, const string& k
             {"timeMS", to_string(total / 1000)},
             {"thresholdMS", to_string(thresholdUS / 1000)},
             {"blockDurationMS", to_string(_blockDurationUS.load() / 1000)}
+        });
+    } else if (total > LOG_THRESHOLD_US) {
+        // Log-only monitoring: the identifier is heavy but still under its block threshold.
+        SINFO("Blocking queue rate limit (time), logging", {
+            {"dimension", dimension},
+            {"identifier", key},
+            {"timeMS", to_string(total / 1000)},
+            {"thresholdMS", to_string(LOG_THRESHOLD_US / 1000)}
         });
     }
 }

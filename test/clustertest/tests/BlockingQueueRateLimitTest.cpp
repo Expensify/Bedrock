@@ -50,18 +50,18 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
 
         // Set the window and thresholds and verify they show up in Status.
         SData setLimits("SetBlockingQueueTimeRateLimit");
-        setLimits["WindowMs"] = "180000";
-        setLimits["AccountThresholdMs"] = "20000";
-        setLimits["CommandThresholdMs"] = "40000";
-        setLimits["BlockDurationMs"] = "60000";
+        setLimits["WindowMS"] = "180000";
+        setLimits["AccountThresholdMS"] = "20000";
+        setLimits["CommandThresholdMS"] = "40000";
+        setLimits["BlockDurationMS"] = "60000";
         leader.executeWaitVerifyContent(setLimits, "200", true);
 
         SData status("Status");
         STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingTimeWindowMs"], "180000");
-        ASSERT_EQUAL(json["blockingAccountThresholdMs"], "20000");
-        ASSERT_EQUAL(json["blockingCommandThresholdMs"], "40000");
-        ASSERT_EQUAL(json["blockingBlockDurationMs"], "60000");
+        ASSERT_EQUAL(json["blockingTimeWindowMS"], "180000");
+        ASSERT_EQUAL(json["blockingAccountThresholdMS"], "20000");
+        ASSERT_EQUAL(json["blockingCommandThresholdMS"], "40000");
+        ASSERT_EQUAL(json["blockingBlockDurationMS"], "60000");
     }
 
     void testTimeRateLimiting()
@@ -71,10 +71,10 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         // Small account threshold so a burst of conflicting commands trips it. The command dimension is
         // disabled so this isolates the account dimension.
         SData setLimits("SetBlockingQueueTimeRateLimit");
-        setLimits["WindowMs"] = "180000";
-        setLimits["AccountThresholdMs"] = "10";
-        setLimits["CommandThresholdMs"] = "0";
-        setLimits["BlockDurationMs"] = "60000";
+        setLimits["WindowMS"] = "180000";
+        setLimits["AccountThresholdMS"] = "10";
+        setLimits["CommandThresholdMS"] = "0";
+        setLimits["BlockDurationMS"] = "60000";
         leader.executeWaitVerifyContent(setLimits, "200", true);
 
         // Force conflicts so commands escalate to the blocking queue and run on worker 0, which is what
@@ -85,7 +85,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
 
         SData status("Status");
         STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingAccountThresholdMs"], "10");
+        ASSERT_EQUAL(json["blockingAccountThresholdMS"], "10");
 
         atomic<int> count503(0);
         atomic<int> count200(0);
@@ -137,7 +137,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         leader.executeWaitVerifyContent(resetConflict, "200", true);
 
         SData resetLimit("SetBlockingQueueTimeRateLimit");
-        resetLimit["AccountThresholdMs"] = "0";
+        resetLimit["AccountThresholdMS"] = "0";
         leader.executeWaitVerifyContent(resetLimit, "200", true);
     }
 } __BlockingQueueRateLimitTest;

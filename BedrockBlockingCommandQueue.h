@@ -98,6 +98,10 @@ private:
     // push and dequeue hot paths stay cheap (dequeue runs under the base `_queueMutex`).
     static bool _isBlocked(StateMap& map, const string& key, uint64_t now);
 
+    // Log (without blocking) when an identifier's windowed time crosses this, for monitoring heavy identifiers
+    // that are still under their block threshold.
+    static constexpr uint64_t LOG_THRESHOLD_US = 10'000'000; // 10 seconds
+
     StateMap _accountStates;
     StateMap _commandStates;
 
