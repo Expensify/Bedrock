@@ -325,6 +325,11 @@ SQLiteNodeState SQLiteNode::getState() const
     return _state;
 }
 
+int SQLiteNode::getStateChangeCount() const
+{
+    return _stateChangeCount;
+}
+
 int SQLiteNode::getPriority() const
 {
     // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in

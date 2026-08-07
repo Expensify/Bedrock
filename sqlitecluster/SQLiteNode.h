@@ -144,6 +144,10 @@ public:
     // Does not block.
     SQLiteNodeState getState() const;
 
+    // Returns the number of times this node has changed states since it started.
+    // Does not block.
+    int getStateChangeCount() const;
+
     // Returns true if we're LEADING with enough FOLLOWERs to commit a quorum transaction.
     // Can block.
     bool hasQuorum() const;
@@ -390,7 +394,7 @@ private:
     // This is an integer that increments every time we change states. This is useful for responses to state changes
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,
     // and not stale responses to old changes.
-    int _stateChangeCount;
+    atomic<int> _stateChangeCount;
 
     // This is the mutex we lock any time we change any internal state variables.
     mutable shared_mutex _stateMutex;
