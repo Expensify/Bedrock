@@ -74,15 +74,6 @@ public:
         FAILED
     };
 
-    // Write consistencies available
-    enum ConsistencyLevel
-    {
-        ASYNC,  // Fully asynchronous write, no follower approval required.
-        ONE,    // Require exactly one approval (likely from a peer on the same LAN)
-        QUORUM, // Require majority approval
-        NUM_CONSISTENCY_LEVELS
-    };
-
     // This is a globally accessible pointer to some node instance. The intention here is to let signal handling code attempt to kill outstanding
     // peer connections on this node before shutting down. Generally, there is only a single node instance per application, and this will
     // refer to that node, there may be exceptions in cases like test harnesses.
@@ -105,8 +96,7 @@ public:
     // Return the string representing an SQLiteNode State
     static const string& stateName(SQLiteNodeState state);
 
-    // True from when we call 'startCommit' until the commit has been sent to (and, if it required replication,
-    // acknowledged by) peers.
+    // True from when we call 'startCommit' until the commit has been sent to peers.
     // Does not block.
     bool commitInProgress() const;
 
@@ -183,7 +173,7 @@ public:
 
     // Begins the process of committing a transaction on this SQLiteNode's database. When this returns,
     // commitInProgress() will return true until the commit completes.
-    void startCommit(ConsistencyLevel consistency);
+    void startCommit();
 
     // Updates the internal state machine. Returns true if it wants immediate re-updating. Returns false to indicate it
     // would be a good idea for the caller to read any new commands or traffic from the network.
@@ -219,10 +209,6 @@ public:
 private:
         CounterType& _counter;
     };
-
-    // The names of each of the consistency levels defined in `ConsistencyLevel` as strings. This is only actually used
-    // for logging.
-    static const string CONSISTENCY_LEVEL_NAMES[NUM_CONSISTENCY_LEVELS];
 
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
 
@@ -324,10 +310,6 @@ private:
     // These are sockets that have been accepted on the node port but have not yet been associated with a peer (because
     // they need to send a LOGIN message with their name first).
     set<Socket*> _unauthenticatedIncomingSockets;
-
-    // The write consistency requested for the current in-progress commit.
-    // Remove. See: https://github.com/Expensify/Expensify/issues/208443
-    ConsistencyLevel _commitConsistency;
 
     // This is the current CommitState we're in with regard to committing a transaction. It is `UNINITIALIZED` from
     // startup until a transaction is started.

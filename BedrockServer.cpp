@@ -377,7 +377,7 @@ void BedrockServer::sync()
             }
             if (dbHasChanges) {
                 commitInProgress = true;
-                _syncNode->startCommit(SQLiteNode::QUORUM);
+                _syncNode->startCommit();
 
                 // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
                 _notifyDoneSync.push(true);
@@ -555,7 +555,7 @@ void BedrockServer::sync()
                         SINFO("[performance] Sync thread beginning committing command " << command->request.methodLine);
                         // START TIMING.
                         command->startTiming(BedrockCommand::COMMIT_SYNC);
-                        _syncNode->startCommit(command->writeConsistency);
+                        _syncNode->startCommit();
 
                         // And we'll start the next main loop.
                         // NOTE: This will cause us to read from the network again. This, in theory, is fine, but we saw

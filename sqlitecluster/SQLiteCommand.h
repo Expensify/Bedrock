@@ -38,9 +38,6 @@ public:
     // Final response
     SData response;
 
-    // Write consistency required when committing this command.
-    SQLiteNode::ConsistencyLevel writeConsistency;
-
     // Whether this command has been completed.
     bool complete;
 

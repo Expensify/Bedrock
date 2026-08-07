@@ -68,10 +68,6 @@ atomic<bool> SQLiteNode::NODE_KILLED{false};
 // Initializations for static vars.
 const uint64_t SQLiteNode::RECV_TIMEOUT{STIME_US_PER_S* 30};
 
-const string SQLiteNode::CONSISTENCY_LEVEL_NAMES[] = {"ASYNC",
-                                                      "ONE",
-                                                      "QUORUM"};
-
 const size_t SQLiteNode::MIN_APPROVE_FREQUENCY{10};
 
 const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString)
@@ -235,7 +231,7 @@ void SQLiteNode::_replicate()
     }
 }
 
-void SQLiteNode::startCommit(ConsistencyLevel consistency)
+void SQLiteNode::startCommit()
 {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
 
@@ -245,10 +241,6 @@ void SQLiteNode::startCommit(ConsistencyLevel consistency)
             _commitState == CommitState::SUCCESS ||
             _commitState == CommitState::FAILED);
     _commitState = CommitState::WAITING;
-    _commitConsistency = consistency;
-    if (_commitConsistency != QUORUM) {
-        SHMMM("Non-quorum transaction running in the sync thread.");
-    }
 }
 
 bool SQLiteNode::beginShutdown()
