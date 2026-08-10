@@ -23,11 +23,11 @@ private:
 struct BlockingCommandQueueTest : tpunit::TestFixture
 {
     BlockingCommandQueueTest() : tpunit::TestFixture("BlockingCommandQueue",
-                                                     TEST(BlockingCommandQueueTest::testAccountOverThresholdBlocks),
+                                                     TEST(BlockingCommandQueueTest::testIdentifierOverThresholdBlocks),
                                                      TEST(BlockingCommandQueueTest::testUnderThresholdNotBlocked),
-                                                     TEST(BlockingCommandQueueTest::testAccountsAreIndependent),
-                                                     TEST(BlockingCommandQueueTest::testCommandDimensionIgnoresAccount),
-                                                     TEST(BlockingCommandQueueTest::testEmptyAccountSkipsAccountDimension),
+                                                     TEST(BlockingCommandQueueTest::testIdentifiersAreIndependent),
+                                                     TEST(BlockingCommandQueueTest::testCommandDimensionIgnoresIdentifier),
+                                                     TEST(BlockingCommandQueueTest::testEmptyIdentifierSkipsIdentifierDimension),
                                                      TEST(BlockingCommandQueueTest::testWindowExpiry),
                                                      TEST(BlockingCommandQueueTest::testPartialCredit),
                                                      TEST(BlockingCommandQueueTest::testBlockDurationHoldsThenClears),
@@ -36,11 +36,11 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     {
     }
 
-    void testAccountOverThresholdBlocks()
+    void testIdentifierOverThresholdBlocks()
     {
         TestBlockingCommandQueue queue;
         queue.setWindow(100);
-        queue.setAccountThreshold(50);
+        queue.setIdentifierThreshold(50);
         queue.setCommandThreshold(0);
         queue.setBlockDuration(1000);
         queue.setNow(1000);
@@ -56,7 +56,7 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     {
         TestBlockingCommandQueue queue;
         queue.setWindow(100);
-        queue.setAccountThreshold(50);
+        queue.setIdentifierThreshold(50);
         queue.setCommandThreshold(0);
         queue.setNow(1000);
 
@@ -64,11 +64,11 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
     }
 
-    void testAccountsAreIndependent()
+    void testIdentifiersAreIndependent()
     {
         TestBlockingCommandQueue queue;
         queue.setWindow(100);
-        queue.setAccountThreshold(50);
+        queue.setIdentifierThreshold(50);
         queue.setCommandThreshold(0);
         queue.setNow(1000);
 
@@ -77,12 +77,12 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_FALSE(queue.isBlocked("acct2", "cmd"));
     }
 
-    void testCommandDimensionIgnoresAccount()
+    void testCommandDimensionIgnoresIdentifier()
     {
-        // With the account dimension disabled, a command over its threshold blocks for every account.
+        // With the identifier dimension disabled, a command over its threshold blocks for every identifier.
         TestBlockingCommandQueue queue;
         queue.setWindow(100);
-        queue.setAccountThreshold(0);
+        queue.setIdentifierThreshold(0);
         queue.setCommandThreshold(50);
         queue.setNow(1000);
 
@@ -92,12 +92,12 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_FALSE(queue.isBlocked("acct1", "otherCmd"));
     }
 
-    void testEmptyAccountSkipsAccountDimension()
+    void testEmptyIdentifierSkipsIdentifierDimension()
     {
-        // An empty account is skipped, but the command dimension still applies.
+        // An empty identifier is skipped, but the command dimension still applies.
         TestBlockingCommandQueue queue;
         queue.setWindow(100);
-        queue.setAccountThreshold(50);
+        queue.setIdentifierThreshold(50);
         queue.setCommandThreshold(50);
         queue.setNow(1000);
 
@@ -110,7 +110,7 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         // A sample older than the window no longer counts toward the threshold.
         TestBlockingCommandQueue queue;
         queue.setWindow(100);
-        queue.setAccountThreshold(50);
+        queue.setIdentifierThreshold(50);
         queue.setCommandThreshold(0);
         queue.setBlockDuration(1000);
         queue.setNow(1000);
@@ -131,7 +131,7 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         // A sample counts only for the part that still lies inside the window.
         TestBlockingCommandQueue queue;
         queue.setWindow(100);
-        queue.setAccountThreshold(35);
+        queue.setIdentifierThreshold(35);
         queue.setCommandThreshold(0);
         queue.setBlockDuration(1000);
         queue.setNow(1000);
@@ -151,7 +151,7 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     {
         TestBlockingCommandQueue queue;
         queue.setWindow(100);
-        queue.setAccountThreshold(50);
+        queue.setIdentifierThreshold(50);
         queue.setCommandThreshold(0);
         queue.setBlockDuration(500);
         queue.setNow(1000);
@@ -172,7 +172,7 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     {
         TestBlockingCommandQueue queue;
         queue.setWindow(100);
-        queue.setAccountThreshold(0);
+        queue.setIdentifierThreshold(0);
         queue.setCommandThreshold(0);
         queue.setNow(1000);
 
@@ -184,7 +184,7 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     {
         TestBlockingCommandQueue queue;
         queue.setWindow(100);
-        queue.setAccountThreshold(50);
+        queue.setIdentifierThreshold(50);
         queue.setCommandThreshold(0);
         queue.setBlockDuration(1000);
         queue.setNow(1000);
