@@ -45,7 +45,8 @@ public:
     bool isBlocked(const string& accountID, const string& commandName);
 
 protected:
-    // Called by get() while _queueMutex is held; rejects a dequeued command whose account or command name is blocked.
+    // Dequeues a command and rejects it if its account or command name is rate limited.
+    // Called by `BedrockCommandQueue::get()` with the base `_queueMutex` held. Calling any base method that reacquires `_queueMutex` would deadlock.
     unique_ptr<BedrockCommand> _dequeue() override;
 
     // Current time in microseconds. Virtual so tests can control the clock.

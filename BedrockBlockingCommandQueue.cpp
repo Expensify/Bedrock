@@ -31,10 +31,6 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
     BedrockCommandQueue::push(move(command));
 }
 
-/**
- * Dequeues a command and rejects it if its account or command name is rate limited.
- * Called by `BedrockCommandQueue::get()` with the base `_queueMutex` held. Calling any base method that reacquires `_queueMutex` would deadlock.
- */
 unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
 {
     auto command = BedrockCommandQueue::_dequeue();
@@ -176,17 +172,19 @@ void BedrockBlockingCommandQueue::_recordAndCheck(StateMap& map, const string& k
 
     const uint64_t windowUS = _windowUS.load();
 
-    // Drop samples that finished before the window and sum the rest in a single pass, crediting each remaining
-    // sample only for the part that lies inside the window. Samples are ordered oldest-first, so expired ones are
-    // a contiguous prefix at the front. Guard the subtraction so a future-dated sample (clock skew) can't underflow.
+    // Drop samples that finished before the current window and sum the ones that are still valid.
     uint64_t total = 0;
     for (auto it = state->commands.begin(); it != state->commands.end();) {
-        const uint64_t age = now > it->finishTime ? now - it->finishTime : 0;
-        if (age >= windowUS) {
+        const uint64_t timeSinceFinishedUS = now > it->finishTime ? now - it->finishTime : 0;
+        if (timeSinceFinishedUS >= windowUS) {
             it = state->commands.erase(it);
             continue;
         }
-        total += min(it->elapsedTime, windowUS - age);
+
+        // Doing the line below will allow us to count for partial timings spent in a command. Let's say the window is 100s,
+        // and we had a command that took 50s and finished 80s ago. We should only count 20s of that command, since the other
+        // 30s are outside the window. So the result would be min(50s, 100 - 80) = min(50, 20) = 20s.
+        total += min(it->elapsedTime, windowUS - timeSinceFinishedUS);
         ++it;
     }
 
