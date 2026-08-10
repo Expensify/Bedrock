@@ -2101,32 +2101,32 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
     } else if (SIEquals(command->request.methodLine, "SetConflictPageLocks")) {
         _enableConflictPageLocks = command->request.test("enable");
     } else if (SIEquals(command->request.methodLine, "SetBlockingQueueTimeRateLimit")) {
-        if (command->request.isSet("WindowMS")) {
-            int64_t windowMS = command->request.calc64("WindowMS");
+        if (command->request.isSet("windowMS")) {
+            int64_t windowMS = command->request.calc64("windowMS");
             if (windowMS >= 0) {
                 uint64_t previousUS = _blockingCommandQueue.setWindow(static_cast<uint64_t>(windowMS) * 1000);
                 response["previousBlockingQueueWindowMS"] = to_string(previousUS / 1000);
                 SINFO("Setting blocking queue rate limit window to " << windowMS << "ms");
             }
         }
-        if (command->request.isSet("AccountThresholdMS")) {
-            int64_t thresholdMS = command->request.calc64("AccountThresholdMS");
+        if (command->request.isSet("identifierThresholdMS")) {
+            int64_t thresholdMS = command->request.calc64("identifierThresholdMS");
             if (thresholdMS >= 0) {
-                uint64_t previousUS = _blockingCommandQueue.setAccountThreshold(static_cast<uint64_t>(thresholdMS) * 1000);
-                response["previousBlockingQueueAccountThresholdMS"] = to_string(previousUS / 1000);
-                SINFO("Setting blocking queue account threshold to " << thresholdMS << "ms");
+                uint64_t previousUS = _blockingCommandQueue.setIdentifierThreshold(static_cast<uint64_t>(thresholdMS) * 1000);
+                response["previousBlockingQueueIdentifierThresholdMS"] = to_string(previousUS / 1000);
+                SINFO("Setting blocking queue identifier threshold to " << thresholdMS << "ms");
             }
         }
-        if (command->request.isSet("CommandThresholdMS")) {
-            int64_t thresholdMS = command->request.calc64("CommandThresholdMS");
+        if (command->request.isSet("commandThresholdMS")) {
+            int64_t thresholdMS = command->request.calc64("commandThresholdMS");
             if (thresholdMS >= 0) {
                 uint64_t previousUS = _blockingCommandQueue.setCommandThreshold(static_cast<uint64_t>(thresholdMS) * 1000);
                 response["previousBlockingQueueCommandThresholdMS"] = to_string(previousUS / 1000);
                 SINFO("Setting blocking queue command threshold to " << thresholdMS << "ms");
             }
         }
-        if (command->request.isSet("BlockDurationMS")) {
-            int64_t durationMS = command->request.calc64("BlockDurationMS");
+        if (command->request.isSet("blockDurationMS")) {
+            int64_t durationMS = command->request.calc64("blockDurationMS");
             if (durationMS >= 0) {
                 uint64_t previousUS = _blockingCommandQueue.setBlockDuration(static_cast<uint64_t>(durationMS) * 1000);
                 response["previousBlockingQueueBlockDurationMS"] = to_string(previousUS / 1000);

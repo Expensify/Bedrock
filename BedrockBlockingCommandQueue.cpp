@@ -106,7 +106,7 @@ uint64_t BedrockBlockingCommandQueue::setWindow(const uint64_t windowUS)
     return _windowUS.exchange(windowUS);
 }
 
-uint64_t BedrockBlockingCommandQueue::setAccountThreshold(const uint64_t thresholdUS)
+uint64_t BedrockBlockingCommandQueue::setIdentifierThreshold(const uint64_t thresholdUS)
 {
     return _identifierThresholdUS.exchange(thresholdUS);
 }
