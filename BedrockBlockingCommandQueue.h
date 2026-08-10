@@ -15,7 +15,7 @@ public:
     static void startTiming(unique_ptr<BedrockCommand>& command);
     static void stopTiming(unique_ptr<BedrockCommand>& command);
 
-    // Rejects a command before enqueuing if its account or command name is rate limited. Overrides
+    // Reject a command before enqueuing if its identifier or command name is rate limited. Overrides
     // BedrockCommandQueue::push(). Throws SException("503 ...") when blocked; the caller catches and replies.
     void push(unique_ptr<BedrockCommand>&& command) override;
 
@@ -30,22 +30,22 @@ public:
 
     // Configure the sliding window and thresholds, all in microseconds. A threshold of 0 disables that
     // dimension. Each setter returns the previous value.
-    uint64_t setWindow(uint64_t windowUS);
-    uint64_t setAccountThreshold(uint64_t thresholdUS);
-    uint64_t setCommandThreshold(uint64_t thresholdUS);
-    uint64_t setBlockDuration(uint64_t durationUS);
+    uint64_t setWindow(const uint64_t windowUS);
+    uint64_t setIdentifierThreshold(const uint64_t thresholdUS);
+    uint64_t setCommandThreshold(const uint64_t thresholdUS);
+    uint64_t setBlockDuration(const uint64_t durationUS);
 
-    // Record that a command finished on the blocking queue after `elapsedUS` of worker-0 time. Records the
-    // sample against the account (when `accountID` is non-empty) and against the command name.
-    void recordExecutionTime(const string& accountID, const string& commandName, uint64_t elapsedUS);
+    // Record that a command finished on the blocking queue after `elapsedUS` of blocking time. Records the
+    // sample against the identifier (when `identifier` is non-empty) and against the command name.
+    void recordExecutionTime(const string& identifier, const string& commandName, uint64_t elapsedUS);
 
-    // True if `accountID` or `commandName` is over its blocking-queue time limit within the window, or is
+    // True if `identifier` or `commandName` is over its blocking-queue time limit within the window, or is
     // still inside an active block. When a dimension newly trips, it is blocked for the block duration.
     // Logs a "Blocking queue rate limit" line when a dimension blocks.
-    bool isBlocked(const string& accountID, const string& commandName);
+    bool isBlocked(const string& identifier, const string& commandName);
 
 protected:
-    // Dequeues a command and rejects it if its account or command name is rate limited.
+    // Dequeues a command and rejects it if its identifier or command name is rate limited.
     // Called by `BedrockCommandQueue::get()` with the base `_queueMutex` held. Calling any base method that reacquires `_queueMutex` would deadlock.
     unique_ptr<BedrockCommand> _dequeue() override;
 
@@ -63,8 +63,8 @@ private:
     // An identifier's recently finished blocking-queue commands, oldest first.
     typedef deque<RecentlyFinishedCommand> RecentlyFinishedCommandList;
 
-    // Rate-limit state for one identifier (an account or a command name). Each entry has its own mutex, so
-    // different identifiers each have their own lock. `blockedUntil` is the time (microseconds) an active
+    // Rate-limit state for one identifier (an identifier or a command name). Each entry has its own mutex, so
+    // different identifiers never contend on one lock. `blockedUntil` is the time (microseconds) an active
     // block ends; 0 means not blocked.
     struct IdentifierState
     {
@@ -73,7 +73,7 @@ private:
         uint64_t blockedUntil = 0;
     };
 
-    // A map of identifier -> state plus the mutex guarding the map. Used once for accounts and once for
+    // A map of identifier -> state plus the mutex guarding the map. Used once for identifiers and once for
     // command names. `mapMutex` guards only the map: hold it just long enough to find or insert an entry and
     // copy its shared_ptr, then release it and lock the entry's own `m` to do the work. The shared_ptr keeps
     // the entry alive if another thread erases it from the map between the two locks.
@@ -103,11 +103,11 @@ private:
     // that are still under their block threshold.
     static constexpr uint64_t LOG_THRESHOLD_US = 10'000'000; // 10 seconds
 
-    StateMap _accountStates;
+    StateMap _identifierStates;
     StateMap _commandStates;
 
     atomic<uint64_t> _windowUS{180'000'000};          // 180 seconds
-    atomic<uint64_t> _accountThresholdUS{20'000'000}; // 20 seconds
+    atomic<uint64_t> _identifierThresholdUS{20'000'000}; // 20 seconds
     atomic<uint64_t> _commandThresholdUS{40'000'000}; // 40 seconds
     atomic<uint64_t> _blockDurationUS{60'000'000};    // 60 seconds
 };

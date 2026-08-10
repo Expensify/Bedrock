@@ -54,9 +54,9 @@ size_t BedrockBlockingCommandQueue::clearRateLimits()
 {
     size_t size = 0;
     {
-        lock_guard<decltype(_accountStates.mapMutex)> lock(_accountStates.mapMutex);
-        size += _accountStates.states.size();
-        _accountStates.states.clear();
+        lock_guard<decltype(_identifierStates.mapMutex)> lock(_identifierStates.mapMutex);
+        size += _identifierStates.states.size();
+        _identifierStates.states.clear();
     }
     {
         lock_guard<decltype(_commandStates.mapMutex)> lock(_commandStates.mapMutex);
@@ -84,56 +84,56 @@ STable BedrockBlockingCommandQueue::getState()
         }
     };
 
-    size_t trackedAccounts = 0, trackedCommands = 0;
-    list<string> blockedAccounts, blockedCommands;
-    inspect(_accountStates, trackedAccounts, blockedAccounts);
+    size_t trackedIdentifiers = 0, trackedCommands = 0;
+    list<string> blockedIdentifiers, blockedCommands;
+    inspect(_identifierStates, trackedIdentifiers, blockedIdentifiers);
     inspect(_commandStates, trackedCommands, blockedCommands);
 
     STable content;
     content["blockingTimeWindowMS"] = to_string(_windowUS.load() / 1000);
-    content["blockingAccountThresholdMS"] = to_string(_accountThresholdUS.load() / 1000);
+    content["blockingIdentifierThresholdMS"] = to_string(_identifierThresholdUS.load() / 1000);
     content["blockingCommandThresholdMS"] = to_string(_commandThresholdUS.load() / 1000);
     content["blockingBlockDurationMS"] = to_string(_blockDurationUS.load() / 1000);
-    content["blockingTrackedAccounts"] = to_string(trackedAccounts);
-    content["blockingBlockedAccounts"] = SComposeList(blockedAccounts);
+    content["blockingTrackedIdentifiers"] = to_string(trackedIdentifiers);
+    content["blockingBlockedIdentifiers"] = SComposeList(blockedIdentifiers);
     content["blockingTrackedCommands"] = to_string(trackedCommands);
     content["blockingBlockedCommands"] = SComposeList(blockedCommands);
     return content;
 }
 
-uint64_t BedrockBlockingCommandQueue::setWindow(uint64_t windowUS)
+uint64_t BedrockBlockingCommandQueue::setWindow(const uint64_t windowUS)
 {
     return _windowUS.exchange(windowUS);
 }
 
-uint64_t BedrockBlockingCommandQueue::setAccountThreshold(uint64_t thresholdUS)
+uint64_t BedrockBlockingCommandQueue::setAccountThreshold(const uint64_t thresholdUS)
 {
-    return _accountThresholdUS.exchange(thresholdUS);
+    return _identifierThresholdUS.exchange(thresholdUS);
 }
 
-uint64_t BedrockBlockingCommandQueue::setCommandThreshold(uint64_t thresholdUS)
+uint64_t BedrockBlockingCommandQueue::setCommandThreshold(const uint64_t thresholdUS)
 {
     return _commandThresholdUS.exchange(thresholdUS);
 }
 
-uint64_t BedrockBlockingCommandQueue::setBlockDuration(uint64_t durationUS)
+uint64_t BedrockBlockingCommandQueue::setBlockDuration(const uint64_t durationUS)
 {
     return _blockDurationUS.exchange(durationUS);
 }
 
-void BedrockBlockingCommandQueue::recordExecutionTime(const string& accountID, const string& commandName, uint64_t elapsedUS)
+void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, const string& commandName, uint64_t elapsedUS)
 {
     const uint64_t now = _now();
-    _recordAndCheck(_accountStates, accountID, _accountThresholdUS.load(), now, elapsedUS, "account");
+    _recordAndCheck(_identifierStates, identifier, _identifierThresholdUS.load(), now, elapsedUS, "identifier");
     _recordAndCheck(_commandStates, commandName, _commandThresholdUS.load(), now, elapsedUS, "command");
 }
 
-bool BedrockBlockingCommandQueue::isBlocked(const string& accountID, const string& commandName)
+bool BedrockBlockingCommandQueue::isBlocked(const string& identifier, const string& commandName)
 {
     // Hot path: called by push() and by _dequeue() under the base `_queueMutex`. Keep it O(1) by reading only
     // the precomputed block deadline. The windowed time is summed in recordExecutionTime, off the blocking thread.
     const uint64_t now = _now();
-    return _isBlocked(_accountStates, accountID, now) || _isBlocked(_commandStates, commandName, now);
+    return _isBlocked(_identifierStates, identifier, now) || _isBlocked(_commandStates, commandName, now);
 }
 
 shared_ptr<BedrockBlockingCommandQueue::IdentifierState> BedrockBlockingCommandQueue::_getOrCreateState(StateMap& map, const string& key)
