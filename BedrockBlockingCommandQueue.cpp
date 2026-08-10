@@ -27,7 +27,7 @@ void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
         STHROW("503 Blocking queue rate limited (time)");
     }
 
-    // Base class acquires its own (non-recursive) `_queueMutex`.
+    // Base class acquires its own `_queueMutex`.
     BedrockCommandQueue::push(move(command));
 }
 
@@ -192,7 +192,7 @@ void BedrockBlockingCommandQueue::_recordAndCheck(StateMap& map, const string& k
 
     if (total > thresholdUS) {
         state->blockedUntil = now + _blockDurationUS.load();
-        SINFO("Blocking queue rate limit (time), blocking", {
+        SINFO("Blocking queue rate limit reached, blocking", {
             {"dimension", dimension},
             {"identifier", key},
             {"timeMS", to_string(total / 1000)},
@@ -201,7 +201,7 @@ void BedrockBlockingCommandQueue::_recordAndCheck(StateMap& map, const string& k
         });
     } else if (total > LOG_THRESHOLD_US) {
         // Log-only monitoring: the identifier is heavy but still under its block threshold.
-        SINFO("Blocking queue rate limit (time), logging", {
+        SINFO("Blocking queue rate limit above logging threshold", {
             {"dimension", dimension},
             {"identifier", key},
             {"timeMS", to_string(total / 1000)},

@@ -713,7 +713,7 @@ void BedrockServer::worker(int threadId)
             SINFO("Dequeued command " << command->request.methodLine << " (" << command->id << ") in worker, "
                   << commandQueue.size() << " commands in " << (threadId ? "" : "blocking") << " queue.");
 
-            // Capture the account and command name (before the command is moved) so we can attribute worker-0
+            // Capture the account and command name so we can attribute worker-0
             // execution time back to the blocking-queue rate limiter after the command finishes. We time every
             // command run on the blocking thread, recording against its command name (always) and account (when set).
             const string blockingIdentifier = (threadId == 0) ? command->blockingQueueRateLimitIdentifier : "";

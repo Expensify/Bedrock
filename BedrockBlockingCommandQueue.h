@@ -15,14 +15,14 @@ public:
     static void startTiming(unique_ptr<BedrockCommand>& command);
     static void stopTiming(unique_ptr<BedrockCommand>& command);
 
-    // Reject a command before enqueuing if its account or command name is rate limited. Overrides
+    // Rejects a command before enqueuing if its account or command name is rate limited. Overrides
     // BedrockCommandQueue::push(). Throws SException("503 ...") when blocked; the caller catches and replies.
     void push(unique_ptr<BedrockCommand>&& command) override;
 
     // Clear the queue and all rate limiting state.
     void clear();
 
-    // Clear all rate-limit state without emptying the queue. Returns the number of tracked accounts and commands cleared.
+    // Clear all rate-limit states without emptying the queue. Returns the number of tracked accounts and commands cleared.
     size_t clearRateLimits();
 
     // Return a table of rate limiting status info for the Status command.
@@ -52,7 +52,7 @@ protected:
     virtual uint64_t _now() const;
 
 private:
-    // One command an identifier finished on the blocking queue. Both times are in microseconds.
+    // A command that finished on the blocking queue. Both times are in microseconds.
     struct RecentlyFinishedCommand
     {
         uint64_t finishTime = 0;
@@ -63,7 +63,7 @@ private:
     typedef deque<RecentlyFinishedCommand> RecentlyFinishedCommandList;
 
     // Rate-limit state for one identifier (an account or a command name). Each entry has its own mutex, so
-    // different identifiers never contend on one lock. `blockedUntil` is the time (microseconds) an active
+    // different identifiers each have their own lock. `blockedUntil` is the time (microseconds) an active
     // block ends; 0 means not blocked.
     struct IdentifierState
     {
