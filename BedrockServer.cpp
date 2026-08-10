@@ -717,7 +717,7 @@ void BedrockServer::worker(int threadId)
             // execution time back to the blocking-queue rate limiter after the command finishes. We time every
             // command run on the blocking thread, recording against its command name (always) and account (when set).
             const string blockingIdentifier = (threadId == 0) ? command->blockingQueueRateLimitIdentifier : "";
-            const string commandName = command->request.methodLine : "";
+            const string commandName = command->request.methodLine;
             const uint64_t blockingStart = (threadId == 0) ? STimeNow() : 0;
 
             runCommand(move(command), threadId == 0, false);
