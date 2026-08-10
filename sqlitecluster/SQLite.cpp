@@ -1182,8 +1182,8 @@ int SQLite::commit(const string& description, const string& commandName, functio
                 _writeQueryCount,
                 _cacheHits,
                 _journalName,
-                   (_hctree ? format(" HC-Tree pages added: {}", _pageCountDifference) : "")),
-            commandName);
+                   (_hctree ? format(" HC-Tree pages added: {}", _pageCountDifference) : ""))
+        );
         _readQueryCount = 0;
         _writeQueryCount = 0;
         _cacheHits = 0;
@@ -1269,10 +1269,7 @@ void SQLite::rollback(const string& commandName)
         SINFO("Rolling back but not inside transaction, ignoring.");
     }
     _queryCache.clear();
-    logLastTransactionTiming(
-        format("Transaction rollback with {} read queries attempted, {} write queries attempted, {} served from cache.", _readQueryCount, _writeQueryCount, _cacheHits),
-        commandName
-    );
+    logLastTransactionTiming(format("Transaction rollback with {} read queries attempted, {} write queries attempted, {} served from cache.", _readQueryCount, _writeQueryCount, _cacheHits));
     _readQueryCount = 0;
     _writeQueryCount = 0;
     _cacheHits = 0;
@@ -1284,8 +1281,7 @@ void SQLite::logLastTransactionTiming(const string& message, const string& comma
     // We don't want to add `commitLockElapsed` and `totalTransactionElapsed` to the total elapsed time since they overlap with parts of the transaction
     // and that could double-count certain times (i.e. `commitElapsed` occurs simultaneously with `commitLockElapsed`)
     uint64_t totalElapsed = _beginElapsed + _readElapsed + _writeElapsed + _prepareElapsed + _commitElapsed + _rollbackElapsed;
-    SINFO(message, {
-        {"command", commandName},
+    STable params = {
         {"totalElapsed", to_string(totalElapsed / 1000)},
         {"readElapsed", to_string(_readElapsed / 1000)},
         {"writeElapsed", to_string(_writeElapsed / 1000)},
@@ -1295,7 +1291,11 @@ void SQLite::logLastTransactionTiming(const string& message, const string& comma
         {"totalTransactionElapsed", to_string(_totalTransactionElapsed / 1000)},
         {"beginElapsed", to_string(_beginElapsed / 1000)},
         {"commitLockElapsed", to_string(_commitLockElapsed / 1000)},
-    });
+    };
+    if (!commandName.empty()) {
+        params["command"] = commandName;
+    }
+    SINFO(message, params);
 }
 
 bool SQLite::getCommit(uint64_t id, string* query, string* hash)

@@ -230,7 +230,7 @@ public:
     }
 
     // Returns the timing of the last command
-    void logLastTransactionTiming(const string& message, const string& commandName);
+    void logLastTransactionTiming(const string& message, const string& commandName = "");
 
     TRANSACTION_TYPE getLastTransactionType();
 
