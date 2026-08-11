@@ -121,6 +121,7 @@ struct UpdateJobTest : tpunit::TestFixture
         ASSERT_NOT_EQUAL(currentJob[0][2], oldPriority);
         ASSERT_EQUAL(currentJob[0][3], "2020-01-01 00:00:00");
     }
+
     void clearRepeatWithShouldClearRepeat()
     {
         // Create a repeating job
