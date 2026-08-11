@@ -13,6 +13,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture
     }
 
     BedrockClusterTester* tester;
+    list<string> writtenValues;
     string prodBedrockName;
     string prodBedrockPluginName;
     string newTestPlugin;
@@ -92,7 +93,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture
         newTestPlugin = string(cwd) + "/testplugin/testplugin.so";
 
         // Load the whole prod cluster with the prod test plugin.
-        tester = new BedrockClusterTester(prodBedrockPluginName, prodBedrockName);
+        tester = new BedrockClusterTester("db," + prodBedrockPluginName, prodBedrockName);
     }
 
     void teardown()
@@ -118,9 +119,13 @@ struct ClusterUpgradeTest : tpunit::TestFixture
         return SToUInt64(SParseJSONObject(statusResult[0].content)["CommitCount"]);
     }
 
-    // Writes a row from `writeToNode` and then verifies that every running node has it. Checking states and versions
-    // says the cluster looks healthy; this says it's actually replicating. A node that quietly stopped accepting
-    // leader's transactions looks identical to a healthy one until someone compares the data.
+    // Writes a row from `writeToNode` and waits for every running node to reach the resulting commit. Checking
+    // states and versions says the cluster looks healthy; this says it's actually replicating. A node that quietly
+    // stopped applying leader's transactions looks identical to a healthy one until someone checks.
+    //
+    // The rows themselves are checked at the end of the test, by which point every node is on the same version. We
+    // can't check them here: a follower running a different version than leader forwards commands to a node that
+    // matches leader, so a read sent to it during the rolling restart is answered from somebody else's database.
     void verifyReplication(const string& value, int writeToNode, const vector<int>& runningNodes)
     {
         // A write sent to a follower escalates to leader, so this works from any node.
@@ -128,20 +133,17 @@ struct ClusterUpgradeTest : tpunit::TestFixture
         cmd["value"] = value;
         vector<SData> result = tester->getTester(writeToNode).executeWaitMultipleData({cmd});
         ASSERT_EQUAL(result[0].methodLine, "200 OK");
+        writtenValues.push_back(value);
 
-        // Followers replicate asynchronously, so wait for the commit to land everywhere before reading it back. The
-        // highest count in the cluster belongs to the leader, which is the node that just committed.
+        // Followers replicate asynchronously, so wait for each of them to reach the commit we just made. The highest
+        // count in the cluster belongs to the leader, which is the node that just committed. `Status` is answered by
+        // whichever node we ask, even one running a different version, so these counts are each node's own.
         uint64_t leaderCommitCount = 0;
         for (int node : runningNodes) {
             leaderCommitCount = max(leaderCommitCount, getCommitCount(node));
         }
         for (int node : runningNodes) {
             ASSERT_TRUE(tester->getTester(node).waitForStatusTerm("CommitCount", to_string(leaderCommitCount)));
-        }
-
-        // Every node should now find the row in its own copy of the DB.
-        for (int node : runningNodes) {
-            ASSERT_EQUAL(tester->getTester(node).readDB("SELECT COUNT(*) FROM test WHERE value = " + SQ(value) + ";"), "1");
         }
     }
 
@@ -168,7 +170,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture
         // Restart 2 on the new version.
         tester->getTester(2).stopServer();
         tester->getTester(2).serverName = "bedrock";
-        tester->getTester(2).updateArgs({{"-plugins", newTestPlugin}});
+        tester->getTester(2).updateArgs({{"-plugins", "db," + newTestPlugin}});
         tester->getTester(2).startServer();
         ASSERT_TRUE(tester->getTester(2).waitForState("FOLLOWING"));
 
@@ -195,7 +197,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture
 
         // Start up the old leader on the new version.
         tester->getTester(0).serverName = "bedrock";
-        tester->getTester(0).updateArgs({{"-plugins", newTestPlugin}});
+        tester->getTester(0).updateArgs({{"-plugins", "db," + newTestPlugin}});
         tester->getTester(0).startServer();
 
         // We should get the expected cluster state.
@@ -216,7 +218,7 @@ struct ClusterUpgradeTest : tpunit::TestFixture
         // And finally, upgrade the last node.
         tester->getTester(1).stopServer();
         tester->getTester(1).serverName = "bedrock";
-        tester->getTester(1).updateArgs({{"-plugins", newTestPlugin}});
+        tester->getTester(1).updateArgs({{"-plugins", "db," + newTestPlugin}});
         tester->getTester(1).startServer();
         ASSERT_TRUE(tester->getTester(1).waitForState("FOLLOWING"));
 
@@ -228,5 +230,14 @@ struct ClusterUpgradeTest : tpunit::TestFixture
 
         // And that the fully upgraded cluster still replicates.
         verifyReplication("all nodes upgraded", 0, {0, 1, 2});
+
+        // Every node runs the same version now, so a read is answered by the node we send it to rather than being
+        // forwarded to one matching leader. Check that every row written during the rolling restart is on every node,
+        // including the ones committed while node 0 was down and had to be synchronized after it came back.
+        for (const string& value : writtenValues) {
+            for (auto i : {0, 1, 2}) {
+                ASSERT_EQUAL(tester->getTester(i).readDB("SELECT COUNT(*) FROM test WHERE value = " + SQ(value) + ";"), "1");
+            }
+        }
     }
 } __ClusterUpgradeTest;
