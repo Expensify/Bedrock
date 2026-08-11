@@ -343,7 +343,6 @@ private:
     static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
     static constexpr auto STATUS_PING = "Ping";
     static constexpr auto STATUS_STATUS = "Status";
-    static constexpr auto STATUS_BLACKLIST = "SetParallelCommandBlacklist";
 
     // This makes the sync node available to worker threads, so that they can write to it's sockets, and query it for
     // data (such as in the Status command). Because this is a shared pointer, the underlying object can't be deleted
@@ -386,10 +385,6 @@ private:
     // A set of command names that will always be run on the blocking commit thread.
     // Specified by the `-synchronousCommands` command-line switch.
     set<string> _synchronousCommands;
-
-    // This is a list of command names than can be processed and committed in worker threads.
-    static set<string> _blacklistedParallelCommands;
-    static shared_timed_mutex _blacklistedParallelCommandMutex;
 
     // The current state of shutdown. Starts as RUNNING.
     atomic<SHUTDOWN_STATE> _shutdownState;

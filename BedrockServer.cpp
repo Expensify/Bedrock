@@ -20,8 +20,6 @@
 #include <ConflictLockGuard.h>
 #include <sqlitecluster/SQLitePeer.h>
 
-set<string> BedrockServer::_blacklistedParallelCommands;
-shared_timed_mutex BedrockServer::_blacklistedParallelCommandMutex;
 thread_local atomic<SQLiteNodeState> BedrockServer::_nodeStateSnapshot = SQLiteNodeState::UNKNOWN;
 
 // Temporary object we're using to log typical timing for various stages of shutting down.
@@ -617,22 +615,9 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         return;
     }
 
-    // See if this is a feasible command to write parallel. If not, then be ready to forward it to the blocking commit
-    // thread, if it doesn't finish in peek. We're already on that thread if `isBlocking` is set, and that thread
-    // writes whatever it's given, so the blacklist doesn't apply to it.
-    bool canWriteParallel = isBlocking;
-    if (!canWriteParallel) {
-        shared_lock<decltype(_blacklistedParallelCommandMutex)> lock(_blacklistedParallelCommandMutex);
-        canWriteParallel =
-            (_blacklistedParallelCommands.find(command->request.methodLine) == _blacklistedParallelCommands.end());
-    }
-
     int64_t lastConflictIdentifier = 0;
     string lastConflictLocation;
     while (true) {
-        // More checks for parallel writing.
-        canWriteParallel = canWriteParallel && (getState() == SQLiteNodeState::LEADING);
-
         // If there are outstanding HTTPS requests on this command (from a previous call to `peek`) we process them here.
         command->waitForHTTPSRequests();
 
@@ -674,9 +659,6 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                 }
                 return;
             }
-
-            // If we've changed out of leading, we need to notice that.
-            canWriteParallel = canWriteParallel && (getState() == SQLiteNodeState::LEADING);
 
             // If the command should run prePeek, do that now .
             if (!command->repeek && !command->httpsRequests.size() && command->shouldPrePeek()) {
@@ -737,30 +719,14 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         return;
                     }
 
-                    // Peek wasn't enough to handle this command. See if we think it should be writable in parallel.
-                    if (!canWriteParallel) {
-                        // Roll back the transaction, it'll get re-run on the blocking commit thread.
+                    // Peek wasn't enough to handle this command, so it needs to write, and only the leader can do
+                    // that.
+                    if (getState() != SQLiteNodeState::LEADING) {
+                        // Roll back the transaction, it'll get re-run wherever this command ends up.
                         core.rollback(command->getMethodName());
                         dbScope.release();
                         auto _clusterMessengerCopy = _clusterMessenger;
-                        if (getState() == SQLiteNodeState::LEADING) {
-                            // Limit the command timeout to 20s. The blocking commit thread holds the commit lock for its
-                            // whole transaction, and a node state change waits on that same lock, so a command that held
-                            // it longer than 30s would cost us the leader (causing a fork).
-                            command->setTimeout(20'000);
-                            SINFO("Sending non-parallel command " << command->request.methodLine
-                                  << " to blocking queue with size " << _blockingCommandQueue.size());
-                            try {
-                                // BedrockBlockingCommandQueue::push() guarantees that any exception (e.g., rate limiting) is
-                                // thrown before the underlying move() into the queue occurs, so `command` is still valid in
-                                // the catch block.
-                                _blockingCommandQueue.push(move(command));
-                            } catch (const SException& e) {
-                                command->response.methodLine = e.what();
-                                command->complete = true;
-                                _reply(command);
-                            }
-                        } else if (_clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
+                        if (_clusterMessengerCopy && _clusterMessengerCopy->runOnPeer(*command, true)) {
                             SINFO("Escalated " << command->request.methodLine << " to leader and complete, responding.");
                             _reply(command);
                         } else {
@@ -1117,16 +1083,6 @@ BedrockServer::BedrockServer(const SData& args_)
         }
     }
 
-    // Check for commands that can't be written by workers.
-    if (args.isSet("-blacklistedParallelCommands")) {
-        unique_lock<decltype(_blacklistedParallelCommandMutex)> lock(_blacklistedParallelCommandMutex);
-        list<string> parallelCommands;
-        SParseList(args["-blacklistedParallelCommands"], parallelCommands);
-        for (auto& command : parallelCommands) {
-            _blacklistedParallelCommands.insert(command);
-        }
-    }
-
     // Allow sending control commands when the server's not LEADING/FOLLOWING.
     SINFO("Opening control port on '" << args["-controlPort"] << "'");
     {
@@ -1477,8 +1433,7 @@ bool BedrockServer::_isStatusCommand(const unique_ptr<BedrockCommand>& command)
     if (SIEquals(command->request.methodLine, STATUS_IS_FOLLOWER) ||
         SIEquals(command->request.methodLine, STATUS_HANDLING_COMMANDS) ||
         SIEquals(command->request.methodLine, STATUS_PING) ||
-        SIEquals(command->request.methodLine, STATUS_STATUS) ||
-        SIEquals(command->request.methodLine, STATUS_BLACKLIST)) {
+        SIEquals(command->request.methodLine, STATUS_STATUS)) {
         return true;
     }
     return false;
@@ -1619,12 +1574,6 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             content[p.first] = p.second;
         }
 
-        // On leader, return the current multi-write blacklists.
-        if (getState() == SQLiteNodeState::LEADING) {
-            // Both of these need to be in the correct state for multi-write to be enabled.
-            content["multiWriteManualBlacklist"] = SComposeJSONArray(_blacklistedParallelCommands);
-        }
-
         // Coalesce all of the peer data into one value to return or return
         // an error message if we timed out getting the peerList data.
         list<string> peerList;
@@ -1669,26 +1618,6 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
         }
 
         // Done, compose the response.
-        response.methodLine = "200 OK";
-        response.content = SComposeJSONObject(content);
-    } else if (SIEquals(request.methodLine, STATUS_BLACKLIST)) {
-        unique_lock<decltype(_blacklistedParallelCommandMutex)> lock(_blacklistedParallelCommandMutex);
-
-        // Return the old list. We can check the list by not passing the "Commands" param.
-        STable content;
-        content["oldCommandBlacklist"] = SComposeList(_blacklistedParallelCommands);
-
-        // If the Commands param is set, parse it and update our value.
-        if (request.isSet("Commands")) {
-            _blacklistedParallelCommands.clear();
-            list<string> parallelCommands;
-            SParseList(request["Commands"], parallelCommands);
-            for (auto& command : parallelCommands) {
-                _blacklistedParallelCommands.insert(command);
-            }
-        }
-
-        // Prepare the command to respond to the caller.
         response.methodLine = "200 OK";
         response.content = SComposeJSONObject(content);
     }
