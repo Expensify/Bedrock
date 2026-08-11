@@ -196,9 +196,10 @@ private:
     void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
 
     // Applies the transaction in `message` to `db`, and reports our commit count back to leader. Returns false if the
-    // transaction couldn't be prepared, in which case it has been rolled back. `isMerged` is set for a `TRANSACTION`
-    // message, which we commit ourselves rather than waiting for a COMMIT_TRANSACTION to tell us to.
-    bool _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime, bool isMerged);
+    // transaction couldn't be prepared, in which case it has been rolled back. How we report back depends on whether
+    // `message` is a `TRANSACTION`, which we commit ourselves, or a `BEGIN_TRANSACTION`, which we wait on a
+    // `COMMIT_TRANSACTION` for.
+    bool _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime);
     int _handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
     void _handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
 

@@ -225,7 +225,7 @@ void SQLiteNode::_replicate()
             // that leaders can start sending it in a later release, once every node can receive it.
             auto start = chrono::steady_clock::now();
             _handleBeginTransaction(db, peer, command);
-            if (!_handlePrepareTransaction(db, peer, command, dequeueTime, true)) {
+            if (!_handlePrepareTransaction(db, peer, command, dequeueTime)) {
                 // We can't commit what we couldn't apply, and a follower that can't apply leader's transaction is
                 // broken. `_handlePrepareTransaction` has already rolled back and alerted.
                 STHROW("prepare failed");
@@ -239,7 +239,7 @@ void SQLiteNode::_replicate()
         } else if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
             auto start = chrono::steady_clock::now();
             _handleBeginTransaction(db, peer, command);
-            _handlePrepareTransaction(db, peer, command, dequeueTime, false);
+            _handlePrepareTransaction(db, peer, command, dequeueTime);
             auto duration = chrono::steady_clock::now() - start;
             SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
         } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
@@ -2047,8 +2047,12 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
     }
 }
 
-bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime, bool isMerged)
+bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime)
 {
+    // A `TRANSACTION` message carries the whole transaction, so we commit it ourselves as soon as we've applied it. A
+    // `BEGIN_TRANSACTION` leaves us holding a prepared transaction until leader tells us what to do with it.
+    const bool isMerged = SIEquals(message.methodLine, "TRANSACTION");
+
     uint64_t prepareStartTime = STimeNow();
     // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
     // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
