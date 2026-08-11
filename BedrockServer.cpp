@@ -143,6 +143,22 @@ void BedrockServer::sync()
     unique_ptr<BedrockCommand> command(nullptr);
     bool commitInProgress = false;
 
+    // The upgrade command finishes asynchronously, so the sync loop finds out how it went here, from the command's
+    // destructor. `upgradeCommand` is only dereferenced inside this callback, which runs while the command is still
+    // alive. `~BedrockCommand` can run on a worker thread, so the flag it clears is atomic.
+    BedrockCommand* upgradeCommand = nullptr;
+    atomic<bool> upgradeCommandRunning(false);
+    function<void()> upgradeCommandFinished = [&]() {
+        if (upgradeCommand->complete && upgradeCommand->response.methodLine == "200 OK") {
+            _upgradeCompleted = true;
+            SINFO("UpgradeDB succeeded, done.");
+            _notifyDone.push(true);
+        } else {
+            SINFO("UpgradeDB failed, trying again.");
+        }
+        upgradeCommandRunning = false;
+    };
+
     // Timer for S_poll performance logging. Created outside the loop because it's cumulative.
     AutoTimer pollTimer("sync thread poll");
     AutoTimer postPollTimer("sync thread PostPoll");
@@ -322,7 +338,7 @@ void BedrockServer::sync()
             shutdownTimer.safeNodeState = chrono::steady_clock::now();
 
             if (commitInProgress) {
-                db.rollback(command ? command->getMethodName() : "upgradeDB");
+                db.rollback(command->getMethodName());
                 commitInProgress = false;
             }
 
@@ -361,9 +377,8 @@ void BedrockServer::sync()
         }
 
         // If _upgradeCompleted is set, I.e., we've run at least one upgrade, we can skip this block.
-        // Otherwise, if we're leading, let's start the commit.
-        // Also, if a commit is in progress, skip it (it's the commit we started on the last loop iteration).
-        if (!_upgradeCompleted && getState() == SQLiteNodeState::LEADING && !commitInProgress) {
+        // Otherwise, if we're leading, run the upgrade command, and wait for it to finish before we run anything else.
+        if (!_upgradeCompleted && !upgradeCommandRunning && getState() == SQLiteNodeState::LEADING && !commitInProgress) {
             if (!_syncNode->majorityOfFollowersSubscribed()) {
                 // We stand up as soon as a majority of peers are logged in, but a peer doesn't receive transactions
                 // until it has gone SUBSCRIBING -> FOLLOWING, which takes a moment longer. Committing the upgrade in
@@ -372,33 +387,15 @@ void BedrockServer::sync()
                 SINFO("Waiting for followers to subscribe before running UpgradeDB.");
                 continue;
             }
-            bool dbHasChanges = false;
-            try {
-                dbHasChanges = _upgradeDB(db);
-            } catch (const SException& e) {
-                // It's possible that _upgradeDB throws at least "512 Internal Lock Timeout".
-                // Because upgrading the DB is critical and needs to be completed before we can use the
-                // DB for anything, we attempt a retry here. A lock timeout should be retryable.
-                SWARN("Got exception when attempting to upgrade DB, will retry.", {{"command", e.method}, {"what", e.what()}});
-                db.rollback();
-                continue;
-            }
-            if (dbHasChanges) {
-                commitInProgress = true;
-                _syncNode->startCommit();
+            auto upgrade = make_unique<BedrockServerUpgradeCommand>(*this);
+            upgradeCommand = upgrade.get();
+            upgrade->destructionCallback = &upgradeCommandFinished;
+            upgradeCommandRunning = true;
+            runCommand(move(upgrade), true);
 
-                // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
-                _notifyDoneSync.push(true);
-                SDEBUG("Finished sending distributed transaction for db upgrade.");
-
-                // Let the commit finish before we do anything else. Let's start the next loop iteration.
-                continue;
-            } else {
-                // If we're not doing an upgrade, we don't need to keep suppressing multi-write, and we're done with
-                // the upgradeInProgress flag.
-                _upgradeCompleted = true;
-                SINFO("UpgradeDB skipped, done.");
-            }
+            // This interrupts the next poll loop immediately. This prevents a 1-second wait when running as a single server.
+            _notifyDoneSync.push(true);
+            continue;
         }
 
         // If we started a commit, and one's not in progress, then we've finished it and we'll take that command and
@@ -409,20 +406,6 @@ void BedrockServer::sync()
                 continue;
             }
             commitInProgress = false;
-
-            // If we were upgrading, there's no response to send, we're just done.
-            // But if we failed, we just try again. We have no real other options as this is required for
-            // the database to be in a usable state.
-            if (!_upgradeCompleted) {
-                if (_syncNode->commitSucceeded()) {
-                    _upgradeCompleted = true;
-                    SINFO("UpgradeDB succeeded, done.");
-                    _notifyDone.push(true);
-                } else {
-                    SINFO("UpgradeDB failed, trying again.");
-                }
-                continue;
-            }
 
             // This case is expected to be impossible but the warning is retained for now because the confidence in that is low.
             if (!command) {
@@ -788,6 +771,11 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
     // here is to shut the node down and so we want to stop building a backlog of in-process commands that prevent
     // standdown from completing. They will get blocked until we hit our final FOLLOWING state and then finished.
     while (!dbReadyToHandleRequests() || getState() == SQLiteNodeState::STANDINGDOWN) {
+        if (dynamic_cast<BedrockServerUpgradeCommand*>(command.get())) {
+            // the upgrade command is exempted from this loop because it needs to run to make the
+            // dbready to handle commands.
+            break;
+        }
         // It's feasible that our command times out in this loop. In this case, we do not have a DB object to pass.
         // The only implication of this is the response does not get the commitCount attached to it.
         if (BedrockCore::isTimedOut(command, nullptr, this)) {
@@ -2184,23 +2172,41 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
     }
 }
 
-bool BedrockServer::_upgradeDB(SQLite& db)
+SData BedrockServer::BedrockServerUpgradeCommand::_buildRequest()
+{
+    SData request("UpgradeDB");
+
+    // Nobody is waiting on a response to this, the sync thread learns that it finished from `destructionCallback`.
+    request["Connection"] = "forget";
+
+    return request;
+}
+
+BedrockServer::BedrockServerUpgradeCommand::BedrockServerUpgradeCommand(BedrockServer& server)
+  : BedrockCommand(SQLiteCommand(_buildRequest()), nullptr), _server(server)
+{
+    // Schema changes run in an exclusive transaction, which otherwise gets the five second budget that any command
+    // not named in `-synchronousCommands` gets. Take the twenty seconds those commands get instead.
+    isSynchronous = true;
+}
+
+bool BedrockServer::BedrockServerUpgradeCommand::peek(SQLite& db)
+{
+    return false;
+}
+
+void BedrockServer::BedrockServerUpgradeCommand::process(SQLite& db)
 {
     // These all get conglomerated into one big query.
     try {
-        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
-        for (auto plugin : plugins) {
+        for (auto plugin : _server.plugins) {
             plugin.second->upgradeDatabase(db);
         }
-        if (db.getUncommittedQuery().empty()) {
-            db.rollback();
-        }
     } catch (const system_error& e) {
-        SWARN("Caught system_error in _upgradeDB, code: " << e.code() << ", message: " << e.what());
+        SWARN("Caught system_error upgrading DB, code: " << e.code() << ", message: " << e.what());
         throw;
     }
     SINFO("Finished running DB upgrade.");
-    return !db.getUncommittedQuery().empty();
 }
 
 void BedrockServer::_beginShutdown(const string& reason, bool detach)

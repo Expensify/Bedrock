@@ -16,6 +16,23 @@ class BedrockCore;
 class BedrockServer : public SQLiteServer {
 public:
 
+    // Gives every plugin a chance to verify and/or modify the database schema. The leader runs this once each time it
+    // stands up, before it will handle any other command.
+    class BedrockServerUpgradeCommand : public BedrockCommand {
+      public:
+        BedrockServerUpgradeCommand(BedrockServer& server);
+
+        // There's nothing to do until `process`, this command is entirely a write operation.
+        bool peek(SQLite& db) override;
+
+        void process(SQLite& db) override;
+
+      private:
+        static SData _buildRequest();
+
+        BedrockServer& _server;
+    };
+
     // Shutting Down and Standing Down a BedrockServer.
     //
     // # What's the difference between these two things?
@@ -308,10 +325,6 @@ private:
     // (i.e., after a `Detach` and then `Attach`. It's used to indicate that the sync thread has finished during shutdown.
     // Notably it's true *before* the sync thread start both at startup and when re-attaching.
     atomic<bool> _syncLoopShouldBeRunning;
-
-    // Give all of our plugins a chance to verify and/or modify the database schema. This will run every time this node
-    // becomes leader. It will return true if the DB has changed and needs to be committed.
-    bool _upgradeDB(SQLite& db);
 
     // Resets the server state so when the sync node restarts it is as if the BedrockServer object was just created.
     void _resetServer();
