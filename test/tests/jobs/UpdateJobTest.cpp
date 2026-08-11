@@ -11,6 +11,7 @@ struct UpdateJobTest : tpunit::TestFixture
                               TEST(UpdateJobTest::updateJob),
                               TEST(UpdateJobTest::updateStringValueLookingLikeNumber),
                               TEST(UpdateJobTest::updateMockedJob),
+                              TEST(UpdateJobTest::clearRepeatWithShouldClearRepeat),
                               AFTER_CLASS(UpdateJobTest::tearDownClass))
     {
     }
@@ -119,5 +120,33 @@ struct UpdateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(currentJob[0][2], "1000");
         ASSERT_NOT_EQUAL(currentJob[0][2], oldPriority);
         ASSERT_EQUAL(currentJob[0][3], "2020-01-01 00:00:00");
+    }
+    void clearRepeatWithShouldClearRepeat()
+    {
+        // Create a repeating job
+        SData command("CreateJob");
+        command["name"] = "repeating-job";
+        command["repeat"] = "HOURLY";
+        STable response = tester->executeWaitVerifyContentTable(command);
+        string jobID = response["jobID"];
+        ASSERT_GREATER_THAN(stol(jobID), 0);
+
+        // Confirm repeat is set
+        SQResult before;
+        tester->readDB("SELECT repeat FROM jobs WHERE jobID = " + jobID + ";", before);
+        ASSERT_EQUAL(before[0][0], "HOURLY");
+
+        // UpdateJob with shouldClearRepeat=1 — should set repeat to "" in the DB
+        command.clear();
+        command.methodLine = "UpdateJob";
+        command["jobID"] = jobID;
+        command["data"] = "{}";
+        command["shouldClearRepeat"] = "1";
+        tester->executeWaitVerifyContent(command);
+
+        // Verify repeat is now cleared
+        SQResult after;
+        tester->readDB("SELECT repeat FROM jobs WHERE jobID = " + jobID + ";", after);
+        ASSERT_EQUAL(after[0][0], "");
     }
 } __UpdateJobTest;
