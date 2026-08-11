@@ -344,7 +344,6 @@ void BedrockServer::sync()
             _notifyDoneSync.push(true);
             continue;
         }
-
     } while (!_syncNode->shutdownComplete() || BedrockCommand::getCommandCount());
 
     SSetSignalHandlerDieFunc([]() {
@@ -1927,7 +1926,7 @@ SData BedrockServer::BedrockServerUpgradeCommand::_buildRequest()
 }
 
 BedrockServer::BedrockServerUpgradeCommand::BedrockServerUpgradeCommand(BedrockServer& server)
-  : BedrockCommand(SQLiteCommand(_buildRequest()), nullptr), _server(server)
+    : BedrockCommand(SQLiteCommand(_buildRequest()), nullptr), _server(server)
 {
     // Schema changes run in an exclusive transaction, which otherwise gets the five second budget that any command
     // not named in `-synchronousCommands` gets. Take the twenty seconds those commands get instead.

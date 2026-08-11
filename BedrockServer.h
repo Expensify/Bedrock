@@ -18,7 +18,7 @@ public:
     // Gives every plugin a chance to verify and/or modify the database schema. The leader runs this once each time it
     // stands up, before it will handle any other command.
     class BedrockServerUpgradeCommand : public BedrockCommand {
-      public:
+public:
         BedrockServerUpgradeCommand(BedrockServer& server);
 
         // There's nothing to do until `process`, this command is entirely a write operation.
@@ -26,7 +26,7 @@ public:
 
         void process(SQLite& db) override;
 
-      private:
+private:
         static SData _buildRequest();
 
         BedrockServer& _server;
