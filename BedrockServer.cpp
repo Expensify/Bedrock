@@ -726,6 +726,17 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
                         }
                     }
 
+                    // We checked this before peeking, but we can have started leading since then, which puts us back to
+                    // waiting on the DB upgrade. Send the command back to the main queue, where it waits for that like
+                    // any other command. The command that runs the upgrade is exempt, or it would wait on itself.
+                    if (!dbReadyToHandleRequests() && !dynamic_cast<BedrockServerUpgradeCommand*>(command.get())) {
+                        core.rollback(command->getMethodName());
+                        dbScope.release();
+                        SINFO("Started leading before the DB upgrade finished, re-queueing " << command->request.methodLine << ".");
+                        _commandQueue.push(move(command));
+                        return;
+                    }
+
                     // Peek wasn't enough to handle this command. See if we think it should be writable in parallel.
                     if (!canWriteParallel) {
                         // Roll back the transaction, it'll get re-run on the blocking commit thread.
