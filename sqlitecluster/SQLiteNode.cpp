@@ -4,7 +4,6 @@
 #include <unistd.h>
 #include <format>
 
-#include <libstuff/AutoScopeOnPrepare.h>
 #include <libstuff/libstuff.h>
 #include <libstuff/SRandom.h>
 #include <libstuff/SQResult.h>
@@ -131,7 +130,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
     _configuredPriority(configuredPriority),
     _port(_host.empty() ? nullptr : openPort(_host)),
     _version(version),
-    _commitState(CommitState::UNINITIALIZED),
     _db(dbPool->getBase()),
     _dbPool(dbPool),
     _isShuttingDown(false),
@@ -147,7 +145,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
 {
     KILLABLE_SQLITE_NODE = this;
     SASSERT(_configuredPriority >= 0);
-    onPrepareHandlerEnabled = false;
 
     // We create a copy of the database handle here so that the sync node can operate on its handle and the plugin gets
     // its own handle to operate on. This avoids conflicts where the sync thread and the plugin are trying to both run
@@ -160,9 +157,6 @@ SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPoo
 
 SQLiteNode::~SQLiteNode()
 {
-    // Make sure it's a clean shutdown
-    SASSERTWARN(!commitInProgress());
-
     // Clean up all the sockets and peers
     for (Socket* socket : _unauthenticatedIncomingSockets) {
         delete socket;
@@ -261,18 +255,6 @@ void SQLiteNode::_replicate()
     }
 }
 
-void SQLiteNode::startCommit()
-{
-    unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
-
-    // Verify we're not already committing something, and then record that we have begun. This doesn't actually *do*
-    // anything, but `update()` will pick up the state in its next invocation and start the actual commit.
-    SASSERT(_commitState == CommitState::UNINITIALIZED ||
-            _commitState == CommitState::SUCCESS ||
-            _commitState == CommitState::FAILED);
-    _commitState = CommitState::WAITING;
-}
-
 bool SQLiteNode::beginShutdown()
 {
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
@@ -291,11 +273,6 @@ bool SQLiteNode::_isNothingBlockingShutdown() const
 {
     // Don't shutdown if in the middle of a transaction
     if (_db.insideTransaction()) {
-        return false;
-    }
-
-    // If we're doing a commit, don't shut down.
-    if (commitInProgress()) {
         return false;
     }
 
@@ -325,7 +302,7 @@ bool SQLiteNode::shutdownComplete() const
     // Not complete unless we're SEARCHING, SYNCHRONIZING, or WAITING
     if (_state > SQLiteNodeState::WAITING) {
         // Not in a shutdown state
-        SINFO("Can't graceful shutdown yet because state=" << stateName(_state) << ", commitInProgress=" << commitInProgress());
+        SINFO("Can't graceful shutdown yet because state=" << stateName(_state) << ".");
         return false;
     }
 
@@ -335,7 +312,7 @@ bool SQLiteNode::shutdownComplete() const
         return true;
     } else {
         // Not done yet
-        SINFO("Can't graceful shutdown yet because waiting on commands: commitInProgress=" << commitInProgress() << ".");
+        SINFO("Can't graceful shutdown yet because waiting on commands.");
         return false;
     }
 }
@@ -395,20 +372,6 @@ uint64_t SQLiteNode::getOutstandingFramesToCheckpoint() const
     // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
     // private methods.
     return _db.getOutstandingFramesToCheckpoint();
-}
-
-bool SQLiteNode::commitInProgress() const
-{
-    // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
-    // private methods.
-    return _commitState.load() == CommitState::WAITING;
-}
-
-bool SQLiteNode::commitSucceeded() const
-{
-    // Note: this can skip locking because it only accesses a single atomic variable, which makes it safe to call in
-    // private methods.
-    return _commitState == CommitState::SUCCESS;
 }
 
 void SQLiteNode::_sendOutstandingTransactions()
@@ -874,12 +837,9 @@ bool SQLiteNode::update()
         ///     concluded in the STANDINGDOWN) state.  The logic for this state
         ///     is as follows:
         ///
-        ///         if( a transaction is waiting )
-        ///             commit it to the local DB
-        ///             if( that succeeded )
-        ///                broadcast BEGIN_TRANSACTION and COMMIT_TRANSACTION to subscribed followers
-        ///             notify the caller that the command is complete
-        ///         if( we're LEADING and not processing a command )
+        ///         broadcast BEGIN_TRANSACTION and COMMIT_TRANSACTION to subscribed followers for any
+        ///             transaction that a worker thread has committed but that we haven't sent yet
+        ///         if( we're LEADING )
         ///             if( there is another LEADER )         goto STANDINGDOWN
         ///             if( there is a higher priority peer ) goto STANDINGDOWN
         ///         if( we're standing down )
@@ -893,70 +853,10 @@ bool SQLiteNode::update()
             // NOTE: This block very carefully will not try and call _changeState() while holding SQLite::g_commitLock,
             // because that could cause a deadlock when called by an outside caller!
 
-            // If there's no commit in progress, we'll send any outstanding transactions that exist. We won't send them
-            // mid-commit, as they'd end up as nested transactions interleaved with the one in progress. However, there
-            // should never be any commits in here while a commit is in progress anyway, since all commits except the one
-            // running are blocked until that one finishes.
-            if (!commitInProgress()) {
-                _sendOutstandingTransactions();
-            }
+            // Send any transactions that worker threads have committed but that we haven't shipped yet.
+            _sendOutstandingTransactions();
 
-            // If there's a transaction that's waiting, we'll start it. We do this *before* we check to see if we should
-            // stand down, and since we return true, we'll never stand down as long as we keep adding new transactions
-            // here. It's up to the server to stop giving us transactions to process if it wants us to stand down.
-            if (_commitState == CommitState::WAITING) {
-                SINFO("[performance] Beginning commit.");
-
-                // We should already have locked the DB before getting here, we can safely clear out any outstanding
-                // transactions, no new ones can be added until we release the lock.
-                _sendOutstandingTransactions();
-
-                // There's no handling for a failed prepare. This should only happen if the DB has been corrupted or
-                // something catastrophic like that.
-                {
-                    AutoScopeOnPrepare onPrepare(onPrepareHandlerEnabled, _db, onPrepareHandler);
-                    SASSERT(_db.prepare());
-                }
-
-                SINFO("committing distributed transaction for commit #" << _db.getCommitCount() + 1 << " ("
-                      << _db.getUncommittedHash() << ")");
-                uint64_t beforeCommit = STimeNow();
-                // Only other intersting place we commit and would care about node state.
-                int result = _db.commit(stateName(_state));
-                SINFO("SQLite::commit in SQLiteNode took " << ((STimeNow() - beforeCommit) / 1000) << "ms.");
-
-                if (result == SQLITE_BUSY_SNAPSHOT) {
-                    // We hadn't told anyone about this transaction yet, so there's nothing to take back.
-                    SINFO("[performance] Conflict committing, rolling back.");
-                    _db.rollback();
-                    _commitState = CommitState::FAILED;
-                } else {
-                    _db.logLastTransactionTiming(
-                    format(
-                        "Committed leader transaction for '{} ({}). {} peers.",
-                        _lastSentTransactionID + 1,
-                        _db.getCommittedHash(),
-                        _peerList.size()
-                        ),
-                    "SQLiteNode::update"
-                    );
-                    SINFO("[performance] Successfully committed transaction. Sending it to peers.");
-
-                    // Ship it. This sends a BEGIN_TRANSACTION and a COMMIT_TRANSACTION back to back, the same as it
-                    // does for any transaction a worker thread committed, and will pick up any others that finished
-                    // while we held the commit lock.
-                    uint64_t beforeSend = STimeNow();
-                    _sendOutstandingTransactions();
-                    SINFO("[performance] SQLite::_sendToAllPeers in SQLiteNode took " << ((STimeNow() - beforeSend) / 1000) << "ms.");
-
-                    _commitState = CommitState::SUCCESS;
-                }
-
-                // We return `true` here so the caller re-updates immediately rather than going back to the network.
-                return true;
-            }
-
-            // Check to see if we should stand down. We'll finish any outstanding commits before we actually do.
+            // Check to see if we should stand down.
             if (_state == SQLiteNodeState::LEADING) {
                 string standDownReason;
                 if (_priority == 1) {
@@ -1766,14 +1666,6 @@ void SQLiteNode::_changeState(SQLiteNodeState newState)
 
         // Additional logic for some old states
         if (SWITHIN(SQLiteNodeState::LEADING, _state, SQLiteNodeState::STANDINGDOWN) && !SWITHIN(SQLiteNodeState::LEADING, newState, SQLiteNodeState::STANDINGDOWN)) {
-            // We are no longer leading.  Are we processing a command?
-            if (commitInProgress()) {
-                // Abort this command
-                SWARN("Stopping LEADING/STANDINGDOWN with commit in progress. Canceling.");
-                _commitState = CommitState::FAILED;
-                _db.rollback();
-            }
-
             // Turn off commits. This prevents late commits coming in right after we call `_sendOutstandingTransactions`
             // below, which otherwise could get committed on leader and not replicated to followers.
             _db.setCommitEnabled(false);

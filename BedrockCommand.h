@@ -15,9 +15,7 @@ public:
         PROCESS,
         POSTPROCESS,
         COMMIT_WORKER,
-        COMMIT_SYNC,
         QUEUE_WORKER,
-        QUEUE_SYNC,
         QUEUE_BLOCKING,
         QUEUE_PAGE_LOCK,
 

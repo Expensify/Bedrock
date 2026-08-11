@@ -8,7 +8,6 @@
 #include "BedrockCommandQueue.h"
 #include "BedrockConflictManager.h"
 #include "BedrockBlockingCommandQueue.h"
-#include "BedrockTimeoutCommandQueue.h"
 
 class SQLitePeer;
 class BedrockCore;
@@ -73,7 +72,8 @@ public:
     // queue. We increment the count of these commands when we dequeue a command from the main queue, and decrememnt it
     // when we respond to the command (and also in a few other exception cases where the command is abandoned or does
     // not require a response). This means that if a command has been moved to the queue of outstanding HTTPS commands,
-    // or the sync thread queue, or is currently being handled by a worker, or escalated to leader, it's "in progress".
+    // or the blocking commit queue, or is currently being handled by a worker, or escalated to leader, it's "in
+    // progress".
     //
     // If we were not leading, there is no STANDINGDOWN state to wait through - all of a followers commands come from
     // local clients, and once those connections are all closed, then that means every command has been responded to,
@@ -296,11 +296,6 @@ private:
     // reference to this object is passed to the sync thread to allow this update.
     atomic<string> _leaderVersion;
 
-    // This is a synchronized queued that can wake up a `poll()` call if something is added to it. This contains the
-    // list of commands that worker threads were unable to complete on their own that needed to be passed back to the
-    // sync thread. A reference is passed to the sync thread.
-    BedrockTimeoutCommandQueue _syncNodeQueuedCommands;
-
     // These control whether or not the command port is currently opened.
     multiset<string> _commandPortBlockReasons;
 
@@ -349,7 +344,6 @@ private:
     static constexpr auto STATUS_PING = "Ping";
     static constexpr auto STATUS_STATUS = "Status";
     static constexpr auto STATUS_BLACKLIST = "SetParallelCommandBlacklist";
-    static constexpr auto STATUS_MULTIWRITE = "EnableMultiWrite";
 
     // This makes the sync node available to worker threads, so that they can write to it's sockets, and query it for
     // data (such as in the Status command). Because this is a shared pointer, the underlying object can't be deleted
@@ -400,9 +394,6 @@ private:
     // The current state of shutdown. Starts as RUNNING.
     atomic<SHUTDOWN_STATE> _shutdownState;
 
-    // Flag indicating whether multi-write is enabled.
-    atomic<bool> _multiWriteEnabled;
-
     // Use this to enable mutexes around conflicting pages to reduce the potential for further conflicts.
     atomic<bool> _enableConflictPageLocks = false;
 
@@ -429,7 +420,7 @@ private:
     unique_ptr<Port> _commandPortPublic;
     unique_ptr<Port> _commandPortPrivate;
 
-    // The maximum number of conflicts we'll accept before forwarding a command to the sync thread.
+    // The maximum number of conflicts we'll accept before forwarding a command to the blocking commit thread.
     atomic<int> _maxConflictRetries;
 
     mutex _httpsCommandMutex;

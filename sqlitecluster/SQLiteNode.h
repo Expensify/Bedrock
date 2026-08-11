@@ -64,15 +64,6 @@ class SQLiteNode : public STCPManager {
     friend class SQLiteNodeTester;
 
 public:
-    // These are the possible states a transaction can be in.
-    enum class CommitState
-    {
-        UNINITIALIZED,
-        WAITING,
-        SUCCESS,
-        FAILED
-    };
-
     // This is a globally accessible pointer to some node instance. The intention here is to let signal handling code attempt to kill outstanding
     // peer connections on this node before shutting down. Generally, there is only a single node instance per application, and this will
     // refer to that node, there may be exceptions in cases like test harnesses.
@@ -90,14 +81,6 @@ public:
 
     // Return the string representing an SQLiteNode State
     static const string& stateName(SQLiteNodeState state);
-
-    // True from when we call 'startCommit' until the commit has finished, successfully or not.
-    // Does not block.
-    bool commitInProgress() const;
-
-    // Returns true if the last commit was successful. If called while `commitInProgress` would return true, it returns false.
-    // Does not block.
-    bool commitSucceeded() const;
 
     // Get's the commitCount from the underlying DB.
     // Does not block.
@@ -172,10 +155,6 @@ public:
                const string& commandPort = "localhost:8890");
     ~SQLiteNode();
 
-    // Begins the process of committing a transaction on this SQLiteNode's database. When this returns,
-    // commitInProgress() will return true until the commit completes.
-    void startCommit();
-
     // Updates the internal state machine. Returns true if it wants immediate re-updating. Returns false to indicate it
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
@@ -185,10 +164,6 @@ public:
     // access _peerList and peer->name, both of which are const. So it is safe
     // to call from other public functions.
     SQLitePeer* getPeerByName(const string& name) const;
-
-    // Pointer to the current on prepare handler to be passed on commit to SQLite
-    void (*onPrepareHandler)(SQLite& _db, int64_t tableID);
-    bool onPrepareHandlerEnabled;
 
     // This changes the current node priority and broadcasts that to all other nodes.
     int setPriority(int newPriority);
@@ -297,17 +272,12 @@ private:
     // they need to send a LOGIN message with their name first).
     set<Socket*> _unauthenticatedIncomingSockets;
 
-    // This is the current CommitState we're in with regard to committing a transaction. It is `UNINITIALIZED` from
-    // startup until a transaction is started.
-    atomic<CommitState> _commitState;
-
     // This is just here to allow `poll` to get interrupted when there are new commits to send. We don't want followers
     // to wait up to a full second for them.
     mutable SSynchronizedQueue<bool> _commitsToSend;
 
     // Handle to the underlying database that we write to. This should also be passed to an SQLiteCore object that can
-    // actually perform some action on the DB. When those action are complete, you can call SQLiteNode::startCommit()
-    // to commit and replicate them.
+    // actually perform some action on the DB.
     SQLite& _db;
 
     // This is a pool of DB handles that this node can use for any DB access it needs. Currently, it hands them out to
