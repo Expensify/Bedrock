@@ -388,8 +388,8 @@ void SQLiteNode::_sendOutstandingTransactions()
             SALERT("Already sent a transaction in committed transaction list");
             continue;
         }
-        string& query = get<0>(i.second);
-        string& hash = get<1>(i.second);
+        string& query = i.second.first;
+        string& hash = i.second.second;
         // Every transaction we send has already committed here, so BEGIN and COMMIT go out together. The "ASYNC_"
         // prefix tells followers not to bother approving it, which is load-bearing: a follower sends a full
         // APPROVE_TRANSACTION for any ID without it.

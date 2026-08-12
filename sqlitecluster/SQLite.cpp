@@ -559,12 +559,6 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
     string beginQuery = (beginOnly && _hctree) ? "BEGIN" : "BEGIN CONCURRENT";
     _insideTransaction = !SQuery(_db, beginQuery);
 
-    // Because some other thread could commit once we've run `BEGIN CONCURRENT`, this value can be slightly behind
-    // where we're actually able to start such that we know we shouldn't get a conflict if this commits successfully on
-    // leader. However, this is perfectly safe, it just adds the possibility that threads on followers wait for an
-    // extra transaction to complete before starting, which is an anti-optimization, but the alternative is wrapping
-    // the above `BEGIN CONCURRENT` and the `getCommitCount` call in a lock, which is worse.
-    _dbCountAtStart = getCommitCount();
     _queryCache.clear();
     _tablesUsed.clear();
     _readQueryCount = 0;
@@ -1026,7 +1020,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     }
 
     // Stash the (now possibly compressed) query so SQLiteNode can ship it to peers without re-compressing.
-    _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash, _dbCountAtStart);
+    _sharedData.prepareTransactionInfo(commitCount + 1, _uncommittedQuery, _uncommittedHash);
 
     string query = "INSERT INTO " + _journalName + " VALUES (:commitID, :query, :hash)";
     map<string, SQLite::Parameter> params = {
@@ -1187,7 +1181,6 @@ int SQLite::commit(const string& description, const string& commandName, functio
         _readQueryCount = 0;
         _writeQueryCount = 0;
         _cacheHits = 0;
-        _dbCountAtStart = 0;
         _lastConflictPage = 0;
         _lastConflictLocation = "";
     } else {
@@ -1216,7 +1209,7 @@ int SQLite::getCheckpointModeFromString(const string& checkpointModeString)
     SERROR("Invalid checkpoint type: " << checkpointModeString);
 }
 
-map<uint64_t, tuple<string, string, uint64_t>> SQLite::popCommittedTransactions()
+map<uint64_t, pair<string, string>> SQLite::popCommittedTransactions()
 {
     return _sharedData.popCommittedTransactions();
 }
@@ -1273,7 +1266,6 @@ void SQLite::rollback(const string& commandName)
     _readQueryCount = 0;
     _writeQueryCount = 0;
     _cacheHits = 0;
-    _dbCountAtStart = 0;
 }
 
 void SQLite::logLastTransactionTiming(const string& message, const string& commandName)
@@ -1580,11 +1572,6 @@ bool SQLite::getUpdateNoopMode() const
     return _noopUpdateMode;
 }
 
-uint64_t SQLite::getDBCountAtStart() const
-{
-    return _dbCountAtStart;
-}
-
 void SQLite::setCommitEnabled(bool enable)
 {
     _sharedData.setCommitEnabled(enable);
@@ -1666,10 +1653,10 @@ void SQLite::SharedData::incrementCommit(const string& commitHash)
     lastCommittedHash.store(commitHash);
 }
 
-void SQLite::SharedData::prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash, uint64_t dbCountAtTransactionStart)
+void SQLite::SharedData::prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash)
 {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
-    _preparedTransactions.insert_or_assign(commitID, make_tuple(query, hash, dbCountAtTransactionStart));
+    _preparedTransactions.insert_or_assign(commitID, make_pair(query, hash));
 }
 
 void SQLite::SharedData::commitTransactionInfo(uint64_t commitID)
@@ -1678,7 +1665,7 @@ void SQLite::SharedData::commitTransactionInfo(uint64_t commitID)
     _committedTransactions.insert(_preparedTransactions.extract(commitID));
 }
 
-map<uint64_t, tuple<string, string, uint64_t>> SQLite::SharedData::popCommittedTransactions()
+map<uint64_t, pair<string, string>> SQLite::SharedData::popCommittedTransactions()
 {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     decltype(_committedTransactions) result;
