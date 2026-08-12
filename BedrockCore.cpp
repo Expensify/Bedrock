@@ -168,7 +168,7 @@ BedrockCore::RESULT BedrockCore::peekCommand(unique_ptr<BedrockCommand>& command
             }
 
             if (exclusive) {
-                decreaseCommandTimeout(command, command->isSynchronous ? BedrockCommand::BLOCKING_COMMAND_TIMEOUT
+                decreaseCommandTimeout(command, command->isSynchronous ? BedrockCommand::SYNCHRONOUS_COMMAND_TIMEOUT
                                                                        : BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
             }
 
@@ -271,7 +271,7 @@ BedrockCore::RESULT BedrockCore::processCommand(unique_ptr<BedrockCommand>& comm
             }
 
             if (exclusive) {
-                decreaseCommandTimeout(command, command->isSynchronous ? BedrockCommand::BLOCKING_COMMAND_TIMEOUT
+                decreaseCommandTimeout(command, command->isSynchronous ? BedrockCommand::SYNCHRONOUS_COMMAND_TIMEOUT
                                                                        : BedrockCommand::DEFAULT_PROCESS_TIMEOUT);
             }
         }

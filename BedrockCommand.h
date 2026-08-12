@@ -44,7 +44,7 @@ public:
     // commit lock for its whole transaction, and SQLiteNode::_changeState waits on the same lock with no timeout, so
     // this also bounds how long a node state change can be stalled. It has to stay well under the 30 second peer
     // receive timeout that would otherwise cost us the leader.
-    static const uint64_t BLOCKING_COMMAND_TIMEOUT = 20'000; // 20 seconds.
+    static const uint64_t SYNCHRONOUS_COMMAND_TIMEOUT = 20'000; // 20 seconds.
 
     // Constructor to initialize via a request object (by move).
     BedrockCommand(SQLiteCommand&& baseCommand, BedrockPlugin* plugin, bool escalateImmediately_ = false);
@@ -311,7 +311,7 @@ private:
     const bool escalateImmediately;
 
     // True if this command was named in `-synchronousCommands`. Such commands run on the blocking commit thread, so
-    // they're serialized against each other and against every other write, and they get BLOCKING_COMMAND_TIMEOUT
+    // they're serialized against each other and against every other write, and they get SYNCHRONOUS_COMMAND_TIMEOUT
     // rather than the shorter DEFAULT_PROCESS_TIMEOUT that thread otherwise imposes.
     bool isSynchronous = false;
 
