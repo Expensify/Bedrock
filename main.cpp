@@ -236,7 +236,6 @@ int main(int argc, char* argv[])
         cout << "-v                          Enables verbose logging" << endl;
         cout << "-q                          Enables quiet logging" << endl;
         cout << "-clean                      Recreate a new database from scratch" << endl;
-        cout << "-enableMultiWrite           Enable multi-write mode (default: true)" << endl;
         cout << "-versionOverride <version>  Pretends to be a different version when talking to peers" << endl;
         cout << "-db             <filename>  Use a database with the given name (default 'bedrock.db')" << endl;
         cout
@@ -332,7 +331,6 @@ int main(int argc, char* argv[])
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-queryLog", "queryLog.csv");
-    SETDEFAULT("-enableMultiWrite", "true");
     SETDEFAULT("-journalZstdDictionaryID", "0");
 
     // We default to PASSIVE checkpoint everywhere as that has been the value proven to work fine for many years.

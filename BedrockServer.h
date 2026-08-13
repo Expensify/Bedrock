@@ -8,13 +8,29 @@
 #include "BedrockCommandQueue.h"
 #include "BedrockConflictManager.h"
 #include "BedrockBlockingCommandQueue.h"
-#include "BedrockTimeoutCommandQueue.h"
 
 class SQLitePeer;
 class BedrockCore;
 
 class BedrockServer : public SQLiteServer {
 public:
+
+    // Gives every plugin a chance to verify and/or modify the database schema. The leader runs this once each time it
+    // stands up, before it will handle any other command.
+    class BedrockServerUpgradeCommand : public BedrockCommand {
+public:
+        BedrockServerUpgradeCommand(BedrockServer& server);
+
+        // There's nothing to do until `process`, this command is entirely a write operation.
+        bool peek(SQLite& db) override;
+
+        void process(SQLite& db) override;
+
+private:
+        static SData _buildRequest();
+
+        BedrockServer& _server;
+    };
 
     // Shutting Down and Standing Down a BedrockServer.
     //
@@ -56,7 +72,8 @@ public:
     // queue. We increment the count of these commands when we dequeue a command from the main queue, and decrememnt it
     // when we respond to the command (and also in a few other exception cases where the command is abandoned or does
     // not require a response). This means that if a command has been moved to the queue of outstanding HTTPS commands,
-    // or the sync thread queue, or is currently being handled by a worker, or escalated to leader, it's "in progress".
+    // or the blocking commit queue, or is currently being handled by a worker, or escalated to leader, it's "in
+    // progress".
     //
     // If we were not leading, there is no STANDINGDOWN state to wait through - all of a followers commands come from
     // local clients, and once those connections are all closed, then that means every command has been responded to,
@@ -279,11 +296,6 @@ private:
     // reference to this object is passed to the sync thread to allow this update.
     atomic<string> _leaderVersion;
 
-    // This is a synchronized queued that can wake up a `poll()` call if something is added to it. This contains the
-    // list of commands that worker threads were unable to complete on their own that needed to be passed back to the
-    // sync thread. A reference is passed to the sync thread.
-    BedrockTimeoutCommandQueue _syncNodeQueuedCommands;
-
     // These control whether or not the command port is currently opened.
     multiset<string> _commandPortBlockReasons;
 
@@ -309,10 +321,6 @@ private:
     // Notably it's true *before* the sync thread start both at startup and when re-attaching.
     atomic<bool> _syncLoopShouldBeRunning;
 
-    // Give all of our plugins a chance to verify and/or modify the database schema. This will run every time this node
-    // becomes leader. It will return true if the DB has changed and needs to be committed.
-    bool _upgradeDB(SQLite& db);
-
     // Resets the server state so when the sync node restarts it is as if the BedrockServer object was just created.
     void _resetServer();
 
@@ -335,8 +343,6 @@ private:
     static constexpr auto STATUS_HANDLING_COMMANDS = "GET /status/handlingCommands HTTP/1.1";
     static constexpr auto STATUS_PING = "Ping";
     static constexpr auto STATUS_STATUS = "Status";
-    static constexpr auto STATUS_BLACKLIST = "SetParallelCommandBlacklist";
-    static constexpr auto STATUS_MULTIWRITE = "EnableMultiWrite";
 
     // This makes the sync node available to worker threads, so that they can write to it's sockets, and query it for
     // data (such as in the Status command). Because this is a shared pointer, the underlying object can't be deleted
@@ -376,19 +382,12 @@ private:
     multimap<uint64_t, uint64_t> _futureCommitCommandTimeouts;
     recursive_mutex _futureCommitCommandMutex;
 
-    // A set of command names that will always be run with QUORUM consistency level.
+    // A set of command names that will always be run on the blocking commit thread.
     // Specified by the `-synchronousCommands` command-line switch.
-    set<string> _syncCommands;
-
-    // This is a list of command names than can be processed and committed in worker threads.
-    static set<string> _blacklistedParallelCommands;
-    static shared_timed_mutex _blacklistedParallelCommandMutex;
+    set<string> _synchronousCommands;
 
     // The current state of shutdown. Starts as RUNNING.
     atomic<SHUTDOWN_STATE> _shutdownState;
-
-    // Flag indicating whether multi-write is enabled.
-    atomic<bool> _multiWriteEnabled;
 
     // Use this to enable mutexes around conflicting pages to reduce the potential for further conflicts.
     atomic<bool> _enableConflictPageLocks = false;
@@ -416,7 +415,7 @@ private:
     unique_ptr<Port> _commandPortPublic;
     unique_ptr<Port> _commandPortPrivate;
 
-    // The maximum number of conflicts we'll accept before forwarding a command to the sync thread.
+    // The maximum number of conflicts we'll accept before forwarding a command to the blocking commit thread.
     atomic<int> _maxConflictRetries;
 
     mutex _httpsCommandMutex;
@@ -443,12 +442,6 @@ private:
 
     // Generate a CRASH_COMMAND command for a given bad command.
     static SData _generateCrashMessage(const unique_ptr<BedrockCommand>& command);
-
-    // The number of seconds to wait between forcing a command to QUORUM.
-    uint64_t _quorumCheckpointSeconds;
-
-    // Timestamp for the last time we promoted a command to QUORUM.
-    atomic<uint64_t> _lastQuorumCommandTime;
 
     // Whether or not all plugins are detached
     bool _pluginsDetached;

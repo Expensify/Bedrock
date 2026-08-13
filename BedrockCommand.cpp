@@ -245,9 +245,7 @@ void BedrockCommand::finalizeTimingInfo()
     uint64_t blockingPostProcessTotal = 0;
     uint64_t commitWorkerTotal = 0;
     uint64_t blockingCommitWorkerTotal = 0;
-    uint64_t commitSyncTotal = 0;
     uint64_t queueWorkerTotal = 0;
-    uint64_t queueSyncTotal = 0;
     uint64_t queueBlockingTotal = 0;
     uint64_t queuePageLockTotal = 0;
     for (const auto& entry: timingInfo) {
@@ -276,14 +274,10 @@ void BedrockCommand::finalizeTimingInfo()
         } else if (get<0>(entry) == BLOCKING_COMMIT_WORKER) {
             commitWorkerTotal += get<2>(entry) - get<1>(entry);
             blockingCommitWorkerTotal += get<2>(entry) - get<1>(entry);
-        } else if (get<0>(entry) == COMMIT_SYNC) {
-            commitSyncTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == QUEUE_WORKER) {
             queueWorkerTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == QUEUE_BLOCKING) {
             queueBlockingTotal += get<2>(entry) - get<1>(entry);
-        } else if (get<0>(entry) == QUEUE_SYNC) {
-            queueSyncTotal += get<2>(entry) - get<1>(entry);
         } else if (get<0>(entry) == QUEUE_PAGE_LOCK) {
             queuePageLockTotal += get<2>(entry) - get<1>(entry);
         }
@@ -293,8 +287,8 @@ void BedrockCommand::finalizeTimingInfo()
     uint64_t totalTime = STimeNow() - creationTime;
 
     // Time that wasn't accounted for in all the other metrics.
-    uint64_t unaccountedTime = totalTime - (prePeekTotal + peekTotal + processTotal + postProcessTotal + commitWorkerTotal + commitSyncTotal +
-        escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queueSyncTotal + queuePageLockTotal);
+    uint64_t unaccountedTime = totalTime - (prePeekTotal + peekTotal + processTotal + postProcessTotal + commitWorkerTotal +
+        escalationTimeUS + queueWorkerTotal + queueBlockingTotal + queuePageLockTotal);
 
     uint64_t exclusiveTransactionLockTime = blockingPeekTotal + blockingProcessTotal + blockingCommitWorkerTotal;
     uint64_t blockingCommitThreadTime = exclusiveTransactionLockTime + blockingPrePeekTotal + blockingPostProcessTotal;
@@ -357,11 +351,9 @@ void BedrockCommand::finalizeTimingInfo()
           "blockingCommitThreadTime:" << blockingCommitThreadTime / 1000 << ", "
           "exclusiveTransactionLockTime:" << exclusiveTransactionLockTime / 1000 <<
           ". Commit: "
-          "worker:" << commitWorkerTotal / 1000 << ", "
-          "sync:" << commitSyncTotal / 1000 <<
+          "worker:" << commitWorkerTotal / 1000 <<
           ". Queue: "
           "worker:" << queueWorkerTotal / 1000 << ", "
-          "sync:" << queueSyncTotal / 1000 << ", "
           "blocking:" << queueBlockingTotal / 1000 << ", "
           "pageLock:" << queuePageLockTotal / 1000 << ", "
           "escalation:" << escalationTimeUS / 1000 <<
