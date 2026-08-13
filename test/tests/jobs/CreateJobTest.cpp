@@ -18,6 +18,7 @@ struct CreateJobTest : tpunit::TestFixture
                               TEST(CreateJobTest::createWithRepeat),
                               TEST(CreateJobTest::uniqueJob),
                               TEST(CreateJobTest::uniqueJobMergeData),
+                              TEST(CreateJobTest::uniqueAsRetryLifecycle),
                               TEST(CreateJobTest::createWithBadData),
                               TEST(CreateJobTest::createWithBadRepeat),
                               TEST(CreateJobTest::createChildWithQueuedParent),
@@ -287,6 +288,231 @@ struct CreateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(nonoverwritenJob[0][7], updatedJob[0][7]);
         ASSERT_EQUAL(nonoverwritenJob[0][8], updatedJob[0][8]);
         ASSERT_EQUAL(nonoverwritenJob[0][9], updatedJob[0][9]);
+    }
+
+    void uniqueAsRetryLifecycle()
+    {
+        // Given a CreateJob request with a malformed unique-as-retry option
+        SData command("CreateJob");
+        command["name"] = "invalidUniqueAsRetry";
+        command["uniqueAsRetry"] = "sometimes";
+
+        // When the caller submits a value that is not Boolean
+        // Then Bedrock rejects the request because the option accepts only Boolean values
+        tester->executeWaitVerifyContent(command, "402 Malformed uniqueAsRetry");
+
+        // Given an opted-in unique job that disables the overwrite behavior required for enqueue merging
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "disabledOverwrite";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        command["overwrite"] = "false";
+
+        // When the caller submits incompatible unique-job options
+        // Then Bedrock rejects the request because unique-as-retry needs one durable row for all enqueues
+        tester->executeWaitVerifyContent(command, "402 uniqueAsRetry requires unique=true and overwrite enabled");
+
+        // Given an opted-in job whose caller tries to forge the private metadata of Bedrock
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "finishVersioned";
+        command["data"] = "{\"activity\":1,\"_bedrockUniqueAsRetry\":{\"version\":999}}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        command["requestID"] = "finish-1";
+        const string finishJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // When the same logical enqueue is replayed with more public data
+        command["data"] = "{\"replayed\":true}";
+        tester->executeWaitVerifyContent(command);
+
+        // Then Bedrock merges the public data without advancing the version because the replay is not new work
+        SQResult result;
+        tester->readDB("SELECT JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), "
+                       "JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.activeVersion'), JSON_EXTRACT(data, '$.replayed') "
+                       "FROM jobs WHERE jobID=" + finishJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "1");
+        ASSERT_EQUAL(result[0][1], "0");
+        ASSERT_EQUAL(result[0][2], "1");
+
+        // Given the replayed job is ready for its first worker
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "finishVersioned";
+
+        // When a worker dequeues the job
+        STable runningJob = tester->executeWaitVerifyContentTable(command);
+
+        // Then the worker receives version 1 without the private metadata of Bedrock
+        ASSERT_EQUAL(runningJob["enqueueVersion"], "1");
+        ASSERT_TRUE(runningJob["data"].find("_bedrockUniqueAsRetry") == string::npos);
+
+        // Given a worker received a version for the active run
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = finishJobID;
+
+        // When FinishJob and RetryJob omit that version
+        // Then Bedrock rejects both requests because an unversioned completion can belong to an older run
+        tester->executeWaitVerifyContent(command, "402 Missing enqueueVersion");
+        command.methodLine = "RetryJob";
+        tester->executeWaitVerifyContent(command, "402 Missing enqueueVersion");
+
+        // Given version 1 is active and a distinct enqueue represents new work
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "finishVersioned";
+        command["data"] = "{\"activity\":2}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        command["requestID"] = "finish-2";
+        tester->executeWaitVerifyContent(command);
+
+        // When the worker for version 1 finishes with stale data
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = finishJobID;
+        command["enqueueVersion"] = "1";
+        command["data"] = "{\"activity\":1,\"worker\":true}";
+        tester->executeWaitVerifyContent(command);
+
+        // Then Bedrock queues version 2 because its data represents the newest enqueue
+        tester->readDB("SELECT state, JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), "
+                       "JSON_EXTRACT(data, '$.activity'), JSON_EXTRACT(data, '$.worker') "
+                       "FROM jobs WHERE jobID=" + finishJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "2");
+        ASSERT_EQUAL(result[0][2], "2");
+        ASSERT_EQUAL(result[0][3], "");
+
+        // Given version 2 is queued after the stale finish
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "finishVersioned";
+
+        // When the next worker dequeues the job
+        runningJob = tester->executeWaitVerifyContentTable(command);
+
+        // Then the worker receives version 2 because that version owns the new run
+        ASSERT_EQUAL(runningJob["enqueueVersion"], "2");
+
+        // Given version 2 is active
+        // When a delayed completion from version 1 asks to delete the job
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = finishJobID;
+        command["enqueueVersion"] = "1";
+        command["data"] = "{\"delete\":true}";
+        tester->executeWaitVerifyContent(command);
+
+        // Then Bedrock keeps version 2 active because the old worker no longer owns the job
+        tester->readDB("SELECT state, JSON_EXTRACT(data, '$.activity') FROM jobs WHERE jobID=" + finishJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "RUNNING");
+        ASSERT_EQUAL(result[0][1], "2");
+
+        // Given version 2 remains the active run
+        command["enqueueVersion"] = "2";
+        command.erase("data");
+
+        // When its worker finishes with the current version
+        tester->executeWaitVerifyContent(command);
+
+        // Then Bedrock removes the completed nonrecurring job
+        tester->readDB("SELECT COUNT(1) FROM jobs WHERE jobID=" + finishJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "0");
+
+        // Given a version 1 worker and a version 2 enqueue with newer data and priority
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "retryVersioned";
+        command["data"] = "{\"activity\":1}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        command["requestID"] = "retry-1";
+        const string retryJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "retryVersioned";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "retryVersioned";
+        command["data"] = "{\"activity\":2}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        command["jobPriority"] = "750";
+        command["requestID"] = "retry-2";
+        tester->executeWaitVerifyContent(command);
+
+        // When the version 1 worker requests a retry with stale job attributes
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = retryJobID;
+        command["enqueueVersion"] = "1";
+        command["nextRun"] = "2042-04-02 00:42:42";
+        command["ignoreRepeat"] = "true";
+        command["name"] = "staleName";
+        command["jobPriority"] = "1000";
+        command["data"] = "{\"activity\":1,\"worker\":true}";
+        tester->executeWaitVerifyContent(command);
+
+        // Then Bedrock uses the retry schedule but preserves the attributes owned by the newer enqueue
+        tester->readDB("SELECT state, name, nextRun, priority, JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), "
+                       "JSON_EXTRACT(data, '$.activity'), JSON_EXTRACT(data, '$.worker') "
+                       "FROM jobs WHERE jobID=" + retryJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "retryVersioned");
+        ASSERT_EQUAL(result[0][2], "2042-04-02 00:42:42");
+        ASSERT_EQUAL(result[0][3], "750");
+        ASSERT_EQUAL(result[0][4], "2");
+        ASSERT_EQUAL(result[0][5], "2");
+        ASSERT_EQUAL(result[0][6], "");
+
+        // Given a legacy unique job does not use enqueue versioning
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "legacyWorker";
+        command["data"] = "{\"activity\":1}";
+        command["unique"] = "true";
+        command["requestID"] = "legacy-1";
+        const string legacyJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // When a worker dequeues the job before it opts in
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "legacyWorker";
+        STable legacyJob = tester->executeWaitVerifyContentTable(command);
+
+        // Then the worker receives no version because the job has no versioned enqueue
+        ASSERT_TRUE(!SContains(legacyJob, "enqueueVersion"));
+
+        // Given the unversioned worker owns the active legacy run
+        // When a new enqueue opts in and the legacy worker finishes without a version
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "legacyWorker";
+        command["data"] = "{\"activity\":2}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        command["requestID"] = "legacy-2";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = legacyJobID;
+        tester->executeWaitVerifyContent(command);
+
+        // Then Bedrock queues the opted-in work because active version 0 identifies the legacy migration case
+        tester->readDB("SELECT state, JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), "
+                       "JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.activeVersion'), JSON_EXTRACT(data, '$.activity') "
+                       "FROM jobs WHERE jobID=" + legacyJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "1");
+        ASSERT_EQUAL(result[0][2], "0");
+        ASSERT_EQUAL(result[0][3], "2");
     }
 
     void createWithBadData()

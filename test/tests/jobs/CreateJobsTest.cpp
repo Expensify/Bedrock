@@ -13,6 +13,7 @@ struct CreateJobsTest : tpunit::TestFixture
                               TEST(CreateJobsTest::createWithParentIDNotRunning),
                               TEST(CreateJobsTest::createWithParentMocked),
                               TEST(CreateJobsTest::createUniqueChildWithWrongParent),
+                              TEST(CreateJobsTest::uniqueAsRetryBatch),
                               AFTER(CreateJobsTest::tearDown),
                               AFTER_CLASS(CreateJobsTest::tearDownClass))
     {
@@ -262,5 +263,53 @@ struct CreateJobsTest : tpunit::TestFixture
         jobs.push_back(SComposeJSONObject(job1Content));
         command["jobs"] = SComposeJSONArray(jobs);
         tester->executeWaitVerifyContent(command, "404 Trying to create a child that already exists, but it is tied to a different parent");
+    }
+
+    void uniqueAsRetryBatch()
+    {
+        // Given an opted-in unique job that already has one logical enqueue
+        SData command("CreateJob");
+        command["name"] = "batchVersioned";
+        command["data"] = "{\"initial\":0}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        command["requestID"] = "batch-initial";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // When one CreateJobs request contains two updates for that durable job
+        command.clear();
+        command.methodLine = "CreateJobs";
+        command["requestID"] = "batch-activity";
+        STable firstJob;
+        firstJob["name"] = "batchVersioned";
+        firstJob["data"] = "{\"first\":1}";
+        firstJob["unique"] = "true";
+        firstJob["uniqueAsRetry"] = "true";
+        STable secondJob = firstJob;
+        secondJob["data"] = "{\"second\":2}";
+        secondJob["jobPriority"] = "750";
+        vector<string> jobs = {SComposeJSONObject(firstJob), SComposeJSONObject(secondJob)};
+        command["jobs"] = SComposeJSONArray(jobs);
+        STable response = tester->executeWaitVerifyContentTable(command);
+
+        // Then both entries reuse the row and advance its version once because they share one request ID
+        list<string> jobIDs = SParseJSONArray(response["jobIDs"]);
+        ASSERT_EQUAL(jobIDs.size(), 2);
+        ASSERT_EQUAL(jobIDs.front(), jobID);
+        ASSERT_EQUAL(jobIDs.back(), jobID);
+
+        // Then the row contains all enqueue data and the final priority because each batch entry contributes its update
+        SQResult result;
+        tester->readDB("SELECT JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), "
+                       "JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.enqueueID'), JSON_EXTRACT(data, '$.first'), "
+                       "JSON_EXTRACT(data, '$.second'), JSON_REMOVE(data, '$._bedrockUniqueAsRetry'), priority "
+                       "FROM jobs WHERE jobID=" + jobID + ";", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], "2");
+        ASSERT_EQUAL(result[0][1], "batch-activity");
+        ASSERT_EQUAL(result[0][2], "1");
+        ASSERT_EQUAL(result[0][3], "2");
+        ASSERT_EQUAL(result[0][4], "{\"initial\":0,\"first\":1,\"second\":2}");
+        ASSERT_EQUAL(result[0][5], "750");
     }
 } __CreateJobsTest;
