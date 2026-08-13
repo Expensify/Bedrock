@@ -1,16 +1,20 @@
 # Bedrock::Jobs -- Rock solid job queuing
 Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that manages a scheduled job queue.  Commands include:
 
- * **CreateJob( name, [data], [firstRun], [repeat] )** - Schedules a new job, optionally in the future, optionally to repeat.
+ * **CreateJob( name, [data], [firstRun], [repeat], [unique], [overwrite], [uniqueAsRetry] )** - Schedules a new job, optionally in the future, optionally to repeat.
    * *name* - Any arbitrary string name for this job.
-   * *data* - (optional) An arbitrary data blob to associate with this job, typically JSON encoded.
+   * *data* - (optional) A JSON object to associate with this job.
    * *firstRun* - (optional) The time/date on which to run this job the first time, in "YYYY-MM-DD [HH:MM:SS]" format
    * *repeat* - (optional) Description of how this job should repeat (see ["Repeat Syntax"](#repeat-syntax) below)
+   * *unique* - (optional request field) Reuse an existing job with the same name.
+   * *overwrite* - (optional request field) For a unique job, merge new data into the existing row. This field defaults to true.
+   * *uniqueAsRetry* - (optional request field) Set this field to true with *unique=true*. *overwrite* must remain enabled. Bedrock uses the request's top-level `requestID` as the enqueue identity. An enqueue that arrives while the job runs causes one subsequent run.
 
  * **GetJob( name, [connection: wait, [timeout] ] )** - Waits for a match (if requested) and atomically dequeues exactly one job.
    * *name* - A pattern to match in GLOB syntax (eg, "Foo*" will get the first job whose name starts with "Foo")
    * *connection* - (optional) If set to "wait", will wait up to "timeout" ms for the match
    * *timeout* - (optional) Number of ms to wait for a match
+   * Returns *enqueueVersion* for a job that uses *uniqueAsRetry*. Pass this value to `FinishJob`, `RetryJob`, or `FailJob`.
 
  * **UpdateJob( jobID, data )** - Updates the data associated with a job.
    * *jobID* - Identifier of the job to update
@@ -21,21 +25,33 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
 
  * **QueryJob( jobID )** - Retrieves the current state and data associated with a job.
    * *jobID* - Identifier of the job to query
+   * Returns *enqueueVersion* when the job uses *uniqueAsRetry*.
 
- * **FinishJob( jobID, [data] )** - Marks a job as finished, which causes it to repeat if requested.
+ * **FinishJob( jobID, [data], [enqueueVersion] )** - Marks a job as finished, which causes it to repeat if requested.
    * *jobID* - Identifier of the job to finish
    * *data* - (optional) New data object to associate with the job (especially useful if repeating, to pass state to the next worker).
+   * *enqueueVersion* - Required for a dequeued *uniqueAsRetry* job. If a newer enqueue arrived during the run, Bedrock preserves its data and queues one immediate subsequent run.
 
  * **DeleteJob( jobID )** - Removes all trace of a job.
    * *jobID* - Identifier of the job to delete
 
- * **RetryJob( jobID )** - Removes all trace of a job.
+ * **RetryJob( jobID, [enqueueVersion] )** - Requeues a running job.
    * *jobID* - Identifier of the job to retry
    * *nextRun* - (optional) The time/date on which the job should be set to run again, in "YYYY-MM-DD [HH:MM:SS]" format. This is ignored if the job is set to repeat.
    * *delay* - (optional) Number of seconds to wait before retrying. This is ignored if the job is set to repeat or if "nextRun" is set.
    * *name* - (optional) Any arbitrary string name for this job.
    * *data* - (optional) Data to associate with this job
    * *ignoreRepeat* - (optional) Ignore a job's repeat parameter when calculating when to retry the job
+   * *enqueueVersion* - Required for a dequeued *uniqueAsRetry* job. If a newer enqueue arrived, Bedrock preserves the latest enqueue-owned data, name, and priority while applying the requested retry timing.
+
+ * **FailJob( jobID, [data], [enqueueVersion] )** - Marks a running job as failed.
+   * *jobID* - Identifier of the job to fail.
+   * *data* - (optional) New data object to associate with the failed job.
+   * *enqueueVersion* - Required for a dequeued *uniqueAsRetry* job. If a newer enqueue arrived during the run, Bedrock preserves its data and queues one immediate subsequent run instead of failing the job.
+
+For *CreateJobs*, set *unique*, *overwrite*, and *uniqueAsRetry* on each object in the *jobs* array. Do not put these fields inside *data*.
+
+Bedrock stores private control state under the reserved `_bedrockUniqueAsRetry` key in the existing `jobs.data` JSON. The jobs table schema is unchanged. Bedrock removes this key from incoming and returned data. Reusing a `requestID` does not advance the enqueue version, but Bedrock still merges the request data. Several distinct enqueues during one run collapse into one later run. A delayed completion from an older run has no effect on a newer active run.
 
 ## Sample Session
 This provides comprehensive functionality for scheduled, recurring, atomically-processed jobs by blocking workers.  For example, first create a job and assign it some data to be used by the worker:
