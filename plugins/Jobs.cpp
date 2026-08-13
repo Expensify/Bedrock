@@ -12,6 +12,20 @@
 // keep their scheduled time since they may need to run on a specific calendar date.
 static constexpr int64_t REPEAT_REANCHOR_THRESHOLD_SECONDS = 4 * 60 * 60;
 
+// Unique-as-retry metadata lives in job data but is owned by Bedrock, so callers must not see or overwrite it.
+static string stripUniqueAsRetryMetadataSQL(const string& dataExpression)
+{
+    return "IIF(JSON_TYPE(" + dataExpression + ", '$._bedrockUniqueAsRetry') IS NULL, " + dataExpression +
+           ", JSON_REMOVE(" + dataExpression + ", '$._bedrockUniqueAsRetry'))";
+}
+
+static string preserveUniqueAsRetryMetadataSQL(const string& newDataExpression)
+{
+    return "IIF(JSON_TYPE(data, '$._bedrockUniqueAsRetry') IS NULL, " + newDataExpression +
+           ", JSON_SET(" + newDataExpression + ", '$._bedrockUniqueAsRetry', "
+           "JSON_EXTRACT(data, '$._bedrockUniqueAsRetry')))";
+}
+
 const int64_t BedrockPlugin_Jobs::JOBS_DEFAULT_PRIORITY = 500;
 const string BedrockPlugin_Jobs::name("Jobs");
 const string& BedrockPlugin_Jobs::getName() const
@@ -225,6 +239,7 @@ bool BedrockJobsCommand::peek(SQLite& db)
         //           o jobID - unique ID of the job
         //           o name  - name of the actual job matched
         //           o data  - JSON data associated with this job
+        //           o enqueueVersion - version to pass to FinishJob, RetryJob, or FailJob
         //         . GetJobs
         //           o jobs - Array of JSON objects, each matching the result of GetJob
         //     - 303 - Timeout
@@ -265,13 +280,16 @@ bool BedrockJobsCommand::peek(SQLite& db)
         //         . lastRun - timestamp it was last run
         //         . repeat - recurring description
         //         . data - JSON data associated with this job
+        //         . enqueueVersion - version to pass to FinishJob, RetryJob, or FailJob
         //     - 404 - No jobs found
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
 
         // Verify there is a job like this
         SQResult result;
-        if (!db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, retryAfter, priority "
+        if (!db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, " +
+                     stripUniqueAsRetryMetadataSQL("data") + ", retryAfter, priority, "
+                     "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0) "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
@@ -290,6 +308,9 @@ bool BedrockJobsCommand::peek(SQLite& db)
         jsonContent["data"] = result[0][7];
         jsonContent["retryAfter"] = result[0][8];
         jsonContent["priority"] = result[0][9];
+        if (result[0][10] != "0") {
+            jsonContent["enqueueVersion"] = result[0][10];
+        }
         return true; // Successfully processed
     }
     // ----------------------------------------------------------------------
@@ -337,10 +358,25 @@ bool BedrockJobsCommand::peek(SQLite& db)
                 if (SContains(job, "data") && SParseJSONObject(job["data"]).empty() && job["data"] != "{}") {
                     STHROW("402 Data is not a valid JSON Object");
                 }
+                if (!job["data"].empty()) {
+                    job["data"] = db.read("SELECT " + stripUniqueAsRetryMetadataSQL(SQ(job["data"])) + ";");
+                }
 
                 // Validate retryAfter
                 if (SContains(job, "retryAfter") && job["retryAfter"] != "" && !SIsValidSQLiteDateModifier(job["retryAfter"])) {
                     STHROW("402 Malformed retryAfter");
+                }
+
+                // unique-as-retry relies on duplicate unique jobs replacing their existing data. Without both settings
+                // there is no stable row on which Bedrock can record an enqueue that arrives during a run.
+                if (SContains(job, "uniqueAsRetry") && !job["uniqueAsRetry"].empty() &&
+                    !SIEquals(job["uniqueAsRetry"], "true") && !SIEquals(job["uniqueAsRetry"], "false")) {
+                    STHROW("402 Malformed uniqueAsRetry");
+                }
+                if (SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true") &&
+                    (!SContains(job, "unique") || job["unique"] != "true" ||
+                     (SContains(job, "overwrite") && job["overwrite"] != "true" && job["overwrite"] != ""))) {
+                    STHROW("402 uniqueAsRetry requires unique=true and overwrite enabled");
                 }
 
                 // Validate that the parentJobID exists and is in the right state if one was passed.
@@ -383,11 +419,13 @@ bool BedrockJobsCommand::peek(SQLite& db)
                     SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
                           << (mockRequest ? "true" : "false"));
                     string operation = mockRequest ? "IS NOT" : "IS";
-                    if (!db.read("SELECT jobID, data, parentJobID "
-                                "FROM jobs "
-                                "WHERE name=" + SQ(job["name"]) +
-                                "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
-                                result)) {
+                    if (!db.read("SELECT jobID, " + stripUniqueAsRetryMetadataSQL("data") + ", parentJobID, "
+                                 "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0), "
+                                 "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.enqueueID'), '') "
+                                 "FROM jobs "
+                                 "WHERE name=" + SQ(job["name"]) +
+                                 "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
+                                 result)) {
                         STHROW("502 Select failed");
                     }
 
@@ -399,7 +437,12 @@ bool BedrockJobsCommand::peek(SQLite& db)
                         if (result[0][2] != "0" && result[0][2] != job["parentJobID"]) {
                             STHROW("404 Trying to create a child that already exists, but it is tied to a different parent");
                         }
-                        if (SIEquals(requestVerb, "CreateJob") && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
+                        const bool uniqueAsRetry = SToInt64(result[0][3]) > 0 ||
+                            (SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true"));
+                        const bool replay = SToInt64(result[0][3]) > 0 && result[0][4] == request["requestID"];
+                        const bool matchingData = (job["data"].empty() && result[0][1] == "{}") ||
+                            (!job["data"].empty() && result[0][1] == job["data"]);
+                        if (SIEquals(requestVerb, "CreateJob") && ((replay && matchingData) || (!uniqueAsRetry && matchingData))) {
                             // Return early, no need to pass to leader, there are no more jobs to create.
                             SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0] << ", mocked? " << (mockRequest ? "true" : "false"));
                             jsonContent["jobID"] = result[0][0];
@@ -482,7 +525,7 @@ void BedrockJobsCommand::process(SQLite& db)
     const string& requestVerb = request.getVerb();
 
     if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
-        // - CreateJob( name, [data], [firstRun], [repeat], [jobPriority], [unique], [parentJobID], [retryAfter] )
+        // - CreateJob( name, [data], [firstRun], [repeat], [jobPriority], [unique], [overwrite], [uniqueAsRetry], [parentJobID], [retryAfter] )
         //
         //     Creates a "job" for future processing by a worker.
         //
@@ -494,8 +537,10 @@ void BedrockJobsCommand::process(SQLite& db)
         //     - jobPriority - High priorities go first (optional, default 500)
         //     - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                return that jobID
-        //     - overwrite - Only applicable when unique is is true. When set to true it will overwrite the existing job
-        //                   with the new jobs data
+        //     - overwrite - Only applicable when unique is true. When set to true it will overwrite the existing job
+        //                   with the new job data
+        //     - uniqueAsRetry - With unique and overwrite enabled, an enqueue received while the job runs causes one
+        //                       subsequent run. Distinct enqueues are identified by requestID.
         //     - parentJobID - The ID of the parent job (optional)
         //     - retryAfter - Amount of auto-retries before marking job as failed (optional)
         //
@@ -515,8 +560,9 @@ void BedrockJobsCommand::process(SQLite& db)
         //          - jobPriority - High priorities go first (optional, default 500)
         //          - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                     return that jobID
-        //          - overwrite - Only applicable when unique is is true. When set to true it will overwrite the existing job
-        //                        with the new jobs data
+        //          - overwrite - Only applicable when unique is true. When set to true it will overwrite the existing job
+        //                        with the new job data
+        //          - uniqueAsRetry - Enables the same subsequent-run behavior as CreateJob
         //          - parentJobID - The ID of the parent job (optional)
         //          - retryAfter - Amount of auto-retries before marking job as failed (optional)
         //
@@ -549,6 +595,11 @@ void BedrockJobsCommand::process(SQLite& db)
             // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
             // leader.
 
+            // This object is owned exclusively by Bedrock. Callers cannot create or overwrite its control state.
+            if (!job["data"].empty()) {
+                job["data"] = db.read("SELECT " + stripUniqueAsRetryMetadataSQL(SQ(job["data"])) + ";");
+            }
+
             // If this is a mock request, we insert that into the data.
             string originalData = job["data"];
             if (mockRequest) {
@@ -565,12 +616,15 @@ void BedrockJobsCommand::process(SQLite& db)
             }
 
             int64_t updateJobID = 0;
+            int64_t existingEnqueueVersion = 0;
             if (SContains(job, "unique") && job["unique"] == "true") {
                 SQResult result;
                 SDEBUG("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
                        << (mockRequest ? "true" : "false"));
                 string operation = mockRequest ? "IS NOT" : "IS";
-                if (!db.read("SELECT jobID, data "
+                if (!db.read("SELECT jobID, " + stripUniqueAsRetryMetadataSQL("data") + ", "
+                             "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0), "
+                             "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.enqueueID'), '') "
                              "FROM jobs "
                              "WHERE name=" + SQ(job["name"]) +
                              "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
@@ -578,24 +632,32 @@ void BedrockJobsCommand::process(SQLite& db)
                     STHROW("502 Select failed");
                 }
 
-                // If we got a result, and it's data is the same as passed, we won't change anything.
-                if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
-                    SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
-                          << result[0][0] << ", mocked? " << (mockRequest ? "true" : "false"));
+                if (!result.empty()) {
+                    existingEnqueueVersion = SToInt64(result[0][2]);
+                    const bool uniqueAsRetry = existingEnqueueVersion > 0 ||
+                        (SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true"));
+                    const bool matchingData = (job["data"].empty() && result[0][1] == "{}") ||
+                        (!job["data"].empty() && result[0][1] == job["data"]);
 
-                    // If we are calling CreateJob, return early, there are no more jobs to create.
-                    if (SIEquals(requestVerb, "CreateJob")) {
-                        jsonContent["jobID"] = result[0][0];
-                        return;
+                    // Opted-in entries always reach the update below. This is important when one CreateJobs request has
+                    // several entries for the same row: all data is merged, while the SQL requestID check increments the
+                    // version only once. Legacy unique jobs retain their existing same-data no-op.
+                    if (!uniqueAsRetry && matchingData) {
+                        SINFO("Job already existed and unique flag was passed, reusing existing job "
+                              << result[0][0] << ", mocked? " << (mockRequest ? "true" : "false"));
+
+                        // If we are calling CreateJob, return early, there are no more jobs to create.
+                        if (SIEquals(requestVerb, "CreateJob")) {
+                            jsonContent["jobID"] = result[0][0];
+                            return;
+                        }
+
+                        // Append new jobID to list of created jobs.
+                        jobIDs.push_back(result[0][0]);
+                        continue;
                     }
 
-                    // Append new jobID to list of created jobs.
-                    jobIDs.push_back(result[0][0]);
-                    continue;
-                }
-
-                // If we found a job, but the data was different, we'll need to update it.
-                if (!result.empty()) {
+                    // A distinct enqueue updates the row even when its data is identical.
                     updateJobID = SToInt64(result[0][0]);
                 }
             }
@@ -656,13 +718,24 @@ void BedrockJobsCommand::process(SQLite& db)
 
             // Are we creating a new job, or updating an existing job?
             if (updateJobID) {
-                if (!SContains(job, "overwrite") || job["overwrite"] == "true" || job["overwrite"] == "") {
+                const bool uniqueAsRetry = existingEnqueueVersion > 0 ||
+                    (SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true"));
+                if (uniqueAsRetry || !SContains(job, "overwrite") || job["overwrite"] == "true" || job["overwrite"] == "") {
+                    const string updatedData = uniqueAsRetry ?
+                        "JSON_SET(JSON_PATCH(data, " + safeData + "), "
+                        "'$._bedrockUniqueAsRetry', JSON_OBJECT("
+                        "'version', COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0) + "
+                        "IIF(COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.enqueueID'), '') != " + SQ(request["requestID"]) + ", 1, 0), "
+                        "'activeVersion', COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.activeVersion'), 0), "
+                        "'enqueueID', " + SQ(request["requestID"]) + "))" :
+                        "JSON_PATCH(data, " + safeData + ")";
+
                     // Update the existing job.
                     if (!db.writeIdempotent("UPDATE jobs SET "
                                              "repeat   = " + SQ(SToUpper(job["repeat"])) + ", " +
-                                             "data     = JSON_PATCH(data, " + safeData + "), " +
+                                             "data     = " + updatedData + ", " +
                                              "priority = " + SQ(priority) + " " +
-                                           "WHERE jobID = " + SQ(updateJobID) + ";")) {
+                                             "WHERE jobID = " + SQ(updateJobID) + ";")) {
                         STHROW("502 update query failed");
                     }
                 }
@@ -691,6 +764,11 @@ void BedrockJobsCommand::process(SQLite& db)
 
                 // If no data was provided, use an empty object
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
+                const bool uniqueAsRetry = SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true");
+                const string dataToInsert = uniqueAsRetry ?
+                    "JSON_SET(" + safeData + ", '$._bedrockUniqueAsRetry', JSON_OBJECT("
+                    "'version', 1, 'activeVersion', 0, 'enqueueID', " + SQ(request["requestID"]) + "))" :
+                    safeData;
 
                 // Create this new job with a new generated ID
                 const int64_t jobIDToUse = SQLiteUtils::getRandomID(db, "jobs", "jobID");
@@ -703,7 +781,7 @@ void BedrockJobsCommand::process(SQLite& db)
                             SQ(job["name"]) + ", " +
                             safeFirstRun + ", " +
                             SQ(SToUpper(job["repeat"])) + ", " +
-                            safeData + ", " +
+                            dataToInsert + ", " +
                             SQ(priority) + ", " +
                             SQ(parentJobID) + ", " +
                             safeRetryAfter + " " +
@@ -744,7 +822,8 @@ void BedrockJobsCommand::process(SQLite& db)
         string selectQuery;
         if (request.isSet("jobPriority")) {
             selectQuery =
-                "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority "
+                "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority, "
+                "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0) "
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=" + SQ(request.calc("jobPriority")) + " "
@@ -754,9 +833,10 @@ void BedrockJobsCommand::process(SQLite& db)
                 "ORDER BY nextRun ASC LIMIT " + safeNumResults + ";";
         } else {
             selectQuery =
-                "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority FROM ( "
+                "SELECT jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority, enqueueVersion FROM ( "
                 "SELECT * FROM ("
-                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun, "
+                "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0) AS enqueueVersion "
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=1000 "
@@ -767,7 +847,8 @@ void BedrockJobsCommand::process(SQLite& db)
                 ") "
                 "UNION ALL "
                 "SELECT * FROM ("
-                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun, "
+                "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0) "
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=850 "
@@ -778,7 +859,8 @@ void BedrockJobsCommand::process(SQLite& db)
                 ") "
                 "UNION ALL "
                 "SELECT * FROM ("
-                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun, "
+                "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0) "
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=750 "
@@ -789,7 +871,8 @@ void BedrockJobsCommand::process(SQLite& db)
                 ") "
                 "UNION ALL "
                 "SELECT * FROM ("
-                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun, "
+                "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0) "
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=500 "
@@ -800,7 +883,8 @@ void BedrockJobsCommand::process(SQLite& db)
                 ") "
                 "UNION ALL "
                 "SELECT * FROM ("
-                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun, "
+                "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0) "
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=250 "
@@ -811,7 +895,8 @@ void BedrockJobsCommand::process(SQLite& db)
                 ") "
                 "UNION ALL "
                 "SELECT * FROM ("
-                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun "
+                "SELECT jobID, name, data, priority, parentJobID, retryAfter, created, repeat, lastRun, nextRun, "
+                "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0) "
                 "FROM jobs "
                 "WHERE state IN ('QUEUED', 'RUNQUEUED') "
                 "AND priority=0 "
@@ -877,7 +962,7 @@ void BedrockJobsCommand::process(SQLite& db)
         list<STable> retriableJobs;
         list<string> jobList;
         for (size_t c = 0; c < result.size(); ++c) {
-            SASSERT(result[c].size() == 10); // jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority
+            SASSERT(result[c].size() == 11); // jobID, name, data, parentJobID, retryAfter, created, repeat, lastRun, nextRun, priority, enqueueVersion
 
             // Skip any candidate we just failed for matching the blacklist so it's never returned to the worker.
             if (crashedJobIDs.count(result[c][0])) {
@@ -888,19 +973,22 @@ void BedrockJobsCommand::process(SQLite& db)
             STable job;
             job["jobID"] = result[c][0];
             job["name"] = result[c][1];
-            job["data"] = result[c][2];
+            job["data"] = db.read("SELECT " + stripUniqueAsRetryMetadataSQL(SQ(result[c][2])) + ";");
             job["retryAfter"] = result[c][4];
             job["created"] = result[c][5];
             job["repeat"] = result[c][6];
             job["lastRun"] = result[c][7];
             job["nextRun"] = result[c][8];
             job["priority"] = result[c][9];
+            if (result[c][10] != "0") {
+                job["enqueueVersion"] = result[c][10];
+            }
             int64_t parentJobID = SToInt64(result[c][3]);
 
             if (parentJobID) {
                 // Has a parent job, add the parent data
                 job["parentJobID"] = SToStr(parentJobID);;
-                job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+                job["parentData"] = db.read("SELECT " + stripUniqueAsRetryMetadataSQL("data") + " FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
             }
 
             // Add jobID to the respective list depending on if retryAfter is set
@@ -912,7 +1000,12 @@ void BedrockJobsCommand::process(SQLite& db)
 
             // See if this job has any FINISHED/CANCELLED child jobs, indicating it is being resumed
             SQResult childJobs;
-            if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID != 0 AND parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
+            if (!db.read("SELECT jobID, " + stripUniqueAsRetryMetadataSQL("data") + ", state "
+                         "FROM jobs "
+                         "WHERE parentJobID != 0 "
+                         "  AND parentJobID=" + result[c][0] + " "
+                         "  AND state IN ('FINISHED', 'CANCELLED');",
+                         childJobs)) {
                 STHROW("502 Failed to select finished child jobs");
             }
 
@@ -943,11 +1036,16 @@ void BedrockJobsCommand::process(SQLite& db)
             jobList.push_back(SComposeJSONObject(job));
         }
 
+        const string activatedData =
+            "IIF(JSON_TYPE(data, '$._bedrockUniqueAsRetry') IS NULL, data, "
+            "JSON_SET(data, '$._bedrockUniqueAsRetry.activeVersion', JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version')))";
+
         if (!nonRetriableJobs.empty()) {
             SINFO("Updating jobs without retryAfter " << SComposeList(nonRetriableJobs));
             string updateQuery = "UPDATE jobs "
                 "SET state='RUNNING', "
-                "lastRun=" + SCURRENT_TIMESTAMP() + " "
+                "lastRun=" + SCURRENT_TIMESTAMP() + ", "
+                "data=" + activatedData + " "
                 "WHERE jobID IN (" + SQList(nonRetriableJobs) + ");";
             if (!db.writeIdempotent(updateQuery)) {
                 STHROW("502 Update failed");
@@ -973,11 +1071,15 @@ void BedrockJobsCommand::process(SQLite& db)
                 string repeatDateTime = _constructNextRunDATETIME(db, job["nextRun"], currentTime, job["repeat"]);
                 string nextRunDateTime = repeatDateTime != "" ? "MIN(" + retryAfterDateTime + ", " + repeatDateTime + ")" : retryAfterDateTime;
                 bool isRepeatBasedOnScheduledTime = SToUpper(job["repeat"]).find("SCHEDULED") != string::npos;
-                string dataUpdateQuery = " ";
+                string dataUpdateQuery = ", data = " + activatedData + " ";
                 if (!SStartsWith(job["name"], "manual")) {
                     // Set this so we don't retry infinitely for non manual jobs (see above)
                     // We also set originalNextRun so we don't lose track of the original nextRun (which we are overriding here)
-                    dataUpdateQuery = ", data = JSON_SET(data, '$.retryAfterCount', COALESCE(JSON_EXTRACT(data, '$.retryAfterCount'), 0) + 1" + (isRepeatBasedOnScheduledTime ? ", '$.originalNextRun', " + SQ(job["nextRun"]) + ") ": ") ");
+                    const string originalNextRunUpdate = isRepeatBasedOnScheduledTime ?
+                        ", '$.originalNextRun', " + SQ(job["nextRun"]) : "";
+                    dataUpdateQuery = ", data = JSON_SET(" + activatedData +
+                        ", '$.retryAfterCount', COALESCE(JSON_EXTRACT(data, '$.retryAfterCount'), 0) + 1" +
+                        originalNextRunUpdate + ") ";
                 }
                 string updateQuery = "UPDATE jobs "
                     "SET state = 'RUNQUEUED', "
@@ -1065,9 +1167,10 @@ void BedrockJobsCommand::process(SQLite& db)
         mockRequest = result[0][3] == "1";
 
         // Preserve the jobs mockRequest attribute so it is not overwritten by data updates.
+        const string sanitizedRequestData = stripUniqueAsRetryMetadataSQL(SQ(request["data"]));
         const string newData = mockRequest
-            ? db.read("SELECT IIF(JSON_VALID(" + SQ(request["data"]) + "), JSON_SET(" + SQ(request["data"]) + ", '$.mockRequest', JSON('true')), '{}');")
-            : db.read("SELECT IIF(JSON_VALID(" + SQ(request["data"]) + "), JSON_REMOVE(" + SQ(request["data"]) + ", '$.mockRequest'), '{}');");
+            ? db.read("SELECT IIF(JSON_VALID(" + SQ(request["data"]) + "), JSON_SET(" + sanitizedRequestData + ", '$.mockRequest', JSON('true')), '{}');")
+            : db.read("SELECT IIF(JSON_VALID(" + SQ(request["data"]) + "), JSON_REMOVE(" + sanitizedRequestData + ", '$.mockRequest'), '{}');");
 
         // Passed next run takes priority over the one computed via the repeat feature
         string newNextRun;
@@ -1079,13 +1182,12 @@ void BedrockJobsCommand::process(SQLite& db)
 
         // Update the data
         if (!db.writeIdempotent("UPDATE jobs "
-                                "SET data=" +
-                                SQ(newData) +
+                                "SET data=" + preserveUniqueAsRetryMetadataSQL(SQ(newData)) +
                                 (SToInt(request["shouldClearRepeat"]) ? ", repeat=''" :
                                  request["repeat"].size() ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
                                 (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
                                 (request.isSet("jobPriority") ? ", priority=" + SQ(request.calc64("jobPriority")) + " " : "") +
-                                "WHERE jobID=" +
+                                " WHERE jobID=" +
                                 SQ(request.calc64("jobID")) + ";")) {
             STHROW("502 Update failed");
         }
@@ -1093,7 +1195,7 @@ void BedrockJobsCommand::process(SQLite& db)
     }
     // ----------------------------------------------------------------------
     else if (SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
-        // - RetryJob( jobID, [delay], [nextRun], [name], [data], [ignoreRepeat] )
+        // - RetryJob( jobID, [delay], [nextRun], [name], [data], [ignoreRepeat], [enqueueVersion] )
         //
         //     Re-queues a RUNNING job.
         //     The nextRun logic for the job is decided in the following way
@@ -1116,22 +1218,29 @@ void BedrockJobsCommand::process(SQLite& db)
         //     - data         - Data to associate with this job
         //     - jobPriority  - The new priority to set for this job
         //     - ignoreRepeat - Ignore the job's repeat param when figuring out when to retry the job
+        //     - enqueueVersion - Version returned when an opted-in unique job was dequeued
         //
-        // - FinishJob( jobID, [data] )
+        // - FinishJob( jobID, [data], [enqueueVersion] )
         //
         //     Finishes a job.  If it's set to recur, reschedules it. If
         //     not recurring, deletes it.
         //
         //     Parameters:
         //     - jobID  - ID of the job to finish
-        //     - data   - Data to associate with this finsihed job
+        //     - data   - Data to associate with this finished job
+        //     - enqueueVersion - Version returned when an opted-in unique job was dequeued
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
+        if (request.isSet("enqueueVersion")) {
+            BedrockPlugin::verifyAttributeInt64(request, "enqueueVersion", 1);
+        }
         int64_t jobID = request.calc64("jobID");
 
         // Verify there is a job like this and it's running
         SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest'), retryAfter, json_extract(data, '$.originalNextRun') "
+        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest'), retryAfter, json_extract(data, '$.originalNextRun'), "
+                     "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0), "
+                     "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.activeVersion'), 0) "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
@@ -1149,11 +1258,74 @@ void BedrockJobsCommand::process(SQLite& db)
         mockRequest = result[0][5] == "1";
         const string retryAfter = result[0][6];
         const string originalDataNextRun = result[0][7];
+        const int64_t latestVersion = SToInt64(result[0][8]);
+        const int64_t activeVersion = SToInt64(result[0][9]);
 
-        // Make sure we're finishing a job that's actually running
-        if (state != "RUNNING" && state != "RUNQUEUED" && !mockRequest) {
+        // An active version proves that this worker received an enqueue version when it dequeued the job. Require it
+        // here so a delayed unversioned completion cannot be mistaken for the current run. A worker that dequeued the
+        // job before it opted in has activeVersion 0 and remains compatible with the migration path below.
+        if (activeVersion > 0 && !request.isSet("enqueueVersion")) {
+            STHROW("402 Missing enqueueVersion");
+        }
+        const int64_t workerVersion = request.calc64("enqueueVersion");
+
+        if (latestVersion > 0 && workerVersion != activeVersion) {
+            // A delayed completion from a prior run must not affect a newer active run.
+            SINFO("Ignoring obsolete " << requestVerb << " for unique-as-retry job#" << jobID << ": worker version "
+                  << workerVersion << ", active version " << activeVersion);
+            return;
+        }
+
+        // Make sure we're finishing a job that's actually running. This guard follows the obsolete-version no-op so a
+        // late completion from a prior run cannot receive an error or affect a newer active run.
+        if (state != "RUNNING" && state != "RUNQUEUED" && !(mockRequest && latestVersion == 0)) {
             SINFO("Trying to finish job#" << jobID << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
             STHROW("405 Can only retry/finish RUNNING and RUNQUEUED jobs");
+        }
+
+        if (latestVersion > 0 && latestVersion != activeVersion) {
+            // A distinct enqueue arrived after this worker dequeued the job. Preserve the enqueue-owned row instead
+            // of letting the worker's stale data, delete marker, name, or priority overwrite it.
+            SINFO("Requeueing unique-as-retry job#" << jobID << " after " << requestVerb << ": worker version "
+                  << workerVersion << ", latest version " << latestVersion);
+            if (SIEquals(requestVerb, "FinishJob")) {
+                if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED', nextRun=" + SQ(SCURRENT_TIMESTAMP_MS()) +
+                                        ", data=JSON_REMOVE(data, '$.retryAfterCount') WHERE jobID=" + SQ(jobID) + ";")) {
+                    STHROW("502 Failed to requeue unique-as-retry job");
+                }
+                return;
+            }
+
+            string safeNewNextRun;
+            const bool ignoreRepeat = request.test("ignoreRepeat");
+            if (!repeat.empty() && !ignoreRepeat) {
+                string lastScheduled = nextRun;
+                if (!retryAfter.empty() && SToUpper(repeat).find("SCHEDULED") != string::npos) {
+                    lastScheduled = originalDataNextRun;
+                }
+                safeNewNextRun = _constructNextRunDATETIME(db, lastScheduled, lastRun, repeat);
+            } else {
+                const string& requestedNextRun = request["nextRun"];
+                if (requestedNextRun.empty()) {
+                    const int64_t delay = request.calc64("delay");
+                    if (delay < 0) {
+                        STHROW("402 Must specify a non-negative delay when retrying");
+                    }
+                    const string retryRepeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
+                    safeNewNextRun = _constructNextRunDATETIME(db, nextRun, lastRun, retryRepeat);
+                    if (safeNewNextRun.empty()) {
+                        STHROW("402 Malformed delay");
+                    }
+                } else {
+                    safeNewNextRun = SQ(requestedNextRun);
+                }
+            }
+
+            if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED', nextRun=" + safeNewNextRun +
+                                    ", data=JSON_REMOVE(data, '$.retryAfterCount') WHERE jobID=" + SQ(jobID) + ";")) {
+                STHROW("502 Failed to retry unique-as-retry job");
+            }
+            return;
         }
 
         // If we have a parent, make sure it is PAUSED.  This is to just
@@ -1176,6 +1348,7 @@ void BedrockJobsCommand::process(SQLite& db)
         // If we've been asked to update the data, let's do that
         auto data = request["data"];
         if (!data.empty()) {
+            data = db.read("SELECT " + stripUniqueAsRetryMetadataSQL(SQ(data)) + ";");
             // See if the new data says it's mocked.
             STable newData = SParseJSONObject(data);
             bool newMocked = newData.find("mockRequest") != newData.end();
@@ -1195,7 +1368,8 @@ void BedrockJobsCommand::process(SQLite& db)
             }
 
             // Update the data to the new value.
-            if (!db.writeIdempotent("UPDATE jobs SET data=" + SQ(data) + " WHERE jobID=" + SQ(jobID) + ";")) {
+            if (!db.writeIdempotent("UPDATE jobs SET data=" + preserveUniqueAsRetryMetadataSQL(SQ(data)) +
+                                    " WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Failed to update job data");
             }
         }
@@ -1369,21 +1543,28 @@ void BedrockJobsCommand::process(SQLite& db)
     }
     // ----------------------------------------------------------------------
     else if (SIEquals(requestVerb, "FailJob")) {
-        // - FailJob( jobID, [data] )
+        // - FailJob( jobID, [data], [enqueueVersion] )
         //
         //     Fails a job.
         //
         //     Parameters:
         //     - jobID - ID of the job to fail
         //     - data  - Data to associate with this failed job
+        //     - enqueueVersion - Version returned when an opted-in unique job was dequeued
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
+        if (request.isSet("enqueueVersion")) {
+            BedrockPlugin::verifyAttributeInt64(request, "enqueueVersion", 1);
+        }
+        const int64_t jobID = request.calc64("jobID");
 
         // Verify there is a job like this and it's running
         SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat "
+        if (!db.read("SELECT state, "
+                     "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0), "
+                     "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.activeVersion'), 0) "
                      "FROM jobs "
-                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
+                     "WHERE jobID=" + SQ(jobID) + ";",
                      result)) {
             STHROW("502 Select failed");
         }
@@ -1391,6 +1572,22 @@ void BedrockJobsCommand::process(SQLite& db)
             STHROW("404 No job with this jobID");
         }
         const string& state = result[0][0];
+        const int64_t latestVersion = SToInt64(result[0][1]);
+        const int64_t activeVersion = SToInt64(result[0][2]);
+
+        // Keep the same compatibility contract as FinishJob and RetryJob: only a worker that dequeued this job before
+        // its first opt-in enqueue may omit the version.
+        if (activeVersion > 0 && !request.isSet("enqueueVersion")) {
+            STHROW("402 Missing enqueueVersion");
+        }
+        const int64_t workerVersion = request.calc64("enqueueVersion");
+
+        if (latestVersion > 0 && workerVersion != activeVersion) {
+            // A delayed failure from a prior run must not affect a newer active run.
+            SINFO("Ignoring obsolete FailJob for unique-as-retry job#" << jobID << ": worker version "
+                  << workerVersion << ", active version " << activeVersion);
+            return;
+        }
 
         // Make sure we're failing a job that's actually running or running with a retryAfter
         if (state != "RUNNING" && state != "RUNQUEUED") {
@@ -1398,18 +1595,32 @@ void BedrockJobsCommand::process(SQLite& db)
             STHROW("405 Can only fail RUNNING or RUNQUEUED jobs");
         }
 
+        if (latestVersion > 0 && latestVersion != activeVersion) {
+            // A distinct enqueue arrived after this worker dequeued the job. Preserve its data and run it rather than
+            // allowing the older worker's fatal outcome to strand the unique job in FAILED.
+            SINFO("Requeueing unique-as-retry job#" << jobID << " after FailJob: worker version " << workerVersion
+                  << ", latest version " << latestVersion);
+            if (!db.writeIdempotent("UPDATE jobs SET state='QUEUED', nextRun=" + SQ(SCURRENT_TIMESTAMP_MS()) +
+                                    ", data=JSON_REMOVE(data, '$.retryAfterCount') WHERE jobID=" + SQ(jobID) + ";")) {
+                STHROW("502 Failed to requeue unique-as-retry job");
+            }
+            return;
+        }
+
         // Are we updating the data too?
         list<string> updateList;
         if (request.isSet("data")) {
-            // Update the data too
-            updateList.push_back("data=" + SQ(request["data"]));
+            // Update public data while preserving Bedrock's private retry control object.
+            const string newData = db.read("SELECT IIF(JSON_VALID(" + SQ(request["data"]) + "), "
+                                           + stripUniqueAsRetryMetadataSQL(SQ(request["data"])) + ", '{}');");
+            updateList.push_back("data=" + preserveUniqueAsRetryMetadataSQL(SQ(newData)));
         }
 
         // Not repeating; just finish
         updateList.push_back("state='FAILED'");
 
         // Update this job
-        if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
+        if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) + " WHERE jobID=" + SQ(jobID) + ";")) {
             STHROW("502 Fail failed");
         }
 
