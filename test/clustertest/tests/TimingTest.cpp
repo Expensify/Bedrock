@@ -17,7 +17,6 @@ struct TimingTest : tpunit::TestFixture
 
             // This just verifies that the dbupgrade table was created by TestPlugin.
             SData query("idcollision h");
-            query["writeConsistency"] = "ASYNC";
             query["value"] = "default";
             int retries = 3;
             SData result;

@@ -38,17 +38,16 @@ struct PermafollowerTest : tpunit::TestFixture
         tester.stopNode(1);
         tester.stopNode(2);
 
-        // Now 4 out of 6 nodes (1 a permafollower) Do a full quorum commit
+        // Now 4 out of 6 nodes (1 a permafollower). Commit.
         SData request;
         request.methodLine = "Query";
         request["query"] = "INSERT OR REPLACE INTO test (id, value) VALUES(12345, 1 );";
-        request["writeConsistency"] = "QUORUM";
         node4.executeWaitVerifyContent(request, "200");
 
         // Shut down permafollower
         tester.stopNode(5);
 
-        // Now 3 out of 6 nodes Do another full quorum commit
+        // Now 3 out of 6 nodes. Commit again.
         node4.executeWaitVerifyContent(request, "200");
     }
 } __PermafollowerTest;

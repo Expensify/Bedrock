@@ -34,7 +34,6 @@ struct EscalateTest : tpunit::TestFixture
         // We're going to send a command to a follower.
         BedrockTester& brtester = tester->getTester(1);
         SData cmd("testescalate");
-        cmd["writeConsistency"] = "ASYNC";
         cmd["tempFile"] = BedrockTester::getTempFileName("escalate_test");
         brtester.executeWaitMultipleData({cmd});
 
@@ -89,7 +88,6 @@ struct EscalateTest : tpunit::TestFixture
 
         // Build a command.
         SData cmd("testescalate");
-        cmd["writeConsistency"] = "ASYNC";
         cmd["tempFile"] = BedrockTester::getTempFileName("escalate_test");
 
         // Set this so the follower's socket to leader won't get reused.

@@ -40,7 +40,7 @@ struct TimeoutTest : tpunit::TestFixture
                               TEST(TimeoutTest::testprocess),
                               TEST(TimeoutTest::testPostProcess),
                               TEST(TimeoutTest::totalTimeout),
-                              TEST(TimeoutTest::quorumHTTPS),
+                              TEST(TimeoutTest::httpsRequestTimeout),
                               TEST(TimeoutTest::futureCommitTimeout),
                               TEST(TimeoutTest::abortDuringProcessRollsBack),
                               TEST(TimeoutTest::abortDuringEscalationRollsBack),
@@ -90,11 +90,10 @@ struct TimeoutTest : tpunit::TestFixture
         ASSERT_GREATER_THAN_EQUAL((end - start) / 1000, BedrockCommand::DEFAULT_PROCESS_TIMEOUT + 5'000);
     }
 
-    void quorumHTTPS()
+    void httpsRequestTimeout()
     {
         BedrockTester& brtester = tester->getTester(0);
         SData request("httpstimeout");
-        request["writeConsistency"] = "2"; // QUORUM.
         request["timeout"] = "100"; // 100ms.
         brtester.executeWaitVerifyContent(request, "555 Timeout");
     }

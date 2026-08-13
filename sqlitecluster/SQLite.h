@@ -305,10 +305,10 @@ public:
     void clearAbortRef();
 
     // This atomically removes and returns committed transactions from our internal list. SQLiteNode can call this, and
-    // it will return a map of transaction IDs to tuples of (query, hash, dbCountAtTransactionStart), so that those
-    // transactions can be replicated out to peers. The query is in its post-prepare() form (a zstd frame when
-    // journalZstdDictionaryID is non-zero, otherwise the raw SQL) and is shipped to followers as-is.
-    map<uint64_t, tuple<string, string, uint64_t>> popCommittedTransactions();
+    // it will return a map of transaction IDs to pairs of (query, hash), so that those transactions can be replicated
+    // out to peers. The query is in its post-prepare() form (a zstd frame when journalZstdDictionaryID is non-zero,
+    // otherwise the raw SQL) and is shipped to followers as-is.
+    map<uint64_t, pair<string, string>> popCommittedTransactions();
 
     // The whitelist is either nullptr, in which case the feature is disabled, or it's a map of table names to sets of
     // column names that are allowed for reading. Using whitelist at all put the database handle into a more
@@ -324,9 +324,6 @@ public:
 
     // The zstd dictionary ID to use when compressing journal entries. 0 means no compression.
     static atomic<int64_t> journalZstdDictionaryID;
-
-    // public read-only accessor for _dbCountAtStart.
-    uint64_t getDBCountAtStart() const;
 
     int64_t getLastConflictIdentifier() const;
 
@@ -371,7 +368,7 @@ public:
         void incrementCommit(const string& commitHash);
 
         // This removes and returns all committed transactions.
-        map<uint64_t, tuple<string, string, uint64_t>> popCommittedTransactions();
+        map<uint64_t, pair<string, string>> popCommittedTransactions();
 
         // This is the last committed hash by *any* thread for this file.
         atomic<string> lastCommittedHash;
@@ -384,7 +381,7 @@ public:
         // transaction is ultimately committed. This should be cleared out if the transaction is rolled back. The
         // query is in its post-prepare() form (a zstd frame when compression is enabled, raw SQL otherwise) and is
         // shipped directly to followers in BEGIN_TRANSACTION.
-        void prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash, uint64_t dbCountAtTransactionStart);
+        void prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash);
 
         // When a transaction that was prepared is committed, we move the data from the prepared list to the committed
         // list.
@@ -424,8 +421,8 @@ public:
 private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
-        map<uint64_t, tuple<string, string, uint64_t>> _preparedTransactions;
-        map<uint64_t, tuple<string, string, uint64_t>> _committedTransactions;
+        map<uint64_t, pair<string, string>> _preparedTransactions;
+        map<uint64_t, pair<string, string>> _committedTransactions;
 
         // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
         // variety of operations (i.e., updating _committedTransactions, etc).
@@ -479,11 +476,6 @@ private:
 
     // Returns the name of a journal table based on it's index.
     static string getJournalTableName(vector<string>& journalNames, int64_t journalTableID, bool create = false);
-
-    // The latest transaction ID at the start of the current transaction (note: it is allowed for this to be *higher*
-    // than the state inside the transaction, if another thread committed to the DB while we were in
-    // `beginTransaction`).
-    uint64_t _dbCountAtStart = 0;
 
     // Timing information.
     mutable uint64_t _beginElapsed = 0;

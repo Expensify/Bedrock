@@ -20,16 +20,12 @@ Bedrock's primary feature is its ability to seamlessly synchronize data between 
 
 7. Each node processes read requests from its local database.  By default it will respond based on the latest data.  However, the client can optionally provide a `commitCount`, which if larger than the current commit count of that node's database, will cause the node to hold off on responding until the database has been synchronized up to that point.  In this way, clients can avoid inconsistency by querying two different nodes with different states (though in practice, clients should attempt to query the same node repeatedly to avoid any unnecessary delay).  All of this is provided "out of the box" by Bedrock's [PHP client library](https://github.com/Expensify/Bedrock-PHP).
 
-8. Write commands are escalated to the leader, which coordinates a distributed two-phase commit transaction.  By default, the leader waits for a quorum of followers to approve the transaction, before committing it on the leader database and instructing the followers to do the same.
+8. Write commands are escalated to the leader, which commits them to its own database and then streams them to the followers.  The leader does not wait for followers to acknowledge a transaction before committing it, which is what allows write throughput to exceed `1/median(rtt)` transactions per second.
 
-9. However, a "selective synchronization" algorithm is used to achieve higher write throughput than could be obtained with full quorum alone.  (It requires `median(rtt)` seconds to obtain quorum, limiting total throughput to `1/median(rtt)` full quorum write transactions.)  In this way clients can designate the [level of consistency desired](https://github.com/Expensify/Bedrock/blob/main/sqlitecluster/SQLiteNode.cpp#L1075) on an individual transaction basis, including `QUORUM` (a majority of followers must approve), `ONE` (any follower, typically the nearest), or `ASYNC` (no followers).
+9. The cost of not waiting is that the leader can "race ahead" of the cluster: if it crashes with commits that haven't reached anyone else, those commits are lost.  A cluster is therefore only as durable as the leader's ability to hand its commits off before it dies.  There is no per-transaction way to ask for a stronger guarantee.
 
-10. Obviously, `ASYNC` provides the highest write throughput because the leader commits without waiting.  However, this allows the leader to "race ahead" of the cluster, which is dangerous: if the leader crashes at that point, its unsynchronized commits could be lost forever.  Accordingly, this is recommended only for commits that can be safely lost (eg, a comment on a report) versus a commit that is very dangerous to lose (eg, reimbursing an expense report).
+10. After a write transaction is processed, the response is returned to the node that escalated it, and then back to the client.
 
-11. Furthermore, for safety, the leader is limited to a maximum number of commits it will go without full quorum, configurable via the `-quorumCheckpoint` command line option.
+11. If the leader dies before an escalated command has been processed, the follower will re-escalate the command to the new leader once elected.  Furthermore, followers will continue accepting commands during the period of leader failover, thereby ensuring that the client sees no "downtime" and merely a short delay (typically imperceptible).
 
-12. After a write transaction is processed, the response is returned to the node that escalated it, and then back to the client.
-
-13. If the leader dies before an escalated command has been processed, the follower will re-escalate the command to the new leader once elected.  Furthermore, followers will continue accepting commands during the period of leader failover, thereby ensuring that the client sees no "downtime" and merely a short delay (typically imperceptible).
-
-14. When the leader returns to operation, the leader will synchronize any transactions it missed while down, and then stand back up and take over control from the interim leader seamlessly.
+12. When the leader returns to operation, the leader will synchronize any transactions it missed while down, and then stand back up and take over control from the interim leader seamlessly.

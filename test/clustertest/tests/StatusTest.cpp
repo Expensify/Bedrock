@@ -35,7 +35,6 @@ struct StatusTest : tpunit::TestFixture
                 BedrockTester& brtester = tester->getTester(i);
 
                 SData status("Status");
-                status["writeConsistency"] = "ASYNC";
 
                 // Ok, send them all!
                 auto result = brtester.executeWaitVerifyContent(status);

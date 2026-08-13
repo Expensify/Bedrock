@@ -58,7 +58,6 @@ struct GracefulFailoverTest : tpunit::TestFixture
                                     // forgotten.
                                     query["Connection"] = "forget";
                                 }
-                                query["writeConsistency"] = "ASYNC";
                                 query["senttonode"] = to_string(currentNodeIndex);
                                 query["clientID"] = to_string(i);
                                 query["response"] = "756";
@@ -67,7 +66,6 @@ struct GracefulFailoverTest : tpunit::TestFixture
                         } else if (randNum % 2 == 0) {
                             // Every remaining even client makes write requests.
                             SData query("idcollision" + randCommand);
-                            query["writeConsistency"] = "ASYNC";
                             query["peekSleep"] = "5";
                             query["processSleep"] = "5";
                             query["response"] = "756";
