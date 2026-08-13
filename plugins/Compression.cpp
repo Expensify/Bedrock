@@ -257,9 +257,14 @@ static void sqliteDecompress(sqlite3_context* ctx, int argc, sqlite3_value** arg
 
 void BedrockPlugin_Compression::registerSQLite(sqlite3* db)
 {
-    sqlite3_create_function_v2(db, "compress", 2, SQLITE_UTF8 | SQLITE_DETERMINISTIC,
+    // SQLITE_INNOCUOUS lets these appear in indexes, views and triggers on a connection with
+    // trusted_schema turned off. Without it, once an index reads decompress(), such a connection
+    // rejects INSERT, UPDATE, REINDEX, PRAGMA integrity_check and VACUUM on the indexed table with
+    // "unsafe use of decompress()". The sqlite3 command line turns trusted_schema off by default,
+    // so that would break querying and maintaining a database snapshot.
+    sqlite3_create_function_v2(db, "compress", 2, SQLITE_UTF8 | SQLITE_DETERMINISTIC | SQLITE_INNOCUOUS,
                                nullptr, ::sqliteCompress, nullptr, nullptr, nullptr);
-    sqlite3_create_function_v2(db, "decompress", 1, SQLITE_UTF8 | SQLITE_DETERMINISTIC,
+    sqlite3_create_function_v2(db, "decompress", 1, SQLITE_UTF8 | SQLITE_DETERMINISTIC | SQLITE_INNOCUOUS,
                                nullptr, ::sqliteDecompress, nullptr, nullptr, nullptr);
 }
 
