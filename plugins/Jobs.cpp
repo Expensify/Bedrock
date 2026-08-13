@@ -1081,7 +1081,8 @@ void BedrockJobsCommand::process(SQLite& db)
         if (!db.writeIdempotent("UPDATE jobs "
                                 "SET data=" +
                                 SQ(newData) +
-                                (request["repeat"].size() ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
+                                (SToInt(request["shouldClearRepeat"]) ? ", repeat=''" :
+                                 request["repeat"].size() ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
                                 (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
                                 (request.isSet("jobPriority") ? ", priority=" + SQ(request.calc64("jobPriority")) + " " : "") +
                                 "WHERE jobID=" +
