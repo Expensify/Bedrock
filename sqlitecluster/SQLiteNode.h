@@ -199,7 +199,6 @@ private:
     // false if the transaction couldn't be prepared, in which case it has been rolled back.
     bool _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime);
     int _handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
-    void _handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
 
     // Called when we first establish a connection with a new peer
     void _onConnect(SQLitePeer* peer);
@@ -217,9 +216,9 @@ private:
     // thread queues onto `_replicateQueue`. Handling them in one thread in the order leader sent them is what keeps our
     // commit order matching leader's.
     //
-    // TRANSACTION applies and commits a transaction in one step, and is what leaders will send once every node can
-    // receive it. Until then they send BEGIN_TRANSACTION to apply one, followed by COMMIT_TRANSACTION to keep it or
-    // ROLLBACK_TRANSACTION to discard it. See the message list at the top of SQLiteNode.cpp.
+    // TRANSACTION applies and commits a transaction in one step, and is what a leader sends. BEGIN_TRANSACTION applies
+    // one and COMMIT_TRANSACTION commits it, which is what a leader running older code sends. See the message list at
+    // the top of SQLiteNode.cpp.
     //
     // This thread exits when `_replicateThreadShouldExitTime` passes, which is set when a node stops FOLLOWING.
     void _replicate();

@@ -246,8 +246,6 @@ void SQLiteNode::_replicate()
             if (result != SQLITE_OK) {
                 STHROW("commit failed");
             }
-        } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-            _handleRollbackTransaction(db, peer, command);
         } else {
             SWARN("Invalid command passed to _replicate: " << command.methodLine);
         }
@@ -960,8 +958,8 @@ bool SQLiteNode::update()
                 // Leader stepping down
                 SHMMM("Leader stepping down.");
 
-                // Are we in the middle of a commit? This should only happen if we received a `BEGIN_TRANSACTION` without a
-                // corresponding `COMMIT` or `ROLLBACK`, this isn't supposed to happen.
+                // Are we in the middle of a commit? This should only happen if we received a `BEGIN_TRANSACTION` from a
+                // leader running older code without a corresponding `COMMIT_TRANSACTION`, this isn't supposed to happen.
                 if (!_db.getUncommittedHash().empty()) {
                     SWARN("Leader stepped down with transaction in progress, rolling back.");
                     _db.rollback();
@@ -1389,7 +1387,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                 _changeState(SQLiteNodeState::SEARCHING);
                 throw e;
             }
-        } else if (SIEquals(message.methodLine, "TRANSACTION") || SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
+        } else if (SIEquals(message.methodLine, "TRANSACTION") || SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION")) {
             if (_state != SQLiteNodeState::FOLLOWING) {
                 // These messages are only valid while following, but we do not throw if we receive them in other states, as
                 // it's not neccesarily an error. Specifically, as we switch away from FOLLOWING, there may still be a stream
@@ -2132,28 +2130,6 @@ int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uin
     db.logLastTransactionTiming(format("[performance] Committed follower transaction #{} ({}).", commandCommitCount, commandCommitHash), "SQLiteNode::_handleCommitTransaction");
 
     return result;
-}
-
-void SQLiteNode::_handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const SData& message)
-{
-    // ROLLBACK_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
-    // outstanding transaction should be rolled back. This completes a given distributed transaction.
-    //
-    // Nothing in this version sends this: a leader only broadcasts a transaction once it has committed it, so there's
-    // never anything to retract. It's retained because an un-upgraded leader still sends it, and dropping the handler
-    // would be worse than useless -- the message would fall through to `_replicate`'s unrecognized-command warning,
-    // the prepared transaction would stay open, and the next BEGIN_TRANSACTION would throw "already in a transaction"
-    // out of a thread with no catch, killing the process. Delete this once no leader can send it.
-    if (!message.isSet("ID")) {
-        STHROW("missing ID");
-    }
-    if (_state != SQLiteNodeState::FOLLOWING) {
-        STHROW("not following");
-    }
-    if (db.getUncommittedHash().empty()) {
-        SINFO("Received ROLLBACK_TRANSACTION with no outstanding transaction.");
-    }
-    db.rollback();
 }
 
 SQLiteNodeState SQLiteNode::leaderState() const
