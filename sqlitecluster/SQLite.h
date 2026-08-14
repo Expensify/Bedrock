@@ -256,7 +256,7 @@ public:
     // Returns a concatenated string containing all the 'write' queries executed within the current, uncommitted
     // transaction. Before prepare() runs this is the raw SQL; after prepare() runs it holds the same bytes that were
     // written to the journal — a zstd frame when journalZstdDictionaryID is non-zero, or the raw SQL otherwise. The
-    // post-prepare form is what gets shipped to followers in BEGIN_TRANSACTION.
+    // post-prepare form is what gets shipped to followers in TRANSACTION.
     string getUncommittedQuery()
     {
         return _uncommittedQuery;
@@ -380,7 +380,7 @@ public:
         // When `SQLite::prepare` is called, we need to save a set of info that will be broadcast to peers when the
         // transaction is ultimately committed. This should be cleared out if the transaction is rolled back. The
         // query is in its post-prepare() form (a zstd frame when compression is enabled, raw SQL otherwise) and is
-        // shipped directly to followers in BEGIN_TRANSACTION.
+        // shipped directly to followers in TRANSACTION.
         void prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash);
 
         // When a transaction that was prepared is committed, we move the data from the prepared list to the committed

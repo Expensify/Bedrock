@@ -2013,9 +2013,8 @@ bool SQLiteNode::_majoritySubscribed() const
 
 void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message)
 {
-    // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
-    // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
-    // the transaction for any reason, it is broken somehow -- disconnect from the leader.
+    // Begins a local transaction with the query the leader broadcast. If the follower cannot start the transaction for
+    // any reason, it is broken somehow -- disconnect from the leader.
     // **FIXME**: What happens if LEADER steps down before sending BEGIN?
     // **FIXME**: What happens if LEADER steps down or disconnects after BEGIN?
     if (_state != SQLiteNodeState::FOLLOWING) {
