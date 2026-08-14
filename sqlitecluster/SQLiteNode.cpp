@@ -54,8 +54,9 @@
 // NewHash:          Hash, but for "ID" instead of "CommitCount".
 //                   Proposal: rename to "currentTransactionHash".
 // NewCount:         Same as "ID" except without the "ASYNC_" prefix.
-// AsyncNotification: Set on an APPROVE_TRANSACTION that a follower sends periodically for an "ASYNC_" transaction. It
-//                   marks the message as a commit-count report rather than an approval of anything.
+// AsyncNotification: Set on an APPROVE_TRANSACTION that a follower running older code sends periodically for an
+//                   "ASYNC_" transaction. It marks the message as a commit-count report rather than an approval of
+//                   anything.
 // State:            The state of the peer sending the message (i.e., SEARCHING, LEADING).
 // Version:          The version string of the node sending the message.
 // Permafollower:    Boolean value (string "true" or "false") indicating if the node sending the message is a
@@ -1422,10 +1423,10 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             // already done: every message carries CommitCount and Hash, and the code above recorded them with
             // `peer->setCommit()`. These branches exist only so the messages aren't logged as unrecognized.
             //
-            // FOLLOWER_STATUS is the message meant for this. APPROVE_TRANSACTION and DENY_TRANSACTION are what
-            // followers actually send today, and are still what a follower sends to a leader running older code, so
-            // they're accepted here too. Deliberately no validation: we no longer act on an approval, and throwing
-            // would cost us the peer connection for a message we're about to ignore either way.
+            // FOLLOWER_STATUS is the message meant for this, and what a follower sends. APPROVE_TRANSACTION and
+            // DENY_TRANSACTION are what a follower running older code sends, so they're accepted here too.
+            // Deliberately no validation: we no longer act on an approval, and throwing would cost us the peer
+            // connection for a message we're about to ignore either way.
         } else if (SIEquals(message.methodLine, "FORKED")) {
             peer->forked = true;
             PINFO("Peer said we're forked, believing them.");
@@ -2041,14 +2042,9 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
 
 bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime)
 {
-    // A `TRANSACTION` message carries the whole transaction, so we commit it ourselves as soon as we've applied it. A
-    // `BEGIN_TRANSACTION` leaves us holding a prepared transaction until leader tells us what to do with it.
-    const bool isMerged = SIEquals(message.methodLine, "TRANSACTION");
-
     uint64_t prepareStartTime = STimeNow();
-    // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
-    // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
-    // the transaction for any reason, it is broken somehow -- disconnect from the leader.
+    // If the follower cannot apply leader's transaction for any reason, it is broken somehow -- disconnect from the
+    // leader.
     // **FIXME**: What happens if LEADER steps down before sending BEGIN?
     // **FIXME**: What happens if LEADER steps down or disconnects after BEGIN?
     if (!message.isSet("ID")) {
@@ -2071,12 +2067,11 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
         db.rollback();
     }
 
-    // Permafollowers never respond. Everyone else does, for one of two reasons.
-    //
-    // A merged TRANSACTION can only come from a leader new enough to understand FOLLOWER_STATUS, so on that path we
-    // report our commit count with the message meant for it, and never send an approval -- there is nothing left to
-    // approve. Every tenth is enough to keep leader roughly current.
-    if (_priority && isMerged) {
+    // There's nothing left to approve -- leader has already committed anything it sends us -- so all we owe it is a
+    // rough idea of how far along we are, which every message we send carries in its CommitCount header. Every tenth
+    // commit is enough to keep leader current, and it's a floor rather than a schedule: sending one more often than
+    // that is harmless. Permafollowers never respond at all.
+    if (_priority) {
         uint64_t currentCommitCount = db.getCommitCount();
         if (currentCommitCount % MIN_APPROVE_FREQUENCY == 0) {
             SData response("FOLLOWER_STATUS");
@@ -2084,31 +2079,8 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
                 _sendToPeer(_leadPeer, response);
             }
         }
-    } else if (_priority) {
-        string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
-        uint64_t currentCommitCount = db.getCommitCount();
-        bool isAsync = SStartsWith(message["ID"], "ASYNC_");
-        bool asyncNotification = isAsync && (currentCommitCount % MIN_APPROVE_FREQUENCY == 0);
-        if (!isAsync || asyncNotification) {
-            // Not a permafollower, approve the transaction
-            PINFO(verb << " #" << currentCommitCount + 1 << " (" << message["NewHash"] << ").");
-            SData response(verb);
-            response["NewCount"] = SToStr(currentCommitCount + 1);
-            response["NewHash"] = success ? db.getUncommittedHash() : message["NewHash"];
-            response["ID"] = message["ID"];
-            if (asyncNotification) {
-                response["AsyncNotification"] = "true";
-            }
-            if (_leadPeer) {
-                _sendToPeer(_leadPeer, response);
-            } else {
-                SWARN("no leader? Still handling transaction, it may have been approved elsewhere.");
-            }
-        } else {
-            SDEBUG("Skipping " << verb << " for ASYNC command.");
-        }
     } else {
-        PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
+        PINFO("Would report status at transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
               << "), but a permafollower -- keeping quiet.");
     }
     uint64_t leaderSentTimestamp = message.calcU64("leaderSendTime");

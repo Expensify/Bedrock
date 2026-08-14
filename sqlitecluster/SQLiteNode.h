@@ -169,8 +169,8 @@ public:
     int setPriority(int newPriority);
 
 private:
-    // The minimum frequency of APPROVE_TRANSACTION messages we'll send when following, back to leader, to indicate our own current synchronization state.
-    // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th BEGIN_TRANSACTION message.
+    // The minimum frequency of FOLLOWER_STATUS messages we'll send when following, back to leader, to indicate our own current synchronization state.
+    // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th TRANSACTION message.
     static const size_t MIN_APPROVE_FREQUENCY;
 
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
@@ -195,10 +195,8 @@ private:
     // Handlers for transaction messages.
     void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
 
-    // Applies the transaction in `message` to `db`, and reports our commit count back to leader. Returns false if the
-    // transaction couldn't be prepared, in which case it has been rolled back. How we report back depends on whether
-    // `message` is a `TRANSACTION`, which we commit ourselves, or a `BEGIN_TRANSACTION`, which we wait on a
-    // `COMMIT_TRANSACTION` for.
+    // Applies the transaction in `message` to `db`, and periodically reports our commit count back to leader. Returns
+    // false if the transaction couldn't be prepared, in which case it has been rolled back.
     bool _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime);
     int _handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
     void _handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
