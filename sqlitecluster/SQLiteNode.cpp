@@ -34,13 +34,11 @@
 // *** REPLICATION MESSAGES ***
 // TRANSACTION:         A complete transaction: the follower applies it and commits it, with no second message needed.
 //                      A leader only ever broadcasts a transaction it has already committed itself, so there is nothing
-//                      it could later ask the follower to take back. Nothing sends this yet -- the receiver ships one
-//                      release ahead of the sender so that leaders can switch to it once every node understands it.
+//                      it could later ask the follower to take back. This is what a leader sends.
 // BEGIN_TRANSACTION:   Apply a transaction but don't commit it; wait to be told which way it went. The older,
-//                      two-message form of the above, and still what every leader sends today.
-// COMMIT_TRANSACTION:  Commit the transaction a BEGIN_TRANSACTION applied.
-// ROLLBACK_TRANSACTION: Discard the transaction a BEGIN_TRANSACTION applied. Nothing in this version sends it; see
-//                      `_handleRollbackTransaction` for why the receiver is still here.
+//                      two-message form of the above. Nothing in this version sends it; the receiver is still here
+//                      because a leader running older code does, and it goes away once none can.
+// COMMIT_TRANSACTION:  Commit the transaction a BEGIN_TRANSACTION applied. Same story as BEGIN_TRANSACTION.
 //
 // *** DOCUMENTATION OF MESSAGE FIELDS ***
 // Note: Yes, two of these fields start with lowercase chars.
@@ -390,26 +388,20 @@ void SQLiteNode::_sendOutstandingTransactions()
         }
         string& query = i.second.first;
         string& hash = i.second.second;
-        // Every transaction we send has already committed here, so BEGIN and COMMIT go out together. The "ASYNC_"
-        // prefix tells followers not to bother approving it, which is load-bearing: a follower sends a full
-        // APPROVE_TRANSACTION for any ID without it.
-        string idHeader = "ASYNC_" + to_string(id);
-        SData transaction("BEGIN_TRANSACTION");
+        // Every transaction we send has already committed here, so it goes out as a single TRANSACTION that the
+        // follower applies and commits on its own. The "ASYNC_" prefix on the ID tells followers not to bother
+        // approving it, which is load-bearing for a follower running older code: it sends a full APPROVE_TRANSACTION
+        // for any ID without it.
+        SData transaction("TRANSACTION");
         transaction["NewCount"] = to_string(id);
         transaction["NewHash"] = hash;
         transaction["leaderSendTime"] = sendTime;
-        transaction["ID"] = idHeader;
+        transaction["ID"] = "ASYNC_" + to_string(id);
         transaction.content = query;
 
         // Allows us to easily figure out how far behind followers are by analyzing the logs.
-        SINFO("Sending COMMIT for ASYNC transaction " << id << " to followers");
+        SINFO("Sending ASYNC transaction " << id << " to followers");
         _sendToAllPeers(transaction, true); // subscribed only
-
-        SData commit("COMMIT_TRANSACTION");
-        commit["ID"] = idHeader;
-        commit["NewCount"] = to_string(id);
-        commit["NewHash"] = hash;
-        _sendToAllPeers(commit, true); // subscribed only
         _lastSentTransactionID = id;
     }
 }
@@ -837,8 +829,8 @@ bool SQLiteNode::update()
         ///     concluded in the STANDINGDOWN) state.  The logic for this state
         ///     is as follows:
         ///
-        ///         broadcast BEGIN_TRANSACTION and COMMIT_TRANSACTION to subscribed followers for any
-        ///             transaction that a worker thread has committed but that we haven't sent yet
+        ///         broadcast TRANSACTION to subscribed followers for any transaction that a worker thread has
+        ///             committed but that we haven't sent yet
         ///         if( we're LEADING )
         ///             if( there is another LEADER )         goto STANDINGDOWN
         ///             if( there is a higher priority peer ) goto STANDINGDOWN
