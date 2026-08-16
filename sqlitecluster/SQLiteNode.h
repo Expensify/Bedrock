@@ -64,25 +64,6 @@ class SQLiteNode : public STCPManager {
     friend class SQLiteNodeTester;
 
 public:
-    // These are the possible states a transaction can be in.
-    enum class CommitState
-    {
-        UNINITIALIZED,
-        WAITING,
-        COMMITTING,
-        SUCCESS,
-        FAILED
-    };
-
-    // Write consistencies available
-    enum ConsistencyLevel
-    {
-        ASYNC,  // Fully asynchronous write, no follower approval required.
-        ONE,    // Require exactly one approval (likely from a peer on the same LAN)
-        QUORUM, // Require majority approval
-        NUM_CONSISTENCY_LEVELS
-    };
-
     // This is a globally accessible pointer to some node instance. The intention here is to let signal handling code attempt to kill outstanding
     // peer connections on this node before shutting down. Generally, there is only a single node instance per application, and this will
     // refer to that node, there may be exceptions in cases like test harnesses.
@@ -95,24 +76,11 @@ public:
     // Receive timeout for cluster messages.
     static const uint64_t RECV_TIMEOUT;
 
-    // The minimum frequency of APPROVE_TRANSACTION messages we'll send when following, back to leader, to indicate our own current synchronization state.
-    // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th BEGIN_TRANSACTION message.
-    static const size_t MIN_APPROVE_FREQUENCY;
-
     // Get and SQLiteNode State from it's name.
     static SQLiteNodeState stateFromName(const string& name);
 
     // Return the string representing an SQLiteNode State
     static const string& stateName(SQLiteNodeState state);
-
-    // True from when we call 'startCommit' until the commit has been sent to (and, if it required replication,
-    // acknowledged by) peers.
-    // Does not block.
-    bool commitInProgress() const;
-
-    // Returns true if the last commit was successful. If called while `commitInProgress` would return true, it returns false.
-    // Does not block.
-    bool commitSucceeded() const;
 
     // Get's the commitCount from the underlying DB.
     // Does not block.
@@ -144,10 +112,6 @@ public:
     // Does not block.
     SQLiteNodeState getState() const;
 
-    // Returns true if we're LEADING with enough FOLLOWERs to commit a quorum transaction.
-    // Can block.
-    bool hasQuorum() const;
-
     // Return the command address of the current leader, if there is one (empty string otherwise).
     // Can block.
     string leaderCommandAddress() const;
@@ -155,6 +119,12 @@ public:
     // Return the state of the lead peer. Returns UNKNOWN if there is no leader, or if we are the leader.
     // Does not block.
     SQLiteNodeState leaderState() const;
+
+    // Returns true if at least half of our full (non-permafollower) peers have subscribed to us. A peer only receives
+    // the transaction stream once it's subscribed, so this answers "would a transaction I commit right now reach most
+    // of the cluster?"
+    // Can block.
+    bool majorityOfFollowersSubscribed() const;
 
     // Tell the node a commit has been made by another thread, so that we can interrupt our poll loop if we're waiting
     // for data, and send the new commit.
@@ -185,10 +155,6 @@ public:
                const string& commandPort = "localhost:8890");
     ~SQLiteNode();
 
-    // Begins the process of committing a transaction on this SQLiteNode's database. When this returns,
-    // commitInProgress() will return true until the commit completes.
-    void startCommit(ConsistencyLevel consistency);
-
     // Updates the internal state machine. Returns true if it wants immediate re-updating. Returns false to indicate it
     // would be a good idea for the caller to read any new commands or traffic from the network.
     bool update();
@@ -199,34 +165,13 @@ public:
     // to call from other public functions.
     SQLitePeer* getPeerByName(const string& name) const;
 
-    // Pointer to the current on prepare handler to be passed on commit to SQLite
-    void (*onPrepareHandler)(SQLite& _db, int64_t tableID);
-    bool onPrepareHandlerEnabled;
-
     // This changes the current node priority and broadcasts that to all other nodes.
     int setPriority(int newPriority);
 
 private:
-    // Utility class that can decrement _replicationThreadCount when objects go out of scope.
-    template<typename CounterType>
-    class ScopedDecrement {
-public:
-        ScopedDecrement(CounterType& counter) : _counter(counter)
-        {
-        }
-
-        ~ScopedDecrement()
-        {
-            --_counter;
-        }
-
-private:
-        CounterType& _counter;
-    };
-
-    // The names of each of the consistency levels defined in `ConsistencyLevel` as strings. This is only actually used
-    // for logging.
-    static const string CONSISTENCY_LEVEL_NAMES[NUM_CONSISTENCY_LEVELS];
+    // The minimum frequency of APPROVE_TRANSACTION messages we'll send when following, back to leader, to indicate our own current synchronization state.
+    // This is expressed as "every Nth message", where e.g., if MIN_APPROVE_FREQUENCY is 10, we will respond to at least every 10th BEGIN_TRANSACTION message.
+    static const size_t MIN_APPROVE_FREQUENCY;
 
     static const vector<SQLitePeer*> _initPeers(const string& peerList);
 
@@ -243,13 +188,18 @@ private:
     // Add required headers for messages being sent to peers.
     SData _addPeerHeaders(SData message);
 
-    void _changeState(SQLiteNodeState newState, uint64_t commitIDToCancelAfter = 0);
+    void _changeState(SQLiteNodeState newState);
 
     string _getLostQuorumLogMessage() const;
 
     // Handlers for transaction messages.
     void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
-    void _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime);
+
+    // Applies the transaction in `message` to `db`, and reports our commit count back to leader. Returns false if the
+    // transaction couldn't be prepared, in which case it has been rolled back. How we report back depends on whether
+    // `message` is a `TRANSACTION`, which we commit ourselves, or a `BEGIN_TRANSACTION`, which we wait on a
+    // `COMMIT_TRANSACTION` for.
+    bool _handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime);
     int _handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash);
     void _handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
 
@@ -265,25 +215,19 @@ private:
     void _reconnectPeer(SQLitePeer* peer);
     void _recvSynchronize(SQLitePeer* peer, const SData& message);
 
-    // This is the main replication loop that's run in the replication threads. It's instantiated in a new thread for
-    // each new relevant replication command received by the sync thread.
+    // This is the main replication loop, run in a single replication thread which consumes messages that the sync
+    // thread queues onto `_replicateQueue`. Handling them in one thread in the order leader sent them is what keeps our
+    // commit order matching leader's.
     //
-    // There are three commands we currently handle here BEGIN_TRANSACTION, ROLLBACK_TRANSACTION, and
-    // COMMIT_TRANSACTION.
-    // ROLLBACK_TRANSACTION and COMMIT_TRANSACTION are trivial, they record the new highest commit number from LEADER,
-    // or instruct the node to go SEARCHING and reconnect if a distributed ROLLBACK happens.
+    // TRANSACTION applies and commits a transaction in one step, and is what leaders will send once every node can
+    // receive it. Until then they send BEGIN_TRANSACTION to apply one, followed by COMMIT_TRANSACTION to keep it or
+    // ROLLBACK_TRANSACTION to discard it. See the message list at the top of SQLiteNode.cpp.
     //
-    // BEGIN_TRANSACTION is where the interesting case is. This starts all transactions in parallel, and then waits
-    // until each previous transaction is committed such that the final commit order matches LEADER. It also handles
-    // commit conflicts by re-running the transaction from the beginning. Most of the logic for making sure
-    // transactions are ordered correctly is done in `SQLiteSequentialNotifier`, which is worth reading.
-    //
-    // This thread exits on completion of handling the command or when node._replicationThreadsShouldExit is set,
-    // which happens when a node stops FOLLOWING.
+    // This thread exits when `_replicateThreadShouldExitTime` passes, which is set when a node stops FOLLOWING.
     void _replicate();
 
     // Replicates any transactions that have been made on our database by other threads to peers.
-    void _sendOutstandingTransactions(const set<uint64_t>& commitOnlyIDs = {});
+    void _sendOutstandingTransactions();
     void _sendStandupResponse(SQLitePeer* peer, const SData& message);
     void _sendPING(SQLitePeer* peer);
     void _sendToAllPeers(const SData& message, bool subscribedOnly = false);
@@ -329,21 +273,12 @@ private:
     // they need to send a LOGIN message with their name first).
     set<Socket*> _unauthenticatedIncomingSockets;
 
-    // The write consistency requested for the current in-progress commit.
-    // Remove. See: https://github.com/Expensify/Expensify/issues/208443
-    ConsistencyLevel _commitConsistency;
-
-    // This is the current CommitState we're in with regard to committing a transaction. It is `UNINITIALIZED` from
-    // startup until a transaction is started.
-    atomic<CommitState> _commitState;
-
     // This is just here to allow `poll` to get interrupted when there are new commits to send. We don't want followers
     // to wait up to a full second for them.
     mutable SSynchronizedQueue<bool> _commitsToSend;
 
     // Handle to the underlying database that we write to. This should also be passed to an SQLiteCore object that can
-    // actually perform some action on the DB. When those action are complete, you can call SQLiteNode::startCommit()
-    // to commit and replicate them.
+    // actually perform some action on the DB.
     SQLite& _db;
 
     // This is a pool of DB handles that this node can use for any DB access it needs. Currently, it hands them out to
@@ -377,9 +312,6 @@ private:
 
     // Server that implements `SQLiteServer` interface.
     SQLiteServer& _server;
-
-    // Stopwatch to track if we're giving up on the server preventing a standdown.
-    SStopwatch _standDownTimeout;
 
     // Our current State.
     atomic<SQLiteNodeState> _state;

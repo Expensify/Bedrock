@@ -105,7 +105,6 @@ struct LeadingTest : tpunit::TestFixture
                     BedrockTester& brtester = tester->getTester(i);
 
                     SData status("Status");
-                    status["writeConsistency"] = "ASYNC";
 
                     auto result = brtester.executeWaitVerifyContent(status);
                     lock_guard<decltype(m)> lock(m);
@@ -143,7 +142,6 @@ struct LeadingTest : tpunit::TestFixture
         vector<SData> requests(5000);
         for (auto& request : requests) {
             request.methodLine = "Query";
-            request["writeConsistency"] = "ASYNC";
             request["query"] = "INSERT INTO test VALUES(" + SQ(SRandom::rand64() % 1'000'000) + ", '');";
         }
 

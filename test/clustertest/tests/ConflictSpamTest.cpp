@@ -40,7 +40,6 @@ struct ConflictSpamTest : tpunit::TestFixture
                 BedrockTester& brtester = tester->getTester(i);
                 SData query("idcollision b");
                 // What if we throw in a few sync commands?
-                query["writeConsistency"] = "ASYNC";
                 int cmdNum = cmdID.fetch_add(1);
                 query["value"] = "sent-" + to_string(cmdNum);
 
@@ -57,7 +56,6 @@ struct ConflictSpamTest : tpunit::TestFixture
             for (int i : {0, 1, 2}) {
                 BedrockTester& brtester = tester->getTester(i);
                 SData query("Query");
-                query["writeConsistency"] = "ASYNC";
                 query["query"] = "SELECT id, value FROM test ORDER BY id;";
                 string result = brtester.executeWaitVerifyContent(query);
                 results[i] = result;
@@ -89,7 +87,6 @@ struct ConflictSpamTest : tpunit::TestFixture
                 int numCommands = 200;
                 for (int j = 0; j < numCommands; j++) {
                     SData query("idcollision b2");
-                    query["writeConsistency"] = "ASYNC";
                     int cmdNum = cmdID.fetch_add(1);
                     query["value"] = "sent-" + to_string(cmdNum);
                     requests.push_back(query);

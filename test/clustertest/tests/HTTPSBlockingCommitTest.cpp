@@ -59,7 +59,6 @@ struct HTTPSBlockingCommitTest : tpunit::TestFixture
                 vector<SData> requests;
                 for (int j = 0; j < 100; j++) {
                     SData cmd("httpsblockingcommit");
-                    cmd["writeConsistency"] = "ASYNC";
                     cmd["value"] = "node" + to_string(i) + "-" + to_string(j);
                     if (waitInPeek) {
                         cmd["waitInPeek"] = "true";

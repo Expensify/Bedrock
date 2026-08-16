@@ -90,7 +90,6 @@ public:
     atomic<SQLiteNodeState> state;
     atomic<Response> standupResponse;
     atomic<bool> subscribed;
-    atomic<Response> transactionResponse;
     atomic<string> version;
     atomic<uint64_t> lastPingTime;
 
