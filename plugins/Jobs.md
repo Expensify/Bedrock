@@ -25,7 +25,8 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
 
  * **QueryJob( jobID )** - Retrieves the current state and data associated with a job.
    * *jobID* - Identifier of the job to query
-   * Returns *enqueueVersion* when the job uses *uniqueAsRetry*.
+   * Returns *enqueueVersion* when the job uses *uniqueAsRetry*. This value is the latest enqueue version and is for status only.
+   * A worker must use the version from its `GetJob` or `GetJobs` response to finish, retry, or fail the job.
 
  * **FinishJob( jobID, [data], [enqueueVersion] )** - Marks a job as finished, which causes it to repeat if requested.
    * *jobID* - Identifier of the job to finish

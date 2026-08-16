@@ -280,7 +280,8 @@ bool BedrockJobsCommand::peek(SQLite& db)
         //         . lastRun - timestamp it was last run
         //         . repeat - recurring description
         //         . data - JSON data associated with this job
-        //         . enqueueVersion - version to pass to FinishJob, RetryJob, or FailJob
+        //         . enqueueVersion - latest enqueue version for an opted-in unique job. This value is for status only.
+        //           Worker completion requires the version from the GetJob or GetJobs dequeue response.
         //     - 404 - No jobs found
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
