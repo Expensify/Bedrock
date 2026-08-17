@@ -197,12 +197,8 @@ void SQLiteNode::_replicate()
         if (isQueueEmpty || (shouldExit && shouldExit < STimeNow())) {
             // There are no commands to process.
             if (shouldExit) {
-                if (db.insideTransaction()) {
-                    SINFO("Finished replication mid-transaction, missing COMMIT_TRANSACTION, rolling back.");
-                    db.rollback();
-                }
-
-                // Done with replication.
+                // Done with replication. Each iteration below either commits or throws, so there's never a transaction
+                // open on this handle between two of them, and this is only reachable between two of them.
                 return;
             } else {
                 // The queue is empty but we're not exiting so go back to the top and wait.
@@ -936,13 +932,6 @@ bool SQLiteNode::update()
             if (_leadPeer.load()->state != SQLiteNodeState::LEADING && _leadPeer.load()->state != SQLiteNodeState::STANDINGDOWN) {
                 // Leader stepping down
                 SHMMM("Leader stepping down.");
-
-                // Are we in the middle of a commit? This should only happen if we received a `BEGIN_TRANSACTION` from a
-                // leader running older code without a corresponding `COMMIT_TRANSACTION`, this isn't supposed to happen.
-                if (!_db.getUncommittedHash().empty()) {
-                    SWARN("Leader stepped down with transaction in progress, rolling back.");
-                    _db.rollback();
-                }
                 _changeState(SQLiteNodeState::SEARCHING);
                 return true; // Re-update
             }
@@ -1174,20 +1163,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                     peer->subscribed = false;
                 } else if (to == SQLiteNodeState::STANDINGUP) {
                     _sendStandupResponse(peer, message);
-                } else if (from == SQLiteNodeState::STANDINGDOWN) {
-                    // STANDINGDOWN: When a peer stands down we double-check to make sure we don't have any outstanding
-                    // transaction (and if we do, we warn and rollback).
-                    if (!_db.getUncommittedHash().empty()) {
-                        // Crap, we were waiting for a response that will apparently never come. I guess roll it back? This
-                        // should never happen, however, as the leader shouldn't STANDOWN unless all subscribed followers
-                        // (including us) have already unsubscribed, and we wouldn't do that in the middle of a
-                        // transaction. But just in case...
-                        SASSERTWARN(_state == SQLiteNodeState::FOLLOWING);
-                        PWARN("Was expecting a response for transaction #"
-                              << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash()
-                              << ") but stood down prematurely, rolling back and hoping for the best.");
-                        _db.rollback();
-                    }
                 }
             }
         } else if (SIEquals(message.methodLine, "STANDUP_RESPONSE")) {
@@ -1462,24 +1437,14 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer)
 
     /// - Verify we didn't just lose contact with our leader.  This should
     ///   only be possible if we're SUBSCRIBING or FOLLOWING.  If we did lose our
-    ///   leader, roll back any uncommitted transaction and go SEARCHING.
+    ///   leader, go SEARCHING.
     ///
     if (peer == _leadPeer) {
-        // We've lost our leader: make sure we aren't waiting for
-        // transaction response and re-SEARCH
+        // We've lost our leader: re-SEARCH
         PWARN("Lost our LEADER, re-SEARCHING.");
         SASSERTWARN(_state == SQLiteNodeState::SUBSCRIBING || _state == SQLiteNodeState::FOLLOWING);
         {
             _leadPeer = nullptr;
-        }
-        if (!_db.getUncommittedHash().empty()) {
-            // We're in the middle of a transaction and waiting for it to
-            // approve or deny, but we'll never get its response.  Roll it
-            // back and synchronize when we reconnect.
-            PHMMM("Was expecting a response for transaction #" << _db.getCommitCount() + 1 << " ("
-                  << _db.getUncommittedHash()
-                  << ") but disconnected prematurely; rolling back.");
-            _db.rollback();
         }
         _changeState(SQLiteNodeState::SEARCHING);
     }
