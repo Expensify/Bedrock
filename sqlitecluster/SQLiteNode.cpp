@@ -44,16 +44,12 @@
 //                   and not to communicate any information about a specific transaction in progress.
 // Hash:             The hash corresponding to the value in CommitCount.
 // ID:               The ID of the transaction currently being operated on. It is the same type of information as
-//                   "CommitCount", but not necessarily for the most recent transaction in the DB. A leader prefixes it
-//                   with "ASYNC_", which tells the follower not to send a full approval for the transaction. That's
-//                   every transaction a current leader sends; the unprefixed form only arrives from a leader running
-//                   older code.
+//                   "CommitCount", but not necessarily for the most recent transaction in the DB. Now that nothing
+//                   prefixes it, this duplicates "NewCount" exactly. It's still sent because a follower running older
+//                   code throws "missing ID" without it.
 // NewHash:          Hash, but for "ID" instead of "CommitCount".
 //                   Proposal: rename to "currentTransactionHash".
-// NewCount:         Same as "ID" except without the "ASYNC_" prefix.
-// AsyncNotification: Set on an APPROVE_TRANSACTION that a follower running older code sends periodically for an
-//                   "ASYNC_" transaction. It marks the message as a commit-count report rather than an approval of
-//                   anything.
+// NewCount:         Same as "ID".
 // State:            The state of the peer sending the message (i.e., SEARCHING, LEADING).
 // Version:          The version string of the node sending the message.
 // Permafollower:    Boolean value (string "true" or "false") indicating if the node sending the message is a
@@ -373,18 +369,16 @@ void SQLiteNode::_sendOutstandingTransactions()
         string& query = i.second.first;
         string& hash = i.second.second;
         // Every transaction we send has already committed here, so it goes out as a single TRANSACTION that the
-        // follower applies and commits on its own. The "ASYNC_" prefix on the ID tells followers not to bother
-        // approving it, which is load-bearing for a follower running older code: it sends a full APPROVE_TRANSACTION
-        // for any ID without it.
+        // follower applies and commits on its own.
         SData transaction("TRANSACTION");
         transaction["NewCount"] = to_string(id);
         transaction["NewHash"] = hash;
         transaction["leaderSendTime"] = sendTime;
-        transaction["ID"] = "ASYNC_" + to_string(id);
+        transaction["ID"] = to_string(id);
         transaction.content = query;
 
         // Allows us to easily figure out how far behind followers are by analyzing the logs.
-        SINFO("Sending ASYNC transaction " << id << " to followers");
+        SINFO("Sending transaction " << id << " to followers");
         _sendToAllPeers(transaction, true); // subscribed only
         _lastSentTransactionID = id;
     }
