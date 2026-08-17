@@ -1393,17 +1393,11 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             } else {
                 SINFO("Discarding replication message, stopping FOLLOWING");
             }
-        } else if (SIEquals(message.methodLine, "FOLLOWER_STATUS") ||
-                   SIEquals(message.methodLine, "APPROVE_TRANSACTION") ||
-                   SIEquals(message.methodLine, "DENY_TRANSACTION")) {
-            // These all tell the leader how much data a follower has, and nothing else that we act on. The work is
-            // already done: every message carries CommitCount and Hash, and the code above recorded them with
-            // `peer->setCommit()`. These branches exist only so the messages aren't logged as unrecognized.
-            //
-            // FOLLOWER_STATUS is the message meant for this, and what a follower sends. APPROVE_TRANSACTION and
-            // DENY_TRANSACTION are what a follower running older code sends, so they're accepted here too.
-            // Deliberately no validation: we no longer act on an approval, and throwing would cost us the peer
-            // connection for a message we're about to ignore either way.
+        } else if (SIEquals(message.methodLine, "FOLLOWER_STATUS")) {
+            // This tells the leader how much data a follower has, and nothing else that we act on. The work is already
+            // done: every message carries CommitCount and Hash, and the code above recorded them with
+            // `peer->setCommit()`. This branch exists only so the message isn't logged as unrecognized. Deliberately no
+            // validation: throwing would cost us the peer connection for a message we're about to ignore either way.
         } else if (SIEquals(message.methodLine, "FORKED")) {
             peer->forked = true;
             PINFO("Peer said we're forked, believing them.");
