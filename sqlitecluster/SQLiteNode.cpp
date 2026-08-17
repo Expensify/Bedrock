@@ -34,11 +34,8 @@
 // *** REPLICATION MESSAGES ***
 // TRANSACTION:         A complete transaction: the follower applies it and commits it, with no second message needed.
 //                      A leader only ever broadcasts a transaction it has already committed itself, so there is nothing
-//                      it could later ask the follower to take back. This is what a leader sends.
-// BEGIN_TRANSACTION:   Apply a transaction but don't commit it; wait to be told which way it went. The older,
-//                      two-message form of the above. Nothing in this version sends it; the receiver is still here
-//                      because a leader running older code does, and it goes away once none can.
-// COMMIT_TRANSACTION:  Commit the transaction a BEGIN_TRANSACTION applied. Same story as BEGIN_TRANSACTION.
+//                      it could later ask the follower to take back, and a follower never holds a prepared transaction
+//                      between two messages.
 //
 // *** DOCUMENTATION OF MESSAGE FIELDS ***
 // Note: Yes, two of these fields start with lowercase chars.
@@ -220,8 +217,7 @@ void SQLiteNode::_replicate()
         // At this point, we're guaranteed to have a message. Process it and then run again.
         if (SIEquals(command.methodLine, "TRANSACTION")) {
             // A whole transaction in one message: apply it, then commit it, with no window in between where we're
-            // holding a prepared transaction waiting to hear what to do with it. Nothing sends this yet -- it's here so
-            // that leaders can start sending it in a later release, once every node can receive it.
+            // holding a prepared transaction waiting to hear what to do with it.
             auto start = chrono::steady_clock::now();
             _handleBeginTransaction(db, peer, command);
             if (!_handlePrepareTransaction(db, peer, command, dequeueTime)) {
@@ -235,17 +231,6 @@ void SQLiteNode::_replicate()
             }
             auto duration = chrono::steady_clock::now() - start;
             SINFO("[performance] Replicated transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
-        } else if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-            auto start = chrono::steady_clock::now();
-            _handleBeginTransaction(db, peer, command);
-            _handlePrepareTransaction(db, peer, command, dequeueTime);
-            auto duration = chrono::steady_clock::now() - start;
-            SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
-        } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-            int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
-            if (result != SQLITE_OK) {
-                STHROW("commit failed");
-            }
         } else {
             SWARN("Invalid command passed to _replicate: " << command.methodLine);
         }
@@ -1387,9 +1372,9 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                 _changeState(SQLiteNodeState::SEARCHING);
                 throw e;
             }
-        } else if (SIEquals(message.methodLine, "TRANSACTION") || SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION")) {
+        } else if (SIEquals(message.methodLine, "TRANSACTION")) {
             if (_state != SQLiteNodeState::FOLLOWING) {
-                // These messages are only valid while following, but we do not throw if we receive them in other states, as
+                // This message is only valid while following, but we do not throw if we receive it in another state, as
                 // it's not neccesarily an error. Specifically, as we switch away from FOLLOWING, there may still be a stream
                 // of transactions being broadcast. We do not attempt to handle these, as we keep careful count of which
                 // replication threads are currently running, and reset the replication state tracking when we're not following.
@@ -2092,8 +2077,7 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
 
 int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash)
 {
-    // COMMIT_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
-    // outstanding transaction should be committed to the database. This completes a given distributed transaction.
+    // Commits the transaction that `_handlePrepareTransaction` just prepared, which completes replicating it.
     if (_state != SQLiteNodeState::FOLLOWING) {
         STHROW("not following");
     }
@@ -2108,7 +2092,7 @@ int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uin
         STHROW("hash mismatch:" + commandCommitHash + "!=" + db.getUncommittedHash() + ";");
     }
 
-    SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
+    SDEBUG("Committing current transaction because TRANSACTION: " << db.getUncommittedQuery());
 
     int result = db.commit(stateName(_state));
     if (result == SQLITE_BUSY_SNAPSHOT) {
