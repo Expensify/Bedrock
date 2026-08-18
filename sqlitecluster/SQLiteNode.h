@@ -216,9 +216,8 @@ private:
     // thread queues onto `_replicateQueue`. Handling them in one thread in the order leader sent them is what keeps our
     // commit order matching leader's.
     //
-    // TRANSACTION applies and commits a transaction in one step, and is what a leader sends. BEGIN_TRANSACTION applies
-    // one and COMMIT_TRANSACTION commits it, which is what a leader running older code sends. See the message list at
-    // the top of SQLiteNode.cpp.
+    // TRANSACTION, the only message this handles, applies and commits a transaction in one step. See the message list
+    // at the top of SQLiteNode.cpp.
     //
     // This thread exits when `_replicateThreadShouldExitTime` passes, which is set when a node stops FOLLOWING.
     void _replicate();
