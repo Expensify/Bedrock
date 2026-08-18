@@ -1673,3 +1673,22 @@ map<uint64_t, pair<string, string>> SQLite::SharedData::popCommittedTransactions
     _committedTransactions.clear();
     return result;
 }
+
+void SQLite::SharedData::registerAfterCommitCallback(function<void()>&& callback)
+{
+    unique_lock<decltype(_afterCommitCallbackLock)> lock(_afterCommitCallbackLock);
+    _afterCommitCallbacks.push_back(move(callback));
+}
+
+void SQLite::SharedData::runAfterCommitCallbacks()
+{
+    shared_lock<decltype(_afterCommitCallbackLock)> lock(_afterCommitCallbackLock);
+    for (const auto& callback : _afterCommitCallbacks) {
+        callback();
+    }
+}
+
+void SQLite::registerAfterCommitCallback(function<void()>&& callback)
+{
+    _sharedData.registerAfterCommitCallback(move(callback));
+}

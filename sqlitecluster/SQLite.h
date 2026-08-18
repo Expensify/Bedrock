@@ -220,6 +220,14 @@ public:
     // The main purpose of this is to allow replications in SQLiteNode to notify other waiting threads that the commit has finished even before the checkpoint is done.
     int commit(const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
 
+    // Registers a callback to run after every successful commit to this database, whether the commit came from a
+    // command running on the leader or from replication on a follower. Callbacks are shared across every handle to
+    // the same database file, so one registration covers all of them.
+    // The callback runs after the commit lock is released, but it still runs on the committing thread: it must not
+    // block, and it must not touch the database.
+    // There is no way to unregister, so callbacks must outlive every handle to this database.
+    void registerAfterCommitCallback(function<void()>&& callback);
+
     // Cancels the current transaction and rolls it back.
     void rollback(const string& commandName = "");
 
@@ -418,6 +426,12 @@ public:
         // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
         shared_mutex writeLock;
 
+        // Adds a callback to run after every successful commit. See SQLite::registerAfterCommitCallback.
+        void registerAfterCommitCallback(function<void()>&& callback);
+
+        // Runs every registered after-commit callback. Called with no locks held.
+        void runAfterCommitCallbacks();
+
 private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
@@ -427,6 +441,12 @@ private:
         // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
         // variety of operations (i.e., updating _committedTransactions, etc).
         recursive_mutex _internalStateMutex;
+
+        // Callbacks to run after each successful commit, and the lock guarding them. This is a separate lock from
+        // _internalStateMutex because it is taken on every commit and we never want a callback registration to wait
+        // behind unrelated shared-state changes.
+        vector<function<void()>> _afterCommitCallbacks;
+        shared_mutex _afterCommitCallbackLock;
     };
 
     // Initializers to support RAII-style allocation in constructors.
