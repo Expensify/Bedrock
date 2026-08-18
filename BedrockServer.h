@@ -279,9 +279,18 @@ private:
 
     // Registers a callback to run after every successful commit, on both a leader and a follower. Intended to be
     // called by plugins at startup. See SQLite::registerAfterCommitCallback for the callback's requirements.
+    // Plugins are constructed before the DB pool exists, so callbacks registered that early are held here and handed
+    // to the pool once it is created.
     void registerAfterCommitCallback(function<void()>&& callback);
 
 private:
+    // After-commit callbacks registered before the DB pool existed, the lock guarding them, and whether they have
+    // been handed off yet. The handoff happens exactly once: the SQLite SharedData that ends up owning them is keyed
+    // by filename and outlives the pool, so re-creating the pool on re-attach must not register them a second time.
+    vector<function<void()>> _pendingAfterCommitCallbacks;
+    mutex _afterCommitCallbackMutex;
+    bool _afterCommitCallbacksForwarded = false;
+
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
 

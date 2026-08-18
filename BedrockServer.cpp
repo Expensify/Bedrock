@@ -81,6 +81,13 @@ shared_ptr<SQLitePool> BedrockServer::getDBPool()
 
 void BedrockServer::registerAfterCommitCallback(function<void()>&& callback)
 {
+    lock_guard<decltype(_afterCommitCallbackMutex)> lock(_afterCommitCallbackMutex);
+    if (!_afterCommitCallbacksForwarded) {
+        // The pool doesn't exist yet, so hold onto this until sync() creates it.
+        _pendingAfterCommitCallbacks.push_back(move(callback));
+        return;
+    }
+
     // Registering on the base handle is enough, the callback list lives in the SharedData that every handle to this
     // database file shares.
     _dbPool->getBase().registerAfterCommitCallback(move(callback));
@@ -115,6 +122,19 @@ void BedrockServer::sync()
     SINFO("Setting dbPool size to: " << _dbPoolSize);
     _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"]);
     SQLite& db = _dbPool->getBase();
+
+    // Hand over any callbacks that plugins registered before this pool existed. This runs only the first time we get
+    // here, because the SharedData holding them is keyed by filename and survives the pool being re-created.
+    {
+        lock_guard<decltype(_afterCommitCallbackMutex)> lock(_afterCommitCallbackMutex);
+        if (!_afterCommitCallbacksForwarded) {
+            for (auto& callback : _pendingAfterCommitCallbacks) {
+                db.registerAfterCommitCallback(move(callback));
+            }
+            _pendingAfterCommitCallbacks.clear();
+            _afterCommitCallbacksForwarded = true;
+        }
+    }
 
     // Allow plugins to read from the DB at startup.
     for (auto plugin : plugins) {
