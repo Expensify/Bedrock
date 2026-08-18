@@ -24,7 +24,8 @@ struct AfterCommitCallbackTest : tpunit::TestFixture
     AfterCommitCallbackTest()
         : tpunit::TestFixture("AfterCommitCallback",
                               TEST(AfterCommitCallbackTest::firesOncePerCommit),
-                              TEST(AfterCommitCallbackTest::doesNotFireOnRollback))
+                              TEST(AfterCommitCallbackTest::doesNotFireOnRollback),
+                              TEST(AfterCommitCallbackTest::doesNotFireOnConflict))
     {
     }
 
@@ -83,4 +84,38 @@ struct AfterCommitCallbackTest : tpunit::TestFixture
         ASSERT_EQUAL(callCount.load(), 0);
     }
 
+    void doesNotFireOnConflict()
+    {
+        AfterCommitCallbackTempDBFile dbFile;
+
+        // Two handles to the same file share one SharedData, so `first` sees callbacks registered on either handle.
+        SQLite first(dbFile.filename, 1000, 1000, 1);
+        SQLite second(first);
+
+        first.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        first.write("CREATE TABLE testTable(id INTEGER PRIMARY KEY, value INTEGER);");
+        first.write("INSERT INTO testTable VALUES(1, 1);");
+        first.prepare();
+        ASSERT_EQUAL(first.commit(), SQLITE_OK);
+
+        atomic<int> callCount(0);
+        first.registerAfterCommitCallback([&callCount]() {
+            callCount++;
+        });
+
+        // Both handles update the same row from the same starting snapshot, so whichever commits second conflicts.
+        first.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
+        second.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
+        first.write("UPDATE testTable SET value = 2 WHERE id = 1;");
+        second.write("UPDATE testTable SET value = 3 WHERE id = 1;");
+
+        first.prepare();
+        ASSERT_EQUAL(first.commit(), SQLITE_OK);
+        ASSERT_EQUAL(callCount.load(), 1);
+
+        second.prepare();
+        ASSERT_EQUAL(second.commit(), SQLITE_BUSY_SNAPSHOT);
+        ASSERT_EQUAL(callCount.load(), 1);
+        second.rollback();
+    }
 } __AfterCommitCallbackTest;
