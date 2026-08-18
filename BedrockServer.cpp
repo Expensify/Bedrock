@@ -79,6 +79,13 @@ shared_ptr<SQLitePool> BedrockServer::getDBPool()
     return _dbPool;
 }
 
+void BedrockServer::registerAfterCommitCallback(function<void()>&& callback)
+{
+    // Registering on the base handle is enough, the callback list lives in the SharedData that every handle to this
+    // database file shares.
+    _dbPool->getBase().registerAfterCommitCallback(move(callback));
+}
+
 void BedrockServer::sync()
 {
     // Parse out the number of worker threads we'll use. The DB needs to know this because it will expect a

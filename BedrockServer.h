@@ -277,6 +277,10 @@ private:
     // Expose the DB pool to plugins.
     shared_ptr<SQLitePool> getDBPool();
 
+    // Registers a callback to run after every successful commit, on both a leader and a follower. Intended to be
+    // called by plugins at startup. See SQLite::registerAfterCommitCallback for the callback's requirements.
+    void registerAfterCommitCallback(function<void()>&& callback);
+
 private:
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
