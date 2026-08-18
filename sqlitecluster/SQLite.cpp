@@ -1147,6 +1147,10 @@ int SQLite::commit(const string& description, const string& commandName, functio
         _queryCache.clear();
         _sharedData.openTransactionCount--;
 
+        // Run these as early as possible after releasing the commit lock, so that anything waiting on a commit hears
+        // about it before we spend time on the checkpoint below.
+        _sharedData.runAfterCommitCallbacks();
+
         if (preCheckpointCallback != nullptr) {
             (*preCheckpointCallback)();
         }
