@@ -34,13 +34,8 @@
 // *** REPLICATION MESSAGES ***
 // TRANSACTION:         A complete transaction: the follower applies it and commits it, with no second message needed.
 //                      A leader only ever broadcasts a transaction it has already committed itself, so there is nothing
-//                      it could later ask the follower to take back. Nothing sends this yet -- the receiver ships one
-//                      release ahead of the sender so that leaders can switch to it once every node understands it.
-// BEGIN_TRANSACTION:   Apply a transaction but don't commit it; wait to be told which way it went. The older,
-//                      two-message form of the above, and still what every leader sends today.
-// COMMIT_TRANSACTION:  Commit the transaction a BEGIN_TRANSACTION applied.
-// ROLLBACK_TRANSACTION: Discard the transaction a BEGIN_TRANSACTION applied. Nothing in this version sends it; see
-//                      `_handleRollbackTransaction` for why the receiver is still here.
+//                      it could later ask the follower to take back, and a follower never holds a prepared transaction
+//                      between two messages.
 //
 // *** DOCUMENTATION OF MESSAGE FIELDS ***
 // Note: Yes, two of these fields start with lowercase chars.
@@ -49,15 +44,12 @@
 //                   and not to communicate any information about a specific transaction in progress.
 // Hash:             The hash corresponding to the value in CommitCount.
 // ID:               The ID of the transaction currently being operated on. It is the same type of information as
-//                   "CommitCount", but not necessarily for the most recent transaction in the DB. A leader prefixes it
-//                   with "ASYNC_", which tells the follower not to send a full approval for the transaction. That's
-//                   every transaction a current leader sends; the unprefixed form only arrives from a leader running
-//                   older code.
+//                   "CommitCount", but not necessarily for the most recent transaction in the DB. Now that nothing
+//                   prefixes it, this duplicates "NewCount" exactly. It's still sent because a follower running older
+//                   code throws "missing ID" without it.
 // NewHash:          Hash, but for "ID" instead of "CommitCount".
 //                   Proposal: rename to "currentTransactionHash".
-// NewCount:         Same as "ID" except without the "ASYNC_" prefix.
-// AsyncNotification: Set on an APPROVE_TRANSACTION that a follower sends periodically for an "ASYNC_" transaction. It
-//                   marks the message as a commit-count report rather than an approval of anything.
+// NewCount:         Same as "ID".
 // State:            The state of the peer sending the message (i.e., SEARCHING, LEADING).
 // Version:          The version string of the node sending the message.
 // Permafollower:    Boolean value (string "true" or "false") indicating if the node sending the message is a
@@ -205,12 +197,8 @@ void SQLiteNode::_replicate()
         if (isQueueEmpty || (shouldExit && shouldExit < STimeNow())) {
             // There are no commands to process.
             if (shouldExit) {
-                if (db.insideTransaction()) {
-                    SINFO("Finished replication mid-transaction, missing COMMIT_TRANSACTION, rolling back.");
-                    db.rollback();
-                }
-
-                // Done with replication.
+                // Done with replication. Each iteration below either commits or throws, so there's never a transaction
+                // open on this handle between two of them, and this is only reachable between two of them.
                 return;
             } else {
                 // The queue is empty but we're not exiting so go back to the top and wait.
@@ -221,8 +209,7 @@ void SQLiteNode::_replicate()
         // At this point, we're guaranteed to have a message. Process it and then run again.
         if (SIEquals(command.methodLine, "TRANSACTION")) {
             // A whole transaction in one message: apply it, then commit it, with no window in between where we're
-            // holding a prepared transaction waiting to hear what to do with it. Nothing sends this yet -- it's here so
-            // that leaders can start sending it in a later release, once every node can receive it.
+            // holding a prepared transaction waiting to hear what to do with it.
             auto start = chrono::steady_clock::now();
             _handleBeginTransaction(db, peer, command);
             if (!_handlePrepareTransaction(db, peer, command, dequeueTime)) {
@@ -236,19 +223,6 @@ void SQLiteNode::_replicate()
             }
             auto duration = chrono::steady_clock::now() - start;
             SINFO("[performance] Replicated transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
-        } else if (SIEquals(command.methodLine, "BEGIN_TRANSACTION")) {
-            auto start = chrono::steady_clock::now();
-            _handleBeginTransaction(db, peer, command);
-            _handlePrepareTransaction(db, peer, command, dequeueTime);
-            auto duration = chrono::steady_clock::now() - start;
-            SINFO("[performance] Wrote replicate transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
-        } else if (SIEquals(command.methodLine, "COMMIT_TRANSACTION")) {
-            int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
-            if (result != SQLITE_OK) {
-                STHROW("commit failed");
-            }
-        } else if (SIEquals(command.methodLine, "ROLLBACK_TRANSACTION")) {
-            _handleRollbackTransaction(db, peer, command);
         } else {
             SWARN("Invalid command passed to _replicate: " << command.methodLine);
         }
@@ -390,26 +364,18 @@ void SQLiteNode::_sendOutstandingTransactions()
         }
         string& query = i.second.first;
         string& hash = i.second.second;
-        // Every transaction we send has already committed here, so BEGIN and COMMIT go out together. The "ASYNC_"
-        // prefix tells followers not to bother approving it, which is load-bearing: a follower sends a full
-        // APPROVE_TRANSACTION for any ID without it.
-        string idHeader = "ASYNC_" + to_string(id);
-        SData transaction("BEGIN_TRANSACTION");
+        // Every transaction we send has already committed here, so it goes out as a single TRANSACTION that the
+        // follower applies and commits on its own.
+        SData transaction("TRANSACTION");
         transaction["NewCount"] = to_string(id);
         transaction["NewHash"] = hash;
         transaction["leaderSendTime"] = sendTime;
-        transaction["ID"] = idHeader;
+        transaction["ID"] = to_string(id);
         transaction.content = query;
 
         // Allows us to easily figure out how far behind followers are by analyzing the logs.
-        SINFO("Sending COMMIT for ASYNC transaction " << id << " to followers");
+        SINFO("Sending transaction " << id << " to followers");
         _sendToAllPeers(transaction, true); // subscribed only
-
-        SData commit("COMMIT_TRANSACTION");
-        commit["ID"] = idHeader;
-        commit["NewCount"] = to_string(id);
-        commit["NewHash"] = hash;
-        _sendToAllPeers(commit, true); // subscribed only
         _lastSentTransactionID = id;
     }
 }
@@ -837,8 +803,8 @@ bool SQLiteNode::update()
         ///     concluded in the STANDINGDOWN) state.  The logic for this state
         ///     is as follows:
         ///
-        ///         broadcast BEGIN_TRANSACTION and COMMIT_TRANSACTION to subscribed followers for any
-        ///             transaction that a worker thread has committed but that we haven't sent yet
+        ///         broadcast TRANSACTION to subscribed followers for any transaction that a worker thread has
+        ///             committed but that we haven't sent yet
         ///         if( we're LEADING )
         ///             if( there is another LEADER )         goto STANDINGDOWN
         ///             if( there is a higher priority peer ) goto STANDINGDOWN
@@ -966,13 +932,6 @@ bool SQLiteNode::update()
             if (_leadPeer.load()->state != SQLiteNodeState::LEADING && _leadPeer.load()->state != SQLiteNodeState::STANDINGDOWN) {
                 // Leader stepping down
                 SHMMM("Leader stepping down.");
-
-                // Are we in the middle of a commit? This should only happen if we received a `BEGIN_TRANSACTION` without a
-                // corresponding `COMMIT` or `ROLLBACK`, this isn't supposed to happen.
-                if (!_db.getUncommittedHash().empty()) {
-                    SWARN("Leader stepped down with transaction in progress, rolling back.");
-                    _db.rollback();
-                }
                 _changeState(SQLiteNodeState::SEARCHING);
                 return true; // Re-update
             }
@@ -1204,20 +1163,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                     peer->subscribed = false;
                 } else if (to == SQLiteNodeState::STANDINGUP) {
                     _sendStandupResponse(peer, message);
-                } else if (from == SQLiteNodeState::STANDINGDOWN) {
-                    // STANDINGDOWN: When a peer stands down we double-check to make sure we don't have any outstanding
-                    // transaction (and if we do, we warn and rollback).
-                    if (!_db.getUncommittedHash().empty()) {
-                        // Crap, we were waiting for a response that will apparently never come. I guess roll it back? This
-                        // should never happen, however, as the leader shouldn't STANDOWN unless all subscribed followers
-                        // (including us) have already unsubscribed, and we wouldn't do that in the middle of a
-                        // transaction. But just in case...
-                        SASSERTWARN(_state == SQLiteNodeState::FOLLOWING);
-                        PWARN("Was expecting a response for transaction #"
-                              << _db.getCommitCount() + 1 << " (" << _db.getUncommittedHash()
-                              << ") but stood down prematurely, rolling back and hoping for the best.");
-                        _db.rollback();
-                    }
                 }
             }
         } else if (SIEquals(message.methodLine, "STANDUP_RESPONSE")) {
@@ -1396,9 +1341,9 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                 _changeState(SQLiteNodeState::SEARCHING);
                 throw e;
             }
-        } else if (SIEquals(message.methodLine, "TRANSACTION") || SIEquals(message.methodLine, "BEGIN_TRANSACTION") || SIEquals(message.methodLine, "COMMIT_TRANSACTION") || SIEquals(message.methodLine, "ROLLBACK_TRANSACTION")) {
+        } else if (SIEquals(message.methodLine, "TRANSACTION")) {
             if (_state != SQLiteNodeState::FOLLOWING) {
-                // These messages are only valid while following, but we do not throw if we receive them in other states, as
+                // This message is only valid while following, but we do not throw if we receive it in another state, as
                 // it's not neccesarily an error. Specifically, as we switch away from FOLLOWING, there may still be a stream
                 // of transactions being broadcast. We do not attempt to handle these, as we keep careful count of which
                 // replication threads are currently running, and reset the replication state tracking when we're not following.
@@ -1423,17 +1368,11 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             } else {
                 SINFO("Discarding replication message, stopping FOLLOWING");
             }
-        } else if (SIEquals(message.methodLine, "FOLLOWER_STATUS") ||
-                   SIEquals(message.methodLine, "APPROVE_TRANSACTION") ||
-                   SIEquals(message.methodLine, "DENY_TRANSACTION")) {
-            // These all tell the leader how much data a follower has, and nothing else that we act on. The work is
-            // already done: every message carries CommitCount and Hash, and the code above recorded them with
-            // `peer->setCommit()`. These branches exist only so the messages aren't logged as unrecognized.
-            //
-            // FOLLOWER_STATUS is the message meant for this. APPROVE_TRANSACTION and DENY_TRANSACTION are what
-            // followers actually send today, and are still what a follower sends to a leader running older code, so
-            // they're accepted here too. Deliberately no validation: we no longer act on an approval, and throwing
-            // would cost us the peer connection for a message we're about to ignore either way.
+        } else if (SIEquals(message.methodLine, "FOLLOWER_STATUS")) {
+            // This tells the leader how much data a follower has, and nothing else that we act on. The work is already
+            // done: every message carries CommitCount and Hash, and the code above recorded them with
+            // `peer->setCommit()`. This branch exists only so the message isn't logged as unrecognized. Deliberately no
+            // validation: throwing would cost us the peer connection for a message we're about to ignore either way.
         } else if (SIEquals(message.methodLine, "FORKED")) {
             peer->forked = true;
             PINFO("Peer said we're forked, believing them.");
@@ -1498,24 +1437,14 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer)
 
     /// - Verify we didn't just lose contact with our leader.  This should
     ///   only be possible if we're SUBSCRIBING or FOLLOWING.  If we did lose our
-    ///   leader, roll back any uncommitted transaction and go SEARCHING.
+    ///   leader, go SEARCHING.
     ///
     if (peer == _leadPeer) {
-        // We've lost our leader: make sure we aren't waiting for
-        // transaction response and re-SEARCH
+        // We've lost our leader: re-SEARCH
         PWARN("Lost our LEADER, re-SEARCHING.");
         SASSERTWARN(_state == SQLiteNodeState::SUBSCRIBING || _state == SQLiteNodeState::FOLLOWING);
         {
             _leadPeer = nullptr;
-        }
-        if (!_db.getUncommittedHash().empty()) {
-            // We're in the middle of a transaction and waiting for it to
-            // approve or deny, but we'll never get its response.  Roll it
-            // back and synchronize when we reconnect.
-            PHMMM("Was expecting a response for transaction #" << _db.getCommitCount() + 1 << " ("
-                  << _db.getUncommittedHash()
-                  << ") but disconnected prematurely; rolling back.");
-            _db.rollback();
         }
         _changeState(SQLiteNodeState::SEARCHING);
     }
@@ -2022,9 +1951,8 @@ bool SQLiteNode::_majoritySubscribed() const
 
 void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message)
 {
-    // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
-    // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
-    // the transaction for any reason, it is broken somehow -- disconnect from the leader.
+    // Begins a local transaction with the query the leader broadcast. If the follower cannot start the transaction for
+    // any reason, it is broken somehow -- disconnect from the leader.
     // **FIXME**: What happens if LEADER steps down before sending BEGIN?
     // **FIXME**: What happens if LEADER steps down or disconnects after BEGIN?
     if (_state != SQLiteNodeState::FOLLOWING) {
@@ -2049,14 +1977,9 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
 
 bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const SData& message, uint64_t dequeueTime)
 {
-    // A `TRANSACTION` message carries the whole transaction, so we commit it ourselves as soon as we've applied it. A
-    // `BEGIN_TRANSACTION` leaves us holding a prepared transaction until leader tells us what to do with it.
-    const bool isMerged = SIEquals(message.methodLine, "TRANSACTION");
-
     uint64_t prepareStartTime = STimeNow();
-    // BEGIN_TRANSACTION: Sent by the LEADER to all subscribed followers to begin a new distributed transaction. Each
-    // follower begins a local transaction with this query and responds APPROVE_TRANSACTION. If the follower cannot start
-    // the transaction for any reason, it is broken somehow -- disconnect from the leader.
+    // If the follower cannot apply leader's transaction for any reason, it is broken somehow -- disconnect from the
+    // leader.
     // **FIXME**: What happens if LEADER steps down before sending BEGIN?
     // **FIXME**: What happens if LEADER steps down or disconnects after BEGIN?
     if (!message.isSet("ID")) {
@@ -2079,12 +2002,11 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
         db.rollback();
     }
 
-    // Permafollowers never respond. Everyone else does, for one of two reasons.
-    //
-    // A merged TRANSACTION can only come from a leader new enough to understand FOLLOWER_STATUS, so on that path we
-    // report our commit count with the message meant for it, and never send an approval -- there is nothing left to
-    // approve. Every tenth is enough to keep leader roughly current.
-    if (_priority && isMerged) {
+    // There's nothing left to approve -- leader has already committed anything it sends us -- so all we owe it is a
+    // rough idea of how far along we are, which every message we send carries in its CommitCount header. Every tenth
+    // commit is enough to keep leader current, and it's a floor rather than a schedule: sending one more often than
+    // that is harmless. Permafollowers never respond at all.
+    if (_priority) {
         uint64_t currentCommitCount = db.getCommitCount();
         if (currentCommitCount % MIN_APPROVE_FREQUENCY == 0) {
             SData response("FOLLOWER_STATUS");
@@ -2092,31 +2014,8 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
                 _sendToPeer(_leadPeer, response);
             }
         }
-    } else if (_priority) {
-        string verb = success ? "APPROVE_TRANSACTION" : "DENY_TRANSACTION";
-        uint64_t currentCommitCount = db.getCommitCount();
-        bool isAsync = SStartsWith(message["ID"], "ASYNC_");
-        bool asyncNotification = isAsync && (currentCommitCount % MIN_APPROVE_FREQUENCY == 0);
-        if (!isAsync || asyncNotification) {
-            // Not a permafollower, approve the transaction
-            PINFO(verb << " #" << currentCommitCount + 1 << " (" << message["NewHash"] << ").");
-            SData response(verb);
-            response["NewCount"] = SToStr(currentCommitCount + 1);
-            response["NewHash"] = success ? db.getUncommittedHash() : message["NewHash"];
-            response["ID"] = message["ID"];
-            if (asyncNotification) {
-                response["AsyncNotification"] = "true";
-            }
-            if (_leadPeer) {
-                _sendToPeer(_leadPeer, response);
-            } else {
-                SWARN("no leader? Still handling transaction, it may have been approved elsewhere.");
-            }
-        } else {
-            SDEBUG("Skipping " << verb << " for ASYNC command.");
-        }
     } else {
-        PINFO("Would approve/deny transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
+        PINFO("Would report status at transaction #" << db.getCommitCount() + 1 << " (" << db.getUncommittedHash()
               << "), but a permafollower -- keeping quiet.");
     }
     uint64_t leaderSentTimestamp = message.calcU64("leaderSendTime");
@@ -2131,8 +2030,7 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
 
 int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uint64_t commandCommitCount, const string& commandCommitHash)
 {
-    // COMMIT_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
-    // outstanding transaction should be committed to the database. This completes a given distributed transaction.
+    // Commits the transaction that `_handlePrepareTransaction` just prepared, which completes replicating it.
     if (_state != SQLiteNodeState::FOLLOWING) {
         STHROW("not following");
     }
@@ -2147,7 +2045,7 @@ int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uin
         STHROW("hash mismatch:" + commandCommitHash + "!=" + db.getUncommittedHash() + ";");
     }
 
-    SDEBUG("Committing current transaction because COMMIT_TRANSACTION: " << db.getUncommittedQuery());
+    SDEBUG("Committing current transaction because TRANSACTION: " << db.getUncommittedQuery());
 
     int result = db.commit(stateName(_state));
     if (result == SQLITE_BUSY_SNAPSHOT) {
@@ -2168,28 +2066,6 @@ int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uin
     db.logLastTransactionTiming(format("[performance] Committed follower transaction #{} ({}).", commandCommitCount, commandCommitHash), "SQLiteNode::_handleCommitTransaction");
 
     return result;
-}
-
-void SQLiteNode::_handleRollbackTransaction(SQLite& db, SQLitePeer* peer, const SData& message)
-{
-    // ROLLBACK_TRANSACTION: Sent to all subscribed followers by the leader when it determines that the current
-    // outstanding transaction should be rolled back. This completes a given distributed transaction.
-    //
-    // Nothing in this version sends this: a leader only broadcasts a transaction once it has committed it, so there's
-    // never anything to retract. It's retained because an un-upgraded leader still sends it, and dropping the handler
-    // would be worse than useless -- the message would fall through to `_replicate`'s unrecognized-command warning,
-    // the prepared transaction would stay open, and the next BEGIN_TRANSACTION would throw "already in a transaction"
-    // out of a thread with no catch, killing the process. Delete this once no leader can send it.
-    if (!message.isSet("ID")) {
-        STHROW("missing ID");
-    }
-    if (_state != SQLiteNodeState::FOLLOWING) {
-        STHROW("not following");
-    }
-    if (db.getUncommittedHash().empty()) {
-        SINFO("Received ROLLBACK_TRANSACTION with no outstanding transaction.");
-    }
-    db.rollback();
 }
 
 SQLiteNodeState SQLiteNode::leaderState() const
