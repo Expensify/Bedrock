@@ -298,7 +298,16 @@ struct CreateJobsTest : tpunit::TestFixture
         ASSERT_EQUAL(jobIDs.front(), jobID);
         ASSERT_EQUAL(jobIDs.back(), jobID);
 
-        // Then the row contains all enqueue data and the final priority because each batch entry contributes its update
+        // When the same CreateJobs request is replayed
+        response = tester->executeWaitVerifyContentTable(command);
+        jobIDs = SParseJSONArray(response["jobIDs"]);
+
+        // Then both entries still reuse the same row
+        ASSERT_EQUAL(jobIDs.size(), 2);
+        ASSERT_EQUAL(jobIDs.front(), jobID);
+        ASSERT_EQUAL(jobIDs.back(), jobID);
+
+        // Then the row contains all data and advances once because all entries share one request ID
         SQResult result;
         tester->readDB("SELECT JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), "
                        "JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.enqueueID'), JSON_EXTRACT(data, '$.first'), "

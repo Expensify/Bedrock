@@ -313,6 +313,46 @@ struct CreateJobTest : tpunit::TestFixture
         // Then Bedrock rejects the request because unique-as-retry needs one durable row for all enqueues
         tester->executeWaitVerifyContent(command, "402 uniqueAsRetry requires unique=true and overwrite enabled");
 
+        // Given a unique-as-retry job does not set the unique option
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "missingUnique";
+        command["uniqueAsRetry"] = "true";
+
+        // Then Bedrock rejects the request because duplicate enqueues cannot reuse one durable row
+        tester->executeWaitVerifyContent(command, "402 uniqueAsRetry requires unique=true and overwrite enabled");
+
+        // Given an ordinary job whose caller tries to forge the private metadata of Bedrock
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "reservedMetadata";
+        command["data"] = "{\"activity\":1,\"_bedrockUniqueAsRetry\":{\"version\":999}}";
+        const string reservedMetadataJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // Then Bedrock removes the reserved object and preserves the public data
+        SQResult result;
+        tester->readDB("SELECT JSON_EXTRACT(data, '$._bedrockUniqueAsRetry'), JSON_EXTRACT(data, '$.activity') "
+                       "FROM jobs WHERE jobID=" + reservedMetadataJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "");
+        ASSERT_EQUAL(result[0][1], "1");
+
+        // Given two distinct enqueues contain identical public data
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "identicalEnqueues";
+        command["data"] = "{\"activity\":1}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        command["requestID"] = "identical-1";
+        const string identicalJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+        command["requestID"] = "identical-2";
+        ASSERT_EQUAL(tester->executeWaitVerifyContentTable(command)["jobID"], identicalJobID);
+
+        // Then Bedrock advances the version because the second request represents new work
+        tester->readDB("SELECT JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version') "
+                       "FROM jobs WHERE jobID=" + identicalJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "2");
+
         // Given an opted-in job whose caller tries to forge the private metadata of Bedrock
         command.clear();
         command.methodLine = "CreateJob";
@@ -328,13 +368,22 @@ struct CreateJobTest : tpunit::TestFixture
         tester->executeWaitVerifyContent(command);
 
         // Then Bedrock merges the public data without advancing the version because the replay is not new work
-        SQResult result;
         tester->readDB("SELECT JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), "
                        "JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.activeVersion'), JSON_EXTRACT(data, '$.replayed') "
                        "FROM jobs WHERE jobID=" + finishJobID + ";", result);
         ASSERT_EQUAL(result[0][0], "1");
         ASSERT_EQUAL(result[0][1], "0");
         ASSERT_EQUAL(result[0][2], "1");
+
+        // When a caller queries the current job status
+        command.clear();
+        command.methodLine = "QueryJob";
+        command["jobID"] = finishJobID;
+        const STable queriedJob = tester->executeWaitVerifyContentTable(command);
+
+        // Then Bedrock returns the status version separately and keeps its private metadata hidden
+        ASSERT_EQUAL(queriedJob.at("enqueueVersion"), "1");
+        ASSERT_TRUE(queriedJob.at("data").find("_bedrockUniqueAsRetry") == string::npos);
 
         // Given the replayed job is ready for its first worker
         command.clear();
