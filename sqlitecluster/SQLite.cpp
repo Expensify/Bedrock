@@ -1684,12 +1684,10 @@ void SQLite::SharedData::registerAfterCommitCallback(function<void()>&& callback
     _afterCommitCallbacks.push_back(move(callback));
 }
 
-void SQLite::SharedData::runAfterCommitCallbacks()
+void SQLite::SharedData::runAfterCommitCallbacks() noexcept
 {
     shared_lock<decltype(_afterCommitCallbackLock)> lock(_afterCommitCallbackLock);
     for (const auto& callback : _afterCommitCallbacks) {
-        // The commit already happened, and SQLiteCore::commit is noexcept, so letting an exception out of here would
-        // terminate the process over a callback that has no bearing on whether the commit succeeded.
         try {
             callback();
         } catch (const exception& e) {

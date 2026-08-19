@@ -429,7 +429,7 @@ public:
         void registerAfterCommitCallback(function<void()>&& callback);
 
         // Runs every registered after-commit callback. Called with no locks held.
-        void runAfterCommitCallbacks();
+        void runAfterCommitCallbacks() noexcept;
 
 private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
