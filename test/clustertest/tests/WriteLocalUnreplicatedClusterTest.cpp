@@ -38,12 +38,18 @@ struct WriteLocalUnreplicatedClusterTest : tpunit::TestFixture
         ASSERT_TRUE(leader.waitForState("LEADING"));
         ASSERT_TRUE(follower.waitForState("FOLLOWING"));
 
-        // Write a row the normal way, so it replicates to the follower.
+        // Write two rows the normal way, so they replicate to the follower. The row we delete below has to be the
+        // older of the two: idcollision picks its primary key with MAX(id) + 1, so deleting the highest id here would
+        // hand the same key back to the next insert. That insert succeeds on the leader, which no longer has the row,
+        // and then breaks the follower, which does. Keeping a higher row alive on both nodes avoids that, and is a
+        // concrete example of what "no other node depends on this row" has to mean in practice.
         leader.executeWaitVerifyContent(SData("idcollision"));
 
         SQResult result;
         leader.readDB("SELECT MAX(id) FROM test;", result);
         const int64_t id = SToInt64(result[0][0]);
+
+        leader.executeWaitVerifyContent(SData("idcollision"));
 
         // Both nodes have it before we start.
         ASSERT_EQUAL(countRowsWithID(leader, id), 1);
