@@ -221,8 +221,7 @@ public:
     int commit(const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
 
     // Registers a callback to run after every successful commit to this database, whether the commit came from a
-    // command running on the leader or from replication on a follower. Callbacks are shared across every handle to
-    // the same database file, so one registration covers all of them.
+    // command running on the leader or from replication on a follower.
     // The callback runs after the commit lock is released, but it still runs on the committing thread: it must not
     // block, and it must not touch the database.
     // There is no way to unregister, so callbacks must outlive every handle to this database.
@@ -442,9 +441,7 @@ private:
         // variety of operations (i.e., updating _committedTransactions, etc).
         recursive_mutex _internalStateMutex;
 
-        // Callbacks to run after each successful commit, and the lock guarding them. This is a separate lock from
-        // _internalStateMutex because it is taken on every commit and we never want a callback registration to wait
-        // behind unrelated shared-state changes.
+        // Callbacks to run after each successful commit.
         vector<function<void()>> _afterCommitCallbacks;
         shared_mutex _afterCommitCallbackLock;
     };

@@ -284,15 +284,11 @@ private:
     void registerAfterCommitCallback(function<void()>&& callback);
 
 private:
-    // After-commit callbacks registered before the DB pool existed, the lock guarding them, and the database filename
-    // we last handed them to. The SQLite SharedData that ends up owning them is keyed by resolved filename and
-    // outlives the pool, so re-creating the pool on re-attach must not register them against the same filename twice.
-    // It is keyed by filename rather than by a one-shot flag because the resolved name can change: SQLite resolves a
-    // relative path to itself while the file is missing and to its absolute form once it exists, so the first pool and
-    // a pool created after re-attach can land on two different SharedData objects.
+    // After-commit callbacks are registered before the DB pool exists, when the plugin is being registered. We'll
+    // store them in the BedrockServer class. That way, if the pool is re-created(on detach/reattach), we can
+    // register them again against the new pool.
     vector<function<void()>> _afterCommitCallbacks;
     mutex _afterCommitCallbackMutex;
-    string _afterCommitCallbacksForwardedTo;
 
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";

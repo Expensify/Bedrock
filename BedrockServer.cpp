@@ -87,7 +87,7 @@ void BedrockServer::registerAfterCommitCallback(function<void()>&& callback)
     // against a different resolved filename.
     _afterCommitCallbacks.push_back(callback);
 
-    if (!_afterCommitCallbacksForwardedTo.empty()) {
+    if (_dbPool) {
         // Registering on the base handle is enough, the callback list lives in the SharedData that every handle to
         // this database file shares.
         _dbPool->getBase().registerAfterCommitCallback(move(callback));
@@ -124,16 +124,12 @@ void BedrockServer::sync()
     _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"]);
     SQLite& db = _dbPool->getBase();
 
-    // Hand over any callbacks that plugins registered before this pool existed. Skipped when this pool resolved to the
-    // same filename as the last one, because that means it shares the SharedData that already holds them.
+    // Hand over any callbacks that plugins registered before this pool existed
     {
         lock_guard<decltype(_afterCommitCallbackMutex)> lock(_afterCommitCallbackMutex);
-        if (_afterCommitCallbacksForwardedTo != db.getFilename()) {
-            for (const auto& callback : _afterCommitCallbacks) {
-                function<void()> callbackCopy = callback;
-                db.registerAfterCommitCallback(move(callbackCopy));
-            }
-            _afterCommitCallbacksForwardedTo = db.getFilename();
+        for (const auto& callback : _afterCommitCallbacks) {
+            function<void()> callbackCopy = callback;
+            db.registerAfterCommitCallback(move(callbackCopy));
         }
     }
 
