@@ -8,6 +8,7 @@
 
 #include <libstuff/SQResult.h>
 #include <libstuff/SThread.h>
+#include <sqlitecluster/SQLitePool.h>
 
 extern int* __pointerToFakeIntArray;
 
@@ -93,6 +94,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
     static set<string> supportedCommands = {
         "testcommand",
         "getaftercommitcount",
+        "deletetestrowunreplicated",
         "testescalate",
         "broadcastwithtimeouts",
         "storeboradcasttimeouts",
@@ -240,7 +242,17 @@ bool TestPluginCommand::peek(SQLite& db)
         usleep(request.calc("PeekSleep") * 1000);
     }
 
-    if (SStartsWith(request.methodLine, "getaftercommitcount")) {
+    if (SStartsWith(request.methodLine, "deletetestrowunreplicated")) {
+        // Takes its own handle from the pool rather than using this command's, which is the way a background thread
+        // would call this: the write begins and ends a transaction of its own, so it needs a handle that is not
+        // already inside one.
+        shared_ptr<SQLitePool> dbPool = plugin().server.getDBPool();
+        SQLiteScopedHandle handle(*dbPool, dbPool->getIndex());
+        const bool deleted = handle.db().writeLocalUnreplicated("DELETE FROM test WHERE id = " + SQ(request.calc64("id")) + ";");
+        response.content = SComposeJSONObject({{"deleted", deleted ? "true" : "false"}});
+        response.methodLine = "200 OK";
+        return true;
+    } else if (SStartsWith(request.methodLine, "getaftercommitcount")) {
         // Peek runs on whichever node received this, so a follower answers for itself instead of escalating.
         response.content = SComposeJSONObject({{"afterCommitCount", SToStr(plugin().afterCommitCount.load())}});
         response.methodLine = "200 OK";
