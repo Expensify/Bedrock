@@ -79,21 +79,6 @@ shared_ptr<SQLitePool> BedrockServer::getDBPool()
     return _dbPool;
 }
 
-void BedrockServer::registerAfterCommitCallback(function<void()>&& callback)
-{
-    lock_guard<decltype(_afterCommitCallbackMutex)> lock(_afterCommitCallbackMutex);
-
-    // Kept even after being handed off, so they can be handed to a different SharedData if the pool is re-created
-    // against a different resolved filename.
-    _afterCommitCallbacks.push_back(callback);
-
-    if (_dbPool) {
-        // Registering on the base handle is enough, the callback list lives in the SharedData that every handle to
-        // this database file shares.
-        _dbPool->getBase().registerAfterCommitCallback(move(callback));
-    }
-}
-
 void BedrockServer::sync()
 {
     // Parse out the number of worker threads we'll use. The DB needs to know this because it will expect a
@@ -120,18 +105,18 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
     SQLite::journalZstdDictionaryID = args.calc("-journalZstdDictionaryID");
-    SINFO("Setting dbPool size to: " << _dbPoolSize);
-    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"]);
-    SQLite& db = _dbPool->getBase();
-
-    // Hand over any callbacks that plugins registered before this pool existed
-    {
-        lock_guard<decltype(_afterCommitCallbackMutex)> lock(_afterCommitCallbackMutex);
-        for (const auto& callback : _afterCommitCallbacks) {
-            function<void()> callbackCopy = callback;
-            db.registerAfterCommitCallback(move(callbackCopy));
-        }
+    // Every plugin gets one of these. The base implementation does nothing, so plugins that don't care about commits
+    // cost an empty virtual call each, which is nothing next to the commit that just happened.
+    vector<function<void()>> callbacks;
+    for (const auto& plugin : plugins) {
+        callbacks.emplace_back([pluginPtr = plugin.second]() {
+            pluginPtr->afterCommitCallback();
+        });
     }
+
+    SINFO("Setting dbPool size to: " << _dbPoolSize);
+    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"], callbacks);
+    SQLite& db = _dbPool->getBase();
 
     // Allow plugins to read from the DB at startup.
     for (auto plugin : plugins) {
