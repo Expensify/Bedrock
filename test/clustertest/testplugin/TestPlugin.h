@@ -53,9 +53,8 @@ public:
 
     static void afterCommitCallback();
 
-    // Deletes rows through writeLocalUnreplicated from a long-lived thread of its own, which is the shape Auth's
-    // OnyxDeleter uses: no command transaction is open on this thread, and it takes a pool handle per cycle rather
-    // than holding one, so nothing is held across a detach.
+    // Deletes rows through writeLocalUnreplicated from a long-lived thread of its own. This will be used to
+    // test that writeLocalUnreplicated can run while other threads are committing.
     unique_ptr<thread> unreplicatedDeleterThread;
     mutex unreplicatedDeleterMutex;
     condition_variable unreplicatedDeleterCV;
