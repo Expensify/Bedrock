@@ -52,12 +52,15 @@ struct WriteLocalUnreplicatedClusterTest : tpunit::TestFixture
         }
         ASSERT_EQUAL(countRowsWithID(follower, id), 1);
 
-        // Delete it on the leader through writeLocalUnreplicated.
+        // Delete it on the leader through writeLocalUnreplicated. The command hands the work to the plugin's deleter
+        // thread, so poll for the result rather than expecting it to have happened by the time the response lands.
         SData deleteCommand("deletetestrowunreplicated");
         deleteCommand["id"] = SToStr(id);
-        ASSERT_EQUAL(leader.executeWaitVerifyContentTable(deleteCommand)["deleted"], "true");
+        leader.executeWaitVerifyContent(deleteCommand);
 
-        // Gone from the leader.
+        for (int i = 0; i < 100 && countRowsWithID(leader, id) != 0; i++) {
+            usleep(100'000);
+        }
         ASSERT_EQUAL(countRowsWithID(leader, id), 0);
 
         // Still on the follower, because the delete was never journaled and so never shipped. Give replication the
