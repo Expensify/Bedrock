@@ -105,15 +105,12 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
     SQLite::journalZstdDictionaryID = args.calc("-journalZstdDictionaryID");
-    // Every plugin gets one of these. The base implementation does nothing, so plugins that don't care about commits
-    // cost an empty virtual call each, which is nothing next to the commit that just happened.
     vector<function<void()>> callbacks;
     for (const auto& plugin : plugins) {
         callbacks.emplace_back([pluginPtr = plugin.second]() {
             pluginPtr->afterCommitCallback();
         });
     }
-
     SINFO("Setting dbPool size to: " << _dbPoolSize);
     _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"], callbacks);
     SQLite& db = _dbPool->getBase();
