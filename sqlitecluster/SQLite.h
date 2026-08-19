@@ -81,7 +81,8 @@ public:
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-           int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE");
+           int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE",
+           vector<function<void()>> afterCommitCallbacks = {});
 
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
@@ -219,13 +220,6 @@ public:
     // preCheckpointCallback is an optional callback that will be called before the checkpoint code runs, after the commit has completed. Note that if the commit fails, this is not called.
     // The main purpose of this is to allow replications in SQLiteNode to notify other waiting threads that the commit has finished even before the checkpoint is done.
     int commit(const string& description = "UNSPECIFIED", const string& commandName = "", function<void()>* preCheckpointCallback = nullptr);
-
-    // Registers a callback to run after every successful commit to this database, whether the commit came from a
-    // command running on the leader or from replication on a follower.
-    // The callback runs after the commit lock is released, but it still runs on the committing thread: it must not
-    // block, and it must not touch the database.
-    // There is no way to unregister, so callbacks must outlive every handle to this database.
-    void registerAfterCommitCallback(function<void()>&& callback);
 
     // Cancels the current transaction and rolls it back.
     void rollback(const string& commandName = "");
@@ -425,12 +419,6 @@ public:
         // This can be locked in exclusive mode to prevent all writes. This exists to support the `BlockWrites` command.
         shared_mutex writeLock;
 
-        // Adds a callback to run after every successful commit. See SQLite::registerAfterCommitCallback.
-        void registerAfterCommitCallback(function<void()>&& callback);
-
-        // Runs every registered after-commit callback. Called with no locks held.
-        void runAfterCommitCallbacks() noexcept;
-
 private:
         // The data required to replicate transactions, in two lists, depending on whether this has only been prepared
         // or if it's been committed.
@@ -440,10 +428,6 @@ private:
         // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
         // variety of operations (i.e., updating _committedTransactions, etc).
         recursive_mutex _internalStateMutex;
-
-        // Callbacks to run after each successful commit.
-        vector<function<void()>> _afterCommitCallbacks;
-        shared_mutex _afterCommitCallbackLock;
     };
 
     // Initializers to support RAII-style allocation in constructors.
@@ -588,6 +572,13 @@ private:
     // Check out various error cases that can interrupt a query.
     // We check them all together because we need to make sure we atomically pick a single one to handle.
     void _checkInterruptErrors(const string& error) const;
+
+    // Callbacks to run after each successful commit. Set at construction and copied to every handle derived from
+    // this one, so they need no locking.
+    const vector<function<void()>> _afterCommitCallbacks;
+
+    // Runs every after-commit callback. Called with no locks held.
+    void runAfterCommitCallbacks() noexcept;
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     //
