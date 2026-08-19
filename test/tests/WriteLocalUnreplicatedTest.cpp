@@ -1,3 +1,4 @@
+#include <thread>
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>
@@ -24,7 +25,8 @@ struct WriteLocalUnreplicatedTest : tpunit::TestFixture
     WriteLocalUnreplicatedTest()
         : tpunit::TestFixture("WriteLocalUnreplicated",
                               TEST(WriteLocalUnreplicatedTest::leavesCommitCountAndJournalUntouched),
-                              TEST(WriteLocalUnreplicatedTest::rollsBackOnFailedQuery))
+                              TEST(WriteLocalUnreplicatedTest::rollsBackOnFailedQuery),
+                              TEST(WriteLocalUnreplicatedTest::survivesConcurrentCommits))
     {
     }
 
@@ -95,4 +97,50 @@ struct WriteLocalUnreplicatedTest : tpunit::TestFixture
         ASSERT_EQUAL(countRows(db), 0);
     }
 
+    void survivesConcurrentCommits()
+    {
+        WriteLocalUnreplicatedTempDBFile dbFile;
+        SQLite db(dbFile.filename, 1000, 1000, 1);
+        SQLite committer(db);
+
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        db.write("CREATE TABLE testTable(id INTEGER PRIMARY KEY, value INTEGER);");
+        db.write("CREATE TABLE unreplicatedTable(id INTEGER PRIMARY KEY, value INTEGER);");
+        db.prepare();
+        ASSERT_EQUAL(db.commit(), SQLITE_OK);
+
+        // Commit on one handle while the other runs unreplicated writes. A commit that lands mid-write makes the
+        // COMMIT return SQLITE_BUSY_SNAPSHOT, which must come back as `false` rather than throwing or corrupting the
+        // handle. Whether that race actually happens on any given run is not guaranteed, so this asserts the outcome
+        // is always well formed rather than asserting a conflict occurred.
+        atomic<bool> stop(false);
+        thread committerThread([&]() {
+            int id = 0;
+            while (!stop) {
+                committer.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+                committer.write("INSERT INTO testTable VALUES(" + SToStr(++id) + ", 1);");
+                committer.prepare();
+                if (committer.commit() != SQLITE_OK) {
+                    committer.rollback();
+                }
+            }
+        });
+
+        int64_t succeeded = 0;
+        for (int i = 1; i <= 200; i++) {
+            if (db.writeLocalUnreplicated("INSERT INTO unreplicatedTable VALUES(" + SToStr(i) + ", 1);")) {
+                succeeded++;
+            }
+        }
+
+        stop = true;
+        committerThread.join();
+
+        // Every write that reported success is present, and no write that reported failure left anything behind.
+        SQResult result;
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
+        db.read("SELECT COUNT(*) FROM unreplicatedTable;", result);
+        db.rollback();
+        ASSERT_EQUAL(SToInt64(result[0][0]), succeeded);
+    }
 } __WriteLocalUnreplicatedTest;
