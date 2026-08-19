@@ -26,8 +26,11 @@ extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s)
 }
 
 BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin(BedrockServer& s) :
-    BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this)), _maxID(-1)
+    BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this)), _maxID(-1), afterCommitCount(0)
 {
+    s.registerAfterCommitCallback([this]() {
+        afterCommitCount++;
+    });
 }
 
 BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
@@ -86,6 +89,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
 {
     static set<string> supportedCommands = {
         "testcommand",
+        "getaftercommitcount",
         "testescalate",
         "broadcastwithtimeouts",
         "storeboradcasttimeouts",
@@ -233,7 +237,12 @@ bool TestPluginCommand::peek(SQLite& db)
         usleep(request.calc("PeekSleep") * 1000);
     }
 
-    if (SStartsWith(request.methodLine, "testcommand")) {
+    if (SStartsWith(request.methodLine, "getaftercommitcount")) {
+        // Peek runs on whichever node received this, so a follower answers for itself instead of escalating.
+        response["afterCommitCount"] = SToStr(plugin().afterCommitCount.load());
+        response.methodLine = "200 OK";
+        return true;
+    } else if (SStartsWith(request.methodLine, "testcommand")) {
         if (!request["response"].empty()) {
             response.methodLine = request["response"];
         } else {
