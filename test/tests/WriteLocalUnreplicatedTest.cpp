@@ -23,7 +23,8 @@ struct WriteLocalUnreplicatedTest : tpunit::TestFixture
 {
     WriteLocalUnreplicatedTest()
         : tpunit::TestFixture("WriteLocalUnreplicated",
-                              TEST(WriteLocalUnreplicatedTest::leavesCommitCountAndJournalUntouched))
+                              TEST(WriteLocalUnreplicatedTest::leavesCommitCountAndJournalUntouched),
+                              TEST(WriteLocalUnreplicatedTest::rollsBackOnFailedQuery))
     {
     }
 
@@ -68,6 +69,30 @@ struct WriteLocalUnreplicatedTest : tpunit::TestFixture
         // But nothing about it was recorded as a commit, so there is nothing to ship to a peer.
         ASSERT_EQUAL(db.getCommitCount(), commitCountBefore);
         ASSERT_EQUAL(countJournalRows(db), journalRowsBefore);
+    }
+
+    void rollsBackOnFailedQuery()
+    {
+        WriteLocalUnreplicatedTempDBFile dbFile;
+        SQLite db(dbFile.filename, 1000, 1000, 1);
+
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        db.write("CREATE TABLE testTable(id INTEGER PRIMARY KEY, value INTEGER);");
+        db.prepare();
+        ASSERT_EQUAL(db.commit(), SQLITE_OK);
+
+        ASSERT_FALSE(db.writeLocalUnreplicated("DELETE FROM aTableThatDoesNotExist;"));
+
+        // The failed call must not leave the handle stuck inside its transaction, so a normal commit still works.
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+        db.write("INSERT INTO testTable VALUES(1, 1);");
+        db.prepare();
+        ASSERT_EQUAL(db.commit(), SQLITE_OK);
+        ASSERT_EQUAL(countRows(db), 1);
+
+        // And a later unreplicated write on the same handle still works.
+        ASSERT_TRUE(db.writeLocalUnreplicated("DELETE FROM testTable WHERE id = 1;"));
+        ASSERT_EQUAL(countRows(db), 0);
     }
 
 } __WriteLocalUnreplicatedTest;
