@@ -68,6 +68,10 @@ const string& BedrockPlugin::getName() const
     SERROR("No name defined by this plugin, aborting.");
 }
 
+void BedrockPlugin::afterCommitCallback()
+{
+}
+
 bool BedrockPlugin::preventAttach()
 {
     return false;

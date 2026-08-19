@@ -73,6 +73,10 @@ public:
     {
     }
 
+    // This will be called every time a commit is successfully finished, both in leader and
+    // follower nodes.
+    virtual void afterCommitCallback();
+
     virtual bool preventAttach();
 
     // Called when a client or plugin requests that the BedrockServer detaches from the database.
