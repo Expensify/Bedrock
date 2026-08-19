@@ -39,7 +39,7 @@ struct WriteLocalUnreplicatedClusterTest : tpunit::TestFixture
         ASSERT_TRUE(follower.waitForState("FOLLOWING"));
 
         // Write a row the normal way, so it replicates to the follower.
-        leader.executeWaitVerifyContent(SData("bigquery"));
+        leader.executeWaitVerifyContent(SData("idcollision"));
 
         SQResult result;
         leader.readDB("SELECT MAX(id) FROM test;", result);
@@ -68,7 +68,7 @@ struct WriteLocalUnreplicatedClusterTest : tpunit::TestFixture
         ASSERT_EQUAL(countRowsWithID(follower, id), 1);
 
         // And the cluster is still healthy: the leader can still commit normally afterwards.
-        leader.executeWaitVerifyContent(SData("bigquery"));
+        leader.executeWaitVerifyContent(SData("idcollision"));
         ASSERT_TRUE(leader.waitForState("LEADING"));
         ASSERT_TRUE(follower.waitForState("FOLLOWING"));
     }
