@@ -1688,7 +1688,15 @@ void SQLite::SharedData::runAfterCommitCallbacks()
 {
     shared_lock<decltype(_afterCommitCallbackLock)> lock(_afterCommitCallbackLock);
     for (const auto& callback : _afterCommitCallbacks) {
-        callback();
+        // The commit already happened, and SQLiteCore::commit is noexcept, so letting an exception out of here would
+        // terminate the process over a callback that has no bearing on whether the commit succeeded.
+        try {
+            callback();
+        } catch (const exception& e) {
+            SWARN("Ignoring exception from afterCommit callback: " << e.what());
+        } catch (...) {
+            SWARN("Ignoring unknown exception from afterCommit callback.");
+        }
     }
 }
 
