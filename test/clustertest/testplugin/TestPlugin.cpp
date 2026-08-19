@@ -239,7 +239,7 @@ bool TestPluginCommand::peek(SQLite& db)
 
     if (SStartsWith(request.methodLine, "getaftercommitcount")) {
         // Peek runs on whichever node received this, so a follower answers for itself instead of escalating.
-        response["afterCommitCount"] = SToStr(plugin().afterCommitCount.load());
+        response.content = SComposeJSONObject({{"afterCommitCount", SToStr(plugin().afterCommitCount.load())}});
         response.methodLine = "200 OK";
         return true;
     } else if (SStartsWith(request.methodLine, "testcommand")) {
