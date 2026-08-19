@@ -163,6 +163,15 @@ public:
     bool writeUnmodified(const string& query);
     bool writeUnmodified(const string& query, const map<string, Parameter>& params);
 
+    // Runs a write in its own transaction that is neither journaled nor replicated. The change is local to this
+    // node's database file, so this is only legal for queries whose effect no other node depends on. Deleting rows
+    // that every node is independently allowed to delete is the motivating case.
+    // This does not take the commit lock, so it can run while other threads commit. It uses BEGIN CONCURRENT for
+    // that reason: if another commit lands underneath it, the COMMIT returns SQLITE_BUSY_SNAPSHOT, this rolls back
+    // and returns false, and the caller is expected to try again later rather than retry in place.
+    // The caller must own a handle that is not inside a transaction, because this begins and ends one of its own.
+    bool writeLocalUnreplicated(const string& query);
+
     // Enable or disable update-noop mode.
     void setUpdateNoopMode(bool enabled);
     bool getUpdateNoopMode() const;

@@ -820,6 +820,36 @@ bool SQLite::writeUnmodified(const string& query, const map<string, Parameter>& 
     return _writeIdempotent(query, params, ignore, true);
 }
 
+bool SQLite::writeLocalUnreplicated(const string& query)
+{
+    // Beginning a transaction here would break whatever transaction the handle is already running, so refuse instead.
+    if (_insideTransaction) {
+        SALERT("writeLocalUnreplicated called on a handle that is inside a transaction, skipping.");
+        return false;
+    }
+
+    // Held in shared mode for the same reason the journal trim in `prepare` holds it: BlockWrites needs to be able to
+    // stop this.
+    shared_lock<shared_mutex> lock(_sharedData.writeLock);
+
+    if (SQuery(_db, "BEGIN CONCURRENT")) {
+        return false;
+    }
+
+    if (SQuery(_db, query)) {
+        SQuery(_db, "ROLLBACK");
+        return false;
+    }
+
+    // A commit that landed while we were writing shows up here as SQLITE_BUSY_SNAPSHOT.
+    if (SQuery(_db, "COMMIT")) {
+        SQuery(_db, "ROLLBACK");
+        return false;
+    }
+
+    return true;
+}
+
 bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>& params, SQResult& result, bool alwaysKeepQueries)
 {
     if (!_insideTransaction) {
