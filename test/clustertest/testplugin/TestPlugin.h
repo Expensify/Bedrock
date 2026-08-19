@@ -1,4 +1,7 @@
 #pragma once
+#include <condition_variable>
+#include <thread>
+
 #include <libstuff/libstuff.h>
 #include <BedrockPlugin.h>
 #include <BedrockServer.h>
@@ -49,6 +52,17 @@ public:
     inline static atomic<uint64_t> afterCommitCount{0};
 
     static void afterCommitCallback();
+
+    // Deletes rows through writeLocalUnreplicated from a long-lived thread of its own, which is the shape Auth's
+    // OnyxDeleter uses: no command transaction is open on this thread, and it takes a pool handle per cycle rather
+    // than holding one, so nothing is held across a detach.
+    unique_ptr<thread> unreplicatedDeleterThread;
+    mutex unreplicatedDeleterMutex;
+    condition_variable unreplicatedDeleterCV;
+    list<int64_t> unreplicatedDeleteQueue;
+    bool unreplicatedDeleterStop = false;
+
+    void serverStopping();
 };
 
 class TestPluginCommand : public BedrockCommand {
