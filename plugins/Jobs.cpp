@@ -733,10 +733,12 @@ void BedrockJobsCommand::process(SQLite& db)
                 const bool uniqueAsRetry = existingEnqueueVersion > 0 ||
                     (SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true"));
                 if (uniqueAsRetry || !SContains(job, "overwrite") || job["overwrite"] == "true" || job["overwrite"] == "") {
-                    // Patch caller data, then advance the latest enqueue version atomically. Leave activeVersion
-                    // unchanged because it identifies the payload already assigned to the current worker.
+                    // Patch caller data, then advance the latest enqueue version atomically. Preserve activeVersion
+                    // for versioned rows, or initialize it to 0 when a running legacy row first opts in.
                     const string updatedData = uniqueAsRetry ?
                         "JSON_SET(JSON_PATCH(data, " + safeData + "), "
+                        "'$._bedrockUniqueAsRetry.activeVersion', "
+                        "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.activeVersion'), 0), "
                         "'$._bedrockUniqueAsRetry.version', "
                         "COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), 0) + "
                         "IIF(COALESCE(JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.enqueueID'), '') != " + SQ(request["requestID"]) + ", 1, 0), "
