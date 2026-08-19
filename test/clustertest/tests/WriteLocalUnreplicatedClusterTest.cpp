@@ -64,7 +64,7 @@ struct WriteLocalUnreplicatedClusterTest : tpunit::TestFixture
         }
         ASSERT_EQUAL(countRowsWithID(leader, id), 0);
 
-        // The row should still exist on the follower, because the delete was never journaled and so never shipped. 
+        // The row should still exist on the follower, because the delete was never journaled and so never shipped.
         // Give replication some time, so this is a real absence of replication rather than a race we happened to win.
         usleep(1'000'000);
         ASSERT_EQUAL(countRowsWithID(follower, id), 1);
