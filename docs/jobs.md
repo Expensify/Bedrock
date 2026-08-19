@@ -12,7 +12,7 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
    * *repeat* - (optional) Description of how this job should repeat (see ["Repeat Syntax"](#repeat-syntax) below)
    * *unique* - (optional request field) Reuse an existing job with the same name.
    * *overwrite* - (optional request field) For a unique job, merge new data into the existing row. This field defaults to true.
-   * *uniqueAsRetry* - (optional request field) Set this field to true with *unique=true*. *overwrite* must remain enabled. Bedrock uses the request's top-level `requestID` as the enqueue identity. An enqueue that arrives while the job runs causes one subsequent run.
+   * *uniqueAsRetry* - (optional request field) Runs the job again after a new enqueue arrives during the active run. This field requires *unique=true*. Do not set *overwrite=false*.
 
  * **GetJob( name, [connection: wait, [timeout] ] )** - Waits for a match (if requested) and atomically dequeues exactly one job.
    * *name* - A pattern to match in GLOB syntax (eg, "Foo*" will get the first job whose name starts with "Foo")
@@ -36,24 +36,56 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
 
  * **QueryJob( jobID )** - Retrieves the current state and data associated with a job.
    * *jobID* - Identifier of the job to query
-   * Returns *enqueueVersion* when the job uses *uniqueAsRetry*.
+   * Returns *enqueueVersion* when the job uses *uniqueAsRetry*. This value is the latest enqueue version and is for status only.
+   * A worker must use the version from its `GetJob` or `GetJobs` response to finish, retry, or fail the job.
 
  * **FinishJob( jobID, [data], [enqueueVersion] )** - Marks a job as finished, which causes it to repeat if requested.
    * *jobID* - Identifier of the job to finish
    * *data* - (optional) New data object to associate with the job (especially useful if repeating, to pass state to the next worker).
-   * *enqueueVersion* - Required for a dequeued *uniqueAsRetry* job. If a newer enqueue arrived during the run, Bedrock preserves its data and queues one immediate subsequent run.
+   * *enqueueVersion* - Required for a dequeued *uniqueAsRetry* job. If a newer enqueue arrived, Bedrock preserves the new enqueue data and queues an immediate subsequent run.
 
  * **RetryJob( jobID, [enqueueVersion] )** - Requeues a running job.
-   * *enqueueVersion* - Required for a dequeued *uniqueAsRetry* job. If a newer enqueue arrived, Bedrock preserves the latest enqueue-owned data, name, and priority while applying the requested retry timing.
+   * *enqueueVersion* - Required for a dequeued *uniqueAsRetry* job. If a newer enqueue arrived, Bedrock preserves the data, name, and priority from that enqueue. Bedrock applies the requested retry time.
 
  * **FailJob( jobID, [data], [enqueueVersion] )** - Marks a running job as failed.
    * *jobID* - Identifier of the job to fail.
    * *data* - (optional) New data object to associate with the failed job.
-   * *enqueueVersion* - Required for a dequeued *uniqueAsRetry* job. If a newer enqueue arrived during the run, Bedrock preserves its data and queues one immediate subsequent run instead of failing the job.
+   * *enqueueVersion* - Required for a dequeued *uniqueAsRetry* job. If a newer enqueue arrived, Bedrock preserves the new enqueue data and queues an immediate subsequent run. Bedrock does not fail the job.
 
 For *CreateJobs*, set *unique*, *overwrite*, and *uniqueAsRetry* on each object in the *jobs* array. Do not put these fields inside *data*.
 
-Bedrock stores private control state under the reserved `_bedrockUniqueAsRetry` key in the existing `jobs.data` JSON. The jobs table schema is unchanged. Bedrock removes this key from incoming and returned data. Reusing a `requestID` does not advance the enqueue version, but Bedrock still merges the request data. Several distinct enqueues during one run collapse into one later run. A delayed completion from an older run has no effect on a newer active run.
+## `uniqueAsRetry` behavior
+
+The *uniqueAsRetry* option queues one subsequent run when one or more distinct duplicate enqueues arrive during an active run.
+
+Set *uniqueAsRetry=true* to enable this behavior. The option has these requirements:
+
+* Set *unique=true*. Bedrock must reuse one job row with the same name.
+* Keep *overwrite* enabled. Bedrock must merge the data from each new enqueue into that row.
+* Give each new enqueue a different top-level `requestID`. A repeated `requestID` does not advance the version. Bedrock still merges the request data.
+
+The latest version identifies the most recent enqueue. The active version identifies the enqueue that the current worker dequeued.
+
+`QueryJob` returns the latest version for status. It does not return a completion token for the active worker.
+
+`GetJob` and `GetJobs` return the active version as *enqueueVersion*. The worker must use this value for `FinishJob`, `RetryJob`, or `FailJob`.
+
+The following timeline shows two enqueues:
+
+1. A request enqueues version 1.
+2. `GetJob` dequeues version 1. The worker receives *enqueueVersion=1*.
+3. A different request enqueues version 2 while the first worker runs.
+4. The latest version becomes 2. The active version remains 1.
+5. The first worker finishes with *enqueueVersion=1*. Bedrock queues the same job row again.
+6. `GetJob` dequeues version 2. The next worker receives *enqueueVersion=2*.
+
+Several enqueues during one active run collapse into one subsequent run. The subsequent run uses the latest version and the final merged data.
+
+A delayed completion from an older run cannot change a newer active run. Bedrock ignores that delayed completion.
+
+The *retryAfter* field has a separate purpose. It recovers a job when a worker stops without a completion command.
+
+The *retryAfter* field does not detect a new enqueue. It does not cause the subsequent run described in this section.
 
  * **DeleteJob( jobID )** - Removes all trace of a job.
    * *jobID* - Identifier of the job to delete 
