@@ -32,12 +32,12 @@ struct AfterCommitCallbackTest : tpunit::TestFixture
     void firesOncePerCommit()
     {
         AfterCommitCallbackTempDBFile dbFile;
-        SQLite db(dbFile.filename, 1000, 1000, 1);
 
+        // Declared before the handle so it outlives every callback that captures it.
         atomic<int> callCount(0);
-        db.registerAfterCommitCallback([&callCount]() {
-            callCount++;
-        });
+        SQLite db(dbFile.filename, 1000, 1000, 1, 0, false, "PASSIVE", {[&callCount]() {
+                callCount++;
+            }});
 
         db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
         db.write("CREATE TABLE testTable(id INTEGER PRIMARY KEY, value INTEGER);");
@@ -58,18 +58,19 @@ struct AfterCommitCallbackTest : tpunit::TestFixture
     void doesNotFireOnRollback()
     {
         AfterCommitCallbackTempDBFile dbFile;
-        SQLite db(dbFile.filename, 1000, 1000, 1);
+
+        atomic<int> callCount(0);
+        SQLite db(dbFile.filename, 1000, 1000, 1, 0, false, "PASSIVE", {[&callCount]() {
+                callCount++;
+            }});
 
         db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
         db.write("CREATE TABLE testTable(id INTEGER PRIMARY KEY, value INTEGER);");
         db.prepare();
         ASSERT_EQUAL(db.commit(), SQLITE_OK);
 
-        // Register only now, so the setup commit above can't be mistaken for the write we roll back.
-        atomic<int> callCount(0);
-        db.registerAfterCommitCallback([&callCount]() {
-            callCount++;
-        });
+        // Zeroed after setup, so the commit above can't be mistaken for the write we roll back.
+        callCount = 0;
 
         db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
         db.write("INSERT INTO testTable VALUES(1, 1);");
@@ -88,8 +89,12 @@ struct AfterCommitCallbackTest : tpunit::TestFixture
     {
         AfterCommitCallbackTempDBFile dbFile;
 
-        // Two handles to the same file share one SharedData, so `first` sees callbacks registered on either handle.
-        SQLite first(dbFile.filename, 1000, 1000, 1);
+        atomic<int> callCount(0);
+        SQLite first(dbFile.filename, 1000, 1000, 1, 0, false, "PASSIVE", {[&callCount]() {
+                callCount++;
+            }});
+
+        // A handle derived from another copies its callbacks, so both handles below count into callCount.
         SQLite second(first);
 
         first.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
@@ -98,10 +103,7 @@ struct AfterCommitCallbackTest : tpunit::TestFixture
         first.prepare();
         ASSERT_EQUAL(first.commit(), SQLITE_OK);
 
-        atomic<int> callCount(0);
-        first.registerAfterCommitCallback([&callCount]() {
-            callCount++;
-        });
+        callCount = 0;
 
         // Both handles update the same row from the same starting snapshot, so whichever commits second conflicts.
         first.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);

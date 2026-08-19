@@ -47,6 +47,9 @@ public:
     // Counts the after-commit callbacks this node has seen, so a test can check that they fire on a follower
     // applying a replicated commit, not just on the leader.
     atomic<uint64_t> afterCommitCount;
+
+    // Counts commits on this node, including replicated ones applied by a follower.
+    void afterCommitCallback();
 };
 
 class TestPluginCommand : public BedrockCommand {

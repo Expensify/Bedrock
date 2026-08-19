@@ -28,9 +28,11 @@ extern "C" BedrockPlugin* BEDROCK_PLUGIN_REGISTER_TESTPLUGIN(BedrockServer& s)
 BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin(BedrockServer& s) :
     BedrockPlugin(s), httpsManager(new TestHTTPSManager(*this)), _maxID(-1), afterCommitCount(0)
 {
-    s.registerAfterCommitCallback([this]() {
-        afterCommitCount++;
-    });
+}
+
+void BedrockPlugin_TestPlugin::afterCommitCallback()
+{
+    afterCommitCount++;
 }
 
 BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
