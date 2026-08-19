@@ -163,8 +163,8 @@ public:
     bool writeUnmodified(const string& query);
     bool writeUnmodified(const string& query, const map<string, Parameter>& params);
 
-    // Runs a write in its own transaction that is neither journaled nor replicated. The change is local to this
-    // node's database file, so this should only be used for queries whose effect no other node depends on.
+    // Writes done with this are not added to the journal nor replicated. The intended use of this is for
+    // truncating old journal entries.
     bool writeLocalUnreplicated(const string& query);
 
     // Enable or disable update-noop mode.
