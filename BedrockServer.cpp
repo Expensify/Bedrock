@@ -82,15 +82,16 @@ shared_ptr<SQLitePool> BedrockServer::getDBPool()
 void BedrockServer::registerAfterCommitCallback(function<void()>&& callback)
 {
     lock_guard<decltype(_afterCommitCallbackMutex)> lock(_afterCommitCallbackMutex);
-    if (!_afterCommitCallbacksForwarded) {
-        // The pool doesn't exist yet, so hold onto this until sync() creates it.
-        _pendingAfterCommitCallbacks.push_back(move(callback));
-        return;
-    }
 
-    // Registering on the base handle is enough, the callback list lives in the SharedData that every handle to this
-    // database file shares.
-    _dbPool->getBase().registerAfterCommitCallback(move(callback));
+    // Kept even after being handed off, so they can be handed to a different SharedData if the pool is re-created
+    // against a different resolved filename.
+    _afterCommitCallbacks.push_back(callback);
+
+    if (!_afterCommitCallbacksForwardedTo.empty()) {
+        // Registering on the base handle is enough, the callback list lives in the SharedData that every handle to
+        // this database file shares.
+        _dbPool->getBase().registerAfterCommitCallback(move(callback));
+    }
 }
 
 void BedrockServer::sync()
@@ -123,16 +124,16 @@ void BedrockServer::sync()
     _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"]);
     SQLite& db = _dbPool->getBase();
 
-    // Hand over any callbacks that plugins registered before this pool existed. This runs only the first time we get
-    // here, because the SharedData holding them is keyed by filename and survives the pool being re-created.
+    // Hand over any callbacks that plugins registered before this pool existed. Skipped when this pool resolved to the
+    // same filename as the last one, because that means it shares the SharedData that already holds them.
     {
         lock_guard<decltype(_afterCommitCallbackMutex)> lock(_afterCommitCallbackMutex);
-        if (!_afterCommitCallbacksForwarded) {
-            for (auto& callback : _pendingAfterCommitCallbacks) {
-                db.registerAfterCommitCallback(move(callback));
+        if (_afterCommitCallbacksForwardedTo != db.getFilename()) {
+            for (const auto& callback : _afterCommitCallbacks) {
+                function<void()> callbackCopy = callback;
+                db.registerAfterCommitCallback(move(callbackCopy));
             }
-            _pendingAfterCommitCallbacks.clear();
-            _afterCommitCallbacksForwarded = true;
+            _afterCommitCallbacksForwardedTo = db.getFilename();
         }
     }
 

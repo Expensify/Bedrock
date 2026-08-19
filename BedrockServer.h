@@ -284,12 +284,15 @@ private:
     void registerAfterCommitCallback(function<void()>&& callback);
 
 private:
-    // After-commit callbacks registered before the DB pool existed, the lock guarding them, and whether they have
-    // been handed off yet. The handoff happens exactly once: the SQLite SharedData that ends up owning them is keyed
-    // by filename and outlives the pool, so re-creating the pool on re-attach must not register them a second time.
-    vector<function<void()>> _pendingAfterCommitCallbacks;
+    // After-commit callbacks registered before the DB pool existed, the lock guarding them, and the database filename
+    // we last handed them to. The SQLite SharedData that ends up owning them is keyed by resolved filename and
+    // outlives the pool, so re-creating the pool on re-attach must not register them against the same filename twice.
+    // It is keyed by filename rather than by a one-shot flag because the resolved name can change: SQLite resolves a
+    // relative path to itself while the file is missing and to its absolute form once it exists, so the first pool and
+    // a pool created after re-attach can land on two different SharedData objects.
+    vector<function<void()>> _afterCommitCallbacks;
     mutex _afterCommitCallbackMutex;
-    bool _afterCommitCallbacksForwarded = false;
+    string _afterCommitCallbacksForwardedTo;
 
     // The name of the sync thread.
     static constexpr auto _syncThreadName = "sync";
