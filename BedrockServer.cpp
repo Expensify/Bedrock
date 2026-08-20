@@ -107,9 +107,9 @@ void BedrockServer::sync()
     SQLite::journalZstdDictionaryID = args.calc("-journalZstdDictionaryID");
     vector<function<void()>> callbacks;
     for (const auto& plugin : plugins) {
-        callbacks.emplace_back([pluginPtr = plugin.second]() {
-            pluginPtr->afterCommitCallback();
-        });
+        if (plugin.second->afterCommitCallback) {
+            callbacks.emplace_back(plugin.second->afterCommitCallback);
+        }
     }
     SINFO("Setting dbPool size to: " << _dbPoolSize);
     _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"], callbacks);
