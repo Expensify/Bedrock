@@ -81,7 +81,8 @@ public:
     //
     // mmapSizeGB: address space to use for memory-mapped IO, in GB.
     SQLite(const string& filename, int cacheSize, int maxJournalSize, int minJournalTables,
-           int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE");
+           int64_t mmapSizeGB = 0, bool hctree = false, const string& checkpointMode = "PASSIVE",
+           vector<function<void()>> afterCommitCallbacks = {});
 
     // This constructor is not exactly a copy constructor. It creates an other SQLite object based on the first except
     // with a *different* journal table. This avoids a lot of locking around creating structures that we know already
@@ -571,6 +572,13 @@ private:
     // Check out various error cases that can interrupt a query.
     // We check them all together because we need to make sure we atomically pick a single one to handle.
     void _checkInterruptErrors(const string& error) const;
+
+    // Callbacks to run after each successful commit. Set at construction and copied to every handle derived from
+    // this one, so they need no locking.
+    const vector<function<void()>> _afterCommitCallbacks;
+
+    // Runs every after-commit callback. Called with no locks held.
+    void runAfterCommitCallbacks() noexcept;
 
     // Called internally by _sqliteAuthorizerCallback to authorize columns for a query.
     //

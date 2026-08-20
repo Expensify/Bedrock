@@ -321,7 +321,7 @@ void SQLite::commonConstructorInitialization(bool hctree)
 }
 
 SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
-               int minJournalTables, int64_t mmapSizeGB, bool hctree, const string& checkpointMode) :
+               int minJournalTables, int64_t mmapSizeGB, bool hctree, const string& checkpointMode, vector<function<void()>> afterCommitCallbacks) :
     _filename(initializeFilename(filename)),
     _maxJournalSize(maxJournalSize),
     _hctree(validateDBFormat(_filename, hctree)),
@@ -332,6 +332,7 @@ SQLite::SQLite(const string& filename, int cacheSize, int maxJournalSize,
     // initialization will not be correct.
     _sharedData(initializeSharedData()),
     _transactionTimer("transaction timer"),
+    _afterCommitCallbacks(afterCommitCallbacks),
     _cacheSize(cacheSize),
     _mmapSizeGB(mmapSizeGB),
     _checkpointMode(getCheckpointModeFromString(checkpointMode))
@@ -347,6 +348,7 @@ SQLite::SQLite(const SQLite& from) :
     _journalNames(from._journalNames),
     _sharedData(from._sharedData),
     _transactionTimer("transaction timer"),
+    _afterCommitCallbacks(from._afterCommitCallbacks),
     _cacheSize(from._cacheSize),
     _mmapSizeGB(from._mmapSizeGB),
     _checkpointMode(from._checkpointMode)
@@ -1147,6 +1149,10 @@ int SQLite::commit(const string& description, const string& commandName, functio
         _queryCache.clear();
         _sharedData.openTransactionCount--;
 
+        // Run these as early as possible after releasing the commit lock, so that anything waiting on a commit hears
+        // about it before we spend time on the checkpoint below.
+        runAfterCommitCallbacks();
+
         if (preCheckpointCallback != nullptr) {
             (*preCheckpointCallback)();
         }
@@ -1672,4 +1678,17 @@ map<uint64_t, pair<string, string>> SQLite::SharedData::popCommittedTransactions
     result = move(_committedTransactions);
     _committedTransactions.clear();
     return result;
+}
+
+void SQLite::runAfterCommitCallbacks() noexcept
+{
+    for (const auto& callback : _afterCommitCallbacks) {
+        try {
+            callback();
+        } catch (const exception& e) {
+            SWARN("Ignoring exception from afterCommit callback: " << e.what());
+        } catch (...) {
+            SWARN("Ignoring unknown exception from afterCommit callback.");
+        }
+    }
 }

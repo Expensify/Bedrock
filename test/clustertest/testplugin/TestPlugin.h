@@ -43,6 +43,12 @@ public:
 
     // Tests setting of an ID value in stateChanged after an upgrade is completed.
     atomic<int64_t> _maxID;
+
+    // Counts the after-commit callbacks this node has seen, so a test can check that they fire on a follower
+    // applying a replicated commit, not just on the leader.
+    inline static atomic<uint64_t> afterCommitCount{0};
+
+    static void afterCommitCallback();
 };
 
 class TestPluginCommand : public BedrockCommand {
