@@ -49,7 +49,6 @@ public:
     inline static atomic<uint64_t> afterCommitCount{0};
 
     static void afterCommitCallback();
-
 };
 
 class TestPluginCommand : public BedrockCommand {

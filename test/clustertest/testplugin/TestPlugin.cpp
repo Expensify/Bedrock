@@ -31,7 +31,8 @@ BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin(BedrockServer& s) :
 {
 }
 
-void BedrockPlugin_TestPlugin::afterCommitCallback() {
+void BedrockPlugin_TestPlugin::afterCommitCallback()
+{
     afterCommitCount++;
 }
 
