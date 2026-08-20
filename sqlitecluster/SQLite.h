@@ -163,6 +163,10 @@ public:
     bool writeUnmodified(const string& query);
     bool writeUnmodified(const string& query, const map<string, Parameter>& params);
 
+    // Writes done with this are not added to the journal nor replicated. The intended use of this is for
+    // truncating old journal entries. This function will not call runAfterCommit callbacks.
+    bool writeLocalUnreplicated(const string& query);
+
     // Enable or disable update-noop mode.
     void setUpdateNoopMode(bool enabled);
     bool getUpdateNoopMode() const;

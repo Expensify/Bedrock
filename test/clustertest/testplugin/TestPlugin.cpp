@@ -8,6 +8,7 @@
 
 #include <libstuff/SQResult.h>
 #include <libstuff/SThread.h>
+#include <sqlitecluster/SQLitePool.h>
 
 extern int* __pointerToFakeIntArray;
 
@@ -29,11 +30,54 @@ BedrockPlugin_TestPlugin::BedrockPlugin_TestPlugin(BedrockServer& s) :
     BedrockPlugin(s, &BedrockPlugin_TestPlugin::afterCommitCallback),
     httpsManager(new TestHTTPSManager(*this)), _maxID(-1)
 {
+    unreplicatedDeleterThread = make_unique<thread>([this]() {
+        SInitialize("TestUnreplicatedDeleter");
+        while (true) {
+            int64_t id = 0;
+            {
+                unique_lock<mutex> lock(unreplicatedDeleterMutex);
+                unreplicatedDeleterCV.wait(lock, [this]() {
+                    return unreplicatedDeleterStop || !unreplicatedDeleteQueue.empty();
+                });
+                if (unreplicatedDeleterStop) {
+                    return;
+                }
+                id = unreplicatedDeleteQueue.front();
+                unreplicatedDeleteQueue.pop_front();
+            }
+
+            // Work only ever arrives from a command, so the pool exists by the time we get here.
+            shared_ptr<SQLitePool> dbPool = server.getDBPool();
+            if (!dbPool) {
+                SWARN("No DB pool for the unreplicated deleter, dropping id " << id);
+                continue;
+            }
+            SQLiteScopedHandle handle(*dbPool, dbPool->getIndex());
+            if (!handle.db().writeLocalUnreplicated("DELETE FROM test WHERE id = " + SQ(id) + ";")) {
+                SWARN("Unreplicated delete of id " << id << " did not succeed.");
+            }
+        }
+    });
 }
 
 void BedrockPlugin_TestPlugin::afterCommitCallback()
 {
     afterCommitCount++;
+}
+
+void BedrockPlugin_TestPlugin::serverStopping()
+{
+    {
+        lock_guard<mutex> lock(unreplicatedDeleterMutex);
+        unreplicatedDeleterStop = true;
+    }
+    unreplicatedDeleterCV.notify_one();
+
+    // Joined outside the lock so the thread can take it on its way out.
+    if (unreplicatedDeleterThread) {
+        unreplicatedDeleterThread->join();
+        unreplicatedDeleterThread = nullptr;
+    }
 }
 
 BedrockPlugin_TestPlugin::~BedrockPlugin_TestPlugin()
@@ -93,6 +137,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
     static set<string> supportedCommands = {
         "testcommand",
         "getaftercommitcount",
+        "deletetestrowunreplicated",
         "testescalate",
         "broadcastwithtimeouts",
         "storeboradcasttimeouts",
@@ -240,7 +285,17 @@ bool TestPluginCommand::peek(SQLite& db)
         usleep(request.calc("PeekSleep") * 1000);
     }
 
-    if (SStartsWith(request.methodLine, "getaftercommitcount")) {
+    if (SStartsWith(request.methodLine, "deletetestrowunreplicated")) {
+        // Hands the work to the deleter thread rather than doing it here. A command already holds an open transaction
+        // on its own handle, which is not the context writeLocalUnreplicated is meant to be called from.
+        {
+            lock_guard<mutex> lock(plugin().unreplicatedDeleterMutex);
+            plugin().unreplicatedDeleteQueue.push_back(request.calc64("id"));
+        }
+        plugin().unreplicatedDeleterCV.notify_one();
+        response.methodLine = "200 OK";
+        return true;
+    } else if (SStartsWith(request.methodLine, "getaftercommitcount")) {
         // Peek runs on whichever node received this, so a follower answers for itself instead of escalating.
         response.content = SComposeJSONObject({{"afterCommitCount", SToStr(plugin().afterCommitCount.load())}});
         response.methodLine = "200 OK";
