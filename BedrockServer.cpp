@@ -505,11 +505,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
     // Check if this command would be likely to cause a crash
     if (_wouldCrash(command)) {
-        // If so, log it and respond 500 without processing it. Note that we deliberately log this at WARN and not
-        // ALERT: the crash that originally caused this command to be blacklisted is already logged at ALERT (see the
-        // die function in SSignal.cpp), and that initial crash is what should page. Receiving and safely rejecting
-        // subsequent known-crashing commands is the crash-protection mechanism working as intended, and a client
-        // retrying can produce thousands of these per minute, so alerting on each rejection is just noise.
+        // If so, make a lot of noise, and respond 500 without processing it. WARN instead of ALERT to avoid BugBot issues.
         SWARN("REJECTING CRASH-INDUCING COMMAND, command:" + command->request.methodLine, command->request.nameValueMap);
         command->response.methodLine = "500 Refused";
         command->complete = true;
