@@ -53,6 +53,13 @@ protected:
     virtual uint64_t _now() const;
 
 private:
+    enum class BlockingDimension
+    {
+        NONE,
+        IDENTIFIER,
+        COMMAND
+    };
+
     // A command that finished on the blocking queue. Both times are in microseconds.
     struct RecentlyFinishedCommand
     {
@@ -98,6 +105,12 @@ private:
     // True if `key` in `map` is inside an active block at `now`. O(1): reads only the block deadline, so the
     // push and dequeue hot paths stay cheap (dequeue runs under the base `_queueMutex`).
     static bool _isBlocked(StateMap& map, const string& key, uint64_t now);
+
+    // Return the active rate-limit dimension. Identifier blocks take precedence when both dimensions are active.
+    BlockingDimension _getBlockingDimension(const string& identifier, const string& commandName);
+
+    static const char* _getBlockingDimensionName(BlockingDimension dimension);
+    static string _getRateLimitMessage(BlockingDimension dimension);
 
     // Log (without blocking) when an identifier's windowed time crosses this, for monitoring heavy identifiers
     // that are still under their block threshold.

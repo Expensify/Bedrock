@@ -5,6 +5,14 @@
 // microseconds. The tests drive the public API only (record + isBlocked + the setters).
 struct TestBlockingCommandQueue : public BedrockBlockingCommandQueue
 {
+    static unique_ptr<BedrockCommand> makeCommand(const string& identifier, const string& commandName)
+    {
+        SData request(commandName);
+        auto command = make_unique<BedrockCommand>(SQLiteCommand(move(request)), nullptr);
+        command->blockingQueueRateLimitIdentifier = identifier;
+        return command;
+    }
+
     void setNow(uint64_t now)
     {
         _testNow = now;
@@ -27,6 +35,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
                                                      TEST(BlockingCommandQueueTest::testUnderThresholdNotBlocked),
                                                      TEST(BlockingCommandQueueTest::testIdentifiersAreIndependent),
                                                      TEST(BlockingCommandQueueTest::testCommandDimensionIgnoresIdentifier),
+                                                     TEST(BlockingCommandQueueTest::testPushReportsRateLimitDimensions),
+                                                     TEST(BlockingCommandQueueTest::testDequeueReportsRateLimitDimensions),
                                                      TEST(BlockingCommandQueueTest::testEmptyIdentifierSkipsIdentifierDimension),
                                                      TEST(BlockingCommandQueueTest::testWindowExpiry),
                                                      TEST(BlockingCommandQueueTest::testPartialCredit),
@@ -90,6 +100,79 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
         ASSERT_TRUE(queue.isBlocked("acct2", "cmd"));
         ASSERT_FALSE(queue.isBlocked("acct1", "otherCmd"));
+    }
+
+    void testPushReportsRateLimitDimensions()
+    {
+        TestBlockingCommandQueue identifierQueue;
+        identifierQueue.setIdentifierThreshold(50);
+        identifierQueue.setCommandThreshold(0);
+        identifierQueue.setNow(1000);
+        identifierQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        bool identifierRejected = false;
+        try {
+            identifierQueue.push(identifierQueue.makeCommand("acct1", "cmd"));
+        } catch (const SException& e) {
+            identifierRejected = true;
+            ASSERT_EQUAL(string(e.what()), "503 Blocking queue rate limited (identifier)");
+        }
+        ASSERT_TRUE(identifierRejected);
+
+        TestBlockingCommandQueue commandQueue;
+        commandQueue.setIdentifierThreshold(0);
+        commandQueue.setCommandThreshold(50);
+        commandQueue.setNow(1000);
+        commandQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        bool commandRejected = false;
+        try {
+            commandQueue.push(commandQueue.makeCommand("acct2", "cmd"));
+        } catch (const SException& e) {
+            commandRejected = true;
+            ASSERT_EQUAL(string(e.what()), "503 Blocking queue rate limited (command)");
+        }
+        ASSERT_TRUE(commandRejected);
+
+        TestBlockingCommandQueue bothDimensionsQueue;
+        bothDimensionsQueue.setIdentifierThreshold(50);
+        bothDimensionsQueue.setCommandThreshold(50);
+        bothDimensionsQueue.setNow(1000);
+        bothDimensionsQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        bool bothDimensionsRejected = false;
+        try {
+            bothDimensionsQueue.push(bothDimensionsQueue.makeCommand("acct1", "cmd"));
+        } catch (const SException& e) {
+            bothDimensionsRejected = true;
+            ASSERT_EQUAL(string(e.what()), "503 Blocking queue rate limited (identifier)");
+        }
+        ASSERT_TRUE(bothDimensionsRejected);
+    }
+
+    void testDequeueReportsRateLimitDimensions()
+    {
+        TestBlockingCommandQueue identifierQueue;
+        identifierQueue.setIdentifierThreshold(50);
+        identifierQueue.setCommandThreshold(0);
+        identifierQueue.setNow(1000);
+        identifierQueue.push(identifierQueue.makeCommand("acct1", "cmd"));
+        identifierQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        auto identifierCommand = identifierQueue.get(1'000'000);
+        ASSERT_TRUE(identifierCommand->complete);
+        ASSERT_EQUAL(identifierCommand->response.methodLine, "503 Blocking queue rate limited (identifier)");
+
+        TestBlockingCommandQueue commandQueue;
+        commandQueue.setIdentifierThreshold(0);
+        commandQueue.setCommandThreshold(50);
+        commandQueue.setNow(1000);
+        commandQueue.push(commandQueue.makeCommand("acct2", "cmd"));
+        commandQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        auto command = commandQueue.get(1'000'000);
+        ASSERT_TRUE(command->complete);
+        ASSERT_EQUAL(command->response.methodLine, "503 Blocking queue rate limited (command)");
     }
 
     void testEmptyIdentifierSkipsIdentifierDimension()
