@@ -42,6 +42,7 @@ void BedrockPlugin_Compression::initializeFromDB(SQLite& db)
 
 void BedrockPlugin_Compression::upgradeDatabase(SQLite& db)
 {
+    // Beware: rows in this table are write-once. See the warning in Compression.h.
     bool created;
     SASSERT(db.verifyTable("zstdDictionaries",
         "CREATE TABLE zstdDictionaries ("
@@ -70,6 +71,8 @@ ZSTD_DDict* BedrockPlugin_Compression::getDecompressionDictionary(size_t id)
     return nullptr;
 }
 
+// Beware: dictionaries are immutable. See the warning in Compression.h — changing an existing dictionary
+// corrupts both the data compressed against it and any index built on decompress().
 void BedrockPlugin_Compression::loadDictionariesFromDB(SQLite& db)
 {
     SQResult result;

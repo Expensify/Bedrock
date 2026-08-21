@@ -25,6 +25,11 @@ public:
 
     // Loads all dictionaries from the zstdDictionaries table into compiled in-memory maps.
     // Called once at startup from the sync thread, before any queries run.
+    //
+    // Beware: dictionaries are immutable. Changing or removing an existing row in zstdDictionaries makes every
+    // value compressed against it unreadable, and because compress()/decompress() are registered as
+    // SQLITE_DETERMINISTIC, it also silently corrupts every index built on decompress(). Only ever add new
+    // dictionary IDs.
     static void loadDictionariesFromDB(SQLite& db);
 
     // Register the compress(data, dictID) and decompress(data) SQLite UDFs.
