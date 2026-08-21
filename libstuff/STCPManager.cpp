@@ -17,7 +17,14 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket)
         // which becomes readable the moment the lookup finishes, so we pick the answer up
         // immediately rather than waiting out the poll timeout.
         if (socket.state.load() == Socket::RESOLVING) {
-            SASSERT(socket.resolution);
+            if (!socket.resolution) {
+                // Nothing to wait on and no fd to connect with, so this socket can never make
+                // progress. Kill the request rather than the process.
+                SWARN("Socket is RESOLVING with no resolution, closing.");
+                socket.state.store(Socket::CLOSED);
+                socket.connectFailure = true;
+                return;
+            }
             SFDset(fdm, socket.resolution->getFD(), SREADEVTS);
             return;
         }
@@ -73,7 +80,12 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket)
     // Update this socket
     switch (socket.state.load()) {
         case Socket::RESOLVING: {
-            SASSERT(socket.resolution);
+            if (!socket.resolution) {
+                SWARN("Socket is RESOLVING with no resolution, closing.");
+                socket.state.store(Socket::CLOSED);
+                socket.connectFailure = true;
+                break;
+            }
             if (!SFDAnySet(fdm, socket.resolution->getFD(), SREADEVTS)) {
                 // Lookup still running, nothing to do.
                 break;
@@ -252,18 +264,22 @@ STCPManager::Socket::Socket(const string& host, bool https, ResolveMode resolveM
 
 void STCPManager::Socket::_completeConnect()
 {
+    // Take ownership of the resolution up front. The member has to be released before anything can
+    // observe the state moving off RESOLVING, because a socket that's RESOLVING with no resolution
+    // has no fd for the poll functions to register.
+    shared_ptr<SResolver::Resolution> pending = move(resolution);
+    resolution = nullptr;
+
     // If a lookup ran, use its answer; otherwise resolve inline. Either way this is where the fd
     // gets opened, so everything downstream sees the same socket regardless of which path we took.
-    if (resolution) {
-        if (resolution->getState() != SResolver::Resolution::RESOLVED) {
+    if (pending) {
+        if (pending->getState() != SResolver::Resolution::RESOLVED) {
             SINFO("Failed to resolve '" << hostToResolve << "', closing socket.");
             state.store(State::CLOSED);
             connectFailure = true;
-            resolution = nullptr;
             return;
         }
-        addr = resolution->getAddr();
-        resolution = nullptr;
+        addr = pending->getAddr();
     } else if (!SResolveHost(hostToResolve, addr)) {
         state.store(State::CLOSED);
         connectFailure = true;
