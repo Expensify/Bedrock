@@ -257,9 +257,14 @@ static void sqliteDecompress(sqlite3_context* ctx, int argc, sqlite3_value** arg
 
 void BedrockPlugin_Compression::registerSQLite(sqlite3* db)
 {
-    sqlite3_create_function_v2(db, "compress", 2, SQLITE_UTF8 | SQLITE_DETERMINISTIC,
+    // SQLITE_INNOCUOUS: neither function has side effects, which SQLite requires before it will allow them in a
+    // schema object (index expressions, generated columns, etc.) while trusted_schema is off.
+    // SQLITE_DETERMINISTIC: both functions return the same result for the same arguments, which SQLite requires
+    // before it will use an index built on them. This holds only because dictionaries are immutable — see the
+    // warning on loadDictionariesFromDB().
+    sqlite3_create_function_v2(db, "compress", 2, SQLITE_UTF8 | SQLITE_DETERMINISTIC | SQLITE_INNOCUOUS,
                                nullptr, ::sqliteCompress, nullptr, nullptr, nullptr);
-    sqlite3_create_function_v2(db, "decompress", 1, SQLITE_UTF8 | SQLITE_DETERMINISTIC,
+    sqlite3_create_function_v2(db, "decompress", 1, SQLITE_UTF8 | SQLITE_DETERMINISTIC | SQLITE_INNOCUOUS,
                                nullptr, ::sqliteDecompress, nullptr, nullptr, nullptr);
 }
 
