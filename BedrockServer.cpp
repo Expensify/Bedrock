@@ -105,8 +105,14 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
     SQLite::journalZstdDictionaryID = args.calc("-journalZstdDictionaryID");
+    vector<function<void()>> callbacks;
+    for (const auto& plugin : plugins) {
+        if (plugin.second->afterCommitCallback) {
+            callbacks.emplace_back(plugin.second->afterCommitCallback);
+        }
+    }
     SINFO("Setting dbPool size to: " << _dbPoolSize);
-    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"]);
+    _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"], callbacks);
     SQLite& db = _dbPool->getBase();
 
     // Allow plugins to read from the DB at startup.

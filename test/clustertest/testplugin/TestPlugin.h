@@ -1,4 +1,7 @@
 #pragma once
+#include <condition_variable>
+#include <thread>
+
 #include <libstuff/libstuff.h>
 #include <BedrockPlugin.h>
 #include <BedrockServer.h>
@@ -43,6 +46,22 @@ public:
 
     // Tests setting of an ID value in stateChanged after an upgrade is completed.
     atomic<int64_t> _maxID;
+
+    // Counts the after-commit callbacks this node has seen, so a test can check that they fire on a follower
+    // applying a replicated commit, not just on the leader.
+    inline static atomic<uint64_t> afterCommitCount{0};
+
+    static void afterCommitCallback();
+
+    // Deletes rows through writeLocalUnreplicated from a long-lived thread of its own. This will be used to
+    // test that writeLocalUnreplicated can run while other threads are committing.
+    unique_ptr<thread> unreplicatedDeleterThread;
+    mutex unreplicatedDeleterMutex;
+    condition_variable unreplicatedDeleterCV;
+    list<int64_t> unreplicatedDeleteQueue;
+    bool unreplicatedDeleterStop = false;
+
+    void serverStopping();
 };
 
 class TestPluginCommand : public BedrockCommand {
