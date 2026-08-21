@@ -1955,8 +1955,33 @@ string SGUnzip(const string& content)
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
+bool SResolveHostLiteral(const string& host, sockaddr_in& addr)
+{
+    string domain;
+    uint16_t port = 0;
+    if (!SParseHost(host, domain, port)) {
+        return false;
+    }
+
+    // Is the domain just a raw IP? Then there's nothing to look up.
+    unsigned int ip = inet_addr(domain.c_str());
+    if (!ip || ip == INADDR_NONE) {
+        return false;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = ip;
+    return true;
+}
+
 bool SResolveHost(const string& host, sockaddr_in& addr)
 {
+    if (SResolveHostLiteral(host, addr)) {
+        return true;
+    }
+
     // First, just parse the host.
     string domain;
     uint16_t port = 0;
@@ -1968,13 +1993,6 @@ bool SResolveHost(const string& host, sockaddr_in& addr)
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-
-    // Is the domain just a raw IP? Then there's nothing to look up.
-    unsigned int ip = inet_addr(domain.c_str());
-    if (ip && ip != INADDR_NONE) {
-        addr.sin_addr.s_addr = ip;
-        return true;
-    }
 
     // We have to actually ask. This is the part that blocks. There's no cache here on purpose:
     // every host runs a local caching resolver, and a second cache on top of it only adds staleness.

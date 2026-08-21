@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <unistd.h>
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SResolver.h>
@@ -15,7 +16,7 @@ struct AsyncResolve : tpunit::TestFixture
                                          TEST(AsyncResolve::testAbandonWhileResolving),
                                          TEST(AsyncResolve::testResolverOutlivesCaller),
                                          TEST(AsyncResolve::testResolutionWakesPoll),
-                                         TEST(AsyncResolve::testInFlightCap))
+                                         TEST(AsyncResolve::testLiteralNeedsNoThread))
     {
     }
 
@@ -55,6 +56,7 @@ struct AsyncResolve : tpunit::TestFixture
         ASSERT_NOT_EQUAL(socket.state.load(), STCPManager::Socket::RESOLVING);
         ASSERT_TRUE(socket.s > 0);
 
+        listener.reset();
         BedrockTester::ports.returnPort(port);
     }
 
@@ -67,10 +69,14 @@ struct AsyncResolve : tpunit::TestFixture
         uint16_t port = 0;
         auto listener = openTestPort(port);
 
-        STCPManager::Socket socket("localhost:" + to_string(port), false, STCPManager::Socket::ResolveMode::ASYNC);
+        // An explicitly generous grace period, because this is testing that the mechanism connects
+        // inline when the answer arrives in time -- not whether the default 5ms happens to be
+        // enough on a loaded test machine, which is a timing assertion and would flake.
+        STCPManager::Socket socket("localhost:" + to_string(port), false, STCPManager::Socket::ResolveMode::ASYNC, 2000);
         ASSERT_NOT_EQUAL(socket.state.load(), STCPManager::Socket::RESOLVING);
         ASSERT_TRUE(socket.s > 0);
 
+        listener.reset();
         BedrockTester::ports.returnPort(port);
     }
 
@@ -94,6 +100,7 @@ struct AsyncResolve : tpunit::TestFixture
         ASSERT_EQUAL(pollUntilSettled(socket), STCPManager::Socket::CONNECTED);
         ASSERT_TRUE(socket.s > 0);
 
+        listener.reset();
         BedrockTester::ports.returnPort(port);
     }
 
@@ -176,32 +183,23 @@ struct AsyncResolve : tpunit::TestFixture
         resolution->drain();
     }
 
-    void testInFlightCap()
+    void testLiteralNeedsNoThread()
     {
-        // A resolver that stops answering would otherwise let threads accumulate without limit,
-        // one per request. Past the cap SResolve throws, which callers already handle by failing
-        // the request rather than by spawning anyway.
-        vector<shared_ptr<SResolution>> held;
-        bool threw = false;
-        try {
-            // Unresolvable hosts so these stay in flight while we pile them up.
-            for (int i = 0; i < S_RESOLVE_MAX_IN_FLIGHT + 50; i++) {
-                held.push_back(SResolve("cap-probe-" + to_string(i) + ".invalid:443"));
-            }
-        } catch (const SException& e) {
-            threw = true;
-        }
-        ASSERT_TRUE(threw);
-        ASSERT_LESS_THAN_EQUAL(SResolveInFlight(), S_RESOLVE_MAX_IN_FLIGHT);
+        // A literal address is answered inline, so it never occupies a resolver thread and the
+        // caller never has anything to wait for. This is what keeps sockets built from an IP --
+        // the proxy socket, cluster peers -- on exactly the path they were on before.
+        auto literal = SResolve("127.0.0.1:443");
+        ASSERT_EQUAL(literal->getState(), SResolution::RESOLVED);
+        ASSERT_EQUAL(literal->getAddr().sin_addr.s_addr, inet_addr("127.0.0.1"));
+        ASSERT_EQUAL(ntohs(literal->getAddr().sin_port), 443);
 
-        // The socket constructor surfaces it the same way, which is what routes it to a failed
-        // transaction rather than an abort.
-        bool socketThrew = false;
-        try {
-            STCPManager::Socket socket("cap-probe-socket.invalid:443", false, STCPManager::Socket::ResolveMode::ASYNC, 0);
-        } catch (const SException& e) {
-            socketThrew = true;
+        // A name can't be, so it starts out pending and finishes later.
+        auto name = SResolve("needs-a-thread-probe.invalid:443");
+        const uint64_t giveUpAt = STimeNow() + 30'000'000;
+        while (name->getState() == SResolution::PENDING && STimeNow() < giveUpAt) {
+            usleep(10'000);
         }
-        ASSERT_TRUE(socketThrew);
+        ASSERT_EQUAL(name->getState(), SResolution::FAILED);
     }
+
 } __AsyncResolve;

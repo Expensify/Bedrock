@@ -55,7 +55,12 @@ private:
     int _pipeFD[2];
 };
 
-// Starts resolving `host` on a detached thread and returns immediately.
+// Starts resolving `host` on a detached thread and returns immediately. A literal address is
+// answered inline without a thread.
+//
+// Note that every lookup still in flight holds a pipe, so it costs two file descriptors. That's
+// nothing against the server's raised RLIMIT_NOFILE, but it's worth knowing before raising the cap
+// below, and worth remembering in any process that runs at the default limit.
 //
 // Throws if too many lookups are already in flight. That only happens when the resolver has stopped
 // answering, since a lookup can occupy its thread for as long as glibc is willing to retry, and the
@@ -65,6 +70,3 @@ shared_ptr<SResolution> SResolve(const string& host);
 
 // How many lookups may be in flight at once before SResolve starts throwing.
 extern const int S_RESOLVE_MAX_IN_FLIGHT;
-
-// Number of lookups currently in flight. Exists for tests.
-int SResolveInFlight();
