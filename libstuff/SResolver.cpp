@@ -86,7 +86,7 @@ shared_ptr<SResolution> SResolve(const string& host)
     // The thread holds its own reference, so it doesn't matter if whoever asked for this has given
     // up by the time the lookup finishes.
     //
-    // A failed spawn arrives as a std::system_error, which callers of a socket constructor have no
+    // A failed spawn arrives as a system_error, which callers of a socket constructor have no
     // reason to expect. Convert it, so running out of threads fails a request the same way the
     // in-flight cap does instead of unwinding past everyone's catch.
     try {

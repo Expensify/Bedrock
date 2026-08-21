@@ -201,5 +201,4 @@ struct AsyncResolve : tpunit::TestFixture
         }
         ASSERT_EQUAL(name->getState(), SResolution::FAILED);
     }
-
 } __AsyncResolve;
