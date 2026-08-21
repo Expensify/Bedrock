@@ -1167,45 +1167,28 @@ struct LibStuff : tpunit::TestFixture
 
     void testResolveHost()
     {
-        SClearResolveCache();
-
-        // A raw IP needs no lookup at all, so even the never-blocks path can answer it.
+        // A raw IP needs no lookup at all.
         sockaddr_in addr;
-        ASSERT_TRUE(SResolveHostCached("127.0.0.1:443", addr));
+        ASSERT_TRUE(SResolveHost("127.0.0.1:443", addr));
         ASSERT_EQUAL(addr.sin_family, AF_INET);
         ASSERT_EQUAL(ntohs(addr.sin_port), 443);
         ASSERT_EQUAL(addr.sin_addr.s_addr, inet_addr("127.0.0.1"));
 
-        // A name we've never looked up can't be answered without blocking.
-        ASSERT_FALSE(SResolveHostCached("localhost:443", addr));
-
-        // Resolving it populates the cache, so the same host now answers inline with the same
-        // address. `localhost` comes out of /etc/hosts, so this doesn't depend on the network.
+        // A name goes through getaddrinfo. `localhost` comes out of /etc/hosts, so this doesn't
+        // depend on the network.
         sockaddr_in resolved;
         ASSERT_TRUE(SResolveHost("localhost:443", resolved));
         ASSERT_EQUAL(ntohs(resolved.sin_port), 443);
 
-        sockaddr_in cached;
-        ASSERT_TRUE(SResolveHostCached("localhost:443", cached));
-        ASSERT_EQUAL(cached.sin_addr.s_addr, resolved.sin_addr.s_addr);
-
-        // The cache is keyed on the domain, not the port, so a different port on a known host is
-        // still answerable inline and carries the port it was asked for.
+        // The port comes from the host string, not from whatever the resolver says.
         sockaddr_in otherPort;
-        ASSERT_TRUE(SResolveHostCached("localhost:80", otherPort));
+        ASSERT_TRUE(SResolveHost("localhost:80", otherPort));
         ASSERT_EQUAL(ntohs(otherPort.sin_port), 80);
         ASSERT_EQUAL(otherPort.sin_addr.s_addr, resolved.sin_addr.s_addr);
 
-        // Failures aren't cached, so an unresolvable host stays unresolvable rather than becoming
-        // a poisoned entry.
+        // A name that doesn't resolve fails, and so does one we can't parse.
         ASSERT_FALSE(SResolveHost("nonexistent-probe-xyzzy.invalid:443", addr));
-        ASSERT_FALSE(SResolveHostCached("nonexistent-probe-xyzzy.invalid:443", addr));
-
-        // A host we can't even parse is a failure, not a lookup.
         ASSERT_FALSE(SResolveHost("", addr));
-
-        SClearResolveCache();
-        ASSERT_FALSE(SResolveHostCached("localhost:443", addr));
     }
 
     void testSGetPeerNamePreservesErrno()

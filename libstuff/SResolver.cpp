@@ -80,9 +80,13 @@ shared_ptr<SResolution> SResolve(const string& host)
     // The thread holds its own reference, so it doesn't matter if whoever asked for this has given
     // up by the time the lookup finishes.
     thread([resolution]() {
-        // Among other things this blocks signals, which a transient thread must do so it can't
-        // swallow one meant for the signal handling thread.
-        SInitialize("resolver");
+        // Deliberately not SInitialize(): that registers a single global buffer as this thread's
+        // alternate signal stack, which is fine for a handful of long-lived threads but not for one
+        // of these per request, all sharing the same 64KB. We only need the two things it would
+        // give us that matter here, and one comes for free -- a new thread inherits the signal mask
+        // of the thread that spawned it, which has already blocked everything the signal handling
+        // thread wants to receive.
+        SLogSetThreadName("resolver");
 
         sockaddr_in addr;
         const bool success = SResolveHost(resolution->host, addr);

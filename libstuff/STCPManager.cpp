@@ -264,7 +264,12 @@ STCPManager::Socket::Socket(const string& host, bool https, ResolveMode resolveM
     }
 
     _completeConnect();
-    if (s < 0) {
+
+    // An async socket reports failure through its state, never by throwing, because whether a
+    // failed lookup lands inside the grace period or after it is a matter of milliseconds and the
+    // caller shouldn't have to handle it two different ways. It's CLOSED either way, and postPoll
+    // surfaces it. A blocking socket has no later opportunity to report, so it still throws.
+    if (s < 0 && resolveMode == ResolveMode::BLOCKING) {
         STHROW("Couldn't open socket to " + host);
     }
 }

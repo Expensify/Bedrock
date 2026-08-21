@@ -9,12 +9,13 @@ struct AsyncResolve : tpunit::TestFixture
 {
     AsyncResolve() : tpunit::TestFixture(true, "AsyncResolve",
                                          TEST(AsyncResolve::testRawIPNeverDefers),
-                                         TEST(AsyncResolve::testCachedHostNeverDefers),
+                                         TEST(AsyncResolve::testGraceWindowConnectsInline),
                                          TEST(AsyncResolve::testDeferredConnectCompletes),
                                          TEST(AsyncResolve::testFailedResolutionClosesSocket),
                                          TEST(AsyncResolve::testAbandonWhileResolving),
                                          TEST(AsyncResolve::testResolverOutlivesCaller),
-                                         TEST(AsyncResolve::testResolutionWakesPoll))
+                                         TEST(AsyncResolve::testResolutionWakesPoll),
+                                         TEST(AsyncResolve::testInFlightCap))
     {
     }
 
@@ -57,18 +58,16 @@ struct AsyncResolve : tpunit::TestFixture
         BedrockTester::ports.returnPort(port);
     }
 
-    void testCachedHostNeverDefers()
+    void testGraceWindowConnectsInline()
     {
-        // A host resolved recently answers from the cache, so the steady state doesn't touch the
-        // resolver pool either.
+        // The grace wait is what replaced the in-process cache: a host the system resolver can
+        // answer immediately comes back inside the window, so the socket connects in the
+        // constructor and never reaches RESOLVING. `localhost` is served from /etc/hosts, which is
+        // the fastest case there is.
         uint16_t port = 0;
         auto listener = openTestPort(port);
-        const string host = "localhost:" + to_string(port);
 
-        sockaddr_in addr;
-        ASSERT_TRUE(SResolveHost(host, addr));
-
-        STCPManager::Socket socket(host, false, STCPManager::Socket::ResolveMode::ASYNC);
+        STCPManager::Socket socket("localhost:" + to_string(port), false, STCPManager::Socket::ResolveMode::ASYNC);
         ASSERT_NOT_EQUAL(socket.state.load(), STCPManager::Socket::RESOLVING);
         ASSERT_TRUE(socket.s > 0);
 
@@ -77,25 +76,20 @@ struct AsyncResolve : tpunit::TestFixture
 
     void testDeferredConnectCompletes()
     {
-        // With an empty cache the lookup goes to the pool, and the connection is finished later by
-        // postPoll rather than by the constructor.
+        // A zero grace period forces the deferred path, so this doesn't depend on losing a race
+        // with the resolver to be meaningful.
         uint16_t port = 0;
         auto listener = openTestPort(port);
         const string host = "localhost:" + to_string(port);
-        SClearResolveCache();
 
-        STCPManager::Socket socket(host, false, STCPManager::Socket::ResolveMode::ASYNC);
+        STCPManager::Socket socket(host, false, STCPManager::Socket::ResolveMode::ASYNC, 0);
+        ASSERT_EQUAL(socket.state.load(), STCPManager::Socket::RESOLVING);
+        ASSERT_EQUAL(socket.s, -1);
 
-        // Whether we caught it mid-lookup is a race we can't control, but either way there must be
-        // no fd yet if it's still resolving.
-        if (socket.state.load() == STCPManager::Socket::RESOLVING) {
-            ASSERT_EQUAL(socket.s, -1);
-
-            // Buffering while resolving is accepted and reports success, having sent nothing.
-            ASSERT_TRUE(socket.send("hello"));
-            ASSERT_FALSE(socket.sendBufferEmpty());
-            ASSERT_TRUE(socket.recv());
-        }
+        // Buffering while resolving is accepted and reports success, having sent nothing.
+        ASSERT_TRUE(socket.send("hello"));
+        ASSERT_FALSE(socket.sendBufferEmpty());
+        ASSERT_TRUE(socket.recv());
 
         ASSERT_EQUAL(pollUntilSettled(socket), STCPManager::Socket::CONNECTED);
         ASSERT_TRUE(socket.s > 0);
@@ -107,8 +101,7 @@ struct AsyncResolve : tpunit::TestFixture
     {
         // A name that can't resolve has to surface as a dead socket rather than hanging forever,
         // because the constructor already returned and can't throw at this point.
-        SClearResolveCache();
-        STCPManager::Socket socket("nonexistent-probe-xyzzy.invalid:443", false, STCPManager::Socket::ResolveMode::ASYNC);
+        STCPManager::Socket socket("nonexistent-probe-xyzzy.invalid:443", false, STCPManager::Socket::ResolveMode::ASYNC, 0);
 
         ASSERT_EQUAL(pollUntilSettled(socket), STCPManager::Socket::CLOSED);
         ASSERT_TRUE(socket.connectFailure);
@@ -120,12 +113,10 @@ struct AsyncResolve : tpunit::TestFixture
         // lands rather than when it times out. A short poll timeout can't tell those apart, so this
         // uses a long one and measures how long we actually sat in it.
         //
-        // The host has to be one that takes a real DNS round trip. `localhost` comes out of
-        // /etc/hosts fast enough that a worker often finishes before the constructor checks, so the
-        // socket never reaches RESOLVING and there's no wake-up to observe. An unresolvable name
-        // costs a round trip and still writes the pipe byte on failure, which is the path we want.
-        SClearResolveCache();
-        STCPManager::Socket socket("slow-to-fail-probe.invalid:443", false, STCPManager::Socket::ResolveMode::ASYNC);
+        // Grace period 0 so the socket is guaranteed to defer, and an unresolvable host so the
+        // answer takes a real round trip to arrive. A failed lookup writes the same pipe byte a
+        // successful one does, which is the wake-up being tested.
+        STCPManager::Socket socket("slow-to-fail-probe.invalid:443", false, STCPManager::Socket::ResolveMode::ASYNC, 0);
         ASSERT_EQUAL(socket.state.load(), STCPManager::Socket::RESOLVING);
 
         // prePoll has to contribute exactly one fd, and it can't be the socket's, because there
@@ -153,10 +144,9 @@ struct AsyncResolve : tpunit::TestFixture
         // Destroying a socket mid-lookup is the case that has to be safe: the worker is still
         // running and will write its result somewhere. Run enough of them to make a use-after-free
         // likely to be caught under ASAN.
-        SClearResolveCache();
         for (int i = 0; i < 20; i++) {
             const string host = "abandoned-host-" + to_string(i) + ".invalid:443";
-            STCPManager::Socket socket(host, false, STCPManager::Socket::ResolveMode::ASYNC);
+            STCPManager::Socket socket(host, false, STCPManager::Socket::ResolveMode::ASYNC, 0);
         }
     }
 
@@ -164,26 +154,54 @@ struct AsyncResolve : tpunit::TestFixture
     {
         // Same idea one layer down, without a socket in the picture: the Resolution has to stay
         // valid for the worker after the requester drops it.
-        SClearResolveCache();
         for (int i = 0; i < 20; i++) {
-            auto resolution = SResolver::getInstance().resolve("dropped-host-" + to_string(i) + ".invalid:443");
+            auto resolution = SResolve("dropped-host-" + to_string(i) + ".invalid:443");
             ASSERT_TRUE(resolution->getFD() > 0);
         }
 
         // A resolution we do hold onto reports a result and wakes its pipe.
-        auto resolution = SResolver::getInstance().resolve("localhost:443");
+        auto resolution = SResolve("localhost:443");
         const uint64_t giveUpAt = STimeNow() + 10'000'000;
-        while (resolution->getState() == SResolver::Resolution::PENDING && STimeNow() < giveUpAt) {
+        while (resolution->getState() == SResolution::PENDING && STimeNow() < giveUpAt) {
             fd_map fdm;
             SFDset(fdm, resolution->getFD(), SREADEVTS);
             S_poll(fdm, 100'000);
         }
-        ASSERT_EQUAL(resolution->getState(), SResolver::Resolution::RESOLVED);
+        ASSERT_EQUAL(resolution->getState(), SResolution::RESOLVED);
 
         fd_map fdm;
         SFDset(fdm, resolution->getFD(), SREADEVTS);
         S_poll(fdm, 0);
         ASSERT_TRUE(SFDAnySet(fdm, resolution->getFD(), SREADEVTS));
         resolution->drain();
+    }
+
+    void testInFlightCap()
+    {
+        // A resolver that stops answering would otherwise let threads accumulate without limit,
+        // one per request. Past the cap SResolve throws, which callers already handle by failing
+        // the request rather than by spawning anyway.
+        vector<shared_ptr<SResolution>> held;
+        bool threw = false;
+        try {
+            // Unresolvable hosts so these stay in flight while we pile them up.
+            for (int i = 0; i < S_RESOLVE_MAX_IN_FLIGHT + 50; i++) {
+                held.push_back(SResolve("cap-probe-" + to_string(i) + ".invalid:443"));
+            }
+        } catch (const SException& e) {
+            threw = true;
+        }
+        ASSERT_TRUE(threw);
+        ASSERT_LESS_THAN_EQUAL(SResolveInFlight(), S_RESOLVE_MAX_IN_FLIGHT);
+
+        // The socket constructor surfaces it the same way, which is what routes it to a failed
+        // transaction rather than an abort.
+        bool socketThrew = false;
+        try {
+            STCPManager::Socket socket("cap-probe-socket.invalid:443", false, STCPManager::Socket::ResolveMode::ASYNC, 0);
+        } catch (const SException& e) {
+            socketThrew = true;
+        }
+        ASSERT_TRUE(socketThrew);
     }
 } __AsyncResolve;
