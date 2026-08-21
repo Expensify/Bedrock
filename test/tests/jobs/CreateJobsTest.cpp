@@ -13,6 +13,7 @@ struct CreateJobsTest : tpunit::TestFixture
                               TEST(CreateJobsTest::createWithParentIDNotRunning),
                               TEST(CreateJobsTest::createWithParentMocked),
                               TEST(CreateJobsTest::createUniqueChildWithWrongParent),
+                              TEST(CreateJobsTest::uniqueAsRetryBatch),
                               AFTER(CreateJobsTest::tearDown),
                               AFTER_CLASS(CreateJobsTest::tearDownClass))
     {
@@ -262,5 +263,58 @@ struct CreateJobsTest : tpunit::TestFixture
         jobs.push_back(SComposeJSONObject(job1Content));
         command["jobs"] = SComposeJSONArray(jobs);
         tester->executeWaitVerifyContent(command, "404 Trying to create a child that already exists, but it is tied to a different parent");
+    }
+
+    void uniqueAsRetryBatch()
+    {
+        // Given an opted-in unique job
+        SData command("CreateJob");
+        command["name"] = "batchComparedData";
+        command["data"] = "{\"initial\":0}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // When one CreateJobs request contains two updates for that durable job
+        command.clear();
+        command.methodLine = "CreateJobs";
+        STable firstJob;
+        firstJob["name"] = "batchComparedData";
+        firstJob["data"] = "{\"first\":1}";
+        firstJob["unique"] = "true";
+        firstJob["uniqueAsRetry"] = "true";
+        STable secondJob = firstJob;
+        secondJob["data"] = "{\"second\":2}";
+        secondJob["jobPriority"] = "750";
+        vector<string> jobs = {SComposeJSONObject(firstJob), SComposeJSONObject(secondJob)};
+        command["jobs"] = SComposeJSONArray(jobs);
+        STable response = tester->executeWaitVerifyContentTable(command);
+
+        // Then both entries reuse the row
+        list<string> jobIDs = SParseJSONArray(response["jobIDs"]);
+        ASSERT_EQUAL(jobIDs.size(), 2);
+        ASSERT_EQUAL(jobIDs.front(), jobID);
+        ASSERT_EQUAL(jobIDs.back(), jobID);
+
+        // When the same CreateJobs request is replayed, both entries still reuse the same row
+        response = tester->executeWaitVerifyContentTable(command);
+        jobIDs = SParseJSONArray(response["jobIDs"]);
+        ASSERT_EQUAL(jobIDs.size(), 2);
+        ASSERT_EQUAL(jobIDs.front(), jobID);
+        ASSERT_EQUAL(jobIDs.back(), jobID);
+
+        // The row contains all merged caller data and only the lightweight private opt-in marker
+        SQResult result;
+        tester->readDB("SELECT JSON_TYPE(data, '$._bedrockUniqueAsRetry'), "
+                       "JSON_EXTRACT(data, '$._bedrockUniqueAsRetry'), JSON_EXTRACT(data, '$.first'), "
+                       "JSON_EXTRACT(data, '$.second'), JSON_REMOVE(data, '$._bedrockUniqueAsRetry'), priority "
+                       "FROM jobs WHERE jobID=" + jobID + ";", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], "true");
+        ASSERT_EQUAL(result[0][1], "1");
+        ASSERT_EQUAL(result[0][2], "1");
+        ASSERT_EQUAL(result[0][3], "2");
+        ASSERT_EQUAL(result[0][4], "{\"initial\":0,\"first\":1,\"second\":2}");
+        ASSERT_EQUAL(result[0][5], "750");
     }
 } __CreateJobsTest;

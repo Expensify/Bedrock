@@ -18,6 +18,7 @@ struct CreateJobTest : tpunit::TestFixture
                               TEST(CreateJobTest::createWithRepeat),
                               TEST(CreateJobTest::uniqueJob),
                               TEST(CreateJobTest::uniqueJobMergeData),
+                              TEST(CreateJobTest::uniqueAsRetryLifecycle),
                               TEST(CreateJobTest::createWithBadData),
                               TEST(CreateJobTest::createWithBadRepeat),
                               TEST(CreateJobTest::createChildWithQueuedParent),
@@ -287,6 +288,248 @@ struct CreateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(nonoverwritenJob[0][7], updatedJob[0][7]);
         ASSERT_EQUAL(nonoverwritenJob[0][8], updatedJob[0][8]);
         ASSERT_EQUAL(nonoverwritenJob[0][9], updatedJob[0][9]);
+    }
+
+    void uniqueAsRetryLifecycle()
+    {
+        // The option accepts only Boolean values and requires a writable unique row.
+        SData command("CreateJob");
+        command["name"] = "invalidUniqueAsRetry";
+        command["uniqueAsRetry"] = "sometimes";
+        tester->executeWaitVerifyContent(command, "402 Malformed uniqueAsRetry");
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "disabledOverwrite";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        command["overwrite"] = "false";
+        tester->executeWaitVerifyContent(command, "402 uniqueAsRetry requires unique=true and overwrite enabled");
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "missingUnique";
+        command["uniqueAsRetry"] = "true";
+        tester->executeWaitVerifyContent(command, "402 uniqueAsRetry requires unique=true and overwrite enabled");
+
+        // Callers cannot create Bedrock's private opt-in marker.
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "reservedMetadata";
+        command["data"] = "{\"activity\":1,\"_bedrockUniqueAsRetry\":{\"version\":999}}";
+        const string reservedMetadataJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        SQResult result;
+        tester->readDB("SELECT JSON_EXTRACT(data, '$._bedrockUniqueAsRetry'), JSON_EXTRACT(data, '$.activity') "
+                       "FROM jobs WHERE jobID=" + reservedMetadataJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "");
+        ASSERT_EQUAL(result[0][1], "1");
+
+        // Equivalent JSON, including reordered nested object members, completes normally. Bedrock-owned fields do not
+        // participate in the comparison, and worker output cannot overwrite the private marker.
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "sameComparedData";
+        command["data"] = "{\"activity\":1,\"nested\":{\"a\":1,\"b\":2}}";
+        command["repeat"] = "FINISHED, +1 DAY";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        const string sameDataJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "QueryJob";
+        command["jobID"] = sameDataJobID;
+        const STable queriedJob = tester->executeWaitVerifyContentTable(command);
+        ASSERT_TRUE(queriedJob.at("data").find("_bedrockUniqueAsRetry") == string::npos);
+        ASSERT_TRUE(!SContains(queriedJob, "enqueueVersion"));
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "sameComparedData";
+        STable runningJob = tester->executeWaitVerifyContentTable(command);
+        ASSERT_TRUE(runningJob["data"].find("_bedrockUniqueAsRetry") == string::npos);
+        ASSERT_TRUE(!SContains(runningJob, "enqueueVersion"));
+
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = sameDataJobID;
+        command["expectedData"] = "{\"nested\":{\"b\":2,\"a\":1},\"activity\":1,\"retryAfterCount\":99,"
+            "\"originalNextRun\":\"1900-01-01 00:00:00\",\"_commitCounts\":{\"db\":999},"
+            "\"_bedrockUniqueAsRetry\":false}";
+        command["data"] = "{\"done\":true,\"_bedrockUniqueAsRetry\":false}";
+        tester->executeWaitVerifyContent(command);
+
+        tester->readDB("SELECT state, JSON_TYPE(data, '$._bedrockUniqueAsRetry'), "
+                       "JSON_EXTRACT(data, '$._bedrockUniqueAsRetry'), JSON_EXTRACT(data, '$.done') "
+                       "FROM jobs WHERE jobID=" + sameDataJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "true");
+        ASSERT_EQUAL(result[0][2], "1");
+        ASSERT_EQUAL(result[0][3], "1");
+
+        // A changed payload queues a subsequent run and discards stale worker output.
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "finishComparedData";
+        command["data"] = "{\"activity\":1}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        const string finishJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "finishComparedData";
+        runningJob = tester->executeWaitVerifyContentTable(command);
+        const string expectedFinishData = runningJob["data"];
+
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = finishJobID;
+        command["expectedData"] = "[]";
+        tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "finishComparedData";
+        command["data"] = "{\"activity\":2}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = finishJobID;
+        command["expectedData"] = expectedFinishData;
+        command["data"] = "{\"activity\":1,\"worker\":true}";
+        tester->executeWaitVerifyContent(command);
+
+        tester->readDB("SELECT state, JSON_EXTRACT(data, '$._bedrockUniqueAsRetry'), "
+                       "JSON_EXTRACT(data, '$.activity'), JSON_EXTRACT(data, '$.worker') "
+                       "FROM jobs WHERE jobID=" + finishJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "1");
+        ASSERT_EQUAL(result[0][2], "2");
+        ASSERT_EQUAL(result[0][3], "");
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "finishComparedData";
+        runningJob = tester->executeWaitVerifyContentTable(command);
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = finishJobID;
+        command["expectedData"] = runningJob["data"];
+        tester->executeWaitVerifyContent(command);
+
+        tester->readDB("SELECT COUNT(1) FROM jobs WHERE jobID=" + finishJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "0");
+
+        // RetryJob preserves the newer enqueue's payload and attributes, but applies the worker's retry schedule.
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "retryComparedData";
+        command["data"] = "{\"activity\":1}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        const string retryJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "retryComparedData";
+        runningJob = tester->executeWaitVerifyContentTable(command);
+        const string expectedRetryData = runningJob["data"];
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "retryComparedData";
+        command["data"] = "{\"activity\":2}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        command["jobPriority"] = "750";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = retryJobID;
+        command["expectedData"] = expectedRetryData;
+        command["nextRun"] = "2042-04-02 00:42:42";
+        command["ignoreRepeat"] = "true";
+        command["name"] = "staleName";
+        command["jobPriority"] = "1000";
+        command["data"] = "{\"activity\":1,\"worker\":true}";
+        tester->executeWaitVerifyContent(command);
+
+        tester->readDB("SELECT state, name, nextRun, priority, JSON_EXTRACT(data, '$.activity'), "
+                       "JSON_EXTRACT(data, '$.worker') "
+                       "FROM jobs WHERE jobID=" + retryJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "retryComparedData");
+        ASSERT_EQUAL(result[0][2], "2042-04-02 00:42:42");
+        ASSERT_EQUAL(result[0][3], "750");
+        ASSERT_EQUAL(result[0][4], "2");
+        ASSERT_EQUAL(result[0][5], "");
+
+        // A job can opt in while it is already running. The immutable snapshot still detects the newer payload.
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "legacyWorker";
+        command["data"] = "{\"activity\":1}";
+        command["unique"] = "true";
+        const string legacyJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "legacyWorker";
+        STable legacyJob = tester->executeWaitVerifyContentTable(command);
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "legacyWorker";
+        command["data"] = "{\"activity\":2}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = legacyJobID;
+        command["expectedData"] = legacyJob["data"];
+        tester->executeWaitVerifyContent(command);
+
+        tester->readDB("SELECT state, JSON_EXTRACT(data, '$._bedrockUniqueAsRetry'), JSON_EXTRACT(data, '$.activity') "
+                       "FROM jobs WHERE jobID=" + legacyJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "1");
+        ASSERT_EQUAL(result[0][2], "2");
+
+        // Missing expectedData keeps legacy completion behavior during a rolling BWM deployment.
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "legacyCompletion";
+        command["data"] = "{\"activity\":1}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        const string legacyCompletionJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "legacyCompletion";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "legacyCompletion";
+        command["data"] = "{\"activity\":2}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = legacyCompletionJobID;
+        tester->executeWaitVerifyContent(command);
+        tester->readDB("SELECT COUNT(1) FROM jobs WHERE jobID=" + legacyCompletionJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "0");
     }
 
     void createWithBadData()
