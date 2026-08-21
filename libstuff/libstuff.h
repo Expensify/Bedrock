@@ -637,6 +637,11 @@ bool SFDAnySet(fd_map& fdm, int socket, short evts);
 // seconds. Callers that must not block should go through SResolver instead.
 bool SResolveHost(const string& host, sockaddr_in& addr);
 
+// Like SResolveHost, but never performs a lookup: it answers only from a raw-IP host or an unexpired
+// cache entry, and returns false if it can't. Never blocks, so callers on latency-sensitive threads
+// can try this first and fall back to resolving off-thread.
+bool SResolveHostCached(const string& host, sockaddr_in& addr);
+
 // How long a successful resolution stays usable. Failures aren't cached at all, so a host that's
 // briefly unresolvable starts working again as soon as DNS does.
 extern const uint64_t S_RESOLVE_CACHE_TTL_US;

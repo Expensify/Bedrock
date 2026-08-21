@@ -1972,14 +1972,15 @@ void SClearResolveCache()
     _resolveCache.clear();
 }
 
-bool SResolveHost(const string& host, sockaddr_in& addr)
+// Everything both resolve entry points can do without blocking: validate the host, fill in the
+// family and port, and answer from a raw IP or an unexpired cache entry.
+enum class SResolveCacheResult { RESOLVED, NEEDS_LOOKUP, INVALID };
+static SResolveCacheResult _resolveWithoutLookup(const string& host, sockaddr_in& addr, string& domain, uint16_t& port)
 {
     // First, just parse the host.
-    string domain;
-    uint16_t port = 0;
+    port = 0;
     if (!SParseHost(host, domain, port)) {
-        SWARN("Failed to resolve '" << host << "': invalid host.");
-        return false;
+        return SResolveCacheResult::INVALID;
     }
 
     memset(&addr, 0, sizeof(addr));
@@ -1990,25 +1991,46 @@ bool SResolveHost(const string& host, sockaddr_in& addr)
     unsigned int ip = inet_addr(domain.c_str());
     if (ip && ip != INADDR_NONE) {
         addr.sin_addr.s_addr = ip;
-        return true;
+        return SResolveCacheResult::RESOLVED;
     }
 
     // Nope. Do we already know this one?
-    uint64_t now = STimeNow();
-    {
-        lock_guard<mutex> lock(_resolveCacheMutex);
-        auto cached = _resolveCache.find(domain);
-        if (cached != _resolveCache.end()) {
-            if (cached->second.expires > now) {
-                addr.sin_addr.s_addr = cached->second.ip;
-                return true;
-            }
-            _resolveCache.erase(cached);
+    lock_guard<mutex> lock(_resolveCacheMutex);
+    auto cached = _resolveCache.find(domain);
+    if (cached != _resolveCache.end()) {
+        if (cached->second.expires > STimeNow()) {
+            addr.sin_addr.s_addr = cached->second.ip;
+            return SResolveCacheResult::RESOLVED;
         }
+        _resolveCache.erase(cached);
+    }
+
+    return SResolveCacheResult::NEEDS_LOOKUP;
+}
+
+bool SResolveHostCached(const string& host, sockaddr_in& addr)
+{
+    string domain;
+    uint16_t port = 0;
+    return _resolveWithoutLookup(host, addr, domain, port) == SResolveCacheResult::RESOLVED;
+}
+
+bool SResolveHost(const string& host, sockaddr_in& addr)
+{
+    string domain;
+    uint16_t port = 0;
+    switch (_resolveWithoutLookup(host, addr, domain, port)) {
+        case SResolveCacheResult::RESOLVED:
+            return true;
+        case SResolveCacheResult::INVALID:
+            SWARN("Failed to resolve '" << host << "': invalid host.");
+            return false;
+        case SResolveCacheResult::NEEDS_LOOKUP:
+            break;
     }
 
     // We have to actually ask. This is the part that blocks.
-    uint64_t start = now;
+    uint64_t start = STimeNow();
 
     // Allocate and initialize addrinfo structures.
     struct addrinfo hints;
@@ -2032,7 +2054,7 @@ bool SResolveHost(const string& host, sockaddr_in& addr)
 
     // Grab the resolved address.
     sockaddr_in* resolvedAddr = (sockaddr_in*) resolved->ai_addr;
-    ip = resolvedAddr->sin_addr.s_addr;
+    const unsigned int ip = resolvedAddr->sin_addr.s_addr;
     char plainTextIP[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &resolvedAddr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
     SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
