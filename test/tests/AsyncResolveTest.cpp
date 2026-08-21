@@ -13,7 +13,8 @@ struct AsyncResolve : tpunit::TestFixture
                                          TEST(AsyncResolve::testDeferredConnectCompletes),
                                          TEST(AsyncResolve::testFailedResolutionClosesSocket),
                                          TEST(AsyncResolve::testAbandonWhileResolving),
-                                         TEST(AsyncResolve::testResolverOutlivesCaller))
+                                         TEST(AsyncResolve::testResolverOutlivesCaller),
+                                         TEST(AsyncResolve::testResolutionWakesPoll))
     {
     }
 
@@ -110,6 +111,40 @@ struct AsyncResolve : tpunit::TestFixture
         STCPManager::Socket socket("nonexistent-probe-xyzzy.invalid:443", false, STCPManager::Socket::ResolveMode::ASYNC);
 
         ASSERT_EQUAL(pollUntilSettled(socket), STCPManager::Socket::CLOSED);
+        ASSERT_TRUE(socket.connectFailure);
+    }
+
+    void testResolutionWakesPoll()
+    {
+        // The point of registering the resolution's pipe is that poll() returns when the answer
+        // lands rather than when it times out. A short poll timeout can't tell those apart, so this
+        // uses a long one and measures how long we actually sat in it.
+        //
+        // The host has to be one that takes a real DNS round trip. `localhost` comes out of
+        // /etc/hosts fast enough that a worker often finishes before the constructor checks, so the
+        // socket never reaches RESOLVING and there's no wake-up to observe. An unresolvable name
+        // costs a round trip and still writes the pipe byte on failure, which is the path we want.
+        SClearResolveCache();
+        STCPManager::Socket socket("slow-to-fail-probe.invalid:443", false, STCPManager::Socket::ResolveMode::ASYNC);
+        ASSERT_EQUAL(socket.state.load(), STCPManager::Socket::RESOLVING);
+
+        // prePoll has to contribute exactly one fd, and it can't be the socket's, because there
+        // isn't one yet.
+        fd_map fdm;
+        STCPManager::prePoll(fdm, socket);
+        ASSERT_EQUAL(socket.s, -1);
+        ASSERT_EQUAL(fdm.size(), 1);
+        ASSERT_FALSE(fdm.contains(socket.s));
+
+        // Without the pipe registered this sits for the full five seconds.
+        const uint64_t before = STimeNow();
+        S_poll(fdm, 5'000'000);
+        const uint64_t elapsedUS = STimeNow() - before;
+        ASSERT_LESS_THAN(elapsedUS, 2'000'000);
+
+        // And the byte we were woken by has to be the completed resolution.
+        STCPManager::postPoll(fdm, socket);
+        ASSERT_EQUAL(socket.state.load(), STCPManager::Socket::CLOSED);
         ASSERT_TRUE(socket.connectFailure);
     }
 
