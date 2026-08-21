@@ -99,6 +99,9 @@ private:
     // push and dequeue hot paths stay cheap (dequeue runs under the base `_queueMutex`).
     static bool _isBlocked(StateMap& map, const string& key, uint64_t now);
 
+    // Return the active rate-limit dimension, or an empty string. Identifier blocks take precedence when both dimensions are active.
+    string _getBlockingDimension(const string& identifier, const string& commandName);
+
     // Log (without blocking) when an identifier's windowed time crosses this, for monitoring heavy identifiers
     // that are still under their block threshold.
     static constexpr uint64_t LOG_THRESHOLD_US = 10'000'000; // 10 seconds
