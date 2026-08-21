@@ -12,20 +12,18 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
    * *repeat* - (optional) Description of how this job should repeat (see ["Repeat Syntax"](#repeat-syntax) below)
    * *unique* - (optional request field) Reuse an existing job with the same name.
    * *overwrite* - (optional request field) For a unique job, merge new data into the existing row. This field defaults to true.
-   * *uniqueAsRetry* - (optional request field) Runs the job again after a new enqueue arrives during the active run. This field requires *unique=true*. Do not set *overwrite=false*.
+   * *uniqueAsRetry* - (optional request field) Runs the job again after a new enqueue changes its data during the active run. This field requires *unique=true*. Do not set *overwrite=false*.
 
  * **GetJob( name, [connection: wait, [timeout] ] )** - Waits for a match (if requested) and atomically dequeues exactly one job.
    * *name* - A pattern to match in GLOB syntax (eg, "Foo*" will get the first job whose name starts with "Foo")
    * *connection* - (optional) If set to "wait", will wait up to "timeout" ms for the match
    * *timeout* - (optional) Number of ms to wait for a match
-   * Returns *enqueueVersion* for a job that uses *uniqueAsRetry*. Pass this value to `FinishJob`, `RetryJob`, or `FailJob`.
 
  * **GetJobs( name, numResults [connection: wait, [timeout] ] )** - Waits for a match (if requested) and atomically dequeues up to the number of requested jobs.
    * *name* - A pattern to match in GLOB syntax (eg, "Foo*" will get the first job whose name starts with "Foo")
    * *numResults* - Maximum number of jobs to dequeue
    * *connection* - (optional) If set to "wait", will wait up to "timeout" ms for the match
    * *timeout* - (optional) Number of ms to wait for a match
-   * Each opted-in job includes *enqueueVersion* with the same completion contract as `GetJob`.
 
  * **UpdateJob( jobID, data )** - Updates the data associated with a job.
    * *jobID* - Identifier of the job to update
@@ -36,52 +34,50 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
 
  * **QueryJob( jobID )** - Retrieves the current state and data associated with a job.
    * *jobID* - Identifier of the job to query
-   * Returns *enqueueVersion* when the job uses *uniqueAsRetry*. This value is the latest enqueue version and is for status only.
-   * A worker must use the version from its `GetJob` or `GetJobs` response to finish, retry, or fail the job.
 
- * **FinishJob( jobID, [data], [enqueueVersion] )** - Marks a job as finished, which causes it to repeat if requested.
+ * **FinishJob( jobID, [data], [expectedData] )** - Marks a job as finished, which causes it to repeat if requested.
    * *jobID* - Identifier of the job to finish
    * *data* - (optional) New data object to associate with the job (especially useful if repeating, to pass state to the next worker).
-   * *enqueueVersion* - Required for a dequeued *uniqueAsRetry* job. If a newer enqueue arrived, Bedrock preserves the new enqueue data and queues an immediate subsequent run.
+   * *expectedData* - (optional) The unchanged data object returned by `GetJob` or `GetJobs`. For a *uniqueAsRetry* job, Bedrock preserves newer data and queues an immediate subsequent run if this snapshot differs from the current data.
 
- * **RetryJob( jobID, [enqueueVersion] )** - Requeues a running job.
-   * *enqueueVersion* - Required for a dequeued *uniqueAsRetry* job. If a newer enqueue arrived, Bedrock preserves the data, name, and priority from that enqueue. Bedrock applies the requested retry time.
+ * **RetryJob( jobID, [expectedData] )** - Requeues a running job.
+   * *expectedData* - (optional) The unchanged data object returned by `GetJob` or `GetJobs`. For a *uniqueAsRetry* job, Bedrock preserves newer data, name, and priority if this snapshot differs from the current data. Bedrock still applies the requested retry time.
 
- * **FailJob( jobID, [data], [enqueueVersion] )** - Marks a running job as failed.
+ * **FailJob( jobID, [data], [expectedData] )** - Marks a running job as failed.
    * *jobID* - Identifier of the job to fail.
    * *data* - (optional) New data object to associate with the failed job.
-   * *enqueueVersion* - Required for a dequeued *uniqueAsRetry* job. If a newer enqueue arrived, Bedrock preserves the new enqueue data and queues an immediate subsequent run. Bedrock does not fail the job.
+   * *expectedData* - (optional) The unchanged data object returned by `GetJob` or `GetJobs`. For a *uniqueAsRetry* job, Bedrock preserves newer data and queues an immediate subsequent run if this snapshot differs from the current data. Bedrock does not fail the job.
 
 For *CreateJobs*, set *unique*, *overwrite*, and *uniqueAsRetry* on each object in the *jobs* array. Do not put these fields inside *data*.
 
 ## `uniqueAsRetry` behavior
 
-The *uniqueAsRetry* option queues one subsequent run when one or more distinct duplicate enqueues arrive during an active run.
+The *uniqueAsRetry* option queues one subsequent run when one or more duplicate enqueues change a job's data during an active run.
 
 Set *uniqueAsRetry=true* to enable this behavior. The option has these requirements:
 
 * Set *unique=true*. Bedrock must reuse one job row with the same name.
 * Keep *overwrite* enabled. Bedrock must merge the data from each new enqueue into that row.
-* Give each new enqueue a different top-level `requestID`. A repeated `requestID` does not advance the version. Bedrock still merges the request data.
+* Pass the immutable data returned by `GetJob` or `GetJobs` as *expectedData* to `FinishJob`, `RetryJob`, or `FailJob`.
 
-The latest version identifies the most recent enqueue. The active version identifies the enqueue that the current worker dequeued.
+The normal *data* completion field remains the worker's final output. Do not use the worker's modified output as *expectedData*.
 
-`QueryJob` returns the latest version for status. It does not return a completion token for the active worker.
+Bedrock compares *expectedData* with the current caller-owned job data in the same transaction that completes the job. The comparison ignores JSON object member order and infrastructure fields such as `retryAfterCount`, `originalNextRun`, and `_commitCounts`.
 
-`GetJob` and `GetJobs` return the active version as *enqueueVersion*. The worker must use this value for `FinishJob`, `RetryJob`, or `FailJob`.
+If the data matches, Bedrock completes the command normally. If the data differs, Bedrock does not apply the worker's stale output or terminal state. `FinishJob` and `FailJob` queue an immediate subsequent run. `RetryJob` queues the subsequent run at the requested retry time.
 
-The following timeline shows two enqueues:
+The following timeline shows two payloads:
 
-1. A request enqueues version 1.
-2. `GetJob` dequeues version 1. The worker receives *enqueueVersion=1*.
-3. A different request enqueues version 2 while the first worker runs.
-4. The latest version becomes 2. The active version remains 1.
-5. The first worker finishes with *enqueueVersion=1*. Bedrock queues the same job row again.
-6. `GetJob` dequeues version 2. The next worker receives *enqueueVersion=2*.
+1. A request enqueues data A.
+2. `GetJob` dequeues the job. The worker retains data A as its immutable snapshot.
+3. A duplicate request merges data B into the same row while the worker runs.
+4. The worker finishes with data A as *expectedData*.
+5. Bedrock sees that data A and data B differ, preserves data B, and queues the row again.
+6. `GetJob` dequeues the job with data B for the subsequent run.
 
-Several enqueues during one active run collapse into one subsequent run. The subsequent run uses the latest version and the final merged data.
+Several data changes during one active run collapse into one subsequent run. The subsequent run uses the latest merged data.
 
-A delayed completion from an older run cannot change a newer active run. Bedrock ignores that delayed completion.
+The *expectedData* field is optional for rolling-deploy compatibility. If it is absent, Bedrock follows the legacy completion behavior and does not compare data.
 
 The *retryAfter* field has a separate purpose. It recovers a job when a worker stops without a completion command.
 

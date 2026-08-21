@@ -129,91 +129,93 @@ struct FailJobTest : tpunit::TestFixture
     {
         // Given an opted-in unique job is ready for its first worker
         SData command("CreateJob");
-        command["name"] = "failVersioned";
+        command["name"] = "failComparedData";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
         command["uniqueAsRetry"] = "true";
-        command["requestID"] = "fail-1";
         const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
-        // When a worker dequeues the job
         command.clear();
         command.methodLine = "GetJob";
-        command["name"] = "failVersioned";
+        command["name"] = "failComparedData";
         STable runningJob = tester->executeWaitVerifyContentTable(command);
+        const string expectedData = runningJob["data"];
 
-        // Then the worker receives version 1 because it owns the first run
-        ASSERT_EQUAL(runningJob["enqueueVersion"], "1");
-
-        // Given version 1 is active
-        // When FailJob omits the active version
+        // expectedData must be a JSON object.
         command.clear();
         command.methodLine = "FailJob";
         command["jobID"] = jobID;
+        command["expectedData"] = "not-json";
+        tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
 
-        // Then Bedrock rejects the request because an unversioned failure can belong to an older run
-        tester->executeWaitVerifyContent(command, "402 Missing enqueueVersion");
-
-        // Given version 1 remains active and a distinct enqueue creates version 2
+        // A newer enqueue changes the current payload while the worker is running.
         command.clear();
         command.methodLine = "CreateJob";
-        command["name"] = "failVersioned";
+        command["name"] = "failComparedData";
         command["data"] = "{\"activity\":2}";
         command["unique"] = "true";
         command["uniqueAsRetry"] = "true";
-        command["requestID"] = "fail-2";
         tester->executeWaitVerifyContent(command);
 
-        // When the worker for version 1 reports a fatal result with stale data
+        // The old worker cannot fail the new work or overwrite its payload.
         command.clear();
         command.methodLine = "FailJob";
         command["jobID"] = jobID;
-        command["enqueueVersion"] = "1";
+        command["expectedData"] = expectedData;
         command["data"] = "{\"activity\":1,\"worker\":true}";
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock queues version 2 because its work must survive the failure from the older worker
         SQResult result;
-        tester->readDB("SELECT state, JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), "
+        tester->readDB("SELECT state, JSON_EXTRACT(data, '$._bedrockUniqueAsRetry'), "
                        "JSON_EXTRACT(data, '$.activity'), JSON_EXTRACT(data, '$.worker') "
                        "FROM jobs WHERE jobID=" + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
-        ASSERT_EQUAL(result[0][1], "2");
+        ASSERT_EQUAL(result[0][1], "1");
         ASSERT_EQUAL(result[0][2], "2");
         ASSERT_EQUAL(result[0][3], "");
 
-        // Given version 2 is queued after the stale failure
         command.clear();
         command.methodLine = "GetJob";
-        command["name"] = "failVersioned";
-
-        // When the next worker dequeues the job
+        command["name"] = "failComparedData";
         runningJob = tester->executeWaitVerifyContentTable(command);
 
-        // Then the worker receives version 2 because that version owns the current run
-        ASSERT_EQUAL(runningJob["enqueueVersion"], "2");
-
-        // Given version 2 is active
-        // When a delayed failure from version 1 arrives
+        // The subsequent worker can fail normally when its snapshot still matches.
         command.clear();
         command.methodLine = "FailJob";
         command["jobID"] = jobID;
-        command["enqueueVersion"] = "1";
+        command["expectedData"] = runningJob["data"];
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock keeps version 2 active because version 1 no longer owns the job
-        tester->readDB("SELECT state, JSON_EXTRACT(data, '$.activity') FROM jobs WHERE jobID=" + jobID + ";", result);
-        ASSERT_EQUAL(result[0][0], "RUNNING");
-        ASSERT_EQUAL(result[0][1], "2");
-
-        // Given version 2 remains active after the stale failure
-        command["enqueueVersion"] = "2";
-
-        // When its worker reports the fatal result with the current version
-        tester->executeWaitVerifyContent(command);
-
-        // Then Bedrock marks the job as failed because no newer enqueue needs to run
         tester->readDB("SELECT state FROM jobs WHERE jobID=" + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "FAILED");
+
+        // Missing expectedData preserves legacy behavior during a rolling BWM deployment.
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "legacyFailure";
+        command["data"] = "{\"activity\":1}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        const string legacyJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "legacyFailure";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "legacyFailure";
+        command["data"] = "{\"activity\":2}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "FailJob";
+        command["jobID"] = legacyJobID;
+        tester->executeWaitVerifyContent(command);
+        tester->readDB("SELECT state FROM jobs WHERE jobID=" + legacyJobID + ";", result);
         ASSERT_EQUAL(result[0][0], "FAILED");
     }
 } __FailJobTest;

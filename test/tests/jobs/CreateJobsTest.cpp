@@ -267,21 +267,19 @@ struct CreateJobsTest : tpunit::TestFixture
 
     void uniqueAsRetryBatch()
     {
-        // Given an opted-in unique job that already has one logical enqueue
+        // Given an opted-in unique job
         SData command("CreateJob");
-        command["name"] = "batchVersioned";
+        command["name"] = "batchComparedData";
         command["data"] = "{\"initial\":0}";
         command["unique"] = "true";
         command["uniqueAsRetry"] = "true";
-        command["requestID"] = "batch-initial";
         const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         // When one CreateJobs request contains two updates for that durable job
         command.clear();
         command.methodLine = "CreateJobs";
-        command["requestID"] = "batch-activity";
         STable firstJob;
-        firstJob["name"] = "batchVersioned";
+        firstJob["name"] = "batchComparedData";
         firstJob["data"] = "{\"first\":1}";
         firstJob["unique"] = "true";
         firstJob["uniqueAsRetry"] = "true";
@@ -292,30 +290,28 @@ struct CreateJobsTest : tpunit::TestFixture
         command["jobs"] = SComposeJSONArray(jobs);
         STable response = tester->executeWaitVerifyContentTable(command);
 
-        // Then both entries reuse the row and advance its version once because they share one request ID
+        // Then both entries reuse the row
         list<string> jobIDs = SParseJSONArray(response["jobIDs"]);
         ASSERT_EQUAL(jobIDs.size(), 2);
         ASSERT_EQUAL(jobIDs.front(), jobID);
         ASSERT_EQUAL(jobIDs.back(), jobID);
 
-        // When the same CreateJobs request is replayed
+        // When the same CreateJobs request is replayed, both entries still reuse the same row
         response = tester->executeWaitVerifyContentTable(command);
         jobIDs = SParseJSONArray(response["jobIDs"]);
-
-        // Then both entries still reuse the same row
         ASSERT_EQUAL(jobIDs.size(), 2);
         ASSERT_EQUAL(jobIDs.front(), jobID);
         ASSERT_EQUAL(jobIDs.back(), jobID);
 
-        // Then the row contains all data and advances once because all entries share one request ID
+        // The row contains all merged caller data and only the lightweight private opt-in marker
         SQResult result;
-        tester->readDB("SELECT JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.version'), "
-                       "JSON_EXTRACT(data, '$._bedrockUniqueAsRetry.enqueueID'), JSON_EXTRACT(data, '$.first'), "
+        tester->readDB("SELECT JSON_TYPE(data, '$._bedrockUniqueAsRetry'), "
+                       "JSON_EXTRACT(data, '$._bedrockUniqueAsRetry'), JSON_EXTRACT(data, '$.first'), "
                        "JSON_EXTRACT(data, '$.second'), JSON_REMOVE(data, '$._bedrockUniqueAsRetry'), priority "
                        "FROM jobs WHERE jobID=" + jobID + ";", result);
         ASSERT_EQUAL(result.size(), 1);
-        ASSERT_EQUAL(result[0][0], "2");
-        ASSERT_EQUAL(result[0][1], "batch-activity");
+        ASSERT_EQUAL(result[0][0], "true");
+        ASSERT_EQUAL(result[0][1], "1");
         ASSERT_EQUAL(result[0][2], "1");
         ASSERT_EQUAL(result[0][3], "2");
         ASSERT_EQUAL(result[0][4], "{\"initial\":0,\"first\":1,\"second\":2}");
