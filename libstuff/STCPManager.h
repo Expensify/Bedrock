@@ -8,6 +8,7 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
+#include <libstuff/SResolver.h>
 
 class SSSLState;
 
@@ -20,8 +21,19 @@ struct STCPManager
     // Captures all the state for a single socket
     class Socket {
 public:
-        enum State { CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
-        Socket(const string& host, bool https = false);
+        // RESOLVING must stay first: several call sites test `state < SHUTTINGDOWN` to mean "still
+        // usable" and `state > CONNECTED` to mean "dead", and ordering it here gets both right for a
+        // socket that's still waiting on DNS.
+        enum State { RESOLVING, CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
+
+        // Whether the constructor is allowed to return before the hostname has been resolved.
+        // ASYNC hands the lookup to SResolver and leaves the socket in the RESOLVING state; the
+        // connection is finished later by STCPManager::postPoll, so only owners that drive the
+        // socket through prePoll/postPoll can use it. Anything that pokes at the fd itself, or that
+        // expects a usable socket the moment the constructor returns, needs BLOCKING.
+        enum class ResolveMode { BLOCKING, ASYNC };
+
+        Socket(const string& host, bool https = false, ResolveMode resolveMode = ResolveMode::BLOCKING);
         Socket(int sock = 0, State state_ = CONNECTING, bool https = false);
         Socket(Socket&& from);
         virtual ~Socket();
@@ -49,6 +61,12 @@ public:
         void setSendBuffer(const string& buffer);
 
 protected:
+        friend struct STCPManager;
+
+        // Opens the fd and sets up SSL now that we have an address, moving the socket from RESOLVING
+        // to CONNECTING (or to CLOSED if the lookup failed). Called by STCPManager::postPoll.
+        void _completeConnect();
+
         static atomic<uint64_t> socketCount;
         recursive_mutex sendRecvMutex;
 
@@ -58,6 +76,12 @@ protected:
         SFastBuffer sendBuffer;
 
         bool https;
+
+        // Set only until the address is known. `resolution` is non-null only for a socket built
+        // with ResolveMode::ASYNC that actually had to wait; it's co-owned with the resolver worker,
+        // so dropping it while a lookup is still running is safe.
+        shared_ptr<SResolver::Resolution> resolution;
+        string hostToResolve;
     };
 
     class Port {

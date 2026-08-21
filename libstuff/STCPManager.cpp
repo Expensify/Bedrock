@@ -13,6 +13,15 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket)
 {
     // Make sure it's not closed
     if (socket.state.load() != Socket::CLOSED) {
+        // There's no socket fd yet while we're waiting on DNS. Poll the resolution's pipe instead,
+        // which becomes readable the moment the lookup finishes, so we pick the answer up
+        // immediately rather than waiting out the poll timeout.
+        if (socket.state.load() == Socket::RESOLVING) {
+            SASSERT(socket.resolution);
+            SFDset(fdm, socket.resolution->getFD(), SREADEVTS);
+            return;
+        }
+
         // Check and see if it looks like we're still valid.
         if (socket.s < 0) {
             SWARN("Invalid FD number("
@@ -63,6 +72,25 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket)
 {
     // Update this socket
     switch (socket.state.load()) {
+        case Socket::RESOLVING: {
+            SASSERT(socket.resolution);
+            if (!SFDAnySet(fdm, socket.resolution->getFD(), SREADEVTS)) {
+                // Lookup still running, nothing to do.
+                break;
+            }
+
+            // The lookup finished. Open the fd and set up SSL now that we have an address; this
+            // leaves us either CONNECTING or CLOSED.
+            //
+            // Deliberately no fall-through to CONNECTING: the fd we just opened isn't in this
+            // fd_map, and its number could belong to a socket closed earlier in this same pass,
+            // whose stale revents would read as a completed connection. The next cycle registers it
+            // properly.
+            socket.resolution->drain();
+            socket._completeConnect();
+            break;
+        }
+
         case Socket::CONNECTING: {
             // See if it connected or failed
             if (!SFDAnySet(fdm, socket.s, SWRITEEVTS | POLLHUP | POLLERR)) {
@@ -184,7 +212,11 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket)
 void STCPManager::Socket::shutdown(Socket::State toState)
 {
     SDEBUG("Shutting down socket '" << addr << "'");
-    ::shutdown(s, SHUT_RDWR);
+
+    // There's no fd yet if we're still waiting on DNS.
+    if (s > 0) {
+        ::shutdown(s, SHUT_RDWR);
+    }
     state.store(toState);
 }
 
@@ -194,21 +226,62 @@ STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool ht
 {
 }
 
-STCPManager::Socket::Socket(const string& host, bool https)
-    : s(0), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https)
+STCPManager::Socket::Socket(const string& host, bool https, ResolveMode resolveMode)
+    : s(-1), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https),
+    hostToResolve(host)
 {
     SASSERT(SHostIsValid(host));
-    s = S_socket(host, true, false, false);
-    if (https) {
-        ssl = new SSSLState(host, s);
-    } else {
-        ssl = nullptr;
+
+    // An async socket only defers when it has to. A raw IP or a host we've resolved recently
+    // answers inline, which keeps the common case identical to a blocking socket: no worker
+    // involved, and the socket is connectable by the time the constructor returns.
+    if (resolveMode == ResolveMode::ASYNC) {
+        resolution = SResolver::getInstance().resolve(host);
+        if (resolution->getState() == SResolver::Resolution::PENDING) {
+            state.store(State::RESOLVING);
+            return;
+        }
     }
 
+    _completeConnect();
     if (s < 0) {
         STHROW("Couldn't open socket to " + host);
     }
+}
+
+void STCPManager::Socket::_completeConnect()
+{
+    // If a lookup ran, use its answer; otherwise resolve inline. Either way this is where the fd
+    // gets opened, so everything downstream sees the same socket regardless of which path we took.
+    if (resolution) {
+        if (resolution->getState() != SResolver::Resolution::RESOLVED) {
+            SINFO("Failed to resolve '" << hostToResolve << "', closing socket.");
+            state.store(State::CLOSED);
+            connectFailure = true;
+            resolution = nullptr;
+            return;
+        }
+        addr = resolution->getAddr();
+        resolution = nullptr;
+    } else if (!SResolveHost(hostToResolve, addr)) {
+        state.store(State::CLOSED);
+        connectFailure = true;
+        return;
+    }
+
+    s = S_socket(addr, true, false, false);
+    if (s < 0) {
+        state.store(State::CLOSED);
+        connectFailure = true;
+        return;
+    }
+
+    if (https) {
+        ssl = new SSSLState(hostToResolve, s);
+    }
+
+    state.store(State::CONNECTING);
 }
 
 STCPManager::Socket::Socket(Socket&& from)
@@ -222,11 +295,14 @@ STCPManager::Socket::Socket(Socket&& from)
     ssl(from.ssl),
     data(from.data),
     id(from.id),
-    https(from.https)
+    https(from.https),
+    resolution(move(from.resolution)),
+    hostToResolve(move(from.hostToResolve))
 {
     from.s = -1;
     from.ssl = nullptr;
     from.data = nullptr;
+    from.resolution = nullptr;
 }
 
 STCPManager::Socket::~Socket()
@@ -241,6 +317,13 @@ STCPManager::Socket::~Socket()
 bool STCPManager::Socket::send(size_t* bytesSentCount)
 {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+
+    // Still waiting on DNS, so there's nowhere to send it yet. Whatever's buffered stays buffered
+    // and goes out once postPoll finishes the connection.
+    if (state.load() == State::RESOLVING) {
+        return true;
+    }
+
     // Send data
     bool result = false;
     size_t oldSize = sendBuffer.size();
@@ -295,6 +378,11 @@ void STCPManager::Socket::setSendBuffer(const string& buffer)
 bool STCPManager::Socket::recv()
 {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+
+    // Still waiting on DNS, so there's nothing that could have arrived yet.
+    if (state.load() == State::RESOLVING) {
+        return true;
+    }
 
     // Read data
     bool result = false;
