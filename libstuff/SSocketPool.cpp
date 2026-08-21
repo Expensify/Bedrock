@@ -76,7 +76,10 @@ unique_ptr<STCPManager::Socket> SSocketPool::getSocket()
 
     // No live pooled socket available, create a new one. No need to hold the lock, so it goes out of scope.
     try {
-        // TODO: Allow S_socket to take a parsed address instead of redoing all the parsing each time.
+        // Resolution stays blocking here: callers poll this socket's fd themselves rather than
+        // driving it through STCPManager::postPoll, so it has to be connectable on return. The
+        // repeated parsing the old TODO here complained about is gone either way, since a host
+        // resolved recently now comes back from the cache.
         return unique_ptr<STCPManager::Socket>(new STCPManager::Socket(host));
     } catch (const SException& exception) {
         return nullptr;
