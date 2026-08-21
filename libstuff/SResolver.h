@@ -1,92 +1,70 @@
 #pragma once
 #include <atomic>
-#include <condition_variable>
-#include <list>
 #include <memory>
-#include <mutex>
 #include <netinet/in.h>
 #include <string>
-#include <thread>
-#include <vector>
 
 using namespace std;
 
-// A small fixed pool of threads that perform DNS lookups, so that threads which can't afford to
-// block don't have to call getaddrinfo() themselves.
+// The result of a single DNS lookup running on its own thread.
 //
-// The pool is deliberately bounded. Spawning a thread per lookup would turn a DNS outage into
-// unbounded thread growth, which is a worse version of the stall this exists to avoid. With a fixed
-// pool, a hung resolver occupies one slot and everything else queues behind it.
-class SResolver {
+// This is handed out as a shared_ptr and co-owned by the caller and the thread performing the
+// lookup, which is what makes abandonment safe: a caller that gives up (because its request timed
+// out, say) just drops its reference, and the thread finishes writing into storage that only it
+// still references. There's no cancellation because getaddrinfo() has none to offer.
+class SResolution {
 public:
-    // The result of a single lookup. This is handed out as a shared_ptr and co-owned by the caller
-    // and the worker performing the lookup, which is what makes abandonment safe: a caller that
-    // gives up (because its request timed out, say) just drops its reference, and the worker
-    // finishes writing into storage that only it still references.
-    class Resolution {
-public:
-        enum State { PENDING, RESOLVED, FAILED };
+    enum State { PENDING, RESOLVED, FAILED };
 
-        Resolution(const string& host);
-        ~Resolution();
+    SResolution(const string& host);
+    ~SResolution();
 
-        // Not copyable or movable; the worker holds a pointer to this.
-        Resolution(const Resolution&) = delete;
-        Resolution& operator=(const Resolution&) = delete;
+    // Not copyable or movable; the resolving thread holds a pointer to this.
+    SResolution(const SResolution&) = delete;
+    SResolution& operator=(const SResolution&) = delete;
 
-        State getState() const
-        {
-            return _state.load();
-        }
+    State getState() const
+    {
+        return _state.load();
+    }
 
-        // Only meaningful once the state is RESOLVED.
-        const sockaddr_in& getAddr() const
-        {
-            return _addr;
-        }
+    // Only meaningful once the state is RESOLVED.
+    const sockaddr_in& getAddr() const
+    {
+        return _addr;
+    }
 
-        // The read end of the notification pipe. A byte becomes readable here exactly once, when the
-        // lookup finishes. Register this with poll() to be woken on completion rather than waiting
-        // out a timeout.
-        int getFD() const
-        {
-            return _pipeFD[0];
-        }
+    // The read end of the notification pipe. A byte becomes readable here exactly once, when the
+    // lookup finishes. Poll this to be woken on completion rather than waiting out a timeout.
+    int getFD() const
+    {
+        return _pipeFD[0];
+    }
 
-        // Consume the notification byte. Safe to call when there's nothing to read.
-        void drain();
+    // Consume the notification byte. Safe to call when there's nothing to read.
+    void drain();
 
-        const string host;
+    // Records the result and wakes anyone polling on the pipe. Called on the resolving thread.
+    void complete(bool success, const sockaddr_in& addr);
+
+    const string host;
 
 private:
-        friend class SResolver;
-
-        // Records the result and wakes anyone polling on the pipe. Called on a worker thread.
-        void _complete(bool success, const sockaddr_in& addr);
-
-        atomic<State> _state;
-        sockaddr_in _addr;
-        int _pipeFD[2];
-    };
-
-    // The process-wide pool. Intentionally never destroyed: a worker stuck inside getaddrinfo()
-    // can't notice a shutdown flag, so joining it at exit could hang the process for as long as the
-    // resolver takes to give up.
-    static SResolver& getInstance();
-
-    // Queue a lookup. Returns immediately. If the host can be answered from cache or is a raw IP,
-    // the returned Resolution is already RESOLVED and no worker is involved.
-    shared_ptr<Resolution> resolve(const string& host);
-
-    SResolver(size_t threadCount);
-    ~SResolver();
-
-private:
-    void _workerFunc();
-
-    list<shared_ptr<Resolution>> _queue;
-    mutex _mutex;
-    condition_variable _cv;
-    bool _exit = false;
-    vector<thread> _threads;
+    atomic<State> _state;
+    sockaddr_in _addr;
+    int _pipeFD[2];
 };
+
+// Starts resolving `host` on a detached thread and returns immediately.
+//
+// Throws if too many lookups are already in flight. That only happens when the resolver has stopped
+// answering, since a lookup can occupy its thread for as long as glibc is willing to retry, and the
+// cap keeps a resolver outage from turning into unbounded thread growth. Callers already handle a
+// throwing socket constructor by failing the request.
+shared_ptr<SResolution> SResolve(const string& host);
+
+// How many lookups may be in flight at once before SResolve starts throwing.
+extern const int S_RESOLVE_MAX_IN_FLIGHT;
+
+// Number of lookups currently in flight. Exists for tests.
+int SResolveInFlight();

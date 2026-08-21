@@ -27,13 +27,20 @@ public:
         enum State { RESOLVING, CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
 
         // Whether the constructor is allowed to return before the hostname has been resolved.
-        // ASYNC hands the lookup to SResolver and leaves the socket in the RESOLVING state; the
+        // ASYNC resolves off-thread and may leave the socket in the RESOLVING state; the
         // connection is finished later by STCPManager::postPoll, so only owners that drive the
         // socket through prePoll/postPoll can use it. Anything that pokes at the fd itself, or that
         // expects a usable socket the moment the constructor returns, needs BLOCKING.
         enum class ResolveMode { BLOCKING, ASYNC };
 
-        Socket(const string& host, bool https = false, ResolveMode resolveMode = ResolveMode::BLOCKING);
+        // How long an ASYNC socket waits for its lookup before giving up and deferring. The local
+        // caching resolver answers a warm host well inside this, so in practice most sockets
+        // connect in the constructor and never reach RESOLVING at all. Tests pass 0 to force the
+        // deferred path.
+        static const int DEFAULT_RESOLVE_GRACE_MS = 5;
+
+        Socket(const string& host, bool https = false, ResolveMode resolveMode = ResolveMode::BLOCKING,
+               int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
         Socket(int sock = 0, State state_ = CONNECTING, bool https = false);
         Socket(Socket&& from);
         virtual ~Socket();
@@ -80,7 +87,7 @@ protected:
         // Set only until the address is known. `resolution` is non-null only for a socket built
         // with ResolveMode::ASYNC that actually had to wait; it's co-owned with the resolver worker,
         // so dropping it while a lookup is still running is safe.
-        shared_ptr<SResolver::Resolution> resolution;
+        shared_ptr<SResolution> resolution;
         string hostToResolve;
     };
 

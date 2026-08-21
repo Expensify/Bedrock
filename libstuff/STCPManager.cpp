@@ -238,19 +238,26 @@ STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool ht
 {
 }
 
-STCPManager::Socket::Socket(const string& host, bool https, ResolveMode resolveMode)
+STCPManager::Socket::Socket(const string& host, bool https, ResolveMode resolveMode, int resolveGraceMS)
     : s(-1), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https),
     hostToResolve(host)
 {
     SASSERT(SHostIsValid(host));
 
-    // An async socket only defers when it has to. A raw IP or a host we've resolved recently
-    // answers inline, which keeps the common case identical to a blocking socket: no worker
-    // involved, and the socket is connectable by the time the constructor returns.
+    // An async socket only defers when it has to. Start the lookup off-thread, then give it a few
+    // milliseconds to come back. A raw IP needs no lookup at all, and the local caching resolver
+    // answers a warm host in well under the grace period, so most sockets finish connecting right
+    // here and never reach RESOLVING.
     if (resolveMode == ResolveMode::ASYNC) {
-        resolution = SResolver::getInstance().resolve(host);
-        if (resolution->getState() == SResolver::Resolution::PENDING) {
+        resolution = SResolve(host);
+
+        // Wait for the notification without consuming it: if we time out, the byte has to still be
+        // there for prePoll and postPoll to find.
+        pollfd pfd = {resolution->getFD(), POLLIN, 0};
+        poll(&pfd, 1, resolveGraceMS);
+
+        if (resolution->getState() == SResolution::PENDING) {
             state.store(State::RESOLVING);
             return;
         }
@@ -267,13 +274,13 @@ void STCPManager::Socket::_completeConnect()
     // Take ownership of the resolution up front. The member has to be released before anything can
     // observe the state moving off RESOLVING, because a socket that's RESOLVING with no resolution
     // has no fd for the poll functions to register.
-    shared_ptr<SResolver::Resolution> pending = move(resolution);
+    shared_ptr<SResolution> pending = move(resolution);
     resolution = nullptr;
 
     // If a lookup ran, use its answer; otherwise resolve inline. Either way this is where the fd
     // gets opened, so everything downstream sees the same socket regardless of which path we took.
     if (pending) {
-        if (pending->getState() != SResolver::Resolution::RESOLVED) {
+        if (pending->getState() != SResolution::RESOLVED) {
             SINFO("Failed to resolve '" << hostToResolve << "', closing socket.");
             state.store(State::CLOSED);
             connectFailure = true;

@@ -2,14 +2,23 @@
 
 #include <cstring>
 #include <fcntl.h>
+#include <thread>
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>
 
-// How many lookups can be in flight at once. Anything past this queues.
-#define SRESOLVER_THREAD_COUNT 4
+const int S_RESOLVE_MAX_IN_FLIGHT = 500;
 
-SResolver::Resolution::Resolution(const string& host)
+// Lookups running right now. A lookup only lasts as long as getaddrinfo() does, so under normal
+// conditions this sits at zero or one.
+static atomic<int> _inFlight(0);
+
+int SResolveInFlight()
+{
+    return _inFlight.load();
+}
+
+SResolution::SResolution(const string& host)
     : host(host), _state(PENDING), _addr{}, _pipeFD{-1, -1}
 {
     if (pipe(_pipeFD)) {
@@ -21,7 +30,7 @@ SResolver::Resolution::Resolution(const string& host)
     fcntl(_pipeFD[0], F_SETFL, flags | O_NONBLOCK);
 }
 
-SResolver::Resolution::~Resolution()
+SResolution::~SResolution()
 {
     if (_pipeFD[0] != -1) {
         close(_pipeFD[0]);
@@ -31,7 +40,7 @@ SResolver::Resolution::~Resolution()
     }
 }
 
-void SResolver::Resolution::drain()
+void SResolution::drain()
 {
     while (true) {
         char buffer[1];
@@ -42,7 +51,7 @@ void SResolver::Resolution::drain()
     }
 }
 
-void SResolver::Resolution::_complete(bool success, const sockaddr_in& addr)
+void SResolution::complete(bool success, const sockaddr_in& addr)
 {
     if (success) {
         _addr = addr;
@@ -52,80 +61,34 @@ void SResolver::Resolution::_complete(bool success, const sockaddr_in& addr)
     // still see PENDING.
     _state.store(success ? RESOLVED : FAILED);
 
-    // Wake anyone polling. There's exactly one of these per Resolution, so the pipe can't fill.
+    // Wake anyone polling. There's exactly one of these per resolution, so the pipe can't fill.
     const char byte = 1;
     if (write(_pipeFD[1], &byte, 1) != 1) {
         SWARN("Failed to notify completed resolution for '" << host << "': " << strerror(errno));
     }
 }
 
-SResolver& SResolver::getInstance()
+shared_ptr<SResolution> SResolve(const string& host)
 {
-    // Deliberately leaked. See the declaration.
-    static SResolver* instance = new SResolver(SRESOLVER_THREAD_COUNT);
-    return *instance;
-}
-
-SResolver::SResolver(size_t threadCount)
-{
-    for (size_t i = 0; i < threadCount; i++) {
-        _threads.emplace_back(&SResolver::_workerFunc, this);
-    }
-}
-
-SResolver::~SResolver()
-{
-    {
-        lock_guard<mutex> lock(_mutex);
-        _exit = true;
-    }
-    _cv.notify_all();
-    for (auto& t : _threads) {
-        t.join();
-    }
-}
-
-shared_ptr<SResolver::Resolution> SResolver::resolve(const string& host)
-{
-    auto resolution = make_shared<Resolution>(host);
-
-    // If we already know the answer, skip the pool entirely. This is the common case.
-    sockaddr_in addr;
-    if (SResolveHostCached(host, addr)) {
-        resolution->_complete(true, addr);
-        return resolution;
+    if (_inFlight.load() >= S_RESOLVE_MAX_IN_FLIGHT) {
+        STHROW("Too many DNS lookups in flight (" + to_string(S_RESOLVE_MAX_IN_FLIGHT) + "), refusing to start another");
     }
 
-    {
-        lock_guard<mutex> lock(_mutex);
-        _queue.push_back(resolution);
-    }
-    _cv.notify_one();
+    auto resolution = make_shared<SResolution>(host);
+    _inFlight++;
 
-    return resolution;
-}
+    // The thread holds its own reference, so it doesn't matter if whoever asked for this has given
+    // up by the time the lookup finishes.
+    thread([resolution]() {
+        // Among other things this blocks signals, which a transient thread must do so it can't
+        // swallow one meant for the signal handling thread.
+        SInitialize("resolver");
 
-void SResolver::_workerFunc()
-{
-    SInitialize("resolver");
-    while (true) {
-        shared_ptr<Resolution> resolution;
-        {
-            unique_lock<mutex> lock(_mutex);
-            while (!_exit && _queue.empty()) {
-                _cv.wait(lock);
-            }
-            if (_exit) {
-                return;
-            }
-            resolution = move(_queue.front());
-            _queue.pop_front();
-        }
-
-        // Outside the lock: this is the part that can take seconds. The Resolution is kept alive by
-        // our own reference, so it doesn't matter if whoever asked for it has since given up.
         sockaddr_in addr;
         const bool success = SResolveHost(resolution->host, addr);
-        resolution->_complete(success, addr);
-    }
+        resolution->complete(success, addr);
+        _inFlight--;
+    }).detach();
+
+    return resolution;
 }

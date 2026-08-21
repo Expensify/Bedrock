@@ -1955,84 +1955,29 @@ string SGUnzip(const string& content)
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
-const uint64_t S_RESOLVE_CACHE_TTL_US = 60 * STIME_US_PER_S;
-
-// Domain -> resolved IPv4 address, with the time the entry stops being usable. Only successful
-// lookups land here.
-struct SResolveCacheEntry
-{
-    unsigned int ip;
-    uint64_t expires;
-};
-static mutex _resolveCacheMutex;
-static map<string, SResolveCacheEntry> _resolveCache;
-
-void SClearResolveCache()
-{
-    lock_guard<mutex> lock(_resolveCacheMutex);
-    _resolveCache.clear();
-}
-
-// Everything both resolve entry points can do without blocking: validate the host, fill in the
-// family and port, and answer from a raw IP or an unexpired cache entry.
-enum class SResolveCacheResult { RESOLVED, NEEDS_LOOKUP, INVALID };
-static SResolveCacheResult _resolveWithoutLookup(const string& host, sockaddr_in& addr, string& domain, uint16_t& port)
+bool SResolveHost(const string& host, sockaddr_in& addr)
 {
     // First, just parse the host.
-    port = 0;
+    string domain;
+    uint16_t port = 0;
     if (!SParseHost(host, domain, port)) {
-        return SResolveCacheResult::INVALID;
+        SWARN("Failed to resolve '" << host << "': invalid host.");
+        return false;
     }
 
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
 
-    // Is the domain just a raw IP?
+    // Is the domain just a raw IP? Then there's nothing to look up.
     unsigned int ip = inet_addr(domain.c_str());
     if (ip && ip != INADDR_NONE) {
         addr.sin_addr.s_addr = ip;
-        return SResolveCacheResult::RESOLVED;
+        return true;
     }
 
-    // Nope. Do we already know this one?
-    lock_guard<mutex> lock(_resolveCacheMutex);
-    auto cached = _resolveCache.find(domain);
-    if (cached != _resolveCache.end()) {
-        if (cached->second.expires > STimeNow()) {
-            addr.sin_addr.s_addr = cached->second.ip;
-            return SResolveCacheResult::RESOLVED;
-        }
-        _resolveCache.erase(cached);
-    }
-
-    return SResolveCacheResult::NEEDS_LOOKUP;
-}
-
-bool SResolveHostCached(const string& host, sockaddr_in& addr)
-{
-    string domain;
-    uint16_t port = 0;
-    return _resolveWithoutLookup(host, addr, domain, port) == SResolveCacheResult::RESOLVED;
-}
-
-bool SResolveHost(const string& host, sockaddr_in& addr)
-{
-    string domain;
-    uint16_t port = 0;
-    switch (_resolveWithoutLookup(host, addr, domain, port)) {
-        case SResolveCacheResult::RESOLVED:
-            return true;
-
-        case SResolveCacheResult::INVALID:
-            SWARN("Failed to resolve '" << host << "': invalid host.");
-            return false;
-
-        case SResolveCacheResult::NEEDS_LOOKUP:
-            break;
-    }
-
-    // We have to actually ask. This is the part that blocks.
+    // We have to actually ask. This is the part that blocks. There's no cache here on purpose:
+    // every host runs a local caching resolver, and a second cache on top of it only adds staleness.
     uint64_t start = STimeNow();
 
     // Allocate and initialize addrinfo structures.
@@ -2057,7 +2002,7 @@ bool SResolveHost(const string& host, sockaddr_in& addr)
 
     // Grab the resolved address.
     sockaddr_in* resolvedAddr = (sockaddr_in*) resolved->ai_addr;
-    const unsigned int ip = resolvedAddr->sin_addr.s_addr;
+    addr.sin_addr.s_addr = resolvedAddr->sin_addr.s_addr;
     char plainTextIP[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &resolvedAddr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
     SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
@@ -2065,12 +2010,6 @@ bool SResolveHost(const string& host, sockaddr_in& addr)
     // Done resolving.
     freeaddrinfo(resolved);
 
-    {
-        lock_guard<mutex> lock(_resolveCacheMutex);
-        _resolveCache[domain] = {ip, STimeNow() + S_RESOLVE_CACHE_TTL_US};
-    }
-
-    addr.sin_addr.s_addr = ip;
     return true;
 }
 
