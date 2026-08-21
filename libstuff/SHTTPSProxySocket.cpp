@@ -6,16 +6,13 @@
 #include <mutex>
 
 SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID)
-    : STCPManager::Socket::Socket(0, STCPManager::Socket::State::CONNECTING, true),
+    // `https` is false here on purpose: this socket builds its own SSSLState once the CONNECT
+    // tunnel is up, rather than at the moment the fd opens.
+    : STCPManager::Socket::Socket(proxyAddress, false, STCPManager::Socket::ResolveMode::ASYNC),
     proxyAddress(proxyAddress),
     hostname(host),
     requestID(requestID)
 {
-    SASSERT(SHostIsValid(proxyAddress));
-    s = S_socket(proxyAddress, true, false, false);
-    if (s < 0) {
-        STHROW("Couldn't open socket to " + host);
-    }
 }
 
 SHTTPSProxySocket::SHTTPSProxySocket(SHTTPSProxySocket&& from)
@@ -34,6 +31,11 @@ SHTTPSProxySocket::~SHTTPSProxySocket()
 bool SHTTPSProxySocket::send(size_t* bytesSentCount)
 {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+
+    // Still waiting on DNS for the proxy, so the CONNECT can't go out yet either.
+    if (state.load() == State::RESOLVING) {
+        return true;
+    }
 
     bool result = false;
     size_t oldSize = sendBuffer.size();
@@ -91,6 +93,11 @@ bool SHTTPSProxySocket::send(const string& buffer, size_t* bytesSentCount)
 bool SHTTPSProxySocket::recv()
 {
     lock_guard<decltype(sendRecvMutex)> lock(sendRecvMutex);
+
+    // Still waiting on DNS for the proxy, so there's nothing that could have arrived yet.
+    if (state.load() == State::RESOLVING) {
+        return true;
+    }
 
     bool result = false;
     if (s > 0) {

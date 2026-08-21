@@ -237,7 +237,7 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
             s = new SHTTPSProxySocket(proxyHost, host, transaction->requestID);
             usingProxy = true;
         } else {
-            s = new Socket(host, isHttps);
+            s = new Socket(host, isHttps, Socket::ResolveMode::ASYNC);
         }
     } catch (const SException& exception) {
         return _createErrorTransaction();
