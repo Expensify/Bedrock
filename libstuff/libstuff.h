@@ -632,7 +632,23 @@ void SFDset(fd_map& fdm, int socket, short evts);
 // Returns false otherwise, or if this socket isn't in this fd_set, or if evts is 0.
 bool SFDAnySet(fd_map& fdm, int socket, short evts);
 
+// Resolves a "domain:port" string into an address. A raw IP answers immediately; anything else
+// blocks for the duration of a getaddrinfo(), which the resolver can stretch to several seconds.
+// Callers that must not block should go through SResolve() instead.
+//
+// Deliberately uncached: every host runs a local caching resolver, so a second cache here would
+// only stack more staleness on top of that one.
+bool SResolveHost(const string& host, sockaddr_in& addr);
+
+// Fills in `addr` and returns true if `host` carries a literal IP, which needs no lookup at all.
+// Returns false for anything that would mean asking a resolver. Never blocks.
+bool SResolveHostLiteral(const string& host, sockaddr_in& addr);
+
 // Socket helpers
+int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking);
+
+// Convenience overload that resolves `host` first. This blocks on DNS; prefer the address-taking
+// version anywhere a stall would hold up a thread that has other work to do.
 int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking);
 int S_close(int* socket);
 int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);

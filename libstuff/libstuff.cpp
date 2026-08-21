@@ -1955,53 +1955,98 @@ string SGUnzip(const string& content)
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
+bool SResolveHostLiteral(const string& host, sockaddr_in& addr)
+{
+    string domain;
+    uint16_t port = 0;
+    if (!SParseHost(host, domain, port)) {
+        return false;
+    }
+
+    // Is the domain just a raw IP? Then there's nothing to look up.
+    unsigned int ip = inet_addr(domain.c_str());
+    if (!ip || ip == INADDR_NONE) {
+        return false;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = ip;
+    return true;
+}
+
+bool SResolveHost(const string& host, sockaddr_in& addr)
+{
+    if (SResolveHostLiteral(host, addr)) {
+        return true;
+    }
+
+    // First, just parse the host.
+    string domain;
+    uint16_t port = 0;
+    if (!SParseHost(host, domain, port)) {
+        SWARN("Failed to resolve '" << host << "': invalid host.");
+        return false;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+
+    // We have to actually ask. This is the part that blocks. There's no cache here on purpose:
+    // every host runs a local caching resolver, and a second cache on top of it only adds staleness.
+    uint64_t start = STimeNow();
+
+    // Allocate and initialize addrinfo structures.
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof hints);
+    struct addrinfo* resolved = nullptr;
+
+    // Set up the hints.
+    hints.ai_family = AF_INET; // IPv4
+    hints.ai_socktype = SOCK_STREAM;
+
+    // Do the initialization.
+    int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
+    SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
+
+    // There was a problem.
+    if (result || !resolved) {
+        freeaddrinfo(resolved);
+        SWARN("Failed to resolve '" << host << "': can't resolve host error no#" << SToStr(result));
+        return false;
+    }
+
+    // Grab the resolved address.
+    sockaddr_in* resolvedAddr = (sockaddr_in*) resolved->ai_addr;
+    addr.sin_addr.s_addr = resolvedAddr->sin_addr.s_addr;
+    char plainTextIP[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &resolvedAddr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
+    SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
+
+    // Done resolving.
+    freeaddrinfo(resolved);
+
+    return true;
+}
+
+// --------------------------------------------------------------------------
 int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
+{
+    sockaddr_in addr;
+    if (!SResolveHost(host, addr)) {
+        return -1;
+    }
+    return S_socket(addr, isTCP, isPort, isBlocking);
+}
+
+// --------------------------------------------------------------------------
+int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking)
 {
     // Try to set up the socket
     int s = -1;
     try {
-        // First, just parse the host
-        string domain;
-        uint16_t port = 0;
-        if (!SParseHost(host, domain, port)) {
-            STHROW("invalid host: " + host);
-        }
-
-        // Is the domain just a raw IP?
-        unsigned int ip = inet_addr(domain.c_str());
-        if (!ip || ip == INADDR_NONE) {
-            // Nope -- resolve the domain
-            uint64_t start = STimeNow();
-
-            // Allocate and initialize addrinfo structures.
-            struct addrinfo hints;
-            memset(&hints, 0, sizeof hints);
-            struct addrinfo* resolved = nullptr;
-
-            // Set up the hints.
-            hints.ai_family = AF_INET; // IPv4
-            hints.ai_socktype = SOCK_STREAM;
-
-            // Do the initialization.
-            int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
-            SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
-
-            // There was a problem.
-            if (result || !resolved) {
-                freeaddrinfo(resolved);
-                STHROW("can't resolve host error no#" + SToStr(result));
-            }
-            // Grab the resolved address.
-            sockaddr_in* addr = (sockaddr_in*) resolved->ai_addr;
-            ip = addr->sin_addr.s_addr;
-            char plainTextIP[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &addr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
-            SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
-
-            // Done resolving.
-            freeaddrinfo(resolved);
-        }
-
         // Open a socket
         if (isTCP) {
             s = (int) socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -2032,11 +2077,6 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
             }
 
             // Bind to the configured port
-            sockaddr_in addr;
-            memset(&addr, 0, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            addr.sin_addr.s_addr = ip;
             if (::bind(s, (sockaddr*) &addr, sizeof(addr))) {
                 STHROW("couldn't bind");
             }
@@ -2047,11 +2087,6 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
             }
         } else {
             // If TCP, connect
-            sockaddr_in addr;
-            memset(&addr, 0, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            addr.sin_addr.s_addr = ip;
             if (connect(s, (sockaddr*) &addr, sizeof(addr)) == -1) {
                 switch (S_errno) {
                     case S_EWOULDBLOCK:
@@ -2072,7 +2107,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
         return s;
     } catch (const SException& e) {
         // Failed to open
-        SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << host
+        SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << addr
               << "': " << e.what() << "(errno=" << S_errno << " '" << strerror(S_errno) << "')");
         if (s != -1) {
             S_close(&s);
