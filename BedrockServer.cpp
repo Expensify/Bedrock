@@ -505,8 +505,8 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
 
     // Check if this command would be likely to cause a crash
     if (_wouldCrash(command)) {
-        // If so, make a lot of noise, and respond 500 without processing it.
-        SALERT("REJECTING CRASH-INDUCING COMMAND, command:" + command->request.methodLine, command->request.nameValueMap);
+        // If so, make a lot of noise, and respond 500 without processing it. WARN instead of ALERT to avoid BugBot issues.
+        SWARN("REJECTING CRASH-INDUCING COMMAND, command:" + command->request.methodLine, command->request.nameValueMap);
         command->response.methodLine = "500 Refused";
         command->complete = true;
         _reply(command);
