@@ -18,13 +18,13 @@ using namespace std;
 // unbounded thread growth, which is a worse version of the stall this exists to avoid. With a fixed
 // pool, a hung resolver occupies one slot and everything else queues behind it.
 class SResolver {
-  public:
+public:
     // The result of a single lookup. This is handed out as a shared_ptr and co-owned by the caller
     // and the worker performing the lookup, which is what makes abandonment safe: a caller that
     // gives up (because its request timed out, say) just drops its reference, and the worker
     // finishes writing into storage that only it still references.
     class Resolution {
-      public:
+public:
         enum State { PENDING, RESOLVED, FAILED };
 
         Resolution(const string& host);
@@ -34,22 +34,31 @@ class SResolver {
         Resolution(const Resolution&) = delete;
         Resolution& operator=(const Resolution&) = delete;
 
-        State getState() const { return _state.load(); }
+        State getState() const
+        {
+            return _state.load();
+        }
 
         // Only meaningful once the state is RESOLVED.
-        const sockaddr_in& getAddr() const { return _addr; }
+        const sockaddr_in& getAddr() const
+        {
+            return _addr;
+        }
 
         // The read end of the notification pipe. A byte becomes readable here exactly once, when the
         // lookup finishes. Register this with poll() to be woken on completion rather than waiting
         // out a timeout.
-        int getFD() const { return _pipeFD[0]; }
+        int getFD() const
+        {
+            return _pipeFD[0];
+        }
 
         // Consume the notification byte. Safe to call when there's nothing to read.
         void drain();
 
         const string host;
 
-      private:
+private:
         friend class SResolver;
 
         // Records the result and wakes anyone polling on the pipe. Called on a worker thread.
@@ -72,7 +81,7 @@ class SResolver {
     SResolver(size_t threadCount);
     ~SResolver();
 
-  private:
+private:
     void _workerFunc();
 
     list<shared_ptr<Resolution>> _queue;

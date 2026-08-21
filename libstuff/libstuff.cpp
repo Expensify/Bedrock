@@ -1959,7 +1959,8 @@ const uint64_t S_RESOLVE_CACHE_TTL_US = 60 * STIME_US_PER_S;
 
 // Domain -> resolved IPv4 address, with the time the entry stops being usable. Only successful
 // lookups land here.
-struct SResolveCacheEntry {
+struct SResolveCacheEntry
+{
     unsigned int ip;
     uint64_t expires;
 };
@@ -2022,9 +2023,11 @@ bool SResolveHost(const string& host, sockaddr_in& addr)
     switch (_resolveWithoutLookup(host, addr, domain, port)) {
         case SResolveCacheResult::RESOLVED:
             return true;
+
         case SResolveCacheResult::INVALID:
             SWARN("Failed to resolve '" << host << "': invalid host.");
             return false;
+
         case SResolveCacheResult::NEEDS_LOOKUP:
             break;
     }

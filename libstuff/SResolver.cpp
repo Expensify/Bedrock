@@ -112,7 +112,9 @@ void SResolver::_workerFunc()
         shared_ptr<Resolution> resolution;
         {
             unique_lock<mutex> lock(_mutex);
-            _cv.wait(lock, [&]() { return _exit || !_queue.empty(); });
+            while (!_exit && _queue.empty()) {
+                _cv.wait(lock);
+            }
             if (_exit) {
                 return;
             }

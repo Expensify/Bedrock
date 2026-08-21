@@ -13,7 +13,9 @@ struct AsyncResolve : tpunit::TestFixture
                                          TEST(AsyncResolve::testDeferredConnectCompletes),
                                          TEST(AsyncResolve::testFailedResolutionClosesSocket),
                                          TEST(AsyncResolve::testAbandonWhileResolving),
-                                         TEST(AsyncResolve::testResolverOutlivesCaller)) { }
+                                         TEST(AsyncResolve::testResolverOutlivesCaller))
+    {
+    }
 
     // Drives a socket through prePoll/postPoll until it leaves the state it started in, or until
     // we give up. Returns the state it landed in.
@@ -149,5 +151,4 @@ struct AsyncResolve : tpunit::TestFixture
         ASSERT_TRUE(SFDAnySet(fdm, resolution->getFD(), SREADEVTS));
         resolution->drain();
     }
-
 } __AsyncResolve;
