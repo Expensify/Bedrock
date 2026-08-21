@@ -632,7 +632,23 @@ void SFDset(fd_map& fdm, int socket, short evts);
 // Returns false otherwise, or if this socket isn't in this fd_set, or if evts is 0.
 bool SFDAnySet(fd_map& fdm, int socket, short evts);
 
+// Resolves a "domain:port" string into an address, consulting (and populating) a TTL cache. This
+// blocks for the duration of the underlying DNS lookup, which the resolver can stretch to several
+// seconds. Callers that must not block should go through SResolver instead.
+bool SResolveHost(const string& host, sockaddr_in& addr);
+
+// How long a successful resolution stays usable. Failures aren't cached at all, so a host that's
+// briefly unresolvable starts working again as soon as DNS does.
+extern const uint64_t S_RESOLVE_CACHE_TTL_US;
+
+// Empties the resolution cache. Exists for tests.
+void SClearResolveCache();
+
 // Socket helpers
+int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking);
+
+// Convenience overload that resolves `host` first. This blocks on DNS; prefer the address-taking
+// version anywhere a stall would hold up a thread that has other work to do.
 int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking);
 int S_close(int* socket);
 int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);

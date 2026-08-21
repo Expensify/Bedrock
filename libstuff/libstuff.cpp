@@ -1955,53 +1955,116 @@ string SGUnzip(const string& content)
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
+const uint64_t S_RESOLVE_CACHE_TTL_US = 60 * STIME_US_PER_S;
+
+// Domain -> resolved IPv4 address, with the time the entry stops being usable. Only successful
+// lookups land here.
+struct SResolveCacheEntry {
+    unsigned int ip;
+    uint64_t expires;
+};
+static mutex _resolveCacheMutex;
+static map<string, SResolveCacheEntry> _resolveCache;
+
+void SClearResolveCache()
+{
+    lock_guard<mutex> lock(_resolveCacheMutex);
+    _resolveCache.clear();
+}
+
+bool SResolveHost(const string& host, sockaddr_in& addr)
+{
+    // First, just parse the host.
+    string domain;
+    uint16_t port = 0;
+    if (!SParseHost(host, domain, port)) {
+        SWARN("Failed to resolve '" << host << "': invalid host.");
+        return false;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+
+    // Is the domain just a raw IP?
+    unsigned int ip = inet_addr(domain.c_str());
+    if (ip && ip != INADDR_NONE) {
+        addr.sin_addr.s_addr = ip;
+        return true;
+    }
+
+    // Nope. Do we already know this one?
+    uint64_t now = STimeNow();
+    {
+        lock_guard<mutex> lock(_resolveCacheMutex);
+        auto cached = _resolveCache.find(domain);
+        if (cached != _resolveCache.end()) {
+            if (cached->second.expires > now) {
+                addr.sin_addr.s_addr = cached->second.ip;
+                return true;
+            }
+            _resolveCache.erase(cached);
+        }
+    }
+
+    // We have to actually ask. This is the part that blocks.
+    uint64_t start = now;
+
+    // Allocate and initialize addrinfo structures.
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof hints);
+    struct addrinfo* resolved = nullptr;
+
+    // Set up the hints.
+    hints.ai_family = AF_INET; // IPv4
+    hints.ai_socktype = SOCK_STREAM;
+
+    // Do the initialization.
+    int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
+    SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
+
+    // There was a problem.
+    if (result || !resolved) {
+        freeaddrinfo(resolved);
+        SWARN("Failed to resolve '" << host << "': can't resolve host error no#" << SToStr(result));
+        return false;
+    }
+
+    // Grab the resolved address.
+    sockaddr_in* resolvedAddr = (sockaddr_in*) resolved->ai_addr;
+    ip = resolvedAddr->sin_addr.s_addr;
+    char plainTextIP[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &resolvedAddr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
+    SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
+
+    // Done resolving.
+    freeaddrinfo(resolved);
+
+    {
+        lock_guard<mutex> lock(_resolveCacheMutex);
+        _resolveCache[domain] = {ip, STimeNow() + S_RESOLVE_CACHE_TTL_US};
+    }
+
+    addr.sin_addr.s_addr = ip;
+    return true;
+}
+
+// --------------------------------------------------------------------------
 int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
+{
+    sockaddr_in addr;
+    if (!SResolveHost(host, addr)) {
+        return -1;
+    }
+    return S_socket(addr, isTCP, isPort, isBlocking);
+}
+
+// --------------------------------------------------------------------------
+int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking)
 {
     // Try to set up the socket
     int s = -1;
     try {
-        // First, just parse the host
-        string domain;
-        uint16_t port = 0;
-        if (!SParseHost(host, domain, port)) {
-            STHROW("invalid host: " + host);
-        }
-
-        // Is the domain just a raw IP?
-        unsigned int ip = inet_addr(domain.c_str());
-        if (!ip || ip == INADDR_NONE) {
-            // Nope -- resolve the domain
-            uint64_t start = STimeNow();
-
-            // Allocate and initialize addrinfo structures.
-            struct addrinfo hints;
-            memset(&hints, 0, sizeof hints);
-            struct addrinfo* resolved = nullptr;
-
-            // Set up the hints.
-            hints.ai_family = AF_INET; // IPv4
-            hints.ai_socktype = SOCK_STREAM;
-
-            // Do the initialization.
-            int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
-            SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
-
-            // There was a problem.
-            if (result || !resolved) {
-                freeaddrinfo(resolved);
-                STHROW("can't resolve host error no#" + SToStr(result));
-            }
-            // Grab the resolved address.
-            sockaddr_in* addr = (sockaddr_in*) resolved->ai_addr;
-            ip = addr->sin_addr.s_addr;
-            char plainTextIP[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &addr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
-            SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
-
-            // Done resolving.
-            freeaddrinfo(resolved);
-        }
-
         // Open a socket
         if (isTCP) {
             s = (int) socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -2032,11 +2095,6 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
             }
 
             // Bind to the configured port
-            sockaddr_in addr;
-            memset(&addr, 0, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            addr.sin_addr.s_addr = ip;
             if (::bind(s, (sockaddr*) &addr, sizeof(addr))) {
                 STHROW("couldn't bind");
             }
@@ -2047,11 +2105,6 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
             }
         } else {
             // If TCP, connect
-            sockaddr_in addr;
-            memset(&addr, 0, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            addr.sin_addr.s_addr = ip;
             if (connect(s, (sockaddr*) &addr, sizeof(addr)) == -1) {
                 switch (S_errno) {
                     case S_EWOULDBLOCK:
@@ -2072,7 +2125,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
         return s;
     } catch (const SException& e) {
         // Failed to open
-        SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << host
+        SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << addr
               << "': " << e.what() << "(errno=" << S_errno << " '" << strerror(S_errno) << "')");
         if (s != -1) {
             S_close(&s);
