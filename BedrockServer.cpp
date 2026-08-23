@@ -1739,6 +1739,15 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         // Take a unique lock so nobody else can read from this table while we update it.
         unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
 
+        // Strip Content-Length before storing. It's added automatically when a command is serialized,
+        // so the same crash command can arrive with or without it depending on the path it took to get
+        // here (e.g. direct injection vs. re-propagation on peer login). Since _crashCommands is a
+        // set<STable>, an entry that differs only by Content-Length would be stored as a second, distinct
+        // entry, which pushes the count above 1 and (incorrectly) escalates a restricted command into a
+        // cluster-wide block. _wouldCrash() already ignores Content-Length when matching, so normalize
+        // here as well to keep the two paths dedupe-consistent.
+        request.nameValueMap.erase("Content-Length");
+
         // Add the blacklisted command to the map.
         _crashCommands[request.methodLine].insert(request.nameValueMap);
         size_t totalCount = 0;
