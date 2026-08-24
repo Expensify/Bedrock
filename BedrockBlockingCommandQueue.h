@@ -40,7 +40,7 @@ public:
     void recordExecutionTime(const string& identifier, const string& commandName, uint64_t elapsedUS);
 
     // Return the active rate-limit dimension, or an empty string. Identifier blocks take precedence when both dimensions are active.
-    string _getBlockingDimension(const string& identifier, const string& commandName);
+    string getBlockingDimension(const string& identifier, const string& commandName);
 
 protected:
     // Dequeues a command and rejects it if its identifier or command name is rate limited.

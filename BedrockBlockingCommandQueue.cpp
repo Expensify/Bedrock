@@ -23,7 +23,7 @@ uint64_t BedrockBlockingCommandQueue::_now() const
 
 void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
 {
-    const string dimension = _getBlockingDimension(command->blockingQueueRateLimitIdentifier, command->request.methodLine);
+    const string dimension = getBlockingDimension(command->blockingQueueRateLimitIdentifier, command->request.methodLine);
     if (!dimension.empty()) {
         SINFO("Blocking queue rate limited command rejected", {
             {"dimension", dimension},
@@ -42,7 +42,7 @@ unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
     auto command = BedrockCommandQueue::_dequeue();
 
     // Marking it complete skips processing in `BedrockServer::runCommand`, which replies to already-complete commands.
-    const string dimension = _getBlockingDimension(command->blockingQueueRateLimitIdentifier, command->request.methodLine);
+    const string dimension = getBlockingDimension(command->blockingQueueRateLimitIdentifier, command->request.methodLine);
     if (!dimension.empty()) {
         SINFO("Blocking queue rate limited command rejected", {
             {"dimension", dimension},
@@ -140,7 +140,7 @@ void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, 
     _recordAndCheck(_commandStates, commandName, _commandThresholdUS.load(), now, elapsedUS, "command");
 }
 
-string BedrockBlockingCommandQueue::_getBlockingDimension(const string& identifier, const string& commandName)
+string BedrockBlockingCommandQueue::getBlockingDimension(const string& identifier, const string& commandName)
 {
     // Hot path: called by push() and by _dequeue() under the base `_queueMutex`. Keep it O(1) by reading only
     // the precomputed block deadline. The windowed time is summed in recordExecutionTime, off the blocking thread.
