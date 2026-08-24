@@ -1739,6 +1739,9 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         // Take a unique lock so nobody else can read from this table while we update it.
         unique_lock<decltype(_crashCommandMutex)> lock(_crashCommandMutex);
 
+        // Strip Content-Length before storing to prevent the same identifiers from being stored twice
+        request.nameValueMap.erase("Content-Length");
+
         // Add the blacklisted command to the map.
         _crashCommands[request.methodLine].insert(request.nameValueMap);
         size_t totalCount = 0;
