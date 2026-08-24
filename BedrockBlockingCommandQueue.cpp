@@ -140,11 +140,6 @@ void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, 
     _recordAndCheck(_commandStates, commandName, _commandThresholdUS.load(), now, elapsedUS, "command");
 }
 
-bool BedrockBlockingCommandQueue::isBlocked(const string& identifier, const string& commandName)
-{
-    return !_getBlockingDimension(identifier, commandName).empty();
-}
-
 string BedrockBlockingCommandQueue::_getBlockingDimension(const string& identifier, const string& commandName)
 {
     // Hot path: called by push() and by _dequeue() under the base `_queueMutex`. Keep it O(1) by reading only

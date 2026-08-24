@@ -2,7 +2,7 @@
 #include <test/lib/tpunit++.hpp>
 
 // A queue whose clock the test controls, so window and block behavior is deterministic. All times below are
-// microseconds. The tests drive the public API only (record + isBlocked + the setters).
+// microseconds. The tests drive the public API and control the clock.
 struct TestBlockingCommandQueue : public BedrockBlockingCommandQueue
 {
     static unique_ptr<BedrockCommand> makeCommand(const string& identifier, const string& commandName)
@@ -56,10 +56,10 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 30);
-        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "");
 
         queue.recordExecutionTime("acct1", "cmd", 30);
-        ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "identifier");
     }
 
     void testUnderThresholdNotBlocked()
@@ -71,7 +71,7 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 40);
-        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "");
     }
 
     void testIdentifiersAreIndependent()
@@ -83,8 +83,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 60);
-        ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
-        ASSERT_FALSE(queue.isBlocked("acct2", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "identifier");
+        ASSERT_EQUAL(queue._getBlockingDimension("acct2", "cmd"), "");
     }
 
     void testCommandDimensionIgnoresIdentifier()
@@ -97,9 +97,9 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 60);
-        ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
-        ASSERT_TRUE(queue.isBlocked("acct2", "cmd"));
-        ASSERT_FALSE(queue.isBlocked("acct1", "otherCmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "command");
+        ASSERT_EQUAL(queue._getBlockingDimension("acct2", "cmd"), "command");
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "otherCmd"), "");
     }
 
     void testPushReportsRateLimitDimensions()
@@ -185,7 +185,7 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         queue.setNow(1000);
 
         queue.recordExecutionTime("", "cmd", 60);
-        ASSERT_TRUE(queue.isBlocked("", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("", "cmd"), "command");
     }
 
     void testWindowExpiry()
@@ -200,13 +200,13 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
 
         // One 40us sample, under the 50us threshold on its own.
         queue.recordExecutionTime("acct1", "cmd", 40);
-        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "");
 
         // A full window later, record another 40us. The first has aged out, so the window holds only 40us
         // (< 50). If it still counted, the two would sum to 80 and block.
         queue.setNow(1150);
         queue.recordExecutionTime("acct1", "cmd", 40);
-        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "");
     }
 
     void testPartialCredit()
@@ -221,13 +221,13 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
 
         // 30us sample, under the 35us threshold.
         queue.recordExecutionTime("acct1", "cmd", 30);
-        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "");
 
         // 80us later, only window - age = 100 - 80 = 20us of the first sample still counts. With a new 10us
         // sample the window holds 20 + 10 = 30us (< 35). Counting the full 30 + 10 = 40 would block.
         queue.setNow(1080);
         queue.recordExecutionTime("acct1", "cmd", 10);
-        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "");
     }
 
     void testBlockDurationHoldsThenClears()
@@ -240,15 +240,15 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 60);
-        ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "identifier");
 
         // The sample has aged out of the window, but the block still holds for its fixed duration.
         queue.setNow(1200);
-        ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "identifier");
 
         // After the block duration, with nothing left in the window, it clears.
         queue.setNow(1600);
-        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "");
     }
 
     void testDisabledThresholdsNeverBlock()
@@ -260,7 +260,7 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 1000000);
-        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "");
     }
 
     void testClearResets()
@@ -273,9 +273,9 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 60);
-        ASSERT_TRUE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "identifier");
 
         queue.clearRateLimits();
-        ASSERT_FALSE(queue.isBlocked("acct1", "cmd"));
+        ASSERT_EQUAL(queue._getBlockingDimension("acct1", "cmd"), "");
     }
 } __BlockingCommandQueueTest;
