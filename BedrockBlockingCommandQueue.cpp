@@ -23,8 +23,14 @@ uint64_t BedrockBlockingCommandQueue::_now() const
 
 void BedrockBlockingCommandQueue::push(unique_ptr<BedrockCommand>&& command)
 {
-    if (isBlocked(command->blockingQueueRateLimitIdentifier, command->request.methodLine)) {
-        STHROW("503 Blocking queue rate limited (time)");
+    const string dimension = getBlockingDimension(command->blockingQueueRateLimitIdentifier, command->request.methodLine);
+    if (!dimension.empty()) {
+        SINFO("Blocking queue rate limited command rejected", {
+            {"dimension", dimension},
+            {"identifier", command->blockingQueueRateLimitIdentifier},
+            {"command", command->request.methodLine}
+        });
+        STHROW("503 Blocking queue rate limited (" + dimension + ")");
     }
 
     // Base class acquires its own `_queueMutex`.
@@ -36,8 +42,14 @@ unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
     auto command = BedrockCommandQueue::_dequeue();
 
     // Marking it complete skips processing in `BedrockServer::runCommand`, which replies to already-complete commands.
-    if (isBlocked(command->blockingQueueRateLimitIdentifier, command->request.methodLine)) {
-        command->response.methodLine = "503 Blocking queue rate limited (time)";
+    const string dimension = getBlockingDimension(command->blockingQueueRateLimitIdentifier, command->request.methodLine);
+    if (!dimension.empty()) {
+        SINFO("Blocking queue rate limited command rejected", {
+            {"dimension", dimension},
+            {"identifier", command->blockingQueueRateLimitIdentifier},
+            {"command", command->request.methodLine}
+        });
+        command->response.methodLine = "503 Blocking queue rate limited (" + dimension + ")";
         command->complete = true;
     }
 
@@ -128,12 +140,18 @@ void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, 
     _recordAndCheck(_commandStates, commandName, _commandThresholdUS.load(), now, elapsedUS, "command");
 }
 
-bool BedrockBlockingCommandQueue::isBlocked(const string& identifier, const string& commandName)
+string BedrockBlockingCommandQueue::getBlockingDimension(const string& identifier, const string& commandName)
 {
     // Hot path: called by push() and by _dequeue() under the base `_queueMutex`. Keep it O(1) by reading only
     // the precomputed block deadline. The windowed time is summed in recordExecutionTime, off the blocking thread.
     const uint64_t now = _now();
-    return _isBlocked(_identifierStates, identifier, now) || _isBlocked(_commandStates, commandName, now);
+    if (_isBlocked(_identifierStates, identifier, now)) {
+        return "identifier";
+    }
+    if (_isBlocked(_commandStates, commandName, now)) {
+        return "command";
+    }
+    return "";
 }
 
 shared_ptr<BedrockBlockingCommandQueue::IdentifierState> BedrockBlockingCommandQueue::_getOrCreateState(StateMap& map, const string& key)
