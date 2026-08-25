@@ -219,13 +219,17 @@ STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool ht
 {
 }
 
+shared_ptr<SResolution> STCPManager::Socket::_startResolution(const string& host)
+{
+    SASSERT(SHostIsValid(host));
+    return SResolve(host);
+}
+
 STCPManager::Socket::Socket(const string& host, bool https, int resolveGraceMS)
     : s(-1), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https),
-    dnsResolution(SResolve(host)), hostToResolve(host)
+    dnsResolution(_startResolution(host)), hostToResolve(host)
 {
-    SASSERT(SHostIsValid(host));
-
     // We give DNS a couple milliseconds to resolve. If it succeeds, we'll create a socket.
     pollfd pfd = {dnsResolution->getFD(), POLLIN, 0};
     poll(&pfd, 1, resolveGraceMS);
