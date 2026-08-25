@@ -11,6 +11,7 @@
 #include <sys/un.h>
 #include <cxxabi.h>
 #include <sys/ioctl.h>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 
@@ -1982,7 +1983,6 @@ bool SResolveHost(const string& host, sockaddr_in& addr)
         return true;
     }
 
-    // First, just parse the host.
     string domain;
     uint16_t port = 0;
     if (!SParseHost(host, domain, port)) {
@@ -1994,38 +1994,26 @@ bool SResolveHost(const string& host, sockaddr_in& addr)
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
 
-    // We have to actually ask. This is the part that blocks. There's no cache here on purpose:
-    // every host runs a local caching resolver, and a second cache on top of it only adds staleness.
-    uint64_t start = STimeNow();
+    auto start = chrono::steady_clock::now();
 
-    // Allocate and initialize addrinfo structures.
     struct addrinfo hints;
     memset(&hints, 0, sizeof hints);
     struct addrinfo* resolved = nullptr;
-
-    // Set up the hints.
     hints.ai_family = AF_INET; // IPv4
     hints.ai_socktype = SOCK_STREAM;
 
-    // Do the initialization.
     int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
-    SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
+    auto elapsed = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start);
+    SINFO("DNS lookup took " << elapsed.count() << "ms for '" << domain << "'.");
 
-    // There was a problem.
     if (result || !resolved) {
         freeaddrinfo(resolved);
         SWARN("Failed to resolve '" << host << "': can't resolve host error no#" << SToStr(result));
         return false;
     }
 
-    // Grab the resolved address.
     sockaddr_in* resolvedAddr = (sockaddr_in*) resolved->ai_addr;
     addr.sin_addr.s_addr = resolvedAddr->sin_addr.s_addr;
-    char plainTextIP[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &resolvedAddr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
-    SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
-
-    // Done resolving.
     freeaddrinfo(resolved);
 
     return true;
