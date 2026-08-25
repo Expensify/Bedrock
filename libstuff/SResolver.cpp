@@ -14,10 +14,6 @@ SResolution::SResolution(const string& host)
     if (pipe(_pipeFD)) {
         STHROW("Failed to create pipe: " + to_string(errno) + " "s + strerror(errno));
     }
-
-    // The reader polls this and drains it opportunistically, so it must never block.
-    int flags = fcntl(_pipeFD[0], F_GETFL, 0);
-    fcntl(_pipeFD[0], F_SETFL, flags | O_NONBLOCK);
 }
 
 SResolution::~SResolution()
@@ -45,17 +41,6 @@ int SResolution::getFD() const
     return _pipeFD[0];
 }
 
-void SResolution::drain()
-{
-    while (true) {
-        char buffer[1];
-        int result = read(_pipeFD[0], buffer, sizeof(buffer));
-        if (result <= 0) {
-            break;
-        }
-    }
-}
-
 void SResolution::complete(bool success, const sockaddr_in& addr)
 {
     if (success) {
@@ -66,11 +51,16 @@ void SResolution::complete(bool success, const sockaddr_in& addr)
     // still see PENDING.
     _state.store(success ? RESOLVED : FAILED);
 
-    // Wake anyone polling. There's exactly one of these per resolution, so the pipe can't fill.
-    const char byte = 1;
-    if (write(_pipeFD[1], &byte, 1) != 1) {
-        SWARN("Failed to notify completed resolution for '" << host << "': " << strerror(errno));
-    }
+    // Closing the write end is the notification: it makes the read end poll POLLHUP, which is part
+    // of SREADEVTS, and it hands back one of the two file descriptors instead of holding it for as
+    // long as the socket lives. It also stays hung up, so a reader that isn't looking yet can't
+    // miss it.
+    //
+    // The read end has to stay open until this object is destroyed. A poll thread can be
+    // registering it at this very moment, and closing it here would free the number for some other
+    // thread to reuse, leaving that poll waiting on an unrelated fd.
+    close(_pipeFD[1]);
+    _pipeFD[1] = -1;
 }
 
 shared_ptr<SResolution> SResolve(const string& host)

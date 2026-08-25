@@ -84,7 +84,6 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket)
             // fd_map, and its number could belong to a socket closed earlier in this same pass,
             // whose stale revents would read as a completed connection. The next cycle registers it
             // properly.
-            socket.dnsResolution->drain();
             socket._connectAfterDNSResolution();
             break;
         }

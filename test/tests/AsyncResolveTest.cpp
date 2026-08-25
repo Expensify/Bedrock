@@ -180,7 +180,12 @@ struct AsyncResolve : tpunit::TestFixture
         SFDset(fdm, resolution->getFD(), SREADEVTS);
         S_poll(fdm, 0);
         ASSERT_TRUE(SFDAnySet(fdm, resolution->getFD(), SREADEVTS));
-        resolution->drain();
+
+        // The hangup is permanent, so a second look still sees it.
+        fd_map again;
+        SFDset(again, resolution->getFD(), SREADEVTS);
+        S_poll(again, 0);
+        ASSERT_TRUE(SFDAnySet(again, resolution->getFD(), SREADEVTS));
     }
 
     void testLiteralNeedsNoThread()
