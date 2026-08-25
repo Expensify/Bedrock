@@ -39,10 +39,8 @@ public:
     // sample against the identifier (when `identifier` is non-empty) and against the command name.
     void recordExecutionTime(const string& identifier, const string& commandName, uint64_t elapsedUS);
 
-    // True if `identifier` or `commandName` is over its blocking-queue time limit within the window, or is
-    // still inside an active block. When a dimension newly trips, it is blocked for the block duration.
-    // Logs a "Blocking queue rate limit" line when a dimension blocks.
-    bool isBlocked(const string& identifier, const string& commandName);
+    // Return the active rate-limit dimension, or an empty string. Identifier blocks take precedence when both dimensions are active.
+    string getBlockingDimension(const string& identifier, const string& commandName);
 
 protected:
     // Dequeues a command and rejects it if its identifier or command name is rate limited.
