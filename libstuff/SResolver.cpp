@@ -30,6 +30,21 @@ SResolution::~SResolution()
     }
 }
 
+SResolution::State SResolution::getState() const
+{
+    return _state.load();
+}
+
+const sockaddr_in& SResolution::getAddr() const
+{
+    return _addr;
+}
+
+int SResolution::getFD() const
+{
+    return _pipeFD[0];
+}
+
 void SResolution::drain()
 {
     while (true) {

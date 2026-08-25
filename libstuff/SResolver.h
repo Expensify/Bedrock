@@ -23,23 +23,14 @@ public:
     SResolution(const SResolution&) = delete;
     SResolution& operator=(const SResolution&) = delete;
 
-    State getState() const
-    {
-        return _state.load();
-    }
+    State getState() const;
 
     // Only meaningful once the state is RESOLVED.
-    const sockaddr_in& getAddr() const
-    {
-        return _addr;
-    }
+    const sockaddr_in& getAddr() const;
 
     // The read end of the notification pipe. A byte becomes readable here exactly once, when the
     // lookup finishes. Poll this to be woken on completion rather than waiting out a timeout.
-    int getFD() const
-    {
-        return _pipeFD[0];
-    }
+    int getFD() const;
 
     // Consume the notification byte. Safe to call when there's nothing to read.
     void drain();
@@ -57,11 +48,4 @@ private:
 
 // Starts resolving `host` on a detached thread and returns immediately. A literal address is
 // answered inline without a thread.
-//
-// Note that every lookup still in flight holds a pipe, so it costs two file descriptors. That's
-// nothing against the server's raised RLIMIT_NOFILE, but it's worth remembering in any process that
-// runs at the default limit.
-//
-// Throws if the thread can't be started. Callers already handle a throwing socket constructor by
-// failing the request.
 shared_ptr<SResolution> SResolve(const string& host);
