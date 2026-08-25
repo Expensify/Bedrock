@@ -641,11 +641,12 @@ bool SResolveHost(const string& host, sockaddr_in& addr);
 bool SIPToAddr(const string& host, sockaddr_in& addr);
 
 // Socket helpers
-int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking);
+// On failure, `errorCode` receives the errno that caused it, if it's given.
+int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking, int* errorCode = nullptr);
 
 // Convenience overload that resolves `host` first. This blocks on DNS; prefer the address-taking
 // version anywhere a stall would hold up a thread that has other work to do.
-int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking);
+int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, int* errorCode = nullptr);
 int S_close(int* socket);
 int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);
 ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fromAddr);

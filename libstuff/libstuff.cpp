@@ -2020,20 +2020,25 @@ bool SResolveHost(const string& host, sockaddr_in& addr)
 }
 
 // --------------------------------------------------------------------------
-int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
+int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, int* errorCode)
 {
     sockaddr_in addr;
     if (!SResolveHost(host, addr)) {
+        // There's no socket call to report on yet, so this is whatever the lookup left behind.
+        if (errorCode) {
+            *errorCode = S_errno;
+        }
         return -1;
     }
-    return S_socket(addr, isTCP, isPort, isBlocking);
+    return S_socket(addr, isTCP, isPort, isBlocking, errorCode);
 }
 
 // --------------------------------------------------------------------------
-int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking)
+int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking, int* errorCode)
 {
     // Try to set up the socket
     int s = -1;
+    int socketError = 0;
     try {
         // Open a socket
         if (isTCP) {
@@ -2042,6 +2047,7 @@ int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking)
             s = (int) socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         }
         if (s == -1) {
+            socketError = S_errno;
             STHROW("couldn't open");
         }
 
@@ -2051,7 +2057,12 @@ int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking)
         if (!isBlocking) {
             // Set non-blocking
             int flags = fcntl(s, F_GETFL);
-            if ((flags < 0) || fcntl(s, F_SETFL, flags | O_NONBLOCK)) {
+            if (flags < 0) {
+                socketError = S_errno;
+                STHROW("couldn't set non-blocking");
+            }
+            if (fcntl(s, F_SETFL, flags | O_NONBLOCK)) {
+                socketError = S_errno;
                 STHROW("couldn't set non-blocking");
             }
         }
@@ -2061,16 +2072,19 @@ int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking)
             // Enable port reuse (so we don't have TIME_WAIT binding issues) and
             u_long enable = 1;
             if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char*) &enable, sizeof(enable))) {
+                socketError = S_errno;
                 STHROW("couldn't set REUSEADDR");
             }
 
             // Bind to the configured port
             if (::bind(s, (sockaddr*) &addr, sizeof(addr))) {
+                socketError = S_errno;
                 STHROW("couldn't bind");
             }
 
             // Start listening, if TCP
             if (isTCP && listen(s, SOMAXCONN)) {
+                socketError = S_errno;
                 STHROW("couldn't listen");
             }
         } else {
@@ -2086,6 +2100,7 @@ int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking)
                         break;
 
                     default:
+                        socketError = S_errno;
                         STHROW("couldn't connect");
                 }
             }
@@ -2094,9 +2109,13 @@ int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking)
         // Success, ready to go.
         return s;
     } catch (const SException& e) {
+        int error = socketError ? socketError : S_errno;
         // Failed to open
         SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << addr
-              << "': " << e.what() << "(errno=" << S_errno << " '" << strerror(S_errno) << "')");
+              << "': " << e.what() << "(errno=" << error << " '" << strerror(error) << "')");
+        if (errorCode) {
+            *errorCode = error;
+        }
         if (s != -1) {
             S_close(&s);
         }
