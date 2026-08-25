@@ -59,14 +59,9 @@ private:
 // answered inline without a thread.
 //
 // Note that every lookup still in flight holds a pipe, so it costs two file descriptors. That's
-// nothing against the server's raised RLIMIT_NOFILE, but it's worth knowing before raising the cap
-// below, and worth remembering in any process that runs at the default limit.
+// nothing against the server's raised RLIMIT_NOFILE, but it's worth remembering in any process that
+// runs at the default limit.
 //
-// Throws if too many lookups are already in flight. That only happens when the resolver has stopped
-// answering, since a lookup can occupy its thread for as long as glibc is willing to retry, and the
-// cap keeps a resolver outage from turning into unbounded thread growth. Callers already handle a
-// throwing socket constructor by failing the request.
+// Throws if the thread can't be started. Callers already handle a throwing socket constructor by
+// failing the request.
 shared_ptr<SResolution> SResolve(const string& host);
-
-// How many lookups may be in flight at once before SResolve starts throwing.
-extern const int S_RESOLVE_MAX_IN_FLIGHT;

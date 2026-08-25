@@ -8,12 +8,6 @@
 
 #include <libstuff/libstuff.h>
 
-const int S_RESOLVE_MAX_IN_FLIGHT = 500;
-
-// Lookups running right now. A lookup only lasts as long as getaddrinfo() does, so under normal
-// conditions this sits at zero or one.
-static atomic<int> _inFlight(0);
-
 SResolution::SResolution(const string& host)
     : host(host), _state(PENDING), _addr{}, _pipeFD{-1, -1}
 {
@@ -77,18 +71,12 @@ shared_ptr<SResolution> SResolve(const string& host)
         return resolution;
     }
 
-    if (_inFlight.load() >= S_RESOLVE_MAX_IN_FLIGHT) {
-        STHROW("Too many DNS lookups in flight (" + to_string(S_RESOLVE_MAX_IN_FLIGHT) + "), refusing to start another");
-    }
-
-    _inFlight++;
-
     // The thread holds its own reference, so it doesn't matter if whoever asked for this has given
     // up by the time the lookup finishes.
     //
     // A failed spawn arrives as a system_error, which callers of a socket constructor have no
-    // reason to expect. Convert it, so running out of threads fails a request the same way the
-    // in-flight cap does instead of unwinding past everyone's catch.
+    // reason to expect. Convert it, so running out of threads fails the request instead of
+    // unwinding past everyone's catch.
     try {
         thread([resolution]() {
             // Deliberately not SInitialize(): that registers a single global buffer as this thread's
@@ -102,10 +90,8 @@ shared_ptr<SResolution> SResolve(const string& host)
             sockaddr_in threadAddr;
             const bool success = SResolveHost(resolution->host, threadAddr);
             resolution->complete(success, threadAddr);
-            _inFlight--;
         }).detach();
     } catch (const system_error& e) {
-        _inFlight--;
         STHROW("Couldn't start a thread to resolve '" + host + "': " + e.what());
     }
 
