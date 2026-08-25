@@ -3216,25 +3216,18 @@ bool SIsValidSQLiteDateModifier(const string& modifier)
 
 bool SREMatch(const string& regExp, const string& input, bool caseSensitive, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset)
 {
-    int errornumber = 0;
-    PCRE2_SIZE erroroffset = 0;
-    uint32_t matchFlags = 0;
+    return SREMatch(SRECompile(regExp, caseSensitive), input, partialMatch, matches, startOffset, matchOffset);
+}
 
+bool SREMatch(const SRECompiledRegex& regExp, const string& input, bool partialMatch, vector<string>* matches, size_t startOffset, size_t* matchOffset)
+{
     // These require full-string matches as that's the historical way this function works.
-    uint32_t compileFlags = partialMatch ? 0 : PCRE2_ANCHORED | PCRE2_ENDANCHORED;
-    if (!caseSensitive) {
-        compileFlags |= PCRE2_CASELESS;
-    }
-    pcre2_code* re = pcre2_compile((PCRE2_SPTR8) regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
-    if (!re) {
-        STHROW("Bad regex: " + regExp);
-    }
-
+    uint32_t matchFlags = partialMatch ? 0 : PCRE2_ANCHORED | PCRE2_ENDANCHORED;
     pcre2_match_context* matchContext = pcre2_match_context_create(0);
     pcre2_set_depth_limit(matchContext, 1000);
-    pcre2_match_data* matchData = pcre2_match_data_create_from_pattern(re, 0);
+    pcre2_match_data* matchData = pcre2_match_data_create_from_pattern(static_cast<pcre2_code*>(regExp.regex), 0);
 
-    int result = pcre2_match(re, (PCRE2_SPTR8) input.c_str() + startOffset, input.size() - startOffset, 0, matchFlags, matchData, matchContext);
+    int result = pcre2_match(static_cast<pcre2_code*>(regExp.regex), (PCRE2_SPTR8) input.c_str() + startOffset, input.size() - startOffset, 0, matchFlags, matchData, matchContext);
 
     // Clear out existing matches.
     if (matches) {
@@ -3258,7 +3251,6 @@ bool SREMatch(const string& regExp, const string& input, bool caseSensitive, boo
         }
     }
 
-    pcre2_code_free(re);
     pcre2_match_context_free(matchContext);
     pcre2_match_data_free(matchData);
 
@@ -3267,11 +3259,16 @@ bool SREMatch(const string& regExp, const string& input, bool caseSensitive, boo
 
 vector<vector<string>> SREMatchAll(const string& regExp, const string& input, bool caseSensitive)
 {
+    return SREMatchAll(SRECompile(regExp, caseSensitive), input);
+}
+
+vector<vector<string>> SREMatchAll(const SRECompiledRegex& regExp, const string& input)
+{
     vector<vector<string>> returnValue;
     vector<string> matches;
     size_t startOffset = 0;
     size_t matchOffset = 0;
-    while (SREMatch(regExp, input, caseSensitive, true, &matches, startOffset, &matchOffset)) {
+    while (SREMatch(regExp, input, true, &matches, startOffset, &matchOffset)) {
         returnValue.push_back(matches);
         startOffset = matchOffset + matches[0].size();
     }
@@ -3279,22 +3276,56 @@ vector<vector<string>> SREMatchAll(const string& regExp, const string& input, bo
     return returnValue;
 }
 
-string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive)
+SRECompiledRegex::SRECompiledRegex(void* regex) : regex(regex)
 {
-    char* output = nullptr;
-    size_t outSize = 0;
+}
+
+SRECompiledRegex::~SRECompiledRegex()
+{
+    pcre2_code_free(static_cast<pcre2_code*>(regex));
+}
+
+SRECompiledRegex::SRECompiledRegex(SRECompiledRegex&& other) noexcept : regex(other.regex)
+{
+    other.regex = nullptr;
+}
+
+SRECompiledRegex& SRECompiledRegex::operator=(SRECompiledRegex&& other) noexcept
+{
+    if (this != &other) {
+        pcre2_code_free(static_cast<pcre2_code*>(regex));
+        regex = other.regex;
+        other.regex = nullptr;
+    }
+    return *this;
+}
+
+SRECompiledRegex SRECompile(const string& regExp, bool caseSensitive)
+{
     int errornumber = 0;
     PCRE2_SIZE erroroffset = 0;
     uint32_t compileFlags = caseSensitive ? 0 : PCRE2_CASELESS;
-    uint32_t substituteFlags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
-    pcre2_code* re = pcre2_compile((PCRE2_SPTR8) regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
-    if (!re) {
+    pcre2_code* regex = pcre2_compile((PCRE2_SPTR8) regExp.c_str(), PCRE2_ZERO_TERMINATED, compileFlags, &errornumber, &erroroffset, 0);
+    if (!regex) {
         STHROW("Bad regex: " + regExp);
     }
+    return SRECompiledRegex(regex);
+}
+
+string SREReplace(const string& regExp, const string& input, const string& replacement, bool caseSensitive)
+{
+    return SREReplace(SRECompile(regExp, caseSensitive), input, replacement);
+}
+
+string SREReplace(const SRECompiledRegex& regExp, const string& input, const string& replacement)
+{
+    char* output = nullptr;
+    size_t outSize = 0;
+    uint32_t substituteFlags = PCRE2_SUBSTITUTE_GLOBAL | PCRE2_SUBSTITUTE_EXTENDED | PCRE2_SUBSTITUTE_OVERFLOW_LENGTH;
     pcre2_match_context* matchContext = pcre2_match_context_create(0);
     pcre2_set_depth_limit(matchContext, 1000);
     for (int i = 0; i < 2; i++) {
-        int result = pcre2_substitute(re, (PCRE2_SPTR8) input.c_str(), input.size(), 0, substituteFlags, 0, matchContext, (PCRE2_SPTR8) replacement.c_str(), replacement.size(), (PCRE2_UCHAR*) output, &outSize);
+        int result = pcre2_substitute(static_cast<pcre2_code*>(regExp.regex), (PCRE2_SPTR8) input.c_str(), input.size(), 0, substituteFlags, 0, matchContext, (PCRE2_SPTR8) replacement.c_str(), replacement.size(), (PCRE2_UCHAR*) output, &outSize);
         if (i == 0 && result == PCRE2_ERROR_NOMEMORY) {
             // This is the expected case on the first run, there's not enough space to store the result, so we allocate the space and do it again.
             output = (char*) malloc(outSize);
@@ -3315,7 +3346,6 @@ string SREReplace(const string& regExp, const string& input, const string& repla
         free(output);
     }
 
-    pcre2_code_free(re);
     pcre2_match_context_free(matchContext);
 
     return outputString;
