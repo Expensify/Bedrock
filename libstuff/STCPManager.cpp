@@ -206,7 +206,15 @@ void STCPManager::Socket::shutdown(Socket::State toState)
 {
     SDEBUG("Shutting down socket '" << addr << "'");
 
-    // There's no fd yet if we're still waiting on DNS.
+    // There's no fd to shut down and no way to flush what's buffered while we're still waiting on
+    // DNS, so there's nothing a graceful shutdown could do. Close instead of leaving the socket in
+    // a state that prePoll would try to register a missing fd for.
+    if (state.load() == State::RESOLVING) {
+        state.store(State::CLOSED);
+        return;
+    }
+
+    // There may still be no fd: opening one can fail after the address is known.
     if (s > 0) {
         ::shutdown(s, SHUT_RDWR);
     }
