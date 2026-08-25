@@ -27,12 +27,12 @@ public:
     // Only meaningful once the state is RESOLVED.
     const sockaddr_in& getAddr() const;
 
-    // The read end of the notification pipe. It hangs up when the lookup finishes, and stays that
-    // way. Poll this to be woken on completion rather than waiting out a timeout.
+    // The read end of the notification pipe. It becomes readable when the lookup finishes, and
+    // stays that way. Poll this to be woken on completion rather than waiting out a timeout.
     int getFD() const;
 
-    // Records the result and hangs up the pipe to wake anyone polling on it. Called on the
-    // resolving thread, exactly once.
+    // Records the result and wakes anyone polling on the pipe. Called on the resolving thread,
+    // exactly once.
     void complete(bool success, const sockaddr_in& addr);
 
     const string host;

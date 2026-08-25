@@ -179,7 +179,7 @@ struct AsyncResolve : tpunit::TestFixture
         S_poll(fdm, 0);
         ASSERT_TRUE(SFDAnySet(fdm, resolution->getFD(), SREADEVTS));
 
-        // The hangup is permanent, so a second look still sees it.
+        // The notification is permanent, so a second look still sees it.
         fd_map again;
         SFDset(again, resolution->getFD(), SREADEVTS);
         S_poll(again, 0);

@@ -11,7 +11,9 @@
 SResolution::SResolution(const string& host)
     : host(host), _state(PENDING), _addr{}, _pipeFD{-1, -1}
 {
-    if (pipe(_pipeFD)) {
+    // O_CLOEXEC because a child that inherits the write end holds the pipe open after we close
+    // ours, and the hangup half of the notification never arrives.
+    if (pipe2(_pipeFD, O_CLOEXEC)) {
         STHROW("Failed to create pipe: " + to_string(errno) + " "s + strerror(errno));
     }
 }
@@ -50,8 +52,15 @@ void SResolution::complete(bool success, const sockaddr_in& addr)
     // The state has to be visible before the notification is, or a reader woken by the pipe could still see PENDING.
     _state.store(success ? RESOLVED : FAILED);
 
-    // Closing the write end is the notification: it makes the read end poll POLLHUP.
-    //
+    // Notify twice over: the byte is what a reader polls on, and closing the write end both hands
+    // back an fd and leaves the pipe hung up, so a reader that isn't looking yet can't miss it. The
+    // byte matters because a forked child can still be holding its own copy of the write end, in
+    // which case there's no hangup to see. Nobody consumes the byte, so it stays readable.
+    const char byte = 1;
+    if (write(_pipeFD[1], &byte, 1) != 1) {
+        SWARN("Failed to notify completed resolution for '" << host << "': " << strerror(errno));
+    }
+
     // The read end has to stay open until this object is destroyed. A poll thread can be
     // registering it at this very moment, and closing it here would free the number for some other
     // thread to reuse, leaving that poll waiting on an unrelated fd.
