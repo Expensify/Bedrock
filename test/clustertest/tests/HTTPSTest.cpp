@@ -25,6 +25,7 @@ struct HTTPSTest : tpunit::TestFixture
                               AFTER_CLASS(HTTPSTest::teardown),
                               TEST(HTTPSTest::testMultipleRequests),
                               TEST(HTTPSTest::testWaitForHTTPSRequests),
+                              TEST(HTTPSTest::testScheduledRequest),
                               TEST(HTTPSTest::test))
     {
     }
@@ -57,6 +58,23 @@ struct HTTPSTest : tpunit::TestFixture
         SData request("httpswait");
         auto result = brtester.executeWaitMultipleData({request});
         ASSERT_TRUE(SStartsWith(result[0].methodLine, "200"));
+    }
+
+    void testScheduledRequest()
+    {
+        BedrockTester& brtester = tester->getTester(1);
+        SData request("httpsscheduled");
+        auto result = brtester.executeWaitMultipleData({request});
+        ASSERT_TRUE(SStartsWith(result[0].methodLine, "200"));
+
+        uint64_t scheduledStartUS = SToUInt64(result[0]["scheduledStartUS"]);
+        uint64_t startedAtUS = SToUInt64(result[0]["startedAtUS"]);
+        ASSERT_GREATER_THAN_EQUAL(startedAtUS, scheduledStartUS);
+        ASSERT_EQUAL(result[0]["startCount"], "1");
+        ASSERT_EQUAL(result[0]["dbInsideTransactionAtStart"], "false");
+        ASSERT_EQUAL(result[0]["dbInsideTransactionAfterWait"], "true");
+        ASSERT_EQUAL(result[0]["markerPreserved"], "true");
+        ASSERT_EQUAL(result[0]["bodyPreserved"], "true");
     }
 
     void test()

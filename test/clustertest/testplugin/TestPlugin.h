@@ -13,6 +13,7 @@ public:
     }
 
     unique_ptr<Transaction> send(const string& url, const SData& request);
+    unique_ptr<Transaction> sendAt(const string& url, const SData& request, uint64_t scheduledStartUS);
     virtual bool _onRecv(Transaction& transaction) override;
 
     // Like _httpsSend in the base class, but doesn't actually send, so we can test timeouts.

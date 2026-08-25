@@ -55,10 +55,17 @@ protected:   // Child API
 
     // Methods
     unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, bool allowProxy = false);
+    unique_ptr<Transaction> _httpsSendAt(const string& url, const SData& request, uint64_t scheduledStartUS, bool allowProxy = false);
     unique_ptr<Transaction> _createErrorTransaction();
     virtual bool _onRecv(Transaction& transaction);
 
     static string initProxyAddressHTTPS();
+    virtual const string& _getProxyAddressHTTPS() const;
+    virtual Socket* _createHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID);
+
+private:
+    static void _startHTTPSRequest(Transaction& transaction, const string& url, const SData& request, bool allowProxy);
+    static void _completeError(Transaction& transaction);
 };
 
 class SHTTPSManager : public SStandaloneHTTPSManager {

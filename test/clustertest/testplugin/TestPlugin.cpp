@@ -166,6 +166,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "EscalateSerializedData",
         "ThreadException",
         "httpswait",
+        "httpsscheduled",
         "httpsblockingcommit",
         "reportcommitthread"
     };
@@ -453,6 +454,44 @@ bool TestPluginCommand::peek(SQLite& db)
             STHROW("500 expected 200 response");
         }
         response.content = httpsRequests.back()->fullResponse.content;
+        return true;
+    } else if (SStartsWith(request.methodLine, "httpsscheduled")) {
+        SData newRequest("GET / HTTP/1.1");
+        newRequest["Host"] = "example.com";
+        newRequest["X-Test-Marker"] = "deferred-cluster";
+        newRequest.content = "deferred-body";
+        uint64_t scheduledStartUS = STimeNow() + 100'000;
+        auto transaction = plugin().httpsManager->sendAt("https://example.com/", newRequest, scheduledStartUS);
+        if (transaction->s || transaction->response || transaction->scheduledStart != scheduledStartUS || !transaction->startFunc) {
+            STHROW("500 Scheduled HTTPS transaction was started too early");
+        }
+
+        bool dbInsideTransactionAtStart = true;
+        uint64_t startedAtUS = 0;
+        uint64_t startCount = 0;
+        function<void(SHTTPSManager::Transaction&)> originalStartFunc = move(transaction->startFunc);
+        SHTTPSManager::Transaction* transactionPtr = transaction.get();
+        transaction->startFunc = [&db, &dbInsideTransactionAtStart, &startedAtUS, &startCount, originalStartFunc = move(originalStartFunc)](SHTTPSManager::Transaction& transaction) mutable {
+            dbInsideTransactionAtStart = db.insideTransaction();
+            startedAtUS = STimeNow();
+            startCount++;
+            originalStartFunc(transaction);
+        };
+        httpsRequests.push_back(move(transaction));
+
+        waitForHTTPSRequests(db);
+        if (transactionPtr->response != 200) {
+            STHROW("500 Scheduled HTTPS request did not return 200");
+        }
+
+        response["scheduledStartUS"] = to_string(scheduledStartUS);
+        response["startedAtUS"] = to_string(startedAtUS);
+        response["startCount"] = to_string(startCount);
+        response["dbInsideTransactionAtStart"] = dbInsideTransactionAtStart ? "true" : "false";
+        response["dbInsideTransactionAfterWait"] = db.insideTransaction() ? "true" : "false";
+        response["markerPreserved"] = transactionPtr->fullRequest["X-Test-Marker"] == "deferred-cluster" ? "true" : "false";
+        response["bodyPreserved"] = transactionPtr->fullRequest.content == "deferred-body" ? "true" : "false";
+        response.content = transactionPtr->fullResponse.content;
         return true;
     } else if (SStartsWith(request.methodLine, "httpsblockingcommit")) {
         // Only queue an HTTPS request when we're running on the serialized blockingCommit thread (worker 0). On the
@@ -827,6 +866,11 @@ TestHTTPSManager::~TestHTTPSManager()
 unique_ptr<TestHTTPSManager::Transaction> TestHTTPSManager::send(const string& url, const SData& request)
 {
     return _httpsSend(url, request);
+}
+
+unique_ptr<TestHTTPSManager::Transaction> TestHTTPSManager::sendAt(const string& url, const SData& request, uint64_t scheduledStartUS)
+{
+    return _httpsSendAt(url, request, scheduledStartUS);
 }
 
 unique_ptr<TestHTTPSManager::Transaction> TestHTTPSManager::httpsDontSend(const string& url, const SData& request)
