@@ -60,7 +60,7 @@ public:
 protected:
         friend struct STCPManager;
 
-        // Run afre DNS resolution completes and create the socket (or fail, as appropriate).
+        // Run after DNS resolution completes to create the socket (or fail, as appropriate).
         void _connectAfterDNSResolution();
 
         static atomic<uint64_t> socketCount;
@@ -73,8 +73,9 @@ protected:
 
         bool https;
 
-        // Will be null if this socket was initialized from a loteral IP string or existing address.
-        // shared ownership allows the resolver thread to continue even if the socket is destroyed during
+        // Will be null only if this socket was initialized from an address or an existing fd. A literal
+        // IP string still gets one, already resolved.
+        // Shared ownership allows the resolver thread to continue even if the socket is destroyed during
         // a slow DNS lookup.
         const shared_ptr<SResolution> dnsResolution;
         string hostToResolve;

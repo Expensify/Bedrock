@@ -6,9 +6,10 @@
 
 using namespace std;
 
-// Calling SResolve returns an SResolution that runs SResolveHost in it's own thread.
+// Calling SResolve returns an SResolution that runs SResolveHost in its own thread.
 // Both the thread and the caller get a shared_ptr to the SResolution object, so either
-// can complete and be destroyed safely while the other continues.
+// can complete and be destroyed safely while the other continues. A literal IP needs no
+// thread and comes back already resolved.
 // This can be poll()'ed upon for completion with `getFD()`.
 class SResolution {
 public:

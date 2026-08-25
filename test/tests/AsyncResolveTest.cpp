@@ -47,8 +47,7 @@ struct AsyncResolve : tpunit::TestFixture
 
     void testRawIPNeverDefers()
     {
-        // Nothing to look up, so even an ASYNC socket connects in the constructor. This is what
-        // keeps the proxy socket, which is always given a literal address, on the old path.
+        // Nothing to look up, so the socket connects in the constructor and never defers.
         uint16_t port = 0;
         auto listener = openTestPort(port);
 
@@ -62,10 +61,9 @@ struct AsyncResolve : tpunit::TestFixture
 
     void testGraceWindowConnectsInline()
     {
-        // The grace wait is what replaced the in-process cache: a host the system resolver can
-        // answer immediately comes back inside the window, so the socket connects in the
-        // constructor and never reaches RESOLVING. `localhost` is served from /etc/hosts, which is
-        // the fastest case there is.
+        // A host the system resolver can answer immediately comes back inside the grace window, so
+        // the socket connects in the constructor and never reaches RESOLVING. `localhost` is served
+        // from /etc/hosts, which is the fastest case there is.
         uint16_t port = 0;
         auto listener = openTestPort(port);
 
@@ -121,8 +119,8 @@ struct AsyncResolve : tpunit::TestFixture
         // uses a long one and measures how long we actually sat in it.
         //
         // Grace period 0 so the socket is guaranteed to defer, and an unresolvable host so the
-        // answer takes a real round trip to arrive. A failed lookup writes the same pipe byte a
-        // successful one does, which is the wake-up being tested.
+        // answer takes a real round trip to arrive. A failed lookup wakes the pipe exactly like a
+        // successful one, which is the wake-up being tested.
         STCPManager::Socket socket("slow-to-fail-probe.invalid:443", false, 0);
         ASSERT_EQUAL(socket.state.load(), STCPManager::Socket::RESOLVING);
 
@@ -191,8 +189,7 @@ struct AsyncResolve : tpunit::TestFixture
     void testLiteralNeedsNoThread()
     {
         // A literal address is answered inline, so it never occupies a resolver thread and the
-        // caller never has anything to wait for. This is what keeps sockets built from an IP --
-        // the proxy socket, cluster peers -- on exactly the path they were on before.
+        // caller never has anything to wait for.
         auto literal = SResolve("127.0.0.1:443");
         ASSERT_EQUAL(literal->getState(), SResolution::RESOLVED);
         ASSERT_EQUAL(literal->getAddr().sin_addr.s_addr, inet_addr("127.0.0.1"));
