@@ -389,6 +389,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
     for (int i = 0; i < connections; i++) {
         threads.emplace_back([&](){
             int socket = -1;
+            int lastSocketError = 0;
 
             // This continues until there are no more requests to process.
             bool timedOut = false;
@@ -401,7 +402,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                 while (true) {
                     // If there's no socket, create a socket.
                     if (socket == -1) {
-                        socket = S_socket((control ? _args["-controlPort"] : _args["-serverHost"]), true, false, true);
+                        socket = S_socket((control ? _args["-controlPort"] : _args["-serverHost"]), true, false, true, &lastSocketError);
                     }
 
                     // If that failed, we'll continue our main loop and try again.
@@ -415,7 +416,17 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                                 *errorCode = 2;
                             }
                             if (timeout) {
-                                cout << "executeWaitMultipleData(): ran out of time waiting for socket" << endl;
+                                const string& host = control ? _args["-controlPort"] : _args["-serverHost"];
+                                bool serverAlive = _serverPID && (kill(_serverPID, 0) == 0 || errno == EPERM);
+                                int controlSocketError = 0;
+                                int controlSocket = control ? -1 : S_socket(_args["-controlPort"], true, false, true, &controlSocketError);
+                                bool controlPortReachable = control || controlSocket != -1;
+                                S_close(&controlSocket);
+                                cout << "executeWaitMultipleData(): ran out of time waiting for socket on '" << host
+                                     << "' after error " << lastSocketError << " ('" << strerror(lastSocketError)
+                                     << "'), server PID " << _serverPID << " is " << (serverAlive ? "alive" : "not alive")
+                                     << ", control port is " << (controlPortReachable ? "reachable" : "unreachable")
+                                     << " (error " << controlSocketError << " '" << strerror(controlSocketError) << "')" << endl;
                             }
                             return;
                         }

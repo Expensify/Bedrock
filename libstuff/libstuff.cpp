@@ -1955,7 +1955,7 @@ string SGUnzip(const string& content)
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
-int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
+int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, int* errorCode)
 {
     // Try to set up the socket
     int s = -1;
@@ -2071,9 +2071,13 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking)
         // Success, ready to go.
         return s;
     } catch (const SException& e) {
+        int error = S_errno;
         // Failed to open
         SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << host
-              << "': " << e.what() << "(errno=" << S_errno << " '" << strerror(S_errno) << "')");
+              << "': " << e.what() << "(errno=" << error << " '" << strerror(error) << "')");
+        if (errorCode) {
+            *errorCode = error;
+        }
         if (s != -1) {
             S_close(&s);
         }
