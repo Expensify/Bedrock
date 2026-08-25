@@ -8,7 +8,7 @@
 // The base class is told https=false on purpose: this socket builds its own SSSLState once the
 // CONNECT tunnel is up, rather than at the moment the fd opens.
 SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID)
-    : STCPManager::Socket::Socket(proxyAddress, false, STCPManager::Socket::ResolveMode::ASYNC),
+    : STCPManager::Socket::Socket(proxyAddress),
     proxyAddress(proxyAddress),
     hostname(host),
     requestID(requestID)

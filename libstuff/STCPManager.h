@@ -21,9 +21,6 @@ struct STCPManager
     // Captures all the state for a single socket
     class Socket {
 public:
-        // RESOLVING must stay first: several call sites test `state < SHUTTINGDOWN` to mean "still
-        // usable" and `state > CONNECTED` to mean "dead", and ordering it here gets both right for a
-        // socket that's still waiting on DNS.
         enum State { RESOLVING, CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
 
         // Whether the constructor is allowed to return before the hostname has been resolved.
@@ -31,7 +28,7 @@ public:
         // connection is finished later by STCPManager::postPoll, so only owners that drive the
         // socket through prePoll/postPoll can use it. Anything that pokes at the fd itself, or that
         // expects a usable socket the moment the constructor returns, needs BLOCKING.
-        enum class ResolveMode { BLOCKING, ASYNC };
+        enum class ResolveMode { ASYNC, BLOCKING };
 
         // How long an ASYNC socket waits for its lookup before giving up and deferring. The local
         // caching resolver answers a warm host well inside this, so in practice most sockets
@@ -39,7 +36,7 @@ public:
         // deferred path.
         static const int DEFAULT_RESOLVE_GRACE_MS = 5;
 
-        Socket(const string& host, bool https = false, ResolveMode resolveMode = ResolveMode::BLOCKING,
+        Socket(const string& host, bool https = false, ResolveMode resolveMode = ResolveMode::ASYNC,
                int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
         Socket(int sock = 0, State state_ = CONNECTING, bool https = false);
         Socket(Socket&& from);

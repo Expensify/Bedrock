@@ -76,8 +76,9 @@ unique_ptr<STCPManager::Socket> SSocketPool::getSocket()
 
     // No live pooled socket available, create a new one. No need to hold the lock, so it goes out of scope.
     try {
-        // Note: uses blocking DNS resolution.
-        return unique_ptr<STCPManager::Socket>(new STCPManager::Socket(host));
+        // Callers poll this socket's fd themselves rather than driving it through
+        // STCPManager::postPoll, so it has to be connected when the constructor returns.
+        return unique_ptr<STCPManager::Socket>(new STCPManager::Socket(host, false, STCPManager::Socket::ResolveMode::BLOCKING));
     } catch (const SException& exception) {
         return nullptr;
     }
