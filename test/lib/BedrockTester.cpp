@@ -427,11 +427,14 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                                     controlPortReachable = controlSocket != -1;
                                 }
                                 S_close(&controlSocket);
-                                cout << "executeWaitMultipleData(): ran out of time waiting for socket on '" << host
-                                << "' after error " << lastSocketError << " ('" << strerror(lastSocketError)
-                                << "'), server PID " << _serverPID << " is " << (serverAlive ? "alive" : "not alive")
-                                << ", control port is " << (controlPortReachable ? "reachable" : "unreachable")
-                                << " (error " << controlSocketError << " '" << strerror(controlSocketError) << "')" << endl;
+                                {
+                                    SAUTOLOCK(listLock);
+                                    cout << "executeWaitMultipleData(): ran out of time waiting for socket on '" << host
+                                    << "' after error " << lastSocketError << " ('" << strerror(lastSocketError)
+                                    << "'), server PID " << _serverPID << " is " << (serverAlive ? "alive" : "not alive")
+                                    << ", control port is " << (controlPortReachable ? "reachable" : "unreachable")
+                                    << " (error " << controlSocketError << " '" << strerror(controlSocketError) << "')" << endl;
+                                }
                             }
                             return;
                         }
