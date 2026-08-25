@@ -17,14 +17,6 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket)
         // which becomes readable the moment the lookup finishes, so we pick the answer up
         // immediately rather than waiting out the poll timeout.
         if (socket.state.load() == Socket::RESOLVING) {
-            if (!socket.dnsResolution) {
-                // Nothing to wait on and no fd to connect with, so this socket can never make
-                // progress. Kill the request rather than the process.
-                SWARN("Socket is RESOLVING with no resolution object, closing.");
-                socket.state.store(Socket::CLOSED);
-                socket.connectFailure = true;
-                return;
-            }
             SFDset(fdm, socket.dnsResolution->getFD(), SREADEVTS);
             return;
         }
@@ -80,12 +72,6 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket)
     // Update this socket
     switch (socket.state.load()) {
         case Socket::RESOLVING: {
-            if (!socket.dnsResolution) {
-                SWARN("Socket is RESOLVING with no resolution object, closing.");
-                socket.state.store(Socket::CLOSED);
-                socket.connectFailure = true;
-                break;
-            }
             if (!SFDAnySet(fdm, socket.dnsResolution->getFD(), SREADEVTS)) {
                 // Lookup still running, nothing to do.
                 break;
@@ -241,12 +227,9 @@ STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool ht
 STCPManager::Socket::Socket(const string& host, bool https, int resolveGraceMS)
     : s(-1), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https),
-    hostToResolve(host)
+    dnsResolution(SResolve(host)), hostToResolve(host)
 {
     SASSERT(SHostIsValid(host));
-
-    // This starts an async DNS lookup.
-    dnsResolution = SResolve(host);
 
     // We give DNS a couple milliseconds to resolve. If it succeeds, we'll create a socket.
     pollfd pfd = {dnsResolution->getFD(), POLLIN, 0};
@@ -280,27 +263,13 @@ STCPManager::Socket::Socket(const sockaddr_in& addr, bool https, const string& h
 
 void STCPManager::Socket::_connectAfterDNSResolution()
 {
-    // Take ownership of the resolution up front. The member has to be released before anything can
-    // observe the state moving off RESOLVING, because a socket that's RESOLVING with no resolution
-    // has no fd for the poll functions to register.
-    shared_ptr<SResolution> pending = move(dnsResolution);
-    dnsResolution = nullptr;
-
-    // If a lookup ran, use its answer; otherwise resolve inline. Either way this is where the fd
-    // gets opened, so everything downstream sees the same socket regardless of which path we took.
-    if (pending) {
-        if (pending->getState() != SResolution::RESOLVED) {
-            SINFO("Failed to resolve '" << hostToResolve << "', closing socket.");
-            state.store(State::CLOSED);
-            connectFailure = true;
-            return;
-        }
-        addr = pending->getAddr();
-    } else if (!SResolveHost(hostToResolve, addr)) {
+    if (dnsResolution->getState() != SResolution::RESOLVED) {
+        SINFO("Failed to resolve '" << hostToResolve << "', closing socket.");
         state.store(State::CLOSED);
         connectFailure = true;
         return;
     }
+    addr = dnsResolution->getAddr();
 
     s = S_socket(addr, true, false, false);
     if (s < 0) {
@@ -328,13 +297,12 @@ STCPManager::Socket::Socket(Socket&& from)
     data(from.data),
     id(from.id),
     https(from.https),
-    dnsResolution(move(from.dnsResolution)),
+    dnsResolution(from.dnsResolution),
     hostToResolve(move(from.hostToResolve))
 {
     from.s = -1;
     from.ssl = nullptr;
     from.data = nullptr;
-    from.dnsResolution = nullptr;
 }
 
 STCPManager::Socket::~Socket()

@@ -67,8 +67,9 @@ public:
 protected:
         friend struct STCPManager;
 
-        // Opens the fd and sets up SSL now that we have an address, moving the socket from RESOLVING
-        // to CONNECTING (or to CLOSED if the lookup failed). Called by STCPManager::postPoll.
+        // Opens the fd and sets up SSL now that `dnsResolution` has an answer, moving the socket
+        // from RESOLVING to CONNECTING (or to CLOSED if the lookup failed). Called by
+        // STCPManager::postPoll.
         void _connectAfterDNSResolution();
 
         static atomic<uint64_t> socketCount;
@@ -81,10 +82,11 @@ protected:
 
         bool https;
 
-        // Set only until the address is known. `resolution` is non-null only for a socket that
-        // actually had to wait; it's co-owned with the resolver worker, so dropping it while a
-        // lookup is still running is safe.
-        shared_ptr<SResolution> dnsResolution;
+        // Set for the lifetime of any socket built from a hostname, and null for one built from an
+        // address or an existing fd. It's co-owned with the resolver worker, so destroying the
+        // socket while a lookup is still running is safe. Because it's never cleared, a RESOLVING
+        // socket always has one to poll on.
+        const shared_ptr<SResolution> dnsResolution;
         string hostToResolve;
     };
 
