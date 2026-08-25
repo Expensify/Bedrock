@@ -69,7 +69,7 @@ protected:
 
         // Opens the fd and sets up SSL now that we have an address, moving the socket from RESOLVING
         // to CONNECTING (or to CLOSED if the lookup failed). Called by STCPManager::postPoll.
-        void _completeConnect();
+        void _connectAfterDNSResolution();
 
         static atomic<uint64_t> socketCount;
         recursive_mutex sendRecvMutex;
@@ -84,7 +84,7 @@ protected:
         // Set only until the address is known. `resolution` is non-null only for a socket that
         // actually had to wait; it's co-owned with the resolver worker, so dropping it while a
         // lookup is still running is safe.
-        shared_ptr<SResolution> resolution;
+        shared_ptr<SResolution> dnsResolution;
         string hostToResolve;
     };
 
