@@ -238,39 +238,50 @@ STCPManager::Socket::Socket(int sock, STCPManager::Socket::State state_, bool ht
 {
 }
 
-STCPManager::Socket::Socket(const string& host, bool https, ResolveMode resolveMode, int resolveGraceMS)
+STCPManager::Socket::Socket(const string& host, bool https, int resolveGraceMS)
     : s(-1), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https),
     hostToResolve(host)
 {
     SASSERT(SHostIsValid(host));
 
-    // An async socket only defers when it has to. Start the lookup off-thread, then give it a few
-    // milliseconds to come back. A raw IP needs no lookup at all, and the local caching resolver
-    // answers a warm host in well under the grace period, so most sockets finish connecting right
-    // here and never reach RESOLVING.
-    if (resolveMode == ResolveMode::ASYNC) {
-        resolution = SResolve(host);
+    // This only defers when it has to. Start the lookup off-thread, then give it a few milliseconds
+    // to come back. A raw IP needs no lookup at all, and the local caching resolver answers a warm
+    // host in well under the grace period, so most sockets finish connecting right here and never
+    // reach RESOLVING.
+    resolution = SResolve(host);
 
-        // Wait for the notification without consuming it: if we time out, the byte has to still be
-        // there for prePoll and postPoll to find.
-        pollfd pfd = {resolution->getFD(), POLLIN, 0};
-        poll(&pfd, 1, resolveGraceMS);
+    // Wait for the notification without consuming it: if we time out, the byte has to still be
+    // there for prePoll and postPoll to find.
+    pollfd pfd = {resolution->getFD(), POLLIN, 0};
+    poll(&pfd, 1, resolveGraceMS);
 
-        if (resolution->getState() == SResolution::PENDING) {
-            state.store(State::RESOLVING);
-            return;
-        }
+    if (resolution->getState() == SResolution::PENDING) {
+        state.store(State::RESOLVING);
+        return;
     }
 
+    // Failure is reported through the state, never by throwing, because whether a failed lookup
+    // lands inside the grace period or after it is a matter of milliseconds and the caller
+    // shouldn't have to handle it two different ways. It's CLOSED either way, and postPoll surfaces
+    // it.
     _completeConnect();
+}
 
-    // An async socket reports failure through its state, never by throwing, because whether a
-    // failed lookup lands inside the grace period or after it is a matter of milliseconds and the
-    // caller shouldn't have to handle it two different ways. It's CLOSED either way, and postPoll
-    // surfaces it. A blocking socket has no later opportunity to report, so it still throws.
-    if (s < 0 && resolveMode == ResolveMode::BLOCKING) {
-        STHROW("Couldn't open socket to " + host);
+STCPManager::Socket::Socket(const sockaddr_in& addr, bool https, const string& hostname)
+    : s(-1), addr(addr), state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https),
+    hostToResolve(hostname)
+{
+    s = S_socket(addr, true, false, false);
+    if (s < 0) {
+        state.store(State::CLOSED);
+        connectFailure = true;
+        STHROW("Couldn't open socket to " + SToStr(addr));
+    }
+
+    if (https) {
+        ssl = new SSSLState(hostname, s);
     }
 }
 

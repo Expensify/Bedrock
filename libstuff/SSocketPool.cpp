@@ -77,11 +77,32 @@ unique_ptr<STCPManager::Socket> SSocketPool::getSocket()
     // No live pooled socket available, create a new one. No need to hold the lock, so it goes out of scope.
     try {
         // Callers poll this socket's fd themselves rather than driving it through
-        // STCPManager::postPoll, so it has to be connected when the constructor returns.
-        return unique_ptr<STCPManager::Socket>(new STCPManager::Socket(host, false, STCPManager::Socket::ResolveMode::BLOCKING));
+        // STCPManager::postPoll, so it has to be connected when the constructor returns. That rules
+        // out the resolving constructor, which can hand back a socket with no fd at all.
+        return unique_ptr<STCPManager::Socket>(new STCPManager::Socket(_getAddress()));
     } catch (const SException& exception) {
         return nullptr;
     }
+}
+
+sockaddr_in SSocketPool::_getAddress()
+{
+    lock_guard<mutex> lock(_addressMutex);
+
+    // A pool talks to one host for its whole life, so the address is almost always the same one we
+    // looked up last time. Re-resolving keeps up with a host that moves without paying for a lookup
+    // on every connection.
+    if (_addressTime == chrono::steady_clock::time_point{} ||
+        (chrono::steady_clock::now() - _addressTime) > addressTimeout) {
+        sockaddr_in addr;
+        if (!SResolveHost(host, addr)) {
+            STHROW("Couldn't resolve '" + host + "'");
+        }
+        _address = addr;
+        _addressTime = chrono::steady_clock::now();
+    }
+
+    return _address;
 }
 
 void SSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s)

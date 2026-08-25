@@ -52,7 +52,7 @@ struct AsyncResolve : tpunit::TestFixture
         uint16_t port = 0;
         auto listener = openTestPort(port);
 
-        STCPManager::Socket socket("127.0.0.1:" + to_string(port), false, STCPManager::Socket::ResolveMode::ASYNC);
+        STCPManager::Socket socket("127.0.0.1:" + to_string(port), false);
         ASSERT_NOT_EQUAL(socket.state.load(), STCPManager::Socket::RESOLVING);
         ASSERT_TRUE(socket.s > 0);
 
@@ -72,7 +72,7 @@ struct AsyncResolve : tpunit::TestFixture
         // An explicitly generous grace period, because this is testing that the mechanism connects
         // inline when the answer arrives in time -- not whether the default 5ms happens to be
         // enough on a loaded test machine, which is a timing assertion and would flake.
-        STCPManager::Socket socket("localhost:" + to_string(port), false, STCPManager::Socket::ResolveMode::ASYNC, 2000);
+        STCPManager::Socket socket("localhost:" + to_string(port), false, 2000);
         ASSERT_NOT_EQUAL(socket.state.load(), STCPManager::Socket::RESOLVING);
         ASSERT_TRUE(socket.s > 0);
 
@@ -88,7 +88,7 @@ struct AsyncResolve : tpunit::TestFixture
         auto listener = openTestPort(port);
         const string host = "localhost:" + to_string(port);
 
-        STCPManager::Socket socket(host, false, STCPManager::Socket::ResolveMode::ASYNC, 0);
+        STCPManager::Socket socket(host, false, 0);
         ASSERT_EQUAL(socket.state.load(), STCPManager::Socket::RESOLVING);
         ASSERT_EQUAL(socket.s, -1);
 
@@ -108,7 +108,7 @@ struct AsyncResolve : tpunit::TestFixture
     {
         // A name that can't resolve has to surface as a dead socket rather than hanging forever,
         // because the constructor already returned and can't throw at this point.
-        STCPManager::Socket socket("nonexistent-probe-xyzzy.invalid:443", false, STCPManager::Socket::ResolveMode::ASYNC, 0);
+        STCPManager::Socket socket("nonexistent-probe-xyzzy.invalid:443", false, 0);
 
         ASSERT_EQUAL(pollUntilSettled(socket), STCPManager::Socket::CLOSED);
         ASSERT_TRUE(socket.connectFailure);
@@ -123,7 +123,7 @@ struct AsyncResolve : tpunit::TestFixture
         // Grace period 0 so the socket is guaranteed to defer, and an unresolvable host so the
         // answer takes a real round trip to arrive. A failed lookup writes the same pipe byte a
         // successful one does, which is the wake-up being tested.
-        STCPManager::Socket socket("slow-to-fail-probe.invalid:443", false, STCPManager::Socket::ResolveMode::ASYNC, 0);
+        STCPManager::Socket socket("slow-to-fail-probe.invalid:443", false, 0);
         ASSERT_EQUAL(socket.state.load(), STCPManager::Socket::RESOLVING);
 
         // prePoll has to contribute exactly one fd, and it can't be the socket's, because there
@@ -153,7 +153,7 @@ struct AsyncResolve : tpunit::TestFixture
         // likely to be caught under ASAN.
         for (int i = 0; i < 20; i++) {
             const string host = "abandoned-host-" + to_string(i) + ".invalid:443";
-            STCPManager::Socket socket(host, false, STCPManager::Socket::ResolveMode::ASYNC, 0);
+            STCPManager::Socket socket(host, false, 0);
         }
     }
 
