@@ -418,9 +418,14 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                             if (timeout) {
                                 const string& host = control ? _args["-controlPort"] : _args["-serverHost"];
                                 bool serverAlive = _serverPID && (kill(_serverPID, 0) == 0 || errno == EPERM);
-                                int controlSocketError = 0;
-                                int controlSocket = control ? -1 : S_socket(_args["-controlPort"], true, false, true, &controlSocketError);
-                                bool controlPortReachable = control || controlSocket != -1;
+                                int controlSocketError = lastSocketError;
+                                int controlSocket = -1;
+                                bool controlPortReachable = false;
+                                if (!control) {
+                                    controlSocketError = 0;
+                                    controlSocket = S_socket(_args["-controlPort"], true, false, true, &controlSocketError);
+                                    controlPortReachable = controlSocket != -1;
+                                }
                                 S_close(&controlSocket);
                                 cout << "executeWaitMultipleData(): ran out of time waiting for socket on '" << host
                                 << "' after error " << lastSocketError << " ('" << strerror(lastSocketError)
