@@ -72,7 +72,7 @@ shared_ptr<SResolution> SResolve(const string& host)
     // worse, the caller would race it and could end up deferring a socket that had nothing to wait
     // for. Answer inline instead.
     sockaddr_in addr;
-    if (SResolveHostLiteral(host, addr)) {
+    if (SIPToAddr(host, addr)) {
         resolution->complete(true, addr);
         return resolution;
     }

@@ -640,9 +640,9 @@ bool SFDAnySet(fd_map& fdm, int socket, short evts);
 // only stack more staleness on top of that one.
 bool SResolveHost(const string& host, sockaddr_in& addr);
 
-// Fills in `addr` and returns true if `host` carries a literal IP, which needs no lookup at all.
-// Returns false for anything that would mean asking a resolver. Never blocks.
-bool SResolveHostLiteral(const string& host, sockaddr_in& addr);
+// Converts a `ddd.ddd.ddd.ddd` formatted IPV4 address with optional colon-separated port number to
+// sockaddr_in. Returns true on success, false on failure.
+bool SIPToAddr(const string& host, sockaddr_in& addr);
 
 // Socket helpers
 int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking);

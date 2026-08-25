@@ -1955,7 +1955,7 @@ string SGUnzip(const string& content)
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
-bool SResolveHostLiteral(const string& host, sockaddr_in& addr)
+bool SIPToAddr(const string& host, sockaddr_in& addr)
 {
     string domain;
     uint16_t port = 0;
@@ -1978,7 +1978,7 @@ bool SResolveHostLiteral(const string& host, sockaddr_in& addr)
 
 bool SResolveHost(const string& host, sockaddr_in& addr)
 {
-    if (SResolveHostLiteral(host, addr)) {
+    if (SIPToAddr(host, addr)) {
         return true;
     }
 
