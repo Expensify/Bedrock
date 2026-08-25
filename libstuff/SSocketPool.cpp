@@ -88,7 +88,7 @@ sockaddr_in SSocketPool::_getAddress()
     lock_guard<mutex> lock(_addressMutex);
 
     // A pool talks to one host for its whole life, so the address is almost always the same one we looked up last time.
-    // We do re-resolve everyu 10 seconds to accomodate load balancers and such.
+    // We do re-resolve every 10 seconds to accomodate load balancers and such.
     if (_addressTime == chrono::steady_clock::time_point{} ||
         (chrono::steady_clock::now() - _addressTime) > addressTimeout) {
         sockaddr_in addr;

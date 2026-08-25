@@ -23,20 +23,13 @@ struct STCPManager
 public:
         enum State { RESOLVING, CONNECTING, CONNECTED, SHUTTINGDOWN, CLOSED };
 
-        // How long the constructor waits for its lookup before giving up and deferring. The local
-        // caching resolver answers a warm host well inside this, so in practice most sockets
-        // connect in the constructor and never reach RESOLVING at all. Tests pass 0 to force the
-        // deferred path.
+        // How long the constructor waits for its lookup before giving up and deferring.
         static const int DEFAULT_RESOLVE_GRACE_MS = 5;
 
-        // Resolves `host` off-thread, which may leave the socket in the RESOLVING state; the
-        // connection is finished later by STCPManager::postPoll, so only owners that drive the
-        // socket through prePoll/postPoll can use it.
+        // Resolves `host` off-thread, which may leave the socket in the RESOLVING state.
         Socket(const string& host, bool https = false, int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
 
-        // Connects to an already-resolved address, so there's nothing to wait for and the socket is
-        // CONNECTING when the constructor returns. `hostname` is only used for SSL. Throws if the
-        // socket can't be opened.
+        // Connects to an already-resolved address, so no DNS resolution is required.
         Socket(const sockaddr_in& addr, bool https = false, const string& hostname = "");
         Socket(int sock = 0, State state_ = CONNECTING, bool https = false);
         Socket(Socket&& from);
@@ -67,9 +60,7 @@ public:
 protected:
         friend struct STCPManager;
 
-        // Opens the fd and sets up SSL now that `dnsResolution` has an answer, moving the socket
-        // from RESOLVING to CONNECTING (or to CLOSED if the lookup failed). Called by
-        // STCPManager::postPoll.
+        // Run afre DNS resolution completes and create the socket (or fail, as appropriate).
         void _connectAfterDNSResolution();
 
         static atomic<uint64_t> socketCount;
@@ -82,10 +73,9 @@ protected:
 
         bool https;
 
-        // Set for the lifetime of any socket built from a hostname, and null for one built from an
-        // address or an existing fd. It's co-owned with the resolver worker, so destroying the
-        // socket while a lookup is still running is safe. Because it's never cleared, a RESOLVING
-        // socket always has one to poll on.
+        // Will be null if this socket was initialized from a loteral IP string or existing address.
+        // shared ownership allows the resolver thread to continue even if the socket is destroyed during
+        // a slow DNS lookup.
         const shared_ptr<SResolution> dnsResolution;
         string hostToResolve;
     };

@@ -13,9 +13,7 @@ void STCPManager::prePoll(fd_map& fdm, Socket& socket)
 {
     // Make sure it's not closed
     if (socket.state.load() != Socket::CLOSED) {
-        // There's no socket fd yet while we're waiting on DNS. Poll the resolution's pipe instead,
-        // which becomes readable the moment the lookup finishes, so we pick the answer up
-        // immediately rather than waiting out the poll timeout.
+        // There's no socket fd yet while we're waiting on DNS, Poll the resolution object's pipe instead.
         if (socket.state.load() == Socket::RESOLVING) {
             SFDset(fdm, socket.dnsResolution->getFD(), SREADEVTS);
             return;
@@ -77,13 +75,7 @@ void STCPManager::postPoll(fd_map& fdm, Socket& socket)
                 break;
             }
 
-            // The lookup finished. Open the fd and set up SSL now that we have an address; this
-            // leaves us either CONNECTING or CLOSED.
-            //
-            // Deliberately no fall-through to CONNECTING: the fd we just opened isn't in this
-            // fd_map, and its number could belong to a socket closed earlier in this same pass,
-            // whose stale revents would read as a completed connection. The next cycle registers it
-            // properly.
+            // The lookup finished. Open the fd and set up SSL now that we have an address.
             socket._connectAfterDNSResolution();
             break;
         }

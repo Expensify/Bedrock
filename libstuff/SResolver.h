@@ -6,12 +6,10 @@
 
 using namespace std;
 
-// The result of a single DNS lookup running on its own thread.
-//
-// This is handed out as a shared_ptr and co-owned by the caller and the thread performing the
-// lookup, which is what makes abandonment safe: a caller that gives up (because its request timed
-// out, say) just drops its reference, and the thread finishes writing into storage that only it
-// still references. There's no cancellation because getaddrinfo() has none to offer.
+// Calling SResolve returns an SResolution that runs SResolveHost in it's own thread.
+// Both the thread and the caller get a shared_ptr to the SResolution object, so either
+// can complete and be destroyed safely while the other continues.
+// This can be poll()'ed upon for completion with `getFD()`.
 class SResolution {
 public:
     enum State { PENDING, RESOLVED, FAILED };
@@ -19,7 +17,7 @@ public:
     SResolution(const string& host);
     ~SResolution();
 
-    // Not copyable or movable; the resolving thread holds a pointer to this.
+    // Not copyable or movable, the resolving thread holds a pointer to this.
     SResolution(const SResolution&) = delete;
     SResolution& operator=(const SResolution&) = delete;
 
@@ -44,6 +42,6 @@ private:
     int _pipeFD[2];
 };
 
-// Starts resolving `host` on a detached thread and returns immediately. A literal address is
-// answered inline without a thread.
+// Starts resolving `host` on a detached thread and returns immediately.
+// A literal address is answered inline without a thread.
 shared_ptr<SResolution> SResolve(const string& host);
