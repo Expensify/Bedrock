@@ -633,7 +633,7 @@ void SFDset(fd_map& fdm, int socket, short evts);
 bool SFDAnySet(fd_map& fdm, int socket, short evts);
 
 // Socket helpers
-int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking);
+int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, int* errorCode = nullptr);
 int S_close(int* socket);
 int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);
 ssize_t S_recvfrom(int s, char* recvBuffer, int recvBufferSize, sockaddr_in& fromAddr);
