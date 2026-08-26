@@ -420,7 +420,7 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                                 *errorCode = 2;
                             }
                             if (timeout) {
-                                SAUTOLOCK(listLock);
+                                lock_guard<recursive_mutex> lock(listLock);
                                 const string& host = control ? _args["-controlPort"] : _args["-serverHost"];
                                 int serverPID = _serverPID;
                                 int serverStatus = 0;
