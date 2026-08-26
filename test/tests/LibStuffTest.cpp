@@ -760,6 +760,11 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(matchList[0][1], "Whiskers");
         ASSERT_EQUAL(matchList[1][1], "Mittens");
         ASSERT_EQUAL(matchList[2][1], "Snowball");
+
+        SRECompiledRegex compiledRegex = SRECompile(R"(KITTY\s+(\w+))", false);
+        ASSERT_FALSE(SREMatch(compiledRegex, catNames));
+        ASSERT_TRUE(SREMatch(compiledRegex, catNames, true));
+        ASSERT_EQUAL(SREMatchAll(compiledRegex, catNames).size(), 3);
     }
 
     void SREReplaceTest()
@@ -782,6 +787,10 @@ struct LibStuff : tpunit::TestFixture
         string from2 = "a cat did something to a dog";
         string result4 = SREReplace("cat(.*)dog", from2, "chicken$1horse");
         ASSERT_EQUAL(result4, "a chicken did something to a horse");
+
+        SRECompiledRegex compiledRegex = SRECompile("CAT", false);
+        ASSERT_EQUAL(SREReplace(compiledRegex, from, "dinosaur"), expected);
+        ASSERT_EQUAL(SREReplace(compiledRegex, "another cat", "dinosaur"), "another dinosaur");
     }
 
     void testSReplace()
