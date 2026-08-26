@@ -72,6 +72,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
     }
 
     string dbFileName = getTempFileName();
+    string shutdownReasonFileName = getTempFileName("shutdown_reason_");
     map<string, string> defaultArgs = {
         {"-db", dbFileName},
         {"-serverHost", "127.0.0.1:" + to_string(_serverPort)},
@@ -91,6 +92,7 @@ BedrockTester::BedrockTester(const map<string, string>& args,
         // Currently breaks only in Travis and needs debugging, which has been removed, maybe?
         //{"-logDirectlyToSyslogSocket", ""},
         {"-testName", currentTestName},
+        {"-testShutdownReasonFile", shutdownReasonFileName},
     };
 
     if (ENABLE_HCTREE) {
@@ -155,6 +157,7 @@ BedrockTester::~BedrockTester()
     SFileExists((_args["-db"] + "-shm").c_str()) && unlink((_args["-db"] + "-shm").c_str());
     SFileExists((_args["-db"] + "-wal").c_str()) && unlink((_args["-db"] + "-wal").c_str());
     SFileExists((_args["-db"] + "-wal2").c_str()) && unlink((_args["-db"] + "-wal2").c_str());
+    SFileDelete(_args["-testShutdownReasonFile"]);
 
     ports.returnPort(_serverPort);
     ports.returnPort(_nodePort);
@@ -211,6 +214,7 @@ void BedrockTester::autoAttachDebugger()
 
 string BedrockTester::startServer(bool wait)
 {
+    SFileSave(_args["-testShutdownReasonFile"], "");
     int childPID = fork();
     if (childPID == -1) {
         cout << "Fork failed, acting like server died." << endl;
@@ -416,8 +420,23 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                                 *errorCode = 2;
                             }
                             if (timeout) {
+                                SAUTOLOCK(listLock);
                                 const string& host = control ? _args["-controlPort"] : _args["-serverHost"];
-                                bool serverAlive = _serverPID && (kill(_serverPID, 0) == 0 || errno == EPERM);
+                                int serverPID = _serverPID;
+                                int serverStatus = 0;
+                                bool serverExited = serverPID && waitpid(serverPID, &serverStatus, WNOHANG) == serverPID;
+                                if (serverExited) {
+                                    _serverPID = 0;
+                                }
+                                bool serverAlive = serverPID && !serverExited && (kill(serverPID, 0) == 0 || errno == EPERM);
+                                string serverState = serverAlive ? "running" : "not running";
+                                if (serverExited) {
+                                    if (WIFEXITED(serverStatus)) {
+                                        serverState = "exited with code " + to_string(WEXITSTATUS(serverStatus));
+                                    } else if (WIFSIGNALED(serverStatus)) {
+                                        serverState = "terminated by signal " + to_string(WTERMSIG(serverStatus));
+                                    }
+                                }
                                 int controlSocketError = lastSocketError;
                                 int controlSocket = -1;
                                 bool controlPortReachable = false;
@@ -427,14 +446,13 @@ vector<SData> BedrockTester::executeWaitMultipleData(vector<SData> requests, int
                                     controlPortReachable = controlSocket != -1;
                                 }
                                 S_close(&controlSocket);
-                                {
-                                    SAUTOLOCK(listLock);
-                                    cout << "executeWaitMultipleData(): ran out of time waiting for socket on '" << host
-                                    << "' after error " << lastSocketError << " ('" << strerror(lastSocketError)
-                                    << "'), server PID " << _serverPID << " is " << (serverAlive ? "alive" : "not alive")
-                                    << ", control port is " << (controlPortReachable ? "reachable" : "unreachable")
-                                    << " (error " << controlSocketError << " '" << strerror(controlSocketError) << "')" << endl;
-                                }
+                                string shutdownReason = SFileLoad(_args["-testShutdownReasonFile"]);
+                                cout << "executeWaitMultipleData(): ran out of time waiting for socket on '" << host
+                                << "' after error " << lastSocketError << " ('" << strerror(lastSocketError)
+                                << "'), server PID " << serverPID << " is " << serverState
+                                << ", control port is " << (controlPortReachable ? "reachable" : "unreachable")
+                                << " (error " << controlSocketError << " '" << strerror(controlSocketError)
+                                << "'), shutdown reason: '" << shutdownReason << "'" << endl;
                             }
                             return;
                         }

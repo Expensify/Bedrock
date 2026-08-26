@@ -1957,6 +1957,9 @@ void BedrockServer::_beginShutdown(const string& reason, bool detach)
         _detach = detach;
         // Begin a graceful shutdown; close our port
         SINFO("Beginning graceful shutdown due to '" << reason << "', closing command port on '" << args["-serverHost"] << "'.");
+        if (args.isSet("-testShutdownReasonFile")) {
+            SFileSave(args["-testShutdownReasonFile"], reason);
+        }
         shutdownTimer.shutdownStart = chrono::steady_clock::now();
         if (getState() != SQLiteNodeState::LEADING && getState() != SQLiteNodeState::STANDINGDOWN) {
             shutdownTimer.safeNodeState = shutdownTimer.shutdownStart;
