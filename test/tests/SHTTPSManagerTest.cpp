@@ -26,6 +26,8 @@ private:
 class ExposedHTTPSManager : public SStandaloneHTTPSManager
 {
 public:
+    using HTTPSProxySocketFactory = SStandaloneHTTPSManager::HTTPSProxySocketFactory;
+
     unique_ptr<Transaction> sendNow(const string& url, const SData& request, bool allowProxy = false)
     {
         return _httpsSend(url, request, allowProxy);
@@ -35,30 +37,52 @@ public:
     {
         return _httpsSendAt(url, request, scheduledStartUS, allowProxy);
     }
+
+    unique_ptr<Transaction> sendWithProxyFactory(
+        const string& url,
+        const SData& request,
+        bool allowProxy,
+        const string& proxyAddress,
+        const HTTPSProxySocketFactory& createProxySocket)
+    {
+        auto transaction = make_unique<Transaction>(*this);
+        _startHTTPSRequest(*transaction, url, request, allowProxy, proxyAddress, createProxySocket);
+        return transaction;
+    }
+
+    void startWithProxyFactory(
+        Transaction& transaction,
+        const string& url,
+        const SData& request,
+        bool allowProxy,
+        const string& proxyAddress,
+        const HTTPSProxySocketFactory& createProxySocket)
+    {
+        _startHTTPSRequest(transaction, url, request, allowProxy, proxyAddress, createProxySocket);
+    }
 };
 
-class ProxyTestHTTPSManager : public ExposedHTTPSManager
+struct ProxyFactoryCapture
 {
-public:
+    struct Call
+    {
+        string proxyAddress;
+        string host;
+        string requestID;
+    };
+
     vector<string> sentRequests;
-    bool failProxy = false;
+    vector<Call> calls;
+    bool fail = false;
 
-protected:
-    const string& _getProxyAddressHTTPS() const override
+    unique_ptr<STCPManager::Socket> create(const string& proxyAddress, const string& host, const string& requestID)
     {
-        return proxyAddress;
-    }
-
-    STCPManager::Socket* _createHTTPSProxySocket(const string&, const string&, const string&) override
-    {
-        if (failProxy) {
+        calls.push_back({proxyAddress, host, requestID});
+        if (fail) {
             STHROW("500 Test proxy construction failure");
         }
-        return new CapturingSocket(sentRequests);
+        return make_unique<CapturingSocket>(sentRequests);
     }
-
-private:
-    const string proxyAddress = "proxy.example.com:443";
 };
 
 struct SHTTPSManagerTest : tpunit::TestFixture
@@ -68,6 +92,8 @@ struct SHTTPSManagerTest : tpunit::TestFixture
                               TEST(SHTTPSManagerTest::testFutureRequestIsSocketless),
                               TEST(SHTTPSManagerTest::testDueRequestUsesImmediatePath),
                               TEST(SHTTPSManagerTest::testScheduledSetupFailureCompletes),
+                              TEST(SHTTPSManagerTest::testScheduledSerializationFailureCompletes),
+                              TEST(SHTTPSManagerTest::testProxyFactoryFailureCompletes),
                               TEST(SHTTPSManagerTest::testProxyRequestParity))
     {
     }
@@ -125,13 +151,33 @@ struct SHTTPSManagerTest : tpunit::TestFixture
         ASSERT_TRUE(transaction->s == nullptr);
         ASSERT_EQUAL(transaction->response, 503);
         ASSERT_TRUE(transaction->finished != 0);
+    }
 
-        ProxyTestHTTPSManager proxyManager;
-        proxyManager.failProxy = true;
+    void testScheduledSerializationFailureCompletes()
+    {
+        ExposedHTTPSManager manager;
+        SData invalidRequest("GET\n");
+        auto serializationFailure = manager.sendAt("https://example.com/", invalidRequest, STimeNow() + 100'000);
+
+        ASSERT_NO_THROW(serializationFailure->startFunc(*serializationFailure));
+
+        ASSERT_TRUE(serializationFailure->s == nullptr);
+        ASSERT_EQUAL(serializationFailure->response, 503);
+        ASSERT_TRUE(serializationFailure->finished != 0);
+    }
+
+    void testProxyFactoryFailureCompletes()
+    {
+        ExposedHTTPSManager proxyManager;
+        ProxyFactoryCapture proxyFactory;
+        proxyFactory.fail = true;
+        SData request("GET / HTTP/1.1");
         request["Host"] = "example.com";
-        auto proxyFailure = proxyManager.sendAt("https://example.com/", request, STimeNow() + 100'000, true);
-
-        ASSERT_NO_THROW(proxyFailure->startFunc(*proxyFailure));
+        ExposedHTTPSManager::HTTPSProxySocketFactory failingFactory = [&proxyFactory](const string& proxyAddress, const string& host, const string& requestID) {
+            return proxyFactory.create(proxyAddress, host, requestID);
+        };
+        auto proxyFailure = proxyManager.sendWithProxyFactory(
+            "https://example.com/", request, true, "https://proxy.example.com:443", failingFactory);
 
         ASSERT_TRUE(proxyFailure->s == nullptr);
         ASSERT_EQUAL(proxyFailure->response, 503);
@@ -140,23 +186,36 @@ struct SHTTPSManagerTest : tpunit::TestFixture
 
     void testProxyRequestParity()
     {
-        ProxyTestHTTPSManager manager;
+        ExposedHTTPSManager manager;
+        ProxyFactoryCapture proxyFactory;
+        ExposedHTTPSManager::HTTPSProxySocketFactory factory = [&proxyFactory](const string& proxyAddress, const string& host, const string& requestID) {
+            return proxyFactory.create(proxyAddress, host, requestID);
+        };
         SData request("GET / HTTP/1.1");
         request["Host"] = "example.com";
         request["Connection"] = "close";
 
-        auto immediate = manager.sendNow("https://example.com/", request, true);
+        auto immediate = manager.sendWithProxyFactory(
+            "https://example.com/", request, true, "https://proxy.example.com:443", factory);
         auto deferred = manager.sendAt("https://example.com/", request, STimeNow() + 100'000, true);
 
-        ASSERT_EQUAL(manager.sentRequests.size(), 1);
-        ASSERT_TRUE(manager.sentRequests[0].find("Connection") == string::npos);
-        ASSERT_TRUE(immediate->fullRequest["Connection"].empty());
+        ASSERT_TRUE(deferred->s == nullptr);
         ASSERT_EQUAL(deferred->fullRequest["Connection"], "close");
 
-        deferred->startFunc(*deferred);
+        manager.startWithProxyFactory(
+            *deferred, "https://example.com/", deferred->fullRequest, true, "https://proxy.example.com:443", factory);
 
-        ASSERT_EQUAL(manager.sentRequests.size(), 2);
-        ASSERT_TRUE(manager.sentRequests[1].find("Connection") == string::npos);
+        ASSERT_EQUAL(proxyFactory.sentRequests.size(), 2);
+        ASSERT_EQUAL(proxyFactory.calls.size(), 2);
+        ASSERT_EQUAL(proxyFactory.calls[0].proxyAddress, "proxy.example.com:443");
+        ASSERT_EQUAL(proxyFactory.calls[0].host, "example.com:443");
+        ASSERT_FALSE(proxyFactory.calls[0].requestID.empty());
+        ASSERT_TRUE(proxyFactory.sentRequests[0].find("Connection") == string::npos);
+        ASSERT_TRUE(immediate->fullRequest["Connection"].empty());
         ASSERT_TRUE(deferred->fullRequest["Connection"].empty());
+        ASSERT_EQUAL(proxyFactory.calls[1].proxyAddress, proxyFactory.calls[0].proxyAddress);
+        ASSERT_EQUAL(proxyFactory.calls[1].host, proxyFactory.calls[0].host);
+        ASSERT_EQUAL(proxyFactory.calls[1].requestID, proxyFactory.calls[0].requestID);
+        ASSERT_TRUE(proxyFactory.sentRequests[1].find("Connection") == string::npos);
     }
 } __SHTTPSManagerTest;

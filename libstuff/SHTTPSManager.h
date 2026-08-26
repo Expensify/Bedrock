@@ -59,12 +59,14 @@ protected:   // Child API
     unique_ptr<Transaction> _createErrorTransaction();
     virtual bool _onRecv(Transaction& transaction);
 
+    // Keep proxy construction injectable without adding virtual methods to the plugin API.
+    using HTTPSProxySocketFactory = function<unique_ptr<Socket>(const string&, const string&, const string&)>;
+
     static string initProxyAddressHTTPS();
-    virtual const string& _getProxyAddressHTTPS() const;
-    virtual Socket* _createHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID);
+    static void _startHTTPSRequest(Transaction& transaction, const string& url, const SData& request, bool allowProxy, const string& proxyAddress, const HTTPSProxySocketFactory& createProxySocket);
 
 private:
-    static void _startHTTPSRequest(Transaction& transaction, const string& url, const SData& request, bool allowProxy);
+    static unique_ptr<Socket> _createHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID);
     static void _completeError(Transaction& transaction);
 };
 

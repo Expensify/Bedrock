@@ -40,14 +40,9 @@ SStandaloneHTTPSManager::~SStandaloneHTTPSManager()
 {
 }
 
-const string& SStandaloneHTTPSManager::_getProxyAddressHTTPS() const
+unique_ptr<STCPManager::Socket> SStandaloneHTTPSManager::_createHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID)
 {
-    return proxyAddressHTTPS;
-}
-
-STCPManager::Socket* SStandaloneHTTPSManager::_createHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID)
-{
-    return new SHTTPSProxySocket(proxyAddress, host, requestID);
+    return make_unique<SHTTPSProxySocket>(proxyAddress, host, requestID);
 }
 
 int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine, const int defaultStatusCode)
@@ -221,14 +216,20 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_creat
 void SStandaloneHTTPSManager::_completeError(Transaction& transaction)
 {
     SHMMM("We had to create an error transaction instead of attempting a real one.");
+    delete transaction.s;
+    transaction.s = nullptr;
     transaction.response = 503;
     transaction.finished = STimeNow();
 }
 
-void SStandaloneHTTPSManager::_startHTTPSRequest(Transaction& transaction, const string& url, const SData& request, bool allowProxy)
+void SStandaloneHTTPSManager::_startHTTPSRequest(
+    Transaction& transaction,
+    const string& url,
+    const SData& request,
+    bool allowProxy,
+    const string& proxyAddress,
+    const HTTPSProxySocketFactory& createProxySocket)
 {
-    // Open a connection, optionally using SSL (if the URL is HTTPS). If that doesn't work, complete the transaction
-    // with an error response instead of throwing through the command scheduler.
     string host, path;
     if (!SParseURI(url, host, path)) {
         _completeError(transaction);
@@ -238,25 +239,14 @@ void SStandaloneHTTPSManager::_startHTTPSRequest(Transaction& transaction, const
         host += ":443";
     }
 
-    // If this is going to be an https transaction, create a certificate and give it to the socket.
-    Socket* s = nullptr;
+    bool isHttps = SStartsWith(url, "https://");
     bool usingProxy = false;
-    try {
-        // If a proxy is set, and it's allowed to use it, go through the proxy.
-        bool isHttps = SStartsWith(url, "https://");
-        const string& proxyAddress = transaction.manager._getProxyAddressHTTPS();
-        if (isHttps && allowProxy && proxyAddress.size()) {
-            string proxyHost, path;
-            SParseURI(proxyAddress, proxyHost, path);
-            SINFO("Proxying " << url << " through " << proxyHost);
-            s = transaction.manager._createHTTPSProxySocket(proxyHost, host, transaction.requestID);
-            usingProxy = true;
-        } else {
-            s = new Socket(host, isHttps);
-        }
-    } catch (const SException& exception) {
-        _completeError(transaction);
-        return;
+    string proxyHost;
+    if (isHttps && allowProxy && proxyAddress.size()) {
+        string proxyPath;
+        SParseURI(proxyAddress, proxyHost, proxyPath);
+        SINFO("Proxying " << url << " through " << proxyHost);
+        usingProxy = true;
     }
 
     // When using a proxy with CONNECT tunnels, remove "Connection: close" header to prevent
@@ -268,13 +258,28 @@ void SStandaloneHTTPSManager::_startHTTPSRequest(Transaction& transaction, const
     if (usingProxy) {
         modifiedRequest.nameValueMap.erase("Connection");
     }
-    transaction.s = s;
+    const string serializedRequest = modifiedRequest.serialize();
+
+    unique_ptr<Socket> socket;
+    try {
+        if (usingProxy) {
+            socket = createProxySocket(proxyHost, host, transaction.requestID);
+        } else {
+            socket = make_unique<Socket>(host, isHttps);
+        }
+    } catch (const SException&) {
+        _completeError(transaction);
+        return;
+    }
+
+    if (!socket) {
+        _completeError(transaction);
+        return;
+    }
+
     transaction.fullRequest = modifiedRequest;
-
-    // Ship it.
-    transaction.s->send(modifiedRequest.serialize());
-
-    // Keep track of the transaction.
+    transaction.s = socket.release();
+    transaction.s->send(serializedRequest);
 }
 
 unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_httpsSend(const string& url, const SData& request, bool allowProxy)
@@ -286,7 +291,7 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
     }
 
     unique_ptr<Transaction> transaction = make_unique<Transaction>(*this);
-    _startHTTPSRequest(*transaction, url, request, allowProxy);
+    _startHTTPSRequest(*transaction, url, request, allowProxy, proxyAddressHTTPS, _createHTTPSProxySocket);
     return transaction;
 }
 
@@ -300,7 +305,12 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
     transaction->fullRequest = request;
     transaction->scheduledStart = scheduledStartUS;
     transaction->startFunc = [url, allowProxy](Transaction& transaction) {
-        _startHTTPSRequest(transaction, url, transaction.fullRequest, allowProxy);
+        try {
+            _startHTTPSRequest(transaction, url, transaction.fullRequest, allowProxy, proxyAddressHTTPS, _createHTTPSProxySocket);
+        } catch (...) {
+            // Scheduled starts run from the HTTPS wait loop, outside the command exception boundary.
+            _completeError(transaction);
+        }
     };
     return transaction;
 }
