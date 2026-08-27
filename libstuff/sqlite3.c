@@ -294111,7 +294111,11 @@ SQLITE_PRIVATE void sqlite3HctDbCsrKey(HctDbCsr *pCsr, i64 *piKey){
 ** Return true if the cursor is at EOF. Otherwise false.
 */
 SQLITE_PRIVATE int sqlite3HctDbCsrEof(HctDbCsr *pCsr){
-  return pCsr==0 || pCsr->iCell<0;
+  if( pCsr==0 || pCsr->iCell<0 ) return 1;
+  if( pCsr->nRange ){
+    return pCsr->aRange[pCsr->nRange-1].pg.aOld==0;
+  }
+  return pCsr->pg.aOld==0;
 }
 
 /*
