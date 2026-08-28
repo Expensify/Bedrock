@@ -56,6 +56,17 @@ struct BadCommandTest : tpunit::TestFixture
                     throw;
                 }
 
+                // A command that sets a control character in its own method line can't be serialized, so we send a
+                // generic error instead of crashing.
+                cmd = SData("controlcharacterresponse");
+                cmd["userID"] = to_string(userID++);
+                try {
+                    leader.executeWaitVerifyContent(cmd, "500 Internal Serialization Error");
+                } catch (...) {
+                    cout << "[BadCommandTest] failing in fourth block." << endl;
+                    throw;
+                }
+
                 // Then for three other commands, verify they kill the leader, but the follower then refuses the same command.
                 // This tests cases where keeping leader alive isn't feasible.
                 bool testFailed = false;
