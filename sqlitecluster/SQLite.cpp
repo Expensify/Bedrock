@@ -831,21 +831,26 @@ bool SQLite::writeLocalUnreplicated(const string& query)
     // Held in shared mode for the same reason the journal trim in `prepare` holds it: BlockWrites needs to be able to
     // stop this.
     shared_lock<shared_mutex> lock(_sharedData.writeLock);
-    if (SQuery(_db, "BEGIN CONCURRENT", 2000 * STIME_US_PER_MS, false, false)) {
+    if (SQuery(_db, "BEGIN CONCURRENT")) {
         return false;
     }
 
-    if (SQuery(_db, query, 2000 * STIME_US_PER_MS, false, false)) {
+    if (SQuery(_db, query)) {
         SQuery(_db, "ROLLBACK");
         return false;
     }
 
     // Only around the COMMIT: every other writer commits under this lock, so this is what stops us racing them for
-    // SQLite's write lock. Taking it earlier would block the commit pipeline for the whole write.
-    lock_guard<decltype(_sharedData.commitLock)> commitLock(_sharedData.commitLock);
+    // SQLite's write lock. Taking it earlier would block the commit pipeline for the whole write. Bounded because a
+    // backed up commit queue is a reason to give up and retry later, not to wait.
+    unique_lock<decltype(_sharedData.commitLock)> commitLock(_sharedData.commitLock, 100ms);
+    if (!commitLock.owns_lock()) {
+        SQuery(_db, "ROLLBACK");
+        return false;
+    }
 
     // A commit that landed while we were writing shows up here as SQLITE_BUSY_SNAPSHOT.
-    if (SQuery(_db, "COMMIT", 2000 * STIME_US_PER_MS, false, false)) {
+    if (SQuery(_db, "COMMIT")) {
         SQuery(_db, "ROLLBACK");
         return false;
     }
