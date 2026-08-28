@@ -832,17 +832,20 @@ bool SQLite::writeLocalUnreplicated(const string& query)
     // stop this.
     shared_lock<shared_mutex> lock(_sharedData.writeLock);
 
-    if (SQuery(_db, "BEGIN CONCURRENT")) {
+    // No busy retry on any of these. Normal commits serialize on the commit lock, which this deliberately skips, so
+    // it is the one writer that races SQLite's write lock and sees plain SQLITE_BUSY. Sleeping a second to retry
+    // would stall this caller for no gain when it can simply try again on its next pass.
+    if (SQuery(_db, "BEGIN CONCURRENT", 2000 * STIME_US_PER_MS, false, false)) {
         return false;
     }
 
-    if (SQuery(_db, query)) {
+    if (SQuery(_db, query, 2000 * STIME_US_PER_MS, false, false)) {
         SQuery(_db, "ROLLBACK");
         return false;
     }
 
     // A commit that landed while we were writing shows up here as SQLITE_BUSY_SNAPSHOT.
-    if (SQuery(_db, "COMMIT")) {
+    if (SQuery(_db, "COMMIT", 2000 * STIME_US_PER_MS, false, false)) {
         SQuery(_db, "ROLLBACK");
         return false;
     }
