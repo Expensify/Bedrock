@@ -577,7 +577,7 @@ bool SHostIsValid(const string& host);
 string SGetDomain(const string& host);
 string SDecodeURIComponent(const char* buffer, int length);
 string SDecodeURIComponent(const string& value);
-string SEncodeURIComponent(const string& value);
+string SEncodeURIComponent(const string& value, bool keepSpaces = false);
 
 // --------------------------------------------------------------------------
 // List stuff

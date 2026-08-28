@@ -146,6 +146,7 @@ unique_ptr<BedrockCommand> BedrockPlugin_TestPlugin::getCommand(SQLiteCommand&& 
         "slowquery",
         "httpstimeout",
         "exceptioninpeek",
+        "controlcharacterexception",
         "generatesegfaultpeek",
         "generateassertpeek",
         "preventattach",
@@ -413,6 +414,9 @@ bool TestPluginCommand::peek(SQLite& db)
         }
     } else if (SStartsWith(request.methodLine, "exceptioninpeek")) {
         throw 1;
+    } else if (SStartsWith(request.methodLine, "controlcharacterexception")) {
+        // Exception messages can contain user input, so they can contain characters that are invalid in a method line.
+        STHROW("402 Control character:" + string(1, '\0') + "suffix");
     } else if (SStartsWith(request.methodLine, "generatesegfaultpeek")) {
         int total = 0;
         for (int i = 0; i < 1000000; i++) {
