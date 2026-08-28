@@ -1351,7 +1351,6 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     string methodLineToUse;
     if (invalidCharsInMethodLine) {
         methodLineToUse = SEncodeURIComponent(methodLine, true);
-
     } else {
         methodLineToUse = methodLine;
     }
