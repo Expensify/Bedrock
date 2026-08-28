@@ -1342,13 +1342,21 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     buffer.clear();
 
     // Validate methodLine before adding it to the buffer to avoid control characters
+    bool invalidCharsInMethodLine = false;
     for (const unsigned char c : methodLine) {
         if (c != 9 && (c < 32 || c == 127)) {
-            STHROW("Invalid control character ascii(" + to_string(static_cast<int>(c)) + ") in methodLine");
+            invalidCharsInMethodLine = true;
         }
     }
+    string methodLineToUse;
+    if (invalidCharsInMethodLine) {
+        methodLineToUse = SEncodeURIComponent(methodLine, true);
 
-    buffer += methodLine + "\r\n";
+    } else {
+        methodLineToUse = methodLine;
+    }
+
+    buffer += methodLineToUse + "\r\n";
     for (pair<string, string> item : nameValueMap) {
         if (SIEquals("Set-Cookie", item.first)) {
             // Parse this list and generate a separate cookie for each.
