@@ -744,8 +744,8 @@ void SQueryLogClose();
 // expanded as SQL literals via sqlite3_expanded_sql) is appended to the string. Write paths use this to
 // journal a self-contained, replay-safe form of the query for replication; followers run the journaled
 // SQL via writeUnmodified() with no params map, so placeholders must already be inlined.
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr, const map<string, SQliteParameter>& params = {}, string* expandedSql = nullptr, bool retryOnBusy = true);
-int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, bool retryOnBusy = true);
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr, const map<string, SQliteParameter>& params = {}, string* expandedSql = nullptr);
+int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false);
 int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec);
 
 // Convenience overloads that put bound parameters right after the SQL — useful for write queries that don't return rows.

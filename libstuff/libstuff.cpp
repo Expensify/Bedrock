@@ -2837,7 +2837,7 @@ void SQueryLogClose()
 
 // --------------------------------------------------------------------------
 // Executes a SQLite query
-int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const map<string, SQliteParameter>& params, string* expandedSql, bool retryOnBusy)
+int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold, bool skipInfoWarn, sqlite3_qrf_spec* spec, const map<string, SQliteParameter>& params, string* expandedSql)
 {
 #define MAX_TRIES 3
     // Execute the query and get the results
@@ -3057,7 +3057,7 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
         }
 
         extErr = sqlite3_extended_errcode(db);
-        if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT || !retryOnBusy) {
+        if (error != SQLITE_BUSY || extErr == SQLITE_BUSY_SNAPSHOT) {
             break;
         }
         SWARN("sqlite3 returned SQLITE_BUSY on try #"
@@ -3684,10 +3684,10 @@ string SQ(double val)
     return SToStr(val);
 }
 
-int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold, bool skipInfoWarn, bool retryOnBusy)
+int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold, bool skipInfoWarn)
 {
     SQResult ignore;
-    return SQuery(db, sql, ignore, warnThreshold, skipInfoWarn, nullptr, {}, nullptr, retryOnBusy);
+    return SQuery(db, sql, ignore, warnThreshold, skipInfoWarn);
 }
 
 int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec)
