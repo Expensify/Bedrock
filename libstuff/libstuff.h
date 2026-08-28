@@ -744,8 +744,6 @@ void SQueryLogClose();
 // expanded as SQL literals via sqlite3_expanded_sql) is appended to the string. Write paths use this to
 // journal a self-contained, replay-safe form of the query for replication; followers run the journaled
 // SQL via writeUnmodified() with no params map, so placeholders must already be inlined.
-// retryOnBusy sleeps a second and retries up to three times when SQLite reports the write lock is held. Pass false
-// from callers that would rather fail immediately and try again later.
 int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, sqlite3_qrf_spec* spec = nullptr, const map<string, SQliteParameter>& params = {}, string* expandedSql = nullptr, bool retryOnBusy = true);
 int SQuery(sqlite3* db, const string& sql, int64_t warnThreshold = 2000* STIME_US_PER_MS, bool skipInfoWarn = false, bool retryOnBusy = true);
 int SQuery(sqlite3* db, const string& sql, sqlite3_qrf_spec* spec);

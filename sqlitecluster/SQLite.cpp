@@ -831,10 +831,6 @@ bool SQLite::writeLocalUnreplicated(const string& query)
     // Held in shared mode for the same reason the journal trim in `prepare` holds it: BlockWrites needs to be able to
     // stop this.
     shared_lock<shared_mutex> lock(_sharedData.writeLock);
-
-    // No busy retry on any of these. Normal commits serialize on the commit lock, which this deliberately skips, so
-    // it is the one writer that races SQLite's write lock and sees plain SQLITE_BUSY. Sleeping a second to retry
-    // would stall this caller for no gain when it can simply try again on its next pass.
     if (SQuery(_db, "BEGIN CONCURRENT", 2000 * STIME_US_PER_MS, false, false)) {
         return false;
     }
