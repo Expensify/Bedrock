@@ -63,6 +63,10 @@ protected:
         // Run after DNS resolution completes to create the socket (or fail, as appropriate).
         void _connectAfterDNSResolution();
 
+        // Opens the fd for `addr` and, for HTTPS sockets, its SSL state. Returns false and marks the socket
+        // closed and failed if the fd can't be opened.
+        bool _openSocket();
+
         // Validates `host` and starts its lookup. `dnsResolution` is const, so it has to be built in
         // the member initializer list, and this is what lets the assertion still run first.
         static shared_ptr<SResolution> _startResolution(const string& host);

@@ -251,20 +251,29 @@ STCPManager::Socket::Socket(const string& host, bool https, int resolveGraceMS)
     }
 }
 
-STCPManager::Socket::Socket(const sockaddr_in& addr, bool https, const string& hostname)
-    : s(-1), addr(addr), state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
-    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https),
-    hostToResolve(hostname)
+bool STCPManager::Socket::_openSocket()
 {
     s = S_socket(addr, true, false, false);
     if (s < 0) {
         state.store(State::CLOSED);
         connectFailure = true;
-        STHROW("Couldn't open socket to " + SToStr(addr));
+        return false;
     }
 
     if (https) {
-        ssl = new SSSLState(hostname, s);
+        ssl = new SSSLState(hostToResolve, s);
+    }
+
+    return true;
+}
+
+STCPManager::Socket::Socket(const sockaddr_in& addr, bool https, const string& hostname)
+    : s(-1), addr(addr), state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
+    lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https),
+    hostToResolve(hostname)
+{
+    if (!_openSocket()) {
+        STHROW("Couldn't open socket to " + SToStr(addr));
     }
 }
 
@@ -278,15 +287,8 @@ void STCPManager::Socket::_connectAfterDNSResolution()
     }
     addr = dnsResolution->getAddr();
 
-    s = S_socket(addr, true, false, false);
-    if (s < 0) {
-        state.store(State::CLOSED);
-        connectFailure = true;
+    if (!_openSocket()) {
         return;
-    }
-
-    if (https) {
-        ssl = new SSSLState(hostToResolve, s);
     }
 
     state.store(State::CONNECTING);
