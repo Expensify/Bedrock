@@ -840,6 +840,10 @@ bool SQLite::writeLocalUnreplicated(const string& query)
         return false;
     }
 
+    // Only around the COMMIT: every other writer commits under this lock, so this is what stops us racing them for
+    // SQLite's write lock. Taking it earlier would block the commit pipeline for the whole write.
+    lock_guard<decltype(_sharedData.commitLock)> commitLock(_sharedData.commitLock);
+
     // A commit that landed while we were writing shows up here as SQLITE_BUSY_SNAPSHOT.
     if (SQuery(_db, "COMMIT", 2000 * STIME_US_PER_MS, false, false)) {
         SQuery(_db, "ROLLBACK");
