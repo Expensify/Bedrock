@@ -26,7 +26,8 @@ struct WriteLocalUnreplicatedTest : tpunit::TestFixture
         : tpunit::TestFixture("WriteLocalUnreplicated",
                               TEST(WriteLocalUnreplicatedTest::leavesCommitCountAndJournalUntouched),
                               TEST(WriteLocalUnreplicatedTest::rollsBackOnFailedQuery),
-                              TEST(WriteLocalUnreplicatedTest::survivesConcurrentCommits))
+                              TEST(WriteLocalUnreplicatedTest::survivesConcurrentCommits),
+                              TEST(WriteLocalUnreplicatedTest::skipsTheBusyRetry))
     {
     }
 
@@ -142,5 +143,27 @@ struct WriteLocalUnreplicatedTest : tpunit::TestFixture
         db.read("SELECT COUNT(*) FROM unreplicatedTable;", result);
         db.rollback();
         ASSERT_EQUAL(SToInt64(result[0][0]), succeeded);
+    }
+
+    void skipsTheBusyRetry()
+    {
+        WriteLocalUnreplicatedTempDBFile dbFile;
+        sqlite3* holder = nullptr;
+        sqlite3* other = nullptr;
+        ASSERT_EQUAL(sqlite3_open(dbFile.filename, &holder), SQLITE_OK);
+        ASSERT_EQUAL(sqlite3_open(dbFile.filename, &other), SQLITE_OK);
+        ASSERT_EQUAL(SQuery(holder, "CREATE TABLE testTable(id INTEGER PRIMARY KEY);"), SQLITE_OK);
+
+        // Holds the write lock, so the other connection can only get SQLITE_BUSY.
+        ASSERT_EQUAL(SQuery(holder, "BEGIN EXCLUSIVE"), SQLITE_OK);
+
+        // Retrying would sleep a second per try, so the elapsed time is what says the retry was skipped.
+        const uint64_t start = STimeNow();
+        ASSERT_EQUAL(SQuery(other, "INSERT INTO testTable VALUES(1);", 2000 * STIME_US_PER_MS, true, false), SQLITE_BUSY);
+        ASSERT_LESS_THAN(STimeNow() - start, 500'000);
+
+        SQuery(holder, "ROLLBACK");
+        sqlite3_close(holder);
+        sqlite3_close(other);
     }
 } __WriteLocalUnreplicatedTest;
