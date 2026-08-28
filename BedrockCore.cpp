@@ -455,7 +455,9 @@ void BedrockCore::_handleCommandException(unique_ptr<BedrockCommand>& command, c
 
     // Set the response to the values from the exception, if set.
     if (!e.method.empty()) {
-        command->response.methodLine = e.method;
+        // Exception messages can embed user input, and SComposeHTTP throws on control characters in the method line.
+        // That throw happens while we serialize the reply, where nothing catches it.
+        command->response.methodLine = SEncodeURIComponent(e.method, true);
     }
     if (!e.headers.empty()) {
         command->response.nameValueMap = e.headers;

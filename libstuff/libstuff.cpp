@@ -1341,22 +1341,14 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     // Just walk across and compose a valid HTTP-like message
     buffer.clear();
 
-    // Method lines can contain user input, and control characters in one would break the framing of the message that
-    // follows, so percent-encode them.
-    static const char* hexChars = "0123456789ABCDEF";
-    string encodedMethodLine;
-    encodedMethodLine.reserve(methodLine.size());
+    // Validate methodLine before adding it to the buffer to avoid control characters
     for (const unsigned char c : methodLine) {
         if (c != 9 && (c < 32 || c == 127)) {
-            encodedMethodLine += '%';
-            encodedMethodLine += hexChars[c >> 4];
-            encodedMethodLine += hexChars[c & 0xF];
-        } else {
-            encodedMethodLine += c;
+            STHROW("Invalid control character ascii(" + to_string(static_cast<int>(c)) + ") in methodLine");
         }
     }
 
-    buffer += encodedMethodLine + "\r\n";
+    buffer += methodLine + "\r\n";
     for (pair<string, string> item : nameValueMap) {
         if (SIEquals("Set-Cookie", item.first)) {
             // Parse this list and generate a separate cookie for each.
@@ -1438,7 +1430,7 @@ bool SParseHost(const string& host, string& domain, uint16_t& port)
 }
 
 // --------------------------------------------------------------------------
-string SEncodeURIComponent(const string& value)
+string SEncodeURIComponent(const string& value, bool keepSpaces)
 {
     // Construct an encoded version.  According to:
     // http://developer.mozilla.org/en/docs/Core_JavaScript_1.5_Reference:Global_Functions:encodeURIComponent
@@ -1453,8 +1445,7 @@ string SEncodeURIComponent(const string& value)
         } else {
             switch (ch) {
                 case ' ':
-                    // Unsafe character, replace
-                    working += '+';
+                    working += keepSpaces ? ' ' : '+';
                     break;
 
                 case '-':

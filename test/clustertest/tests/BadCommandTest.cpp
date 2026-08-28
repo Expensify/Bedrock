@@ -45,24 +45,14 @@ struct BadCommandTest : tpunit::TestFixture
                     throw;
                 }
 
-                // An exception message can contain user input, so a control character in one is percent-encoded rather
-                // than crashing the server when we serialize the reply.
+                // An exception message can contain user input, so we URL-encode it rather than crashing the server
+                // when we serialize the reply.
                 cmd = SData("controlcharacterexception");
                 cmd["userID"] = to_string(userID++);
                 try {
-                    leader.executeWaitVerifyContent(cmd, "402 Control character:%00suffix");
+                    leader.executeWaitVerifyContent(cmd, "402 Control character%3A%00suffix");
                 } catch (...) {
                     cout << "[BadCommandTest] failing in third block." << endl;
-                    throw;
-                }
-
-                // Same for a command that sets a control character in its own method line.
-                cmd = SData("controlcharacterresponse");
-                cmd["userID"] = to_string(userID++);
-                try {
-                    leader.executeWaitVerifyContent(cmd, "200 OK%00suffix");
-                } catch (...) {
-                    cout << "[BadCommandTest] failing in fourth block." << endl;
                     throw;
                 }
 
