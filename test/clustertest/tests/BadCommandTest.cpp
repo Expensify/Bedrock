@@ -45,6 +45,17 @@ struct BadCommandTest : tpunit::TestFixture
                     throw;
                 }
 
+                // An exception message can contain user input, so we URL-encode it rather than crashing the server
+                // when we serialize the reply.
+                cmd = SData("controlcharacterexception");
+                cmd["userID"] = to_string(userID++);
+                try {
+                    leader.executeWaitVerifyContent(cmd, "402 Control character%3A%00suffix");
+                } catch (...) {
+                    cout << "[BadCommandTest] failing in third block." << endl;
+                    throw;
+                }
+
                 // Then for three other commands, verify they kill the leader, but the follower then refuses the same command.
                 // This tests cases where keeping leader alive isn't feasible.
                 bool testFailed = false;

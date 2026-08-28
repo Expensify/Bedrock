@@ -577,7 +577,7 @@ bool SHostIsValid(const string& host);
 string SGetDomain(const string& host);
 string SDecodeURIComponent(const char* buffer, int length);
 string SDecodeURIComponent(const string& value);
-string SEncodeURIComponent(const string& value);
+string SEncodeURIComponent(const string& value, bool keepSpaces = false);
 
 // --------------------------------------------------------------------------
 // List stuff
@@ -657,7 +657,20 @@ void SFDset(fd_map& fdm, int socket, short evts);
 // Returns false otherwise, or if this socket isn't in this fd_set, or if evts is 0.
 bool SFDAnySet(fd_map& fdm, int socket, short evts);
 
+// Resolves a "domain:port" string into an address.
+// This will block on a call to getaddrinfo unless passed a plain IP string, i.e: "192.168.0.1"
+bool SResolveHost(const string& host, sockaddr_in& addr);
+
+// Converts a `ddd.ddd.ddd.ddd` formatted IPV4 address with optional colon-separated port number to sockaddr_in.
+// Returns true on success, false on failure.
+bool SIPToAddr(const string& host, sockaddr_in& addr);
+
 // Socket helpers
+// On failure, `errorCode` receives the errno that caused it, if it's given.
+int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking, int* errorCode = nullptr);
+
+// Convenience overload that resolves `host` first. This blocks on DNS; prefer the address-taking
+// version anywhere a stall would hold up a thread that has other work to do.
 int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, int* errorCode = nullptr);
 int S_close(int* socket);
 int S_accept(int port, sockaddr_in& fromAddr, bool isBlocking);

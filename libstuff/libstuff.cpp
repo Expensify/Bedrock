@@ -11,6 +11,7 @@
 #include <sys/un.h>
 #include <cxxabi.h>
 #include <sys/ioctl.h>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 
@@ -1342,13 +1343,20 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     buffer.clear();
 
     // Validate methodLine before adding it to the buffer to avoid control characters
+    bool invalidCharsInMethodLine = false;
     for (const unsigned char c : methodLine) {
         if (c != 9 && (c < 32 || c == 127)) {
-            STHROW("Invalid control character ascii(" + to_string(static_cast<int>(c)) + ") in methodLine");
+            invalidCharsInMethodLine = true;
         }
     }
+    string methodLineToUse;
+    if (invalidCharsInMethodLine) {
+        methodLineToUse = SEncodeURIComponent(methodLine, true);
+    } else {
+        methodLineToUse = methodLine;
+    }
 
-    buffer += methodLine + "\r\n";
+    buffer += methodLineToUse + "\r\n";
     for (pair<string, string> item : nameValueMap) {
         if (SIEquals("Set-Cookie", item.first)) {
             // Parse this list and generate a separate cookie for each.
@@ -1430,7 +1438,7 @@ bool SParseHost(const string& host, string& domain, uint16_t& port)
 }
 
 // --------------------------------------------------------------------------
-string SEncodeURIComponent(const string& value)
+string SEncodeURIComponent(const string& value, bool keepSpaces)
 {
     // Construct an encoded version.  According to:
     // http://developer.mozilla.org/en/docs/Core_JavaScript_1.5_Reference:Global_Functions:encodeURIComponent
@@ -1445,8 +1453,7 @@ string SEncodeURIComponent(const string& value)
         } else {
             switch (ch) {
                 case ' ':
-                    // Unsafe character, replace
-                    working += '+';
+                    working += keepSpaces ? ' ' : '+';
                     break;
 
                 case '-':
@@ -1955,54 +1962,90 @@ string SGUnzip(const string& content)
 /////////////////////////////////////////////////////////////////////////////
 
 // --------------------------------------------------------------------------
+bool SIPToAddr(const string& host, sockaddr_in& addr)
+{
+    string domain;
+    uint16_t port = 0;
+    if (!SParseHost(host, domain, port)) {
+        return false;
+    }
+
+    // Is the domain just a raw IP? Then there's nothing to look up.
+    unsigned int ip = inet_addr(domain.c_str());
+    if (!ip || ip == INADDR_NONE) {
+        return false;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = ip;
+    return true;
+}
+
+bool SResolveHost(const string& host, sockaddr_in& addr)
+{
+    if (SIPToAddr(host, addr)) {
+        return true;
+    }
+
+    string domain;
+    uint16_t port = 0;
+    if (!SParseHost(host, domain, port)) {
+        SWARN("Failed to resolve '" << host << "': invalid host.");
+        return false;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+
+    auto start = chrono::steady_clock::now();
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof hints);
+    struct addrinfo* resolved = nullptr;
+    hints.ai_family = AF_INET; // IPv4
+    hints.ai_socktype = SOCK_STREAM;
+
+    int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
+    auto elapsed = chrono::duration_cast<chrono::milliseconds>(chrono::steady_clock::now() - start);
+    SINFO("DNS lookup took " << elapsed.count() << "ms for '" << domain << "'.");
+
+    if (result || !resolved) {
+        freeaddrinfo(resolved);
+        SWARN("Failed to resolve '" << host << "': can't resolve host error no#" << SToStr(result));
+        return false;
+    }
+
+    sockaddr_in* resolvedAddr = (sockaddr_in*) resolved->ai_addr;
+    addr.sin_addr.s_addr = resolvedAddr->sin_addr.s_addr;
+    freeaddrinfo(resolved);
+
+    return true;
+}
+
+// --------------------------------------------------------------------------
 int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, int* errorCode)
+{
+    sockaddr_in addr;
+    if (!SResolveHost(host, addr)) {
+        // There's no socket call to report on yet, so this is whatever the lookup left behind.
+        if (errorCode) {
+            *errorCode = S_errno;
+        }
+        return -1;
+    }
+    return S_socket(addr, isTCP, isPort, isBlocking, errorCode);
+}
+
+// --------------------------------------------------------------------------
+int S_socket(const sockaddr_in& addr, bool isTCP, bool isPort, bool isBlocking, int* errorCode)
 {
     // Try to set up the socket
     int s = -1;
     int socketError = 0;
     try {
-        // First, just parse the host
-        string domain;
-        uint16_t port = 0;
-        if (!SParseHost(host, domain, port)) {
-            STHROW("invalid host: " + host);
-        }
-
-        // Is the domain just a raw IP?
-        unsigned int ip = inet_addr(domain.c_str());
-        if (!ip || ip == INADDR_NONE) {
-            // Nope -- resolve the domain
-            uint64_t start = STimeNow();
-
-            // Allocate and initialize addrinfo structures.
-            struct addrinfo hints;
-            memset(&hints, 0, sizeof hints);
-            struct addrinfo* resolved = nullptr;
-
-            // Set up the hints.
-            hints.ai_family = AF_INET; // IPv4
-            hints.ai_socktype = SOCK_STREAM;
-
-            // Do the initialization.
-            int result = getaddrinfo(domain.c_str(), to_string(port).c_str(), &hints, &resolved);
-            SINFO("DNS lookup took " << (STimeNow() - start) / 1000 << "ms for '" << domain << "'.");
-
-            // There was a problem.
-            if (result || !resolved) {
-                freeaddrinfo(resolved);
-                STHROW("can't resolve host error no#" + SToStr(result));
-            }
-            // Grab the resolved address.
-            sockaddr_in* addr = (sockaddr_in*) resolved->ai_addr;
-            ip = addr->sin_addr.s_addr;
-            char plainTextIP[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &addr->sin_addr, plainTextIP, INET_ADDRSTRLEN);
-            SINFO("Resolved " << domain << " to ip: " << plainTextIP << ".");
-
-            // Done resolving.
-            freeaddrinfo(resolved);
-        }
-
         // Open a socket
         if (isTCP) {
             s = (int) socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -2040,11 +2083,6 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, int* 
             }
 
             // Bind to the configured port
-            sockaddr_in addr;
-            memset(&addr, 0, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            addr.sin_addr.s_addr = ip;
             if (::bind(s, (sockaddr*) &addr, sizeof(addr))) {
                 socketError = S_errno;
                 STHROW("couldn't bind");
@@ -2057,11 +2095,6 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, int* 
             }
         } else {
             // If TCP, connect
-            sockaddr_in addr;
-            memset(&addr, 0, sizeof(addr));
-            addr.sin_family = AF_INET;
-            addr.sin_port = htons(port);
-            addr.sin_addr.s_addr = ip;
             if (connect(s, (sockaddr*) &addr, sizeof(addr)) == -1) {
                 switch (S_errno) {
                     case S_EWOULDBLOCK:
@@ -2084,7 +2117,7 @@ int S_socket(const string& host, bool isTCP, bool isPort, bool isBlocking, int* 
     } catch (const SException& e) {
         int error = socketError ? socketError : S_errno;
         // Failed to open
-        SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << host
+        SWARN("Failed to open " << (isTCP ? "TCP" : "UDP") << (isPort ? " port" : " socket") << " '" << addr
               << "': " << e.what() << "(errno=" << error << " '" << strerror(error) << "')");
         if (errorCode) {
             *errorCode = error;

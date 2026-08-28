@@ -76,11 +76,30 @@ unique_ptr<STCPManager::Socket> SSocketPool::getSocket()
 
     // No live pooled socket available, create a new one. No need to hold the lock, so it goes out of scope.
     try {
-        // TODO: Allow S_socket to take a parsed address instead of redoing all the parsing each time.
-        return unique_ptr<STCPManager::Socket>(new STCPManager::Socket(host));
+        // Note: this can sometimes block on resolving DNS (See: _getAddress).
+        return unique_ptr<STCPManager::Socket>(new STCPManager::Socket(_getAddress()));
     } catch (const SException& exception) {
         return nullptr;
     }
+}
+
+sockaddr_in SSocketPool::_getAddress()
+{
+    lock_guard<mutex> lock(_addressMutex);
+
+    // A pool talks to one host for its whole life, so the address is almost always the same one we looked up last time.
+    // We do re-resolve every 10 seconds to accomodate load balancers and such.
+    if (_addressTime == chrono::steady_clock::time_point{} ||
+        (chrono::steady_clock::now() - _addressTime) > addressTimeout) {
+        sockaddr_in addr;
+        if (!SResolveHost(host, addr)) {
+            STHROW("Couldn't resolve '" + host + "'");
+        }
+        _address = addr;
+        _addressTime = chrono::steady_clock::now();
+    }
+
+    return _address;
 }
 
 void SSocketPool::returnSocket(unique_ptr<STCPManager::Socket>&& s)
