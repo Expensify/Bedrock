@@ -45,23 +45,22 @@ struct BadCommandTest : tpunit::TestFixture
                     throw;
                 }
 
-                // An exception message with a control character in it must not crash the server when we serialize the
-                // reply. The control character is replaced with a space.
+                // An exception message can contain user input, so a control character in one is percent-encoded rather
+                // than crashing the server when we serialize the reply.
                 cmd = SData("controlcharacterexception");
                 cmd["userID"] = to_string(userID++);
                 try {
-                    leader.executeWaitVerifyContent(cmd, "402 Control character: suffix");
+                    leader.executeWaitVerifyContent(cmd, "402 Control character:%00suffix");
                 } catch (...) {
                     cout << "[BadCommandTest] failing in third block." << endl;
                     throw;
                 }
 
-                // A command that sets a control character in its own method line can't be serialized, so we send a
-                // generic error instead of crashing.
+                // Same for a command that sets a control character in its own method line.
                 cmd = SData("controlcharacterresponse");
                 cmd["userID"] = to_string(userID++);
                 try {
-                    leader.executeWaitVerifyContent(cmd, "500 Internal Serialization Error");
+                    leader.executeWaitVerifyContent(cmd, "200 OK%00suffix");
                 } catch (...) {
                     cout << "[BadCommandTest] failing in fourth block." << endl;
                     throw;

@@ -1341,14 +1341,22 @@ void SComposeHTTP(string& buffer, const string& methodLine, const STable& nameVa
     // Just walk across and compose a valid HTTP-like message
     buffer.clear();
 
-    // Validate methodLine before adding it to the buffer to avoid control characters
+    // Method lines can contain user input, and control characters in one would break the framing of the message that
+    // follows, so percent-encode them.
+    static const char* hexChars = "0123456789ABCDEF";
+    string encodedMethodLine;
+    encodedMethodLine.reserve(methodLine.size());
     for (const unsigned char c : methodLine) {
         if (c != 9 && (c < 32 || c == 127)) {
-            STHROW("Invalid control character ascii(" + to_string(static_cast<int>(c)) + ") in methodLine");
+            encodedMethodLine += '%';
+            encodedMethodLine += hexChars[c >> 4];
+            encodedMethodLine += hexChars[c & 0xF];
+        } else {
+            encodedMethodLine += c;
         }
     }
 
-    buffer += methodLine + "\r\n";
+    buffer += encodedMethodLine + "\r\n";
     for (pair<string, string> item : nameValueMap) {
         if (SIEquals("Set-Cookie", item.first)) {
             // Parse this list and generate a separate cookie for each.

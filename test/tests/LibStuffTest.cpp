@@ -1148,9 +1148,10 @@ struct LibStuff : tpunit::TestFixture
         string buffer = SComposeHTTP(methodLine, {}, "");
         ASSERT_EQUAL(buffer, "500 Internal Server Error\r\nContent-Length: 0\r\n\r\n");
 
-        // Verify that control characters are not allowed in methodLine
+        // Verify that control characters in a methodLine are percent-encoded, so they can't inject a header.
         string methodLineWithControlChars = "500 Internal Server Error\r\nContent-Type: application/json";
-        ASSERT_THROW(SComposeHTTP(methodLineWithControlChars, {}, ""), SException);
+        buffer = SComposeHTTP(methodLineWithControlChars, {}, "");
+        ASSERT_EQUAL(buffer, "500 Internal Server Error%0D%0AContent-Type: application/json\r\nContent-Length: 0\r\n\r\n");
     }
 
     void testEncodeDecodeURIComponent()

@@ -1379,18 +1379,7 @@ void BedrockServer::_reply(unique_ptr<BedrockCommand>& command)
             }
         } else {
             // Otherwise we send the standard response.
-            string serializedResponse;
-            try {
-                serializedResponse = command->response.serialize();
-            } catch (const SException& e) {
-                // The response is unusable, so build a fresh one rather than reusing any part of it. Its headers came
-                // from the same place as whatever we couldn't serialize.
-                SALERT("Couldn't serialize response to '" << command->request.methodLine << "' (" << e.what() << "), sending 500.");
-                SData safeResponse("500 Internal Serialization Error");
-                safeResponse["nodeName"] = args["-nodeName"];
-                serializedResponse = safeResponse.serialize();
-            }
-            if (!command->socket->send(serializedResponse)) {
+            if (!command->socket->send(command->response.serialize())) {
                 // If we can't send (client closed the socket?), alert our plugin it's response was never sent.
                 SINFO("No socket to reply for: '" << command->request.methodLine << "' #" << command->initiatingClientID);
                 command->handleFailedReply();
