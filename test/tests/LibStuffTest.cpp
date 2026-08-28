@@ -1,3 +1,4 @@
+#include <arpa/inet.h>
 #include <cstring>
 #include <unistd.h>
 
@@ -61,7 +62,8 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::SRedactSensitiveValuesTest),
                                      TEST(LibStuff::SComposeHTTPTest),
                                      TEST(LibStuff::testEncodeDecodeURIComponent),
-                                     TEST(LibStuff::testSGetPeerNamePreservesErrno)
+                                     TEST(LibStuff::testSGetPeerNamePreservesErrno),
+                                     TEST(LibStuff::testResolveHost)
     )
     {
     }
@@ -1170,6 +1172,32 @@ struct LibStuff : tpunit::TestFixture
         // UTF-8: ü (U+00FC) = bytes 0xC3 0xBC → %C3%BC
         ASSERT_EQUAL(SEncodeURIComponent("\xC3\xBC"), "%C3%BC");
         ASSERT_EQUAL(SDecodeURIComponent(SEncodeURIComponent("\xC3\xBC")), "\xC3\xBC");
+    }
+
+    void testResolveHost()
+    {
+        // A raw IP needs no lookup at all.
+        sockaddr_in addr;
+        ASSERT_TRUE(SResolveHost("127.0.0.1:443", addr));
+        ASSERT_EQUAL(addr.sin_family, AF_INET);
+        ASSERT_EQUAL(ntohs(addr.sin_port), 443);
+        ASSERT_EQUAL(addr.sin_addr.s_addr, inet_addr("127.0.0.1"));
+
+        // A name goes through getaddrinfo. `localhost` comes out of /etc/hosts, so this doesn't
+        // depend on the network.
+        sockaddr_in resolved;
+        ASSERT_TRUE(SResolveHost("localhost:443", resolved));
+        ASSERT_EQUAL(ntohs(resolved.sin_port), 443);
+
+        // The port comes from the host string, not from whatever the resolver says.
+        sockaddr_in otherPort;
+        ASSERT_TRUE(SResolveHost("localhost:80", otherPort));
+        ASSERT_EQUAL(ntohs(otherPort.sin_port), 80);
+        ASSERT_EQUAL(otherPort.sin_addr.s_addr, resolved.sin_addr.s_addr);
+
+        // A name that doesn't resolve fails, and so does one we can't parse.
+        ASSERT_FALSE(SResolveHost("nonexistent-probe-xyzzy.invalid:443", addr));
+        ASSERT_FALSE(SResolveHost("", addr));
     }
 
     void testSGetPeerNamePreservesErrno()
