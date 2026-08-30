@@ -1855,6 +1855,503 @@ list<string> SParseJSONArray(const string& array, const string& nullValue)
     return out;
 }
 
+namespace {
+enum class SJSONValueType
+{
+    INVALID,
+    NULL_VALUE,
+    BOOLEAN,
+    NUMBER,
+    STRING,
+    ARRAY,
+    OBJECT,
+};
+
+struct SJSONValue
+{
+    SJSONValueType type = SJSONValueType::INVALID;
+    string scalar;
+    vector<SJSONValue> array;
+    map<string, vector<SJSONValue>> object;
+
+    bool operator==(const SJSONValue& rhs) const
+    {
+        if (type != rhs.type) {
+            return false;
+        }
+        switch (type) {
+            case SJSONValueType::NULL_VALUE:
+                return true;
+
+            case SJSONValueType::BOOLEAN:
+            case SJSONValueType::NUMBER:
+            case SJSONValueType::STRING:
+                return scalar == rhs.scalar;
+
+            case SJSONValueType::ARRAY:
+                return array == rhs.array;
+
+            case SJSONValueType::OBJECT:
+                return object == rhs.object;
+
+            case SJSONValueType::INVALID:
+                return false;
+        }
+        return false;
+    }
+};
+
+struct SSignedDecimal
+{
+    bool negative = false;
+    string magnitude = "0";
+};
+
+string SStripLeadingZeroes(const string& value)
+{
+    const size_t firstNonZero = value.find_first_not_of('0');
+    return firstNonZero == string::npos ? "0" : value.substr(firstNonZero);
+}
+
+int SCompareUnsignedDecimals(const string& lhs, const string& rhs)
+{
+    if (lhs.size() != rhs.size()) {
+        return lhs.size() < rhs.size() ? -1 : 1;
+    }
+    if (lhs == rhs) {
+        return 0;
+    }
+    return lhs < rhs ? -1 : 1;
+}
+
+string SAddUnsignedDecimals(const string& lhs, const string& rhs)
+{
+    string result;
+    int lhsIndex = static_cast<int>(lhs.size()) - 1;
+    int rhsIndex = static_cast<int>(rhs.size()) - 1;
+    int carry = 0;
+    while (lhsIndex >= 0 || rhsIndex >= 0 || carry) {
+        const int lhsDigit = lhsIndex >= 0 ? lhs[lhsIndex--] - '0' : 0;
+        const int rhsDigit = rhsIndex >= 0 ? rhs[rhsIndex--] - '0' : 0;
+        const int sum = lhsDigit + rhsDigit + carry;
+        result.push_back(static_cast<char>('0' + (sum % 10)));
+        carry = sum / 10;
+    }
+    reverse(result.begin(), result.end());
+    return result;
+}
+
+// Subtract rhs from lhs. The caller must ensure that lhs is not smaller than rhs.
+string SSubtractUnsignedDecimals(const string& lhs, const string& rhs)
+{
+    string result;
+    int lhsIndex = static_cast<int>(lhs.size()) - 1;
+    int rhsIndex = static_cast<int>(rhs.size()) - 1;
+    int borrow = 0;
+    while (lhsIndex >= 0) {
+        int difference = (lhs[lhsIndex--] - '0') - borrow;
+        if (rhsIndex >= 0) {
+            difference -= rhs[rhsIndex--] - '0';
+        }
+        if (difference < 0) {
+            difference += 10;
+            borrow = 1;
+        } else {
+            borrow = 0;
+        }
+        result.push_back(static_cast<char>('0' + difference));
+    }
+    reverse(result.begin(), result.end());
+    return SStripLeadingZeroes(result);
+}
+
+SSignedDecimal SAddSignedDecimals(const SSignedDecimal& lhs, const SSignedDecimal& rhs)
+{
+    if (lhs.negative == rhs.negative) {
+        return {lhs.negative, SAddUnsignedDecimals(lhs.magnitude, rhs.magnitude)};
+    }
+
+    const int comparison = SCompareUnsignedDecimals(lhs.magnitude, rhs.magnitude);
+    if (comparison == 0) {
+        return {};
+    }
+    if (comparison > 0) {
+        return {lhs.negative, SSubtractUnsignedDecimals(lhs.magnitude, rhs.magnitude)};
+    }
+    return {rhs.negative, SSubtractUnsignedDecimals(rhs.magnitude, lhs.magnitude)};
+}
+
+SSignedDecimal SSignedDecimalFromSize(const size_t value, const bool negative)
+{
+    return {negative && value != 0, to_string(value)};
+}
+
+string SNormalizeJSONNumber(const bool negative, const string& integer, const string& fraction,
+                            const SSignedDecimal& exponent)
+{
+    string coefficient = integer + fraction;
+    coefficient = SStripLeadingZeroes(coefficient);
+    if (coefficient == "0") {
+        return "0";
+    }
+
+    size_t trailingZeroes = 0;
+    while (coefficient.back() == '0') {
+        coefficient.pop_back();
+        ++trailingZeroes;
+    }
+
+    SSignedDecimal scale = exponent;
+    if (trailingZeroes >= fraction.size()) {
+        scale = SAddSignedDecimals(scale, SSignedDecimalFromSize(trailingZeroes - fraction.size(), false));
+    } else {
+        scale = SAddSignedDecimals(scale, SSignedDecimalFromSize(fraction.size() - trailingZeroes, true));
+    }
+
+    return (negative ? "-" : "") + coefficient + "e" + (scale.negative ? "-" : "") + scale.magnitude;
+}
+
+class SJSONParser
+{
+private:
+    static constexpr size_t MAX_DEPTH = 1000;
+    const char* _current;
+    const char* const _end;
+
+    void skipWhitespace()
+    {
+        while (_current < _end &&
+               (*_current == ' ' || *_current == '\t' || *_current == '\n' || *_current == '\r')) {
+            ++_current;
+        }
+    }
+
+    static int hexValue(const char value)
+    {
+        if (value >= '0' && value <= '9') {
+            return value - '0';
+        }
+        if (value >= 'a' && value <= 'f') {
+            return value - 'a' + 10;
+        }
+        if (value >= 'A' && value <= 'F') {
+            return value - 'A' + 10;
+        }
+        return -1;
+    }
+
+    bool parseHexCodeUnit(unsigned int& codeUnit)
+    {
+        if (_end - _current < 4) {
+            return false;
+        }
+        codeUnit = 0;
+        for (int i = 0; i < 4; ++i) {
+            const int digit = hexValue(*_current++);
+            if (digit < 0) {
+                return false;
+            }
+            codeUnit = (codeUnit << 4) | static_cast<unsigned int>(digit);
+        }
+        return true;
+    }
+
+    static void appendUTF8(string& output, const unsigned int codePoint)
+    {
+        if (codePoint <= 0x7F) {
+            output.push_back(static_cast<char>(codePoint));
+        } else if (codePoint <= 0x7FF) {
+            output.push_back(static_cast<char>(0xC0 | (codePoint >> 6)));
+            output.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+        } else if (codePoint <= 0xFFFF) {
+            output.push_back(static_cast<char>(0xE0 | (codePoint >> 12)));
+            output.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F)));
+            output.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+        } else {
+            output.push_back(static_cast<char>(0xF0 | (codePoint >> 18)));
+            output.push_back(static_cast<char>(0x80 | ((codePoint >> 12) & 0x3F)));
+            output.push_back(static_cast<char>(0x80 | ((codePoint >> 6) & 0x3F)));
+            output.push_back(static_cast<char>(0x80 | (codePoint & 0x3F)));
+        }
+    }
+
+    bool parseString(string& output)
+    {
+        if (_current == _end || *_current != '"') {
+            return false;
+        }
+        ++_current;
+        while (_current < _end) {
+            const unsigned char value = static_cast<unsigned char>(*_current++);
+            if (value == '"') {
+                return true;
+            }
+            if (value < 0x20) {
+                return false;
+            }
+            if (value != '\\') {
+                output.push_back(static_cast<char>(value));
+                continue;
+            }
+            if (_current == _end) {
+                return false;
+            }
+
+            const char escaped = *_current++;
+            switch (escaped) {
+                case '"':
+                case '\\':
+                case '/':
+                    output.push_back(escaped);
+                    break;
+                case 'b':
+                    output.push_back('\b');
+                    break;
+                case 'f':
+                    output.push_back('\f');
+                    break;
+                case 'n':
+                    output.push_back('\n');
+                    break;
+                case 'r':
+                    output.push_back('\r');
+                    break;
+                case 't':
+                    output.push_back('\t');
+                    break;
+                case 'u': {
+                    unsigned int codePoint = 0;
+                    if (!parseHexCodeUnit(codePoint)) {
+                        return false;
+                    }
+                    if (codePoint >= 0xD800 && codePoint <= 0xDBFF) {
+                        if (_end - _current < 6 || _current[0] != '\\' || _current[1] != 'u') {
+                            return false;
+                        }
+                        _current += 2;
+                        unsigned int lowSurrogate = 0;
+                        if (!parseHexCodeUnit(lowSurrogate) || lowSurrogate < 0xDC00 || lowSurrogate > 0xDFFF) {
+                            return false;
+                        }
+                        codePoint = 0x10000 + ((codePoint - 0xD800) << 10) + (lowSurrogate - 0xDC00);
+                    } else if (codePoint >= 0xDC00 && codePoint <= 0xDFFF) {
+                        return false;
+                    }
+                    appendUTF8(output, codePoint);
+                    break;
+                }
+                default:
+                    return false;
+            }
+        }
+        return false;
+    }
+
+    bool parseNumber(SJSONValue& output)
+    {
+        bool negative = false;
+        if (*_current == '-') {
+            negative = true;
+            if (++_current == _end) {
+                return false;
+            }
+        }
+
+        const char* integerStart = _current;
+        if (*_current == '0') {
+            ++_current;
+            if (_current < _end && isdigit(static_cast<unsigned char>(*_current))) {
+                return false;
+            }
+        } else if (*_current >= '1' && *_current <= '9') {
+            while (_current < _end && isdigit(static_cast<unsigned char>(*_current))) {
+                ++_current;
+            }
+        } else {
+            return false;
+        }
+        const string integer(integerStart, _current);
+
+        string fraction;
+        if (_current < _end && *_current == '.') {
+            ++_current;
+            const char* fractionStart = _current;
+            while (_current < _end && isdigit(static_cast<unsigned char>(*_current))) {
+                ++_current;
+            }
+            if (_current == fractionStart) {
+                return false;
+            }
+            fraction.assign(fractionStart, _current);
+        }
+
+        SSignedDecimal exponent;
+        if (_current < _end && (*_current == 'e' || *_current == 'E')) {
+            ++_current;
+            if (_current == _end) {
+                return false;
+            }
+            if (*_current == '-' || *_current == '+') {
+                exponent.negative = *_current == '-';
+                if (++_current == _end) {
+                    return false;
+                }
+            }
+            const char* exponentStart = _current;
+            while (_current < _end && isdigit(static_cast<unsigned char>(*_current))) {
+                ++_current;
+            }
+            if (_current == exponentStart) {
+                return false;
+            }
+            exponent.magnitude = SStripLeadingZeroes(string(exponentStart, _current));
+            if (exponent.magnitude == "0") {
+                exponent.negative = false;
+            }
+        }
+
+        output.type = SJSONValueType::NUMBER;
+        output.scalar = SNormalizeJSONNumber(negative, integer, fraction, exponent);
+        return true;
+    }
+
+    bool parseArray(SJSONValue& output, const size_t depth)
+    {
+        output.type = SJSONValueType::ARRAY;
+        ++_current;
+        skipWhitespace();
+        if (_current < _end && *_current == ']') {
+            ++_current;
+            return true;
+        }
+        while (_current < _end) {
+            SJSONValue value;
+            if (!parseValue(value, depth + 1)) {
+                return false;
+            }
+            output.array.push_back(move(value));
+            skipWhitespace();
+            if (_current < _end && *_current == ']') {
+                ++_current;
+                return true;
+            }
+            if (_current == _end || *_current != ',') {
+                return false;
+            }
+            ++_current;
+            skipWhitespace();
+        }
+        return false;
+    }
+
+    bool parseObject(SJSONValue& output, const size_t depth)
+    {
+        output.type = SJSONValueType::OBJECT;
+        ++_current;
+        skipWhitespace();
+        if (_current < _end && *_current == '}') {
+            ++_current;
+            return true;
+        }
+        while (_current < _end) {
+            string key;
+            if (!parseString(key)) {
+                return false;
+            }
+            skipWhitespace();
+            if (_current == _end || *_current != ':') {
+                return false;
+            }
+            ++_current;
+            skipWhitespace();
+
+            SJSONValue value;
+            if (!parseValue(value, depth + 1)) {
+                return false;
+            }
+            output.object[key].push_back(move(value));
+            skipWhitespace();
+            if (_current < _end && *_current == '}') {
+                ++_current;
+                return true;
+            }
+            if (_current == _end || *_current != ',') {
+                return false;
+            }
+            ++_current;
+            skipWhitespace();
+        }
+        return false;
+    }
+
+    bool parseValue(SJSONValue& output, const size_t depth)
+    {
+        if (depth > MAX_DEPTH || _current == _end) {
+            return false;
+        }
+        switch (*_current) {
+            case 'n':
+                if (_end - _current < 4 || string(_current, _current + 4) != "null") {
+                    return false;
+                }
+                _current += 4;
+                output.type = SJSONValueType::NULL_VALUE;
+                return true;
+            case 't':
+                if (_end - _current < 4 || string(_current, _current + 4) != "true") {
+                    return false;
+                }
+                _current += 4;
+                output.type = SJSONValueType::BOOLEAN;
+                output.scalar = "true";
+                return true;
+            case 'f':
+                if (_end - _current < 5 || string(_current, _current + 5) != "false") {
+                    return false;
+                }
+                _current += 5;
+                output.type = SJSONValueType::BOOLEAN;
+                output.scalar = "false";
+                return true;
+            case '"':
+                output.type = SJSONValueType::STRING;
+                return parseString(output.scalar);
+            case '[':
+                return parseArray(output, depth);
+            case '{':
+                return parseObject(output, depth);
+            default:
+                if (*_current == '-' || (*_current >= '0' && *_current <= '9')) {
+                    return parseNumber(output);
+                }
+                return false;
+        }
+    }
+
+public:
+    explicit SJSONParser(const string& json) : _current(json.data()), _end(json.data() + json.size())
+    {
+    }
+
+    bool parse(SJSONValue& output)
+    {
+        skipWhitespace();
+        if (!parseValue(output, 0)) {
+            return false;
+        }
+        skipWhitespace();
+        return _current == _end;
+    }
+};
+} // namespace
+
+bool SJSONEquals(const string& lhs, const string& rhs)
+{
+    SJSONValue lhsValue;
+    SJSONValue rhsValue;
+    return SJSONParser(lhs).parse(lhsValue) && SJSONParser(rhs).parse(rhsValue) && lhsValue == rhsValue;
+}
+
 // --------------------------------------------------------------------------
 string SGZip(const string& content)
 {

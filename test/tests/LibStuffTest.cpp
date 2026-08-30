@@ -32,6 +32,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testSHMACSHA256),
                                      TEST(LibStuff::testJSONDecode),
                                      TEST(LibStuff::testJSON),
+                                     TEST(LibStuff::testJSONEquality),
                                      TEST(LibStuff::testEscapeUnescape),
                                      TEST(LibStuff::testTrim),
                                      TEST(LibStuff::testCollapse),
@@ -200,6 +201,39 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(nanParsed["note"], "nan");
         ASSERT_EQUAL(nanParsed["value"], "inf");
         ASSERT_EQUAL(nanParsed["negative"], "-inf");
+    }
+
+    void testJSONEquality()
+    {
+        // Object member order and insignificant whitespace do not affect equality.
+        ASSERT_TRUE(SJSONEquals(
+            R"({"activity":1,"nested":{"enabled":true,"values":[1,2,3]}})",
+            " { \"nested\" : { \"values\" : [ 1, 2, 3 ], \"enabled\" : true }, \"activity\" : 1 } "));
+
+        // Equivalent string escapes and number representations compare by value.
+        ASSERT_TRUE(SJSONEquals(R"({"text":"Bedrock\/JSON","value":1.00e2})",
+                                R"({"value":100,"text":"Bedrock\u002fJSON"})"));
+        ASSERT_TRUE(SJSONEquals(R"("\uD83D\uDE00")", R"("😀")"));
+        ASSERT_TRUE(SJSONEquals("1e99999999999999999999", "10e99999999999999999998"));
+        ASSERT_TRUE(SJSONEquals("-0.0", "0"));
+
+        // Array order and JSON value types remain significant.
+        ASSERT_FALSE(SJSONEquals(R"([1,2,3])", R"([3,2,1])"));
+        ASSERT_FALSE(SJSONEquals(R"({"value":1})", R"({"value":"1"})"));
+        ASSERT_FALSE(SJSONEquals(R"({"value":true})", R"({"value":"true"})"));
+        ASSERT_FALSE(SJSONEquals(R"({"value":null})", R"({"value":"null"})"));
+        ASSERT_FALSE(SJSONEquals(R"({"key":1})", R"({"KEY":1})"));
+
+        // A changed, missing, or additional member makes objects different.
+        ASSERT_FALSE(SJSONEquals(R"({"nested":{"value":1}})", R"({"nested":{"value":2}})"));
+        ASSERT_FALSE(SJSONEquals(R"({"value":1})", R"({})"));
+        ASSERT_FALSE(SJSONEquals(R"({"value":1})", R"({"value":1,"other":2})"));
+
+        // Invalid JSON never compares equal, including when the invalid input strings are identical.
+        ASSERT_FALSE(SJSONEquals(R"({"value":1)", R"({"value":1)"));
+        ASSERT_FALSE(SJSONEquals(R"({"value":1} trailing)", R"({"value":1} trailing)"));
+        ASSERT_FALSE(SJSONEquals("01", "01"));
+        ASSERT_FALSE(SJSONEquals(R"("\uD800")", R"("\uD800")"));
     }
 
     void testEscapeUnescape()
