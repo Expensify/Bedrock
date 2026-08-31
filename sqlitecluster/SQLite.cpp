@@ -561,6 +561,11 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
     string beginQuery = (beginOnly && _hctree) ? "BEGIN" : "BEGIN CONCURRENT";
     _insideTransaction = !SQuery(_db, beginQuery);
 
+    // If we locked the mutex and then failed to begin, unlock it before returning
+    if (_mutexLocked && !_insideTransaction) {
+        _sharedData.commitLock.unlock();
+    }
+
     _queryCache.clear();
     _tablesUsed.clear();
     _readQueryCount = 0;
