@@ -207,14 +207,6 @@ void SQLiteNode::_replicate()
         }
 
         // At this point, we're guaranteed to have a message. Process it and then run again.
-        //
-        // Everything that can throw is inside this `try`. Nothing may escape it: this is a thread function, so an
-        // uncaught exception here is `std::terminate` and the whole process dies rather than one connection dropping.
-        // We keep looping afterwards rather than returning, because returning would leave `_replicateThread` set with
-        // nothing consuming `_replicateQueue`, which stalls replication silently until the next state change. Any
-        // message still queued behind a failure is from the stream we just abandoned, and can't be applied out of
-        // order: `_handleCommitTransaction` checks the commit count and hash against our own before committing
-        // anything, so a stale message throws its way back here instead of diverging the DB.
         try {
             if (SIEquals(command.methodLine, "TRANSACTION")) {
                 // A whole transaction in one message: apply it, then commit it, with no window in between where we're
@@ -253,17 +245,7 @@ void SQLiteNode::_onReplicationError(SQLite& db, SQLitePeer* peer, const SData& 
         {"reason", reason}
     });
 
-    // Whatever we'd started applying must not commit. Two reasons this isn't optional: `db` is a handle from
-    // `_dbPool`, so anything left open on it goes back into the pool for some other thread to find, and a transaction
-    // that's been prepared but not committed is still holding the commit lock, which blocks every writer in the
-    // process. `rollback` is safe whether or not a transaction is actually open, and releases the lock if `prepare`
-    // took it.
     db.rollback();
-
-    // Drop the peer, the same way `_onMESSAGE` drops a peer whose message we couldn't handle. We've stopped
-    // replicating mid-stream, so our commit count now trails what leader believes we have -- leaving the connection up
-    // would let the next transaction arrive as if nothing had gone wrong. Dropping the socket makes the sync thread
-    // notice, go SEARCHING, and re-synchronize from a known state.
     if (peer) {
         SData reconnect("RECONNECT");
         reconnect["Reason"] = reason;
