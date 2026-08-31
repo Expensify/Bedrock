@@ -197,8 +197,8 @@ void SQLiteNode::_replicate()
         if (isQueueEmpty || (shouldExit && shouldExit < STimeNow())) {
             // There are no commands to process.
             if (shouldExit) {
-                // Done with replication. Each iteration below either commits or throws, so there's never a transaction
-                // open on this handle between two of them, and this is only reachable between two of them.
+                // Done with replication. Each iteration below either commits or rolls back, so there's never a
+                // transaction open on this handle between two of them, and this is only reachable between two of them.
                 return;
             } else {
                 // The queue is empty but we're not exiting so go back to the top and wait.
@@ -207,25 +207,68 @@ void SQLiteNode::_replicate()
         }
 
         // At this point, we're guaranteed to have a message. Process it and then run again.
-        if (SIEquals(command.methodLine, "TRANSACTION")) {
-            // A whole transaction in one message: apply it, then commit it, with no window in between where we're
-            // holding a prepared transaction waiting to hear what to do with it.
-            auto start = chrono::steady_clock::now();
-            _handleBeginTransaction(db, peer, command);
-            if (!_handlePrepareTransaction(db, peer, command, dequeueTime)) {
-                // We can't commit what we couldn't apply, and a follower that can't apply leader's transaction is
-                // broken. `_handlePrepareTransaction` has already rolled back and alerted.
-                STHROW("prepare failed");
+        //
+        // Everything that can throw is inside this `try`. Nothing may escape it: this is a thread function, so an
+        // uncaught exception here is `std::terminate` and the whole process dies rather than one connection dropping.
+        // We keep looping afterwards rather than returning, because returning would leave `_replicateThread` set with
+        // nothing consuming `_replicateQueue`, which stalls replication silently until the next state change. Any
+        // message still queued behind a failure is from the stream we just abandoned, and can't be applied out of
+        // order: `_handleCommitTransaction` checks the commit count and hash against our own before committing
+        // anything, so a stale message throws its way back here instead of diverging the DB.
+        try {
+            if (SIEquals(command.methodLine, "TRANSACTION")) {
+                // A whole transaction in one message: apply it, then commit it, with no window in between where we're
+                // holding a prepared transaction waiting to hear what to do with it.
+                auto start = chrono::steady_clock::now();
+                _handleBeginTransaction(db, peer, command);
+                if (!_handlePrepareTransaction(db, peer, command, dequeueTime)) {
+                    // We can't commit what we couldn't apply, and a follower that can't apply leader's transaction is
+                    // broken. `_handlePrepareTransaction` has already rolled back and alerted.
+                    STHROW("prepare failed");
+                }
+                int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
+                if (result != SQLITE_OK) {
+                    STHROW("commit failed");
+                }
+                auto duration = chrono::steady_clock::now() - start;
+                SINFO("[performance] Replicated transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
+            } else {
+                SWARN("Invalid command passed to _replicate: " << command.methodLine);
             }
-            int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
-            if (result != SQLITE_OK) {
-                STHROW("commit failed");
-            }
-            auto duration = chrono::steady_clock::now() - start;
-            SINFO("[performance] Replicated transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
-        } else {
-            SWARN("Invalid command passed to _replicate: " << command.methodLine);
+        } catch (const SException& e) {
+            _onReplicationError(db, peer, command, e.what());
+        } catch (const exception& e) {
+            _onReplicationError(db, peer, command, string("unexpected exception: ") + e.what());
+        } catch (...) {
+            _onReplicationError(db, peer, command, "unknown exception");
         }
+    }
+}
+
+void SQLiteNode::_onReplicationError(SQLite& db, SQLitePeer* peer, const SData& command, const string& reason)
+{
+    SWARN("Error replicating, rolling back and reconnecting", {
+        {"peer", peer ? peer->name : "unknown"},
+        {"message", !command.empty() ? command.methodLine : ""},
+        {"reason", reason}
+    });
+
+    // Whatever we'd started applying must not commit. Two reasons this isn't optional: `db` is a handle from
+    // `_dbPool`, so anything left open on it goes back into the pool for some other thread to find, and a transaction
+    // that's been prepared but not committed is still holding the commit lock, which blocks every writer in the
+    // process. `rollback` is safe whether or not a transaction is actually open, and releases the lock if `prepare`
+    // took it.
+    db.rollback();
+
+    // Drop the peer, the same way `_onMESSAGE` drops a peer whose message we couldn't handle. We've stopped
+    // replicating mid-stream, so our commit count now trails what leader believes we have -- leaving the connection up
+    // would let the next transaction arrive as if nothing had gone wrong. Dropping the socket makes the sync thread
+    // notice, go SEARCHING, and re-synchronize from a known state.
+    if (peer) {
+        SData reconnect("RECONNECT");
+        reconnect["Reason"] = reason;
+        _sendToPeer(peer, reconnect);
+        peer->shutdownSocket();
     }
 }
 
