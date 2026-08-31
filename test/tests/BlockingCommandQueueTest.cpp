@@ -184,10 +184,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
 
     void testDequeueRestoresLogPrefix()
     {
-        // `_dequeue()` sets the thread log prefix from the rejected command's own request so the rejection is logged
-        // against the request and user that got the 503. That prefix is scoped, so it must be gone by the time
-        // `get()` returns: the blocking worker sets its own prefix after `get()` and would otherwise inherit a stale
-        // one for the rest of the iteration.
+        // `_dequeue()`'s prefix is scoped, so it must be gone once `get()` returns: the blocking worker sets its own
+        // prefix after `get()` and would otherwise inherit a stale one.
         TestBlockingCommandQueue queue;
         queue.setIdentifierThreshold(50);
         queue.setCommandThreshold(0);
