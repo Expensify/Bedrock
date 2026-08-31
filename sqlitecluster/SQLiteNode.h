@@ -222,6 +222,8 @@ private:
     // This thread exits when `_replicateThreadShouldExitTime` passes, which is set when a node stops FOLLOWING.
     void _replicate();
 
+    void _onReplicationError(SQLite& db, SQLitePeer* peer, const SData& command, const string& reason);
+
     // Replicates any transactions that have been made on our database by other threads to peers.
     void _sendOutstandingTransactions();
     void _sendStandupResponse(SQLitePeer* peer, const SData& message);

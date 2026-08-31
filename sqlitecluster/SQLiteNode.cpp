@@ -197,8 +197,8 @@ void SQLiteNode::_replicate()
         if (isQueueEmpty || (shouldExit && shouldExit < STimeNow())) {
             // There are no commands to process.
             if (shouldExit) {
-                // Done with replication. Each iteration below either commits or throws, so there's never a transaction
-                // open on this handle between two of them, and this is only reachable between two of them.
+                // Done with replication. Each iteration below either commits or rolls back, so there's never a
+                // transaction open on this handle between two of them, and this is only reachable between two of them.
                 return;
             } else {
                 // The queue is empty but we're not exiting so go back to the top and wait.
@@ -207,25 +207,50 @@ void SQLiteNode::_replicate()
         }
 
         // At this point, we're guaranteed to have a message. Process it and then run again.
-        if (SIEquals(command.methodLine, "TRANSACTION")) {
-            // A whole transaction in one message: apply it, then commit it, with no window in between where we're
-            // holding a prepared transaction waiting to hear what to do with it.
-            auto start = chrono::steady_clock::now();
-            _handleBeginTransaction(db, peer, command);
-            if (!_handlePrepareTransaction(db, peer, command, dequeueTime)) {
-                // We can't commit what we couldn't apply, and a follower that can't apply leader's transaction is
-                // broken. `_handlePrepareTransaction` has already rolled back and alerted.
-                STHROW("prepare failed");
+        try {
+            if (SIEquals(command.methodLine, "TRANSACTION")) {
+                // A whole transaction in one message: apply it, then commit it, with no window in between where we're
+                // holding a prepared transaction waiting to hear what to do with it.
+                auto start = chrono::steady_clock::now();
+                _handleBeginTransaction(db, peer, command);
+                if (!_handlePrepareTransaction(db, peer, command, dequeueTime)) {
+                    // We can't commit what we couldn't apply, and a follower that can't apply leader's transaction is
+                    // broken. `_handlePrepareTransaction` has already rolled back and alerted.
+                    STHROW("prepare failed");
+                }
+                int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
+                if (result != SQLITE_OK) {
+                    STHROW("commit failed");
+                }
+                auto duration = chrono::steady_clock::now() - start;
+                SINFO("[performance] Replicated transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
+            } else {
+                SWARN("Invalid command passed to _replicate: " << command.methodLine);
             }
-            int result = _handleCommitTransaction(db, peer, command.calcU64("NewCount"), command["NewHash"]);
-            if (result != SQLITE_OK) {
-                STHROW("commit failed");
-            }
-            auto duration = chrono::steady_clock::now() - start;
-            SINFO("[performance] Replicated transaction in " << chrono::duration_cast<chrono::microseconds>(duration).count() << "us.");
-        } else {
-            SWARN("Invalid command passed to _replicate: " << command.methodLine);
+        } catch (const SException& e) {
+            _onReplicationError(db, peer, command, e.what());
+        } catch (const exception& e) {
+            _onReplicationError(db, peer, command, string("unexpected exception: ") + e.what());
+        } catch (...) {
+            _onReplicationError(db, peer, command, "unknown exception");
         }
+    }
+}
+
+void SQLiteNode::_onReplicationError(SQLite& db, SQLitePeer* peer, const SData& command, const string& reason)
+{
+    SWARN("Error replicating, rolling back and reconnecting", {
+        {"peer", peer ? peer->name : "unknown"},
+        {"message", !command.empty() ? command.methodLine : ""},
+        {"reason", reason}
+    });
+
+    db.rollback();
+    if (peer) {
+        SData reconnect("RECONNECT");
+        reconnect["Reason"] = reason;
+        _sendToPeer(peer, reconnect);
+        peer->shutdownSocket();
     }
 }
 
