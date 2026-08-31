@@ -562,7 +562,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
     _insideTransaction = !SQuery(_db, beginQuery);
 
     // If we locked the mutex and then failed to begin, unlock it before returning
-    if(_mutexLocked && !_insideTransaction) {
+    if (_mutexLocked && !_insideTransaction) {
         _sharedData.commitLock.unlock();
     }
 
