@@ -18,7 +18,7 @@
 ** separate file. This file contains only code for the core SQLite library.
 **
 ** The content in this amalgamation comes from Fossil check-in
-** fd4fca9cb6f65d86a3ffd10e1b551668d007 with changes in files:
+** bf8437339f31209af779566b1bf6744015a2 with changes in files:
 **
 **    
 */
@@ -476,10 +476,10 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.54.0"
 #define SQLITE_VERSION_NUMBER 3054000
-#define SQLITE_SOURCE_ID      "2026-08-17 16:49:11 fd4fca9cb6f65d86a3ffd10e1b551668d00705779e22fbce0bf1048376a0cbe1"
+#define SQLITE_SOURCE_ID      "2026-08-28 11:51:14 bf8437339f31209af779566b1bf6744015a278a9133a260a5c9584ef4a467ad5"
 #define SQLITE_SCM_BRANCH     "hctree-bedrock-lcd-ex"
 #define SQLITE_SCM_TAGS       ""
-#define SQLITE_SCM_DATETIME   "2026-08-17T16:49:11.522Z"
+#define SQLITE_SCM_DATETIME   "2026-08-28T11:51:14.711Z"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -74208,6 +74208,11 @@ struct BtConcurrent {
 #define BTCONC_STATE_RETIRED 2
 
 /*
+** Maximum number of reads to log before giving up on LCD.
+*/
+#define BTCONC_MAX_READS (25*1024*1024)
+
+/*
 ** Each read of an intkey or index btree by a BEGIN CONCURRENT transaction is
 ** represented by an object of one of the following types.
 */
@@ -76993,6 +76998,11 @@ static BtReadIntkey *btreeBcIntkeyRead(
   int *piScanIndex,
   int *pRc
 ){
+  assert( pBtConc->eState==BTCONC_STATE_INUSE );
+  if( pBtConc->nReadIntkey>BTCONC_MAX_READS ){
+    pBtConc->eState = BTCONC_STATE_RETIRED;
+  }
+
   int rc = btreeBcGrowArray(
       (void**)&pBtConc->aReadIntkey,
       &pBtConc->nReadIntkey,
@@ -77085,6 +77095,12 @@ static int btreeBcScanStart(
   if( rc==SQLITE_OK && pBtConc->eState==BTCONC_STATE_INUSE ){
     pCsr->iScanDir = 0;
     pCsr->eScanType = eRead;
+
+    if( (pBtConc->nReadIntkey + pBtConc->nReadIndex)>=BTCONC_MAX_READS ){
+      pBtConc->eState = BTCONC_STATE_RETIRED;
+      return SQLITE_OK;
+    }
+
     if( pCsr->pKeyInfo ){
 
       /* Reserve a BtReadIndex structure from the array */
@@ -146624,6 +146640,21 @@ static void soundexFunc(
 }
 #endif /* SQLITE_SOUNDEX */
 
+#if defined(SQLITE_DEBUG) || defined(SQLITE_BUILTIN_OOM_FUNCTION)
+/*
+** This SQL function just invokes sqlite3OomFault() and then returns
+** NULL.  Used for testing only.
+*/
+static void oomFunc(
+  sqlite3_context *context,
+  int argc,
+  sqlite3_value **argv
+){
+  sqlite3 *db = sqlite3_context_db_handle(context);
+  sqlite3OomFault(db);
+}
+#endif /* SQLITE_DEBUG || SQLITE_BUILTIN_OOM_FUNCTION */
+
 #ifndef SQLITE_OMIT_LOAD_EXTENSION
 /*
 ** A function that loads a shared-library extension then returns NULL.
@@ -148181,6 +148212,9 @@ SQLITE_PRIVATE void sqlite3RegisterBuiltinFunctions(void){
 #ifdef SQLITE_DEBUG
     FUNCTION(fpdecode,           3, 0, 0, fpdecodeFunc     ),
     FUNCTION(parseuri,          -1, 0, 0, parseuriFunc     ),
+#endif
+#if defined(SQLITE_DEBUG) || defined(SQLITE_BUILTIN_OOM_FUNCTION)
+    FUNCTION(oom,               -1, 0, 0, oomFunc          ),
 #endif
 #ifndef SQLITE_OMIT_FLOATING_POINT
     FUNCTION(round,              1, 0, 0, roundFunc        ),
@@ -275589,7 +275623,7 @@ static void fts5SourceIdFunc(
 ){
   assert( nArg==0 );
   UNUSED_PARAM2(nArg, apUnused);
-  sqlite3_result_text(pCtx, "fts5: 2026-08-17 16:49:11 fd4fca9cb6f65d86a3ffd10e1b551668d00705779e22fbce0bf1048376a0cbe1", -1, SQLITE_TRANSIENT);
+  sqlite3_result_text(pCtx, "fts5: 2026-08-28 11:51:14 bf8437339f31209af779566b1bf6744015a278a9133a260a5c9584ef4a467ad5", -1, SQLITE_TRANSIENT);
 }
 
 /*
