@@ -30,6 +30,7 @@
 #include <libstuff/SData.h>
 #include <libstuff/SFastBuffer.h>
 #include <libstuff/SFluentdLogger.h>
+#include <libstuff/JSON/Parser.h>
 #include <libstuff/sqlite3.h>
 
 // Additional headers
@@ -634,7 +635,6 @@ string SUnescape(const char* lhs, char escaper)
                     utfValue &= ~(byte << 12);
                     additionalBytes = 2;
                 }
-
                 // Loop through the remaining bytes expanding with UTF-8 header
                 string utfChar = "";
                 for (; additionalBytes > 0; --additionalBytes) {
@@ -1853,6 +1853,31 @@ list<string> SParseJSONArray(const string& array, const string& nullValue)
         return list<string>();
     }
     return out;
+}
+
+bool SJSONEquals(const string& left, const string& right, const set<string>& ignoredTopLevelKeys)
+{
+    try {
+        unique_ptr<JSON::Value> leftValue = JSON::Parser::readStrict(left);
+        unique_ptr<JSON::Value> rightValue = JSON::Parser::readStrict(right);
+
+        // Ignored keys apply only to a root object. Strict parsing happens before erasing them so invalid ignored values
+        // and duplicate ignored keys cannot be hidden by the comparison.
+        if (leftValue->isObject()) {
+            for (const string& key : ignoredTopLevelKeys) {
+                leftValue->erase(key);
+            }
+        }
+        if (rightValue->isObject()) {
+            for (const string& key : ignoredTopLevelKeys) {
+                rightValue->erase(key);
+            }
+        }
+
+        return *leftValue == *rightValue;
+    } catch (const JSON::InvalidArgument&) {
+        return false;
+    }
 }
 
 // --------------------------------------------------------------------------

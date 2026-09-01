@@ -60,14 +60,14 @@ mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/lib
 
 # We select all of the cpp files (and manually add sqlite3.c and qrf.c) that will be in libstuff.
 # We then transform those file names into a list of object file name and dependency file names.
-STUFFCPP = $(shell find libstuff -name '*.cpp' -not -path 'libstuff/JSON/*') libstuff/JSON/Metrics.cpp
+STUFFCPP = $(shell find libstuff -name '*.cpp' -not -path 'libstuff/JSON/*') libstuff/JSON/Metrics.cpp libstuff/JSON/StrictParser.cpp
 STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(INTERMEDIATEDIR)/libstuff/qrf.o $(INTERMEDIATEDIR)/libstuff/sqlite3.o
 STUFFDEP = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 # Link this object directly into bedrock so dynamically loaded applications can resolve the metrics hook.
 JSONMETRICSOBJ = $(INTERMEDIATEDIR)/libstuff/JSON/Metrics.o
 
 # Keep the JSON implementation in a separate archive so embedding applications can provide their own JSON symbols during migration.
-JSONCPP = $(shell find libstuff/JSON -name '*.cpp' -not -name 'Metrics.cpp')
+JSONCPP = $(shell find libstuff/JSON -name '*.cpp' -not -name 'Metrics.cpp' -not -name 'StrictParser.cpp')
 JSONOBJ = $(JSONCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 JSONDEP = $(JSONCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 

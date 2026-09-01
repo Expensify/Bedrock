@@ -634,6 +634,12 @@ string SComposeJSONObject(const STable& nameValueMap, const bool forceString = f
 // this is useful for determining the order of supplied keys.
 STable SParseJSONObject(const string& object, const string& nullValue = "null", const function<void(const string&, const string&)>& callback = [] (const string&, const string&){});
 list<string> SParseJSONArray(const string& array, const string& nullValue = "null");
+
+// Compares JSON values recursively. Object member order and insignificant whitespace are ignored, while array order
+// and JSON value types remain significant. Equivalent spellings within the same numeric type compare equal.
+// ignoredTopLevelKeys applies only to the root object.
+bool SJSONEquals(const string& left, const string& right, const set<string>& ignoredTopLevelKeys = {});
+
 string SGetJSONArrayFront(const string& jsonArray);
 
 // --------------------------------------------------------------------------

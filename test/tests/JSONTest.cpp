@@ -1,6 +1,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <string>
 
 #include <libstuff/JSON/Metrics.h>
@@ -71,6 +72,7 @@ struct JSONTest : tpunit::TestFixture
                               TEST(JSONTest::testParseAndSerializeNestedValue),
                               TEST(JSONTest::testExactUint64),
                               TEST(JSONTest::testEqualitySemantics),
+                              TEST(JSONTest::testStrictParserValidation),
                               TEST(JSONTest::testMetricsObserver),
                               TEST(JSONTest::testDisabledMetricsObserver))
     {
@@ -102,6 +104,16 @@ struct JSONTest : tpunit::TestFixture
                      JSON::Value::parse("{\"b\":[true,null],\"a\":1}"));
         ASSERT_NOT_EQUAL(JSON::Value::parse("[1,2]"), JSON::Value::parse("[2,1]"));
         ASSERT_NOT_EQUAL(JSON::Value::parse("1"), JSON::Value::parse("1.0"));
+    }
+
+    void testStrictParserValidation()
+    {
+        const unique_ptr<JSON::Value> valid = JSON::Parser::readStrict("{\"emoji\":\"\\ud83d\\ude00\"}");
+        ASSERT_EQUAL("{\"emoji\":\"\xf0\x9f\x98\x80\"}", valid->serialize());
+
+        ASSERT_THROW(JSON::Parser::readStrict("{"), JSON::InvalidArgument);
+        ASSERT_THROW(JSON::Parser::readStrict("{\"a\":1,\"\\u0061\":2}"), JSON::InvalidArgument);
+        ASSERT_THROW(JSON::Parser::readStrict(string("{\"value\":\"\xc3\x28\"}")), JSON::InvalidArgument);
     }
 
     void testMetricsObserver()
