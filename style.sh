@@ -6,7 +6,7 @@ cd /vagrant/Bedrock/
 git fetch origin main # Make sure local references of main branch are up to date
 for FILENAME in $(git diff --name-only origin/main...`git branch | grep \* | cut -d ' ' -f2` -- '*.cpp' '*.h'); do
     case "$FILENAME" in
-        *tpunit++.cpp|*qrf.h|*sqlite3.h|*sqlite3ext.h)
+        *tpunit++.cpp|*qrf.h|*sqlite3.h|*sqlite3ext.h|externalLib/rapidjson/*)
             continue
             ;;
     esac
