@@ -8,6 +8,7 @@ bedrock
 .build
 libbedrock.a
 libstuff.a
+libjson.a
 sqlitecluster/sqlitecluster
 libstuff/libstuff.d
 libstuff/libstuff.h.gch
