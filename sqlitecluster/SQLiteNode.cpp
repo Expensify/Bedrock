@@ -997,8 +997,9 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             // If the peer has a CommitCount, and is not forked from us (in which case its commits are not usable),
             // update the commit count. This assists with being able to choose synchronization peers.
             // The check for the presence of commit count can be removed once PING and PONG broadcasting this is universally deployed.
-            if (!peer->forked && message.calcU64("CommitCount")) {
-                peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
+            uint64_t newCommitCount = message.calcU64("CommitCount");
+            if (!peer->forked && newCommitCount && newCommitCount > peer.getCommitCount()) {
+                peer->setCommit(newCommitCount, message["Hash"]);
             }
 
             return;
