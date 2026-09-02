@@ -980,18 +980,28 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
         SASSERTWARN(!message.empty());
         SDEBUG("Received sqlitenode message from peer " << peer->name << ": " << message.serialize());
 
-        // We let PING and PONG skip the other message validations, they're here just to know conenctedness and don't need
-        // info on the DB state.
-        if (SIEquals(message.methodLine, "PING")) {
-            SINFO("Received PING from peer '" << peer->name << "'. Sending PONG.");
-            SData pong("PONG");
-            pong["Timestamp"] = message["Timestamp"];
-            peer->sendMessage(pong);
-            return;
-        } else if (SIEquals(message.methodLine, "PONG")) {
-            // Latency must be > 0 because we treat 0 as "not connected".
-            peer->latency = max(STimeNow() - message.calc64("Timestamp"), 1ul);
-            SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency / 1000 << "ms latency)");
+        // Once PING and PONG including `_addPeerHeaders` is universally deployed, we can move the checks that are currently
+        // under the "Every other message" comment below above here.
+        if (SIEquals(message.methodLine, "PING") || SIEquals(message.methodLine, "PONG")) {
+            if (SIEquals(message.methodLine, "PING")) {
+                SINFO("Received PING from peer '" << peer->name << "'. Sending PONG.");
+                SData pong("PONG");
+                pong["Timestamp"] = message["Timestamp"];
+                peer->sendMessage(_addPeerHeaders(pong));
+            } else {
+                // Latency must be > 0 because we treat 0 as "not connected".
+                peer->latency = max(STimeNow() - message.calc64("Timestamp"), 1ul);
+                SINFO("Received PONG from peer '" << peer->name << "' (" << peer->latency / 1000 << "ms latency)");
+            }
+
+            // If the peer has a CommitCount, and is not forked from us (in which case its commits are not usable),
+            // update the commit count. This assists with being able to choose synchronization peers.
+            // The check for the presence of commit count can be removed once PING and PONG broadcasting this is universally deployed.
+            uint64_t newCommitCount = message.calcU64("CommitCount");
+            if (!peer->forked && newCommitCount && newCommitCount > peer->commitCount) {
+                peer->setCommit(newCommitCount, message["Hash"]);
+            }
+
             return;
         }
 
@@ -2320,7 +2330,7 @@ void SQLiteNode::_sendPING(SQLitePeer* peer)
     SASSERT(peer);
     SData ping("PING");
     ping["Timestamp"] = SToStr(STimeNow());
-    peer->sendMessage(ping);
+    peer->sendMessage(_addPeerHeaders(ping));
 }
 
 SQLitePeer* SQLiteNode::getPeerByName(const string& name) const
