@@ -70,11 +70,6 @@ JSONMETRICSOBJ = $(INTERMEDIATEDIR)/libstuff/JSON/Metrics.o
 JSONCPP = $(shell find libstuff/JSON -name '*.cpp' -not -name 'Metrics.cpp')
 JSONOBJ = $(JSONCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 JSONDEP = $(JSONCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
-RAPIDJSON_HEADERS = $(shell find externalLib/rapidjson/include/rapidjson -type f -name '*.h')
-
-# System headers are omitted from -MMD output, so track the vendored RapidJSON headers explicitly while retaining
-# -isystem warning suppression.
-$(JSONOBJ): $(RAPIDJSON_HEADERS)
 
 # The same for libbedrock.
 LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -path 'test*' -not -path 'libstuff*')
@@ -103,16 +98,12 @@ TESTPLUGINOBJ = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 TESTPLUGINTDEP = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
 
-# Rules to build our three static libraries. Recreate each archive so removed or reclassified source files cannot
-# survive as stale archive members after an incremental build.
-libstuff.a: $(STUFFOBJ) Makefile
-	$(RM) $@
+# Rules to build our three static libraries.
+libstuff.a: $(STUFFOBJ)
 	ar crv $@ $(STUFFOBJ)
-libjson.a: $(JSONOBJ) Makefile libstuff/JSON
-	$(RM) $@
+libjson.a: $(JSONOBJ)
 	ar crv $@ $(JSONOBJ)
-libbedrock.a: $(LIBBEDROCKOBJ) Makefile
-	$(RM) $@
+libbedrock.a: $(LIBBEDROCKOBJ)
 	ar crv $@ $(LIBBEDROCKOBJ)
 
 # The prerequisites for all binaries are the same. We only include one of the mbedtls libs to avoid building three

@@ -210,8 +210,6 @@ Value::Value(Value&& v) noexcept
     v.valueType = NIL;
 }
 
-Value::~Value() = default;
-
 Value& Value::operator=(const Value& v)
 {
     if (this == &v) {
@@ -694,7 +692,7 @@ void Value::merge(Value&& v)
 {
     ensureType(OBJECT);
     if (v.type() != OBJECT) {
-        SINFO("Trying to merge something that is not object, type: " << v.typeToName(v.type()));
+        SINFO("Trying to merge something that is not object", {{"type", v.typeToName(v.type())}});
         SLogStackTrace(LOG_INFO);
         return;
     }
@@ -725,7 +723,7 @@ void Value::mergeDeep(Value&& v, bool useSQLiteMergeBehavior)
 {
     ensureType(OBJECT);
     if (v.type() != OBJECT) {
-        SINFO("Trying to merge something that is not object, type: " << v.typeToName(v.type()));
+        SINFO("Trying to merge something that is not object", {{"type", v.typeToName(v.type())}});
         SLogStackTrace(LOG_INFO);
         return;
     }

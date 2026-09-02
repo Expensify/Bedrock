@@ -126,12 +126,6 @@ public:
     Value(Value&& v) noexcept;
 
     /**
-     * Out-of-line so the implementation is supplied by libjson.a instead of
-     * being emitted into every consumer of this header.
-     */
-    ~Value();
-
-    /**
      * Constructor from int.
      *
      * @param i The int value
