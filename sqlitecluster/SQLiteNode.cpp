@@ -998,7 +998,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             // update the commit count. This assists with being able to choose synchronization peers.
             // The check for the presence of commit count can be removed once PING and PONG broadcasting this is universally deployed.
             uint64_t newCommitCount = message.calcU64("CommitCount");
-            if (!peer->forked && newCommitCount && newCommitCount > peer->getCommitCount()) {
+            if (!peer->forked && newCommitCount && newCommitCount > peer->commitCount) {
                 peer->setCommit(newCommitCount, message["Hash"]);
             }
 
