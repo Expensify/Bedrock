@@ -5,9 +5,15 @@
 // microseconds. The tests drive the public API and control the clock.
 struct TestBlockingCommandQueue : public BedrockBlockingCommandQueue
 {
-    static unique_ptr<BedrockCommand> makeCommand(const string& identifier, const string& commandName)
+    static unique_ptr<BedrockCommand> makeCommand(const string& identifier, const string& commandName, const string& requestID = "", const string& logParam = "")
     {
         SData request(commandName);
+        if (!requestID.empty()) {
+            request["requestID"] = requestID;
+        }
+        if (!logParam.empty()) {
+            request["logParam"] = logParam;
+        }
         auto command = make_unique<BedrockCommand>(SQLiteCommand(move(request)), nullptr);
         command->blockingQueueRateLimitIdentifier = identifier;
         return command;
@@ -37,6 +43,7 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
                                                      TEST(BlockingCommandQueueTest::testCommandDimensionIgnoresIdentifier),
                                                      TEST(BlockingCommandQueueTest::testPushReportsRateLimitDimensions),
                                                      TEST(BlockingCommandQueueTest::testDequeueReportsRateLimitDimensions),
+                                                     TEST(BlockingCommandQueueTest::testDequeueRestoresLogPrefix),
                                                      TEST(BlockingCommandQueueTest::testEmptyIdentifierSkipsIdentifierDimension),
                                                      TEST(BlockingCommandQueueTest::testWindowExpiry),
                                                      TEST(BlockingCommandQueueTest::testPartialCredit),
@@ -173,6 +180,31 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         auto command = commandQueue.get(1'000'000);
         ASSERT_TRUE(command->complete);
         ASSERT_EQUAL(command->response.methodLine, "503 Blocking queue rate limited (command)");
+    }
+
+    void testDequeueRestoresLogPrefix()
+    {
+        // `_dequeue()`'s prefix is scoped, so it must be gone once `get()` returns: the blocking worker sets its own
+        // prefix after `get()` and would otherwise inherit a stale one.
+        TestBlockingCommandQueue queue;
+        queue.setIdentifierThreshold(50);
+        queue.setCommandThreshold(0);
+        queue.setNow(1000);
+        queue.push(queue.makeCommand("acct1", "cmd", "rejected1", "rejected@example.com"));
+        queue.recordExecutionTime("acct1", "cmd", 60);
+
+        SData outerRequest("outerCmd");
+        outerRequest["requestID"] = "outer1";
+        outerRequest["logParam"] = "outer@example.com";
+        SAUTOPREFIX(outerRequest);
+
+        auto command = queue.get(1'000'000);
+        ASSERT_TRUE(command->complete);
+        ASSERT_EQUAL(command->response.methodLine, "503 Blocking queue rate limited (identifier)");
+
+        ASSERT_EQUAL(SThreadLogPrefix, "outer1");
+        ASSERT_EQUAL(SThreadLogParam, "outer@example.com");
+        ASSERT_EQUAL(SThreadLogCommand, "outerCmd");
     }
 
     void testEmptyIdentifierSkipsIdentifierDimension()
