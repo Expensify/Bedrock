@@ -13,6 +13,7 @@ struct CreateJobsTest : tpunit::TestFixture
                               TEST(CreateJobsTest::createWithParentIDNotRunning),
                               TEST(CreateJobsTest::createWithParentMocked),
                               TEST(CreateJobsTest::createUniqueChildWithWrongParent),
+                              TEST(CreateJobsTest::rerunIfDataChangedBatch),
                               AFTER(CreateJobsTest::tearDown),
                               AFTER_CLASS(CreateJobsTest::tearDownClass))
     {
@@ -262,5 +263,75 @@ struct CreateJobsTest : tpunit::TestFixture
         jobs.push_back(SComposeJSONObject(job1Content));
         command["jobs"] = SComposeJSONArray(jobs);
         tester->executeWaitVerifyContent(command, "404 Trying to create a child that already exists, but it is tied to a different parent");
+    }
+
+    void rerunIfDataChangedBatch()
+    {
+        // Given an opted-in unique job that provides one durable row for duplicate activity
+        SData command("CreateJob");
+        command["name"] = "batchComparedData";
+        command["data"] = "{\"initial\":0}";
+        command["unique"] = "true";
+        command["rerunIfDataChanged"] = "true";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // When one CreateJobs request contains two updates for the same execution lane
+        command.clear();
+        command.methodLine = "CreateJobs";
+        STable firstJob;
+        firstJob["name"] = "batchComparedData";
+        firstJob["data"] = "{\"first\":1}";
+        firstJob["unique"] = "true";
+        firstJob["rerunIfDataChanged"] = "true";
+        STable secondJob = firstJob;
+        secondJob["data"] = "{\"second\":2}";
+        secondJob["jobPriority"] = "750";
+        vector<string> jobs = {SComposeJSONObject(firstJob), SComposeJSONObject(secondJob)};
+        command["jobs"] = SComposeJSONArray(jobs);
+        STable response = tester->executeWaitVerifyContentTable(command);
+
+        // Then both entries reuse the row because parallel rows violate unique execution
+        list<string> jobIDs = SParseJSONArray(response["jobIDs"]);
+        ASSERT_EQUAL(jobIDs.size(), 2);
+        ASSERT_EQUAL(jobIDs.front(), jobID);
+        ASSERT_EQUAL(jobIDs.back(), jobID);
+
+        // When the caller replays the same batch after an uncertain response
+        response = tester->executeWaitVerifyContentTable(command);
+        jobIDs = SParseJSONArray(response["jobIDs"]);
+
+        // Then both entries reuse the row because retries must remain idempotent
+        ASSERT_EQUAL(jobIDs.size(), 2);
+        ASSERT_EQUAL(jobIDs.front(), jobID);
+        ASSERT_EQUAL(jobIDs.back(), jobID);
+
+        // Then the row retains all caller updates because each batch entry represents valid activity
+        SQResult result;
+        tester->readDB("SELECT JSON_TYPE(data, '$._bedrockRerunIfDataChanged'), "
+                       "JSON_EXTRACT(data, '$._bedrockRerunIfDataChanged'), JSON_EXTRACT(data, '$.first'), "
+                       "JSON_EXTRACT(data, '$.second'), JSON_REMOVE(data, '$._bedrockRerunIfDataChanged'), priority "
+                       "FROM jobs WHERE jobID=" + jobID + ";", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], "true");
+        ASSERT_EQUAL(result[0][1], "1");
+        ASSERT_EQUAL(result[0][2], "1");
+        ASSERT_EQUAL(result[0][3], "2");
+        ASSERT_EQUAL(result[0][4], "{\"initial\":0,\"first\":1,\"second\":2}");
+        ASSERT_EQUAL(result[0][5], "750");
+
+        // Given the merged row is ready for a worker
+        command.clear();
+        command.methodLine = "GetJobs";
+        command["name"] = "batchComparedData";
+        command["numResults"] = "1";
+
+        // When GetJobs assigns the row to that worker
+        response = tester->executeWaitVerifyContentTable(command);
+        const list<string> dequeuedJobs = SParseJSONArray(response["jobs"]);
+
+        // Then the response hides Bedrock's private state
+        ASSERT_EQUAL(dequeuedJobs.size(), 1);
+        const STable dequeuedJob = SParseJSONObject(dequeuedJobs.front());
+        ASSERT_TRUE(dequeuedJob.at("data").find("_bedrockRerunIfDataChanged") == string::npos);
     }
 } __CreateJobsTest;

@@ -5,11 +5,14 @@ layout: default
 # Bedrock::Jobs -- Rock solid job queuing
 Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that manages a scheduled job queue.  Commands include:
 
- * **CreateJob( name, [data], [firstRun], [repeat] )** - Schedules a new job, optionally in the future, optionally to repeat.
+ * **CreateJob( name, [data], [firstRun], [repeat], [unique], [overwrite], [rerunIfDataChanged] )** - Schedules a new job, optionally in the future, optionally to repeat.
    * *name* - Any arbitrary string name for this job.
-   * *data* - (optional) An arbitrary data blob to associate with this job, typically JSON encoded.
+   * *data* - (optional) A JSON object to associate with this job.
    * *firstRun* - (optional) The time/date on which to run this job the first time, in "YYYY-MM-DD [HH:MM:SS]" format
    * *repeat* - (optional) Description of how this job should repeat (see ["Repeat Syntax"](#repeat-syntax) below)
+   * *unique* - (optional request field) Reuse an existing job with the same name.
+   * *overwrite* - (optional request field) For a unique job, merge new data into the existing row. This field defaults to true.
+   * *rerunIfDataChanged* - (optional boolean request field, default: false) Runs the job again when another request to create the same unique job changes the job's data while the job is running. This field only works for unique=true and overwrite=true. A job created with this cannot own child jobs.
 
  * **GetJob( name, [connection: wait, [timeout] ] )** - Waits for a match (if requested) and atomically dequeues exactly one job.
    * *name* - A pattern to match in GLOB syntax (eg, "Foo*" will get the first job whose name starts with "Foo")
@@ -32,12 +35,63 @@ Bedrock::Jobs is a plugin to the [Bedrock data foundation](../README.md) that ma
  * **QueryJob( jobID )** - Retrieves the current state and data associated with a job.
    * *jobID* - Identifier of the job to query
 
- * **FinishJob( jobID, [data] )** - Marks a job as finished, which causes it to repeat if requested.
+ * **FinishJob( jobID, [data], [expectedData] )** - Marks a job as finished, which causes it to repeat if requested.
    * *jobID* - Identifier of the job to finish
    * *data* - (optional) New data object to associate with the job (especially useful if repeating, to pass state to the next worker).
+   * *expectedData* - (optional) The data the job had when it started running. If the job has rerunIfDataChanged=true and the data passed here is different from the data currently saved in the DB, the job requeues itself to run again because the current run ran with different data and more processing might be needed.
+
+ * **RetryJob( jobID, [expectedData] )** - Requeues a running job.
+   * *expectedData* - (optional) The data the job had when it started running. If the job has rerunIfDataChanged=true and the data passed here is different from the data currently saved in the DB, Bedrock preserves the current data and applies the requested retry time.
+
+ * **FailJob( jobID, [data], [expectedData] )** - Marks a running job as failed.
+   * *jobID* - Identifier of the job to fail.
+   * *data* - (optional) New data object to associate with the failed job.
+   * *expectedData* - (optional) The data the job had when it started running. If the job has rerunIfDataChanged=true and the data passed here is different from the data currently saved in the DB, the job requeues itself to run again instead of being marked as failed.
 
  * **DeleteJob( jobID )** - Removes all trace of a job.
-   * *jobID* - Identifier of the job to delete 
+   * *jobID* - Identifier of the job to delete
+
+For *CreateJobs*, set *unique*, *overwrite*, and *rerunIfDataChanged* on each object in the *jobs* array. Do not put these fields inside *data*.
+
+## `rerunIfDataChanged` behavior
+
+The *rerunIfDataChanged* option is a boolean that defaults to false. When enabled, if a job's data changed while it was running because it was updated by another call to create this same unique job, then it requeues the job after finishing.
+
+Set *rerunIfDataChanged=true* to enable this behavior. The option has these requirements:
+
+* Set *unique=true*. Bedrock must reuse one job row with the same name.
+* Keep *overwrite* enabled. Bedrock must merge the data from each new enqueue into that row.
+* Pass the immutable data returned by `GetJob` or `GetJobs` as *expectedData* to `FinishJob`, `RetryJob`, or `FailJob`.
+* Do not create child jobs from a job that uses `rerunIfDataChanged`. If the job's data changes, children created during that run may contain stale work. Bedrock cannot determine whether to keep those children for the next run, so it does not support this combination. Nevertheless, a job that uses this option can still be a child of another job.
+
+The normal *data* completion field remains the worker's final output. Do not use the worker's modified output as *expectedData*.
+
+Workers managed by BedrockWorkerManager.php handle expectedData automatically.
+
+Bedrock stores the opt-in as a private boolean named `_bedrockRerunIfDataChanged` in the job data.
+
+Once set, the marker remains true across dequeues, requeues, `UpdateJob` calls, and recurring runs. Bedrock does not return it to callers because it is internal state, not part of the worker's data. Callers also cannot set or overwrite the marker through the public *data* field.
+
+When the worker calls `FinishJob`, `RetryJob`, or `FailJob`, Bedrock compares the current data with *expectedData* in the same transaction. The comparison ignores JSON object member order, whitespace, `retryAfterCount`, `originalNextRun`, and `_commitCounts`.
+
+If the data matches, Bedrock completes the command normally. If the data differs, Bedrock does not apply the worker's stale output or terminal state. `FinishJob` and `FailJob` queue an immediate subsequent run. `RetryJob` queues the subsequent run at the requested retry time.
+
+The comparison does not track what changed the data. An `UpdateJob` call that changes an opted-in job's data also causes a mismatch with the immutable snapshot.
+
+The following timeline shows two payloads:
+
+1. A request creates a unique job with `rerunIfDataChanged` set to true and data A.
+2. `GetJob` dequeues the job. The worker retains data A as its immutable snapshot.
+3. Another call tries to create the same unique job with data B, which gets merged into the existing job's data while the worker is running it.
+4. The worker that ran with only data A finishes and sends that data in *expectedData*.
+5. Bedrock sees that data A and data B differ, preserves data B, and sets the job to QUEUED again.
+6. `GetJob` dequeues the job with data B for the subsequent run.
+
+Several data changes during one active run collapse into one subsequent run. The subsequent run uses the latest merged data.
+
+The *retryAfter* field has a separate purpose. It recovers a job when a worker stops without a completion command.
+
+The *retryAfter* field does not detect a new enqueue. It does not cause the subsequent run described in this section.
 
 ## Sample Session
 This provides comprehensive functionality for scheduled, recurring, atomically-processed jobs by blocking workers.  For example, first create a job and assign it some data to be used by the worker:
