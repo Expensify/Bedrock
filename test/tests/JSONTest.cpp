@@ -1,7 +1,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory>
 #include <string>
 
 #include <libstuff/JSON/Metrics.h>
@@ -72,7 +71,6 @@ struct JSONTest : tpunit::TestFixture
                               TEST(JSONTest::testParseAndSerializeNestedValue),
                               TEST(JSONTest::testExactUint64),
                               TEST(JSONTest::testEqualitySemantics),
-                              TEST(JSONTest::testStrictParserValidation),
                               TEST(JSONTest::testMetricsObserver),
                               TEST(JSONTest::testDisabledMetricsObserver))
     {
@@ -106,16 +104,6 @@ struct JSONTest : tpunit::TestFixture
         ASSERT_NOT_EQUAL(JSON::Value::parse("1"), JSON::Value::parse("1.0"));
     }
 
-    void testStrictParserValidation()
-    {
-        const unique_ptr<JSON::Value> valid = JSON::Parser::readStrict("{\"emoji\":\"\\ud83d\\ude00\"}");
-        ASSERT_EQUAL("{\"emoji\":\"\xf0\x9f\x98\x80\"}", valid->serialize());
-
-        ASSERT_THROW(JSON::Parser::readStrict("{"), JSON::InvalidArgument);
-        ASSERT_THROW(JSON::Parser::readStrict("{\"a\":1,\"\\u0061\":2}"), JSON::InvalidArgument);
-        ASSERT_THROW(JSON::Parser::readStrict(string("{\"value\":\"\xc3\x28\"}")), JSON::InvalidArgument);
-    }
-
     void testMetricsObserver()
     {
         const string source = "{\"items\":[1,2,3]}";
@@ -133,6 +121,22 @@ struct JSONTest : tpunit::TestFixture
         ASSERT_GREATER_THAN_EQUAL(metricsRecord.serializeDurationUS, 0);
         ASSERT_EQUAL(source.size(), metricsRecord.parsedSize);
         ASSERT_EQUAL(serialized.size(), metricsRecord.serializedSize);
+
+        resetMetricsRecord();
+        {
+            ScopedMetricsObserver observer(recordMetrics);
+            ASSERT_TRUE(SJSONEquals("{\"value\":1.0}", "{\"value\":1e0}"));
+        }
+        ASSERT_EQUAL(2, metricsRecord.parseCalls);
+        ASSERT_EQUAL(0, metricsRecord.serializeCalls);
+
+        resetMetricsRecord();
+        {
+            ScopedMetricsObserver observer(recordMetrics);
+            ASSERT_FALSE(SJSONEquals("{", "not-json"));
+        }
+        ASSERT_EQUAL(2, metricsRecord.parseCalls);
+        ASSERT_EQUAL(0, metricsRecord.serializeCalls);
     }
 
     void testDisabledMetricsObserver()

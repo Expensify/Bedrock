@@ -25,10 +25,10 @@ LIBPATHS =-L$(PROJECT) -Lmbedtls/library
 LIBRARIES =-Wl,--exclude-libs,libjson.a -Wl,--start-group -lbedrock -lstuff -ljson -Wl,--end-group -ldl -lpcre2-8 -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lzstd -lm
 
 # These targets aren't actual files.
-.PHONY: all test clustertest clean testplugin checkjsonsymbols
+.PHONY: all test clustertest clean testplugin checkjsonsymbols checkjsonequalitysymbols
 
 # This sets our default by being the first target, and also sets `all` in case someone types `make all`.
-all: bedrock test clustertest checkjsonsymbols
+all: bedrock test clustertest checkjsonsymbols checkjsonequalitysymbols
 test: test/test
 clustertest: test/clustertest/clustertest testplugin
 testplugin: test/clustertest/testplugin/testplugin.so
@@ -60,14 +60,15 @@ mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/lib
 
 # We select all of the cpp files (and manually add sqlite3.c and qrf.c) that will be in libstuff.
 # We then transform those file names into a list of object file name and dependency file names.
-STUFFCPP = $(shell find libstuff -name '*.cpp' -not -path 'libstuff/JSON/*') libstuff/JSON/Metrics.cpp libstuff/JSON/StrictParser.cpp
+STUFFCPP = $(shell find libstuff -name '*.cpp' -not -path 'libstuff/JSON/*') libstuff/JSON/Metrics.cpp
 STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(INTERMEDIATEDIR)/libstuff/qrf.o $(INTERMEDIATEDIR)/libstuff/sqlite3.o
 STUFFDEP = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
-# Link this object directly into bedrock so dynamically loaded applications can resolve the metrics hook.
+# Link these objects directly into bedrock so dynamically loaded applications can resolve their symbols.
 JSONMETRICSOBJ = $(INTERMEDIATEDIR)/libstuff/JSON/Metrics.o
+JSONEQUALITYOBJ = $(INTERMEDIATEDIR)/libstuff/SJSONEquals.o
 
 # Keep the JSON implementation in a separate archive so embedding applications can provide their own JSON symbols during migration.
-JSONCPP = $(shell find libstuff/JSON -name '*.cpp' -not -name 'Metrics.cpp' -not -name 'StrictParser.cpp')
+JSONCPP = $(shell find libstuff/JSON -name '*.cpp' -not -name 'Metrics.cpp')
 JSONOBJ = $(JSONCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 JSONDEP = $(JSONCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
@@ -111,10 +112,21 @@ libbedrock.a: $(LIBBEDROCKOBJ)
 BINPREREQS = libbedrock.a libstuff.a libjson.a mbedtls/library/libmbedcrypto.a
 
 # All of our binaries build in the same way.
-bedrock: $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(BINPREREQS)
-	$(CXX) -o $@ $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+bedrock: $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(JSONEQUALITYOBJ) $(BINPREREQS)
+	$(CXX) -o $@ $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(JSONEQUALITYOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/test: $(TESTOBJ) $(BINPREREQS)
 	$(CXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+checkjsonequalitysymbols: bedrock test/test
+	@for binary in $^; do \
+		if nm -D --defined-only "$$binary" | c++filt | grep -E ' [TDBR] JSON::(Value|Utils|Parser|Writer|SAXHandler)'; then \
+			echo "JSON implementation symbols must not be exported from $$binary"; \
+			exit 1; \
+		fi; \
+		if ! nm -D --defined-only "$$binary" | c++filt | grep -F ' SJSONEquals(' > /dev/null; then \
+			echo "SJSONEquals must be exported from $$binary"; \
+			exit 1; \
+		fi; \
+	done
 test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 

@@ -289,6 +289,8 @@ struct LibStuff : tpunit::TestFixture
         };
         const string embeddedNull("{}\0{}", 5);
         const string invalidUTF8("{\"value\":\"\xc3\x28\"}");
+        const string ignoredNULKey("ignored\0key", 11);
+        const set<string> ignoredNULKeys = {ignoredNULKey};
         const vector<JSONEqualsCase> testCases = {
             {left, right, true},
             {"{\"emoji\":\"\xf0\x9f\x98\x80\"}", "{\"emoji\":\"\\ud83d\\ude00\"}", true},
@@ -297,11 +299,34 @@ struct LibStuff : tpunit::TestFixture
             {"{\"value\":-0}", "{\"value\":0}", true},
             {"{\"value\":1e0}", "{\"value\":1.0}", true},
             {"{\"value\":1.00}", "{\"value\":1.0}", true},
+            {"{\"value\":1.2300e+3}", "{\"value\":1230.0}", true},
+            {
+                "{\"value\":1e99999999999999999999999999999999999999}",
+                "{\"value\":10e99999999999999999999999999999999999998}",
+                true,
+            },
+            {
+                "{\"value\":10e-99999999999999999999999999999999999999}",
+                "{\"value\":1e-99999999999999999999999999999999999998}",
+                true,
+            },
             {"{\"items\":[1,2]}", "{\"items\":[2,1]}", false},
             {"{\"value\":1}", "{\"value\":1.0}", false},
+            {"{\"value\":9007199254740992.0}", "{\"value\":9007199254740993.0}", false},
+            {"{\"value\":0.123456789012345678901}", "{\"value\":0.123456789012345678902}", false},
+            {"{\"value\":1e-324}", "{\"value\":0.0}", false},
+            {
+                "{\"value\":1e99999999999999999999999999999999999999}",
+                "{\"value\":1e99999999999999999999999999999999999998}",
+                false,
+            },
             {"{\"value\":18446744073709551615}", "{\"value\":18446744073709551615}", true},
             {"{\"value\":18446744073709551615}", "{\"value\":18446744073709551614}", false},
             {"{\"value\":18446744073709551615}", "{\"value\":18446744073709551615.0}", false},
+            {"{\"value\":18446744073709551615000000000000000000000}",
+             "{\"value\":18446744073709551615000000000000000000000}", true},
+            {"{\"value\":18446744073709551615000000000000000000000}",
+             "{\"value\":18446744073709551615000000000000000000001}", false},
             {"{\"value\":1}", "{\"value\":\"1\"}", false},
             {"{\"value\":true}", "{\"value\":\"true\"}", false},
             {
@@ -327,9 +352,20 @@ struct LibStuff : tpunit::TestFixture
             {"{\"value\":1,\"value\":2}", "{\"value\":2}", false},
             {"{\"a\":1,\"\\u0061\":1}", "{\"a\":1}", false},
             {"{\"nested\":{\"a\":1,\"\\u0061\":1}}", "{\"nested\":{\"a\":1}}", false},
+            {"{\"\\u0000a\":1}", "{\"\\u0000a\":1}", true},
+            {"{\"\\u0000a\":1}", "{\"\\u0000b\":1}", false},
+            {"{\"\\u0000\":1,\"\\u0000\":2}", "{\"\\u0000\":2}", false},
             {"{\"ignored\":01}", "{}", false, {"ignored"}},
+            {"{\"value\":.1}", "{\"value\":.1}", false},
+            {"{\"value\":1.}", "{\"value\":1.}", false},
+            {"{\"value\":1e}", "{\"value\":1e}", false},
+            {"{\"value\":1e+}", "{\"value\":1e+}", false},
+            {"{\"value\":--1}", "{\"value\":--1}", false},
+            {"{\"value\":+1}", "{\"value\":+1}", false},
+            {"[1 2]", "[1 2]", false},
             {"{}", "{\"ignored\":\"\\q\"}", false, {"ignored"}},
             {"{\"ignored\":1,\"\\u0069gnored\":2}", "{}", false, {"ignored"}},
+            {"{\"ignored\\u0000key\":1,\"value\":2}", "{\"value\":2}", true, ignoredNULKeys},
         };
 
         // Then only valid pairs with the same meaningful data should match, preventing missed retries.
