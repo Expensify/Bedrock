@@ -44,6 +44,9 @@ unique_ptr<BedrockCommand> BedrockBlockingCommandQueue::_dequeue()
     // Marking it complete skips processing in `BedrockServer::runCommand`, which replies to already-complete commands.
     const string dimension = getBlockingDimension(command->blockingQueueRateLimitIdentifier, command->request.methodLine);
     if (!dimension.empty()) {
+        // The blocking worker sets its own prefix after `get()` returns, so without this the rejection logs the
+        // thread-local defaults instead of the request that got the 503.
+        SAUTOPREFIX(command->request);
         SINFO("Blocking queue rate limited command rejected", {
             {"dimension", dimension},
             {"identifier", command->blockingQueueRateLimitIdentifier},

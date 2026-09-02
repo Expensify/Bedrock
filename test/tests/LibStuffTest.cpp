@@ -63,9 +63,70 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::SComposeHTTPTest),
                                      TEST(LibStuff::testEncodeDecodeURIComponent),
                                      TEST(LibStuff::testSGetPeerNamePreservesErrno),
-                                     TEST(LibStuff::testResolveHost)
+                                     TEST(LibStuff::testResolveHost),
+                                     TEST(LibStuff::testAutoThreadPrefixRestoresPreviousValues)
     )
     {
+    }
+
+    void testAutoThreadPrefixRestoresPreviousValues()
+    {
+        // `SAUTOPREFIX` in a self-contained block must restore all three thread-locals at the closing brace, which is
+        // what lets a caller set a prefix for one branch without leaking it into the rest of the scope.
+        const string originalPrefix = SThreadLogPrefix;
+        const string originalParam = SThreadLogParam;
+        const string originalCommand = SThreadLogCommand;
+
+        {
+            SData outerRequest("outerCommand");
+            outerRequest["requestID"] = "outer1";
+            outerRequest["logParam"] = "outer@example.com";
+            SAUTOPREFIX(outerRequest);
+            ASSERT_EQUAL(SThreadLogPrefix, "outer1");
+            ASSERT_EQUAL(SThreadLogParam, "outer@example.com");
+            ASSERT_EQUAL(SThreadLogCommand, "outerCommand");
+
+            {
+                SData innerRequest("innerCommand");
+                innerRequest["requestID"] = "inner1";
+                innerRequest["logParam"] = "inner@example.com";
+                SAUTOPREFIX(innerRequest);
+                ASSERT_EQUAL(SThreadLogPrefix, "inner1");
+                ASSERT_EQUAL(SThreadLogParam, "inner@example.com");
+                ASSERT_EQUAL(SThreadLogCommand, "innerCommand");
+            }
+
+            // The inner block reverts to the outer values, not to the defaults.
+            ASSERT_EQUAL(SThreadLogPrefix, "outer1");
+            ASSERT_EQUAL(SThreadLogParam, "outer@example.com");
+            ASSERT_EQUAL(SThreadLogCommand, "outerCommand");
+
+            // A request with no `requestID` or `logParam` applies the defaults, then still reverts to the outer values.
+            {
+                SAUTOPREFIX(SData("noHeaders"));
+                ASSERT_EQUAL(SThreadLogPrefix, "xxxxxx");
+                ASSERT_EQUAL(SThreadLogParam, "we@dont.know");
+                ASSERT_EQUAL(SThreadLogCommand, "noHeaders");
+            }
+            ASSERT_EQUAL(SThreadLogPrefix, "outer1");
+            ASSERT_EQUAL(SThreadLogParam, "outer@example.com");
+            ASSERT_EQUAL(SThreadLogCommand, "outerCommand");
+
+            // The `requestID` overload leaves `SThreadLogCommand` alone while it's in scope.
+            {
+                SAUTOPREFIX("sub1"s);
+                ASSERT_EQUAL(SThreadLogPrefix, "sub1");
+                ASSERT_EQUAL(SThreadLogParam, "we@dont.know");
+                ASSERT_EQUAL(SThreadLogCommand, "outerCommand");
+            }
+            ASSERT_EQUAL(SThreadLogPrefix, "outer1");
+            ASSERT_EQUAL(SThreadLogParam, "outer@example.com");
+            ASSERT_EQUAL(SThreadLogCommand, "outerCommand");
+        }
+
+        ASSERT_EQUAL(SThreadLogPrefix, originalPrefix);
+        ASSERT_EQUAL(SThreadLogParam, originalParam);
+        ASSERT_EQUAL(SThreadLogCommand, originalCommand);
     }
 
     void testEncryptDecrpyt()
