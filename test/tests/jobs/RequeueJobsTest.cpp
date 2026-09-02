@@ -16,6 +16,7 @@ struct RequeueJobsTest : tpunit::TestFixture
                               TEST(RequeueJobsTest::requeueMultipleJobs),
                               TEST(RequeueJobsTest::changeMultipleJobNames),
                               TEST(RequeueJobsTest::testNextRunTime),
+                              TEST(RequeueJobsTest::rejectCorruptOptedInData),
                               AFTER(RequeueJobsTest::tearDown),
                               AFTER_CLASS(RequeueJobsTest::tearDownClass))
     {
@@ -98,6 +99,28 @@ struct RequeueJobsTest : tpunit::TestFixture
         // Confrim the job is back in the QUEUED state
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
+    }
+
+    void rejectCorruptOptedInData()
+    {
+        SData command("CreateJob");
+        command["name"] = "corruptRequeue";
+        command["data"] = "{\"value\":1}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "Query";
+        command["query"] = "UPDATE jobs SET data = "
+            "'{\"_bedrockRerunIfDataChanged\":true,\"value\":1,\"value\":2}' WHERE jobID = " + jobID + ";";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "RequeueJobs";
+        command["jobIDs"] = jobID;
+        command["decrementFailures"] = "true";
+        tester->executeWaitVerifyContent(command, "500 Opted-in job contains invalid JSON data");
     }
 
     void autoRequeue()

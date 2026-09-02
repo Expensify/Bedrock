@@ -13,7 +13,7 @@ struct CreateJobsTest : tpunit::TestFixture
                               TEST(CreateJobsTest::createWithParentIDNotRunning),
                               TEST(CreateJobsTest::createWithParentMocked),
                               TEST(CreateJobsTest::createUniqueChildWithWrongParent),
-                              TEST(CreateJobsTest::rerunIfDataChangedBatch),
+                              TEST(CreateJobsTest::uniqueAsRetryBatch),
                               AFTER(CreateJobsTest::tearDown),
                               AFTER_CLASS(CreateJobsTest::tearDownClass))
     {
@@ -265,14 +265,14 @@ struct CreateJobsTest : tpunit::TestFixture
         tester->executeWaitVerifyContent(command, "404 Trying to create a child that already exists, but it is tied to a different parent");
     }
 
-    void rerunIfDataChangedBatch()
+    void uniqueAsRetryBatch()
     {
         // Given an opted-in unique job that provides one durable row for duplicate activity
         SData command("CreateJob");
         command["name"] = "batchComparedData";
         command["data"] = "{\"initial\":0}";
         command["unique"] = "true";
-        command["rerunIfDataChanged"] = "true";
+        command["uniqueAsRetry"] = "true";
         const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         // When one CreateJobs request contains two updates for the same execution lane
@@ -282,7 +282,7 @@ struct CreateJobsTest : tpunit::TestFixture
         firstJob["name"] = "batchComparedData";
         firstJob["data"] = "{\"first\":1}";
         firstJob["unique"] = "true";
-        firstJob["rerunIfDataChanged"] = "true";
+        firstJob["uniqueAsRetry"] = "true";
         STable secondJob = firstJob;
         secondJob["data"] = "{\"second\":2}";
         secondJob["jobPriority"] = "750";
@@ -333,5 +333,51 @@ struct CreateJobsTest : tpunit::TestFixture
         ASSERT_EQUAL(dequeuedJobs.size(), 1);
         const STable dequeuedJob = SParseJSONObject(dequeuedJobs.front());
         ASSERT_TRUE(dequeuedJob.at("data").find("_bedrockRerunIfDataChanged") == string::npos);
+        ASSERT_TRUE(SContains(dequeuedJob, "expectedDataBase64"));
+        ASSERT_TRUE(SJSONEquals(dequeuedJob.at("data"), SDecodeBase64(dequeuedJob.at("expectedDataBase64"))));
+
+        // A process-time check must see marker and child changes made by earlier entries in the same transaction.
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "batchParent";
+        command["data"] = "{\"activity\":1}";
+        command["unique"] = "true";
+        const string parentJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "batchParent";
+        tester->executeWaitVerifyContent(command);
+
+        STable enableParent;
+        enableParent["name"] = "batchParent";
+        enableParent["data"] = "{\"activity\":1}";
+        enableParent["unique"] = "true";
+        enableParent["uniqueAsRetry"] = "true";
+        STable child;
+        child["name"] = "batchChild";
+        child["parentJobID"] = parentJobID;
+
+        command.clear();
+        command.methodLine = "CreateJobs";
+        jobs = {SComposeJSONObject(enableParent), SComposeJSONObject(child)};
+        command["jobs"] = SComposeJSONArray(jobs);
+        tester->executeWaitVerifyContent(command, "405 uniqueAsRetry jobs cannot own child jobs");
+
+        tester->readDB("SELECT JSON_TYPE(data, '$._bedrockRerunIfDataChanged'), "
+                       "(SELECT COUNT(1) FROM jobs WHERE parentJobID = " + parentJobID + ") "
+                       "FROM jobs WHERE jobID = " + parentJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "");
+        ASSERT_EQUAL(result[0][1], "0");
+
+        jobs = {SComposeJSONObject(child), SComposeJSONObject(enableParent)};
+        command["jobs"] = SComposeJSONArray(jobs);
+        tester->executeWaitVerifyContent(command, "405 uniqueAsRetry jobs cannot own child jobs");
+
+        tester->readDB("SELECT JSON_TYPE(data, '$._bedrockRerunIfDataChanged'), "
+                       "(SELECT COUNT(1) FROM jobs WHERE parentJobID = " + parentJobID + ") "
+                       "FROM jobs WHERE jobID = " + parentJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "");
+        ASSERT_EQUAL(result[0][1], "0");
     }
 } __CreateJobsTest;

@@ -12,7 +12,7 @@ struct FailJobTest : tpunit::TestFixture
                               TEST(FailJobTest::notInRunningRunqueuedState),
                               TEST(FailJobTest::failJobInRunningState),
                               TEST(FailJobTest::failJobInRunqueuedState),
-                              TEST(FailJobTest::rerunIfDataChanged),
+                              TEST(FailJobTest::uniqueAsRetry),
                               AFTER(FailJobTest::tearDown),
                               AFTER_CLASS(FailJobTest::tearDownClass))
     {
@@ -125,21 +125,21 @@ struct FailJobTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0][0], "FAILED");
     }
 
-    void rerunIfDataChanged()
+    void uniqueAsRetry()
     {
         // Given an opted-in unique job that is ready for its first worker
         SData command("CreateJob");
         command["name"] = "failComparedData";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
-        command["rerunIfDataChanged"] = "true";
+        command["uniqueAsRetry"] = "true";
         const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "failComparedData";
         STable runningJob = tester->executeWaitVerifyContentTable(command);
-        const string expectedData = runningJob["data"];
+        const string expectedData = SDecodeBase64(runningJob.at("expectedDataBase64"));
 
         // When the worker submits malformed expected data that Bedrock cannot compare semantically
         command.clear();
@@ -150,13 +150,20 @@ struct FailJobTest : tpunit::TestFixture
         // Then Bedrock rejects the failure because it cannot make an atomic freshness decision
         tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
 
+        command["expectedData"] = "{\"activity\":1,\"activity\":1}";
+        tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
+
+        command["expectedData"] = expectedData;
+        command["data"] = "[]";
+        tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
+
         // Given a duplicate enqueue that installs newer activity while the worker remains active
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "failComparedData";
         command["data"] = "{\"activity\":2}";
         command["unique"] = "true";
-        command["rerunIfDataChanged"] = "true";
+        command["uniqueAsRetry"] = "true";
         tester->executeWaitVerifyContent(command);
 
         // When the stale worker reports a fatal result with output from the original activity
@@ -186,7 +193,7 @@ struct FailJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "FailJob";
         command["jobID"] = jobID;
-        command["expectedData"] = runningJob["data"];
+        command["expectedData"] = SDecodeBase64(runningJob.at("expectedDataBase64"));
 
         // When that worker reports a fatal result
         tester->executeWaitVerifyContent(command);
@@ -201,7 +208,7 @@ struct FailJobTest : tpunit::TestFixture
         command["name"] = "progressOnlyFailure";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
-        command["rerunIfDataChanged"] = "true";
+        command["uniqueAsRetry"] = "true";
         const string progressOnlyJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         command.clear();
@@ -219,7 +226,7 @@ struct FailJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "FailJob";
         command["jobID"] = progressOnlyJobID;
-        command["expectedData"] = runningJob["data"];
+        command["expectedData"] = SDecodeBase64(runningJob.at("expectedDataBase64"));
         tester->executeWaitVerifyContent(command);
 
         // Then Bedrock requeues the job because its current data no longer matches the immutable snapshot
@@ -234,7 +241,7 @@ struct FailJobTest : tpunit::TestFixture
         command["name"] = "legacyFailure";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
-        command["rerunIfDataChanged"] = "true";
+        command["uniqueAsRetry"] = "true";
         const string legacyJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         command.clear();
@@ -247,7 +254,7 @@ struct FailJobTest : tpunit::TestFixture
         command["name"] = "legacyFailure";
         command["data"] = "{\"activity\":2}";
         command["unique"] = "true";
-        command["rerunIfDataChanged"] = "true";
+        command["uniqueAsRetry"] = "true";
         tester->executeWaitVerifyContent(command);
 
         // When an old worker manager reports failure without expectedData
@@ -259,5 +266,31 @@ struct FailJobTest : tpunit::TestFixture
         // Then Bedrock uses legacy failure behavior because rolling deployments require backward compatibility
         tester->readDB("SELECT state FROM jobs WHERE jobID=" + legacyJobID + ";", result);
         ASSERT_EQUAL(result[0][0], "FAILED");
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "corruptFailure";
+        command["data"] = "{\"value\":1}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        const string corruptJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "corruptFailure";
+        runningJob = tester->executeWaitVerifyContentTable(command);
+
+        command.clear();
+        command.methodLine = "Query";
+        command["query"] = "UPDATE jobs SET data = "
+            "'{\"_bedrockRerunIfDataChanged\":true,\"value\":1,\"value\":2}' WHERE jobID = " +
+            corruptJobID + ";";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "FailJob";
+        command["jobID"] = corruptJobID;
+        command["expectedData"] = SDecodeBase64(runningJob.at("expectedDataBase64"));
+        tester->executeWaitVerifyContent(command, "500 Opted-in job contains invalid JSON data");
     }
 } __FailJobTest;
