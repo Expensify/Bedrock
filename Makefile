@@ -9,7 +9,7 @@ GIT_REVISION = -DGIT_REVISION=$(shell git rev-parse HEAD | grep -o '^.\{10\}')
 PROJECT = $(shell git rev-parse --show-toplevel)
 
 # Set our include paths. We need this for the pre-processor to use to generate dependencies.
-INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include
+INCLUDE = -I$(PROJECT) -I$(PROJECT)/mbedtls/include -isystem $(PROJECT)/externalLib/rapidjson/include
 
 # Set our standard C++ compiler flags
 CXXFLAGS = -g -std=c++20 -fPIC -DSQLITE_ENABLE_NORMALIZE $(BEDROCK_OPTIM_COMPILE_FLAG) -Wall -Werror -Wformat-security -Wno-unqualified-std-cast-call -Wno-error=deprecated-declarations $(INCLUDE)
@@ -22,13 +22,13 @@ INTERMEDIATEDIR = .build
 
 # We use the same library paths and required libraries for all binaries.
 LIBPATHS =-L$(PROJECT) -Lmbedtls/library
-LIBRARIES =-Wl,--start-group -lbedrock -lstuff -Wl,--end-group -ldl -lpcre2-8 -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lzstd -lm
+LIBRARIES =-Wl,--exclude-libs,libjson.a -Wl,--start-group -lbedrock -lstuff -ljson -Wl,--end-group -ldl -lpcre2-8 -lpthread -lmbedtls -lmbedx509 -lmbedcrypto -lz -lzstd -lm
 
 # These targets aren't actual files.
-.PHONY: all test clustertest clean testplugin
+.PHONY: all test clustertest clean testplugin checkjsonsymbols
 
 # This sets our default by being the first target, and also sets `all` in case someone types `make all`.
-all: bedrock test clustertest
+all: bedrock test clustertest checkjsonsymbols
 test: test/test
 clustertest: test/clustertest/clustertest testplugin
 testplugin: test/clustertest/testplugin/testplugin.so
@@ -36,6 +36,7 @@ testplugin: test/clustertest/testplugin/testplugin.so
 clean:
 	rm -rf $(INTERMEDIATEDIR)
 	rm -rf libstuff.a
+	rm -rf libjson.a
 	rm -rf libbedrock.a
 	rm -rf bedrock
 	rm -rf test/test
@@ -59,9 +60,16 @@ mbedtls/library/libmbedcrypto.a mbedtls/library/libmbedtls.a mbedtls/library/lib
 
 # We select all of the cpp files (and manually add sqlite3.c and qrf.c) that will be in libstuff.
 # We then transform those file names into a list of object file name and dependency file names.
-STUFFCPP = $(shell find libstuff -name '*.cpp')
+STUFFCPP = $(shell find libstuff -name '*.cpp' -not -path 'libstuff/JSON/*') libstuff/JSON/Metrics.cpp
 STUFFOBJ = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.o) $(INTERMEDIATEDIR)/libstuff/qrf.o $(INTERMEDIATEDIR)/libstuff/sqlite3.o
 STUFFDEP = $(STUFFCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
+# Link this object directly into bedrock so dynamically loaded applications can resolve the metrics hook.
+JSONMETRICSOBJ = $(INTERMEDIATEDIR)/libstuff/JSON/Metrics.o
+
+# Keep the JSON implementation in a separate archive so embedding applications can provide their own JSON symbols during migration.
+JSONCPP = $(shell find libstuff/JSON -name '*.cpp' -not -name 'Metrics.cpp')
+JSONOBJ = $(JSONCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
+JSONDEP = $(JSONCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
 # The same for libbedrock.
 LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -path 'test*' -not -path 'libstuff*')
@@ -89,23 +97,42 @@ TESTPLUGINCPP = test/clustertest/testplugin/TestPlugin.cpp test/clustertest/test
 TESTPLUGINOBJ = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 TESTPLUGINTDEP = $(TESTPLUGINCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
-# Rules to build our two static libraries.
+
+# Rules to build our three static libraries.
 libstuff.a: $(STUFFOBJ)
 	ar crv $@ $(STUFFOBJ)
+libjson.a: $(JSONOBJ)
+	ar crv $@ $(JSONOBJ)
 libbedrock.a: $(LIBBEDROCKOBJ)
 	ar crv $@ $(LIBBEDROCKOBJ)
 
 # The prerequisites for all binaries are the same. We only include one of the mbedtls libs to avoid building three
 # times in parallel if it's out of date.
-BINPREREQS = libbedrock.a libstuff.a mbedtls/library/libmbedcrypto.a
+BINPREREQS = libbedrock.a libstuff.a libjson.a mbedtls/library/libmbedcrypto.a
 
 # All of our binaries build in the same way.
-bedrock: $(BEDROCKOBJ) $(BINPREREQS)
-	$(CXX) -o $@ $(BEDROCKOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+bedrock: $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(BINPREREQS)
+	$(CXX) -o $@ $(BEDROCKOBJ) $(JSONMETRICSOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/test: $(TESTOBJ) $(BINPREREQS)
 	$(CXX) -o $@ $(TESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
 test/clustertest/clustertest: $(CLUSTERTESTOBJ) $(BINPREREQS)
 	$(CXX) -o $@ $(CLUSTERTESTOBJ) $(LIBPATHS) -rdynamic $(LIBRARIES)
+
+checkjsonsymbols: bedrock
+	@symbols="$$(nm -D --defined-only bedrock | c++filt | grep -E ' [TDBR] JSON::' || true)"; \
+	if ! printf '%s\n' "$$symbols" | grep -q ' JSON::setMetricsObserver('; then \
+		echo 'JSON::setMetricsObserver is not exported from bedrock'; \
+		exit 1; \
+	fi; \
+	if ! printf '%s\n' "$$symbols" | grep -q ' JSON::reportMetrics('; then \
+		echo 'JSON::reportMetrics is not exported from bedrock'; \
+		exit 1; \
+	fi; \
+	if [ "$$(printf '%s\n' "$$symbols" | sed '/^$$/d' | wc -l)" -ne 2 ]; then \
+		echo 'Unexpected strong JSON symbols exported from bedrock:'; \
+		printf '%s\n' "$$symbols"; \
+		exit 1; \
+	fi
 
 # Benchmarks binary (separate from unit tests) under top-level benchmarks/
 BENCHCPP = $(shell find benchmarks -name '*.cpp') test/lib/tpunit++.cpp
@@ -147,6 +174,7 @@ $(INTERMEDIATEDIR)/%.o: %.c
 ifneq ($(MAKECMDGOALS),clean)
 -include $(LIBBEDROCKDEP)
 -include $(STUFFDEP)
+-include $(JSONDEP)
 -include $(TESTDEP)
 -include $(CLUSTERTESTDEP)
 -include $(BEDROCKDEP)

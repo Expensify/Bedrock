@@ -25,7 +25,7 @@ while read STATUS FILENAME
 do
     # Skip some files we don't want to style
     case "$FILENAME" in
-        *tpunit++.cpp|*qrf.h|*sqlite3.h|*sqlite3ext.h)
+        *tpunit++.cpp|*qrf.h|*sqlite3.h|*sqlite3ext.h|externalLib/rapidjson/*)
             # Match found: do nothing and continue the loop
             continue
             ;;
