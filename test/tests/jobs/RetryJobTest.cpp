@@ -13,6 +13,7 @@ struct RetryJobTest : tpunit::TestFixture
                               TEST(RetryJobTest::parentIsNotPaused),
                               TEST(RetryJobTest::removeFinishedAndCancelledChildren),
                               TEST(RetryJobTest::updateData),
+                              TEST(RetryJobTest::uniqueAsRetryExactThreeWayMerge),
                               TEST(RetryJobTest::negativeDelay),
                               TEST(RetryJobTest::positiveDelay),
                               TEST(RetryJobTest::delayError),
@@ -227,6 +228,120 @@ struct RetryJobTest : tpunit::TestFixture
         SQResult result;
         tester->readDB("SELECT data FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], SComposeJSONObject(data));
+    }
+
+    void uniqueAsRetryExactThreeWayMerge()
+    {
+        const string initialData =
+            "{\"conflict\":9007199254740992.0,\"underflow\":1e-324,\"emptyObject\":{},"
+            "\"uint64\":18446744073709551615,\"workerChange\":\"old\",\"workerDelete\":true,"
+            "\"workerNull\":1,\"enqueueDelete\":true,\"enqueueChange\":\"old\","
+            "\"nested\":{\"a\":1,\"b\":2}}";
+        SData command("CreateJob");
+        command["name"] = "exact-retry";
+        command["data"] = initialData;
+        command["repeat"] = "FINISHED, +1 DAY";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "exact-retry";
+        const STable runningJob = tester->executeWaitVerifyContentTable(command);
+        const string expectedData = SDecodeBase64(runningJob.at("expectedDataBase64"));
+        ASSERT_TRUE(SJSONEquals(initialData, expectedData));
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "exact-retry";
+        command["data"] = "{\"conflict\":9007199254740993.0,\"underflow\":0.0,\"enqueueDelete\":null,"
+            "\"enqueueChange\":\"new\",\"enqueueAdd\":true}";
+        command["repeat"] = "FINISHED, +1 DAY";
+        command["jobPriority"] = "750";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        tester->executeWaitVerifyContent(command);
+
+        // This baseline is the normalized data that PHP gives to the worker. The raw expectedData remains exact.
+        const string expectedWorkerData =
+            "{\"conflict\":9007199254740992.0,\"underflow\":0.0,\"emptyObject\":[],"
+            "\"uint64\":1.8446744073709552e+19,\"workerChange\":\"old\",\"workerDelete\":true,"
+            "\"workerNull\":1,\"enqueueDelete\":true,\"enqueueChange\":\"old\","
+            "\"nested\":{\"b\":2,\"a\":1}}";
+        const string workerData =
+            "{\"conflict\":9007199254740992.0,\"underflow\":0.0,\"emptyObject\":[],"
+            "\"uint64\":1.8446744073709552e+19,\"workerChange\":\"new\",\"workerNull\":null,"
+            "\"enqueueDelete\":true,\"enqueueChange\":\"old\",\"workerAdd\":true,"
+            "\"nested\":{\"a\":1,\"b\":2}}";
+
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        command["expectedData"] = "{\"duplicate\":1,\"duplicate\":2}";
+        command["expectedWorkerData"] = expectedWorkerData;
+        command["data"] = workerData;
+        tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
+
+        command["expectedData"] = expectedData;
+        command["expectedWorkerData"] = "{\"duplicate\":1,\"duplicate\":2}";
+        tester->executeWaitVerifyContent(command, "402 expectedWorkerData is not a valid JSON Object");
+
+        command["expectedWorkerData"] = expectedWorkerData;
+        command["data"] = "[]";
+        tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
+
+        command["data"] = workerData;
+        command["nextRun"] = "2042-04-02 00:42:42";
+        command["ignoreRepeat"] = "true";
+        command["name"] = "stale-name";
+        command["jobPriority"] = "1000";
+        tester->executeWaitVerifyContent(command);
+
+        SQResult result;
+        tester->readDB("SELECT state, name, nextRun, priority, data FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "exact-retry");
+        ASSERT_EQUAL(result[0][2], "2042-04-02 00:42:42");
+        ASSERT_EQUAL(result[0][3], "750");
+
+        const string expectedMergedData =
+            "{\"_bedrockRerunIfDataChanged\":true,\"conflict\":9007199254740993.0,\"underflow\":0.0,"
+            "\"emptyObject\":{},\"uint64\":18446744073709551615,\"workerChange\":\"new\","
+            "\"workerNull\":null,\"enqueueChange\":\"new\",\"enqueueAdd\":true,\"workerAdd\":true,"
+            "\"nested\":{\"a\":1,\"b\":2}}";
+        ASSERT_TRUE(SJSONEquals(result[0][4], expectedMergedData));
+        ASSERT_TRUE(result[0][4].find("9007199254740993.0") != string::npos);
+        ASSERT_TRUE(result[0][4].find("18446744073709551615") != string::npos);
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "corrupt-retry";
+        command["data"] = "{\"value\":1}";
+        command["unique"] = "true";
+        command["uniqueAsRetry"] = "true";
+        const string corruptJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "corrupt-retry";
+        const STable corruptRunningJob = tester->executeWaitVerifyContentTable(command);
+        const string corruptExpectedData = SDecodeBase64(corruptRunningJob.at("expectedDataBase64"));
+
+        command.clear();
+        command.methodLine = "Query";
+        command["query"] = "UPDATE jobs SET data = "
+            "'{\"_bedrockRerunIfDataChanged\":true,\"value\":1,\"value\":2}' WHERE jobID = " +
+            corruptJobID + ";";
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = corruptJobID;
+        command["data"] = "{\"value\":2}";
+        command["expectedData"] = corruptExpectedData;
+        command["expectedWorkerData"] = corruptRunningJob.at("data");
+        tester->executeWaitVerifyContent(command, "500 Opted-in job contains invalid JSON data");
     }
 
     // Cannot retry with a negative delay
