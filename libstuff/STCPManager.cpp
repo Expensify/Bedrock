@@ -261,7 +261,18 @@ bool STCPManager::Socket::_openSocket()
     }
 
     if (https) {
-        ssl = new SSSLState(hostToResolve, s);
+        // SSSLState only closes the fd in its destructor, so if its constructor throws, the fd is still ours
+        // to close. Reporting failure by return value rather than letting the exception out also keeps it out
+        // of the poll loop, which reaches here by way of _connectAfterDNSResolution.
+        try {
+            ssl = new SSSLState(hostToResolve, s);
+        } catch (const SException& e) {
+            SWARN("Couldn't set up SSL for '" << hostToResolve << "' (" << addr << "): " << e.what());
+            S_close(&s);
+            state.store(State::CLOSED);
+            connectFailure = true;
+            return false;
+        }
     }
 
     return true;
