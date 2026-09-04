@@ -121,6 +121,22 @@ struct JSONTest : tpunit::TestFixture
         ASSERT_GREATER_THAN_EQUAL(metricsRecord.serializeDurationUS, 0);
         ASSERT_EQUAL(source.size(), metricsRecord.parsedSize);
         ASSERT_EQUAL(serialized.size(), metricsRecord.serializedSize);
+
+        resetMetricsRecord();
+        {
+            ScopedMetricsObserver observer(recordMetrics);
+            ASSERT_TRUE(SJSONEquals("{\"value\":1.0}", "{\"value\":1e0}"));
+        }
+        ASSERT_EQUAL(2, metricsRecord.parseCalls);
+        ASSERT_EQUAL(0, metricsRecord.serializeCalls);
+
+        resetMetricsRecord();
+        {
+            ScopedMetricsObserver observer(recordMetrics);
+            ASSERT_FALSE(SJSONEquals("{", "not-json"));
+        }
+        ASSERT_EQUAL(2, metricsRecord.parseCalls);
+        ASSERT_EQUAL(0, metricsRecord.serializeCalls);
     }
 
     void testDisabledMetricsObserver()

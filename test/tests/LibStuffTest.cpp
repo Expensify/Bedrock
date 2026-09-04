@@ -32,6 +32,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testSHMACSHA256),
                                      TEST(LibStuff::testJSONDecode),
                                      TEST(LibStuff::testJSON),
+                                     TEST(LibStuff::testJSONEquals),
                                      TEST(LibStuff::testEscapeUnescape),
                                      TEST(LibStuff::testTrim),
                                      TEST(LibStuff::testCollapse),
@@ -261,6 +262,117 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(nanParsed["note"], "nan");
         ASSERT_EQUAL(nanParsed["value"], "inf");
         ASSERT_EQUAL(nanParsed["negative"], "-inf");
+    }
+
+    void testJSONEquals()
+    {
+        // Given matching, different, and invalid JSON pairs that could otherwise cause false matches.
+        struct JSONEqualsCase
+        {
+            string left;
+            string right;
+            bool shouldMatch;
+            set<string> ignoredTopLevelKeys = {};
+        };
+
+        const string left =
+            "{\"reportID\":1,\"additionalInputMessages\":[{\"message\":\"caf\xc3\xa9/path\","
+            "\"meta\":{\"a\":1,\"b\":true}}],\"ratio\":1.0}";
+        const string right =
+            "{ \"ratio\": 1.0, \"additionalInputMessages\": [{\"meta\":{\"b\":true,\"a\":1},"
+            "\"message\":\"caf\\u00e9\\/path\"}], \"reportID\": 1 }";
+        const set<string> ignoredTopLevelKeys = {
+            "_bedrockRerunIfDataChanged",
+            "retryAfterCount",
+            "originalNextRun",
+            "_commitCounts",
+        };
+        const string embeddedNull("{}\0{}", 5);
+        const string invalidUTF8("{\"value\":\"\xc3\x28\"}");
+        const string ignoredNULKey("ignored\0key", 11);
+        const set<string> ignoredNULKeys = {ignoredNULKey};
+        const vector<JSONEqualsCase> testCases = {
+            {left, right, true},
+            {"{\"emoji\":\"\xf0\x9f\x98\x80\"}", "{\"emoji\":\"\\ud83d\\ude00\"}", true},
+            {"[]", "[]", true},
+            {"null", " null ", true},
+            {"{\"value\":-0}", "{\"value\":0}", true},
+            {"{\"value\":1e0}", "{\"value\":1.0}", true},
+            {"{\"value\":1.00}", "{\"value\":1.0}", true},
+            {"{\"value\":1.2300e+3}", "{\"value\":1230.0}", true},
+            {
+                "{\"value\":1e99999999999999999999999999999999999999}",
+                "{\"value\":10e99999999999999999999999999999999999998}",
+                true,
+            },
+            {
+                "{\"value\":10e-99999999999999999999999999999999999999}",
+                "{\"value\":1e-99999999999999999999999999999999999998}",
+                true,
+            },
+            {"{\"items\":[1,2]}", "{\"items\":[2,1]}", false},
+            {"{\"value\":1}", "{\"value\":1.0}", false},
+            {"{\"value\":9007199254740992.0}", "{\"value\":9007199254740993.0}", false},
+            {"{\"value\":0.123456789012345678901}", "{\"value\":0.123456789012345678902}", false},
+            {"{\"value\":1e-324}", "{\"value\":0.0}", false},
+            {
+                "{\"value\":1e99999999999999999999999999999999999999}",
+                "{\"value\":1e99999999999999999999999999999999999998}",
+                false,
+            },
+            {"{\"value\":18446744073709551615}", "{\"value\":18446744073709551615}", true},
+            {"{\"value\":18446744073709551615}", "{\"value\":18446744073709551614}", false},
+            {"{\"value\":18446744073709551615}", "{\"value\":18446744073709551615.0}", false},
+            {"{\"value\":18446744073709551615000000000000000000000}",
+             "{\"value\":18446744073709551615000000000000000000000}", true},
+            {"{\"value\":18446744073709551615000000000000000000000}",
+             "{\"value\":18446744073709551615000000000000000000001}", false},
+            {"{\"value\":1}", "{\"value\":\"1\"}", false},
+            {"{\"value\":true}", "{\"value\":\"true\"}", false},
+            {
+                "{\"triggeringReportActionID\":1,\"retryAfterCount\":1,\"_commitCounts\":{\"auth\":1}}",
+                "{\"_bedrockRerunIfDataChanged\":true,\"triggeringReportActionID\":1,"
+                "\"originalNextRun\":\"1900-01-01 00:00:00\",\"_commitCounts\":{\"auth\":2}}",
+                true,
+                ignoredTopLevelKeys,
+            },
+            {"{\"triggeringReportActionID\":1}", "{\"triggeringReportActionID\":2}", false,
+             ignoredTopLevelKeys},
+            {"{\"data\":{\"_commitCounts\":{\"auth\":1}}}",
+             "{\"data\":{\"_commitCounts\":{\"auth\":2}}}", false, ignoredTopLevelKeys},
+            {"{\"value\":1}", "not-json", false},
+            {"", "", false},
+            {"{", "{", false},
+            {"{} {}", "{} {}", false},
+            {embeddedNull, embeddedNull, false},
+            {invalidUTF8, invalidUTF8, false},
+            {"\"\\q\"", "\"q\"", false},
+            {"\"\\ud800\"", "\"\\ud800\"", false},
+            {"\"\\udc00\"", "\"\\udc00\"", false},
+            {"{\"value\":1,\"value\":2}", "{\"value\":2}", false},
+            {"{\"a\":1,\"\\u0061\":1}", "{\"a\":1}", false},
+            {"{\"nested\":{\"a\":1,\"\\u0061\":1}}", "{\"nested\":{\"a\":1}}", false},
+            {"{\"\\u0000a\":1}", "{\"\\u0000a\":1}", true},
+            {"{\"\\u0000a\":1}", "{\"\\u0000b\":1}", false},
+            {"{\"\\u0000\":1,\"\\u0000\":2}", "{\"\\u0000\":2}", false},
+            {"{\"ignored\":01}", "{}", false, {"ignored"}},
+            {"{\"value\":.1}", "{\"value\":.1}", false},
+            {"{\"value\":1.}", "{\"value\":1.}", false},
+            {"{\"value\":1e}", "{\"value\":1e}", false},
+            {"{\"value\":1e+}", "{\"value\":1e+}", false},
+            {"{\"value\":--1}", "{\"value\":--1}", false},
+            {"{\"value\":+1}", "{\"value\":+1}", false},
+            {"[1 2]", "[1 2]", false},
+            {"{}", "{\"ignored\":\"\\q\"}", false, {"ignored"}},
+            {"{\"ignored\":1,\"\\u0069gnored\":2}", "{}", false, {"ignored"}},
+            {"{\"ignored\\u0000key\":1,\"value\":2}", "{\"value\":2}", true, ignoredNULKeys},
+        };
+
+        // Then only valid pairs with the same meaningful data should match, preventing missed retries.
+        for (const auto& testCase : testCases) {
+            ASSERT_EQUAL(testCase.shouldMatch,
+                         SJSONEquals(testCase.left, testCase.right, testCase.ignoredTopLevelKeys));
+        }
     }
 
     void testEscapeUnescape()
