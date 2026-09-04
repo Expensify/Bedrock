@@ -51,7 +51,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
                                                      TEST(BlockingCommandQueueTest::testDisabledThresholdsNeverBlock),
                                                      TEST(BlockingCommandQueueTest::testClearResets),
                                                      TEST(BlockingCommandQueueTest::testGlobalOverThresholdBlocksEveryone),
-                                                     TEST(BlockingCommandQueueTest::testGlobalRejectsOnPushAndDequeue))
+                                                     TEST(BlockingCommandQueueTest::testGlobalRejectsOnPushAndDequeue),
+                                                     TEST(BlockingCommandQueueTest::testGlobalBlockTakesPrecedence))
     {
     }
 
@@ -364,5 +365,23 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         auto command = dequeueQueue.get(1'000'000);
         ASSERT_TRUE(command->complete);
         ASSERT_EQUAL(command->response.methodLine, "503 Blocking queue rate limited (global)");
+    }
+
+    void testGlobalBlockTakesPrecedence()
+    {
+        // One command can trip the identifier and the global dimension at once. The reject reports global,
+        // because that is the one that also rejects everybody else.
+        TestBlockingCommandQueue queue;
+        queue.setWindow(100);
+        queue.setIdentifierThreshold(50);
+        queue.setCommandThreshold(0);
+        queue.setBlockDuration(1000);
+        queue.setGlobalWindow(100);
+        queue.setGlobalThreshold(50);
+        queue.setGlobalBlockDuration(1000);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
     }
 } __BlockingCommandQueueTest;
