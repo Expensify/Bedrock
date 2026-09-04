@@ -72,8 +72,8 @@ private:
     typedef deque<RecentlyFinishedCommand> RecentlyFinishedCommandList;
 
     // Rate-limit state for one dimension: the whole queue, one identifier, or one command name. Each entry has
-    // its own mutex, so different identifiers never contend on one lock. `blockedUntil` is the time (microseconds) an active
-    // block ends; 0 means not blocked.
+    // its own mutex, so different identifiers never contend on one lock. `blockedUntil` is the time
+    // (microseconds) an active block ends; 0 means not blocked.
     struct DimensionState
     {
         mutex m;
