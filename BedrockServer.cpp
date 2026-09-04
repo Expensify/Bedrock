@@ -445,7 +445,7 @@ void BedrockServer::worker(int threadId)
 
             // Capture the identifier and command name so we can attribute the blocking execution time back to the
             // rate limiter after the command finishes. We time every command run on the blocking thread, recording against
-            // its command name (always) and identifier (when set).
+            // the queue as a whole (always), its command name (always) and identifier (when set).
             const string blockingIdentifier = (threadId == 0) ? command->blockingQueueRateLimitIdentifier : "";
             const string commandName = command->request.methodLine;
             const uint64_t blockingStart = (threadId == 0) ? STimeNow() : 0;
@@ -1804,6 +1804,30 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
                 uint64_t previousUS = _blockingCommandQueue.setBlockDuration(static_cast<uint64_t>(durationMS) * 1000);
                 response["previousBlockingQueueBlockDurationMS"] = to_string(previousUS / 1000);
                 SINFO("Setting blocking queue block duration to " << durationMS << "ms");
+            }
+        }
+        if (command->request.isSet("globalWindowMS")) {
+            int64_t windowMS = command->request.calc64("globalWindowMS");
+            if (windowMS >= 0) {
+                uint64_t previousUS = _blockingCommandQueue.setGlobalWindow(static_cast<uint64_t>(windowMS) * 1000);
+                response["previousBlockingQueueGlobalWindowMS"] = to_string(previousUS / 1000);
+                SINFO("Setting blocking queue global window to " << windowMS << "ms");
+            }
+        }
+        if (command->request.isSet("globalThresholdMS")) {
+            int64_t thresholdMS = command->request.calc64("globalThresholdMS");
+            if (thresholdMS >= 0) {
+                uint64_t previousUS = _blockingCommandQueue.setGlobalThreshold(static_cast<uint64_t>(thresholdMS) * 1000);
+                response["previousBlockingQueueGlobalThresholdMS"] = to_string(previousUS / 1000);
+                SINFO("Setting blocking queue global threshold to " << thresholdMS << "ms");
+            }
+        }
+        if (command->request.isSet("globalBlockDurationMS")) {
+            int64_t durationMS = command->request.calc64("globalBlockDurationMS");
+            if (durationMS >= 0) {
+                uint64_t previousUS = _blockingCommandQueue.setGlobalBlockDuration(static_cast<uint64_t>(durationMS) * 1000);
+                response["previousBlockingQueueGlobalBlockDurationMS"] = to_string(previousUS / 1000);
+                SINFO("Setting blocking queue global block duration to " << durationMS << "ms");
             }
         }
         if (command->request.test("ClearBlocks")) {
