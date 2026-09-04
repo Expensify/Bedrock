@@ -139,8 +139,18 @@ uint64_t BedrockBlockingCommandQueue::setBlockDuration(const uint64_t durationUS
 void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, const string& commandName, uint64_t elapsedUS)
 {
     const uint64_t now = _now();
-    _recordAndCheck(_identifierStates, identifier, _identifierThresholdUS.load(), now, elapsedUS, "identifier");
-    _recordAndCheck(_commandStates, commandName, _commandThresholdUS.load(), now, elapsedUS, "command");
+    const uint64_t windowUS = _windowUS.load();
+    const uint64_t blockDurationUS = _blockDurationUS.load();
+
+    const Limits identifierLimits = {windowUS, _identifierThresholdUS.load(), blockDurationUS, LOG_THRESHOLD_US};
+    if (!identifier.empty() && identifierLimits.thresholdUS) {
+        _recordAndCheck(*_getOrCreateState(_identifierStates, identifier), "identifier", identifier, identifierLimits, now, elapsedUS);
+    }
+
+    const Limits commandLimits = {windowUS, _commandThresholdUS.load(), blockDurationUS, LOG_THRESHOLD_US};
+    if (!commandName.empty() && commandLimits.thresholdUS) {
+        _recordAndCheck(*_getOrCreateState(_commandStates, commandName), "command", commandName, commandLimits, now, elapsedUS);
+    }
 }
 
 string BedrockBlockingCommandQueue::getBlockingDimension(const string& identifier, const string& commandName)
@@ -148,11 +158,17 @@ string BedrockBlockingCommandQueue::getBlockingDimension(const string& identifie
     // Hot path: called by push() and by _dequeue() under the base `_queueMutex`. Keep it O(1) by reading only
     // the precomputed block deadline. The windowed time is summed in recordExecutionTime, off the blocking thread.
     const uint64_t now = _now();
-    if (_isBlocked(_identifierStates, identifier, now)) {
-        return "identifier";
+    if (!identifier.empty()) {
+        auto state = _getState(_identifierStates, identifier);
+        if (state && _isBlocked(*state, now)) {
+            return "identifier";
+        }
     }
-    if (_isBlocked(_commandStates, commandName, now)) {
-        return "command";
+    if (!commandName.empty()) {
+        auto state = _getState(_commandStates, commandName);
+        if (state && _isBlocked(*state, now)) {
+            return "command";
+        }
     }
     return "";
 }
@@ -174,70 +190,56 @@ shared_ptr<BedrockBlockingCommandQueue::DimensionState> BedrockBlockingCommandQu
     return it == map.states.end() ? nullptr : it->second;
 }
 
-void BedrockBlockingCommandQueue::_recordAndCheck(StateMap& map, const string& key, uint64_t thresholdUS, uint64_t now, uint64_t elapsedUS, const string& dimension)
+void BedrockBlockingCommandQueue::_recordAndCheck(DimensionState& state, const string& dimension, const string& key, const Limits& limits, uint64_t now, uint64_t elapsedUS)
 {
-    if (key.empty() || thresholdUS == 0) {
-        return;
-    }
-
-    auto state = _getOrCreateState(map, key);
-    lock_guard<decltype(state->m)> lock(state->m);
+    lock_guard<decltype(state.m)> lock(state.m);
 
     // Already inside an active block: a block lasts a fixed duration and is not extended by further hits, so
     // there's nothing to record or recompute until it expires.
-    if (state->blockedUntil > now) {
+    if (state.blockedUntil > now) {
         return;
     }
 
-    state->commands.push_back({now, elapsedUS});
-
-    const uint64_t windowUS = _windowUS.load();
+    state.commands.push_back({now, elapsedUS});
 
     // Drop samples that finished before the current window and sum the ones that are still valid.
     uint64_t total = 0;
-    for (auto it = state->commands.begin(); it != state->commands.end();) {
+    for (auto it = state.commands.begin(); it != state.commands.end();) {
         const uint64_t timeSinceFinishedUS = now > it->finishTime ? now - it->finishTime : 0;
-        if (timeSinceFinishedUS >= windowUS) {
-            it = state->commands.erase(it);
+        if (timeSinceFinishedUS >= limits.windowUS) {
+            it = state.commands.erase(it);
             continue;
         }
 
         // Doing the line below will allow us to count for partial timings spent in a command. Let's say the window is 100s,
         // and we had a command that took 50s and finished 80s ago. We should only count 20s of that command, since the other
         // 30s are outside the window. So the result would be min(50s, 100 - 80) = min(50, 20) = 20s.
-        total += min(it->elapsedTime, windowUS - timeSinceFinishedUS);
+        total += min(it->elapsedTime, limits.windowUS - timeSinceFinishedUS);
         ++it;
     }
 
-    if (total > thresholdUS) {
-        state->blockedUntil = now + _blockDurationUS.load();
+    if (total > limits.thresholdUS) {
+        state.blockedUntil = now + limits.blockDurationUS;
         SINFO("Blocking queue rate limit reached, blocking", {
             {"dimension", dimension},
             {"identifier", key},
             {"timeMS", to_string(total / 1000)},
-            {"thresholdMS", to_string(thresholdUS / 1000)},
-            {"blockDurationMS", to_string(_blockDurationUS.load() / 1000)}
+            {"thresholdMS", to_string(limits.thresholdUS / 1000)},
+            {"blockDurationMS", to_string(limits.blockDurationUS / 1000)}
         });
-    } else if (total > LOG_THRESHOLD_US) {
+    } else if (limits.logThresholdUS && total > limits.logThresholdUS) {
         // Log-only monitoring: the identifier is heavy but still under its block threshold.
         SINFO("Blocking queue rate limit above logging threshold", {
             {"dimension", dimension},
             {"identifier", key},
             {"timeMS", to_string(total / 1000)},
-            {"thresholdMS", to_string(LOG_THRESHOLD_US / 1000)}
+            {"thresholdMS", to_string(limits.logThresholdUS / 1000)}
         });
     }
 }
 
-bool BedrockBlockingCommandQueue::_isBlocked(StateMap& map, const string& key, uint64_t now)
+bool BedrockBlockingCommandQueue::_isBlocked(DimensionState& state, uint64_t now)
 {
-    if (key.empty()) {
-        return false;
-    }
-    auto state = _getState(map, key);
-    if (!state) {
-        return false;
-    }
-    lock_guard<decltype(state->m)> lock(state->m);
-    return state->blockedUntil > now;
+    lock_guard<decltype(state.m)> lock(state.m);
+    return state.blockedUntil > now;
 }

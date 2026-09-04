@@ -81,21 +81,30 @@ private:
         unordered_map<string, shared_ptr<DimensionState>> states;
     };
 
+    // The tunables for one dimension, in microseconds. A `thresholdUS` of 0 disables the dimension. A
+    // `logThresholdUS` of 0 disables the log-only line for identifiers that are heavy but under the threshold.
+    struct Limits
+    {
+        uint64_t windowUS = 0;
+        uint64_t thresholdUS = 0;
+        uint64_t blockDurationUS = 0;
+        uint64_t logThresholdUS = 0;
+    };
+
     // Return a shared_ptr to the state for `key` in `map`, creating it if absent. Holds map.mapMutex only briefly.
     static shared_ptr<DimensionState> _getOrCreateState(StateMap& map, const string& key);
 
     // Return the state for `key` in `map`, or nullptr if absent. Holds map.mapMutex only briefly.
     static shared_ptr<DimensionState> _getState(StateMap& map, const string& key);
 
-    // Append a sample that finished at `now` after `elapsedUS` for `key` in `map`, then re-evaluate the window
-    // and block `key` for the block duration when its windowed time exceeds `thresholdUS`. A threshold of 0
-    // disables the dimension. `dimension` labels the log line emitted when it blocks. This is the O(window)
-    // work; it runs off the blocking thread (from recordExecutionTime), never under the base `_queueMutex`.
-    void _recordAndCheck(StateMap& map, const string& key, uint64_t thresholdUS, uint64_t now, uint64_t elapsedUS, const string& dimension);
+    // Append a sample that finished at `now` after `elapsedUS` to `state`, then re-evaluate the window and
+    // block for `limits.blockDurationUS` when the windowed time exceeds `limits.thresholdUS`. `dimension` and
+    // `key` label the log line. This is the O(window) work; it never runs under the base `_queueMutex`.
+    static void _recordAndCheck(DimensionState& state, const string& dimension, const string& key, const Limits& limits, uint64_t now, uint64_t elapsedUS);
 
-    // True if `key` in `map` is inside an active block at `now`. O(1): reads only the block deadline, so the
-    // push and dequeue hot paths stay cheap (dequeue runs under the base `_queueMutex`).
-    static bool _isBlocked(StateMap& map, const string& key, uint64_t now);
+    // True if `state` is inside an active block at `now`. O(1): reads only the block deadline, so the push and
+    // dequeue hot paths stay cheap (dequeue runs under the base `_queueMutex`).
+    static bool _isBlocked(DimensionState& state, uint64_t now);
 
     // Log (without blocking) when an identifier's windowed time crosses this, for monitoring heavy identifiers
     // that are still under their block threshold.
