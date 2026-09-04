@@ -50,7 +50,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
                                                      TEST(BlockingCommandQueueTest::testBlockDurationHoldsThenClears),
                                                      TEST(BlockingCommandQueueTest::testDisabledThresholdsNeverBlock),
                                                      TEST(BlockingCommandQueueTest::testClearResets),
-                                                     TEST(BlockingCommandQueueTest::testGlobalOverThresholdBlocksEveryone))
+                                                     TEST(BlockingCommandQueueTest::testGlobalOverThresholdBlocksEveryone),
+                                                     TEST(BlockingCommandQueueTest::testGlobalRejectsOnPushAndDequeue))
     {
     }
 
@@ -331,5 +332,37 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_EQUAL(queue.getBlockingDimension("acct2", "cmd2"), "global");
         ASSERT_EQUAL(queue.getBlockingDimension("acct3", "cmd3"), "global");
         ASSERT_EQUAL(queue.getBlockingDimension("", ""), "global");
+    }
+
+    void testGlobalRejectsOnPushAndDequeue()
+    {
+        TestBlockingCommandQueue pushQueue;
+        pushQueue.setIdentifierThreshold(0);
+        pushQueue.setCommandThreshold(0);
+        pushQueue.setGlobalThreshold(50);
+        pushQueue.setNow(1000);
+        pushQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        bool pushRejected = false;
+        try {
+            pushQueue.push(pushQueue.makeCommand("acct2", "otherCmd"));
+        } catch (const SException& e) {
+            pushRejected = true;
+            ASSERT_EQUAL(string(e.what()), "503 Blocking queue rate limited (global)");
+        }
+        ASSERT_TRUE(pushRejected);
+
+        // Commands that were already queued are rejected on the way out, so a backlog drains instead of running.
+        TestBlockingCommandQueue dequeueQueue;
+        dequeueQueue.setIdentifierThreshold(0);
+        dequeueQueue.setCommandThreshold(0);
+        dequeueQueue.setGlobalThreshold(50);
+        dequeueQueue.setNow(1000);
+        dequeueQueue.push(dequeueQueue.makeCommand("acct2", "otherCmd"));
+        dequeueQueue.recordExecutionTime("acct1", "cmd", 60);
+
+        auto command = dequeueQueue.get(1'000'000);
+        ASSERT_TRUE(command->complete);
+        ASSERT_EQUAL(command->response.methodLine, "503 Blocking queue rate limited (global)");
     }
 } __BlockingCommandQueueTest;
