@@ -49,7 +49,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
                                                      TEST(BlockingCommandQueueTest::testPartialCredit),
                                                      TEST(BlockingCommandQueueTest::testBlockDurationHoldsThenClears),
                                                      TEST(BlockingCommandQueueTest::testDisabledThresholdsNeverBlock),
-                                                     TEST(BlockingCommandQueueTest::testClearResets))
+                                                     TEST(BlockingCommandQueueTest::testClearResets),
+                                                     TEST(BlockingCommandQueueTest::testGlobalOverThresholdBlocksEveryone))
     {
     }
 
@@ -309,5 +310,26 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
 
         queue.clearRateLimits();
         ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+    }
+
+    void testGlobalOverThresholdBlocksEveryone()
+    {
+        // The global dimension counts every command, so a burst spread over several identifiers trips it even
+        // though no single identifier or command is over a limit of its own.
+        TestBlockingCommandQueue queue;
+        queue.setIdentifierThreshold(0);
+        queue.setCommandThreshold(0);
+        queue.setGlobalWindow(100);
+        queue.setGlobalThreshold(50);
+        queue.setGlobalBlockDuration(1000);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd1", 30);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd1"), "");
+
+        queue.recordExecutionTime("acct2", "cmd2", 30);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct2", "cmd2"), "global");
+        ASSERT_EQUAL(queue.getBlockingDimension("acct3", "cmd3"), "global");
+        ASSERT_EQUAL(queue.getBlockingDimension("", ""), "global");
     }
 } __BlockingCommandQueueTest;
