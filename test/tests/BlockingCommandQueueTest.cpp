@@ -295,6 +295,7 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         queue.setWindow(100);
         queue.setIdentifierThreshold(0);
         queue.setCommandThreshold(0);
+        queue.setGlobalThreshold(0);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 1000000);
