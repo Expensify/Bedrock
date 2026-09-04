@@ -167,6 +167,14 @@ public:
     // truncating old journal entries. This function will not call runAfterCommit callbacks.
     bool writeLocalUnreplicated(const string& query);
 
+    // Deletes up to `batchSize` rows from one journal table, keeping the newest `-maxJournalSize` commits. Returns
+    // false if the delete did not commit, which happens when another commit lands underneath it. Must be called
+    // outside of a transaction.
+    bool trimJournalTable(size_t journalTableIndex, int64_t batchSize);
+
+    // The number of journal tables in this database. Any index passed to `trimJournalTable` is taken modulo this.
+    size_t getJournalTableCount() const;
+
     // Enable or disable update-noop mode.
     void setUpdateNoopMode(bool enabled);
     bool getUpdateNoopMode() const;
