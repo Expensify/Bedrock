@@ -54,7 +54,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
                                                      TEST(BlockingCommandQueueTest::testGlobalRejectsOnPushAndDequeue),
                                                      TEST(BlockingCommandQueueTest::testGlobalBlockTakesPrecedence),
                                                      TEST(BlockingCommandQueueTest::testGlobalWindowIsIndependent),
-                                                     TEST(BlockingCommandQueueTest::testGlobalBlockDurationHoldsThenClears))
+                                                     TEST(BlockingCommandQueueTest::testGlobalBlockDurationHoldsThenClears),
+                                                     TEST(BlockingCommandQueueTest::testClearResetsGlobalBlock))
     {
     }
 
@@ -428,6 +429,23 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
 
         queue.setNow(1600);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+    }
+
+    void testClearResetsGlobalBlock()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setIdentifierThreshold(0);
+        queue.setCommandThreshold(0);
+        queue.setGlobalWindow(100);
+        queue.setGlobalThreshold(50);
+        queue.setGlobalBlockDuration(1000);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
+
+        queue.clearRateLimits();
         ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
     }
 } __BlockingCommandQueueTest;
