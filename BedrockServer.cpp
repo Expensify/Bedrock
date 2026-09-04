@@ -449,14 +449,16 @@ void BedrockServer::worker(int threadId)
             const string blockingIdentifier = (threadId == 0) ? command->blockingQueueRateLimitIdentifier : "";
             const string commandName = command->request.methodLine;
             const uint64_t blockingStart = (threadId == 0) ? STimeNow() : 0;
-            uint64_t blockingCommitLockWaitUS = 0;
+            SQLite::resetCommitLockWait();
 
-            runCommand(move(command), threadId == 0, false, threadId == 0 ? &blockingCommitLockWaitUS : nullptr);
+            runCommand(move(command), threadId == 0, false);
 
             if (blockingStart) {
+                // Waiting for the commit lock is caused by unrelated cluster contention, so it isn't the identifier's
+                // work and must not count toward its rate limit.
                 const uint64_t elapsedUS = STimeNow() - blockingStart;
-                _blockingCommandQueue.recordExecutionTime(blockingIdentifier, commandName,
-                                                           elapsedUS > blockingCommitLockWaitUS ? elapsedUS - blockingCommitLockWaitUS : 0);
+                const uint64_t commitLockWaitUS = SQLite::getCommitLockWait();
+                _blockingCommandQueue.recordExecutionTime(blockingIdentifier, commandName, elapsedUS > commitLockWaitUS ? elapsedUS - commitLockWaitUS : 0);
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
@@ -479,25 +481,11 @@ bool BedrockServer::isShuttingDown()
     return shuttingDown;
 }
 
-void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlocking, bool hasDedicatedThread,
-                               uint64_t* blockingCommitLockWaitUS)
+void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlocking, bool hasDedicatedThread)
 {
     // This takes ownership of the passed command. By calling the move constructor, the caller's unique_ptr is now empty, and so when the one here goes out of scope (i.e., this function
     // returns), the command is destroyed.
     unique_ptr<BedrockCommand> command(move(_command));
-
-    struct BlockingCommitLockWaitCollector
-    {
-        BedrockCommand* command;
-        uint64_t* output;
-
-        ~BlockingCommitLockWaitCollector()
-        {
-            if (output) {
-                *output = command->getBlockingCommitLockWait();
-            }
-        }
-    } blockingCommitLockWaitCollector{command.get(), blockingCommitLockWaitUS};
 
     SAUTOPREFIX(command->request);
 
@@ -653,22 +641,7 @@ void BedrockServer::runCommand(unique_ptr<BedrockCommand>&& _command, bool isBlo
         {
             SQLiteScopedHandle dbScope(*_dbPool, _dbPool->getIndex());
             SQLite& db = dbScope.db();
-            db.resetCommitLockWaitElapsed();
             BedrockCore core(db, *this);
-
-            struct BlockingCommitLockWaitCollector
-            {
-                BedrockCommand* command;
-                SQLite& db;
-                bool enabled;
-
-                ~BlockingCommitLockWaitCollector()
-                {
-                    if (enabled) {
-                        command->addBlockingCommitLockWait(db.getCommitLockWaitElapsed());
-                    }
-                }
-            } blockingCommitLockWaitCollector{command.get(), db, isBlocking};
 
             // If the command has already timed out when we get it, we can return early here without peeking it.
             // We'd also catch that the command timed out in `peek`, but this can cause some weird side-effects: a

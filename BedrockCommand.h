@@ -135,16 +135,6 @@ public:
     // Start recording time for a given action type.
     void startTiming(TIMING_INFO type);
 
-    void addBlockingCommitLockWait(uint64_t elapsedUS)
-    {
-        _blockingCommitLockWaitElapsed += elapsedUS;
-    }
-
-    uint64_t getBlockingCommitLockWait() const
-    {
-        return _blockingCommitLockWaitElapsed;
-    }
-
     // Finish recording time for a given action type. `type` must match what was passed to the most recent call to
     // `startTiming`.
     void stopTiming(TIMING_INFO type);
@@ -297,8 +287,6 @@ private:
 
     // An identifier for rate-limiting commands in the blocking queue. Empty means skip rate limiting.
     string blockingQueueRateLimitIdentifier;
-
-    uint64_t _blockingCommitLockWaitElapsed = 0;
 
     // Return the timestamp by which this command must finish executing.
     uint64_t timeout() const

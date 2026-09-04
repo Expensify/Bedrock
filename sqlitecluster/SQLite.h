@@ -237,15 +237,10 @@ public:
     // Returns the timing of the last command
     void logLastTransactionTiming(const string& message, const string& commandName = "");
 
-    uint64_t getCommitLockWaitElapsed() const
-    {
-        return _commitLockWaitElapsed;
-    }
-
-    void resetCommitLockWaitElapsed()
-    {
-        _commitLockWaitElapsed = 0;
-    }
+    // Time this thread has spent waiting to acquire the commit lock since the last reset. The thread that waits is
+    // always the thread running the command, so callers can attribute the wait without passing it through every call.
+    static uint64_t getCommitLockWait();
+    static void resetCommitLockWait();
 
     TRANSACTION_TYPE getLastTransactionType();
 
@@ -500,7 +495,6 @@ private:
     uint64_t _commitElapsed = 0;
     uint64_t _rollbackElapsed = 0;
     uint64_t _commitLockElapsed = 0;
-    uint64_t _commitLockWaitElapsed = 0;
     uint64_t _totalTransactionElapsed = 0;
 
     SPerformanceTimer _transactionTimer;
@@ -514,6 +508,7 @@ private:
     atomic<string> _lastConflictLocation;
     static thread_local int64_t _conflictIdentifier;
     static thread_local string _conflictLocation;
+    static thread_local uint64_t _commitLockWait;
 
     bool _writeIdempotent(const string& query, const map<string, Parameter>& params, SQResult& result, bool alwaysKeepQueries = false);
 
