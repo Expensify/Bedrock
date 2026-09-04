@@ -111,79 +111,73 @@ STable BedrockBlockingCommandQueue::getState()
     inspect(_commandStates, trackedCommands, blockedCommands);
 
     STable content;
-    content["blockingTimeWindowMS"] = to_string(_windowUS.load() / 1000);
-    content["blockingIdentifierThresholdMS"] = to_string(_identifierThresholdUS.load() / 1000);
-    content["blockingCommandThresholdMS"] = to_string(_commandThresholdUS.load() / 1000);
-    content["blockingBlockDurationMS"] = to_string(_blockDurationUS.load() / 1000);
+    content["blockingTimeWindowMS"] = to_string(_identifierLimits.windowUS.load() / 1000);
+    content["blockingIdentifierThresholdMS"] = to_string(_identifierLimits.thresholdUS.load() / 1000);
+    content["blockingCommandThresholdMS"] = to_string(_commandLimits.thresholdUS.load() / 1000);
+    content["blockingBlockDurationMS"] = to_string(_identifierLimits.blockDurationUS.load() / 1000);
     content["blockingTrackedIdentifiers"] = to_string(trackedIdentifiers);
     content["blockingBlockedIdentifiers"] = SComposeList(blockedIdentifiers);
     content["blockingTrackedCommands"] = to_string(trackedCommands);
     content["blockingBlockedCommands"] = SComposeList(blockedCommands);
-    content["blockingGlobalWindowMS"] = to_string(_globalWindowUS.load() / 1000);
-    content["blockingGlobalThresholdMS"] = to_string(_globalThresholdUS.load() / 1000);
-    content["blockingGlobalBlockDurationMS"] = to_string(_globalBlockDurationUS.load() / 1000);
+    content["blockingGlobalWindowMS"] = to_string(_globalLimits.windowUS.load() / 1000);
+    content["blockingGlobalThresholdMS"] = to_string(_globalLimits.thresholdUS.load() / 1000);
+    content["blockingGlobalBlockDurationMS"] = to_string(_globalLimits.blockDurationUS.load() / 1000);
     content["blockingGlobalBlocked"] = _isBlocked(_globalState, now) ? "true" : "false";
     return content;
 }
 
 uint64_t BedrockBlockingCommandQueue::setWindow(const uint64_t windowUS)
 {
-    return _windowUS.exchange(windowUS);
+    _commandLimits.windowUS.store(windowUS);
+    return _identifierLimits.windowUS.exchange(windowUS);
 }
 
 uint64_t BedrockBlockingCommandQueue::setIdentifierThreshold(const uint64_t thresholdUS)
 {
-    return _identifierThresholdUS.exchange(thresholdUS);
+    return _identifierLimits.thresholdUS.exchange(thresholdUS);
 }
 
 uint64_t BedrockBlockingCommandQueue::setCommandThreshold(const uint64_t thresholdUS)
 {
-    return _commandThresholdUS.exchange(thresholdUS);
+    return _commandLimits.thresholdUS.exchange(thresholdUS);
 }
 
 uint64_t BedrockBlockingCommandQueue::setBlockDuration(const uint64_t durationUS)
 {
-    return _blockDurationUS.exchange(durationUS);
+    _commandLimits.blockDurationUS.store(durationUS);
+    return _identifierLimits.blockDurationUS.exchange(durationUS);
 }
 
 uint64_t BedrockBlockingCommandQueue::setGlobalWindow(const uint64_t windowUS)
 {
-    return _globalWindowUS.exchange(windowUS);
+    return _globalLimits.windowUS.exchange(windowUS);
 }
 
 uint64_t BedrockBlockingCommandQueue::setGlobalThreshold(const uint64_t thresholdUS)
 {
-    return _globalThresholdUS.exchange(thresholdUS);
+    _globalLimits.logThresholdUS.store(thresholdUS * GLOBAL_LOG_PERCENT / 100);
+    return _globalLimits.thresholdUS.exchange(thresholdUS);
 }
 
 uint64_t BedrockBlockingCommandQueue::setGlobalBlockDuration(const uint64_t durationUS)
 {
-    return _globalBlockDurationUS.exchange(durationUS);
+    return _globalLimits.blockDurationUS.exchange(durationUS);
 }
 
 void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, const string& commandName, uint64_t elapsedUS)
 {
     const uint64_t now = _now();
-    const uint64_t windowUS = _windowUS.load();
-    const uint64_t blockDurationUS = _blockDurationUS.load();
 
-    const Limits identifierLimits = {windowUS, _identifierThresholdUS.load(), blockDurationUS, LOG_THRESHOLD_US};
-    if (!identifier.empty() && identifierLimits.thresholdUS) {
-        _recordAndCheck(*_getOrCreateState(_identifierStates, identifier), "identifier", identifier, identifierLimits, now, elapsedUS);
+    if (!identifier.empty() && _identifierLimits.thresholdUS.load()) {
+        _recordAndCheck(*_getOrCreateState(_identifierStates, identifier), "identifier", identifier, _identifierLimits, now, elapsedUS);
+    }
+    if (!commandName.empty() && _commandLimits.thresholdUS.load()) {
+        _recordAndCheck(*_getOrCreateState(_commandStates, commandName), "command", commandName, _commandLimits, now, elapsedUS);
     }
 
-    const Limits commandLimits = {windowUS, _commandThresholdUS.load(), blockDurationUS, LOG_THRESHOLD_US};
-    if (!commandName.empty() && commandLimits.thresholdUS) {
-        _recordAndCheck(*_getOrCreateState(_commandStates, commandName), "command", commandName, commandLimits, now, elapsedUS);
-    }
-
-    // Every command counts toward the global dimension, whoever sent it. Warn from 80% of the threshold so the
-    // threshold can be tuned against real traffic before it starts rejecting anything. The fixed 10 second log
-    // threshold the other dimensions use would log on almost every command here.
-    const uint64_t globalThresholdUS = _globalThresholdUS.load();
-    const Limits globalLimits = {_globalWindowUS.load(), globalThresholdUS, _globalBlockDurationUS.load(), globalThresholdUS / 5 * 4};
-    if (globalLimits.thresholdUS) {
-        _recordAndCheck(_globalState, "global", "", globalLimits, now, elapsedUS);
+    // Every command counts toward the global dimension, whoever sent it.
+    if (_globalLimits.thresholdUS.load()) {
+        _recordAndCheck(_globalState, "global", "", _globalLimits, now, elapsedUS);
     }
 }
 
@@ -229,6 +223,11 @@ shared_ptr<BedrockBlockingCommandQueue::DimensionState> BedrockBlockingCommandQu
 
 void BedrockBlockingCommandQueue::_recordAndCheck(DimensionState& state, const string& dimension, const string& key, const Limits& limits, uint64_t now, uint64_t elapsedUS)
 {
+    const uint64_t windowUS = limits.windowUS.load();
+    const uint64_t thresholdUS = limits.thresholdUS.load();
+    const uint64_t blockDurationUS = limits.blockDurationUS.load();
+    const uint64_t logThresholdUS = limits.logThresholdUS.load();
+
     lock_guard<decltype(state.m)> lock(state.m);
 
     // Already inside an active block: a block lasts a fixed duration and is not extended by further hits, so
@@ -243,7 +242,7 @@ void BedrockBlockingCommandQueue::_recordAndCheck(DimensionState& state, const s
     uint64_t total = 0;
     for (auto it = state.commands.begin(); it != state.commands.end();) {
         const uint64_t timeSinceFinishedUS = now > it->finishTime ? now - it->finishTime : 0;
-        if (timeSinceFinishedUS >= limits.windowUS) {
+        if (timeSinceFinishedUS >= windowUS) {
             it = state.commands.erase(it);
             continue;
         }
@@ -251,26 +250,26 @@ void BedrockBlockingCommandQueue::_recordAndCheck(DimensionState& state, const s
         // Doing the line below will allow us to count for partial timings spent in a command. Let's say the window is 100s,
         // and we had a command that took 50s and finished 80s ago. We should only count 20s of that command, since the other
         // 30s are outside the window. So the result would be min(50s, 100 - 80) = min(50, 20) = 20s.
-        total += min(it->elapsedTime, limits.windowUS - timeSinceFinishedUS);
+        total += min(it->elapsedTime, windowUS - timeSinceFinishedUS);
         ++it;
     }
 
-    if (total > limits.thresholdUS) {
-        state.blockedUntil = now + limits.blockDurationUS;
+    if (total > thresholdUS) {
+        state.blockedUntil = now + blockDurationUS;
         SINFO("Blocking queue rate limit reached, blocking", {
             {"dimension", dimension},
             {"identifier", key},
             {"timeMS", to_string(total / 1000)},
-            {"thresholdMS", to_string(limits.thresholdUS / 1000)},
-            {"blockDurationMS", to_string(limits.blockDurationUS / 1000)}
+            {"thresholdMS", to_string(thresholdUS / 1000)},
+            {"blockDurationMS", to_string(blockDurationUS / 1000)}
         });
-    } else if (limits.logThresholdUS && total > limits.logThresholdUS) {
+    } else if (logThresholdUS && total > logThresholdUS) {
         // Log-only monitoring: the dimension is heavy but still under its block threshold.
         SINFO("Blocking queue rate limit above logging threshold", {
             {"dimension", dimension},
             {"identifier", key},
             {"timeMS", to_string(total / 1000)},
-            {"thresholdMS", to_string(limits.logThresholdUS / 1000)}
+            {"thresholdMS", to_string(logThresholdUS / 1000)}
         });
     }
 }
