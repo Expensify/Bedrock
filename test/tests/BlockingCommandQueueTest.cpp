@@ -52,7 +52,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
                                                      TEST(BlockingCommandQueueTest::testClearResets),
                                                      TEST(BlockingCommandQueueTest::testGlobalOverThresholdBlocksEveryone),
                                                      TEST(BlockingCommandQueueTest::testGlobalRejectsOnPushAndDequeue),
-                                                     TEST(BlockingCommandQueueTest::testGlobalBlockTakesPrecedence))
+                                                     TEST(BlockingCommandQueueTest::testGlobalBlockTakesPrecedence),
+                                                     TEST(BlockingCommandQueueTest::testGlobalWindowIsIndependent))
     {
     }
 
@@ -382,6 +383,29 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
+    }
+
+    void testGlobalWindowIsIndependent()
+    {
+        // The global dimension has its own window, so a sample that has aged out of the shared window can still
+        // count toward the global threshold.
+        TestBlockingCommandQueue queue;
+        queue.setWindow(100);
+        queue.setIdentifierThreshold(0);
+        queue.setCommandThreshold(0);
+        queue.setGlobalWindow(1000);
+        queue.setGlobalThreshold(50);
+        queue.setGlobalBlockDuration(1000);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 30);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
+
+        // 500us later the first sample is far outside the 100us shared window but inside the 1000us global
+        // window, so all 30us of it still counts and the second sample takes the total to 60 (> 50).
+        queue.setNow(1500);
+        queue.recordExecutionTime("acct1", "cmd", 30);
         ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
     }
 } __BlockingCommandQueueTest;
