@@ -78,6 +78,12 @@ size_t BedrockBlockingCommandQueue::clearRateLimits()
         size += _commandStates.states.size();
         _commandStates.states.clear();
     }
+    {
+        // The global dimension is a single state rather than a tracked key, so it isn't part of the count.
+        lock_guard<decltype(_globalState.m)> lock(_globalState.m);
+        _globalState.commands.clear();
+        _globalState.blockedUntil = 0;
+    }
     return size;
 }
 
@@ -113,6 +119,10 @@ STable BedrockBlockingCommandQueue::getState()
     content["blockingBlockedIdentifiers"] = SComposeList(blockedIdentifiers);
     content["blockingTrackedCommands"] = to_string(trackedCommands);
     content["blockingBlockedCommands"] = SComposeList(blockedCommands);
+    content["blockingGlobalWindowMS"] = to_string(_globalWindowUS.load() / 1000);
+    content["blockingGlobalThresholdMS"] = to_string(_globalThresholdUS.load() / 1000);
+    content["blockingGlobalBlockDurationMS"] = to_string(_globalBlockDurationUS.load() / 1000);
+    content["blockingGlobalBlocked"] = _isBlocked(_globalState, now) ? "true" : "false";
     return content;
 }
 
@@ -136,6 +146,21 @@ uint64_t BedrockBlockingCommandQueue::setBlockDuration(const uint64_t durationUS
     return _blockDurationUS.exchange(durationUS);
 }
 
+uint64_t BedrockBlockingCommandQueue::setGlobalWindow(const uint64_t windowUS)
+{
+    return _globalWindowUS.exchange(windowUS);
+}
+
+uint64_t BedrockBlockingCommandQueue::setGlobalThreshold(const uint64_t thresholdUS)
+{
+    return _globalThresholdUS.exchange(thresholdUS);
+}
+
+uint64_t BedrockBlockingCommandQueue::setGlobalBlockDuration(const uint64_t durationUS)
+{
+    return _globalBlockDurationUS.exchange(durationUS);
+}
+
 void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, const string& commandName, uint64_t elapsedUS)
 {
     const uint64_t now = _now();
@@ -151,6 +176,15 @@ void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, 
     if (!commandName.empty() && commandLimits.thresholdUS) {
         _recordAndCheck(*_getOrCreateState(_commandStates, commandName), "command", commandName, commandLimits, now, elapsedUS);
     }
+
+    // Every command counts toward the global dimension, whoever sent it. Warn from 80% of the threshold so the
+    // threshold can be tuned against real traffic before it starts rejecting anything. The fixed 10 second log
+    // threshold the other dimensions use would log on almost every command here.
+    const uint64_t globalThresholdUS = _globalThresholdUS.load();
+    const Limits globalLimits = {_globalWindowUS.load(), globalThresholdUS, _globalBlockDurationUS.load(), globalThresholdUS / 5 * 4};
+    if (globalLimits.thresholdUS) {
+        _recordAndCheck(_globalState, "global", "", globalLimits, now, elapsedUS);
+    }
 }
 
 string BedrockBlockingCommandQueue::getBlockingDimension(const string& identifier, const string& commandName)
@@ -158,6 +192,9 @@ string BedrockBlockingCommandQueue::getBlockingDimension(const string& identifie
     // Hot path: called by push() and by _dequeue() under the base `_queueMutex`. Keep it O(1) by reading only
     // the precomputed block deadline. The windowed time is summed in recordExecutionTime, off the blocking thread.
     const uint64_t now = _now();
+    if (_isBlocked(_globalState, now)) {
+        return "global";
+    }
     if (!identifier.empty()) {
         auto state = _getState(_identifierStates, identifier);
         if (state && _isBlocked(*state, now)) {
@@ -228,7 +265,7 @@ void BedrockBlockingCommandQueue::_recordAndCheck(DimensionState& state, const s
             {"blockDurationMS", to_string(limits.blockDurationUS / 1000)}
         });
     } else if (limits.logThresholdUS && total > limits.logThresholdUS) {
-        // Log-only monitoring: the identifier is heavy but still under its block threshold.
+        // Log-only monitoring: the dimension is heavy but still under its block threshold.
         SINFO("Blocking queue rate limit above logging threshold", {
             {"dimension", dimension},
             {"identifier", key},
