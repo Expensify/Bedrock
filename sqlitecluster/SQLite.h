@@ -237,6 +237,16 @@ public:
     // Returns the timing of the last command
     void logLastTransactionTiming(const string& message, const string& commandName = "");
 
+    uint64_t getCommitLockWaitElapsed() const
+    {
+        return _commitLockWaitElapsed;
+    }
+
+    void resetCommitLockWaitElapsed()
+    {
+        _commitLockWaitElapsed = 0;
+    }
+
     TRANSACTION_TYPE getLastTransactionType();
 
     // Returns the number of changes that were performed in the last query.
@@ -490,6 +500,7 @@ private:
     uint64_t _commitElapsed = 0;
     uint64_t _rollbackElapsed = 0;
     uint64_t _commitLockElapsed = 0;
+    uint64_t _commitLockWaitElapsed = 0;
     uint64_t _totalTransactionElapsed = 0;
 
     SPerformanceTimer _transactionTimer;

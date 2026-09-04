@@ -26,7 +26,8 @@ struct WriteLocalUnreplicatedTest : tpunit::TestFixture
         : tpunit::TestFixture("WriteLocalUnreplicated",
                               TEST(WriteLocalUnreplicatedTest::leavesCommitCountAndJournalUntouched),
                               TEST(WriteLocalUnreplicatedTest::rollsBackOnFailedQuery),
-                              TEST(WriteLocalUnreplicatedTest::survivesConcurrentCommits))
+                              TEST(WriteLocalUnreplicatedTest::survivesConcurrentCommits),
+                              TEST(WriteLocalUnreplicatedTest::recordsCommitLockWait))
     {
     }
 
@@ -142,5 +143,34 @@ struct WriteLocalUnreplicatedTest : tpunit::TestFixture
         db.read("SELECT COUNT(*) FROM unreplicatedTable;", result);
         db.rollback();
         ASSERT_EQUAL(SToInt64(result[0][0]), succeeded);
+    }
+
+    void recordsCommitLockWait()
+    {
+        WriteLocalUnreplicatedTempDBFile dbFile;
+        SQLite db(dbFile.filename, 1000, 1000, 1);
+        SQLite waiter(db);
+
+        db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+
+        atomic<bool> started(false);
+        thread waitingThread([&]() {
+            started = true;
+            waiter.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE);
+            waiter.rollback();
+        });
+
+        while (!started) {
+            this_thread::yield();
+        }
+        usleep(20'000);
+        db.rollback();
+        waitingThread.join();
+
+        ASSERT_TRUE(waiter.getCommitLockWaitElapsed() >= 10'000);
+
+        waiter.beginTransaction(SQLite::TRANSACTION_TYPE::SHARED);
+        ASSERT_EQUAL(waiter.getCommitLockWaitElapsed(), 0);
+        waiter.rollback();
     }
 } __WriteLocalUnreplicatedTest;
