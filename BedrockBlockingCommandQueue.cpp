@@ -157,17 +157,17 @@ string BedrockBlockingCommandQueue::getBlockingDimension(const string& identifie
     return "";
 }
 
-shared_ptr<BedrockBlockingCommandQueue::IdentifierState> BedrockBlockingCommandQueue::_getOrCreateState(StateMap& map, const string& key)
+shared_ptr<BedrockBlockingCommandQueue::DimensionState> BedrockBlockingCommandQueue::_getOrCreateState(StateMap& map, const string& key)
 {
     lock_guard<decltype(map.mapMutex)> lock(map.mapMutex);
     auto [it, inserted] = map.states.try_emplace(key);
     if (inserted) {
-        it->second = make_shared<IdentifierState>();
+        it->second = make_shared<DimensionState>();
     }
     return it->second;
 }
 
-shared_ptr<BedrockBlockingCommandQueue::IdentifierState> BedrockBlockingCommandQueue::_getState(StateMap& map, const string& key)
+shared_ptr<BedrockBlockingCommandQueue::DimensionState> BedrockBlockingCommandQueue::_getState(StateMap& map, const string& key)
 {
     lock_guard<decltype(map.mapMutex)> lock(map.mapMutex);
     auto it = map.states.find(key);

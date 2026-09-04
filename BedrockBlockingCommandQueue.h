@@ -61,10 +61,10 @@ private:
     // An identifier's recently finished blocking-queue commands, oldest first.
     typedef deque<RecentlyFinishedCommand> RecentlyFinishedCommandList;
 
-    // Rate-limit state for one identifier (an identifier or a command name). Each entry has its own mutex, so
+    // Rate-limit state for one dimension: one identifier or one command name. Each entry has its own mutex, so
     // different identifiers never contend on one lock. `blockedUntil` is the time (microseconds) an active
     // block ends; 0 means not blocked.
-    struct IdentifierState
+    struct DimensionState
     {
         mutex m;
         RecentlyFinishedCommandList commands;
@@ -78,14 +78,14 @@ private:
     struct StateMap
     {
         mutable mutex mapMutex;
-        unordered_map<string, shared_ptr<IdentifierState>> states;
+        unordered_map<string, shared_ptr<DimensionState>> states;
     };
 
     // Return a shared_ptr to the state for `key` in `map`, creating it if absent. Holds map.mapMutex only briefly.
-    static shared_ptr<IdentifierState> _getOrCreateState(StateMap& map, const string& key);
+    static shared_ptr<DimensionState> _getOrCreateState(StateMap& map, const string& key);
 
     // Return the state for `key` in `map`, or nullptr if absent. Holds map.mapMutex only briefly.
-    static shared_ptr<IdentifierState> _getState(StateMap& map, const string& key);
+    static shared_ptr<DimensionState> _getState(StateMap& map, const string& key);
 
     // Append a sample that finished at `now` after `elapsedUS` for `key` in `map`, then re-evaluate the window
     // and block `key` for the block duration when its windowed time exceeds `thresholdUS`. A threshold of 0
