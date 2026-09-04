@@ -53,7 +53,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
                                                      TEST(BlockingCommandQueueTest::testGlobalOverThresholdBlocksEveryone),
                                                      TEST(BlockingCommandQueueTest::testGlobalRejectsOnPushAndDequeue),
                                                      TEST(BlockingCommandQueueTest::testGlobalBlockTakesPrecedence),
-                                                     TEST(BlockingCommandQueueTest::testGlobalWindowIsIndependent))
+                                                     TEST(BlockingCommandQueueTest::testGlobalWindowIsIndependent),
+                                                     TEST(BlockingCommandQueueTest::testGlobalBlockDurationHoldsThenClears))
     {
     }
 
@@ -407,5 +408,26 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         queue.setNow(1500);
         queue.recordExecutionTime("acct1", "cmd", 30);
         ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
+    }
+
+    void testGlobalBlockDurationHoldsThenClears()
+    {
+        TestBlockingCommandQueue queue;
+        queue.setIdentifierThreshold(0);
+        queue.setCommandThreshold(0);
+        queue.setGlobalWindow(100);
+        queue.setGlobalThreshold(50);
+        queue.setGlobalBlockDuration(500);
+        queue.setNow(1000);
+
+        queue.recordExecutionTime("acct1", "cmd", 60);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
+
+        // The sample has aged out of the window, but the block still holds for its fixed duration.
+        queue.setNow(1200);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
+
+        queue.setNow(1600);
+        ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
     }
 } __BlockingCommandQueueTest;
