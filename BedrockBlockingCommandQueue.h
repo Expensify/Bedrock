@@ -15,8 +15,9 @@ public:
     static void startTiming(unique_ptr<BedrockCommand>& command);
     static void stopTiming(unique_ptr<BedrockCommand>& command);
 
-    // Reject a command before enqueuing if its identifier or command name is rate limited. Overrides
-    // BedrockCommandQueue::push(). Throws SException("503 ...") when blocked; the caller catches and replies.
+    // Reject a command before enqueuing if the queue as a whole, its identifier, or its command name is rate
+    // limited. Overrides BedrockCommandQueue::push(). Throws SException("503 ...") when blocked; the caller
+    // catches and replies.
     void push(unique_ptr<BedrockCommand>&& command) override;
 
     // Clear the queue and all rate limiting state.
@@ -35,15 +36,24 @@ public:
     uint64_t setCommandThreshold(const uint64_t thresholdUS);
     uint64_t setBlockDuration(const uint64_t durationUS);
 
+    // The global dimension counts every command that runs on the blocking thread, so that a burst spread over
+    // many identifiers still trips it. It gets its own window, threshold and block duration because it
+    // measures total saturation of the thread rather than one identifier's share of it.
+    uint64_t setGlobalWindow(const uint64_t windowUS);
+    uint64_t setGlobalThreshold(const uint64_t thresholdUS);
+    uint64_t setGlobalBlockDuration(const uint64_t durationUS);
+
     // Record that a command finished on the blocking queue after `elapsedUS` of blocking time. Records the
-    // sample against the identifier (when `identifier` is non-empty) and against the command name.
+    // sample against the queue as a whole, against the identifier (when `identifier` is non-empty), and
+    // against the command name.
     void recordExecutionTime(const string& identifier, const string& commandName, uint64_t elapsedUS);
 
-    // Return the active rate-limit dimension, or an empty string. Identifier blocks take precedence when both dimensions are active.
+    // Return the active rate-limit dimension, or an empty string. A global block takes precedence over an
+    // identifier block, which takes precedence over a command block.
     string getBlockingDimension(const string& identifier, const string& commandName);
 
 protected:
-    // Dequeues a command and rejects it if its identifier or command name is rate limited.
+    // Dequeues a command and rejects it if the queue as a whole, its identifier, or its command name is rate limited.
     // Called by `BedrockCommandQueue::get()` with the base `_queueMutex` held. Calling any base method that reacquires `_queueMutex` would deadlock.
     unique_ptr<BedrockCommand> _dequeue() override;
 
@@ -61,10 +71,10 @@ private:
     // An identifier's recently finished blocking-queue commands, oldest first.
     typedef deque<RecentlyFinishedCommand> RecentlyFinishedCommandList;
 
-    // Rate-limit state for one identifier (an identifier or a command name). Each entry has its own mutex, so
-    // different identifiers never contend on one lock. `blockedUntil` is the time (microseconds) an active
-    // block ends; 0 means not blocked.
-    struct IdentifierState
+    // Rate-limit state for one dimension: the whole queue, one identifier, or one command name. Each entry has
+    // its own mutex, so different identifiers never contend on one lock. `blockedUntil` is the time
+    // (microseconds) an active block ends; 0 means not blocked.
+    struct DimensionState
     {
         mutex m;
         RecentlyFinishedCommandList commands;
@@ -78,34 +88,57 @@ private:
     struct StateMap
     {
         mutable mutex mapMutex;
-        unordered_map<string, shared_ptr<IdentifierState>> states;
+        unordered_map<string, shared_ptr<DimensionState>> states;
+    };
+
+    // The tunables for one dimension, in microseconds. The blocking thread reads these while the
+    // SetBlockingQueueTimeRateLimit control command writes them from a worker, so each one is atomic. A
+    // `thresholdUS` of 0 disables the dimension. A `logThresholdUS` of 0 disables the log-only line for
+    // identifiers that are heavy but under the threshold.
+    struct Limits
+    {
+        atomic<uint64_t> windowUS;
+        atomic<uint64_t> thresholdUS;
+        atomic<uint64_t> blockDurationUS;
+        atomic<uint64_t> logThresholdUS;
     };
 
     // Return a shared_ptr to the state for `key` in `map`, creating it if absent. Holds map.mapMutex only briefly.
-    static shared_ptr<IdentifierState> _getOrCreateState(StateMap& map, const string& key);
+    static shared_ptr<DimensionState> _getOrCreateState(StateMap& map, const string& key);
 
     // Return the state for `key` in `map`, or nullptr if absent. Holds map.mapMutex only briefly.
-    static shared_ptr<IdentifierState> _getState(StateMap& map, const string& key);
+    static shared_ptr<DimensionState> _getState(StateMap& map, const string& key);
 
-    // Append a sample that finished at `now` after `elapsedUS` for `key` in `map`, then re-evaluate the window
-    // and block `key` for the block duration when its windowed time exceeds `thresholdUS`. A threshold of 0
-    // disables the dimension. `dimension` labels the log line emitted when it blocks. This is the O(window)
-    // work; it runs off the blocking thread (from recordExecutionTime), never under the base `_queueMutex`.
-    void _recordAndCheck(StateMap& map, const string& key, uint64_t thresholdUS, uint64_t now, uint64_t elapsedUS, const string& dimension);
+    // Append a sample that finished at `now` after `elapsedUS` to `state`, then re-evaluate the window and
+    // block for `limits.blockDurationUS` when the windowed time exceeds `limits.thresholdUS`. `dimension` and
+    // `key` label the log line. Reads `limits` once up front, so a concurrent retune can't change the window
+    // partway through. This is the O(window) work; it never runs under the base `_queueMutex`.
+    static void _recordAndCheck(DimensionState& state, const string& dimension, const string& key, const Limits& limits, uint64_t now, uint64_t elapsedUS);
 
-    // True if `key` in `map` is inside an active block at `now`. O(1): reads only the block deadline, so the
-    // push and dequeue hot paths stay cheap (dequeue runs under the base `_queueMutex`).
-    static bool _isBlocked(StateMap& map, const string& key, uint64_t now);
+    // True if `state` is inside an active block at `now`. O(1): reads only the block deadline, so the push and
+    // dequeue hot paths stay cheap (dequeue runs under the base `_queueMutex`).
+    static bool _isBlocked(DimensionState& state, uint64_t now);
 
-    // Log (without blocking) when an identifier's windowed time crosses this, for monitoring heavy identifiers
-    // that are still under their block threshold.
+    // Log (without blocking) when an identifier's or a command's windowed time crosses this, for monitoring
+    // heavy ones that are still under their block threshold.
     static constexpr uint64_t LOG_THRESHOLD_US = 10'000'000; // 10 seconds
+
+    static constexpr uint64_t GLOBAL_THRESHOLD_US = 55'000'000; // 55 seconds
+
+    // The global dimension warns from this share of its threshold instead of the fixed one above, so the
+    // threshold can be tuned against real traffic before it rejects anything. Every command counts toward this
+    // dimension, so a fixed 10 seconds would log on almost all of them. setGlobalThreshold() keeps the two in step.
+    static constexpr uint64_t GLOBAL_LOG_PERCENT = 80;
 
     StateMap _identifierStates;
     StateMap _commandStates;
 
-    atomic<uint64_t> _windowUS{180'000'000};          // 180 seconds
-    atomic<uint64_t> _identifierThresholdUS{20'000'000}; // 20 seconds
-    atomic<uint64_t> _commandThresholdUS{40'000'000}; // 40 seconds
-    atomic<uint64_t> _blockDurationUS{60'000'000};    // 60 seconds
+    // The global dimension has no key, so it needs one state rather than a map of them.
+    DimensionState _globalState;
+
+    // The identifier and command dimensions share one window and one block duration, so setWindow() and
+    // setBlockDuration() write both of them.
+    Limits _identifierLimits{180'000'000, 20'000'000, 60'000'000, LOG_THRESHOLD_US};
+    Limits _commandLimits{180'000'000, 40'000'000, 60'000'000, LOG_THRESHOLD_US};
+    Limits _globalLimits{60'000'000, GLOBAL_THRESHOLD_US, 60'000'000, (GLOBAL_THRESHOLD_US * GLOBAL_LOG_PERCENT) / 100};
 };
