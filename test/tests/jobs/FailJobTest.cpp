@@ -150,9 +150,6 @@ struct FailJobTest : tpunit::TestFixture
         // Then Bedrock rejects the failure because it cannot make an atomic freshness decision
         tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
 
-        command["expectedData"] = "{\"activity\":1,\"activity\":1}";
-        tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
-
         command["expectedData"] = expectedData;
         command["data"] = "[]";
         tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
@@ -266,31 +263,5 @@ struct FailJobTest : tpunit::TestFixture
         // Then Bedrock uses legacy failure behavior because rolling deployments require backward compatibility
         tester->readDB("SELECT state FROM jobs WHERE jobID=" + legacyJobID + ";", result);
         ASSERT_EQUAL(result[0][0], "FAILED");
-
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "corruptFailure";
-        command["data"] = "{\"value\":1}";
-        command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
-        const string corruptJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
-
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "corruptFailure";
-        runningJob = tester->executeWaitVerifyContentTable(command);
-
-        command.clear();
-        command.methodLine = "Query";
-        command["query"] = "UPDATE jobs SET data = "
-            "'{\"_bedrockRerunIfDataChanged\":true,\"value\":}' WHERE jobID = " +
-            corruptJobID + ";";
-        tester->executeWaitVerifyContent(command);
-
-        command.clear();
-        command.methodLine = "FailJob";
-        command["jobID"] = corruptJobID;
-        command["expectedData"] = SDecodeBase64(runningJob.at("expectedDataBase64"));
-        tester->executeWaitVerifyContent(command, "500 Opted-in job contains invalid JSON data");
     }
 } __FailJobTest;

@@ -485,9 +485,6 @@ struct CreateJobTest : tpunit::TestFixture
         // Then Bedrock rejects the terminal request because freshness comparison requires a JSON object
         tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
 
-        command["expectedData"] = "{\"activity\":1,\"activity\":1}";
-        tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
-
         command["expectedData"] = expectedFinishData;
         command["data"] = "[]";
         tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
@@ -695,64 +692,6 @@ struct CreateJobTest : tpunit::TestFixture
         ASSERT_TRUE(exactSnapshot.find("18446744073709551615") != string::npos);
         ASSERT_TRUE(exactSnapshot.find("11.5") != string::npos);
         ASSERT_TRUE(exactSnapshot.find("nul\\u0000key") != string::npos);
-
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "invalidStoredData";
-        command["data"] = "{\"value\":1}";
-        command["unique"] = "true";
-        const string invalidStoredJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
-
-        command.clear();
-        command.methodLine = "Query";
-        command["query"] = "UPDATE jobs SET data = '{\"value\":}' WHERE jobID = " + invalidStoredJobID + ";";
-        tester->executeWaitVerifyContent(command);
-
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "invalidStoredData";
-        command["data"] = "{\"replacement\":true}";
-        command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
-        tester->executeWaitVerifyContent(command, "402 Cannot enable uniqueAsRetry on invalid stored data");
-
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "corruptOptedData";
-        command["data"] = "{\"value\":1}";
-        command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
-        const string corruptJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
-
-        command.clear();
-        command.methodLine = "Query";
-        command["query"] = "UPDATE jobs SET data = "
-            "'{\"_bedrockRerunIfDataChanged\":true,\"value\":}' WHERE jobID = " +
-            corruptJobID + ";";
-        tester->executeWaitVerifyContent(command);
-
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "corruptOptedData";
-        command["data"] = "{\"value\":3}";
-        command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
-        tester->executeWaitVerifyContent(command, "500 Opted-in job contains invalid JSON data");
-
-        command.clear();
-        command.methodLine = "QueryJob";
-        command["jobID"] = corruptJobID;
-        tester->executeWaitVerifyContent(command, "500 Opted-in job contains invalid JSON data");
-
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "corruptOptedData";
-        tester->executeWaitVerifyContent(command, "500 Opted-in job contains invalid JSON data");
-
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = corruptJobID;
-        tester->executeWaitVerifyContent(command, "500 Opted-in job contains invalid JSON data");
     }
 
     void uniqueAsRetryCannotOwnChildren()

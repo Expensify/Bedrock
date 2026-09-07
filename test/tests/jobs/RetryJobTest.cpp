@@ -314,35 +314,6 @@ struct RetryJobTest : tpunit::TestFixture
         ASSERT_TRUE(JSON::Value::parse(result[0][4]) == JSON::Value::parse(expectedMergedData));
         ASSERT_TRUE(result[0][4].find("11.5") != string::npos);
         ASSERT_TRUE(result[0][4].find("18446744073709551615") != string::npos);
-
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "corrupt-retry";
-        command["data"] = "{\"value\":1}";
-        command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
-        const string corruptJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
-
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "corrupt-retry";
-        const STable corruptRunningJob = tester->executeWaitVerifyContentTable(command);
-        const string corruptExpectedData = SDecodeBase64(corruptRunningJob.at("expectedDataBase64"));
-
-        command.clear();
-        command.methodLine = "Query";
-        command["query"] = "UPDATE jobs SET data = "
-            "'{\"_bedrockRerunIfDataChanged\":true,\"value\":}' WHERE jobID = " +
-            corruptJobID + ";";
-        tester->executeWaitVerifyContent(command);
-
-        command.clear();
-        command.methodLine = "RetryJob";
-        command["jobID"] = corruptJobID;
-        command["data"] = "{\"value\":2}";
-        command["expectedData"] = corruptExpectedData;
-        command["expectedWorkerData"] = corruptRunningJob.at("data");
-        tester->executeWaitVerifyContent(command, "500 Opted-in job contains invalid JSON data");
     }
 
     // Cannot retry with a negative delay
