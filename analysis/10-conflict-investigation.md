@@ -7,10 +7,9 @@ check-in `eedd80c1a9749300`, **except** the `IdxDelete` path noted in §6. Every
 here describes exactly what production runs.
 
 **RESUME POINT:** covered — read-set representation, validation algorithms on both sides,
-`hctDbTidIsConflict`, range coalescing. Next — (i) the write/write path
-(`hctDbWriteWriteConflict`, `hct_database.c:5945+`), (ii) `hct_journalhash.c` for H5,
-(iii) `hct_pman.c` free-page baskets for H3, (iv) Bedrock's journal tables for H4,
-(v) `BedrockConflictManager` for H7.
+`hctDbTidIsConflict`, range coalescing, H4 (journal head, verified), H7 (killed).
+Next — (i) `hct_journalhash.c` for H5, (ii) `hct_pman.c` free-page baskets for H3,
+(iii) the write/write path (`hctDbWriteWriteConflict`, `hct_database.c:5945+`) in detail.
 
 ---
 
@@ -147,7 +146,7 @@ by paying the expensive path.
 | H1 | Granularity is not actually row-level on Bedrock's paths | **Killed as stated.** The conflict predicate is genuinely per-row (`hctDbValidateEntry`, `hct_database.c:8092`). But *reworded and confirmed*: the cheap path is page-granular, the row-granular path is the expensive one. |
 | H2 | Validation scope is wider than the write set — read sets conflict | **Confirmed, but not a differentiator.** HC-Tree does conflict on reads (`rcCommit` doc, `hct_database.c:343-358`; `hctDbLogReadConflict`, `hct_database.c:5883`). So does WAL2 (`btreeBcDetectIntkeyConflict`). Both are read/write-conflicting optimistic schemes. |
 | H3 | Shared hot structures serialize every transaction | **Confirmed as a mechanism, magnitude unmeasured.** `hctDbTMapLookup()` is called per validated row, and the fast path that would avoid it is **commented out** — see §4. This is the strongest 384-CPU concern. |
-| H4 | Bedrock's journal tables are the true conflict set | **Partially confirmed — sharding is good, but the head of each shard is a contended maintenance hot spot.** See §4.5. |
+| H4 | Bedrock's journal tables are the true conflict set | **CONFIRMED in a form that matters more than the original hypothesis.** Journal *appends* are well sharded and are not the problem. But every write transaction reads the *head* of its shard and trimming deletes there, producing a genuine same-row read/write conflict that **both engines detect identically** — so it is a conflict class row-level locking cannot reduce. See §4.5. |
 | H5 | Hash/bitmap aliasing produces false conflicts | **Not yet examined** (`hct_journalhash.c`). Note: HC-Tree validation compares real keys and real TIDs, so aliasing would have to enter via the journal hash, not via validation. |
 | H6 | The two engines count different events as "conflicts" | **Partially confirmed — important for interpreting our metrics.** See §5. |
 | H7 | Bedrock's own layer amplifies engine conflicts | **Killed.** `BedrockConflictManager` (`BedrockConflictManager.cpp`, 66 lines) is *purely* a profiling counter: `recordTables()` increments per-command/per-table use counts under a mutex, and `generateReport()` prints them. It explicitly skips journal tables. It makes no retry, ordering, or locking decision and cannot amplify anything. |
@@ -269,16 +268,62 @@ it worth pursuing anyway:
   moved out of the write path entirely (a background sweep). Either change removes the read
   from the transaction's read set, and with it the conflict edge.
 
-**UNVERIFIED and needs checking before acting:** what read range HC-Tree actually records
-for `SELECT MIN(id)` on an intkey table. If the planner emits a `First()` seek,
-`hctDbCsrScanStart`/`Finish` may record `[SMALLEST_INT64, min_id]` rather than a point —
-which would make the read range cover exactly the deleted region and turn an occasional
-overlap into a systematic one. This is directly testable and is the first thing to check
-next session.
+#### VERIFIED: the overlap is systematic, not occasional — and engine-independent
 
-**Cheap win regardless of the above:** make the `SELECT MIN(id)` conditional, or cache it.
-It is a per-transaction database read on the write path whose result is usually
-"nothing to do".
+`SELECT MIN(id)` on an intkey table compiles to a `First()` seek.
+`sqlite3HctDbCsrFirst()` (`hct_database.c:7393`) sets `eDir = BTREE_DIR_FORWARD` and calls:
+
+```c
+rc = hctDbCsrScanStart(pCsr, 0, SMALLEST_INT64);
+```
+(`hct_database.c:7400`)
+
+so `iFirst = SMALLEST_INT64`. At `hctDbCsrScanFinish()` the cursor is sitting on the
+minimum row `K`, and since `eDir != BTREE_DIR_NONE` the code takes
+`sqlite3HctDbCsrKey(pCsr, &iVal)` and `iVal >= pOp->iFirst`, so `iLast = K`
+(`hct_database.c:2210-2228`).
+
+**The recorded read range is `[SMALLEST_INT64, K]`, where `K` is the shard minimum.**
+
+The trimming `DELETE … WHERE id < oldestCommitToKeep LIMIT 10` removes the ten *lowest*
+rows — starting with `K`, the exact row the read range's upper endpoint sits on. So:
+
+> Transaction A reads row `K`. Transaction B deletes row `K`. Both are on the same journal
+> shard. That is a genuine, unavoidable read/write conflict on a single shared row.
+
+This is not an artifact of range over-approximation and not a false conflict. Two
+transactions really do touch the same row.
+
+**The critical consequence — and the clearest answer yet to Dan's question:**
+
+WAL2 records the same range. `btreeBcIntkeyRead()` sets `pRead->iMin = iKey` with `iMax`
+filled in at scan end (`btree.c:2012`, `btree.c:1806-1807`), and
+`btreeBcDetectIntkeyConflict()` then finds write key `K` inside read range
+`[SMALLEST_INT64, K]` and returns `SQLITE_BUSY_SNAPSHOT` (`btree.c:1385-1396`) — exactly as
+HC-Tree does.
+
+**So this entire class of conflict is engine-independent. Moving from WAL2 to HC-Tree
+cannot reduce it by even one conflict, because row-level locking is already the finest
+granularity available and the two transactions genuinely contend on the same row.**
+
+If journal housekeeping accounts for a meaningful share of production conflicts, that alone
+explains the reported symptom: HC-Tree's finer granularity has nothing to bite on, so the
+conflict rate stays flat while HC-Tree additionally pays the more expensive validation
+described in §2 — which is how "the same" becomes "the same or more".
+
+**This is the highest-confidence actionable finding in the investigation so far**, because
+unlike the `iLocalMinTid` question it needs no upstream input: the fix is entirely in
+Bedrock's own code (`11-portable-optimizations.md` B7 — cache the per-shard min-id, move
+trimming to a background sweep). It is also directly measurable: count how many of our
+`SQLITE_BUSY_SNAPSHOT` events name a `journal*` root.
+
+**Sizing the exposure.** `maxJournalSize` defaults to 1,000,000 commits
+(`main.cpp:332`) and `journalTables` to `workerThreads` ≈ 384
+(`BedrockServer.cpp:97`), so each shard holds roughly 2,600 rows in steady state and
+trims continuously once past the threshold — i.e. the `DELETE` is the normal case, not a
+rare one. Shard assignment is global round-robin
+(`_sharedData.nextJournalCount++`, `sqlitecluster/SQLite.cpp:947`), so transactions *i* and
+*i+384* collide; whether they overlap in time is a throughput question, **not yet measured**.
 
 ### 4.4 Validation cost is unbounded by the transaction's own size
 
