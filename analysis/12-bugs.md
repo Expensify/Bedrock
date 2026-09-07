@@ -257,4 +257,79 @@ assumes.
 
 ---
 
+## #7 — HC-Tree log recovery uses an unvalidated file offset and record length
+
+**Severity:** **high** — out-of-bounds reads on the crash-recovery path, fed by exactly the
+input a power loss produces
+**Affects:** both the vendored Aug-28 drop and check-in `eedd80c1a9749300`; HC-Tree only
+**Location:** `src/hctree.c:508` (`hctLogReaderNext`), `src/hctree.c:560`
+(`hctLogReaderOpen`)
+
+Two values are taken straight from the log file's bytes and used without bounds checks.
+
+**(a) Starting offset `iFile`.** `hctLogReaderOpen()` reads the whole file into `aFile`
+(`nFile` bytes, allocated `nFile + 8`) and then reads its initial parse position *from the
+file itself*:
+
+```c
+      memcpy(&pReader->iTid, pReader->aFile, sizeof(i64));
+      memcpy(&pReader->iFile, &pReader->aFile[8], sizeof(int));
+```
+
+`iFile` is never validated against `[0, nFile]`. `hctLogReaderNext()` bounds only the upper
+end, in signed arithmetic:
+
+```c
+  if( (pReader->iFile + 12)>pReader->nFile ){
+    pReader->bEof = 1;
+  }else{
+    memcpy(&iRoot, &pReader->aFile[pReader->iFile], sizeof(iRoot));
+```
+
+A negative `iFile` passes and indexes **before** the buffer.
+
+**(b) Record length `nByte`.** In the same function:
+
+```c
+        pReader->nKey = nByte;
+        pReader->aKey = &pReader->aFile[pReader->iFile];
+        pReader->iFile += pReader->nKey;
+```
+
+`nByte` is a `u32` read verbatim from the file, never compared against `nFile` or the bytes
+remaining. The `(aKey, nKey)` pair — potentially describing a region far past the
+allocation — is passed to `hctRecoverOneLog()` (`hctree.c:618`) and used as a key.
+
+**(c) Size cast.** `pReader->nFile = (int)sStat.st_size;` casts `off_t` to `int` unchecked;
+a log ≥ 2 GiB yields a negative `nFile`. Log chunks default to 16 KiB
+(`HCT_DEFAULT_SZLOGCHUNK`, `hctInt.h:57`), so probably not reachable today, but unguarded.
+
+**Failure scenario.** Machine crash or power loss. Because HC-Tree issues **no `fsync`
+anywhere** (`05-recovery-durability.md` §3), log files on disk after such an event may be
+torn, partially written, or contain stale bytes from a reused block. On restart, recovery
+parses them. A damaged `iFile` or `nByte` produces an out-of-bounds read: at best a crash
+that prevents the node restarting, at worst adjacent heap silently interpreted as a
+recovered key and applied to the database.
+
+**Why this ranks above the other entries:** this is the one place where the design
+*guarantees* the parser will periodically be handed damaged input — no sync means torn logs
+are expected, not adversarial — and the parser has no checksum, no magic number, and no
+length validation. The log format's only structure is an `iRoot == 0` terminator
+(`hctree.c:522`).
+
+**Not remotely triggerable** — it requires local file state, so this is a
+recovery-reliability and robustness problem, not a remote vulnerability.
+
+**Suggested fixes (small and local):**
+1. validate `iFile` against `[0, nFile]` after reading it in `hctLogReaderOpen()`
+2. validate `nByte <= nFile - iFile` before assigning `nKey` / `aKey`
+3. use `i64` for `nFile` and range-check `st_size`
+4. (larger) add a per-record checksum so recovery can *detect* a torn tail and stop cleanly,
+   rather than parsing into it
+
+**Action:** raise with Dan Kennedy. Items 1–3 are a few lines each and are worth doing
+regardless of whether item 4 is wanted.
+
+---
+
 *(further entries appended as units proceed)*
