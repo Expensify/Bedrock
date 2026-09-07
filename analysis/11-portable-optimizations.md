@@ -80,6 +80,14 @@ simply not yet done.
 
 **Confidence:** high that the gap is real; medium that generalizing is as easy as it looks.
 
+**Ready-made experiment, no code required:** Bedrock already ships `PRAGMA noop_update`
+(`SQLITE_ENABLE_NOOP_UPDATE`, `update.c:468`), which rewrites every `SET` expression to
+`+column` so an `UPDATE` writes each column its existing value — see
+`08-custom-flags.md` §4. Running a representative write workload with it enabled produces
+*only* the write amplification, since no value changes. Any conflicts and any index
+delete/insert traffic observed under it are exactly what A2 would remove. This sizes the
+prize before anyone writes a line of code.
+
 ## A4 — Give `ConflictLockGuard` an identifier with grouping power on HC-Tree
 
 **Not a port from WAL2 — a repair of a Bedrock mechanism that WAL2's coarseness made work
