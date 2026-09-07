@@ -1,4 +1,5 @@
 #include <libstuff/SData.h>
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
@@ -13,7 +14,7 @@ struct RetryJobTest : tpunit::TestFixture
                               TEST(RetryJobTest::parentIsNotPaused),
                               TEST(RetryJobTest::removeFinishedAndCancelledChildren),
                               TEST(RetryJobTest::updateData),
-                              TEST(RetryJobTest::uniqueAsRetryExactThreeWayMerge),
+                              TEST(RetryJobTest::uniqueAsRetryThreeWayMerge),
                               TEST(RetryJobTest::negativeDelay),
                               TEST(RetryJobTest::positiveDelay),
                               TEST(RetryJobTest::delayError),
@@ -230,15 +231,15 @@ struct RetryJobTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0][0], SComposeJSONObject(data));
     }
 
-    void uniqueAsRetryExactThreeWayMerge()
+    void uniqueAsRetryThreeWayMerge()
     {
         const string initialData =
-            "{\"conflict\":9007199254740992.0,\"underflow\":1e-324,\"emptyObject\":{},"
+            "{\"conflict\":10.5,\"emptyObject\":{},"
             "\"uint64\":18446744073709551615,\"workerChange\":\"old\",\"workerDelete\":true,"
             "\"workerNull\":1,\"enqueueDelete\":true,\"enqueueChange\":\"old\","
             "\"nested\":{\"a\":1,\"b\":2}}";
         SData command("CreateJob");
-        command["name"] = "exact-retry";
+        command["name"] = "retry-merge";
         command["data"] = initialData;
         command["repeat"] = "FINISHED, +1 DAY";
         command["unique"] = "true";
@@ -247,15 +248,15 @@ struct RetryJobTest : tpunit::TestFixture
 
         command.clear();
         command.methodLine = "GetJob";
-        command["name"] = "exact-retry";
+        command["name"] = "retry-merge";
         const STable runningJob = tester->executeWaitVerifyContentTable(command);
         const string expectedData = SDecodeBase64(runningJob.at("expectedDataBase64"));
-        ASSERT_TRUE(SJSONEquals(initialData, expectedData));
+        ASSERT_TRUE(JSON::Value::parse(initialData) == JSON::Value::parse(expectedData));
 
         command.clear();
         command.methodLine = "CreateJob";
-        command["name"] = "exact-retry";
-        command["data"] = "{\"conflict\":9007199254740993.0,\"underflow\":0.0,\"enqueueDelete\":null,"
+        command["name"] = "retry-merge";
+        command["data"] = "{\"conflict\":11.5,\"enqueueDelete\":null,"
             "\"enqueueChange\":\"new\",\"enqueueAdd\":true}";
         command["repeat"] = "FINISHED, +1 DAY";
         command["jobPriority"] = "750";
@@ -265,12 +266,12 @@ struct RetryJobTest : tpunit::TestFixture
 
         // This baseline is the normalized data that PHP gives to the worker. The raw expectedData remains exact.
         const string expectedWorkerData =
-            "{\"conflict\":9007199254740992.0,\"underflow\":0.0,\"emptyObject\":[],"
+            "{\"conflict\":10.5,\"emptyObject\":[],"
             "\"uint64\":1.8446744073709552e+19,\"workerChange\":\"old\",\"workerDelete\":true,"
             "\"workerNull\":1,\"enqueueDelete\":true,\"enqueueChange\":\"old\","
             "\"nested\":{\"b\":2,\"a\":1}}";
         const string workerData =
-            "{\"conflict\":9007199254740992.0,\"underflow\":0.0,\"emptyObject\":[],"
+            "{\"conflict\":10.5,\"emptyObject\":[],"
             "\"uint64\":1.8446744073709552e+19,\"workerChange\":\"new\",\"workerNull\":null,"
             "\"enqueueDelete\":true,\"enqueueChange\":\"old\",\"workerAdd\":true,"
             "\"nested\":{\"a\":1,\"b\":2}}";
@@ -278,13 +279,13 @@ struct RetryJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "RetryJob";
         command["jobID"] = jobID;
-        command["expectedData"] = "{\"duplicate\":1,\"duplicate\":2}";
+        command["expectedData"] = "{\"value\":}";
         command["expectedWorkerData"] = expectedWorkerData;
         command["data"] = workerData;
         tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
 
         command["expectedData"] = expectedData;
-        command["expectedWorkerData"] = "{\"duplicate\":1,\"duplicate\":2}";
+        command["expectedWorkerData"] = "{\"value\":}";
         tester->executeWaitVerifyContent(command, "402 expectedWorkerData is not a valid JSON Object");
 
         command["expectedWorkerData"] = expectedWorkerData;
@@ -301,17 +302,17 @@ struct RetryJobTest : tpunit::TestFixture
         SQResult result;
         tester->readDB("SELECT state, name, nextRun, priority, data FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
-        ASSERT_EQUAL(result[0][1], "exact-retry");
+        ASSERT_EQUAL(result[0][1], "retry-merge");
         ASSERT_EQUAL(result[0][2], "2042-04-02 00:42:42");
         ASSERT_EQUAL(result[0][3], "750");
 
         const string expectedMergedData =
-            "{\"_bedrockRerunIfDataChanged\":true,\"conflict\":9007199254740993.0,\"underflow\":0.0,"
+            "{\"_bedrockRerunIfDataChanged\":true,\"conflict\":11.5,"
             "\"emptyObject\":{},\"uint64\":18446744073709551615,\"workerChange\":\"new\","
             "\"workerNull\":null,\"enqueueChange\":\"new\",\"enqueueAdd\":true,\"workerAdd\":true,"
             "\"nested\":{\"a\":1,\"b\":2}}";
-        ASSERT_TRUE(SJSONEquals(result[0][4], expectedMergedData));
-        ASSERT_TRUE(result[0][4].find("9007199254740993.0") != string::npos);
+        ASSERT_TRUE(JSON::Value::parse(result[0][4]) == JSON::Value::parse(expectedMergedData));
+        ASSERT_TRUE(result[0][4].find("11.5") != string::npos);
         ASSERT_TRUE(result[0][4].find("18446744073709551615") != string::npos);
 
         command.clear();
@@ -331,7 +332,7 @@ struct RetryJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "Query";
         command["query"] = "UPDATE jobs SET data = "
-            "'{\"_bedrockRerunIfDataChanged\":true,\"value\":1,\"value\":2}' WHERE jobID = " +
+            "'{\"_bedrockRerunIfDataChanged\":true,\"value\":}' WHERE jobID = " +
             corruptJobID + ";";
         tester->executeWaitVerifyContent(command);
 

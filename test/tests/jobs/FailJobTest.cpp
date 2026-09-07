@@ -283,7 +283,7 @@ struct FailJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "Query";
         command["query"] = "UPDATE jobs SET data = "
-            "'{\"_bedrockRerunIfDataChanged\":true,\"value\":1,\"value\":2}' WHERE jobID = " +
+            "'{\"_bedrockRerunIfDataChanged\":true,\"value\":}' WHERE jobID = " +
             corruptJobID + ";";
         tester->executeWaitVerifyContent(command);
 

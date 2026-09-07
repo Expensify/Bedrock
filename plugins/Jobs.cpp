@@ -21,195 +21,91 @@ static const set<string> IGNORED_BEDROCK_JOB_DATA_KEYS = {
     "_commitCounts",
 };
 
-struct ExactJSONObject
+static bool parseJobData(const string& data, JSON::Value* object = nullptr)
 {
-    // Each value is a complete JSON fragment retained from the input. Exact SJSONEquals comparisons never pass through
-    // SQLite REAL or a C++ double.
-    map<string, string> members;
-};
-
-static void skipJSONWhitespace(const string& data, size_t& position)
-{
-    while (position < data.size() && isspace(static_cast<unsigned char>(data[position]))) {
-        ++position;
-    }
-}
-
-static size_t findJSONStringEnd(const string& data, size_t position)
-{
-    if (position >= data.size() || data[position] != '"') {
-        return string::npos;
-    }
-    for (++position; position < data.size(); ++position) {
-        if (data[position] == '\\') {
-            ++position;
-        } else if (data[position] == '"') {
-            return position + 1;
+    try {
+        JSON::Value parsed = JSON::Value::parse(data);
+        if (!parsed.isObject()) {
+            return false;
         }
-    }
-    return string::npos;
-}
-
-static size_t findJSONValueEnd(const string& data, size_t position)
-{
-    if (position >= data.size()) {
-        return string::npos;
-    }
-    if (data[position] == '"') {
-        return findJSONStringEnd(data, position);
-    }
-    if (data[position] != '{' && data[position] != '[') {
-        while (position < data.size() && data[position] != ',' && data[position] != '}' &&
-               !isspace(static_cast<unsigned char>(data[position]))) {
-            ++position;
+        if (object) {
+            *object = move(parsed);
         }
-        return position;
-    }
-
-    vector<char> closingCharacters = {data[position] == '{' ? '}' : ']'};
-    for (++position; position < data.size(); ++position) {
-        if (data[position] == '"') {
-            position = findJSONStringEnd(data, position) - 1;
-        } else if (data[position] == '{') {
-            closingCharacters.push_back('}');
-        } else if (data[position] == '[') {
-            closingCharacters.push_back(']');
-        } else if (data[position] == closingCharacters.back()) {
-            closingCharacters.pop_back();
-            if (closingCharacters.empty()) {
-                return position + 1;
-            }
-        }
-    }
-    return string::npos;
-}
-
-static bool parseStrictJSONObject(const string& data, ExactJSONObject* exactObject = nullptr)
-{
-    // SJSONEquals performs the strict parse without converting arbitrary-precision JSON numbers. The scanner below
-    // checks the root type and retains every complete top-level value lexeme.
-    if (!SJSONEquals(data, data)) {
-        return false;
-    }
-
-    size_t position = 0;
-    skipJSONWhitespace(data, position);
-    if (data[position] != '{') {
-        return false;
-    }
-    if (!exactObject) {
         return true;
+    } catch (const JSON::Error&) {
+        return false;
     }
-
-    ++position;
-    skipJSONWhitespace(data, position);
-    while (data[position] != '}') {
-        const size_t keyStart = position;
-        const size_t keyEnd = findJSONStringEnd(data, keyStart);
-        if (keyEnd == string::npos) {
-            return false;
-        }
-        const JSON::Value key = JSON::Value::parse(data.substr(keyStart, keyEnd - keyStart));
-        if (!key.isString()) {
-            return false;
-        }
-
-        position = keyEnd;
-        skipJSONWhitespace(data, position);
-        if (position >= data.size() || data[position++] != ':') {
-            return false;
-        }
-        skipJSONWhitespace(data, position);
-
-        const size_t valueStart = position;
-        position = findJSONValueEnd(data, valueStart);
-        if (position == string::npos) {
-            return false;
-        }
-        exactObject->members.emplace(key.getString(), data.substr(valueStart, position - valueStart));
-
-        skipJSONWhitespace(data, position);
-        if (data[position] == ',') {
-            ++position;
-            skipJSONWhitespace(data, position);
-        }
-    }
-    return true;
 }
 
-static string composeExactJSONObject(const ExactJSONObject& object)
+static bool callerDataEquals(const string& leftData, const string& rightData)
 {
-    string result = "{";
-    bool first = true;
-    for (const auto& [key, value] : object.members) {
-        if (!first) {
-            result += ',';
-        }
-        first = false;
-        // JSON::Value's writer safely escapes decoded control characters, including NUL, in object keys.
-        result += JSON::Value(key).serialize() + ':' + value;
+    JSON::Value left;
+    JSON::Value right;
+    if (!parseJobData(leftData, &left) || !parseJobData(rightData, &right)) {
+        return false;
     }
-    return result + '}';
+    for (const string& key : IGNORED_BEDROCK_JOB_DATA_KEYS) {
+        left.erase(key);
+        right.erase(key);
+    }
+    return left == right;
 }
 
-static bool exactMembersEqual(const ExactJSONObject& left, const ExactJSONObject& right, const string& key)
+static bool membersEqual(const JSON::Value& left, const JSON::Value& right, const string& key)
 {
-    const auto leftMember = left.members.find(key);
-    const auto rightMember = right.members.find(key);
-    if (leftMember == left.members.end() || rightMember == right.members.end()) {
-        return leftMember == left.members.end() && rightMember == right.members.end();
+    if (!left.hasMember(key) || !right.hasMember(key)) {
+        return left.hasMember(key) == right.hasMember(key);
     }
-    return SJSONEquals(leftMember->second, rightMember->second);
+    return left[key] == right[key];
 }
 
 // Apply a worker's top-level change only when a newer enqueue did not change that field. expectedWorkerData is the
 // decoded representation originally given to the worker; comparing the worker output against it prevents PHP's JSON
-// decode/encode normalization from looking like a worker edit. currentData and expectedData retain their exact JSON.
+// decode/encode normalization from looking like a worker edit. currentData and expectedData use the shared JSON value semantics.
 static string mergeRetryJobData(const string& currentData, const string& expectedData,
                                 const string& expectedWorkerData, const string& workerData)
 {
-    ExactJSONObject current;
-    ExactJSONObject expected;
-    ExactJSONObject workerBaseline;
-    ExactJSONObject worker;
-    if (!parseStrictJSONObject(currentData, &current) || !parseStrictJSONObject(expectedData, &expected) ||
-        !parseStrictJSONObject(expectedWorkerData, &workerBaseline) || !parseStrictJSONObject(workerData, &worker)) {
+    JSON::Value current;
+    JSON::Value expected;
+    JSON::Value workerBaseline;
+    JSON::Value worker;
+    if (!parseJobData(currentData, &current) || !parseJobData(expectedData, &expected) ||
+        !parseJobData(expectedWorkerData, &workerBaseline) || !parseJobData(workerData, &worker)) {
         STHROW("500 Cannot merge invalid retry job data");
     }
 
-    current.members.erase("_bedrockRerunIfDataChanged");
-    expected.members.erase("_bedrockRerunIfDataChanged");
-    workerBaseline.members.erase("_bedrockRerunIfDataChanged");
-    worker.members.erase("_bedrockRerunIfDataChanged");
+    current.erase("_bedrockRerunIfDataChanged");
+    expected.erase("_bedrockRerunIfDataChanged");
+    workerBaseline.erase("_bedrockRerunIfDataChanged");
+    worker.erase("_bedrockRerunIfDataChanged");
 
     set<string> keys;
-    for (const auto& member : current.members) {
+    for (const auto& member : JSON::ObjectValue(current)) {
         keys.insert(member.first);
     }
-    for (const auto& member : expected.members) {
+    for (const auto& member : JSON::ObjectValue(expected)) {
         keys.insert(member.first);
     }
-    for (const auto& member : workerBaseline.members) {
+    for (const auto& member : JSON::ObjectValue(workerBaseline)) {
         keys.insert(member.first);
     }
-    for (const auto& member : worker.members) {
+    for (const auto& member : JSON::ObjectValue(worker)) {
         keys.insert(member.first);
     }
 
-    ExactJSONObject merged;
+    JSON::Value merged = JSON::Value::object({});
     for (const string& key : keys) {
-        const bool currentMatchesExpected = exactMembersEqual(current, expected, key);
-        const bool workerMatchesBaseline = exactMembersEqual(worker, workerBaseline, key);
-        const auto selected = currentMatchesExpected && !workerMatchesBaseline ? worker.members.find(key) : current.members.find(key);
-        const auto selectedEnd = currentMatchesExpected && !workerMatchesBaseline ? worker.members.end() : current.members.end();
-        if (selected != selectedEnd) {
-            merged.members.emplace(key, selected->second);
+        const bool currentMatchesExpected = membersEqual(current, expected, key);
+        const bool workerMatchesBaseline = membersEqual(worker, workerBaseline, key);
+        const JSON::Value& selected = currentMatchesExpected && !workerMatchesBaseline ? worker : current;
+        if (selected.hasMember(key)) {
+            merged[key] = selected[key];
         }
     }
 
-    merged.members.erase("retryAfterCount");
-    merged.members["_bedrockRerunIfDataChanged"] = "true";
-    return composeExactJSONObject(merged);
+    merged.erase("retryAfterCount");
+    merged["_bedrockRerunIfDataChanged"] = true;
+    return merged.serialize();
 }
 
 static string preserveRerunIfDataChangedSQL(const string& newDataExpression)
@@ -221,26 +117,26 @@ static string preserveRerunIfDataChangedSQL(const string& newDataExpression)
 
 static string stripRerunIfDataChanged(const string& data)
 {
-    ExactJSONObject publicData;
-    if (!parseStrictJSONObject(data, &publicData) || !publicData.members.erase("_bedrockRerunIfDataChanged")) {
+    JSON::Value publicData;
+    if (!parseJobData(data, &publicData) || !publicData.hasMember("_bedrockRerunIfDataChanged")) {
         return data;
     }
-    return composeExactJSONObject(publicData);
+    publicData.erase("_bedrockRerunIfDataChanged");
+    return publicData.serialize();
 }
 
 static bool validateAndGetRerunIfDataChanged(const string& data)
 {
-    // Bedrock always writes this private key without escapes. Avoid strict parsing on the ordinary dequeue hot path.
+    // Bedrock always writes this private key without escapes. Avoid parsing on the ordinary dequeue hot path.
     if (data.find("\"_bedrockRerunIfDataChanged\"") == string::npos) {
         return false;
     }
 
-    ExactJSONObject object;
-    if (!parseStrictJSONObject(data, &object)) {
+    JSON::Value object;
+    if (!parseJobData(data, &object)) {
         STHROW("500 Opted-in job contains invalid JSON data");
     }
-    const auto marker = object.members.find("_bedrockRerunIfDataChanged");
-    return marker != object.members.end() && SJSONEquals(marker->second, "true");
+    return object.getBoolMemberWithDefault("_bedrockRerunIfDataChanged");
 }
 
 struct ExistingUniqueJob
@@ -589,8 +485,8 @@ bool BedrockJobsCommand::peek(SQLite& db)
                 // we can remove this restriction in the future.
                 _validatePriority(priority);
 
-                // Strict validation prevents duplicate keys or invalid encodings from becoming durable job state.
-                if (SContains(job, "data") && !parseStrictJSONObject(job["data"])) {
+                // Require an object before storing job data.
+                if (SContains(job, "data") && !parseJobData(job["data"])) {
                     STHROW("402 Data is not a valid JSON Object");
                 }
                 if (!job["data"].empty()) {
@@ -670,12 +566,12 @@ bool BedrockJobsCommand::peek(SQLite& db)
                         const bool optsIntoRerunIfDataChanged =
                             SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true");
                         if (optsIntoRerunIfDataChanged && !alreadyRerunIfDataChanged &&
-                            !parseStrictJSONObject(existingJob.data)) {
+                            !parseJobData(existingJob.data)) {
                             STHROW("402 Cannot enable uniqueAsRetry on invalid stored data");
                         }
                         const string incomingData = job["data"].empty() ? "{}" : job["data"];
                         const bool matchingData =
-                            SJSONEquals(existingJob.data, incomingData, IGNORED_BEDROCK_JOB_DATA_KEYS);
+                            callerDataEquals(existingJob.data, incomingData);
                         if (SIEquals(requestVerb, "CreateJob") && matchingData &&
                             (alreadyRerunIfDataChanged || !optsIntoRerunIfDataChanged)) {
                             // Return early, no need to pass to leader, there are no more jobs to create.
@@ -833,7 +729,7 @@ void BedrockJobsCommand::process(SQLite& db)
 
             // This marker is owned exclusively by Bedrock. Callers cannot create or overwrite it.
             if (!job["data"].empty()) {
-                if (!parseStrictJSONObject(job["data"])) {
+                if (!parseJobData(job["data"])) {
                     STHROW("402 Data is not a valid JSON Object");
                 }
                 job["data"] = stripRerunIfDataChanged(job["data"]);
@@ -847,10 +743,10 @@ void BedrockJobsCommand::process(SQLite& db)
                 if (job["data"].empty()) {
                     job["data"] = "{\"mockRequest\":true}";
                 } else {
-                    ExactJSONObject data;
-                    SASSERT(parseStrictJSONObject(job["data"], &data));
-                    data.members["mockRequest"] = "true";
-                    job["data"] = composeExactJSONObject(data);
+                    JSON::Value data;
+                    SASSERT(parseJobData(job["data"], &data));
+                    data["mockRequest"] = true;
+                    job["data"] = data.serialize();
                 }
             }
 
@@ -867,12 +763,12 @@ void BedrockJobsCommand::process(SQLite& db)
                     const bool optsIntoRerunIfDataChanged =
                         SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true");
                     if (optsIntoRerunIfDataChanged && !existingRerunIfDataChanged &&
-                        !parseStrictJSONObject(existingJob.data)) {
+                        !parseJobData(existingJob.data)) {
                         STHROW("402 Cannot enable uniqueAsRetry on invalid stored data");
                     }
                     const string incomingData = job["data"].empty() ? "{}" : job["data"];
                     const bool matchingData =
-                        SJSONEquals(existingJob.data, incomingData, IGNORED_BEDROCK_JOB_DATA_KEYS);
+                        callerDataEquals(existingJob.data, incomingData);
                     enablesRerunIfDataChangedWithoutDataChange =
                         optsIntoRerunIfDataChanged && !existingRerunIfDataChanged && matchingData;
 
@@ -1412,9 +1308,9 @@ void BedrockJobsCommand::process(SQLite& db)
         const string& lastRun = result[0][2];
         const string& currentData = result[0][3];
         const bool rerunIfDataChanged = validateAndGetRerunIfDataChanged(currentData);
-        // Keep the established SQLite mock semantics, but only parse the stored payload after strict marker validation.
+        // Keep the established SQLite mock semantics, but only parse the stored payload after marker validation.
         mockRequest = db.read("SELECT JSON_EXTRACT(" + SQ(currentData) + ", '$.mockRequest');") == "1";
-        if (rerunIfDataChanged && !parseStrictJSONObject(request["data"])) {
+        if (rerunIfDataChanged && !parseJobData(request["data"])) {
             STHROW("402 Data is not a valid JSON Object");
         }
 
@@ -1512,7 +1408,7 @@ void BedrockJobsCommand::process(SQLite& db)
         const string retryAfter = result[0][5];
         const string& currentData = result[0][6];
         const bool rerunIfDataChanged = validateAndGetRerunIfDataChanged(currentData);
-        // The stored data is strict at this point, so these reads preserve the established SQLite metadata semantics.
+        // The stored data is validated at this point, so these reads preserve the established SQLite metadata semantics.
         mockRequest = db.read("SELECT JSON_EXTRACT(" + SQ(currentData) + ", '$.mockRequest');") == "1";
         const string originalDataNextRun =
             db.read("SELECT JSON_EXTRACT(" + SQ(currentData) + ", '$.originalNextRun');");
@@ -1523,12 +1419,12 @@ void BedrockJobsCommand::process(SQLite& db)
             STHROW("405 Can only retry/finish RUNNING and RUNQUEUED jobs");
         }
 
-        if (rerunIfDataChanged && request.isSet("data") && !parseStrictJSONObject(request["data"])) {
+        if (rerunIfDataChanged && request.isSet("data") && !parseJobData(request["data"])) {
             STHROW("402 Data is not a valid JSON Object");
         }
         if (rerunIfDataChanged && SIEquals(requestVerb, "RetryJob") && request.isSet("expectedWorkerData")) {
             BedrockPlugin::verifyAttributeSize(request, "expectedWorkerData", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
-            if (!parseStrictJSONObject(request["expectedWorkerData"])) {
+            if (!parseJobData(request["expectedWorkerData"])) {
                 STHROW("402 expectedWorkerData is not a valid JSON Object");
             }
         }
@@ -1566,10 +1462,10 @@ void BedrockJobsCommand::process(SQLite& db)
 
         if (rerunIfDataChanged && request.isSet("expectedData")) {
             BedrockPlugin::verifyAttributeSize(request, "expectedData", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
-            if (!parseStrictJSONObject(request["expectedData"])) {
+            if (!parseJobData(request["expectedData"])) {
                 STHROW("402 expectedData is not a valid JSON Object");
             }
-            if (!SJSONEquals(currentData, request["expectedData"], IGNORED_BEDROCK_JOB_DATA_KEYS)) {
+            if (!callerDataEquals(currentData, request["expectedData"])) {
                 // The caller-owned payload changed after this worker dequeued the job. Preserve the current payload,
                 // name, priority, and terminal state. RetryJob can still apply non-conflicting worker data changes.
                 SINFO("Requeueing rerun-if-data-changed job#" << jobID << " after " << requestVerb
@@ -1825,16 +1721,16 @@ void BedrockJobsCommand::process(SQLite& db)
             STHROW("405 Can only fail RUNNING or RUNQUEUED jobs");
         }
 
-        if (rerunIfDataChanged && request.isSet("data") && !parseStrictJSONObject(request["data"])) {
+        if (rerunIfDataChanged && request.isSet("data") && !parseJobData(request["data"])) {
             STHROW("402 Data is not a valid JSON Object");
         }
 
         if (rerunIfDataChanged && request.isSet("expectedData")) {
             BedrockPlugin::verifyAttributeSize(request, "expectedData", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
-            if (!parseStrictJSONObject(request["expectedData"])) {
+            if (!parseJobData(request["expectedData"])) {
                 STHROW("402 expectedData is not a valid JSON Object");
             }
-            if (!SJSONEquals(currentData, request["expectedData"], IGNORED_BEDROCK_JOB_DATA_KEYS)) {
+            if (!callerDataEquals(currentData, request["expectedData"])) {
                 // The caller-owned payload changed after this worker dequeued the job. Preserve it and run it rather
                 // than allowing the older worker's fatal outcome or data to strand the job in FAILED.
                 SINFO("Requeueing rerun-if-data-changed job#" << jobID

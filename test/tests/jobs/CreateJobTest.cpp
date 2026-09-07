@@ -2,6 +2,7 @@
 #include <unistd.h>
 
 #include <libstuff/SData.h>
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
@@ -19,7 +20,7 @@ struct CreateJobTest : tpunit::TestFixture
                               TEST(CreateJobTest::uniqueJob),
                               TEST(CreateJobTest::uniqueJobMergeData),
                               TEST(CreateJobTest::uniqueAsRetryLifecycle),
-                              TEST(CreateJobTest::uniqueAsRetryStrictDataAndSnapshot),
+                              TEST(CreateJobTest::uniqueAsRetryDataAndSnapshot),
                               TEST(CreateJobTest::uniqueAsRetryCannotOwnChildren),
                               TEST(CreateJobTest::createWithBadData),
                               TEST(CreateJobTest::createWithBadRepeat),
@@ -650,36 +651,36 @@ struct CreateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0][0], "0");
     }
 
-    void uniqueAsRetryStrictDataAndSnapshot()
+    void uniqueAsRetryDataAndSnapshot()
     {
         SData command("CreateJob");
-        command["name"] = "strictDuplicateData";
-        command["data"] = "{\"value\":1,\"value\":2}";
+        command["name"] = "invalidData";
+        command["data"] = "{\"value\":}";
         command["unique"] = "true";
         command["uniqueAsRetry"] = "true";
         tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
 
-        command["name"] = "strictNestedDuplicateData";
-        command["data"] = "{\"nested\":{\"value\":1,\"value\":2}}";
+        command["name"] = "invalidNestedData";
+        command["data"] = "{\"nested\":{\"value\":}}";
         tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
 
-        command["name"] = "strictArrayData";
+        command["name"] = "arrayData";
         command["data"] = "[]";
         tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
 
-        command["name"] = "strictWhitespaceObject";
+        command["name"] = "whitespaceObject";
         command["data"] = " { } ";
         const string whitespaceJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
         ASSERT_GREATER_THAN(SToInt64(whitespaceJobID), 0);
 
-        const string preciseData =
+        const string snapshotData =
             "{\"emptyObject\":{},\"uint64\":18446744073709551615,"
-            "\"preciseFloat\":9007199254740993.0,\"underflow\":1e-324,"
-            "\"hugeExponent\":1e999999999999999999999999999999999999,\"nul\\u0000key\":true}";
+            "\"amount\":11.5,"
+            "\"nul\\u0000key\":true}";
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "exactSnapshot";
-        command["data"] = preciseData;
+        command["data"] = snapshotData;
         command["unique"] = "true";
         command["uniqueAsRetry"] = "true";
         tester->executeWaitVerifyContent(command);
@@ -690,11 +691,9 @@ struct CreateJobTest : tpunit::TestFixture
         const STable runningJob = tester->executeWaitVerifyContentTable(command);
         ASSERT_TRUE(SContains(runningJob, "expectedDataBase64"));
         const string exactSnapshot = SDecodeBase64(runningJob.at("expectedDataBase64"));
-        ASSERT_TRUE(SJSONEquals(preciseData, exactSnapshot));
+        ASSERT_TRUE(JSON::Value::parse(snapshotData) == JSON::Value::parse(exactSnapshot));
         ASSERT_TRUE(exactSnapshot.find("18446744073709551615") != string::npos);
-        ASSERT_TRUE(exactSnapshot.find("9007199254740993.0") != string::npos);
-        ASSERT_TRUE(exactSnapshot.find("1e-324") != string::npos);
-        ASSERT_TRUE(exactSnapshot.find("1e999999999999999999999999999999999999") != string::npos);
+        ASSERT_TRUE(exactSnapshot.find("11.5") != string::npos);
         ASSERT_TRUE(exactSnapshot.find("nul\\u0000key") != string::npos);
 
         command.clear();
@@ -706,7 +705,7 @@ struct CreateJobTest : tpunit::TestFixture
 
         command.clear();
         command.methodLine = "Query";
-        command["query"] = "UPDATE jobs SET data = '{\"value\":1,\"value\":2}' WHERE jobID = " + invalidStoredJobID + ";";
+        command["query"] = "UPDATE jobs SET data = '{\"value\":}' WHERE jobID = " + invalidStoredJobID + ";";
         tester->executeWaitVerifyContent(command);
 
         command.clear();
@@ -728,7 +727,7 @@ struct CreateJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "Query";
         command["query"] = "UPDATE jobs SET data = "
-            "'{\"_bedrockRerunIfDataChanged\":true,\"value\":1,\"value\":2}' WHERE jobID = " +
+            "'{\"_bedrockRerunIfDataChanged\":true,\"value\":}' WHERE jobID = " +
             corruptJobID + ";";
         tester->executeWaitVerifyContent(command);
 

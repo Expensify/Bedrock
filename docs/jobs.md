@@ -8,7 +8,7 @@ Bedrock::Jobs is a plugin for the [Bedrock data foundation](../README.md). The p
 
  * **CreateJob( name, [data], [firstRun], [repeat], [jobPriority], [unique], [overwrite], [uniqueAsRetry], [parentJobID], [retryAfter] )** - Creates a job.
    * *name* - The job name.
-   * *data* - An optional, strict JSON object for the job.
+   * *data* - An optional JSON object for the job.
    * *firstRun* - The optional first run time in `YYYY-MM-DD [HH:MM:SS]` format.
    * *repeat* - The optional repeat rule. See [Repeat Syntax](#repeat-syntax).
    * *jobPriority* - The optional job priority. A job with a higher priority runs first.
@@ -51,7 +51,7 @@ Bedrock::Jobs is a plugin for the [Bedrock data foundation](../README.md). The p
    * *delay* - The optional retry delay in seconds.
    * *nextRun* - The optional retry time in `YYYY-MM-DD HH:MM:SS` format.
    * *name* - The optional new job name.
-   * *data* - The optional, strict JSON object from the worker.
+   * *data* - The optional JSON object from the worker.
    * *jobPriority* - The optional new priority.
    * *ignoreRepeat* - Ignores the repeat rule when this optional field is true.
    * *expectedData* - The optional, decoded *expectedDataBase64* string.
@@ -101,6 +101,8 @@ Bedrock stores the opt-in as a private boolean named `_bedrockRerunIfDataChanged
 Once set, the marker remains true across dequeues, requeues, `UpdateJob` calls, and recurring runs. Bedrock does not return it to callers because it is internal state, not part of the worker's data. Callers also cannot set or overwrite the marker through the public *data* field.
 
 When the worker calls `FinishJob`, `RetryJob`, or `FailJob`, Bedrock compares the current data with *expectedData* in the same transaction. The comparison ignores JSON object member order, whitespace, `retryAfterCount`, `originalNextRun`, and `_commitCounts`.
+
+The comparison uses `JSON::Value` equality. Array order and value types matter. Numbers use the shared library’s integer and floating-point representations.
 
 If the data matches, Bedrock completes the command normally. If the data differs, Bedrock does not apply the worker's stale output or terminal state. `FinishJob` and `FailJob` queue an immediate subsequent run. `RetryJob` queues the subsequent run at the requested retry time.
 
