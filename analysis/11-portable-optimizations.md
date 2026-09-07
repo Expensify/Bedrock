@@ -174,6 +174,36 @@ in upstream or the amalgamation. Whatever it once enabled is gone. Given that ev
 in Part B is a contention hypothesis, restoring a mutex-hold-time alert would convert
 guesswork into measurement. Low effort, high diagnostic leverage.
 
+## B7 — Take journal housekeeping off the write path
+
+`SQLite::prepare()` runs `SELECT MIN(id) FROM <journal shard>` **on every transaction**
+(`sqlitecluster/SQLite.cpp:952`) purely to decide whether to trim, and when trimming is due
+issues `DELETE … WHERE id < N LIMIT 10` (`sqlitecluster/SQLite.cpp:969`) — both at the
+*head* of the shard, both inside the transaction. See `10-conflict-investigation.md` §4.5.
+
+**Two independent changes, both cheap:**
+
+1. **Cache the min-id per shard in `_sharedData`** instead of reading it from the database
+   inside every transaction. The value changes only when that shard is trimmed, which the
+   process itself does — so it can be maintained in memory. Removes a database read, and
+   its read-set entry, from every write transaction.
+2. **Move trimming off the write path** into a background sweep. Journal trimming has no
+   ordering relationship with the transaction that happens to trigger it; it is bolted onto
+   `prepare()` for convenience. A background trimmer removes the head-region write from
+   application transactions entirely.
+
+**Benefit:** eliminates the only region of the journal where reads and writes coincide, and
+removes one unconditional query from every write transaction. Helps both engines, but helps
+HC-Tree more, because HC-Tree's validation cost scales with the read set.
+
+**Risk:** low for (1) — it is a cache of a value this process controls. Medium for (2) —
+needs care that trimming cannot race ahead of a reader that still needs those journal rows
+(`_getJournalQuery` readers at `sqlitecluster/SQLite.cpp:1346`, `:1371`), and the existing
+`shared_lock(_sharedData.writeLock)` suggests the locking is already considered.
+
+**Confidence:** high that both are safe wins in principle; the magnitude depends on the
+shard-collision rate, which is unmeasured.
+
 ## B6 — Compile in `HCT_VALIDATE_TIMERS`
 
 Not an optimization but the measurement that ranks all of the above. See
@@ -196,6 +226,8 @@ measured yet:
    Kennedy.
 5. **A2** — generalize the no-op index rewrite skip. Directly reduces conflicts; needs
    upstream input.
-6. **B5** — restore mutex alerting. Diagnostic.
-7. **B3 / B4** — deferred pending units 5 and 6.
-8. **A3** — design change; do not pursue without upstream agreement.
+6. **B7** — take journal housekeeping off the write path. Two cheap, self-contained
+   changes in Bedrock's own code, no SQLite change needed.
+7. **B5** — restore mutex alerting. Diagnostic.
+8. **B3 / B4** — deferred pending units 5 and 6.
+9. **A3** — design change; do not pursue without upstream agreement.
