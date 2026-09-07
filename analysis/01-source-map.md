@@ -128,8 +128,11 @@ non-inlinable-call cost that upstream stock SQLite does not. On hot cursor paths
    list, not by documentation. Unit 3 can start from that fact rather than establishing it.
 
 4. **`hct_journal.c` has LEADER/FOLLOWER modes.** Bedrock also has leader/follower.
-   Whether these interact, duplicate, or conflict is an open question worth putting to Dan
-   — it is not answerable from the SQLite source alone.
+   **Resolved in unit 8:** they do not interact. Bedrock uses none of HC-Tree's
+   replication machinery — a grep for `SQLITE_HCT_` or `sqlite_hct_journal` across
+   Bedrock's C++ returns nothing — so HC-Tree runs in `NORMAL` mode and Bedrock replicates
+   through its own journal tables. Consequently all FOLLOWER-mode paths are dead in our
+   configuration; see `09-multiprocess.md` §5.2 for two consequences that matter.
 
 ---
 

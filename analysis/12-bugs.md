@@ -149,6 +149,15 @@ a long-uptime node.
 Both suppressions have the shape of deliberate temporary debugging changes that were never
 reverted (a commented-out call and an `&& 0`). **Question for Dan Kennedy:** intentional?
 
+**Update (unit 8): the leak is active in exactly Bedrock's configuration, not merely
+theoretical.** The `bDefer` branch is only taken in `FOLLOWER` mode, and Bedrock does not
+use HC-Tree's replication at all — a grep for `SQLITE_HCT_` / `sqlite_hct_journal` across
+Bedrock's C++ returns nothing, so HC-Tree runs in `NORMAL` mode
+(`09-multiprocess.md` §5.2). Every close therefore takes the `bDefer==0` path — the one
+whose `unlink()` is commented out. Note also that Bedrock's `-clean` / `-bootstrap` reset
+removes the database, `-pagemap`, `-wal`, `-wal2` and `-shm` (`main.cpp:340-347`) but
+**not** HC-Tree log files.
+
 ---
 
 ## #5 — `WAL2NOCKSUM` trades data checksums for write ordering, but `synchronous=0` removes the ordering guarantee
