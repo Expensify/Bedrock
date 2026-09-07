@@ -173,16 +173,23 @@ touching.** Do not simply uncomment it.
 
 **Confidence:** high value if safe; safety entirely unestablished.
 
-## B2 — Raise the page cache to match the hardware
+## B2 — ~~Raise the page cache to match the hardware~~ — WITHDRAWN, WAL2-only
 
-`SQLITE_DEFAULT_CACHE_SIZE=-51200` (`Makefile:18`) is 50 MiB, and Bedrock's `-cacheSize`
-default is `0`, which means the runtime `PRAGMA cache_size` is never issued at all
-(`main.cpp:329`, `sqlitecluster/SQLite.cpp:295`). See `12-bugs.md` #3 — the help text
-claims 1 GB.
+**Withdrawn after unit 6.** `PRAGMA cache_size` is a **no-op on HC-Tree** —
+`sqlite3HctBtreeSetCacheSize()` is `/* no-op in hct */ return SQLITE_OK;` (`hctree.c`).
+HC-Tree has no pager and no page cache; it maps the file directly and relies on the OS page
+cache (`07-mmap.md`). Raising `-cacheSize` would improve WAL2 only, which is explicitly out
+of scope under P2.
 
-On a 6 TB-RAM host this is very likely leaving the working set out of cache. Cheapest
-possible experiment: set `-cacheSize` explicitly and measure. **Pending confirmation of
-what production actually passes.**
+The underlying observation still stands as a documentation bug (`12-bugs.md` #3), and the
+*equivalent* HC-Tree levers are real but different — B9 (`hct_npageset`) and B10
+(`hct_prefault`).
+
+**Worth stating positively:** HC-Tree's single-layer model — mapping backed by the OS page
+cache, no SQLite-level cache above it — is the better fit for a 6 TB-RAM host, because it
+lets the kernel use all available memory without SQLite second-guessing it, and removes a
+tuning parameter that is currently set wrong. That is a real HC-Tree advantage independent
+of the conflict question.
 
 ## B3 — Retune the HC-Tree mmap chunking for a 6 TB database
 
@@ -320,20 +327,19 @@ measured yet:
 0. **Query `hctstats` in production and grep conflict logs for `journal*`.** Zero rebuild,
    zero risk, and it reorders everything below. See `13-instrumentation.md`.
 1. **B6** — compile in `HCT_VALIDATE_TIMERS` and measure. Prerequisite for the code changes.
-2. **B2** — check and fix the page cache size. Trivial, possibly large.
-3. **A4** — fix the `ConflictLockGuard` identifier on HC-Tree, *if*
+2. **A4** — fix the `ConflictLockGuard` identifier on HC-Tree, *if*
    `-enableConflictPageLocks` is on in production. Potentially the largest single win, and
    entirely in Bedrock's own code.
-4. **A1** — sort/coalesce read ranges. Low risk, clear mechanism, no semantic change.
+3. **A1** — sort/coalesce read ranges. Low risk, clear mechanism, no semantic change.
+4. **B9** — raise `hct_npageset`. Runtime pragma, no rebuild.
 5. **B1** — re-enable `iLocalMinTid`. Highest ceiling, but blocked on a question to Dan
    Kennedy.
 6. **A2** — generalize the no-op index rewrite skip. Directly reduces conflicts; needs
    upstream input.
 7. **B7** — take journal housekeeping off the write path. Two cheap, self-contained
    changes in Bedrock's own code, no SQLite change needed.
-8. **B9** — raise `hct_npageset`. Runtime pragma, no rebuild; the cheap answer to B8.
-9. **B10** — warm the mapping at startup via `hct_prefault`.
-10. **B5** — restore mutex alerting. Diagnostic.
+8. **B10** — warm the mapping at startup via `hct_prefault`.
+9. **B5** — restore mutex alerting. Diagnostic.
 11. **B8** — page-allocator mutex *sharding*, only if `hctstats` says it is contended
     **and** B9 does not resolve it.
 12. **B3 / B4** — B3 deferred pending unit 6; B4 (NUMA) still speculative.

@@ -74,8 +74,8 @@ The latter turns a silent runtime regression into a compile error and costs thre
 
 ## #3 — `-cacheSize` help text contradicts its actual default; real default is 50 MiB on a 6 TB-RAM host
 
-**Severity:** medium (performance + misleading documentation)
-**Affects:** Bedrock, all engines
+**Severity:** low-medium — **WAL2 only** (see the correction at the end of this entry)
+**Affects:** Bedrock; WAL2 databases only
 **Location:** `main.cpp:250`, `main.cpp:329`, `sqlitecluster/SQLite.cpp:295-297`,
 `Makefile:18`, `configs/bedrock.conf:12`
 
@@ -103,7 +103,44 @@ obvious — but 10–50 MiB per connection is almost certainly far below optimum
 explicit `-cacheSize`. **Question for Dan:** what does production actually set? If it
 inherits the default, this is likely the cheapest available win (P4).
 
-**Action regardless:** fix the help text, or better, make the default match it.
+**CORRECTION (unit 6): this affects WAL2 only.** `PRAGMA cache_size` is a **no-op on
+HC-Tree** — `sqlite3HctBtreeSetCacheSize()` is `/* no-op in hct */ return SQLITE_OK;`
+(`hctree.c`). HC-Tree has no pager and no page cache; it maps the file directly
+(`hct_file.c:713`) and lets the OS page cache do the work. See `07-mmap.md` §1.
+
+So on HC-Tree nodes this setting is inert and the severity drops to a documentation bug.
+On WAL2 nodes it remains a real performance question. Given Dan's P2 framing — improve
+HC-Tree, not WAL2 — the *performance* half of this is out of scope; the misleading help
+text is still worth a one-line fix.
+
+**Action:** fix the help text, or better, make the default match it. Note the same
+no-op applies to `PRAGMA mmap_size` and `PRAGMA synchronous` on HC-Tree.
+
+---
+
+## #6 — HC-Tree's `pFakePager` is a raw zeroed buffer cast to `Pager*`
+
+**Severity:** low (latent; no known reachable path)
+**Affects:** both builds; HC-Tree only
+**Location:** `src/hctree.c:761`, returned by `sqlite3HctBtreePager()`
+
+HC-Tree has no pager, but the btree API requires `sqlite3BtreePager()` to return one. The
+implementation returns a 4096-byte zeroed heap allocation cast to `Pager*`:
+
+```c
+    pNew->pFakePager = (Pager*)sqlite3HctMallocRc(&rc, 4096);
+```
+
+Any caller that dereferences a field of the returned pointer reads zeros rather than
+crashing on NULL — which is arguably worse, since a NULL would fail loudly. The 4096-byte
+size appears to be "comfortably larger than `sizeof(Pager)`" rather than a computed bound;
+if `Pager` ever grew past 4096 bytes, a field read would run off the allocation.
+
+**No reachable misuse identified** — this is recorded as a latent hazard, not a live bug.
+Two cheap hardenings if upstream is amenable: use `sizeof(Pager)` instead of a literal, or
+return NULL and fix the callers that cannot accept it.
+
+---
 
 ---
 
