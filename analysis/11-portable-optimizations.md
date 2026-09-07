@@ -80,6 +80,38 @@ simply not yet done.
 
 **Confidence:** high that the gap is real; medium that generalizing is as easy as it looks.
 
+## A4 — Give `ConflictLockGuard` an identifier with grouping power on HC-Tree
+
+**Not a port from WAL2 — a repair of a Bedrock mechanism that WAL2's coarseness made work
+and HC-Tree's precision broke.** Full analysis in `10-conflict-investigation.md` §6.
+
+Bedrock damps conflict storms by making a retrying command take a mutex keyed on where it
+last conflicted (`ConflictLockGuard.cpp`, `BedrockServer.cpp:686`). Under WAL2 that key is
+a **page number**, which groups every command touching that page. Under HC-Tree it is
+`hash(table + row key)` (`sqlitecluster/SQLite.cpp:432`), which groups essentially nothing
+— and churns the 500-entry mutex LRU.
+
+**Fix options, cheapest first:**
+
+1. Key on `_conflictLocation` (table/index name) alone — one line, maximally coarse, may
+   over-serialize hot tables.
+2. **Key on `root=` plus a bucketed row key.** HC-Tree's conflict message already carries
+   `(root=%lld)` (`hct_database.c:5869`); bucketing the key gives a tunable granularity
+   between row and table, needs no upstream change, and the bucket width becomes a
+   measurable knob. **Recommended.**
+3. Key on a logical page — reproduces WAL2 exactly, but HC-Tree does not log a page number,
+   so it needs an upstream message change.
+
+**Gate:** confirm `-enableConflictPageLocks` is on in production first
+(`BedrockServer.h:393` defaults it to false). If it is off, this becomes new headroom
+rather than a regression to fix.
+
+**Risk:** low — the change is confined to how one identifier is computed, and over-grouping
+costs throughput rather than correctness. Needs measurement to tune bucket width.
+
+**Confidence:** high that the asymmetry is real and material; the magnitude depends
+entirely on the answer to the gate question.
+
 ## A3 — Cheap-first conflict detection
 
 **WAL2 mechanism:** validation is an in-memory merge join over two sorted arrays
@@ -243,14 +275,17 @@ measured yet:
    zero risk, and it reorders everything below. See `13-instrumentation.md`.
 1. **B6** — compile in `HCT_VALIDATE_TIMERS` and measure. Prerequisite for the code changes.
 2. **B2** — check and fix the page cache size. Trivial, possibly large.
-3. **A1** — sort/coalesce read ranges. Low risk, clear mechanism, no semantic change.
-4. **B1** — re-enable `iLocalMinTid`. Highest ceiling, but blocked on a question to Dan
+3. **A4** — fix the `ConflictLockGuard` identifier on HC-Tree, *if*
+   `-enableConflictPageLocks` is on in production. Potentially the largest single win, and
+   entirely in Bedrock's own code.
+4. **A1** — sort/coalesce read ranges. Low risk, clear mechanism, no semantic change.
+5. **B1** — re-enable `iLocalMinTid`. Highest ceiling, but blocked on a question to Dan
    Kennedy.
-5. **A2** — generalize the no-op index rewrite skip. Directly reduces conflicts; needs
+6. **A2** — generalize the no-op index rewrite skip. Directly reduces conflicts; needs
    upstream input.
-6. **B7** — take journal housekeeping off the write path. Two cheap, self-contained
+7. **B7** — take journal housekeeping off the write path. Two cheap, self-contained
    changes in Bedrock's own code, no SQLite change needed.
-7. **B5** — restore mutex alerting. Diagnostic.
-8. **B8** — page-allocator mutex sharding, *only if* `hctstats` says it is contended.
-9. **B3 / B4** — deferred pending units 5 and 6.
-10. **A3** — design change; do not pursue without upstream agreement.
+8. **B5** — restore mutex alerting. Diagnostic.
+9. **B8** — page-allocator mutex sharding, *only if* `hctstats` says it is contended.
+10. **B3 / B4** — deferred pending units 5 and 6.
+11. **A3** — design change; do not pursue without upstream agreement.

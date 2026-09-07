@@ -6,10 +6,12 @@
 check-in `eedd80c1a9749300`, **except** the `IdxDelete` path noted in §6. Everything else
 here describes exactly what production runs.
 
-**RESUME POINT:** covered — read-set representation, validation algorithms on both sides,
-`hctDbTidIsConflict`, range coalescing, H4 (journal head, verified), H7 (killed).
-Next — (i) `hct_journalhash.c` for H5, (ii) `hct_pman.c` free-page baskets for H3,
-(iii) the write/write path (`hctDbWriteWriteConflict`, `hct_database.c:5945+`) in detail.
+**RESUME POINT:** all seven hypotheses now have verdicts. Covered — read-set
+representation, validation algorithms on both sides, `hctDbTidIsConflict`, range
+coalescing, H4 (journal head, verified), H5 (killed), H3 (confirmed, measurable),
+H7 (confirmed — §6, the `ConflictLockGuard` identifier asymmetry).
+Next — (i) the write/write path (`hctDbWriteWriteConflict`, `hct_database.c:5945+`) in
+detail, (ii) quantify §6 against production logs once Dan answers Q0.
 
 ---
 
@@ -149,7 +151,7 @@ by paying the expensive path.
 | H4 | Bedrock's journal tables are the true conflict set | **CONFIRMED in a form that matters more than the original hypothesis.** Journal *appends* are well sharded and are not the problem. But every write transaction reads the *head* of its shard and trimming deletes there, producing a genuine same-row read/write conflict that **both engines detect identically** — so it is a conflict class row-level locking cannot reduce. See §4.5. |
 | H5 | Hash/bitmap aliasing produces false conflicts | **Killed.** `hct_journalhash.c` is a public-domain MD5 implementation exposing `sqlite3_hct_journal_hash()` / `sqlite3_hct_journal_hashentry()` — a *content checksum* for journal entries, not a conflict structure. Its only callers in the tree are `test_hctserver.c:664` and `:1358`, and Bedrock does not reference it at all. There is no hashed or bitmap-summarized representation anywhere in the conflict path: validation compares real keys and real TIDs (§2). No aliasing is possible. |
 | H6 | The two engines count different events as "conflicts" | **Partially confirmed — important for interpreting our metrics.** See §5. |
-| H7 | Bedrock's own layer amplifies engine conflicts | **Killed.** `BedrockConflictManager` (`BedrockConflictManager.cpp`, 66 lines) is *purely* a profiling counter: `recordTables()` increments per-command/per-table use counts under a mutex, and `generateReport()` prints them. It explicitly skips journal tables. It makes no retry, ordering, or locking decision and cannot amplify anything. |
+| H7 | Bedrock's own layer amplifies engine conflicts | **CONFIRMED — and this is the strongest explanation found.** My first pass looked at the wrong class. `BedrockConflictManager` is indeed only a profiling counter. But the *actual* conflict-handling layer is `ConflictLockGuard`, and it keys on an identifier whose meaning **differs fundamentally between the two engines** — page number under WAL2, row-key hash under HC-Tree — which makes the mitigation effective on WAL2 and nearly inert on HC-Tree. See §6. |
 
 ---
 
@@ -364,7 +366,112 @@ where does our conflict metric come from?
 
 ---
 
-## 6. What the newer check-in changes (drifted code)
+## 6. `ConflictLockGuard`: a mitigation that WAL2's coarseness makes work and HC-Tree's precision breaks
+
+**This is the most direct answer found so far to "why doesn't row-level locking help?"**
+
+### The mechanism
+
+When a command's commit fails with a conflict, Bedrock records where the conflict happened
+and, on the retry, takes a process-wide mutex keyed on that location
+(`BedrockServer.cpp:686`):
+
+```cpp
+ConflictLockGuard conflictLock(lastConflictIdentifier);
+```
+
+`ConflictLockGuard` (`ConflictLockGuard.cpp`) maintains a static
+`map<uint64_t, mutex>` keyed by identifier, with LRU pruning above
+`MAX_PAGE_MUTEXES = 500`. The intent is plainly stated in its own comment: rather than let
+N commands repeatedly collide on the same page, make them **queue** behind one mutex so
+each retry succeeds instead of re-conflicting.
+
+The identifier is set on the failed attempt (`BedrockServer.cpp:805-814`), and journal
+conflicts are deliberately excluded:
+
+```cpp
+if (!SStartsWith(lastConflictLocation, "journal") && (…shouldLockCommitPageOnConflict…)) {
+    lastConflictIdentifier = db.getLastConflictIdentifier();
+}
+```
+
+### The asymmetry
+
+`_conflictIdentifier` is derived by parsing the engine's own conflict log message
+(`sqlitecluster/SQLite.cpp:411-435`) — and the two engines yield **categorically different
+identifiers**:
+
+**WAL2** (`sqlitecluster/SQLite.cpp:421-422`) — the identifier is the **page number**:
+```cpp
+_conflictLocation = SREReplace("^.*part of db (table|index) (.*?);.*$", zMsg, "$2");
+_conflictIdentifier = atol(conflictAtPagePtr + …);   /* "conflict at page 1854553" */
+```
+
+**HC-Tree** (`sqlitecluster/SQLite.cpp:429-434`) — the identifier is a hash of the
+**individual row key**:
+```cpp
+_conflictLocation = SREReplace("^.*conflict on (?:index|table) (\\S+).*$", zMsg, "$1");
+string identifier = SREReplace("^.*key=(\\S+).*$", zMsg, "$1");
+_conflictIdentifier = hash<string>{}(_conflictLocation + identifier);
+```
+
+Consequences:
+
+| | WAL2 | HC-Tree |
+|---|---|---|
+| Identifier | page number | hash(table + row key) |
+| Commands mapping to one identifier | **all commands touching that page** — many rows | **only commands touching that exact row** |
+| Effect of the guard | groups a whole contending neighbourhood; retries serialize and succeed | two commands contending on *different rows of the same hot page* get *different* mutexes and **do not serialize at all** |
+| Identifier space | small (page numbers, heavily repeated) | enormous (one per distinct row), rarely repeated |
+| 500-entry LRU mutex cache | works — hot pages recur and stay cached | thrashes — near-unique keys evict each other |
+
+**So Bedrock's conflict-damping mechanism was designed around WAL2's page granularity, and
+it is precisely that coarseness which makes it effective.** HC-Tree's row-precise
+identifier defeats it: the guard almost never groups anything, so contending commands
+retry immediately and collide again, undamped.
+
+This is a mechanism by which HC-Tree can plausibly exhibit *more* observed conflicts than
+WAL2 **even though its engine-level conflict predicate is strictly more precise**. The
+precision is real; it just removes the property the mitigation depended on.
+
+### Important caveat — check before relying on this
+
+`_enableConflictPageLocks` **defaults to `false`** (`BedrockServer.h:393`), is set from
+`-enableConflictPageLocks` (`BedrockServer.cpp:1026`), and can be toggled at runtime by a
+control command (`BedrockServer.cpp:1775`). The cluster tests enable it
+(`test/clustertest/BedrockClusterTester.h:133`).
+
+**Question for Dan — this one gates the whole finding:** is `-enableConflictPageLocks`
+enabled in production?
+
+- **If yes:** this is very likely a primary cause of the symptom, and the fix is to give
+  HC-Tree an identifier with grouping power — see below.
+- **If no:** the finding inverts into an opportunity. A damping mechanism exists that
+  helps WAL2 and was never going to help HC-Tree; an HC-Tree-appropriate variant would be
+  new headroom rather than a regression to undo.
+
+### Proposed fix (either way)
+
+The guard needs an identifier that is **coarser than a row but finer than a table** on
+HC-Tree. Options, cheapest first:
+
+1. **Key on `_conflictLocation` alone** (table or index name) rather than
+   `hash(location + key)`. Maximally coarse — it would serialize all conflicts on a hot
+   table, which may over-serialize, but it restores grouping and is a one-line change.
+2. **Key on the HC-Tree `root=` value plus a bucketed key.** The conflict message already
+   carries `(root=%lld)` (`hct_database.c:5869`), and bucketing the key (e.g. high bits of
+   an integer key) recovers a tunable granularity between row and table.
+3. **Key on the logical page**, if it can be recovered — this would reproduce WAL2's
+   behaviour exactly. HC-Tree's conflict messages do not currently log a page number, so
+   this needs an upstream message change.
+
+Option 2 is the most promising: it is tunable, needs no upstream change, and the bucket
+width becomes a knob that can be measured. Logged as A4 in
+`11-portable-optimizations.md`.
+
+---
+
+## 7. What the newer check-in changes (drifted code)
 
 The `OP_IdxDelete` no-op skip (see `00-provenance.md`) removes a delete+reinsert of a
 byte-identical index entry, which removes both a write and its conflict footprint. It
@@ -377,11 +484,11 @@ performs a real delete + insert of an identical entry — manufacturing a write-
 and a conflict opportunity, from a semantic no-op. ORMs that write back every column hit
 this constantly.
 
-**This is a strong P2 candidate** and is logged in `11-portable-optimizations.md` #2.
+**This is a strong P2 candidate** and is logged in `11-portable-optimizations.md` A2.
 
 ---
 
-## 7. Instrumentation available today
+## 8. Instrumentation available today
 
 `HCT_VALIDATE_TIMERS` (`hct_database.c:7998-8090`) is a compile-time option that logs slow
 validations at three granularities:
@@ -406,8 +513,10 @@ change.
 
 ---
 
-## 8. Open questions for Dan
+## 9. Open questions for Dan
 
+0. **Is `-enableConflictPageLocks` enabled in production?** (§6 — gates the strongest
+   finding in this document.)
 1. Why is `iLocalMinTid` commented out in `hctDbTidIsConflict` (`hct_database.c:995`)?
 2. Where does our production conflict metric come from, and does it count HC-Tree's eager
    `hctDbSetCannotCommit` dooming the same way it counts WAL2's commit-time detection?
