@@ -191,20 +191,33 @@ Each numbered item is one work unit producing one committed file. Units are size
 single session can finish one (sometimes two of the small ones). Every unit is
 independently valuable — the analysis is useful even if it stops after any unit.
 
-| # | File | Unit | Notes |
+| # | File | Unit | Status |
 |---|---|---|---|
-| — | `analysis/PLAN.md` | This plan | done |
-| 0a | `analysis/00-provenance.md` | Generate amalgamation from checkout, diff vs `libstuff/sqlite3.c`, classify every hunk as (a) upstream-newer, (b) Bedrock-only patch, (c) generation noise | Gate for everything else |
-| 0b | `analysis/01-source-map.md` | Enumerate both sides' files, line counts, role paragraphs, dispatch mechanism | Cheap, high leverage |
-| 1 | `analysis/02-write-path.md` | Write path & commit protocol: BEGIN CONCURRENT validation, transaction lifecycle | Largest unit; may split |
-| 2 | `analysis/03-locking.md` | Locking granularity: page vs row; July 2026 row-lock fix (Bedrock `08c755b`); `OP_IdxDelete` change in `1035b1143f` / `eedd80c1a9` | Needs fossil check-in diffs |
-| 3 | `analysis/04-checkpointing.md` | WAL2 dual-WAL scheme + starvation risk vs HC-Tree's claimed elimination of checkpointing — **verified in code** | Directly tied to the prod incident history |
-| 4 | `analysis/05-recovery-durability.md` | Crash recovery paths; what `SYNCHRONOUS=0` means on each side | |
-| 5 | `analysis/06-readers-snapshots.md` | MVCC / visibility; long-reader behavior | |
-| 6 | `analysis/07-mmap.md` | mmap + `SQLITE_SHARED_MAPPING` at 16 TB map size, per engine | Small unit |
-| 7 | `analysis/08-custom-flags.md` | `WAL_BIGHASH`, `WAL2NOCKSUM`, `MUTEX_ALERT_MILLISECONDS`, `NOOP_UPDATE`, `PERCENTILE`: code gated, engines affected, risk | Mechanical; do by grep over checkout |
-| 8 | `analysis/09-multiprocess.md` | HC-Tree same-process constraint vs WAL2 multi-process; consequences for Bedrock architecture and out-of-process tooling | |
-| 9 | `analysis/99-synthesis.md` | Decision-oriented comparison, risks at scale, open questions for Dan, verification/benchmark list | Last |
+| — | `analysis/PLAN.md` | This plan | **done** |
+| 0a | `analysis/00-provenance.md` | Amalgamation regenerated and diffed; all 12 hunks classified; **zero Bedrock-only patches** | **done** |
+| 0b | `analysis/01-source-map.md` | Both sides' files, line counts, roles, vtable dispatch | **done** |
+| P1 | `analysis/10-conflict-investigation.md` | Dan's headline question. All seven hypotheses have verdicts | **first pass done**, write/write path outstanding |
+| P2/P4 | `analysis/11-portable-optimizations.md` | A1–A4 ported, B1–B8 invented, provisionally ranked | **living** |
+| P3 | `analysis/12-bugs.md` | 5 entries so far | **living** |
+| — | `analysis/13-instrumentation.md` | *(unplanned, high value)* the diagnostic surface already shipping in production | **done** |
+| 3 | `analysis/04-checkpointing.md` | WAL2 dual-WAL + starvation vs HC-Tree's absence of checkpointing — **verified in code** | **done** |
+| 7 | `analysis/08-custom-flags.md` | All Expensify flags: what each gates, engines affected, risk | **done** |
+| 1 | `analysis/02-write-path.md` | Write path & commit protocol: BEGIN CONCURRENT validation, transaction lifecycle | todo — partly covered by P1 §2 |
+| 2 | `analysis/03-locking.md` | Locking granularity; July row-lock fix (`08c755b`); `OP_IdxDelete` change | todo — `OP_IdxDelete` already covered in `00-provenance.md` |
+| 4 | `analysis/05-recovery-durability.md` | Crash recovery paths; `SYNCHRONOUS=0` on each side | todo — partly covered by `12-bugs.md` #5 |
+| 5 | `analysis/06-readers-snapshots.md` | MVCC / visibility; long-reader behaviour; snapshot retention vs WAL growth | **todo — highest remaining value** (`04-checkpointing.md` §4 depends on it) |
+| 6 | `analysis/07-mmap.md` | mmap + `SHARED_MAPPING` at 16 TiB, per engine | todo — inputs gathered in `08-custom-flags.md` §5 |
+| 8 | `analysis/09-multiprocess.md` | HC-Tree same-process constraint; out-of-process tooling | todo — `08-custom-flags.md` §7 is a partial input |
+| 9 | `analysis/99-synthesis.md` | Decision-oriented comparison, risks, open questions, benchmark list | last |
+
+**Deviation from the original ordering, and why.** Dan's four priorities arrived after
+Phase 0 and reordered the work: the conflict investigation (P1) was promoted ahead of the
+neutral subsystem sweep, and units 3 and 7 were done next because both fed it directly —
+checkpointing because the production starvation history motivates the whole comparison, and
+the flags unit because `WAL_BIGHASH` corroborates it and `NOOP_UPDATE` turned out to be a
+ready-made P1 experiment. `13-instrumentation.md` was unplanned and is now the top
+recommendation, because the measurements that would settle most open questions are already
+being logged.
 
 Ordering rationale: 0a/0b first because every later claim depends on knowing what code
 production actually runs. Then units 1–3, which carry the most decision weight (write
