@@ -202,22 +202,25 @@ independently valuable — the analysis is useful even if it stops after any uni
 | — | `analysis/13-instrumentation.md` | *(unplanned, high value)* the diagnostic surface already shipping in production | **done** |
 | 3 | `analysis/04-checkpointing.md` | WAL2 dual-WAL + starvation vs HC-Tree's absence of checkpointing — **verified in code** | **done** |
 | 7 | `analysis/08-custom-flags.md` | All Expensify flags: what each gates, engines affected, risk | **done** |
-| 1 | `analysis/02-write-path.md` | Write path & commit protocol: BEGIN CONCURRENT validation, transaction lifecycle | todo — partly covered by P1 §2 |
-| 2 | `analysis/03-locking.md` | Locking granularity; July row-lock fix (`08c755b`); `OP_IdxDelete` change | todo — `OP_IdxDelete` already covered in `00-provenance.md` |
+| 1+2 | `analysis/02-write-path.md` | Write path, commit protocol and locking granularity — combined, since on HC-Tree the write path *is* the locking mechanism. Includes the isolated July `08c755b` fix | **done** |
 | 4 | `analysis/05-recovery-durability.md` | Crash recovery; no fsync anywhere in HC-Tree; **bug #7** | **done** |
 | 5 | `analysis/06-readers-snapshots.md` | MVCC / visibility; long-reader behaviour; GC horizon | **done** |
 | 6 | `analysis/07-mmap.md` | mmap per engine; three pragmas that are no-ops on HC-Tree | **done** |
 | 8 | `analysis/09-multiprocess.md` | HC-Tree single-process constraint; tooling consequences | **done** |
 | 9 | `analysis/99-synthesis.md` | Decision-oriented comparison, risks, verification plan, open questions | **done** (revisit as units 1–2 land) |
 
-**Remaining:** units 1 (write path) and 2 (locking) as standalone files. Their substance is
-largely absorbed into `10-conflict-investigation.md` §1–2 (read-set representation,
-validation algorithms, granularity on both sides) and `00-provenance.md` (the `OP_IdxDelete`
-change). What is genuinely uncovered: the HC-Tree write/write conflict path
-(`hctDbWriteWriteConflict`, `hct_database.c:5945+`) in detail, page balancing/splitting
-under concurrency, and the July 2026 Bedrock re-vendor `08c755b` — whose semantic content is
-buried in a 4,787-line whole-amalgamation diff and would need a two-tarball comparison to
-isolate.
+**All planned units are complete.** The July `08c755b` fix was isolated after all — not by
+fetching upstream tarballs (sqlite.org returned 503 throughout) but by diffing the two
+vendored amalgamations out of Bedrock's own git history and classifying all 390 hunks by
+source file. See `02-write-path.md` §5; it produced the Q0 that now heads both the conflict
+investigation and the synthesis.
+
+**What is left is measurement, not reading.** `99-synthesis.md` §4 lists it in four tiers,
+the first of which needs no rebuild and no deploy. Two source-level areas were deliberately
+not pursued because nothing suggested they mattered: page balancing/splitting under
+concurrency (instrumented via the nine `balance_*` counters if it ever does), and the
+FOLLOWER-mode replication paths, which are dead in Bedrock's configuration
+(`09-multiprocess.md` §5.2).
 
 **Deviation from the original ordering, and why.** Dan's four priorities arrived after
 Phase 0 and reordered the work: the conflict investigation (P1) was promoted ahead of the

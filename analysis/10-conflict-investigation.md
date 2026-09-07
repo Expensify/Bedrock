@@ -1,17 +1,18 @@
 # 10 — Why does HC-Tree conflict as much as or more than WAL2?
 
 **Priority:** P1 (Dan, 2026-09-07) — the headline question
-**Status:** IN PROGRESS — first pass complete, verdicts below. Living document.
+**Status:** COMPLETE for the source-level investigation. All seven hypotheses have
+verdicts and the write/write path is covered in `02-write-path.md` §2. What remains is
+measurement, not reading — see Q0 and `99-synthesis.md` §4.
 **Drift:** none of the code in this file differs between the vendored Aug-28 drop and
 check-in `eedd80c1a9749300`, **except** the `IdxDelete` path noted in §6. Everything else
 here describes exactly what production runs.
 
-**RESUME POINT:** all seven hypotheses now have verdicts. Covered — read-set
-representation, validation algorithms on both sides, `hctDbTidIsConflict`, range
-coalescing, H4 (journal head, verified), H5 (killed), H3 (confirmed, measurable),
-H7 (confirmed — §6, the `ConflictLockGuard` identifier asymmetry).
-Next — (i) the write/write path (`hctDbWriteWriteConflict`, `hct_database.c:5945+`) in
-detail, (ii) quantify §6 against production logs once Dan answers Q0.
+**Covered:** read-set representation and validation algorithms on both sides,
+`hctDbTidIsConflict`, range coalescing, H1–H7 verdicts, the journal-head conflict (H4,
+verified), the `ConflictLockGuard` identifier asymmetry (H7, §6), and — in
+`02-write-path.md` — the write/write path and the `iLocalMinTid` argument for B1.
+**Next steps are measurements, not reading:** Q0 first, then `99-synthesis.md` §4 tier 1.
 
 ---
 
