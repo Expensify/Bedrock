@@ -274,6 +274,44 @@ worker.
 **Do not act before measuring** — the batching may already make this a non-issue, and the
 counter will say so in minutes.
 
+## B9 — Raise `hct_npageset` (the allocator batch size)
+
+**Default 256** (`HCT_DEFAULT_NPAGESET`, `hctInt.h:54`), settable at runtime via
+`PRAGMA hct_npageset` (`hctree.c:3550`). Bedrock sets it nowhere.
+
+This is how many free page ids a client batches locally before it must take the **single
+global page-allocator mutex** (`hct_pman.c:103`) to refill or hand back — i.e. it is the
+amortization factor for B8. Raising it reduces mutex traffic proportionally, at a cost of
+memory that is free at 6 TB RAM.
+
+**This is the cheapest possible response to B8** — a runtime pragma, no rebuild, trivially
+reversible. Measure `pman.mutex_block / pman.mutex_attempt` from `hctstats` before and
+after (`13-instrumentation.md`).
+
+**Risk:** low. Larger batches mean more free page ids held per client and slightly lazier
+reuse. **Confidence:** high that the mechanism works as described; the right value needs
+measurement.
+
+## B10 — Warm the mapping at server startup (`hct_prefault`)
+
+`PRAGMA hct_prefault = N` launches N threads to fault the database mapping into RAM
+(`hct_file.c:2505-2530`, `hctree.c`); a negative N restricts it to minor faults.
+
+**Nothing currently warms the mapping during normal Bedrock startup.** Bedrock's `VMTouch`
+is multi-threaded (`VMTouch.cpp:118`) but runs only in a standalone utility mode that
+exits the process straight afterwards (`main.cpp:351-355`). So a freshly started node pays
+page-fault latency on first touch of every page.
+
+On a host where the database plausibly fits in RAM, warming it deliberately — with as many
+threads as the box has — converts a long tail of cold-start latency into a bounded startup
+cost. `hct_prefault` does exactly that, in-process, and is unused.
+
+**Risk:** low, but it is startup-time and I/O-heavy; on a 6 TB file with cold cache it will
+take a while and should be sized/measured rather than switched on blind. Note it applies to
+HC-Tree only.
+
+**Open question:** is the standalone-only use of `VMTouch` deliberate?
+
 ## Provisional ranking
 
 Ordered by (value × confidence) ÷ risk, with the honest caveat that nothing here is
@@ -293,7 +331,15 @@ measured yet:
    upstream input.
 7. **B7** — take journal housekeeping off the write path. Two cheap, self-contained
    changes in Bedrock's own code, no SQLite change needed.
-8. **B5** — restore mutex alerting. Diagnostic.
-9. **B8** — page-allocator mutex sharding, *only if* `hctstats` says it is contended.
-10. **B3 / B4** — deferred pending units 5 and 6.
-11. **A3** — design change; do not pursue without upstream agreement.
+8. **B9** — raise `hct_npageset`. Runtime pragma, no rebuild; the cheap answer to B8.
+9. **B10** — warm the mapping at startup via `hct_prefault`.
+10. **B5** — restore mutex alerting. Diagnostic.
+11. **B8** — page-allocator mutex *sharding*, only if `hctstats` says it is contended
+    **and** B9 does not resolve it.
+12. **B3 / B4** — B3 deferred pending unit 6; B4 (NUMA) still speculative.
+13. **A3** — design change; do not pursue without upstream agreement.
+
+**Cross-cutting note added after unit 5:** Bedrock sets **none** of HC-Tree's ten tunable
+pragmas (`06-readers-snapshots.md` §5), so the whole engine runs at upstream defaults
+chosen without reference to a 384-CPU / 6 TB-RAM host. B9 and B10 are the two with the
+clearest rationale, but the surface as a whole deserves a deliberate pass.
