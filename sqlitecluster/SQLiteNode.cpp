@@ -1829,21 +1829,31 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
         if (!_db.beginTransaction()) {
             STHROW("failed to begin transaction");
         }
-        if (!_db.writeUnmodified(BedrockPlugin_Compression::decompress(commit.content))) {
-            STHROW("failed to write transaction");
-        }
-        string newHash;
-        if (!_db.prepare(nullptr, &newHash)) {
-            STHROW("failed to prepare transaction");
-        }
-        if (newHash != commit["Hash"]) {
-            _db.rollback();
-            STHROW("potential hash mismatch");
-        }
+        // We now have an open transaction on the sync handle. Nothing above us rolls it back, so every path out of
+        // here needs to, or the handle stays dirty and the next `beginTransaction()` throws "already inside
+        // transaction", leaving this node unable to synchronize until it's restarted.
+        try {
+            if (!_db.writeUnmodified(BedrockPlugin_Compression::decompress(commit.content))) {
+                STHROW("failed to write transaction");
+            }
+            string newHash;
+            if (!_db.prepare(nullptr, &newHash)) {
+                STHROW("failed to prepare transaction");
+            }
+            if (newHash != commit["Hash"]) {
+                STHROW("potential hash mismatch");
+            }
 
-        // Transaction succeeded, commit and go to the next
-        SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
-        _db.commit(stateName(_state));
+            // Transaction succeeded, commit and go to the next
+            SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
+            int result = _db.commit(stateName(_state));
+            if (result != SQLITE_OK) {
+                STHROW("failed to commit transaction, result: " + to_string(result));
+            }
+        } catch (...) {
+            _db.rollback();
+            throw;
+        }
 
         // Clear the list of committed transactions. We're synchronizing, so we don't need to send these.
         _db.popCommittedTransactions();

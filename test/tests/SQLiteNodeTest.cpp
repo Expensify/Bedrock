@@ -54,7 +54,8 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            BEFORE_CLASS(SQLiteNodeTest::setup),
                                            AFTER_CLASS(SQLiteNodeTest::teardown),
                                            TEST(SQLiteNodeTest::testFindSyncPeer),
-                                           TEST(SQLiteNodeTest::testGetPeerByName))
+                                           TEST(SQLiteNodeTest::testGetPeerByName),
+                                           TEST(SQLiteNodeTest::testRecvSynchronizeRollsBackOnFailure))
     {
     }
 
@@ -166,5 +167,44 @@ struct SQLiteNodeTest : tpunit::TestFixture
             ASSERT_EQUAL(testNode.getPeerByName("peerBanana")->name, "peerBanana");
             ASSERT_EQUAL(testNode.getPeerByName("peer9"), nullptr);
         }
+    }
+
+    void testRecvSynchronizeRollsBackOnFailure()
+    {
+        SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, configuredPriority, 1000000000, "1.0");
+
+        // A commit that passes every check up to the point where it's written, and then fails to apply.
+        SData commit("COMMIT");
+        commit["CommitIndex"] = to_string(testNode._db.getCommitCount() + 1);
+        commit["Hash"] = "somehash";
+        commit.content = "NOT VALID SQL;";
+
+        SData response("SYNCHRONIZE_RESPONSE");
+        response["NumCommits"] = "1";
+        response.content = commit.serialize();
+
+        bool threw = false;
+        try {
+            testNode._recvSynchronize(nullptr, response);
+        } catch (const SException& e) {
+            threw = true;
+            ASSERT_EQUAL(string(e.what()), "failed to write transaction");
+        }
+        ASSERT_TRUE(threw);
+
+        // The failure has to leave the handle clean. If it doesn't, the next SYNCHRONIZE_RESPONSE throws
+        // "already inside transaction" instead, and the node can't synchronize again at all.
+        ASSERT_FALSE(testNode._db.insideTransaction());
+        ASSERT_TRUE(testNode._db.getUncommittedHash().empty());
+
+        // Which is to say: retrying gets as far as applying the commit again, rather than failing on the dirty handle.
+        threw = false;
+        try {
+            testNode._recvSynchronize(nullptr, response);
+        } catch (const SException& e) {
+            threw = true;
+            ASSERT_EQUAL(string(e.what()), "failed to write transaction");
+        }
+        ASSERT_TRUE(threw);
     }
 } __SQLiteNodeTest;
