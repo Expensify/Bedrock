@@ -204,11 +204,20 @@ independently valuable — the analysis is useful even if it stops after any uni
 | 7 | `analysis/08-custom-flags.md` | All Expensify flags: what each gates, engines affected, risk | **done** |
 | 1 | `analysis/02-write-path.md` | Write path & commit protocol: BEGIN CONCURRENT validation, transaction lifecycle | todo — partly covered by P1 §2 |
 | 2 | `analysis/03-locking.md` | Locking granularity; July row-lock fix (`08c755b`); `OP_IdxDelete` change | todo — `OP_IdxDelete` already covered in `00-provenance.md` |
-| 4 | `analysis/05-recovery-durability.md` | Crash recovery paths; `SYNCHRONOUS=0` on each side | todo — partly covered by `12-bugs.md` #5 |
-| 5 | `analysis/06-readers-snapshots.md` | MVCC / visibility; long-reader behaviour; snapshot retention vs WAL growth | **todo — highest remaining value** (`04-checkpointing.md` §4 depends on it) |
-| 6 | `analysis/07-mmap.md` | mmap + `SHARED_MAPPING` at 16 TiB, per engine | todo — inputs gathered in `08-custom-flags.md` §5 |
-| 8 | `analysis/09-multiprocess.md` | HC-Tree same-process constraint; out-of-process tooling | todo — `08-custom-flags.md` §7 is a partial input |
-| 9 | `analysis/99-synthesis.md` | Decision-oriented comparison, risks, open questions, benchmark list | last |
+| 4 | `analysis/05-recovery-durability.md` | Crash recovery; no fsync anywhere in HC-Tree; **bug #7** | **done** |
+| 5 | `analysis/06-readers-snapshots.md` | MVCC / visibility; long-reader behaviour; GC horizon | **done** |
+| 6 | `analysis/07-mmap.md` | mmap per engine; three pragmas that are no-ops on HC-Tree | **done** |
+| 8 | `analysis/09-multiprocess.md` | HC-Tree single-process constraint; tooling consequences | **done** |
+| 9 | `analysis/99-synthesis.md` | Decision-oriented comparison, risks, verification plan, open questions | **done** (revisit as units 1–2 land) |
+
+**Remaining:** units 1 (write path) and 2 (locking) as standalone files. Their substance is
+largely absorbed into `10-conflict-investigation.md` §1–2 (read-set representation,
+validation algorithms, granularity on both sides) and `00-provenance.md` (the `OP_IdxDelete`
+change). What is genuinely uncovered: the HC-Tree write/write conflict path
+(`hctDbWriteWriteConflict`, `hct_database.c:5945+`) in detail, page balancing/splitting
+under concurrency, and the July 2026 Bedrock re-vendor `08c755b` — whose semantic content is
+buried in a 4,787-line whole-amalgamation diff and would need a two-tarball comparison to
+isolate.
 
 **Deviation from the original ordering, and why.** Dan's four priorities arrived after
 Phase 0 and reordered the work: the conflict investigation (P1) was promoted ahead of the
