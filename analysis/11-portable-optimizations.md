@@ -214,12 +214,34 @@ flag and turns Part A/B from ranked guesses into ranked measurements.
 
 ---
 
+## B8 — The page allocator is behind one global mutex
+
+`hct_pman.c:103` gives `HctPManServer` a single `sqlite3_mutex` guarding the free-page
+"baskets", entered via `hctPManMutexEnter()` (`hct_pman.c:144`) from every allocation path
+(`hct_pman.c:420`, `:624`, `:723`).
+
+The design already mitigates this: each client keeps local `aPgSet[2]` pools of
+immediately-reusable physical and logical page ids and only takes the server mutex when
+refilling or handing back a batch (`hct_pman.c:124-141`). So the mutex is amortized, not
+per-page.
+
+**Whether the amortization is sufficient at 384 CPUs is exactly what
+`pman.mutex_block / pman.mutex_attempt` measures** — and that counter already exists
+(`13-instrumentation.md`). If the ratio is high, the fixes are conventional: larger
+per-client batches (cheap at 6 TB RAM), or sharding the server pool per NUMA node or per
+worker.
+
+**Do not act before measuring** — the batching may already make this a non-issue, and the
+counter will say so in minutes.
+
 ## Provisional ranking
 
 Ordered by (value × confidence) ÷ risk, with the honest caveat that nothing here is
 measured yet:
 
-1. **B6** — compile in `HCT_VALIDATE_TIMERS` and measure. Prerequisite for the rest.
+0. **Query `hctstats` in production and grep conflict logs for `journal*`.** Zero rebuild,
+   zero risk, and it reorders everything below. See `13-instrumentation.md`.
+1. **B6** — compile in `HCT_VALIDATE_TIMERS` and measure. Prerequisite for the code changes.
 2. **B2** — check and fix the page cache size. Trivial, possibly large.
 3. **A1** — sort/coalesce read ranges. Low risk, clear mechanism, no semantic change.
 4. **B1** — re-enable `iLocalMinTid`. Highest ceiling, but blocked on a question to Dan
@@ -229,5 +251,6 @@ measured yet:
 6. **B7** — take journal housekeeping off the write path. Two cheap, self-contained
    changes in Bedrock's own code, no SQLite change needed.
 7. **B5** — restore mutex alerting. Diagnostic.
-8. **B3 / B4** — deferred pending units 5 and 6.
-9. **A3** — design change; do not pursue without upstream agreement.
+8. **B8** — page-allocator mutex sharding, *only if* `hctstats` says it is contended.
+9. **B3 / B4** — deferred pending units 5 and 6.
+10. **A3** — design change; do not pursue without upstream agreement.
