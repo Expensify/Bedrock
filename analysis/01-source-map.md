@@ -54,10 +54,15 @@ The mechanism, in three pieces:
    }
    ```
 
-   This list is small but load-bearing evidence for later units: `BtreeSharable` /
-   `BtreeConnectionCount` absent → the shared-cache/multi-connection model differs
-   (unit 8); `BtreeCheckpoint` absent, with an author comment admitting unease → HC-Tree
-   genuinely has no checkpoint entry point (unit 3).
+   This list is evidence for later units: `BtreeSharable` / `BtreeConnectionCount` absent
+   → the shared-cache/multi-connection model differs (unit 8).
+
+   **Correction (made while reading unit 3):** the `BtreeCheckpoint` entry in this list is
+   now stale. `sqlite3HctBtreeCheckpoint()` *does* exist (`hctree.c:3753`) and *is* wired
+   into the HC-Tree method table (`btwrapper.c:491`). But its entire body is
+   `return SQLITE_OK;` — a no-op stub. So the conclusion "HC-Tree has no checkpointing"
+   still holds and is now established from the implementation rather than from the
+   generator's TODO list; see `04-checkpointing.md`.
 
 **Runtime selection** happens above this layer, in Bedrock:
 `-newDBsUseHctree` / URI `hctree=1` on first open, header sniff for

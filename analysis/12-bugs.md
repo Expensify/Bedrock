@@ -107,4 +107,108 @@ inherits the default, this is likely the cheapest available win (P4).
 
 ---
 
+## #4 — HC-Tree log files are never unlinked at runtime (both delete paths disabled)
+
+**Severity:** medium (disk-space leak)
+**Affects:** both the vendored Aug-28 drop and check-in `eedd80c1a9749300`; HC-Tree only
+**Location:** `src/hct_log.c:268`, `src/hct_log.c:444` (upstream)
+
+Both code paths that would remove an HC-Tree log file are disabled in the source.
+
+`sqlite3HctLogClose()` (`hct_log.c:245`) computes `bDefer` to decide whether removal is
+safe now — in `FOLLOWER` mode it defers while the log holds transactions newer than the
+journal's safe CID — and then never removes anything (`hct_log.c:266-269`):
+
+```c
+      if( p->zPath && bDefer==0 ){
+        // unlink(p->zPath);
+        sqlite3_free(p->zPath);
+      }
+```
+
+The deferred path is disabled too, by an unconditional `&& 0` (`hct_log.c:444`):
+
+```c
+        if( bUnlink && 0 ) unlink(pFile->zPath);
+```
+
+**Failure scenario:** each HC-Tree connection creates an `HctLog` holding two log files
+(`hctree.c:775`) and releases it on close (`hctree.c:847`). Because neither release path
+deletes, the files persist. The only cleanup is at process start —
+`hctFileServerInitUnlinkLog()` (`hct_file.c:786`) via `hctFileFindLogs()`
+(`hct_file.c:1033`). A long-running node therefore accumulates two files per
+connection-close for its entire uptime, and only reclaims them on restart.
+
+**Magnitude depends on connection churn, not transaction rate.** Bedrock pools connections
+(`SQLitePool`, `BedrockServer.cpp:115`), so a steady pool leaks little; churn — including
+`SQLite`'s copy constructor, which opens a fresh handle
+(`sqlitecluster/SQLite.cpp:346`) — leaks proportionally. **Not yet measured against
+production behaviour**; the check is simply counting log files in the database directory on
+a long-uptime node.
+
+Both suppressions have the shape of deliberate temporary debugging changes that were never
+reverted (a commented-out call and an `&& 0`). **Question for Dan Kennedy:** intentional?
+
+---
+
+## #5 — `WAL2NOCKSUM` trades data checksums for write ordering, but `synchronous=0` removes the ordering guarantee
+
+**Severity:** medium — silent corruption *only* on machine crash or power loss, and
+partially mitigated by Bedrock's own hash chain. Not a process-crash risk.
+**Affects:** both builds; WAL2 databases only
+**Location:** `Makefile:18` (`-DSQLITE_ENABLE_WAL2NOCKSUM`, `-DSQLITE_DEFAULT_WAL_SYNCHRONOUS=0`),
+`src/wal.c:1275`, `:1331`, `:5217-5228`, `:5405`, `:5471`
+
+With `SQLITE_ENABLE_WAL2NOCKSUM`, `isNocksum(pWal)` is true for every wal2-mode database
+(`wal.c:476`), and the running frame checksum then covers **only the first 8 bytes of the
+frame header** — the page number and truncate size. The page body is excluded, in both the
+encoder (`wal.c:1275`) and the validator (`wal.c:1331`):
+
+```c
+  walChecksumBytes(nativeCksum, aFrame, 8, aCksum, aCksum);
+  if( isNocksum(pWal)==0 ){
+    walChecksumBytes(nativeCksum, aData, pWal->szPage, aCksum, aCksum);
+  }
+```
+
+The integrity substitute is **write ordering**: in nocksum mode `walWriteOneFrame()` writes
+the page data *first* and the frame header *afterwards* (`wal.c:5217-5228`), inverting the
+normal order, so that a header's presence is meant to imply its data was already written.
+
+**The problem:** nothing enforces that ordering to durable media. `walWriteToLog()` syncs
+only when a write crosses `iSyncPoint` (`wal.c:5175-5183`), `w.iSyncPoint` is initialised
+to `0` (`wal.c:5405`), and the only place it is set to something meaningful is the commit
+path, guarded by `if( isCommit && WAL_SYNC_FLAGS(sync_flags)!=0 )` (`wal.c:5471`). With
+`SQLITE_DEFAULT_WAL_SYNCHRONOUS=0` those sync flags are absent, so **no fsync is issued on
+the WAL at all** and the kernel may write back the header and the data in either order.
+
+**Failure scenario:** power loss or kernel panic after the frame header has reached storage
+but before (or during) the page body. On restart, `walDecodeFrame()` validates the header
+chain, finds it consistent, and — because the body is not covered by any checksum —
+**accepts the frame and applies whatever bytes are in the page slot**. Instead of a clean
+truncation at the last good frame, recovery silently applies a partially-written or stale
+page.
+
+**Qualifications, which matter:**
+
+- This is **not** a process-crash risk. If only `bedrock` dies, the page cache retains the
+  writes and recovery reads exactly what was written.
+- `synchronous=0` already means recent transactions are lost on power loss; that is an
+  accepted, deliberate trade. The *additional* exposure from `WAL2NOCKSUM` is that the loss
+  boundary may be **silently wrong** rather than cleanly detected.
+- Bedrock maintains its own hash chain in the journal (`INSERT INTO <journal> VALUES
+  (:commitID, :query, :hash)`, `sqlitecluster/SQLite.cpp:1070`) and is a replicated
+  cluster, so a corrupted node has a plausible detection path above SQLite. **Whether that
+  detection actually runs on recovery is not verified here** and is the thing worth
+  checking.
+
+**Action:** confirm the intended durability contract. If the answer is "we accept losing
+recent commits but must never apply a corrupt page", the combination of `NOCKSUM` +
+`synchronous=0` does not deliver that, and either the checksum or a barrier before the
+header write is needed. Worth putting to Dan Kennedy, since the write-inversion in
+`wal.c:5217-5228` is clearly a designed mechanism and he will know what durability level it
+assumes.
+
+---
+
 *(further entries appended as units proceed)*

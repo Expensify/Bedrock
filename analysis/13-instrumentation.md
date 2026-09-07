@@ -45,6 +45,31 @@ Five subsystems report (`aHctStatGlobal[]`, `hct_stats.c:39`): `file`, `db`, `tm
 | `db` | `load_physical_to_free_ovfl` | Overflow-page handling volume. |
 | `hct` | **`nretry`, `nretrykey`, `nkeyop`** | Transaction-level retry counts — the closest thing to a native "conflict rate" from inside the engine, and therefore the right cross-check against Bedrock's own conflict metric (see `10-conflict-investigation.md` §5, where the two engines are shown to log conflicts under *different* result codes). |
 
+### Bedrock already logs this — check existing logs before instrumenting anything
+
+`SQLite::commit()` already dumps the whole table on slow HC-Tree commits
+(`sqlitecluster/SQLite.cpp:1181-1188`):
+
+```cpp
+if (_commitElapsed > 100'000 && _hctree) {
+    SQResult stats;
+    if (read("SELECT * FROM hctstats", stats)) {
+        for (const auto& row : stats) {
+            SINFO("slow HC-Tree commit", {{"hctstats", SComposeList(row)}});
+        }
+    }
+}
+```
+
+So for every HC-Tree commit taking over 100 ms, production logs already contain a full
+counter snapshot tagged `slow HC-Tree commit`. **The data needed to settle H3 and to size
+B1 may already be sitting in the log archive.** Searching for that tag is the single
+cheapest next step in this entire analysis — no query, no rebuild, no deploy.
+
+Two caveats: the sample is biased to slow commits by construction (which is arguably the
+population of interest), and the counters are cumulative, so deltas between successive
+snapshots are what carry meaning.
+
 ### Recommended first query
 
 ```sql
@@ -114,11 +139,19 @@ WAL2 via `btreeBcRootToObject()`.
 conflict log lines name a `journal*` table. If it is large, B7 (take journal housekeeping
 off the write path) is the highest-value fix available and needs no upstream involvement.
 
+**Bedrock already parses these messages.** `SQLite::_sqliteLogCallback()`
+(`sqlitecluster/SQLite.cpp:411-435`) extracts the table/index name into
+`_conflictLocation` for *both* engines and exposes it via `getLastConflictLocation()`. So
+the conflict-by-table distribution is available from existing production logs — see
+`10-conflict-investigation.md` §6, which also shows the identifier derived alongside it
+means different things on the two engines.
+
 **Two traps when doing this:**
 
 1. The engines log under **different result codes** — HC-Tree uses
-   `sqlite3_log(SQLITE_BUSY_SNAPSHOT, …)`, WAL2 uses `sqlite3_log(SQLITE_OK, …)`. Any log
-   filter keyed on the code will silently see only one engine.
+   `sqlite3_log(SQLITE_BUSY_SNAPSHOT, …)` (517), WAL2 uses `sqlite3_log(SQLITE_OK, …)` (0).
+   Bedrock's own parser keys on the message prefix rather than the code and so handles
+   both, but any *manual* log filter keyed on the code will silently see only one engine.
 2. HC-Tree's messages are also emitted from the *eager* dooming path
    (`hctDbSetCannotCommit`), which has no WAL2 equivalent, so raw counts are not
    like-for-like. See `10-conflict-investigation.md` §5.
