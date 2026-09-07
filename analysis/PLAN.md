@@ -62,6 +62,105 @@ must be classified, not assumed away.
 
 ---
 
+## 0b. Standing investigation priorities (from Dan, 2026-09-07)
+
+These override the neutral "compare everything evenly" framing. Every subsystem unit
+below must be read with these three questions in hand, and anything relevant routed into
+the dedicated files named here.
+
+### P1 — Why does HC-Tree produce *the same or more* conflicts than WAL2?
+
+This is the headline question. HC-Tree advertises row-level locking and should therefore
+conflict *less* than WAL2's page-level granularity; production says otherwise. Treat this
+as an active investigation, not a comparison. Candidate hypotheses to confirm or kill in
+source, each of which would explain "row-level locking that doesn't buy you anything":
+
+- **H1 — Granularity is not actually row-level on the paths Bedrock uses.** Conflict
+  detection may fall back to page/range granularity for index scans, `OP_IdxDelete`,
+  overflow cells, or interior-node splits, so the effective granularity is coarser than
+  advertised for real workloads.
+- **H2 — Validation scope is wider than the write set.** If the commit-time validation
+  compares against a *read* set, a scanned key range, or a whole-table sequence number,
+  then read-mostly transactions collide even when their writes are disjoint.
+- **H3 — Shared hot structures.** Free-page/pointer-map equivalents, the journal/log
+  append point, `sqlite_sequence`-style counters, root-page metadata, or Bedrock's own
+  journal tables may be written by *every* transaction, giving a guaranteed conflict edge
+  regardless of engine granularity.
+- **H4 — Bedrock's journal tables are the true conflict set.** Every Bedrock commit writes
+  the journal; if those rows/pages are adjacent or monotonically appended, row-level
+  locking on a hot tail is worth little.
+- **H5 — False conflicts from hash/bitmap aliasing.** If validation uses a hashed or
+  bitmap-summarized representation of the write set, collisions produce false positives
+  whose rate grows with transaction size and concurrency — and would get *worse* at 384
+  CPUs, not better.
+- **H6 — Retry/abort accounting differs.** HC-Tree may report as a conflict what WAL2
+  reports as a busy/blocked wait, so the two engines' "conflict" counters are not
+  measuring the same event. This would make the comparison itself partly an artifact.
+- **H7 — Interaction with Bedrock's own layer.** `BedrockConflictManager` /
+  `ConflictLockGuard` may serialize or retry differently depending on the error code the
+  engine returns, amplifying engine-level conflicts into observed ones.
+
+Deliverable: **`analysis/10-conflict-investigation.md`** — each hypothesis stated,
+evidence for and against with `file:line`, and a verdict of confirmed / killed /
+UNVERIFIED-needs-experiment. Where source cannot settle it, specify the exact experiment
+or instrumentation that would.
+
+### P2 — WAL2 optimizations portable to HC-Tree
+
+One-directional: we care about improving HC-Tree, not WAL2. As each subsystem is read,
+log anything WAL2 does that HC-Tree does not, and that HC-Tree could adopt — including
+Expensify's own WAL2-side modifications (`WAL_BIGHASH`, `WAL2NOCKSUM` are the obvious
+candidates: a bigger hash table and a skipped checksum are both engine-agnostic ideas).
+Note where HC-Tree deliberately does not need the optimization.
+
+Deliverable: **`analysis/11-portable-optimizations.md`** — running list, each entry with
+the WAL2 mechanism (`file:line`), the HC-Tree gap (`file:line`), estimated benefit at our
+scale, and implementation risk.
+
+### P3 — Bugs and vulnerabilities
+
+Anything found in passing, either engine, either side of the vendor boundary. Includes
+correctness bugs, races, unchecked arithmetic on sizes that matter at 6 TB / 16 TB mmap,
+and anything reachable from untrusted input.
+
+Deliverable: **`analysis/12-bugs.md`** — appended to continuously, each entry with
+`file:line`, the failure scenario, severity, and whether it affects the vendored Aug-31
+drop, the newer check-in, or both.
+
+### P4 — Any optimization the hardware makes possible
+
+The target machine is **384 CPUs and 6 TB of RAM**, which is far outside the envelope
+stock SQLite is tuned for and changes which trade-offs are correct. Not limited to ideas
+already present in either engine — invent where warranted. Angles to work deliberately:
+
+- **The whole database may fit in RAM.** At 6 TB of memory against a 6 TB database, the
+  page cache / mmap can plausibly hold everything. Anything that exists to economize on
+  memory (cache eviction, spill thresholds, `SQLITE_DEFAULT_CACHE_SIZE=-51200` — only
+  50 MB, which is almost certainly wrong here) is a candidate for retuning or removal.
+- **384-way contention is a different regime.** Any single mutex, atomic counter, or
+  cache line touched on every transaction becomes the bottleneck long before I/O does.
+  Look for shared-state hot spots and per-CPU / sharded / striped alternatives.
+  `SQLITE_MUTEX_ALERT_MILLISECONDS=20` exists because someone already hit this.
+- **NUMA.** A 384-CPU host is many sockets; a single shared mapping and a single hot
+  allocator have NUMA locality consequences that neither engine models at all.
+- **Trading memory for concurrency.** Bigger hash tables, more aggressive precomputation,
+  wider striping, per-connection arenas — all cheap at 6 TB RAM and all normally rejected
+  upstream as wasteful.
+
+Deliverable: folded into **`analysis/11-portable-optimizations.md`**, in a separate
+"beyond-WAL2" section so ported-from-WAL2 and invented ideas stay distinguishable. Each
+entry gets an expected-benefit rationale tied to the hardware, not a generic one.
+
+These four priorities produce **living documents**, appended during every subsequent unit,
+not written once at the end.
+
+> Note on hardware figures: the original brief said "6 TB database"; Dan's follow-up says
+> "384 CPU, 6 TB RAM machine". Both are recorded; where a claim depends on which, it says
+> so. To confirm: whether the working set is ~6 TB *and* RAM is ~6 TB (i.e. fully
+> cacheable), which would make P4's first bullet the single highest-leverage item.
+
+---
+
 ## 1. Method
 
 For every subsystem, the deliverable is a findings file that answers the same five
