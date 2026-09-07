@@ -15,6 +15,30 @@ detail, (ii) quantify §6 against production logs once Dan answers Q0.
 
 ---
 
+## Q0 — FIRST: is the data being explained from before or after 2026-07-15?
+
+**Before assuming there is a phenomenon here at all, check the date range of the conflict
+comparison.**
+
+Bedrock commit `08c755b` (2026-07-15) fixed a bug in which **WAL2 silently discarded the
+in-progress read range every time a cursor was cleared**. `sqlite3BtreeClearCursor()` did
+not call `btreeBcScanFinish()`, so the accumulated key range never reached the read set and
+`btreeBcDetectIntkeyConflict()` never tested it. Full derivation in `02-write-path.md` §5.
+
+Consequences: WAL2 **under-reported conflicts** before that date (and could commit
+transactions that should have aborted). HC-Tree's tracking was correct throughout.
+
+**So any WAL2-vs-HC-Tree conflict comparison drawn from data before 2026-07-15 is
+invalid** — one side was systematically undercounted. After the fix, WAL2's measured rate
+should have risen to its true level.
+
+If the "HC-Tree has the same or more conflicts" observation predates or straddles mid-July,
+**part of the gap is an artifact of that bug, not a property of either engine**, and the
+comparison needs redoing before the mechanisms below are worth acting on. If it is from
+after the fix, everything below stands.
+
+---
+
 ## Headline
 
 **Both engines track reads as key ranges and detect conflicts at row/key granularity. The

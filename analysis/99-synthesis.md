@@ -12,9 +12,29 @@ difference from the check-in analysed is the `OP_IdxDelete` no-op skip
 
 ---
 
+## 0. Check this before anything else: which side of 2026-07-15 is the data from?
+
+Bedrock commit `08c755b` (2026-07-15) fixed a bug where **WAL2 discarded the in-progress
+read range whenever a cursor was cleared** — `sqlite3BtreeClearCursor()` did not call
+`btreeBcScanFinish()`, so accumulated key ranges never entered the read set and were never
+tested at commit (`02-write-path.md` §5).
+
+WAL2 therefore **under-reported conflicts before that date**; HC-Tree was correct
+throughout. Any comparison drawn from pre-July-15 data had one side systematically
+undercounted, and after the fix WAL2's measured rate should have risen on its own.
+
+**If the observation that started this work predates or straddles mid-July, part of the gap
+is an artifact of that bug rather than a property of either engine.** That question is
+cheaper to answer than anything in §4 and determines whether the rest is worth acting on.
+
+(The same fix has a second implication worth noting separately: before it, WAL2
+`BEGIN CONCURRENT` transactions could commit despite conflicting reads — an isolation
+defect, not merely a metrics one. Fixed now; **UNVERIFIED** whether it was ever hit.)
+
 ## 1. The direct answer to "why doesn't row-level locking help?"
 
-**Because the premise is wrong, and because two other things are true.**
+**Because the premise is wrong, and because two other things are true** — assuming §0
+clears.
 
 WAL2's `BEGIN CONCURRENT` is **not** page-level. It records reads as key ranges
 (`BtReadIntkey{iRoot, iMin, iMax}`) and detects conflicts against write **keys**
@@ -103,17 +123,19 @@ changing any code.**
 
 ### Tier 1 — no rebuild, no deploy
 
-1. **Search existing logs for `slow HC-Tree commit`.** Bedrock already dumps the full
+1. **Establish the date range of the conflict comparison (§0).** Cheapest and most
+   consequential single question in this document.
+2. **Search existing logs for `slow HC-Tree commit`.** Bedrock already dumps the full
    `hctstats` counter set for every HC-Tree commit over 100 ms
    (`SQLite.cpp:1181-1188`). The data to settle risk #2 may already be in the archive.
    Compute `tmap.mutex_block / tmap.mutex_attempt`, `pman.mutex_block / pman.mutex_attempt`,
    `file.cas_fail / file.cas_attempt`, and `db.tmap_lookup` per transaction.
-2. **Grep conflict logs for `journal*`.** Both engines log conflicts with the table name
+3. **Grep conflict logs for `journal*`.** Both engines log conflicts with the table name
    resolved and Bedrock already parses them (`SQLite.cpp:411-435`). The share naming a
    journal table directly sizes §1(a). *Trap:* the engines log under different result codes
    (WAL2 `SQLITE_OK`, HC-Tree `SQLITE_BUSY_SNAPSHOT`), so filter on message text.
-3. **Answer Q1–Q4 in §6.** Configuration questions, not investigations.
-4. **Check `vm.max_map_count` and `wc -l /proc/<pid>/maps`** on a production node — closes
+4. **Answer Q1–Q4 in §6.** Configuration questions, not investigations.
+5. **Check `vm.max_map_count` and `wc -l /proc/<pid>/maps`** on a production node — closes
    risk #7 with one command.
 
 ### Tier 2 — cheap experiments
@@ -174,8 +196,10 @@ Tier 1 could plausibly overturn the ranking in §4 — that is exactly why it co
 
 **For Dan (configuration — these gate findings):**
 
+0. **What date range is the conflict-rate comparison drawn from?** Gates §0 and therefore
+   everything else. Anything before 2026-07-15 undercounted WAL2.
 1. **Is `-enableConflictPageLocks` enabled in production?** Gates §1(b), the strongest
-   single finding. Defaults to `false` (`BedrockServer.h:393`).
+   single mechanism. Defaults to `false` (`BedrockServer.h:393`).
 2. Where does our production conflict metric come from? The engines log under different
    result codes and HC-Tree additionally dooms transactions *eagerly* mid-scan
    (`hct_database.c:5905`) with no WAL2 equivalent — so the two may not be counting the

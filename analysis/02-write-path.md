@@ -2,7 +2,7 @@
 
 **Units:** 1 and 2, combined — they overlap almost completely on the HC-Tree side, where
 the write path *is* the locking mechanism (per-row TIDs rather than page locks).
-**Status:** COMPLETE for the write/write path. The `08c755b` re-vendor is tracked in §5.
+**Status:** COMPLETE. The `08c755b` re-vendor is isolated in §5.
 **Drift:** none, except `OP_IdxDelete` (`00-provenance.md`).
 **Note:** the read/write half of the commit protocol — read-set representation and
 validation — is in `10-conflict-investigation.md` §1–2 and not repeated here. This file
@@ -208,11 +208,97 @@ The two upstream check-ins involved are recoverable from the vendored headers:
    today's position, where `00-provenance.md` shows the current drop is a byte-clean
    generated amalgamation of a named check-in.
 
-**Isolating the semantic change requires diffing the two upstream trees.** Both tarball
-fetches are currently returning HTTP 503 "Server Overload" from `sqlite.org` — the fossil
-server throttles tarball generation. Retries are in progress; if they continue to fail this
-is an availability limitation, not an analysis one, and the comparison can be redone at any
-time from the two IDs above. **Marked UNVERIFIED pending that fetch.**
+**RESOLVED — the semantic change is isolated.** The upstream tarballs were unavailable
+(`sqlite.org` returned HTTP 503 "Server Overload" for both tarball and `vdiff` endpoints),
+so the two vendored amalgamations were diffed directly out of Bedrock's own git history
+instead: 390 hunks, 8,374 lines. Classifying every hunk by source file showed the bulk to
+be ordinary upstream churn merged in with the branch switch — `os_win.c` (67 hunks),
+`backup.c`, `fts5.c`, `json.c`, `printf.c` and so on, none of it engine-relevant.
+
+Filtering to the files that could implement the stated fix left exactly one hunk that does.
+
+### The fix: `sqlite3BtreeClearCursor()` was discarding the in-progress read range
+
+**Before** (`08c755b^`, in full):
+
+```c
+SQLITE_PRIVATE void sqlite3BtreeClearCursor(BtCursor *pCur){
+  assert( cursorHoldsMutex(pCur) );
+  sqlite3_free(pCur->pKey);
+  pCur->pKey = 0;
+  pCur->eState = CURSOR_INVALID;
+}
+```
+
+**After** (`08c755b`):
+
+```c
+SQLITE_PRIVATE void sqlite3BtreeClearCursor(BtCursor *pCur){
+  assert( cursorHoldsMutex(pCur) );
+#ifndef SQLITE_OMIT_CONCURRENT
+  if( SQLITE_OK!=btreeBcScanFinish(pCur) ){
+    /* Allocation failed in btreeBcScanFinish(), but we have no way
+    ** to return the error to the user. So just disable the BtConcurrent
+    ** object.  */
+    BtShared *pBt = pCur->pBt;
+    assert( pBt->conc.eState==BTCONC_STATE_INUSE );
+    pBt->conc.eState = BTCONC_STATE_RETIRED;
+  }
+#endif
+  sqlite3_free(pCur->pKey);
+  ...
+```
+
+`btreeBcScanFinish()` is WAL2's counterpart to HC-Tree's `hctDbCsrScanFinish()`: it closes
+the current scan and **commits the accumulated key range into the transaction's read set**.
+Reference counts confirm the shape of the change — `btreeBcScanFinish` 7 → 9 occurrences,
+`BTCONC_STATE_RETIRED` 8 → 9 — a new call site, not new machinery. The key-range
+infrastructure itself (`BtReadIntkey`, `btreeBcDetectIntkeyConflict`,
+`btreeBcReadIntkeySort`) is byte-identical in both trees, so this was never a case of WAL2
+lacking row-level detection.
+
+**What the bug was.** `sqlite3BtreeClearCursor()` is called whenever a cursor is reset or
+invalidated — a routine event. Before the fix, every such reset **silently dropped the read
+range accumulated by the scan in progress**. That range never reached the read set, so
+`btreeBcDetectIntkeyConflict()` never tested it at commit.
+
+**Two consequences, and the second is the important one:**
+
+1. **WAL2 under-reported conflicts.** Missing read ranges mean missing conflicts. A WAL2
+   node before 2026-07-15 showed a conflict rate lower than the truth.
+2. **WAL2 could commit transactions that should have aborted.** This is an isolation
+   defect, not just a metrics defect: a `BEGIN CONCURRENT` transaction whose read set was
+   partly discarded could commit on top of a concurrent write it had read stale data from —
+   the classic lost-update shape. **UNVERIFIED whether this was ever hit in production**,
+   and it is fixed now; recorded because it bears on how much to trust pre-July data.
+
+### Why this matters directly to P1
+
+**Any WAL2-vs-HC-Tree conflict-rate comparison drawn from data before 2026-07-15 is
+invalid**, because WAL2's side of it was systematically undercounted while HC-Tree's was
+correct. After the fix, WAL2's measured conflict rate should have *risen* to its true level.
+
+So the observation "HC-Tree has the same or more conflicts than WAL2" is much more
+meaningful if it comes from after mid-July than before. If it straddles the fix, part of
+the gap is an artifact of the bug rather than a property of either engine.
+
+**This is now the first question to ask about the P1 data** — ahead of the mechanisms in
+`10-conflict-investigation.md`, because it determines whether the thing being explained is
+real. Added as Q0 there and to `99-synthesis.md` §6.
+
+### Two incidental findings from the same diff
+
+- **A 32-bit overflow fix in `unixShmMap()`** (`os_unix.c`, 3 hunks): `int nByte` →
+  `i64 nByte`, `int iPg` → `i64 iPg`, `int nMap` → `i64 nMap`, with casts on the
+  multiplications. This is the wal-index (`-shm`) region mapping, and it is **48× more
+  exposed in Bedrock's build than in a stock one**, because `SQLITE_ENABLE_WAL_BIGHASH`
+  grows `WALINDEX_PGSZ` from ~32 KB to ~1.5 MB (`08-custom-flags.md` §1). The arithmetic
+  still only overflows in the region of ~10^8 frames, so it was probably never reached —
+  but this is exactly the class of "unchecked size arithmetic that matters at our scale"
+  worth knowing was fixed rather than still latent.
+- **A redundant `sqlite3HctBufferFree()` was removed** from `hct_database.c`. This is *not*
+  a double-free fix: `sqlite3HctBufferFree()` zeroes the struct after freeing
+  (`hct_database.c:681`), so the second call was a harmless no-op. Cleanup only.
 
 ## 6. Comparison
 
@@ -239,3 +325,6 @@ lifetime at the application layer is now supported by two independent mechanisms
 2. What is `db.descend_in_writewrite` per write in production? Settles §2.2.
 3. Does anyone have the working tree that produced the `-experimental` July-09 drop, or is
    that period simply unreproducible (§5)?
+4. **When was the conflict-rate comparison between WAL2 and HC-Tree actually made?** If any
+   of it predates 2026-07-15, WAL2's numbers were undercounted by the read-set bug in §5
+   and the comparison needs redoing.
