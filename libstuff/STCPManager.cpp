@@ -261,7 +261,16 @@ bool STCPManager::Socket::_openSocket()
     }
 
     if (https) {
-        ssl = new SSSLState(hostToResolve, s);
+        // SSSLState only closes the fd in its destructor, so if its constructor throws, the fd is still ours to close.
+        try {
+            ssl = new SSSLState(hostToResolve, s);
+        } catch (const SException& e) {
+            SWARN("Couldn't set up SSL for '" << hostToResolve << "' (" << addr << "): " << e.what());
+            S_close(&s);
+            state.store(State::CLOSED);
+            connectFailure = true;
+            return false;
+        }
     }
 
     return true;

@@ -64,7 +64,7 @@ protected:
         void _connectAfterDNSResolution();
 
         // Opens the fd for `addr` and, for HTTPS sockets, its SSL state. Returns false and marks the socket
-        // closed and failed if the fd can't be opened.
+        // closed and failed if the fd can't be opened or the SSL state can't be set up.
         bool _openSocket();
 
         // Validates `host` and starts its lookup. `dnsResolution` is const, so it has to be built in
