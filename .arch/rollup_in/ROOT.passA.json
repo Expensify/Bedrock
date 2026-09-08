@@ -1,0 +1,855 @@
+{
+ "dir": "",
+ "pass": "passA",
+ "subdirectories": [
+  {
+   "dir": "benchmarks",
+   "summary_file": "benchmarks/SUMMARY.md",
+   "exists": true,
+   "rollup": "theme: Standalone benchmark harness timing individual libstuff functions (currently only SDeburr/SReplace/SReplaceAll) with an optional git-baseline throughput comparison\nexports: [BenchmarkBase, BenchmarkResult, g_benchmarkResults, runBenchmarks, printComparison]\ndepends_on_dirs: [libstuff, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 1}\nresolved_locally: 0\nescalate:\n  - item: \"main() --baseline branch (git stash/checkout/rebuild orchestration)\"\n    from: benchmarks/main.cpp\n    why: Build/source-control orchestration embedded in the benchmark binary rather than driven externally\n    suggested_home: \"a wrapper shell script that runs the plain benchmark binary twice and diffs results; exact location needs a repo-wide view\""
+  },
+  {
+   "dir": "libstuff",
+   "summary_file": "libstuff/SUMMARY.md",
+   "exists": true,
+   "rollup": "theme: Bedrock's dependency-free foundation layer - string/table/exception/logging core, poll()-loop networking, SQL-adjacent typed values and wire format, async threading primitives, an in-house JSON model, and process diagnostics - undercut by a 4612-line catch-all file that still duplicates several of its own dedicated units.\nexports: [libstuff-core (SString/STable/SException/SStopwatch/logging+assert macros), SData (generic HTTP-like wire message), SQResult/SQValue/SQliteParameter (typed SQL result set + bindable parameter), STCPManager/SHTTPSManager/SSSLState (poll()-loop socket/TLS/HTTPS stack), SLog/SSignal (process-wide logging + crash/signal handling), SThread/SRingBuffer/SFluentdLogger/SResolver (safe background-thread primitives and consumers), JSON::Value (in-house JSON document model, via JSON/)]\ndepends_on_dirs: [sqlitecluster, .]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 7, low: 6}\nresolved_locally: 8\nescalate:\n  - item: AutoScopeOnPrepare\n    from: libstuff/AutoScopeOnPrepare.h,cpp\n    why: includes sqlitecluster/SQLite.h directly and exists solely to scope a SQLite-specific callback; confirming the landing spot needs sqlitecluster's own view\n    suggested_home: sqlitecluster\n  - item: AutoTimer name collision\n    from: libstuff/AutoTimer.h,cpp\n    why: a second, unrelated AutoTimer class exists in BedrockCore.h outside libstuff's visibility; resolving the collision needs a view spanning both\n    suggested_home: null\n  - item: SData::deserialize simdjson padding logic\n    from: libstuff/SData.cpp\n    why: over-allocates for one downstream simdjson parser's requirement, but no consumer of SData that does simdjson parsing is visible anywhere in libstuff\n    suggested_home: wherever SData payloads are simdjson-parsed (not visible from libstuff)\n  - item: SHTTPSManager (class, depends on BedrockPlugin.h)\n    from: libstuff/SHTTPSManager.h\n    why: inverts libstuff's expected dependency direction on the application layer above it; SStandaloneHTTPSManager in the same file proves the coupling isn't load-bearing\n    suggested_home: near BedrockPlugin, or a thinner adapter in Bedrock proper leaving libstuff plugin-free\n  - item: \"_SSignal_StackTrace's direct call to SQLiteNode::KILLABLE_SQLITE_NODE->kill()\"\n    from: libstuff/SSignal.cpp\n    why: a generic libstuff crash handler reaching directly into the sqlitecluster layer; a layering decision the root must settle\n    suggested_home: null"
+  },
+  {
+   "dir": "plugins",
+   "summary_file": "plugins/SUMMARY.md",
+   "exists": true,
+   "rollup": "theme: plugins/ holds each BedrockPlugin_* implementation \u2014 self-contained units that register request verbs with BedrockServer and answer them via peek()/process(), each owning whatever SQLite schema it needs.\nexports: [BedrockPlugin_Cache, BedrockPlugin_Compression, BedrockPlugin_DB, BedrockPlugin_Jobs, BedrockPlugin_MySQL, the peek()/process() BedrockCommand pattern used by all five, per-plugin SQLite schema ownership (cache/cacheSize, zstdDictionaries, jobs tables), MySQL wire-protocol compatibility shim]\ndepends_on_dirs: [libstuff, sqlitecluster]\ndepended_on_by: []\nmisfit_count: {high: 1, med: 1, low: 4}\nresolved_locally: 2\nescalate:\n  - item: BedrockPlugin_Cache::LRUMap\n    from: plugins/Cache.h\n    why: fully generic string-keyed LRU tracker, no cache logic, trapped private to one plugin\n    suggested_home: libstuff (or a new shared containers location \u2014 libstuff is already overloaded, see note)\n  - item: BedrockPlugin_DB::Sqlite3QRFSpecWrapper / parseSQLite3Args / generateErrorContextMessage\n    from: plugins/DB.h,DB.cpp\n    why: generic sqlite3-CLI arg/error layer wrapping libstuff/qrf.h, nothing DB-plugin-specific\n    suggested_home: libstuff/qrf.h or a new libstuff unit alongside it\n  - item: BedrockPlugin_Jobs::scopedDisableNoopMode\n    from: plugins/Jobs.cpp\n    why: generic SQLite-noop RAII guard, file-local to Jobs.cpp, unreachable by other plugins that need it\n    suggested_home: libstuff or SQLite.h\n  - item: BedrockPlugin_Jobs::upgradeDatabase Expensify-specific index literals (jobsPriorityNextRunManualSmartScan*, jobsManualSmartscanReceiptID, jobsPriorityNextRunWWWProd/WWWStag)\n    from: plugins/Jobs.cpp\n    why: deployment-specific job-name literals baked into otherwise-generic job-queue schema DDL; needs a repo-wide customization seam, not a local fix\n    suggested_home: null"
+  },
+  {
+   "dir": "sqlitecluster",
+   "summary_file": "sqlitecluster/SUMMARY.md",
+   "exists": true,
+   "rollup": "theme: Replicated-SQLite engine \u2014 the transaction/journal handle, the leader/follower consensus node, and the wire-format/pooling plumbing that carries commands and connections through the cluster.\nexports: [SQLite, SQLiteNode, SQLitePeer, SQLiteCommand, SQLiteClusterMessenger, SQLitePool, SQLiteServer]\ndepends_on_dirs: [libstuff, plugins, root (BedrockCommand.h, BedrockServer.h)]\ndepended_on_by: []\nmisfit_count: {high: 1, med: 2, low: 6}\nresolved_locally: 8\nescalate:\n  - item: \"SQLite.cpp and SQLiteNode.cpp both include plugins/Compression.h and call BedrockPlugin_Compression::compress/decompress to (de)compress journal entries\"\n    from: sqlitecluster/SQLite.cpp, sqlitecluster/SQLiteNode.cpp\n    why: the replication engine, which otherwise depends only on libstuff, depends upward on an application-level Bedrock command plugin \u2014 an inverted layering that two independent units converge on, so it is structural rather than a one-off\n    suggested_home: a libstuff- or sqlitecluster-level compression primitive that plugins/Compression itself builds on, instead of the reverse; deciding the exact seam requires a view above sqlitecluster that also sees plugins/"
+  },
+  {
+   "dir": "test",
+   "summary_file": "test/SUMMARY.md",
+   "exists": true,
+   "rollup": "theme: Root of Bedrock's test tree \u2014 divides \"verify Bedrock\" into a harness layer (test/lib), a single-node command/support-library test suite (test/tests), and a multi-node cluster-integration subsystem (test/clustertest), tied together by the single-node test binary's entry point (main.cpp).\nexports: [single-node bedrock test-binary entry point (main.cpp), BedrockTester test harness + vendored tpunit++ framework (test/lib), single-node command and libstuff/JSON support-library test suite incl. Jobs-plugin coverage (test/tests), BedrockClusterTester multi-node cluster harness plus test-only plugin and cluster-integration test suite (test/clustertest)]\ndepends_on_dirs: [libstuff, libstuff/JSON, sqlitecluster, plugins]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 1, low: 2}\nresolved_locally: 0\nescalate:\n  - item: fileAppend / fileLockAndLoad\n    from: test/clustertest/testplugin/TestPlugin.cpp\n    why: generic flock-guarded file I/O helpers with no plugin-specific logic and no relation to any part of test/'s remit; belongs in a shared utility location outside this subtree\n    suggested_home: libstuff\n  - item: \"operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)\"\n    from: test/lib/PrintEquality.h\n    why: generic container-printing utilities with no tie to PrintEquality or testing, already built on libstuff's SComposeList\n    suggested_home: a shared stream-formatting utility header in libstuff\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: tests a compiled-in SQLite extension (percentile/median aggregates), not Bedrock's Query command handling; no better home exists within test/'s own subtree, and whether one exists elsewhere in the repo needs a wider view\n    suggested_home: null"
+  }
+ ],
+ "units": [
+  {
+   "unit": "BedrockBlockingCommandQueue",
+   "dir": "",
+   "files": [
+    "BedrockBlockingCommandQueue.h",
+    "BedrockBlockingCommandQueue.cpp"
+   ],
+   "lines": 354,
+   "test": false,
+   "intent": "A BedrockCommandQueue subclass, used for the blocking commit thread's queue, that adds per-identifier and per-command-name sliding-window rate limiting, rejecting commands whose key has spent too much recent time on the queue.",
+   "objects": [
+    {
+     "name": "BedrockBlockingCommandQueue",
+     "kind": "class",
+     "role": "extends BedrockCommandQueue; adds rate-limit checks to push()/_dequeue() plus configuration and status reporting"
+    },
+    {
+     "name": "BedrockBlockingCommandQueue::RecentlyFinishedCommand",
+     "kind": "struct",
+     "role": "one timed sample (finishTime, elapsedTime) in the sliding window"
+    },
+    {
+     "name": "BedrockBlockingCommandQueue::RecentlyFinishedCommandList",
+     "kind": "typedef",
+     "role": "deque<RecentlyFinishedCommand>, oldest first"
+    },
+    {
+     "name": "BedrockBlockingCommandQueue::IdentifierState",
+     "kind": "struct",
+     "role": "one tracked key's mutex, recent-sample deque, and block-until deadline"
+    },
+    {
+     "name": "BedrockBlockingCommandQueue::StateMap",
+     "kind": "struct",
+     "role": "mutex-guarded unordered_map<string, shared_ptr<IdentifierState>>; one instance each for identifiers and command names"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "IdentifierState / StateMap / _recordAndCheck / _isBlocked",
+     "why": "a generic string-keyed sliding-window rate limiter with no dependency on BedrockCommand, implemented as private nested machinery of a command-queue subclass",
+     "severity": "low",
+     "suggested_home": "libstuff, as a general-purpose rate limiter"
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "'Blocking' refers to the blocking commit thread's queue, which this class serves; the rate-limiting role isn't in the name"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits; sits beside its base class BedrockCommandQueue"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent `_` prefix on private members; Identifier vs Command dimensions named distinctly with no confusable aliasing"
+   },
+   "depends_on": [
+    "BedrockCommandQueue.h",
+    "BedrockCommand.h"
+   ],
+   "_src": "b101.json",
+   "hash": "bc0815ce37e37479"
+  },
+  {
+   "unit": "BedrockCommand",
+   "dir": "",
+   "files": [
+    "BedrockCommand.h",
+    "BedrockCommand.cpp"
+   ],
+   "lines": 879,
+   "test": false,
+   "intent": "Represents a single client command as it flows through Bedrock's prePeek/peek/process/postProcess pipeline, tracking plugin ownership, HTTPS sub-requests, per-phase timing, timeout policy, and crash-diagnostic state.",
+   "objects": [
+    {
+     "name": "BedrockCommand",
+     "kind": "class",
+     "role": "extends SQLiteCommand; the per-request unit of work with virtual peek/process hooks for plugins to override"
+    },
+    {
+     "name": "BedrockCommand::TIMING_INFO",
+     "kind": "enum",
+     "role": "phase labels for timing samples, including BLOCKING_* variants for the blocking commit thread"
+    },
+    {
+     "name": "BedrockCommand::STAGE",
+     "kind": "enum class",
+     "role": "which pipeline stage reset() is being called for"
+    },
+    {
+     "name": "BedrockCommand::GrowOnlyList<T>",
+     "kind": "nested template class",
+     "role": "append-only wrapper around list<T> (no erase); holds httpsRequests so iterators stay stable"
+    },
+    {
+     "name": "BedrockCommand::CrashMap",
+     "kind": "nested class (public map<string, SString>)",
+     "role": "subset of request name/value pairs used to fingerprint commands that may have caused a crash"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BedrockCommand::GrowOnlyList<T>",
+     "why": "a generic, command-agnostic container template with no dependency on BedrockCommand, defined inline inside it",
+     "severity": "low",
+     "suggested_home": "libstuff (as a reusable append-only-list utility)"
+    },
+    {
+     "item": "BedrockCommand::getMethodName",
+     "why": "special-cases a 'returnValueList' suffix documented in-code as a hack to support one legacy plugin format (Auth's old Get), inside the generic base command class",
+     "severity": "med",
+     "suggested_home": "the Auth plugin, or null"
+    },
+    {
+     "item": "BedrockCommand.cpp: finalizeTimingInfo",
+     "why": "a sizeable timing-metrics/logging routine (per-phase totals, upstream-value promotion, a long SINFO composition) bundled into the command class itself rather than a separate metrics helper",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "top-level, consistent with other core command-pipeline types (BedrockCore, BedrockServer)"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent `_` on non-public members; TIMING_INFO is a plain unscoped enum sitting beside STAGE, which correctly uses enum class"
+   },
+   "depends_on": [
+    "libstuff/SHTTPSManager.h",
+    "sqlitecluster/SQLiteCommand.h",
+    "BedrockPlugin.h",
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLite.h",
+    "BedrockServer.h"
+   ],
+   "_src": "b101.json",
+   "hash": "8e2d42713657f002"
+  },
+  {
+   "unit": "BedrockCommandQueue",
+   "dir": "",
+   "files": [
+    "BedrockCommandQueue.h",
+    "BedrockCommandQueue.cpp"
+   ],
+   "lines": 315,
+   "test": false,
+   "intent": "A thread-safe, time-ordered queue of BedrockCommands keyed by scheduled time and timeout, from which worker threads block-and-wait for the next command that is either already timed out or due to run.",
+   "objects": [
+    {
+     "name": "BedrockCommandQueue",
+     "kind": "class",
+     "role": "push/get/_dequeue, the timed-out-vs-scheduled ordering rule, and empty/size/clear/getAll queries"
+    },
+    {
+     "name": "BedrockCommandQueue::timeout_error",
+     "kind": "nested exception class",
+     "role": "thrown by get() when its wait window elapses with nothing available"
+    },
+    {
+     "name": "BedrockCommandQueue::ItemTimeoutPair",
+     "kind": "protected nested struct",
+     "role": "pairs a queued command with its timeout for the parallel _lookupByTimeout index"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Timeout and Scheduled are both bare uint64_t typedefs, mutually assignable with nothing at the type level stopping one being passed where the other is expected"
+   },
+   "depends_on": [
+    "BedrockCommand.h",
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b101.json",
+   "hash": "9aad786cd636a08a"
+  },
+  {
+   "unit": "BedrockConflictManager",
+   "dir": "",
+   "files": [
+    "BedrockConflictManager.h",
+    "BedrockConflictManager.cpp"
+   ],
+   "lines": 91,
+   "test": false,
+   "intent": "Thread-safe collector that tracks how often each command name touches which database tables during commit conflicts, and renders a plaintext profiling report.",
+   "objects": [
+    {
+     "name": "BedrockConflictManagerCommandInfo",
+     "kind": "class",
+     "role": "Per-command tally: a total count plus a table-name to use-count map"
+    },
+    {
+     "name": "BedrockConflictManager",
+     "kind": "class",
+     "role": "Mutex-guarded collector; recordTables() tallies one command's table touches, generateReport() renders a plaintext summary"
+    },
+    {
+     "name": "BedrockConflictManager::recordTables",
+     "kind": "method",
+     "role": "Increments a command's total and per-table use counts, skipping journal* tables and json_each"
+    },
+    {
+     "name": "BedrockConflictManager::generateReport",
+     "kind": "method",
+     "role": "Renders one text block per command with its total and per-table counts"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Exactly what it says: manages conflict statistics"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "Fits alongside BedrockServer, which is its only expected user, and ConflictLockGuard"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Private mutex `m` breaks the repo's leading-underscore convention for private members, while `_commandInfo` right below it follows it"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b102.json",
+   "hash": "4f01557f5e96b604"
+  },
+  {
+   "unit": "BedrockCore",
+   "dir": "",
+   "files": [
+    "BedrockCore.h",
+    "BedrockCore.cpp"
+   ],
+   "lines": 575,
+   "test": false,
+   "intent": "Runs a BedrockCommand's prePeek/peek/process/postProcess lifecycle against a specific SQLite db and transaction, translating thrown exceptions into HTTP-style response codes.",
+   "objects": [
+    {
+     "name": "BedrockCore",
+     "kind": "class",
+     "role": "extends SQLiteCore; executes a command's lifecycle methods against _db, handling timeouts/aborts/exceptions"
+    },
+    {
+     "name": "BedrockCore::RESULT",
+     "kind": "enum class",
+     "role": "outcome codes from peekCommand/processCommand (COMPLETE, SHOULD_PROCESS, NEEDS_COMMIT, NO_COMMIT_REQUIRED, SERVER_NOT_LEADING)"
+    },
+    {
+     "name": "BedrockCore::AutoTimer",
+     "kind": "nested RAII class",
+     "role": "records one timing entry into command->timingInfo spanning its own lifetime"
+    },
+    {
+     "name": "AutoScopeRewrite",
+     "kind": "file-local class (BedrockCore.cpp)",
+     "role": "RAII enable/disable of SQLite's query-rewrite hook for one process() call"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "AutoScopeRewrite",
+     "why": "defined at file scope in BedrockCore.cpp without `static` or an anonymous namespace, so its file-local intent relies on convention rather than being enforced",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits; sits at the repo root as the execution engine beside BedrockCommand and BedrockServer"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent; `_server` follows the `_` convention for private members"
+   },
+   "depends_on": [
+    "BedrockCommand.h",
+    "sqlitecluster/SQLiteCore.h",
+    "BedrockServer.h",
+    "BedrockPlugin.h",
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b101.json",
+   "hash": "53f0541ac29e5df3"
+  },
+  {
+   "unit": "BedrockPlugin",
+   "dir": "",
+   "files": [
+    "BedrockPlugin.h",
+    "BedrockPlugin.cpp"
+   ],
+   "lines": 212,
+   "test": false,
+   "intent": "Abstract base class defining the plugin interface a BedrockServer uses to add command handling, schema upgrades, timers, and optional dedicated network ports at runtime, plus a global registry of plugin factories.",
+   "objects": [
+    {
+     "name": "BedrockPlugin",
+     "kind": "class",
+     "role": "Abstract plugin base; holds a reference to its owning BedrockServer and declares the full lifecycle/command hook surface"
+    },
+    {
+     "name": "BedrockPlugin::MAX_SIZE_QUERY/MAX_SIZE_BLOB/MAX_SIZE_SMALL",
+     "kind": "static constants",
+     "role": "Size limits enforced so the storage engine cannot silently truncate oversized input"
+    },
+    {
+     "name": "BedrockPlugin::isValidDate",
+     "kind": "static method",
+     "role": "Regex-based date/datetime format validator"
+    },
+    {
+     "name": "BedrockPlugin::verifyAttributeInt64/verifyAttributeSize/verifyAttributeBool/verifyAttributeDate",
+     "kind": "static method group",
+     "role": "Throw a 402 on missing or malformed request attributes"
+    },
+    {
+     "name": "BedrockPlugin::getCommand",
+     "kind": "pure virtual method",
+     "role": "Factory that claims a request into a BedrockCommand or declines it by returning null"
+    },
+    {
+     "name": "BedrockPlugin::getInfo/getName/upgradeDatabase/initializeFromDB/timerFired/getPort/onPortAccept/onPortRecv/onPortRequestComplete/preventAttach/onDetach/onAttach/stateChanged/onNodeLogin/serverStopping/shouldLockCommitPageOnConflict",
+     "kind": "virtual method group",
+     "role": "Overridable lifecycle hooks a plugin implements as needed; most default to no-ops"
+    },
+    {
+     "name": "BedrockPlugin::g_registeredPluginList",
+     "kind": "static member",
+     "role": "Global map of plugin name to factory function, populated by each plugin's registration"
+    },
+    {
+     "name": "BedrockPlugin::timers",
+     "kind": "member",
+     "role": "Public set of SStopwatch pointers the plugin has registered for periodic callbacks"
+    },
+    {
+     "name": "BedrockPlugin::server/afterCommitCallback",
+     "kind": "member group",
+     "role": "Reference to the owning BedrockServer and an optional post-commit callback"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BedrockPlugin::verifyAttributeInt64/verifyAttributeSize/verifyAttributeBool/verifyAttributeDate/isValidDate",
+     "why": "Purely static helpers that operate only on an SData request with no dependency on BedrockPlugin state or the plugin lifecycle; read like generic request-validation utilities rather than plugin-system code",
+     "severity": "med",
+     "suggested_home": "libstuff/SData.h or a new shared request-validation unit"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Exactly a plugin base class"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Core plugin-system header at repo root alongside BedrockServer, matching class_hierarchy.md's Bedrock-specific layer"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent on-prefixed event callbacks and a single clearly-named global (g_registeredPluginList)"
+   },
+   "depends_on": [
+    "BedrockCommand.h",
+    "BedrockServer.h",
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b102.json",
+   "hash": "f3da86a31bf66a94"
+  },
+  {
+   "unit": "BedrockServer",
+   "dir": "",
+   "files": [
+    "BedrockServer.h",
+    "BedrockServer.cpp"
+   ],
+   "lines": 2972,
+   "test": false,
+   "intent": "The top-level per-node server object: owns the sync thread and worker thread pool, the command queues, the listening ports, the loaded plugins and DB pool, and the shutdown/detach state machine, implementing the SQLiteServer interface SQLiteNode uses to call back into it.",
+   "objects": [
+    {
+     "name": "BedrockServer",
+     "kind": "class",
+     "role": "The server: owns threads, queues, ports, plugins, and DB pool; implements SQLiteServer"
+    },
+    {
+     "name": "BedrockServer::SHUTDOWN_STATE",
+     "kind": "enum",
+     "role": "The four states of the shutdown state machine (RUNNING/START_SHUTDOWN/COMMANDS_FINISHED/DONE)"
+    },
+    {
+     "name": "BedrockServer::BedrockServerUpgradeCommand",
+     "kind": "class",
+     "role": "Nested BedrockCommand that runs every plugin's DB schema upgrade once, the first time this node stands up as leader"
+    },
+    {
+     "name": "BedrockServer::syncWrapper/sync",
+     "kind": "function group",
+     "role": "Sync thread body: brings up SQLiteNode/DB pool, starts workers, drives the poll/update loop, runs the upgrade command, drains shutdown"
+    },
+    {
+     "name": "BedrockServer::worker",
+     "kind": "function",
+     "role": "Worker thread body: dequeues from the main or blocking queue and calls runCommand in a loop"
+    },
+    {
+     "name": "BedrockServer::runCommand",
+     "kind": "function",
+     "role": "Core peek/process/commit/retry state machine for one command, including escalation and conflict-retry backoff"
+    },
+    {
+     "name": "BedrockServer::handleSocket",
+     "kind": "function",
+     "role": "Per-connection thread: polls a client socket, deserializes requests, runs each command on its own thread to watch for disconnect/abort"
+    },
+    {
+     "name": "BedrockServer::buildCommandFromRequest",
+     "kind": "function",
+     "role": "Builds a command from a raw request via the plugins, handling fire-and-forget and attached HTTPS sub-requests"
+    },
+    {
+     "name": "BedrockServer::_reply",
+     "kind": "function",
+     "role": "Sends a completed command's response back over its socket or via its owning plugin"
+    },
+    {
+     "name": "BedrockServer::_status/_isStatusCommand",
+     "kind": "function group",
+     "role": "Implements the Status/isFollower/handlingCommands/Ping status commands"
+    },
+    {
+     "name": "BedrockServer::_control/_isControlCommand/_isNonSecureControlCommand",
+     "kind": "function group",
+     "role": "Implements the localhost-only control command surface (BeginBackup, SuppressCommandPort, ClearCrashCommands, ConflictReport, Detach/Attach, EnableSQLTracing, CRASH_COMMAND, ClearBlockingQueue, SetConflictParams/SetConflictPageLocks, SetBlockingQueueTimeRateLimit, BlockWrites/UnblockWrites, SetMaxSocketThreads, SetPriority, GetCommitHash)"
+    },
+    {
+     "name": "BedrockServer::_wouldCrash/_generateCrashMessage/onNodeLogin",
+     "kind": "function group",
+     "role": "Tracks commands known to have crashed a node, refuses to rerun them, broadcasts the block list to peers"
+    },
+    {
+     "name": "BedrockServer::_beginShutdown/shutdownComplete/isShuttingDown",
+     "kind": "function group",
+     "role": "Drives the shutdown/standdown state machine documented at length in the header"
+    },
+    {
+     "name": "BedrockServer::_acceptSockets",
+     "kind": "function",
+     "role": "Accepts pending connections on all open ports and spawns a handleSocket thread per connection"
+    },
+    {
+     "name": "shutdownTimer",
+     "kind": "struct (file-local, unnamed)",
+     "role": "Four steady_clock timestamps logged once in the destructor to report shutdown-phase durations"
+    },
+    {
+     "name": "__quiesceLock/__quiesceShouldUnlock/__quiesceThread",
+     "kind": "global state (file-local)",
+     "role": "Hold the single outstanding exclusive-DB-lock thread used to implement BlockWrites/UnblockWrites"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "__quiesceLock/__quiesceShouldUnlock/__quiesceThread",
+     "why": "Plain (non-static) file-scope globals with external linkage rather than BedrockServer members, holding exactly the kind of per-server state (which thread owns the DB quiesce lock) this file otherwise keeps private; their double-leading-underscore names are also identifiers reserved to the implementation by the C++ standard",
+     "severity": "high",
+     "suggested_home": null
+    },
+    {
+     "item": "BedrockServer::commandPortSuppressionReasons",
+     "why": "Public list<string> whose doc comment references an 'instance of commandPortSuppressionCount', a type that does not exist anywhere in the repo; the member itself is never read or written anywhere, a dead vestige of an earlier refactor of suppressCommandPort",
+     "severity": "med",
+     "suggested_home": null
+    },
+    {
+     "item": "BedrockServer::_control",
+     "why": "One ~250-line function directly owns the tuning knobs of several otherwise-separate subsystems (conflict retry counts and page-lock policy, the blocking queue's rate-limit windows, DB quiesce, socket-thread caps, sync-node priority, journal hash lookup) instead of delegating each to its own subsystem",
+     "severity": "med",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "BedrockServer.h/.cpp is exactly the server class it names"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Root-level orchestrator alongside its peers (BedrockCommand, BedrockPlugin), matching class_hierarchy.md's placement of BedrockServer as SQLiteServer's concrete subclass"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Consistent `_` prefix on private members and honestly-labeled legacy aliases (isUpgradeComplete, suppressCommandPort), but the reserved double-underscore quiesce globals are a real violation"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLiteNode.h",
+    "sqlitecluster/SQLiteServer.h",
+    "sqlitecluster/SQLiteClusterMessenger.h",
+    "BedrockPlugin.h",
+    "BedrockCommandQueue.h",
+    "BedrockConflictManager.h",
+    "BedrockBlockingCommandQueue.h",
+    "BedrockCommand.h",
+    "bedrockVersion.h",
+    "BedrockCore.h",
+    "libstuff/SRandom.h",
+    "libstuff/AutoTimer.h",
+    "ConflictLockGuard.h",
+    "sqlitecluster/SQLitePeer.h"
+   ],
+   "_src": "b100.json",
+   "hash": "97f2ea0ac2f2e51c"
+  },
+  {
+   "unit": "ConflictLockGuard",
+   "dir": "",
+   "files": [
+    "ConflictLockGuard.h",
+    "ConflictLockGuard.cpp"
+   ],
+   "lines": 126,
+   "test": false,
+   "intent": "RAII scoped lock keyed by an opaque uint64_t identifier (a commit-conflict key), backed by a shared, refcounted, LRU-pruned pool of mutexes so concurrent commands only block each other when they collide on the same identifier.",
+   "objects": [
+    {
+     "name": "ConflictLockGuard",
+     "kind": "class",
+     "role": "RAII guard; constructor blocks until the mutex for its identifier is held, destructor releases it; identifier == 0 is a no-op"
+    },
+    {
+     "name": "ConflictLockGuard::controlMutex",
+     "kind": "static member",
+     "role": "Guards all access to the shared mutex-pool bookkeeping"
+    },
+    {
+     "name": "ConflictLockGuard::mutexes",
+     "kind": "static member",
+     "role": "The pool: identifier to mutex map"
+    },
+    {
+     "name": "ConflictLockGuard::mutexCounts",
+     "kind": "static member",
+     "role": "Reference counts per identifier, used to decide what's safe to prune"
+    },
+    {
+     "name": "ConflictLockGuard::mutexOrder/mutexOrderFastLookup",
+     "kind": "static member group",
+     "role": "LRU order over identifiers plus an index into it, used to prune the pool once it exceeds MAX_PAGE_MUTEXES"
+    },
+    {
+     "name": "ConflictLockGuard::_identifier",
+     "kind": "member",
+     "role": "The identifier this instance locked, or 0 for a no-op guard"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 4,
+    "note": "Accurately a lock guard, though it locks on an arbitrary identifier, not specifically a 'conflict' per se"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "Fits alongside BedrockConflictManager and BedrockServer, which is its only caller"
+   },
+   "naming_quality": {
+    "score": 2,
+    "note": "Private static members (controlMutex, mutexes, mutexCounts, mutexOrder, mutexOrderFastLookup) lack the repo's leading-underscore convention that _identifier follows; the constant MAX_PAGE_MUTEXES and its comments call the keyed value a 'page' though the class and its only caller call it a 'conflict key'"
+   },
+   "depends_on": [],
+   "_src": "b102.json",
+   "hash": "d0cafeb3080d06d3"
+  },
+  {
+   "unit": "VMTouch",
+   "dir": "",
+   "files": [
+    "VMTouch.h",
+    "VMTouch.cpp"
+   ],
+   "lines": 232,
+   "test": false,
+   "intent": "Static-only utility that inspects, and optionally force-touches, how much of a file is resident in the OS page cache, used to pre-warm a database file into memory; adapted from Doug Hoyte's third-party VMTouch tool.",
+   "objects": [
+    {
+     "name": "VMTouch",
+     "kind": "class",
+     "role": "Static-only class; check() reports and optionally forces page-cache residency for a file path"
+    },
+    {
+     "name": "VMTouch::check",
+     "kind": "static method",
+     "role": "Open/mmap/mincore/touch/report pipeline for one path, optionally touching pages in parallel across worker threads"
+    },
+    {
+     "name": "VMTouch::bytes2pages",
+     "kind": "static method",
+     "role": "Rounds a byte length up to a page count"
+    },
+    {
+     "name": "VMTouch::isPageAligned",
+     "kind": "static method",
+     "role": "Checks a pointer's alignment against the system page size"
+    },
+    {
+     "name": "VMTouch::is_mincore_page_resident",
+     "kind": "static method",
+     "role": "Tests the residency bit of one mincore() output byte"
+    },
+    {
+     "name": "VMTouch::do_nothing",
+     "kind": "static method",
+     "role": "No-op sink used only to keep a per-thread counter variable read as used"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "VMTouch (whole unit)",
+     "why": "A generic, Bedrock-agnostic OS/filesystem utility living at the repo root rather than under libstuff with the rest of the reusable helpers",
+     "severity": "low",
+     "suggested_home": "libstuff/VMTouch.h or libstuff/VMTouch.cpp"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Name matches the upstream tool it's adapted from and its contents"
+   },
+   "location_fit": {
+    "score": 3,
+    "note": "Standalone at repo root instead of libstuff, where similarly generic helpers live"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Mixes camelCase (isPageAligned, bytes2pages) with snake_case (is_mincore_page_resident, do_nothing)"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b102.json",
+   "hash": "717c4521066fec8c"
+  },
+  {
+   "unit": "bedrockVersion",
+   "dir": "",
+   "files": [
+    "bedrockVersion.h"
+   ],
+   "lines": 12,
+   "test": false,
+   "intent": "Defines the VERSION macro reporting the running build's git revision (from GIT_REVISION, passed in by the Makefile), or a placeholder if none was supplied.",
+   "objects": [
+    {
+     "name": "VERSION",
+     "kind": "macro",
+     "role": "Build-revision string, consumed by main.cpp (--version) and BedrockServer's _version field"
+    },
+    {
+     "name": "STRINGIZE/EXPAND_STRING",
+     "kind": "macro group",
+     "role": "Private stringizing helpers used only to expand GIT_REVISION into VERSION"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "A Bedrock-specific version macro, named accordingly"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "Small config-style header at repo root alongside its consumers (main.cpp, BedrockServer.cpp)"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Name and purpose closely shadow version.h's SVERSION, inviting confusion between a live macro (VERSION) and an apparently dead one (SVERSION)"
+   },
+   "depends_on": [],
+   "_src": "b102.json",
+   "hash": "e7bd86b4a93189e8"
+  },
+  {
+   "unit": "main",
+   "dir": "",
+   "files": [
+    "main.cpp"
+   ],
+   "lines": 457,
+   "test": false,
+   "intent": "Process entry point for the Bedrock server binary: parses arguments, applies defaults, handles one-shot maintenance flags, loads plugins, initializes SQLite/SSL/signal handling, and runs the main poll loop.",
+   "objects": [
+    {
+     "name": "main",
+     "kind": "function",
+     "role": "entry point; startup/shutdown sequencing and the main prePoll/poll/postPoll loop"
+    },
+    {
+     "name": "RetrySystem",
+     "kind": "function",
+     "role": "runs a shell command via system(), retrying up to 3 times with a 5s backoff, fatal SERROR if it never succeeds"
+    },
+    {
+     "name": "VacuumDB",
+     "kind": "function",
+     "role": "shells out to `sqlite3 <db> 'VACUUM;'` via RetrySystem"
+    },
+    {
+     "name": "BackupDB",
+     "kind": "function",
+     "role": "copies the db file plus its -wal/-shm sidecars into BACKUP_DIR"
+    },
+    {
+     "name": "loadPlugins",
+     "kind": "function",
+     "role": "registers built-in plugins by name and dlopen/dlsym's any plugin named in -plugins that isn't built in"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "VacuumDB / BackupDB / BACKUP_DIR",
+     "why": "shell out to the external `sqlite3` binary and hardcode a `/var/tmp/` backup path inside the process entry point; BACKUP_DIR is the only path in this file not configurable via args like everything else here",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "loadPlugins",
+     "why": "a self-contained dlopen/dlsym plugin-registration subsystem implemented as a free function in main.cpp",
+     "severity": "med",
+     "suggested_home": "BedrockPlugin.h/.cpp"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "RetrySystem/VacuumDB/BackupDB use PascalCase while loadPlugins uses camelCase, for free functions at the same file scope"
+   },
+   "depends_on": [
+    "BedrockServer.h",
+    "BedrockPlugin.h",
+    "plugins/Cache.h",
+    "plugins/DB.h",
+    "plugins/Jobs.h",
+    "plugins/MySQL.h",
+    "plugins/Compression.h",
+    "libstuff/libstuff.h",
+    "libstuff/SSSLState.h",
+    "sqlitecluster/SQLite.h",
+    "VMTouch.h"
+   ],
+   "_src": "b101.json",
+   "hash": "c3f81ed420e8bbba"
+  },
+  {
+   "unit": "version",
+   "dir": "",
+   "files": [
+    "version.h"
+   ],
+   "lines": 4,
+   "test": false,
+   "intent": "Defines a fallback SVERSION macro (a placeholder 40-character hash); unlike bedrockVersion.h's VERSION, this macro is not referenced by any other file in the repo.",
+   "objects": [
+    {
+     "name": "SVERSION",
+     "kind": "macro",
+     "role": "Placeholder all-zero revision-string macro"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "version.h (whole file / SVERSION)",
+     "why": "SVERSION is never included or referenced anywhere else in the repo (only bedrockVersion.h's differently-named VERSION is actually used); appears to be dead code superseded by bedrockVersion.h",
+     "severity": "med",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 2,
+    "note": "Generic name collides conceptually with bedrockVersion.h's VERSION; having both invites picking the wrong one"
+   },
+   "location_fit": {
+    "score": 2,
+    "note": "Sits at repo root as if in active use, but appears to be an unreferenced leftover"
+   },
+   "naming_quality": {
+    "score": 2,
+    "note": "Carries the repo's `S` shared-utility prefix though it's an unused macro, not a libstuff type"
+   },
+   "depends_on": [],
+   "_src": "b102.json",
+   "hash": "6fc4f14586cda5ad"
+  }
+ ],
+ "clusters": []
+}
