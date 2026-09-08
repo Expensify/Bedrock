@@ -1,3 +1,25 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLiteCommand.cpp
+ * Path:    sqlitecluster/SQLiteCommand.cpp
+ * Pair:    SQLiteCommand.h
+ *
+ * INTENT
+ *   Implementation; see the header for the class's purpose.
+ *
+ * OBJECTS
+ *   All symbols are declared in the header; this file implements
+ *   preprocessRequest, both constructors, the move constructor, and the
+ *   move-assignment operator.
+ *
+ * OUT OF PLACE
+ *   Nothing beyond what is already noted in the header.
+ *
+ * NAME/LOCATION FIT
+ *   Fits its header.
+ *
+ * NAMING QUALITY
+ *   Same `privateRequest` naming noted in the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "SQLiteCommand.h"
 
 #include <libstuff/libstuff.h>

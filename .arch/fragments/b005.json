@@ -2,208 +2,509 @@
  {
   "unit": "SHTTPSManager",
   "dir": "libstuff",
-  "files": ["libstuff/SHTTPSManager.h", "libstuff/SHTTPSManager.cpp"],
+  "files": [
+   "libstuff/SHTTPSManager.h",
+   "libstuff/SHTTPSManager.cpp"
+  ],
   "lines": 341,
   "test": false,
   "intent": "Non-blocking base classes for making outbound HTTPS/HTTP requests driven from a poll() loop, tracking each as a Transaction with its own socket, timing, and response.",
   "objects": [
-    {"name": "SStandaloneHTTPSManager", "kind": "class", "role": "owns STCPManager sockets and drives Transactions through prePoll/postPoll; usable with no Bedrock plugin"},
-    {"name": "SStandaloneHTTPSManager::Transaction", "kind": "struct", "role": "one outbound request/response: socket, full request/response SData, timestamps, response code, scheduled start"},
-    {"name": "SHTTPSManager", "kind": "class", "role": "SStandaloneHTTPSManager bound to an owning BedrockPlugin"},
-    {"name": "SStandaloneHTTPSManager::initProxyAddressHTTPS", "kind": "static method", "role": "reads HTTPS_PROXY env var once to initialize proxyAddressHTTPS"}
+   {
+    "name": "SStandaloneHTTPSManager",
+    "kind": "class",
+    "role": "owns STCPManager sockets and drives Transactions through prePoll/postPoll; usable with no Bedrock plugin"
+   },
+   {
+    "name": "SStandaloneHTTPSManager::Transaction",
+    "kind": "struct",
+    "role": "one outbound request/response: socket, full request/response SData, timestamps, response code, scheduled start"
+   },
+   {
+    "name": "SHTTPSManager",
+    "kind": "class",
+    "role": "SStandaloneHTTPSManager bound to an owning BedrockPlugin"
+   },
+   {
+    "name": "SStandaloneHTTPSManager::initProxyAddressHTTPS",
+    "kind": "static method",
+    "role": "reads HTTPS_PROXY env var once to initialize proxyAddressHTTPS"
+   }
   ],
   "misfits": [
-    {"item": "SHTTPSManager.cpp: #include <BedrockServer.h>, #include <sqlitecluster/SQLiteNode.h>", "why": "neither BedrockServer:: nor SQLiteNode:: is referenced anywhere in the file; unused includes coupling libstuff to the application/clustering layers", "severity": "low", "suggested_home": null},
-    {"item": "SHTTPSManager (class)", "why": "exists only to attach a BedrockPlugin& to the manager, so libstuff depends on BedrockPlugin.h - inverts the expected dependency direction", "severity": "med", "suggested_home": "near BedrockPlugin, or keep in libstuff but move the BedrockPlugin coupling into a thinner adapter"},
-    {"item": "SStandaloneHTTPSManager::Transaction::Transaction throwing on isBlockingCommitThread", "why": "encodes a Bedrock-specific execution-model rule inside an otherwise generic transaction constructor", "severity": "low", "suggested_home": null}
+   {
+    "item": "SHTTPSManager.cpp: #include <BedrockServer.h>, #include <sqlitecluster/SQLiteNode.h>",
+    "why": "neither BedrockServer:: nor SQLiteNode:: is referenced anywhere in the file; unused includes coupling libstuff to the application/clustering layers",
+    "severity": "low",
+    "suggested_home": null
+   },
+   {
+    "item": "SHTTPSManager (class)",
+    "why": "exists only to attach a BedrockPlugin& to the manager, so libstuff depends on BedrockPlugin.h - inverts the expected dependency direction",
+    "severity": "med",
+    "suggested_home": "near BedrockPlugin, or keep in libstuff but move the BedrockPlugin coupling into a thinner adapter"
+   },
+   {
+    "item": "SStandaloneHTTPSManager::Transaction::Transaction throwing on isBlockingCommitThread",
+    "why": "encodes a Bedrock-specific execution-model rule inside an otherwise generic transaction constructor",
+    "severity": "low",
+    "suggested_home": null
+   }
   ],
-  "name_fit": {"score": 4, "note": "SStandaloneHTTPSManager fits well; SHTTPSManager less so given its BedrockPlugin dependency"},
-  "location_fit": {"score": 3, "note": "SStandaloneHTTPSManager is a natural libstuff networking type; SHTTPSManager pulls in Bedrock application headers"},
-  "naming_quality": {"score": 4, "note": "consistent; SHTTPSManager's protected `plugin` lacks the `_` prefix used by SStandaloneHTTPSManager's protected members"},
-  "depends_on": ["libstuff/SData.h", "libstuff/STCPManager.h", "libstuff/SHTTPSProxySocket.h", "libstuff/libstuff.h", "BedrockPlugin.h", "BedrockServer.h", "sqlitecluster/SQLiteNode.h"]
+  "name_fit": {
+   "score": 4,
+   "note": "SStandaloneHTTPSManager fits well; SHTTPSManager less so given its BedrockPlugin dependency"
+  },
+  "location_fit": {
+   "score": 3,
+   "note": "SStandaloneHTTPSManager is a natural libstuff networking type; SHTTPSManager pulls in Bedrock application headers"
+  },
+  "naming_quality": {
+   "score": 4,
+   "note": "consistent; SHTTPSManager's protected `plugin` lacks the `_` prefix used by SStandaloneHTTPSManager's protected members"
+  },
+  "depends_on": [
+   "libstuff/SData.h",
+   "libstuff/STCPManager.h",
+   "libstuff/SHTTPSProxySocket.h",
+   "libstuff/libstuff.h",
+   "BedrockPlugin.h",
+   "BedrockServer.h",
+   "sqlitecluster/SQLiteNode.h"
+  ]
  },
  {
   "unit": "SSignal",
   "dir": "libstuff",
-  "files": ["libstuff/SSignal.cpp"],
+  "files": [
+   "libstuff/SSignal.cpp"
+  ],
   "lines": 307,
   "test": false,
   "intent": "Installs process-wide POSIX signal handling: crash signals get a best-effort stack trace logged/written to disk before abort(), and other signals are recorded in a bitmask that can optionally wake a poll loop.",
   "objects": [
-    {"name": "SSetSignalHandlerDieFunc", "kind": "function", "role": "installs the callback run just before a crash-signal abort to produce a final log line"},
-    {"name": "STerminationSignalCount", "kind": "function", "role": "count of SIGTERM/SIGINT seen so far"},
-    {"name": "SCheckSignal", "kind": "function", "role": "peek one bit of the pending signal bitmask"},
-    {"name": "SGetSignal", "kind": "function", "role": "peek-and-clear one bit of the pending signal bitmask"},
-    {"name": "SGetSignals", "kind": "function", "role": "read the whole pending signal bitmask"},
-    {"name": "SGetSignalDescription", "kind": "function", "role": "human-readable list of pending signal names"},
-    {"name": "SClearSignals", "kind": "function", "role": "reset the pending signal bitmask"},
-    {"name": "SInitializeSignals", "kind": "function", "role": "installs sigaction handlers and starts the background signal-handling thread"},
-    {"name": "SStopSignalThread", "kind": "function", "role": "stops and joins the signal-handling thread"},
-    {"name": "SSIGNAL_NOTIFY_INTERRUPT", "kind": "extern void*", "role": "optional pointer to an SSynchronizedQueue<bool>, pushed to on any signal"},
-    {"name": "SSignalHandlerDieFunc", "kind": "thread_local function<string()>", "role": "the die-func called on crash"},
-    {"name": "_SSignal_signalHandlerThreadFunc", "kind": "file-local function", "role": "background thread body: sigtimedwait loop dispatching signals"},
-    {"name": "_SSignal_StackTrace", "kind": "file-local function", "role": "crash-signal handler: builds/demangles/logs backtrace, writes crash file, calls die-func, aborts"},
-    {"name": "__SIGSTACK / sigStackSize", "kind": "file-local statics", "role": "64kb emergency altstack for signal delivery"}
+   {
+    "name": "SSetSignalHandlerDieFunc",
+    "kind": "function",
+    "role": "installs the callback run just before a crash-signal abort to produce a final log line"
+   },
+   {
+    "name": "STerminationSignalCount",
+    "kind": "function",
+    "role": "count of SIGTERM/SIGINT seen so far"
+   },
+   {
+    "name": "SCheckSignal",
+    "kind": "function",
+    "role": "peek one bit of the pending signal bitmask"
+   },
+   {
+    "name": "SGetSignal",
+    "kind": "function",
+    "role": "peek-and-clear one bit of the pending signal bitmask"
+   },
+   {
+    "name": "SGetSignals",
+    "kind": "function",
+    "role": "read the whole pending signal bitmask"
+   },
+   {
+    "name": "SGetSignalDescription",
+    "kind": "function",
+    "role": "human-readable list of pending signal names"
+   },
+   {
+    "name": "SClearSignals",
+    "kind": "function",
+    "role": "reset the pending signal bitmask"
+   },
+   {
+    "name": "SInitializeSignals",
+    "kind": "function",
+    "role": "installs sigaction handlers and starts the background signal-handling thread"
+   },
+   {
+    "name": "SStopSignalThread",
+    "kind": "function",
+    "role": "stops and joins the signal-handling thread"
+   },
+   {
+    "name": "SSIGNAL_NOTIFY_INTERRUPT",
+    "kind": "extern void*",
+    "role": "optional pointer to an SSynchronizedQueue<bool>, pushed to on any signal"
+   },
+   {
+    "name": "SSignalHandlerDieFunc",
+    "kind": "thread_local function<string()>",
+    "role": "the die-func called on crash"
+   },
+   {
+    "name": "_SSignal_signalHandlerThreadFunc",
+    "kind": "file-local function",
+    "role": "background thread body: sigtimedwait loop dispatching signals"
+   },
+   {
+    "name": "_SSignal_StackTrace",
+    "kind": "file-local function",
+    "role": "crash-signal handler: builds/demangles/logs backtrace, writes crash file, calls die-func, aborts"
+   },
+   {
+    "name": "__SIGSTACK / sigStackSize",
+    "kind": "file-local statics",
+    "role": "64kb emergency altstack for signal delivery"
+   }
   ],
   "misfits": [
-    {"item": "_SSignal_StackTrace: SQLiteNode::KILLABLE_SQLITE_NODE->kill()", "why": "a generic libstuff crash handler directly reaching into the sqlitecluster layer to kill peer connections on crash", "severity": "med", "suggested_home": null},
-    {"item": "hardcoded \"/tmp/bedrock_crash_{}.log\" path", "why": "bakes a product-specific filename into an otherwise general-purpose signal handler", "severity": "low", "suggested_home": null},
-    {"item": "no SSignal.h", "why": "the whole public API is declared in libstuff.h instead of a dedicated header, unlike most libstuff pairs", "severity": "low", "suggested_home": null}
+   {
+    "item": "_SSignal_StackTrace: SQLiteNode::KILLABLE_SQLITE_NODE->kill()",
+    "why": "a generic libstuff crash handler directly reaching into the sqlitecluster layer to kill peer connections on crash",
+    "severity": "med",
+    "suggested_home": null
+   },
+   {
+    "item": "hardcoded \"/tmp/bedrock_crash_{}.log\" path",
+    "why": "bakes a product-specific filename into an otherwise general-purpose signal handler",
+    "severity": "low",
+    "suggested_home": null
+   },
+   {
+    "item": "no SSignal.h",
+    "why": "the whole public API is declared in libstuff.h instead of a dedicated header, unlike most libstuff pairs",
+    "severity": "low",
+    "suggested_home": null
+   }
   ],
-  "name_fit": {"score": 4, "note": "does exactly what the name implies"},
-  "location_fit": {"score": 3, "note": "declarations live in libstuff.h rather than an SSignal.h; also entangled with sqlitecluster via KILLABLE_SQLITE_NODE"},
-  "naming_quality": {"score": 3, "note": "internal helpers consistently _SSignal_-prefixed; SSIGNAL_NOTIFY_INTERRUPT is an untyped void* though always cast to SSynchronizedQueue<bool>*"},
-  "depends_on": ["libstuff/libstuff.h", "libstuff/SSynchronizedQueue.h", "sqlitecluster/SQLiteNode.h"]
+  "name_fit": {
+   "score": 4,
+   "note": "does exactly what the name implies"
+  },
+  "location_fit": {
+   "score": 3,
+   "note": "declarations live in libstuff.h rather than an SSignal.h; also entangled with sqlitecluster via KILLABLE_SQLITE_NODE"
+  },
+  "naming_quality": {
+   "score": 3,
+   "note": "internal helpers consistently _SSignal_-prefixed; SSIGNAL_NOTIFY_INTERRUPT is an untyped void* though always cast to SSynchronizedQueue<bool>*"
+  },
+  "depends_on": [
+   "libstuff/libstuff.h",
+   "libstuff/SSynchronizedQueue.h",
+   "sqlitecluster/SQLiteNode.h"
+  ]
  },
  {
   "unit": "SData",
   "dir": "libstuff",
-  "files": ["libstuff/SData.h", "libstuff/SData.cpp"],
+  "files": [
+   "libstuff/SData.h",
+   "libstuff/SData.cpp"
+  ],
   "lines": 283,
   "test": false,
   "intent": "A generic HTTP-like message (method line, name/value header table, content body) used both for real HTTP and as Bedrock's internal command/message wire format.",
   "objects": [
-    {"name": "SData", "kind": "struct", "role": "methodLine/nameValueMap/content; map-like accessors; calc/test helpers; getVerb; serialize/deserialize to HTTP wire format"},
-    {"name": "operator<<(ostream&, const SData&)", "kind": "free function", "role": "stream helper, serializes"}
+   {
+    "name": "SData",
+    "kind": "struct",
+    "role": "methodLine/nameValueMap/content; map-like accessors; calc/test helpers; getVerb; serialize/deserialize to HTTP wire format"
+   },
+   {
+    "name": "operator<<(ostream&, const SData&)",
+    "kind": "free function",
+    "role": "stream helper, serializes"
+   }
   ],
   "misfits": [
-    {"item": "SData::deserialize simdjson padding logic", "why": "unconditionally reserves 32 extra bytes on any JSON-looking header value to satisfy simdjson's trailing-scratch-space requirement; a generic HTTP message container shaping its storage to one downstream JSON parser's needs", "severity": "low", "suggested_home": "wherever the simdjson parsing of these values actually happens"},
-    {"item": "SData::create", "why": "marked **DEPRECATED** in favor of the constructor but still present as public API", "severity": "low", "suggested_home": null}
+   {
+    "item": "SData::deserialize simdjson padding logic",
+    "why": "unconditionally reserves 32 extra bytes on any JSON-looking header value to satisfy simdjson's trailing-scratch-space requirement; a generic HTTP message container shaping its storage to one downstream JSON parser's needs",
+    "severity": "low",
+    "suggested_home": "wherever the simdjson parsing of these values actually happens"
+   },
+   {
+    "item": "SData::create",
+    "why": "marked **DEPRECATED** in favor of the constructor but still present as public API",
+    "severity": "low",
+    "suggested_home": null
+   }
   ],
-  "name_fit": {"score": 5, "note": "fits"},
-  "location_fit": {"score": 5, "note": "fits; sits naturally beside SFastBuffer/STable"},
-  "naming_quality": {"score": 4, "note": "consistent with repo convention"},
-  "depends_on": ["libstuff/libstuff.h", "libstuff/SFastBuffer.h"]
+  "name_fit": {
+   "score": 5,
+   "note": "fits"
+  },
+  "location_fit": {
+   "score": 5,
+   "note": "fits; sits naturally beside SFastBuffer/STable"
+  },
+  "naming_quality": {
+   "score": 4,
+   "note": "consistent with repo convention"
+  },
+  "depends_on": [
+   "libstuff/libstuff.h",
+   "libstuff/SFastBuffer.h"
+  ]
  },
  {
   "unit": "SDeburr",
   "dir": "libstuff",
-  "files": ["libstuff/SDeburr.h", "libstuff/SDeburr.cpp"],
+  "files": [
+   "libstuff/SDeburr.h",
+   "libstuff/SDeburr.cpp"
+  ],
   "lines": 277,
   "test": false,
   "intent": "Converts accented Unicode text to a lowercased ASCII-only approximation (lodash-style deburr) for search normalization, and exposes the same transform as a SQLite UDF.",
   "objects": [
-    {"name": "SDeburr::deburr(const unsigned char*)", "kind": "static method", "role": "public transform, hand-rolled UTF-8 decode"},
-    {"name": "SDeburr::deburr(const string&)", "kind": "static method", "role": "string overload"},
-    {"name": "SDeburr::registerSQLite", "kind": "static method", "role": "registers the DEBURR(text) SQLite UDF"},
-    {"name": "SDeburr::unicodeToAscii", "kind": "private static method", "role": "per-codepoint lookup into UNICODE_TO_ASCII_MAP"},
-    {"name": "SDeburr::UNICODE_TO_ASCII_MAP", "kind": "private constexpr array", "role": "Latin-1/Latin Extended-A codepoint-to-ASCII table"},
-    {"name": "sqliteDeburr", "kind": "file-local lambda (in registerSQLite)", "role": "the actual sqlite3_create_function_v2 callback"}
+   {
+    "name": "SDeburr::deburr(const unsigned char*)",
+    "kind": "static method",
+    "role": "public transform, hand-rolled UTF-8 decode"
+   },
+   {
+    "name": "SDeburr::deburr(const string&)",
+    "kind": "static method",
+    "role": "string overload"
+   },
+   {
+    "name": "SDeburr::registerSQLite",
+    "kind": "static method",
+    "role": "registers the DEBURR(text) SQLite UDF"
+   },
+   {
+    "name": "SDeburr::unicodeToAscii",
+    "kind": "private static method",
+    "role": "per-codepoint lookup into UNICODE_TO_ASCII_MAP"
+   },
+   {
+    "name": "SDeburr::UNICODE_TO_ASCII_MAP",
+    "kind": "private constexpr array",
+    "role": "Latin-1/Latin Extended-A codepoint-to-ASCII table"
+   },
+   {
+    "name": "sqliteDeburr",
+    "kind": "file-local lambda (in registerSQLite)",
+    "role": "the actual sqlite3_create_function_v2 callback"
+   }
   ],
   "misfits": [],
-  "name_fit": {"score": 5, "note": "fits"},
-  "location_fit": {"score": 5, "note": "fits"},
-  "naming_quality": {"score": 4, "note": "consistent; minor param-name mismatch (input vs inputBytes) between header and .cpp"},
-  "depends_on": ["libstuff/libstuff.h", "libstuff/sqlite3.h"]
+  "name_fit": {
+   "score": 5,
+   "note": "fits"
+  },
+  "location_fit": {
+   "score": 5,
+   "note": "fits"
+  },
+  "naming_quality": {
+   "score": 4,
+   "note": "consistent; minor param-name mismatch (input vs inputBytes) between header and .cpp"
+  },
+  "depends_on": [
+   "libstuff/libstuff.h",
+   "libstuff/sqlite3.h"
+  ]
  },
  {
   "unit": "SSSLState",
   "dir": "libstuff",
-  "files": ["libstuff/SSSLState.h", "libstuff/SSSLState.cpp"],
+  "files": [
+   "libstuff/SSSLState.h",
+   "libstuff/SSSLState.cpp"
+  ],
   "lines": 269,
   "test": false,
   "intent": "Thin wrapper around mbedTLS providing per-connection TLS handshake and send/recv over a raw socket fd, plus process-wide mbedTLS setup shared across all connections.",
   "objects": [
-    {"name": "SSSLState", "kind": "class", "role": "ssl/net_ctx per-connection state; initConfig/freeConfig for shared process-wide mbedTLS state; send/recv/sendConsume/recvAppend"}
+   {
+    "name": "SSSLState",
+    "kind": "class",
+    "role": "ssl/net_ctx per-connection state; initConfig/freeConfig for shared process-wide mbedTLS state; send/recv/sendConsume/recvAppend"
+   }
   ],
   "misfits": [],
-  "name_fit": {"score": 5, "note": "fits"},
-  "location_fit": {"score": 5, "note": "natural peer of STCPManager/SHTTPSProxySocket"},
-  "naming_quality": {"score": 5, "note": "consistent with repo convention"},
-  "depends_on": ["libstuff/libstuff.h", "libstuff/SFastBuffer.h"]
+  "name_fit": {
+   "score": 5,
+   "note": "fits"
+  },
+  "location_fit": {
+   "score": 5,
+   "note": "natural peer of STCPManager/SHTTPSProxySocket"
+  },
+  "naming_quality": {
+   "score": 5,
+   "note": "consistent with repo convention"
+  },
+  "depends_on": [
+   "libstuff/libstuff.h",
+   "libstuff/SFastBuffer.h"
+  ]
  },
  {
   "unit": "SQValue",
   "dir": "libstuff",
-  "files": ["libstuff/SQValue.h", "libstuff/SQValue.cpp"],
+  "files": [
+   "libstuff/SQValue.h",
+   "libstuff/SQValue.cpp"
+  ],
   "lines": 230,
   "test": false,
   "intent": "A tagged-value type mirroring SQLite's dynamic column typing (NONE/INTEGER/REAL/TEXT/BLOB), implicitly convertible to/from string for drop-in use wherever legacy code expects a string-typed value.",
   "objects": [
-    {"name": "SQValue", "kind": "class", "role": "TYPE enum + typed storage; constructors from int64_t/double/const char*/string; operator string(); friend operator+/==/!=; empty()/size(); operator<<"},
-    {"name": "SQValue::TYPE", "kind": "enum class", "role": "NONE/INTEGER/REAL/TEXT/BLOB"}
+   {
+    "name": "SQValue",
+    "kind": "class",
+    "role": "TYPE enum + typed storage; constructors from int64_t/double/const char*/string; operator string(); friend operator+/==/!=; empty()/size(); operator<<"
+   },
+   {
+    "name": "SQValue::TYPE",
+    "kind": "enum class",
+    "role": "NONE/INTEGER/REAL/TEXT/BLOB"
+   }
   ],
   "misfits": [],
-  "name_fit": {"score": 5, "note": "Q naming matches other SQLite-adjacent types (SQResult, SQuery)"},
-  "location_fit": {"score": 5, "note": "fits"},
-  "naming_quality": {"score": 4, "note": "consistent; integer/real/text all coexist rather than a union, a deliberate simplicity tradeoff"},
-  "depends_on": ["libstuff/sqlite3.h"]
- },
- {
-  "unit": "qrf",
-  "dir": "libstuff",
-  "files": ["libstuff/qrf.h"],
-  "lines": 200,
-  "test": false,
-  "intent": "Public C API (adapted from SQLite's own shell-tool formatter) configuring how a query result set is rendered - style, quoting, escaping, alignment, widths - and the entry point that renders a prepared statement's output accordingly.",
-  "objects": [
-    {"name": "sqlite3_qrf_spec", "kind": "typedef'd struct", "role": "full rendering configuration: style, escape/quoting modes, alignment, width/line/char limits, render/write callbacks"},
-    {"name": "sqlite3_format_query_result", "kind": "function", "role": "renders a prepared statement's results per a spec"},
-    {"name": "sqlite3_qrf_wcwidth", "kind": "function", "role": "estimated display width of one Unicode character"},
-    {"name": "sqlite3_qrf_wcswidth", "kind": "function", "role": "estimated display width of a string"},
-    {"name": "QRF_* macros", "kind": "macro group", "role": "style/quoting/escape/alignment enums and width limits"}
-  ],
-  "misfits": [
-    {"item": "entire file's naming convention", "why": "adapted third-party SQLite-shell code using sqlite3_/QRF_-prefixed C API rather than the repo's S-prefixed C++ convention; presumably deliberate to stay mergeable with upstream, but worth flagging so it isn't 'fixed' unknowingly", "severity": "low", "suggested_home": null},
-    {"item": "doc comment reference to resfmt.md", "why": "the paired qrf.c instead references qrf.md; neither file exists in the repo - a dangling/inconsistent doc pointer", "severity": "low", "suggested_home": null}
-  ],
-  "name_fit": {"score": 5, "note": "name fits content"},
-  "location_fit": {"score": 4, "note": "fits its actual use by libstuff.cpp's SQuery() and plugins/DB.cpp"},
-  "naming_quality": {"score": 3, "note": "internally consistent but deliberately off-convention for the rest of the repo (vendored code)"},
-  "depends_on": ["libstuff/sqlite3.h"]
+  "name_fit": {
+   "score": 5,
+   "note": "Q naming matches other SQLite-adjacent types (SQResult, SQuery)"
+  },
+  "location_fit": {
+   "score": 5,
+   "note": "fits"
+  },
+  "naming_quality": {
+   "score": 4,
+   "note": "consistent; integer/real/text all coexist rather than a union, a deliberate simplicity tradeoff"
+  },
+  "depends_on": [
+   "libstuff/sqlite3.h"
+  ]
  },
  {
   "unit": "SFastBuffer",
   "dir": "libstuff",
-  "files": ["libstuff/SFastBuffer.h", "libstuff/SFastBuffer.cpp"],
+  "files": [
+   "libstuff/SFastBuffer.h",
+   "libstuff/SFastBuffer.cpp"
+  ],
   "lines": 180,
   "test": false,
   "intent": "An append-friendly byte buffer that avoids repeated reallocation/erase on the front by tracking a front offset, used as socket send/recv buffers polled incrementally.",
   "objects": [
-    {"name": "SFastBuffer", "kind": "class", "role": "front/data storage; empty/size/c_str/clear/consumeFront/append/operator+=/=; startsWithHTTPRequest incremental HTTP-terminator scan"},
-    {"name": "operator<<(ostream&, const SFastBuffer&)", "kind": "free function", "role": "stream helper"}
+   {
+    "name": "SFastBuffer",
+    "kind": "class",
+    "role": "front/data storage; empty/size/c_str/clear/consumeFront/append/operator+=/=; startsWithHTTPRequest incremental HTTP-terminator scan"
+   },
+   {
+    "name": "operator<<(ostream&, const SFastBuffer&)",
+    "kind": "free function",
+    "role": "stream helper"
+   }
   ],
   "misfits": [
-    {"item": "SFastBuffer::startsWithHTTPRequest and its nextToCheck/headerLength state", "why": "bakes HTTP-specific framing (\\r\\n\\r\\n / \\n\\n terminator) knowledge into an otherwise protocol-agnostic buffer type", "severity": "low", "suggested_home": "a small HTTP-framing helper layered on top of SFastBuffer, rather than inside it"},
-    {"item": "SFastBuffer::contentLength (private member)", "why": "reset to 0 in four places but never read or set to any other value anywhere in the file - dead/vestigial field", "severity": "low", "suggested_home": null}
+   {
+    "item": "SFastBuffer::startsWithHTTPRequest and its nextToCheck/headerLength state",
+    "why": "bakes HTTP-specific framing (\\r\\n\\r\\n / \\n\\n terminator) knowledge into an otherwise protocol-agnostic buffer type",
+    "severity": "low",
+    "suggested_home": "a small HTTP-framing helper layered on top of SFastBuffer, rather than inside it"
+   },
+   {
+    "item": "SFastBuffer::contentLength (private member)",
+    "why": "reset to 0 in four places but never read or set to any other value anywhere in the file - dead/vestigial field",
+    "severity": "low",
+    "suggested_home": null
+   }
   ],
-  "name_fit": {"score": 4, "note": "fits, slightly undercut by the HTTP-specific method"},
-  "location_fit": {"score": 5, "note": "fits"},
-  "naming_quality": {"score": 4, "note": "consistent aside from the dead contentLength field"},
+  "name_fit": {
+   "score": 4,
+   "note": "fits, slightly undercut by the HTTP-specific method"
+  },
+  "location_fit": {
+   "score": 5,
+   "note": "fits"
+  },
+  "naming_quality": {
+   "score": 4,
+   "note": "consistent aside from the dead contentLength field"
+  },
   "depends_on": []
  },
  {
   "unit": "SHTTPSProxySocket",
   "dir": "libstuff",
-  "files": ["libstuff/SHTTPSProxySocket.h", "libstuff/SHTTPSProxySocket.cpp"],
+  "files": [
+   "libstuff/SHTTPSProxySocket.h",
+   "libstuff/SHTTPSProxySocket.cpp"
+  ],
   "lines": 176,
   "test": false,
   "intent": "An STCPManager::Socket that negotiates an HTTP CONNECT tunnel through an HTTPS forward proxy, then switches to a normal TLS connection to the real destination once the tunnel is established.",
   "objects": [
-    {"name": "SHTTPSProxySocket", "kind": "class (extends STCPManager::Socket)", "role": "proxyAddress/hostname/requestID; proxyNegotiationComplete/filledPreSendBuffer flags; preSendBuffer (CONNECT request); overrides send/recv"}
+   {
+    "name": "SHTTPSProxySocket",
+    "kind": "class (extends STCPManager::Socket)",
+    "role": "proxyAddress/hostname/requestID; proxyNegotiationComplete/filledPreSendBuffer flags; preSendBuffer (CONNECT request); overrides send/recv"
+   }
   ],
   "misfits": [
-    {"item": "private members proxyAddress, hostname, requestID, proxyNegotiationComplete, filledPreSendBuffer, preSendBuffer", "why": "lack the repo's `_` prefix convention for private members, used elsewhere in this same batch (e.g. SStandaloneHTTPSManager's _pem, SSynchronizedQueue's _queue)", "severity": "low", "suggested_home": null}
+   {
+    "item": "private members proxyAddress, hostname, requestID, proxyNegotiationComplete, filledPreSendBuffer, preSendBuffer",
+    "why": "lack the repo's `_` prefix convention for private members, used elsewhere in this same batch (e.g. SStandaloneHTTPSManager's _pem, SSynchronizedQueue's _queue)",
+    "severity": "low",
+    "suggested_home": null
+   }
   ],
-  "name_fit": {"score": 5, "note": "fits"},
-  "location_fit": {"score": 5, "note": "natural peer of STCPManager/SSSLState"},
-  "naming_quality": {"score": 3, "note": "unprefixed private members inconsistent with local convention"},
-  "depends_on": ["libstuff/SFastBuffer.h", "libstuff/STCPManager.h", "libstuff/SData.h", "libstuff/libstuff.h", "libstuff/SSSLState.h"]
+  "name_fit": {
+   "score": 5,
+   "note": "fits"
+  },
+  "location_fit": {
+   "score": 5,
+   "note": "natural peer of STCPManager/SSSLState"
+  },
+  "naming_quality": {
+   "score": 3,
+   "note": "unprefixed private members inconsistent with local convention"
+  },
+  "depends_on": [
+   "libstuff/SFastBuffer.h",
+   "libstuff/STCPManager.h",
+   "libstuff/SData.h",
+   "libstuff/libstuff.h",
+   "libstuff/SSSLState.h"
+  ]
  },
  {
   "unit": "SSynchronizedQueue",
   "dir": "libstuff",
-  "files": ["libstuff/SSynchronizedQueue.h"],
+  "files": [
+   "libstuff/SSynchronizedQueue.h"
+  ],
   "lines": 175,
   "test": false,
   "intent": "A thread-safe FIFO queue that can be waited on inside a poll() loop alongside real sockets, by writing a byte to an internal pipe on every push so the queue's readiness multiplexes like a socket.",
   "objects": [
-    {"name": "SSynchronizedQueue<T>", "kind": "class template", "role": "_queue/_queueMutex/_pipeFD; prePoll/postPoll register/drain the wake pipe; clear/empty/front/pop/push/size/each"}
+   {
+    "name": "SSynchronizedQueue<T>",
+    "kind": "class template",
+    "role": "_queue/_queueMutex/_pipeFD; prePoll/postPoll register/drain the wake pipe; clear/empty/front/pop/push/size/each"
+   }
   ],
   "misfits": [],
-  "name_fit": {"score": 5, "note": "fits perfectly"},
-  "location_fit": {"score": 5, "note": "fits"},
-  "naming_quality": {"score": 5, "note": "consistent, correctly _-prefixed protected members"},
-  "depends_on": ["libstuff/libstuff.h"]
+  "name_fit": {
+   "score": 5,
+   "note": "fits perfectly"
+  },
+  "location_fit": {
+   "score": 5,
+   "note": "fits"
+  },
+  "naming_quality": {
+   "score": 5,
+   "note": "consistent, correctly _-prefixed protected members"
+  },
+  "depends_on": [
+   "libstuff/libstuff.h"
+  ]
  }
 ]

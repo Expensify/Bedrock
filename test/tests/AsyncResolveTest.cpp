@@ -1,3 +1,37 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    AsyncResolveTest.cpp
+ * Path:    test/tests/AsyncResolveTest.cpp
+ * Pair:    (exercises libstuff/STCPManager.h and libstuff/SResolver.h)
+ *
+ * INTENT
+ *   Tests the deferred DNS resolution path in STCPManager::Socket and
+ *   the underlying SResolve/SResolution API: raw-IP and in-grace-window
+ *   lookups connect synchronously, a zero grace period forces the
+ *   deferred path, failed or slow resolutions close the socket or wake
+ *   poll() via a pipe, and a resolution outlives a caller that drops it.
+ *
+ * OBJECTS
+ *   AsyncResolve - tpunit fixture (note: the class and its global
+ *     instance are named AsyncResolve/__AsyncResolve, not
+ *     AsyncResolveTest, despite the filename) with 8 tests; also owns
+ *     two private helpers, pollUntilSettled() (drives prePoll/S_poll/
+ *     postPoll until a socket leaves RESOLVING/CONNECTING) and
+ *     openTestPort() (opens a listening port from BedrockTester's port
+ *     pool).
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits the directory, but see NAMING QUALITY.
+ *
+ * NAMING QUALITY
+ *   The fixture struct and its global instance are named AsyncResolve
+ *   and __AsyncResolve, inconsistent with the file's own name and with
+ *   every other test in this batch, which follow a Foo/FooTest/__FooTest
+ *   pattern. [CANDIDATE for a rename to AsyncResolveTest/__AsyncResolveTest.]
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <arpa/inet.h>
 #include <unistd.h>
 

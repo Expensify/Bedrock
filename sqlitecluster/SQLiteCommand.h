@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLiteCommand.h
+ * Path:    sqlitecluster/SQLiteCommand.h
+ * Pair:    SQLiteCommand.cpp
+ *
+ * INTENT
+ *   Base representation of a command as it moves through the cluster: the
+ *   wire-format request/response, a cross-node id, completion flag, and
+ *   escalation timing. BedrockCommand builds on top of this.
+ *
+ * OBJECTS
+ *   SQLiteCommand                     - holds request/response/id/timing for a command; move-only via a private mutable backing field for the const `request` reference
+ *   SQLiteCommand::preprocessRequest  - static helper that assigns a requestID and warns on deprecated commandExecuteTime, run before `request` is bound
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] The `commandExecuteTime` deprecation-warning branch inside
+ *   preprocessRequest - deprecation-specific logic for one legacy field
+ *   living inside what is otherwise a generic request-preprocessing step.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: the base command type lives with the rest of sqlitecluster.
+ *
+ * NAMING QUALITY
+ *   The private backing field is named `privateRequest` rather than the
+ *   repo's usual `_` prefix (e.g. `_request`), inconsistent with the rest of
+ *   this class's own convention and the wider codebase.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 
 #include <libstuff/SData.h>

@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    UpgradeDBTest.cpp
+ * Path:    test/clustertest/tests/UpgradeDBTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying that a schema change made by `upgradeDatabase`
+ *   (creating the `dbupgrade` table) replicates to every follower, by
+ *   writing a row on the leader and then reading it back locally on every
+ *   node without escalation.
+ *
+ * OBJECTS
+ *   UpgradeDBTest        - tpunit fixture; brings up a default cluster.
+ *   UpgradeDBTest::test - writes a row on the leader, waits for followers' commit counts to catch
+ *                          up, then reads the row back from all three nodes directly.
+ *   __UpgradeDBTest      - static instance that registers the fixture with tpunit.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test files.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

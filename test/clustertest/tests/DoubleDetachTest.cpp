@@ -1,3 +1,26 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    DoubleDetachTest.cpp
+ * Path:    test/clustertest/tests/DoubleDetachTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying that detaching an already-detached follower is
+ *   rejected ("Already detached") rather than accepted a second time, and
+ *   that the node re-attaches cleanly and keeps its priority afterward.
+ *
+ * OBJECTS
+ *   DoubleDetachTest                    - tpunit fixture; brings up a default cluster.
+ *   DoubleDetachTest::testDoubleDetach - sets a follower's priority, detaches it twice, then re-attaches.
+ *   __DoubleDetachTest                  - static instance that registers the fixture with tpunit.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] #include <iostream> - unused in this file.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test files.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <iostream>
 
 #include <libstuff/SData.h>

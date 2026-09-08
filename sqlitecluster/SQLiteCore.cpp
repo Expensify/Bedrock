@@ -1,3 +1,24 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLiteCore.cpp
+ * Path:    sqlitecluster/SQLiteCore.cpp
+ * Pair:    SQLiteCore.h
+ *
+ * INTENT
+ *   Implementation; see the header for the class's purpose.
+ *
+ * OBJECTS
+ *   All symbols are declared in the header; this file implements the
+ *   constructor, commit, and rollback.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits its header.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/AutoScopeOnPrepare.h>
 #include <libstuff/libstuff.h>
 #include "SQLiteCore.h"

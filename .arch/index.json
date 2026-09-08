@@ -3654,8 +3654,6 @@
    "test/tests/jobs/RetryJobTest",
    "test/tests/jobs/UpdateJobTest"
   ],
-  "orphan": [
-   "libstuff/qrf"
-  ]
+  "orphan": []
  }
 }

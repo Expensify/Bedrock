@@ -1,3 +1,34 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    WriteTest.cpp
+ * Path:    test/tests/WriteTest.cpp
+ * Pair:    (exercises the Query/Write command handled elsewhere)
+ *
+ * INTENT
+ *   Integration tests for Bedrock's Query/Write command path: INSERT,
+ *   UPDATE, and DELETE, the no-WHERE safety guard and its override
+ *   parameter, parallel writes, HTTP-style and shorthand method-line
+ *   syntax, and blocking of non-deterministic SQL functions on write
+ *   while still allowing them on read.
+ *
+ * OBJECTS
+ *   WriteTest - tpunit fixture (BEFORE_CLASS/AFTER_CLASS-managed
+ *     BedrockTester) with 15 tests covering insert, parallel insert,
+ *     delete/update without WHERE (default, explicit false, explicit
+ *     true), delete/update with WHERE, an HTTP-style request, shorthand
+ *     query syntax, keyword-as-literal-value parsing, and
+ *     CURRENT_TIMESTAMP/RANDOM() being blocked when written but allowed
+ *     when read.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SData.h>
 #include <libstuff/SRandom.h>
 #include <test/lib/BedrockTester.h>
