@@ -121,6 +121,7 @@ struct JournalDeleterTest : tpunit::TestFixture
 
         ASSERT_EQUAL(countJournalRows(db, oldRows), oldRowsBefore - (int64_t) db.getJournalTableCount());
     }
+
     void aZeroBatchSizeDeletesNothing()
     {
         JournalDeleterTempDBFile dbFile;
