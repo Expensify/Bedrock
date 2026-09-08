@@ -4,6 +4,7 @@
 #include <libstuff/STCPManager.h>
 
 class BedrockPlugin;
+struct SX509;
 
 class SStandaloneHTTPSManager : public STCPManager {
 public:
@@ -48,10 +49,10 @@ public:
 
 protected:   // Child API
 
-    // Used to create the signing certificate.
     const string _pem;
     const string _srvCrt;
     const string _caCrt;
+    SX509* _x509 = nullptr;
 
     // Methods
     unique_ptr<Transaction> _httpsSend(const string& url, const SData& request, bool allowProxy = false);

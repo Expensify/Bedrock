@@ -8,11 +8,12 @@
 #include <string>
 
 using namespace std;
+struct SX509;
 class SFastBuffer;
 
 class SSSLState {
 public:
-    SSSLState(const string& hostname, int socket);
+    SSSLState(const string& hostname, int socket, SX509* x509 = nullptr);
     ~SSSLState();
 
     static void initConfig();
@@ -28,6 +29,9 @@ public:
     mbedtls_net_context net_ctx;
 
 private:
+    bool _hasOwnConf = false;
+    mbedtls_ssl_config _ownConf;
+
     static mbedtls_entropy_context _ec;
     static mbedtls_ctr_drbg_context _ctr_drbg;
     static mbedtls_ssl_config _conf;

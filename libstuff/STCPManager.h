@@ -11,6 +11,7 @@
 #include <libstuff/SResolver.h>
 
 class SSSLState;
+struct SX509;
 
 using namespace std;
 
@@ -27,7 +28,7 @@ public:
         static const int DEFAULT_RESOLVE_GRACE_MS = 5;
 
         // Resolves `host` off-thread, which may leave the socket in the RESOLVING state.
-        Socket(const string& host, bool https = false, int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
+        Socket(const string& host, bool https = false, int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS, SX509* x509 = nullptr);
 
         // Connects to an already-resolved address, so no DNS resolution is required.
         Socket(const sockaddr_in& addr, bool https = false, const string& hostname = "");
@@ -87,6 +88,9 @@ protected:
         // a slow DNS lookup.
         const shared_ptr<SResolution> dnsResolution;
         string hostToResolve;
+
+        // Owned by the HTTPS manager that created this socket, so it outlives the socket.
+        SX509* x509 = nullptr;
     };
 
     class Port {

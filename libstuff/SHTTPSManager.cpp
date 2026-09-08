@@ -1,4 +1,5 @@
 #include "SHTTPSManager.h"
+#include <libstuff/SX509.h>
 #include "SHTTPSProxySocket.h"
 #include "libstuff/STCPManager.h"
 
@@ -32,12 +33,15 @@ SStandaloneHTTPSManager::SStandaloneHTTPSManager()
 }
 
 SStandaloneHTTPSManager::SStandaloneHTTPSManager(const string& pem, const string& srvCrt, const string& caCrt)
-    : _pem(pem), _srvCrt(srvCrt), _caCrt(caCrt)
+    : _pem(pem), _srvCrt(srvCrt), _caCrt(caCrt), _x509(SX509Open(pem, srvCrt, caCrt))
 {
 }
 
 SStandaloneHTTPSManager::~SStandaloneHTTPSManager()
 {
+    if (_x509) {
+        SX509Close(_x509);
+    }
 }
 
 int SStandaloneHTTPSManager::getHTTPResponseCode(const string& methodLine, const int defaultStatusCode)
@@ -234,10 +238,10 @@ unique_ptr<SStandaloneHTTPSManager::Transaction> SStandaloneHTTPSManager::_https
             string proxyHost, path;
             SParseURI(proxyAddressHTTPS, proxyHost, path);
             SINFO("Proxying " << url << " through " << proxyHost);
-            s = new SHTTPSProxySocket(proxyHost, host, transaction->requestID);
+            s = new SHTTPSProxySocket(proxyHost, host, transaction->requestID, _x509);
             usingProxy = true;
         } else {
-            s = new Socket(host, isHttps);
+            s = new Socket(host, isHttps, Socket::DEFAULT_RESOLVE_GRACE_MS, _x509);
         }
     } catch (const SException& exception) {
         return _createErrorTransaction();

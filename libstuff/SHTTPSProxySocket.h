@@ -6,7 +6,7 @@
 class SHTTPSProxySocket : public STCPManager::Socket {
 public:
     // Implement all the same constructors as the base class.
-    SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID);
+    SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID, SX509* x509 = nullptr);
     SHTTPSProxySocket(SHTTPSProxySocket&& from);
 
     ~SHTTPSProxySocket();

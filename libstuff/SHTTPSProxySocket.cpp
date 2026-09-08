@@ -7,8 +7,8 @@
 
 // The base class is told https=false on purpose: this socket builds its own SSSLState once the
 // CONNECT tunnel is up, rather than at the moment the fd opens.
-SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID)
-    : STCPManager::Socket::Socket(proxyAddress),
+SHTTPSProxySocket::SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID, SX509* x509)
+    : STCPManager::Socket::Socket(proxyAddress, false, DEFAULT_RESOLVE_GRACE_MS, x509),
     proxyAddress(proxyAddress),
     hostname(host),
     requestID(requestID)
@@ -121,7 +121,7 @@ bool SHTTPSProxySocket::recv()
                         // waiting for the response, but this was causing issues debugging in wireshark, which couldn't reassemble the
                         // stream of packets in a way that really made sense. It's also just sort of strange looking, so we just
                         // wait to start the TLS handshake until the CONNECT message is complete and its response is received.
-                        ssl = new SSSLState(hostname, s);
+                        ssl = new SSSLState(hostname, s, x509);
                     } else {
                         SWARN("Proxy server " << proxyAddress << " returned methodLine: " << connectionEstablished.methodLine);
                         close(s);

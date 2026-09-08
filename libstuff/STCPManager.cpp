@@ -233,10 +233,10 @@ shared_ptr<SResolution> STCPManager::Socket::_startResolution(const string& host
     return SResolve(host);
 }
 
-STCPManager::Socket::Socket(const string& host, bool https, int resolveGraceMS)
+STCPManager::Socket::Socket(const string& host, bool https, int resolveGraceMS, SX509* x509)
     : s(-1), addr{}, state(State::CONNECTING), connectFailure(false), openTime(STimeNow()), lastSendTime(openTime),
     lastRecvTime(openTime), ssl(nullptr), data(nullptr), id(STCPManager::Socket::socketCount++), https(https),
-    dnsResolution(_startResolution(host)), hostToResolve(host)
+    dnsResolution(_startResolution(host)), hostToResolve(host), x509(x509)
 {
     // We give DNS a couple milliseconds to resolve. If it succeeds, we'll create a socket.
     pollfd pfd = {dnsResolution->getFD(), POLLIN, 0};
@@ -263,7 +263,7 @@ bool STCPManager::Socket::_openSocket()
     if (https) {
         // SSSLState only closes the fd in its destructor, so if its constructor throws, the fd is still ours to close.
         try {
-            ssl = new SSSLState(hostToResolve, s);
+            ssl = new SSSLState(hostToResolve, s, x509);
         } catch (const SException& e) {
             SWARN("Couldn't set up SSL for '" << hostToResolve << "' (" << addr << "): " << e.what());
             S_close(&s);
@@ -316,7 +316,8 @@ STCPManager::Socket::Socket(Socket&& from)
     id(from.id),
     https(from.https),
     dnsResolution(from.dnsResolution),
-    hostToResolve(move(from.hostToResolve))
+    hostToResolve(move(from.hostToResolve)),
+    x509(from.x509)
 {
     from.s = -1;
     from.ssl = nullptr;

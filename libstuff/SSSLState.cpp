@@ -4,6 +4,7 @@
 #include <mbedtls/net_sockets.h>
 #include <libstuff/libstuff.h>
 #include <libstuff/SFastBuffer.h>
+#include <libstuff/SX509.h>
 
 mbedtls_entropy_context SSSLState::_ec;
 mbedtls_ctr_drbg_context SSSLState::_ctr_drbg;
@@ -67,7 +68,7 @@ void SSSLState::freeConfig()
     mbedtls_x509_crt_free(&_cacert);
 }
 
-SSSLState::SSSLState(const string& hostname, int socket)
+SSSLState::SSSLState(const string& hostname, int socket, SX509* x509)
 {
     mbedtls_ssl_init(&ssl);
     mbedtls_net_init(&net_ctx);
@@ -108,7 +109,27 @@ SSSLState::SSSLState(const string& hostname, int socket)
         net_ctx.fd = socket;
     }
 
-    lastResult = mbedtls_ssl_setup(&ssl, &_conf);
+    const mbedtls_ssl_config* conf = &_conf;
+    if (x509) {
+        _hasOwnConf = true;
+        mbedtls_ssl_config_init(&_ownConf);
+        lastResult = mbedtls_ssl_config_defaults(&_ownConf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
+        if (lastResult) {
+            mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+            STHROW("mbedtls_ssl_config_defaults failed with error " + to_string(lastResult) + ": " + errorBuffer);
+        }
+        mbedtls_ssl_conf_rng(&_ownConf, mbedtls_ctr_drbg_random, &_ctr_drbg);
+        mbedtls_ssl_conf_ca_chain(&_ownConf, x509->hasCA ? &x509->ca : &_cacert, nullptr);
+        mbedtls_ssl_conf_authmode(&_ownConf, MBEDTLS_SSL_VERIFY_REQUIRED);
+        lastResult = mbedtls_ssl_conf_own_cert(&_ownConf, &x509->cert, &x509->pk);
+        if (lastResult) {
+            mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
+            STHROW("mbedtls_ssl_conf_own_cert failed with error " + to_string(lastResult) + ": " + errorBuffer);
+        }
+        conf = &_ownConf;
+    }
+
+    lastResult = mbedtls_ssl_setup(&ssl, conf);
     if (lastResult) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
         STHROW("mbedtls_ssl_setup failed with error " + to_string(lastResult) + ": " + errorBuffer);
@@ -122,6 +143,9 @@ SSSLState::~SSSLState()
     // Note that this closes the socket if one is set, so there is no need (and in fact it is a bug) to close it otherwise.
     mbedtls_net_free(&net_ctx);
     mbedtls_ssl_free(&ssl);
+    if (_hasOwnConf) {
+        mbedtls_ssl_config_free(&_ownConf);
+    }
 }
 
 int SSSLState::send(const char* buffer, int length)
