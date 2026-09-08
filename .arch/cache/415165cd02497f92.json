@@ -1,0 +1,43 @@
+{
+ "unit": "RemoteSQLite",
+ "dir": "test/lib",
+ "files": [
+  "test/lib/RemoteSQLite.h",
+  "test/lib/RemoteSQLite.cpp"
+ ],
+ "lines": 138,
+ "test": true,
+ "intent": "A client-side SQLite subclass that forwards every read/write to a BedrockTester's server as a Query command instead of touching a local DB file, so HC-Tree-mode tests can still use SQLite-shaped call sites.",
+ "objects": [
+  {
+   "name": "RemoteSQLite",
+   "kind": "class",
+   "role": "overrides SQLite's read/write/writeIdempotent family to serialize each call into a Query command sent via the owning BedrockTester"
+  },
+  {
+   "name": "RemoteSQLite::_runRemoteQuery",
+   "kind": "member function",
+   "role": "builds and sends the Query command with bound parameters as sql-param-<name> headers, shared by all public overrides"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits; test-only infrastructure paired with BedrockTester."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Consistent with the SQLite base class's naming and repo convention (_-prefixed private member/helper)."
+ },
+ "depends_on": [
+  "sqlitecluster/SQLite.h",
+  "libstuff/SData.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b115.json",
+ "hash": "415165cd02497f92"
+}

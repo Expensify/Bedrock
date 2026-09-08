@@ -1,0 +1,65 @@
+{
+ "unit": "tpunit++",
+ "dir": "test/lib",
+ "files": [
+  "test/lib/tpunit++.cpp"
+ ],
+ "lines": 606,
+ "test": true,
+ "intent": "Implements the tpunit++ micro test framework's runner: fixture registration, multithreaded execution with name filtering, before/after hooks, pass/fail bookkeeping, and console output.",
+ "objects": [
+  {
+   "name": "tpunit::_TestFixture",
+   "kind": "class",
+   "role": "fixture base; registers itself on construction and implements the whole run loop, per-class and per-test threading, method dispatch with exception trapping, and float-equality helpers"
+  },
+  {
+   "name": "tpunit::_TestFixture::method",
+   "kind": "struct",
+   "role": "one registered before/after/test callback; linked-list node"
+  },
+  {
+   "name": "tpunit::_TestFixture::stats",
+   "kind": "struct",
+   "role": "global pass/fail counters and failure-name set"
+  },
+  {
+   "name": "tpunit::_TestFixture::perFixtureStats",
+   "kind": "struct",
+   "role": "thread_local per-fixture assertion/exception/trace counters"
+  },
+  {
+   "name": "tpunit::TestFixture",
+   "kind": "class",
+   "role": "empty out-of-line destructor only"
+  },
+  {
+   "name": "tpunit::Tests::run",
+   "kind": "free function group",
+   "role": "public entry points that call into _TestFixture::tpunit_detail_do_run"
+  },
+  {
+   "name": "tpunit::tpunit_break_check_line",
+   "kind": "free function",
+   "role": "keeps short-form dot output readable when a verbose log line interrupts it"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 4,
+  "note": "It's the vendored micro-framework's implementation file; the ++ suffix is unusual but recognizable."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits; kept under test/lib with the rest of the test infrastructure."
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "registerTests taking 70 individually numbered method* parameters (m0..m69) is a design wart inherited from the upstream framework, not a naming defect, but it stands out."
+ },
+ "depends_on": [
+  "test/lib/tpunit++.hpp"
+ ],
+ "_src": "b115.json",
+ "hash": "b3895badc1f24cc1"
+}

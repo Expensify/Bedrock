@@ -1,0 +1,55 @@
+{
+ "unit": "BedrockTester",
+ "dir": "test/lib",
+ "files": [
+  "test/lib/BedrockTester.h",
+  "test/lib/BedrockTester.cpp"
+ ],
+ "lines": 876,
+ "test": true,
+ "intent": "Forks, execs, and manages one bedrock server subprocess for tests, and provides the request/response plumbing and direct DB access tests use against it.",
+ "objects": [
+  {
+   "name": "BedrockTester",
+   "kind": "class",
+   "role": "owns one bedrock server subprocess: starts/stops it, sends it commands over TCP, reads its DB file directly, and tracks all live instances for stopAll"
+  },
+  {
+   "name": "BedrockTester::autoAttachDebugger",
+   "kind": "member function",
+   "role": "speaks a small JSON-over-socket protocol to an LLDB RPC server to auto-attach a debugger to the spawned process"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "BedrockTester::autoAttachDebugger",
+   "why": "A self-contained LLDB RPC-socket client with its own wire protocol, unrelated to running a server subprocess and sending it commands",
+   "severity": "med",
+   "suggested_home": "a standalone debug-attach helper, or null"
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits; core per-server test harness class."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Repo-typical (_-prefixed private members); _commitCountBase vs. the reference member _commitCount is a little confusing on first read but is explained at the constructor."
+ },
+ "depends_on": [
+  "test/lib/PortMap.h",
+  "test/lib/tpunit++.hpp",
+  "libstuff/libstuff.h",
+  "libstuff/SData.h",
+  "libstuff/SFastBuffer.h",
+  "libstuff/SQResult.h",
+  "sqlitecluster/SQLite.h",
+  "test/lib/RemoteSQLite.h"
+ ],
+ "_src": "b115.json",
+ "hash": "f00c46658dbd7c08"
+}

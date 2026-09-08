@@ -1,0 +1,46 @@
+{
+ "unit": "JobIDTest",
+ "dir": "test/clustertest/tests",
+ "files": [
+  "test/clustertest/tests/JobIDTest.cpp"
+ ],
+ "lines": 97,
+ "test": true,
+ "intent": "Regression test verifying a node that becomes leader after restart correctly re-initializes the jobs table's last-used ID (including zero) so newly created jobs don't fail on a unique-ID conflict.",
+ "objects": [
+  {
+   "name": "JobIDTest",
+   "kind": "struct/tpunit fixture",
+   "role": "the whole scenario"
+  },
+  {
+   "name": "JobIDTest::setup/teardown",
+   "kind": "method group",
+   "role": "own the BedrockClusterTester"
+  },
+  {
+   "name": "JobIDTest::test",
+   "kind": "method",
+   "role": "creates jobs across a sequence of leader/follower role swaps and drains them at the end"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "exactly a jobs-ID regression test"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits with its peers"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "clear, consistent with sibling tests"
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/clustertest/BedrockClusterTester.h"
+ ],
+ "_src": "b114.json",
+ "hash": "e47a1866f5522984"
+}

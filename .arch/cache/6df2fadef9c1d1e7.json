@@ -1,0 +1,36 @@
+{
+ "unit": "AfterCommitCallbackClusterTest",
+ "dir": "test/clustertest/tests",
+ "files": [
+  "test/clustertest/tests/AfterCommitCallbackClusterTest.cpp"
+ ],
+ "lines": 65,
+ "test": true,
+ "intent": "Cluster test verifying an after-commit callback fires both when the leader commits a write itself and when a follower applies that write via replication.",
+ "objects": [
+  {
+   "name": "AfterCommitCallbackClusterTest",
+   "kind": "struct",
+   "role": "tpunit fixture; polls the plugin's after-commit counter on leader and follower around one write"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Consistent with sibling clustertest files."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/clustertest/BedrockClusterTester.h"
+ ],
+ "_src": "b115.json",
+ "hash": "6df2fadef9c1d1e7"
+}

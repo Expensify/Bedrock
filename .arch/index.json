@@ -4052,6 +4052,333 @@
    "hash": "d26ea8599f58733b"
   },
   {
+   "unit": "AfterCommitCallbackClusterTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/AfterCommitCallbackClusterTest.cpp"
+   ],
+   "lines": 65,
+   "test": true,
+   "intent": "Cluster test verifying an after-commit callback fires both when the leader commits a write itself and when a follower applies that write via replication.",
+   "objects": [
+    {
+     "name": "AfterCommitCallbackClusterTest",
+     "kind": "struct",
+     "role": "tpunit fixture; polls the plugin's after-commit counter on leader and follower around one write"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "6df2fadef9c1d1e7"
+  },
+  {
+   "unit": "BadCommandTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/BadCommandTest.cpp"
+   ],
+   "lines": 127,
+   "test": true,
+   "intent": "Cluster test that leader handles misbehaving commands safely: unhandled exceptions return 500s without crashing, control-character exception messages are URL-encoded, and commands that crash the server cause a clean failover with the follower refusing the identical command.",
+   "objects": [
+    {
+     "name": "BadCommandTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "BadCommandTest::test",
+     "kind": "method",
+     "role": "runs the whole scenario, retried up to twice since crash-and-failover isn't guaranteed to land cleanly first try"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly an error-handling test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "clear, consistent with sibling tests"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "3216b0afb99f8ce4"
+  },
+  {
+   "unit": "BlockingQueueRateLimitTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/BlockingQueueRateLimitTest.cpp"
+   ],
+   "lines": 143,
+   "test": true,
+   "intent": "Cluster test for the blocking-queue time-based rate limiter: verifies SetBlockingQueueTimeRateLimit's window/threshold settings round-trip through Status, and that a burst of conflicting commands sharing an identifier trips per-identifier blocking once its threshold is exceeded.",
+   "objects": [
+    {
+     "name": "BlockingQueueRateLimitTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "BlockingQueueRateLimitTest::setup/teardown",
+     "kind": "method group",
+     "role": "own the BedrockClusterTester"
+    },
+    {
+     "name": "BlockingQueueRateLimitTest::before",
+     "kind": "method",
+     "role": "runs before each TEST(): clears rate-limit state and resets conflict retries"
+    },
+    {
+     "name": "BlockingQueueRateLimitTest::testControlCommands",
+     "kind": "method",
+     "role": "sets window/threshold values and checks they round-trip through Status"
+    },
+    {
+     "name": "BlockingQueueRateLimitTest::testTimeRateLimiting",
+     "kind": "method",
+     "role": "forces conflicts on a shared identifier from three threads, checks some requests are refused (503) and the identifier shows blocked"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly the rate-limit test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "clear, consistent with sibling control-command tests"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "4e88be02d8be4a9f"
+  },
+  {
+   "unit": "BoundParametersTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/BoundParametersTest.cpp"
+   ],
+   "lines": 141,
+   "test": true,
+   "intent": "Regression test (PR #2600) for leader/follower divergence with named bound SQL parameters: confirms a leader write round-trips correctly and journals the inlined SQL literal rather than the raw placeholder text, and exercises the same path through RemoteSQLite.",
+   "objects": [
+    {
+     "name": "BoundParametersTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "BoundParametersTest::setup/teardown",
+     "kind": "method group",
+     "role": "own a 3-node BedrockClusterTester"
+    },
+    {
+     "name": "BoundParametersTest::queryServer",
+     "kind": "method",
+     "role": "runs a JSON-format Query and deserializes the SQResult"
+    },
+    {
+     "name": "BoundParametersTest::getCommitCount",
+     "kind": "method",
+     "role": "reads a node's Status commit count"
+    },
+    {
+     "name": "BoundParametersTest::readJournalText",
+     "kind": "method",
+     "role": "reads and decompresses one journal row's query text for a given commit ID"
+    },
+    {
+     "name": "BoundParametersTest::testBoundParamReplication",
+     "kind": "method",
+     "role": "writes a bound-param value on leader, waits for followers to catch up, checks the replicated row and journal text on every node"
+    },
+    {
+     "name": "BoundParametersTest::testRemoteSQLiteForwardsParams",
+     "kind": "method",
+     "role": "writes and reads back a row through RemoteSQLite with bound params, checking values didn't bind to NULL"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly a bound-parameter replication test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "clear method names"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "test/clustertest/BedrockClusterTester.h",
+    "test/lib/RemoteSQLite.h"
+   ],
+   "_src": "b114.json",
+   "hash": "19d6d1007c596ccb"
+  },
+  {
+   "unit": "BroadcastTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/BroadcastTest.cpp"
+   ],
+   "lines": 87,
+   "test": true,
+   "intent": "Cluster test for testplugin's broadcast-with-timeouts command: verifies a broadcast command's peekedAt timestamp and process/broadcast timeouts are received correctly by every follower it's sent to.",
+   "objects": [
+    {
+     "name": "BroadcastCommandTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario (note: named BroadcastCommandTest, not BroadcastTest)"
+    },
+    {
+     "name": "BroadcastCommandTest::setup/teardown",
+     "kind": "method group",
+     "role": "own the BedrockClusterTester"
+    },
+    {
+     "name": "BroadcastCommandTest::test",
+     "kind": "method",
+     "role": "sends broadcastwithtimeouts to leader, reads getbroadcasttimeouts back from both followers, checks stored values on each"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BroadcastTest.cpp filename vs. BroadcastCommandTest struct",
+     "why": "the file is BroadcastTest.cpp but its fixture class, registered fixture name ('BroadcastCommand'), and global instance (__BroadcastCommandTest) are all BroadcastCommandTest -- the file and its contents disagree on the test's name",
+     "severity": "med",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 2,
+    "note": "filename doesn't match the struct/fixture name it contains"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "still fits conceptually alongside the other clustertest scenarios"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "internally consistent (BroadcastCommandTest throughout); the mismatch is with the filename, not within the file"
+   },
+   "depends_on": [
+    "test/lib/tpunit++.hpp",
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "27cfb318553110c8"
+  },
+  {
+   "unit": "ClusterUpgradeTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/ClusterUpgradeTest.cpp"
+   ],
+   "lines": 243,
+   "test": true,
+   "intent": "Cluster test verifying rolling upgrades: builds/reuses the most recent released Bedrock binary, runs a mixed old/new-version 3-node cluster through leader failover in both upgrade directions, and checks replication and previously-written rows survive throughout.",
+   "objects": [
+    {
+     "name": "ClusterUpgradeTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole rolling-upgrade scenario"
+    },
+    {
+     "name": "ClusterUpgradeTest::setup",
+     "kind": "method",
+     "role": "fetches recent git tags, builds or reuses a cached build of the prior release, starts a 3-node cluster on it"
+    },
+    {
+     "name": "ClusterUpgradeTest::teardown",
+     "kind": "method",
+     "role": "deletes the cluster tester"
+    },
+    {
+     "name": "ClusterUpgradeTest::getVersions",
+     "kind": "method",
+     "role": "reads each node's Status version"
+    },
+    {
+     "name": "ClusterUpgradeTest::getCommitCount",
+     "kind": "method",
+     "role": "reads one node's Status commit count"
+    },
+    {
+     "name": "ClusterUpgradeTest::verifyReplication",
+     "kind": "method",
+     "role": "writes a row and waits for every running node to reach the resulting commit"
+    },
+    {
+     "name": "ClusterUpgradeTest::test",
+     "kind": "method",
+     "role": "drives the upgrade sequence across both directions, checking escalation and replication at each step"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "ClusterUpgradeTest::setup (clone/checkout/compile pipeline)",
+     "why": "runs full build/release orchestration via system() (git clone, git checkout, hardcoded 'CXX=clang++-18 ... make -j8') from inside a test fixture, including a hardcoded compiler version and a bare 'brdata.txt' temp file in the working directory rather than BedrockTester::getTempFileName",
+     "severity": "low",
+     "suggested_home": "a standalone setup/build script this test shells out to"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly an upgrade test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with the other clustertest scenarios"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "prodBedrockName/prodBedrockPluginName/newTestPlugin read clearly against each other"
+   },
+   "depends_on": [
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "8ce686f1907afb7e"
+  },
+  {
    "unit": "CompressionTest",
    "dir": "test/clustertest/tests",
    "files": [
@@ -4132,6 +4459,205 @@
    "hash": "00d3b91a37b43840"
   },
   {
+   "unit": "ControlCommandTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/ControlCommandTest.cpp"
+   ],
+   "lines": 53,
+   "test": true,
+   "intent": "Cluster test verifying a preventattach control command sent to the test plugin blocks a subsequent Attach until its internal delay passes.",
+   "objects": [
+    {
+     "name": "ControlCommandTest",
+     "kind": "struct",
+     "role": "tpunit fixture; detaches a follower, prevents attach via the plugin, confirms attach is refused then later allowed"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "#include <iostream>",
+     "why": "Unused in this file",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "2bad5b9cb6248ec2"
+  },
+  {
+   "unit": "DoubleDetachTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/DoubleDetachTest.cpp"
+   ],
+   "lines": 52,
+   "test": true,
+   "intent": "Cluster test verifying detaching an already-detached follower is rejected rather than accepted a second time, and that the node re-attaches cleanly.",
+   "objects": [
+    {
+     "name": "DoubleDetachTest",
+     "kind": "struct",
+     "role": "tpunit fixture; sets a follower's priority, detaches it twice, then re-attaches"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "#include <iostream>",
+     "why": "Unused in this file",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "633173b89ee023be"
+  },
+  {
+   "unit": "EscalateTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/EscalateTest.cpp"
+   ],
+   "lines": 107,
+   "test": true,
+   "intent": "Cluster test for command escalation from follower to leader: a follower-received command reaches and is processed by leader, escalation survives serialized command data (including a deserialize-failure path), and the escalation socket is safely reused or not between requests.",
+   "objects": [
+    {
+     "name": "EscalateTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "EscalateTest::setup/teardown",
+     "kind": "method group",
+     "role": "own the BedrockClusterTester"
+    },
+    {
+     "name": "EscalateTest::test",
+     "kind": "method",
+     "role": "sends a follower command verified via a shared temp file, then confirms the server is still alive"
+    },
+    {
+     "name": "EscalateTest::testSerializedData",
+     "kind": "method",
+     "role": "checks EscalateSerializedData round-trips the escalating/escalated node names"
+    },
+    {
+     "name": "EscalateTest::testSerializedDataException",
+     "kind": "method",
+     "role": "checks a forced deserialize failure returns '500 BAD DESERIALIZE'"
+    },
+    {
+     "name": "EscalateTest::socketReuse",
+     "kind": "method",
+     "role": "sends the same escalating command twice, with/without Connection: close, exercising socket pooling"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly a command-escalation test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "clear, consistent with sibling tests"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "a39badef636cd2ae"
+  },
+  {
+   "unit": "FastStandDownTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/FastStandDownTest.cpp"
+   ],
+   "lines": 120,
+   "test": true,
+   "intent": "Cluster test verifying leader can stand down quickly with slow work outstanding: a command stuck in a 5s HTTPS request, and one scheduled 5s in the future, must not block stand-down/failover, yet still complete correctly afterward.",
+   "objects": [
+    {
+     "name": "FastStandDownTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "FastStandDownTest::setup/teardown",
+     "kind": "method group",
+     "role": "own the BedrockClusterTester"
+    },
+    {
+     "name": "FastStandDownTest::testHTTPSRequests",
+     "kind": "method",
+     "role": "starts a slow HTTPS command on leader, stops leader mid-request, confirms fast failover and correct escalation"
+    },
+    {
+     "name": "FastStandDownTest::testFutureCommands",
+     "kind": "method",
+     "role": "same shape for a command scheduled 5s in the future"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly a stand-down-latency test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "clear, consistent with sibling tests"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "5e04ec8dd08ffbfe"
+  },
+  {
    "unit": "FinishJobTest",
    "dir": "test/clustertest/tests",
    "files": [
@@ -4175,6 +4701,820 @@
    ],
    "_src": "b113.json",
    "hash": "e207e98aab089735"
+  },
+  {
+   "unit": "ForkCheckTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/ForkCheckTest.cpp"
+   ],
+   "lines": 139,
+   "test": true,
+   "intent": "Cluster test that manufactures a fork: advances a follower's journal past the stopped leader's, corrupts the leader's own last journal-entry hash with a raw sqlite3 write, restarts it, and verifies it aborts (SIGABRT) rather than rejoining.",
+   "objects": [
+    {
+     "name": "ForkCheckTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "ForkCheckTest::getMaxJournalCommit",
+     "kind": "method",
+     "role": "finds the highest commit ID (and its journal table) across a node's journal* tables"
+    },
+    {
+     "name": "ForkCheckTest::createThreads",
+     "kind": "method",
+     "role": "spawns worker threads spamming idcollision commands at rotating nodes, avoiding a known-down leader"
+    },
+    {
+     "name": "ForkCheckTest::forkAtShutDown",
+     "kind": "method",
+     "role": "drives the scenario: builds a 5-node cluster, stops leader under load, hand-corrupts its last commit hash, restarts it, asserts SIGABRT"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "#include <sqlitecluster/SQLite.h> and <sqlitecluster/SQLiteNode.h>",
+     "why": "neither the SQLite nor SQLiteNode class is referenced in this file; only the raw sqlite3 C API (sqlite3_open_v2/sqlite3_exec/sqlite3_close_v2) is used, which these headers only supply transitively",
+     "severity": "low",
+     "suggested_home": "libstuff/sqlite3.h included directly instead"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly a fork-detection test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "clear, consistent with sibling tests"
+   },
+   "depends_on": [
+    "test/lib/BedrockTester.h",
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "sqlitecluster/SQLite.h",
+    "sqlitecluster/SQLiteNode.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "8b840ed801e4e0da"
+  },
+  {
+   "unit": "FutureExecutionTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/FutureExecutionTest.cpp"
+   ],
+   "lines": 87,
+   "test": true,
+   "intent": "Cluster test for leader-only scheduled ('future') command execution: a write scheduled a few seconds out isn't applied early but lands once its time passes, and a command depending on a commit count that will never arrive times out rather than hanging.",
+   "objects": [
+    {
+     "name": "FutureExecutionTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "FutureExecutionTest::setup/teardown",
+     "kind": "method group",
+     "role": "own the BedrockClusterTester"
+    },
+    {
+     "name": "FutureExecutionTest::FutureExecution",
+     "kind": "method",
+     "role": "schedules an insert a few seconds out, confirms it's absent then present after the delay"
+    },
+    {
+     "name": "FutureExecutionTest::FutureExecutionTimeout",
+     "kind": "method",
+     "role": "a query depending on an unreachable commitCount with a 100ms timeout returns '555 Timeout'"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "#include <fstream>",
+     "why": "unused; no stream type from it appears anywhere in the file",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly a scheduled-execution test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "FutureExecution/FutureExecutionTimeout are PascalCase, unlike the testXxx camelCase convention used by every sibling test method, and echo the fixture's own name closely enough to read as constructors at a glance"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "adea879c0912693d"
+  },
+  {
+   "unit": "GracefulFailoverTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/GracefulFailoverTest.cpp"
+   ],
+   "lines": 228,
+   "test": true,
+   "intent": "Cluster test keeping a 3-node cluster under continuous multi-client read/write/HTTPS traffic while cycling leader and follower nodes through graceful and SIGKILL restarts, checking every client response is a normal 202/756 with nothing hanging or erroring.",
+   "objects": [
+    {
+     "name": "GracefulFailoverTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "GracefulFailoverTest::setup/teardown",
+     "kind": "method group",
+     "role": "own the BedrockClusterTester"
+    },
+    {
+     "name": "GracefulFailoverTest::startClientThreads",
+     "kind": "method",
+     "role": "spawns one thread per simulated client looping read/write/HTTPS-forget commands against a rotating node, tallying response codes"
+    },
+    {
+     "name": "GracefulFailoverTest::test",
+     "kind": "method",
+     "role": "runs client load through a graceful leader restart, a follower restart, then repeats both with SIGKILL"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "GracefulFailoverTest::threads/counts/allresults",
+     "why": "struct members sized in setup() are shadowed by identically-named local variables re-declared inside test(); the members are written once and never read again, appearing live when they're dead",
+     "severity": "med",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly a graceful-failover-under-load test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 2,
+    "note": "member/local name collisions (threads, counts, allresults) are actively misleading"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SRandom.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "30c88b82ae807526"
+  },
+  {
+   "unit": "HTTPSBlockingCommitTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/HTTPSBlockingCommitTest.cpp"
+   ],
+   "lines": 99,
+   "test": true,
+   "intent": "Cluster test (Expensify/Expensify#661688) verifying a command that would issue an HTTPS request on the serialized blockingCommit thread is refused rather than allowed to stall that thread, whether detected before or during peek's wait.",
+   "objects": [
+    {
+     "name": "HTTPSBlockingCommitTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "HTTPSBlockingCommitTest::setup/teardown",
+     "kind": "method group",
+     "role": "own the BedrockClusterTester and lower/restore MaxConflictRetries so contention reliably reaches worker 0"
+    },
+    {
+     "name": "HTTPSBlockingCommitTest::runAndVerifyRefusals",
+     "kind": "method",
+     "role": "fires many concurrent mutually-conflicting commands across all nodes, checks every one responds with at least one refusal"
+    },
+    {
+     "name": "HTTPSBlockingCommitTest::testRefusedViaPreCheck",
+     "kind": "method",
+     "role": "refusal via the worker loop's pre-check"
+    },
+    {
+     "name": "HTTPSBlockingCommitTest::testRefusedViaPeekThrow",
+     "kind": "method",
+     "role": "refusal via the throw path inside peek's HTTPS wait"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly a blocking-commit-thread regression test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "clear, consistent with sibling tests"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "d4ddb46208c20df5"
+  },
+  {
+   "unit": "HTTPSTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/HTTPSTest.cpp"
+   ],
+   "lines": 123,
+   "test": true,
+   "intent": "Cluster test aiming to provoke a conflict between a command's HTTPS request and its own retried peek/process, spamming a mix of HTTPS and conflicting commands at all nodes and checking testplugin never runs peek more than once for the same HTTPS attempt.",
+   "objects": [
+    {
+     "name": "HTTPSTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "HTTPSTest::setup/teardown",
+     "kind": "method group",
+     "role": "own the BedrockClusterTester"
+    },
+    {
+     "name": "HTTPSTest::testMultipleRequests",
+     "kind": "method",
+     "role": "sendrequest with a 3x HTTPS-request count returns 3 response lines"
+    },
+    {
+     "name": "HTTPSTest::testWaitForHTTPSRequests",
+     "kind": "method",
+     "role": "httpswait command returns 200"
+    },
+    {
+     "name": "HTTPSTest::test",
+     "kind": "method",
+     "role": "spams sendrequest and idcollision commands across three threads/nodes, checking every response is 200 with the expected body presence"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly the HTTPS-conflict test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "clear, consistent with sibling tests"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "2aba4b061bc3f18a"
+  },
+  {
+   "unit": "JobIDTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/JobIDTest.cpp"
+   ],
+   "lines": 97,
+   "test": true,
+   "intent": "Regression test verifying a node that becomes leader after restart correctly re-initializes the jobs table's last-used ID (including zero) so newly created jobs don't fail on a unique-ID conflict.",
+   "objects": [
+    {
+     "name": "JobIDTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "JobIDTest::setup/teardown",
+     "kind": "method group",
+     "role": "own the BedrockClusterTester"
+    },
+    {
+     "name": "JobIDTest::test",
+     "kind": "method",
+     "role": "creates jobs across a sequence of leader/follower role swaps and drains them at the end"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly a jobs-ID regression test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "clear, consistent with sibling tests"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "e47a1866f5522984"
+  },
+  {
+   "unit": "LeadingTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/LeadingTest.cpp"
+   ],
+   "lines": 190,
+   "test": true,
+   "intent": "Cluster test covering the basic leader lifecycle: cluster comes up leading/following, failover on leader stop, leader restart reclaiming leadership, and a follower resynchronizing after falling behind while stopped.",
+   "objects": [
+    {
+     "name": "LeadingTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "LeadingTest::setup/teardown",
+     "kind": "method group",
+     "role": "own the BedrockClusterTester"
+    },
+    {
+     "name": "LeadingTest::clusterUp",
+     "kind": "method",
+     "role": "polls until node 0 leads and 1/2 follow"
+    },
+    {
+     "name": "LeadingTest::failover",
+     "kind": "method",
+     "role": "stops node 0, waits for node 1 to lead"
+    },
+    {
+     "name": "LeadingTest::standDownTimeout",
+     "kind": "method",
+     "role": "verifies a stuck HTTPS request doesn't block stand-down; commented out of the TEST() list and never runs"
+    },
+    {
+     "name": "LeadingTest::restoreLeader",
+     "kind": "method",
+     "role": "restarts node 0, waits for the original layout to return"
+    },
+    {
+     "name": "LeadingTest::synchronizing",
+     "kind": "method",
+     "role": "stops a follower, writes 5000 rows, restarts it and confirms SYNCHRONIZING before FOLLOWING"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "LeadingTest::standDownTimeout",
+     "why": "fully implemented test method permanently disabled via a comment ('Disabled for speed') rather than removed or gated, so it never runs as part of the suite",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly a leadership-transition test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "clear, consistent method names"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SRandom.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "51e7b58788a71636"
+  },
+  {
+   "unit": "MassiveQueryTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/MassiveQueryTest.cpp"
+   ],
+   "lines": 53,
+   "test": true,
+   "intent": "Cluster test verifying a large, long-running write sent to a follower is escalated to the leader, committed, and replicated to every other follower.",
+   "objects": [
+    {
+     "name": "MassiveQueryTest",
+     "kind": "struct",
+     "role": "tpunit fixture; sends a bigquery command then polls a follower's commit count until it catches up"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "0af5f97f4d1ffee5"
+  },
+  {
+   "unit": "MultipleLeaderSyncTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/MultipleLeaderSyncTest.cpp"
+   ],
+   "lines": 187,
+   "test": true,
+   "intent": "Cluster test for successive leader failures on a 5-node cluster: kills the leader twice with enough writes between failures that returning nodes must pass through SYNCHRONIZING before re-leading or following, and verifies that sequence is actually observed.",
+   "objects": [
+    {
+     "name": "MultipleLeaderSyncTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "MultipleLeaderSyncTest::runTrivialWrites",
+     "kind": "method",
+     "role": "issues a batch of trivial UPDATE/INSERT writes to advance a node's commit count"
+    },
+    {
+     "name": "MultipleLeaderSyncTest::waitForCommit",
+     "kind": "method",
+     "role": "polls a node's Status until its commitCount reaches a minimum, or times out"
+    },
+    {
+     "name": "MultipleLeaderSyncTest::test",
+     "kind": "method",
+     "role": "builds the cluster, fails leader twice while writing between failures, restarts both downed nodes concurrently, and watches each pass through the expected state sequence"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly a multi-failure leader-sync test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "clear and consistent"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "552225259128f264"
+  },
+  {
+   "unit": "PermafollowerTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/PermafollowerTest.cpp"
+   ],
+   "lines": 53,
+   "test": true,
+   "intent": "Cluster test verifying a permafollower (priority 0) never counts toward write quorum: the cluster keeps committing once enough regular followers are down, whether or not the permafollower itself is up.",
+   "objects": [
+    {
+     "name": "PermafollowerTest",
+     "kind": "struct",
+     "role": "tpunit fixture; builds a 6-node cluster and commits with successively more nodes, including the permafollower, down"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "35cf6db3832d3d20"
+  },
+  {
+   "unit": "PrePeekPostProcessTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/PrePeekPostProcessTest.cpp"
+   ],
+   "lines": 91,
+   "test": true,
+   "intent": "Cluster test verifying testplugin commands can hook prePeek/postProcess in addition to peek/process, that stage data reaches the client response, and that process()-time DB writes are visible in postProcess but not in peek/prePeek.",
+   "objects": [
+    {
+     "name": "checkWithoutThis",
+     "kind": "file-local free function",
+     "role": "a no-op tautological assertion (ASSERT_EQUAL(1,1)) called once from prePeek()"
+    },
+    {
+     "name": "PrePeekPostProcessTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "PrePeekPostProcessTest::setup/teardown",
+     "kind": "method group",
+     "role": "own the BedrockClusterTester"
+    },
+    {
+     "name": "PrePeekPostProcessTest::prePeek",
+     "kind": "method",
+     "role": "prepeekcommand: checks prePeek/peek info round-trip and the row isn't inserted yet"
+    },
+    {
+     "name": "PrePeekPostProcessTest::prePeekThrow",
+     "kind": "method",
+     "role": "prepeekcommand w/ shouldThrow: checks '501 ERROR'"
+    },
+    {
+     "name": "PrePeekPostProcessTest::postProcess",
+     "kind": "method",
+     "role": "postprocesscommand: checks a process()-inserted row is absent at peek, present at postProcess"
+    },
+    {
+     "name": "PrePeekPostProcessTest::prePeekPostProcess",
+     "kind": "method",
+     "role": "prepeekpostprocesscommand: checks a process()-deleted row is present at peek, gone at postProcess"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "checkWithoutThis",
+     "why": "a free function asserting a hardcoded tautology, not exercising any Bedrock behavior; reads as a leftover probe rather than part of the test's stated intent",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly a prePeek/postProcess hook test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "checkWithoutThis's name doesn't convey what it does or why it exists"
+   },
+   "depends_on": [
+    "BedrockCommand.h",
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "0e5c2f57280eb851"
+  },
+  {
+   "unit": "SetPriorityTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/SetPriorityTest.cpp"
+   ],
+   "lines": 210,
+   "test": true,
+   "intent": "Cluster test for the SetPriority control command: validates its input checking, then exercises priority-driven leadership changes, quorum protection, and priority-conflict rejection across a 6-node cluster.",
+   "objects": [
+    {
+     "name": "findPeer",
+     "kind": "file-local static function",
+     "role": "polls a node's Status peerList for a named peer's parsed STable, retrying until found or timeout"
+    },
+    {
+     "name": "waitForPeerField",
+     "kind": "file-local static function",
+     "role": "polls until a named peer's given field equals an expected value"
+    },
+    {
+     "name": "setPriority",
+     "kind": "file-local static function",
+     "role": "sends SetPriority with the given value and asserts a 200"
+    },
+    {
+     "name": "SetPriorityTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "SetPriorityTest::testValidation",
+     "kind": "method",
+     "role": "missing/reserved/negative priority values are rejected with 400s"
+    },
+    {
+     "name": "SetPriorityTest::testPriorityScenarios",
+     "kind": "method",
+     "role": "all six-node priority scenarios (repriority, forced stand-down both directions, permafollower promotion/demotion, conflict rejection, quorum-breaking rejection) in one method to reuse one cluster"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly the SetPriority command test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent camelCase helpers/methods; setPriority (helper) vs SetPriority (command) reads clearly from context"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "f54c1605fc93f4ca"
+  },
+  {
+   "unit": "StatusHandlingCommandsTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/StatusHandlingCommandsTest.cpp"
+   ],
+   "lines": 60,
+   "test": true,
+   "intent": "Cluster test verifying GET /status/handlingCommands on a follower whose leader is briefly down reports the follower's own LEADING/FOLLOWING transition correctly and never claims a version mismatch just because it has no leader to compare against.",
+   "objects": [
+    {
+     "name": "StatusHandlingCommandsTest",
+     "kind": "struct",
+     "role": "tpunit fixture; stops the leader, polls a follower's status endpoint on a background thread, restarts the leader"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "a31693c05b2ce879"
+  },
+  {
+   "unit": "StatusTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/StatusTest.cpp"
+   ],
+   "lines": 63,
+   "test": true,
+   "intent": "Cluster test verifying a Status command sent concurrently to every node in a 3-node cluster reports the correct leader/follower role and a peer list of the expected size from each node's own view.",
+   "objects": [
+    {
+     "name": "StatusTest",
+     "kind": "struct",
+     "role": "tpunit fixture; fires Status at all three nodes in parallel, one thread per node"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "478f4d9f317a8fb8"
+  },
+  {
+   "unit": "SynchronousCommandsTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/SynchronousCommandsTest.cpp"
+   ],
+   "lines": 66,
+   "test": true,
+   "intent": "Cluster test verifying -synchronousCommands routes the named command to the blocking commit thread both directly on the leader and when escalated from a follower, while an unlisted command sharing the same handler still commits on a regular worker thread.",
+   "objects": [
+    {
+     "name": "SynchronousCommandsTest",
+     "kind": "struct",
+     "role": "tpunit fixture covering the leader, escalated-follower, and negative-control cases"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files; well-commented."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "065b6696b0517485"
+  },
+  {
+   "unit": "ThreadExceptionTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/ThreadExceptionTest.cpp"
+   ],
+   "lines": 23,
+   "test": true,
+   "intent": "Cluster test verifying an exception thrown on a worker thread surfaces as a proper 500 error response rather than crashing or hanging the server.",
+   "objects": [
+    {
+     "name": "ThreadExceptionTest",
+     "kind": "struct",
+     "role": "tpunit fixture; sends the ThreadException command plain, then again with rethrow=true"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "628cd8c2ac172b5b"
   },
   {
    "unit": "TimeoutTest",
@@ -4221,6 +5561,532 @@
    ],
    "_src": "b113.json",
    "hash": "07117a82dfbadc17"
+  },
+  {
+   "unit": "TimingTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/TimingTest.cpp"
+   ],
+   "lines": 111,
+   "test": true,
+   "intent": "Cluster test verifying testplugin's per-command timing instrumentation: leader reports its own peek/process/total times, followers additionally report the leader's upstream times, and peek+process never exceeds the reported total.",
+   "objects": [
+    {
+     "name": "TimingTest",
+     "kind": "struct/tpunit fixture",
+     "role": "the whole scenario"
+    },
+    {
+     "name": "TimingTest::test",
+     "kind": "method",
+     "role": "runs a write and a read command on every node, checking the timing invariants for each"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "exactly a command-timing test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits with its peers"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "clear, consistent with sibling tests"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b114.json",
+   "hash": "2deef8e5b9556ecd"
+  },
+  {
+   "unit": "UniqueConstraintsTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/UniqueConstraintsTest.cpp"
+   ],
+   "lines": 21,
+   "test": true,
+   "intent": "Cluster test verifying a duplicate-key INSERT is accepted the first time and rejected with 400 the second time by SQLite's unique-constraint check.",
+   "objects": [
+    {
+     "name": "UniqueConstraintsTest",
+     "kind": "struct",
+     "role": "tpunit fixture; sends the same INSERT twice and checks each response code"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "0512cab1c7c260f1"
+  },
+  {
+   "unit": "UpgradeDBTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/UpgradeDBTest.cpp"
+   ],
+   "lines": 51,
+   "test": true,
+   "intent": "Cluster test verifying a schema change made by upgradeDatabase replicates to every follower, by writing a row on the leader and reading it back locally on every node.",
+   "objects": [
+    {
+     "name": "UpgradeDBTest",
+     "kind": "struct",
+     "role": "tpunit fixture; writes on the leader, waits for followers' commit counts to match, reads the row on all nodes"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "876c10dd6cf5f463"
+  },
+  {
+   "unit": "UpgradeTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/UpgradeTest.cpp"
+   ],
+   "lines": 62,
+   "test": true,
+   "intent": "Regression guard against a bug (PR #1293) where sending multiple commands on one socket to a follower running a different version than the leader caused the second command to hang.",
+   "objects": [
+    {
+     "name": "UpgradeTest",
+     "kind": "struct",
+     "role": "tpunit fixture; single test that bumps a follower's version and pipelines two commands on one socket"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "#include <libstuff/SRandom.h>",
+     "why": "Nothing in this file calls into SRandom; looks like a leftover from an earlier version of the test",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SRandom.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "480af2b27097c2fc"
+  },
+  {
+   "unit": "VersionMismatchTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/VersionMismatchTest.cpp"
+   ],
+   "lines": 70,
+   "test": true,
+   "intent": "Cluster test verifying a follower on a different version than the leader escalates every command, reads included, instead of executing reads locally.",
+   "objects": [
+    {
+     "name": "VersionMismatchTest",
+     "kind": "struct",
+     "role": "tpunit fixture; runs two followers on a fake version in a 5-node cluster and checks read/write escalation"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "c83174193b579e4b"
+  },
+  {
+   "unit": "WriteLocalUnreplicatedClusterTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/WriteLocalUnreplicatedClusterTest.cpp"
+   ],
+   "lines": 77,
+   "test": true,
+   "intent": "Cluster test verifying a write made through the plugin's writeLocalUnreplicated path commits on the leader without being journaled or replicated to followers, while normal replicated commits keep working around it.",
+   "objects": [
+    {
+     "name": "WriteLocalUnreplicatedClusterTest",
+     "kind": "struct",
+     "role": "tpunit fixture that runs the unreplicated-write test against a default 3-node cluster"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling clustertest files."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "1c21dd331d0a7817"
+  },
+  {
+   "unit": "BedrockTester",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/BedrockTester.h",
+    "test/lib/BedrockTester.cpp"
+   ],
+   "lines": 876,
+   "test": true,
+   "intent": "Forks, execs, and manages one bedrock server subprocess for tests, and provides the request/response plumbing and direct DB access tests use against it.",
+   "objects": [
+    {
+     "name": "BedrockTester",
+     "kind": "class",
+     "role": "owns one bedrock server subprocess: starts/stops it, sends it commands over TCP, reads its DB file directly, and tracks all live instances for stopAll"
+    },
+    {
+     "name": "BedrockTester::autoAttachDebugger",
+     "kind": "member function",
+     "role": "speaks a small JSON-over-socket protocol to an LLDB RPC server to auto-attach a debugger to the spawned process"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BedrockTester::autoAttachDebugger",
+     "why": "A self-contained LLDB RPC-socket client with its own wire protocol, unrelated to running a server subprocess and sending it commands",
+     "severity": "med",
+     "suggested_home": "a standalone debug-attach helper, or null"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits; core per-server test harness class."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Repo-typical (_-prefixed private members); _commitCountBase vs. the reference member _commitCount is a little confusing on first read but is explained at the constructor."
+   },
+   "depends_on": [
+    "test/lib/PortMap.h",
+    "test/lib/tpunit++.hpp",
+    "libstuff/libstuff.h",
+    "libstuff/SData.h",
+    "libstuff/SFastBuffer.h",
+    "libstuff/SQResult.h",
+    "sqlitecluster/SQLite.h",
+    "test/lib/RemoteSQLite.h"
+   ],
+   "_src": "b115.json",
+   "hash": "f00c46658dbd7c08"
+  },
+  {
+   "unit": "PortMap",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/PortMap.h",
+    "test/lib/PortMap.cpp"
+   ],
+   "lines": 107,
+   "test": true,
+   "intent": "Hands out non-conflicting TCP ports from a fixed range to BedrockTester instances so parallel tests don't collide, recycling returned ports once confirmed free.",
+   "objects": [
+    {
+     "name": "PortMap",
+     "kind": "class",
+     "role": "allocates ports sequentially from a fixed range, recycles returned ones, and confirms a port is bindable before handing it out"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with repo convention (_-prefixed private members); not S-prefixed, but it's test-only infrastructure rather than a libstuff shared utility type."
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b115.json",
+   "hash": "faf700137f857288"
+  },
+  {
+   "unit": "PrintEquality",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/PrintEquality.h"
+   ],
+   "lines": 54,
+   "test": true,
+   "intent": "Backs tpunit++'s ASSERT_EQUAL/ASSERT_NOT_EQUAL family, printing both compared values with an = or != between them when an assertion fails.",
+   "objects": [
+    {
+     "name": "PrintEquality",
+     "kind": "class",
+     "role": "constructor-only helper templated on the two compared types; prints 'a (= or !=) b' to cout when constructed"
+    },
+    {
+     "name": "operator<<(ostream&, const list<T>&)",
+     "kind": "free function",
+     "role": "prints a list via SComposeList"
+    },
+    {
+     "name": "operator<<(ostream&, const set<T>&)",
+     "kind": "free function",
+     "role": "prints a set via SComposeList"
+    },
+    {
+     "name": "operator<<(ostream&, const map<T,U>&)",
+     "kind": "free function",
+     "role": "prints a map as one 'k: v' line per entry"
+    },
+    {
+     "name": "operator<<(ostream&, const optional<T>&)",
+     "kind": "free function",
+     "role": "prints the contained value or '(nullopt)'"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)",
+     "why": "Generic stream-formatting utilities with no dependency on PrintEquality or tpunit, bundled here only because PrintEquality's own printing happens to need them",
+     "severity": "med",
+     "suggested_home": "a shared stream-formatting utility header in libstuff, or null"
+    }
+   ],
+   "name_fit": {
+    "score": 3,
+    "note": "The file does far more than print equality - it defines general-purpose container-printing operators."
+   },
+   "location_fit": {
+    "score": 3,
+    "note": "Test-only placement is defensible for the class itself, less so for the generic operator<< overloads it carries."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "PrintEquality's own name matches its narrow job."
+   },
+   "depends_on": [],
+   "_src": "b115.json",
+   "hash": "f29d77201f001cff"
+  },
+  {
+   "unit": "RemoteSQLite",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/RemoteSQLite.h",
+    "test/lib/RemoteSQLite.cpp"
+   ],
+   "lines": 138,
+   "test": true,
+   "intent": "A client-side SQLite subclass that forwards every read/write to a BedrockTester's server as a Query command instead of touching a local DB file, so HC-Tree-mode tests can still use SQLite-shaped call sites.",
+   "objects": [
+    {
+     "name": "RemoteSQLite",
+     "kind": "class",
+     "role": "overrides SQLite's read/write/writeIdempotent family to serialize each call into a Query command sent via the owning BedrockTester"
+    },
+    {
+     "name": "RemoteSQLite::_runRemoteQuery",
+     "kind": "member function",
+     "role": "builds and sends the Query command with bound parameters as sql-param-<name> headers, shared by all public overrides"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits; test-only infrastructure paired with BedrockTester."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with the SQLite base class's naming and repo convention (_-prefixed private member/helper)."
+   },
+   "depends_on": [
+    "sqlitecluster/SQLite.h",
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "415165cd02497f92"
+  },
+  {
+   "unit": "TestHTTPS",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/TestHTTPS.h",
+    "test/lib/TestHTTPS.cpp"
+   ],
+   "lines": 47,
+   "test": true,
+   "intent": "A minimal SHTTPSManager subclass used by tests to make outbound HTTPS requests and read back their status code, with no product-specific response handling.",
+   "objects": [
+    {
+     "name": "TestHTTPS",
+     "kind": "class",
+     "role": "trivial SHTTPSManager subclass; exposes sendRequest publicly and parses the response status code out of the raw HTTP method line in _onRecv"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits; test-only HTTPS helper alongside the rest of test/lib."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with SHTTPSManager's naming conventions."
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SHTTPSManager.h"
+   ],
+   "_src": "b115.json",
+   "hash": "c6c48f73f4795ab9"
+  },
+  {
+   "unit": "tpunit++",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/tpunit++.cpp"
+   ],
+   "lines": 606,
+   "test": true,
+   "intent": "Implements the tpunit++ micro test framework's runner: fixture registration, multithreaded execution with name filtering, before/after hooks, pass/fail bookkeeping, and console output.",
+   "objects": [
+    {
+     "name": "tpunit::_TestFixture",
+     "kind": "class",
+     "role": "fixture base; registers itself on construction and implements the whole run loop, per-class and per-test threading, method dispatch with exception trapping, and float-equality helpers"
+    },
+    {
+     "name": "tpunit::_TestFixture::method",
+     "kind": "struct",
+     "role": "one registered before/after/test callback; linked-list node"
+    },
+    {
+     "name": "tpunit::_TestFixture::stats",
+     "kind": "struct",
+     "role": "global pass/fail counters and failure-name set"
+    },
+    {
+     "name": "tpunit::_TestFixture::perFixtureStats",
+     "kind": "struct",
+     "role": "thread_local per-fixture assertion/exception/trace counters"
+    },
+    {
+     "name": "tpunit::TestFixture",
+     "kind": "class",
+     "role": "empty out-of-line destructor only"
+    },
+    {
+     "name": "tpunit::Tests::run",
+     "kind": "free function group",
+     "role": "public entry points that call into _TestFixture::tpunit_detail_do_run"
+    },
+    {
+     "name": "tpunit::tpunit_break_check_line",
+     "kind": "free function",
+     "role": "keeps short-form dot output readable when a verbose log line interrupts it"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 4,
+    "note": "It's the vendored micro-framework's implementation file; the ++ suffix is unusual but recognizable."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits; kept under test/lib with the rest of the test infrastructure."
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "registerTests taking 70 individually numbered method* parameters (m0..m69) is a design wart inherited from the upstream framework, not a naming defect, but it stands out."
+   },
+   "depends_on": [
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b115.json",
+   "hash": "b3895badc1f24cc1"
   },
   {
    "unit": "main",
@@ -6235,47 +8101,8 @@
  "rollups": {},
  "coverage": {
   "total": 150,
-  "annotated": 112,
-  "missing": [
-   "test/clustertest/tests/AfterCommitCallbackClusterTest",
-   "test/clustertest/tests/BadCommandTest",
-   "test/clustertest/tests/BlockingQueueRateLimitTest",
-   "test/clustertest/tests/BoundParametersTest",
-   "test/clustertest/tests/BroadcastTest",
-   "test/clustertest/tests/ClusterUpgradeTest",
-   "test/clustertest/tests/ControlCommandTest",
-   "test/clustertest/tests/DoubleDetachTest",
-   "test/clustertest/tests/EscalateTest",
-   "test/clustertest/tests/FastStandDownTest",
-   "test/clustertest/tests/ForkCheckTest",
-   "test/clustertest/tests/FutureExecutionTest",
-   "test/clustertest/tests/GracefulFailoverTest",
-   "test/clustertest/tests/HTTPSBlockingCommitTest",
-   "test/clustertest/tests/HTTPSTest",
-   "test/clustertest/tests/JobIDTest",
-   "test/clustertest/tests/LeadingTest",
-   "test/clustertest/tests/MassiveQueryTest",
-   "test/clustertest/tests/MultipleLeaderSyncTest",
-   "test/clustertest/tests/PermafollowerTest",
-   "test/clustertest/tests/PrePeekPostProcessTest",
-   "test/clustertest/tests/SetPriorityTest",
-   "test/clustertest/tests/StatusHandlingCommandsTest",
-   "test/clustertest/tests/StatusTest",
-   "test/clustertest/tests/SynchronousCommandsTest",
-   "test/clustertest/tests/ThreadExceptionTest",
-   "test/clustertest/tests/TimingTest",
-   "test/clustertest/tests/UniqueConstraintsTest",
-   "test/clustertest/tests/UpgradeDBTest",
-   "test/clustertest/tests/UpgradeTest",
-   "test/clustertest/tests/VersionMismatchTest",
-   "test/clustertest/tests/WriteLocalUnreplicatedClusterTest",
-   "test/lib/BedrockTester",
-   "test/lib/PortMap",
-   "test/lib/PrintEquality",
-   "test/lib/RemoteSQLite",
-   "test/lib/TestHTTPS",
-   "test/lib/tpunit++"
-  ],
+  "annotated": 150,
+  "missing": [],
   "orphan": []
  }
 }

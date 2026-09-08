@@ -1,0 +1,62 @@
+{
+ "unit": "ForkCheckTest",
+ "dir": "test/clustertest/tests",
+ "files": [
+  "test/clustertest/tests/ForkCheckTest.cpp"
+ ],
+ "lines": 139,
+ "test": true,
+ "intent": "Cluster test that manufactures a fork: advances a follower's journal past the stopped leader's, corrupts the leader's own last journal-entry hash with a raw sqlite3 write, restarts it, and verifies it aborts (SIGABRT) rather than rejoining.",
+ "objects": [
+  {
+   "name": "ForkCheckTest",
+   "kind": "struct/tpunit fixture",
+   "role": "the whole scenario"
+  },
+  {
+   "name": "ForkCheckTest::getMaxJournalCommit",
+   "kind": "method",
+   "role": "finds the highest commit ID (and its journal table) across a node's journal* tables"
+  },
+  {
+   "name": "ForkCheckTest::createThreads",
+   "kind": "method",
+   "role": "spawns worker threads spamming idcollision commands at rotating nodes, avoiding a known-down leader"
+  },
+  {
+   "name": "ForkCheckTest::forkAtShutDown",
+   "kind": "method",
+   "role": "drives the scenario: builds a 5-node cluster, stops leader under load, hand-corrupts its last commit hash, restarts it, asserts SIGABRT"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "#include <sqlitecluster/SQLite.h> and <sqlitecluster/SQLiteNode.h>",
+   "why": "neither the SQLite nor SQLiteNode class is referenced in this file; only the raw sqlite3 C API (sqlite3_open_v2/sqlite3_exec/sqlite3_close_v2) is used, which these headers only supply transitively",
+   "severity": "low",
+   "suggested_home": "libstuff/sqlite3.h included directly instead"
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "exactly a fork-detection test"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits with its peers"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "clear, consistent with sibling tests"
+ },
+ "depends_on": [
+  "test/lib/BedrockTester.h",
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "sqlitecluster/SQLite.h",
+  "sqlitecluster/SQLiteNode.h",
+  "test/clustertest/BedrockClusterTester.h"
+ ],
+ "_src": "b114.json",
+ "hash": "8b840ed801e4e0da"
+}

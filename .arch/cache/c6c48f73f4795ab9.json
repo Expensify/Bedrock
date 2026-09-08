@@ -1,0 +1,37 @@
+{
+ "unit": "TestHTTPS",
+ "dir": "test/lib",
+ "files": [
+  "test/lib/TestHTTPS.h",
+  "test/lib/TestHTTPS.cpp"
+ ],
+ "lines": 47,
+ "test": true,
+ "intent": "A minimal SHTTPSManager subclass used by tests to make outbound HTTPS requests and read back their status code, with no product-specific response handling.",
+ "objects": [
+  {
+   "name": "TestHTTPS",
+   "kind": "class",
+   "role": "trivial SHTTPSManager subclass; exposes sendRequest publicly and parses the response status code out of the raw HTTP method line in _onRecv"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits; test-only HTTPS helper alongside the rest of test/lib."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Consistent with SHTTPSManager's naming conventions."
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/SHTTPSManager.h"
+ ],
+ "_src": "b115.json",
+ "hash": "c6c48f73f4795ab9"
+}

@@ -1,0 +1,60 @@
+{
+ "unit": "PrintEquality",
+ "dir": "test/lib",
+ "files": [
+  "test/lib/PrintEquality.h"
+ ],
+ "lines": 54,
+ "test": true,
+ "intent": "Backs tpunit++'s ASSERT_EQUAL/ASSERT_NOT_EQUAL family, printing both compared values with an = or != between them when an assertion fails.",
+ "objects": [
+  {
+   "name": "PrintEquality",
+   "kind": "class",
+   "role": "constructor-only helper templated on the two compared types; prints 'a (= or !=) b' to cout when constructed"
+  },
+  {
+   "name": "operator<<(ostream&, const list<T>&)",
+   "kind": "free function",
+   "role": "prints a list via SComposeList"
+  },
+  {
+   "name": "operator<<(ostream&, const set<T>&)",
+   "kind": "free function",
+   "role": "prints a set via SComposeList"
+  },
+  {
+   "name": "operator<<(ostream&, const map<T,U>&)",
+   "kind": "free function",
+   "role": "prints a map as one 'k: v' line per entry"
+  },
+  {
+   "name": "operator<<(ostream&, const optional<T>&)",
+   "kind": "free function",
+   "role": "prints the contained value or '(nullopt)'"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)",
+   "why": "Generic stream-formatting utilities with no dependency on PrintEquality or tpunit, bundled here only because PrintEquality's own printing happens to need them",
+   "severity": "med",
+   "suggested_home": "a shared stream-formatting utility header in libstuff, or null"
+  }
+ ],
+ "name_fit": {
+  "score": 3,
+  "note": "The file does far more than print equality - it defines general-purpose container-printing operators."
+ },
+ "location_fit": {
+  "score": 3,
+  "note": "Test-only placement is defensible for the class itself, less so for the generic operator<< overloads it carries."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "PrintEquality's own name matches its narrow job."
+ },
+ "depends_on": [],
+ "_src": "b115.json",
+ "hash": "f29d77201f001cff"
+}

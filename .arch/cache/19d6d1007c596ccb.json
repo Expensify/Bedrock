@@ -1,0 +1,68 @@
+{
+ "unit": "BoundParametersTest",
+ "dir": "test/clustertest/tests",
+ "files": [
+  "test/clustertest/tests/BoundParametersTest.cpp"
+ ],
+ "lines": 141,
+ "test": true,
+ "intent": "Regression test (PR #2600) for leader/follower divergence with named bound SQL parameters: confirms a leader write round-trips correctly and journals the inlined SQL literal rather than the raw placeholder text, and exercises the same path through RemoteSQLite.",
+ "objects": [
+  {
+   "name": "BoundParametersTest",
+   "kind": "struct/tpunit fixture",
+   "role": "the whole scenario"
+  },
+  {
+   "name": "BoundParametersTest::setup/teardown",
+   "kind": "method group",
+   "role": "own a 3-node BedrockClusterTester"
+  },
+  {
+   "name": "BoundParametersTest::queryServer",
+   "kind": "method",
+   "role": "runs a JSON-format Query and deserializes the SQResult"
+  },
+  {
+   "name": "BoundParametersTest::getCommitCount",
+   "kind": "method",
+   "role": "reads a node's Status commit count"
+  },
+  {
+   "name": "BoundParametersTest::readJournalText",
+   "kind": "method",
+   "role": "reads and decompresses one journal row's query text for a given commit ID"
+  },
+  {
+   "name": "BoundParametersTest::testBoundParamReplication",
+   "kind": "method",
+   "role": "writes a bound-param value on leader, waits for followers to catch up, checks the replicated row and journal text on every node"
+  },
+  {
+   "name": "BoundParametersTest::testRemoteSQLiteForwardsParams",
+   "kind": "method",
+   "role": "writes and reads back a row through RemoteSQLite with bound params, checking values didn't bind to NULL"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "exactly a bound-parameter replication test"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits with its peers"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "clear method names"
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "test/clustertest/BedrockClusterTester.h",
+  "test/lib/RemoteSQLite.h"
+ ],
+ "_src": "b114.json",
+ "hash": "19d6d1007c596ccb"
+}

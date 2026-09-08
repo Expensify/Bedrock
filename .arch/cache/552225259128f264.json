@@ -1,0 +1,51 @@
+{
+ "unit": "MultipleLeaderSyncTest",
+ "dir": "test/clustertest/tests",
+ "files": [
+  "test/clustertest/tests/MultipleLeaderSyncTest.cpp"
+ ],
+ "lines": 187,
+ "test": true,
+ "intent": "Cluster test for successive leader failures on a 5-node cluster: kills the leader twice with enough writes between failures that returning nodes must pass through SYNCHRONIZING before re-leading or following, and verifies that sequence is actually observed.",
+ "objects": [
+  {
+   "name": "MultipleLeaderSyncTest",
+   "kind": "struct/tpunit fixture",
+   "role": "the whole scenario"
+  },
+  {
+   "name": "MultipleLeaderSyncTest::runTrivialWrites",
+   "kind": "method",
+   "role": "issues a batch of trivial UPDATE/INSERT writes to advance a node's commit count"
+  },
+  {
+   "name": "MultipleLeaderSyncTest::waitForCommit",
+   "kind": "method",
+   "role": "polls a node's Status until its commitCount reaches a minimum, or times out"
+  },
+  {
+   "name": "MultipleLeaderSyncTest::test",
+   "kind": "method",
+   "role": "builds the cluster, fails leader twice while writing between failures, restarts both downed nodes concurrently, and watches each pass through the expected state sequence"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "exactly a multi-failure leader-sync test"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits with its peers"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "clear and consistent"
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/clustertest/BedrockClusterTester.h"
+ ],
+ "_src": "b114.json",
+ "hash": "552225259128f264"
+}

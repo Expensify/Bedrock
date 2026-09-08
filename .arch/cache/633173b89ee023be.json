@@ -1,0 +1,43 @@
+{
+ "unit": "DoubleDetachTest",
+ "dir": "test/clustertest/tests",
+ "files": [
+  "test/clustertest/tests/DoubleDetachTest.cpp"
+ ],
+ "lines": 52,
+ "test": true,
+ "intent": "Cluster test verifying detaching an already-detached follower is rejected rather than accepted a second time, and that the node re-attaches cleanly.",
+ "objects": [
+  {
+   "name": "DoubleDetachTest",
+   "kind": "struct",
+   "role": "tpunit fixture; sets a follower's priority, detaches it twice, then re-attaches"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "#include <iostream>",
+   "why": "Unused in this file",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Consistent with sibling clustertest files."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/clustertest/BedrockClusterTester.h"
+ ],
+ "_src": "b115.json",
+ "hash": "633173b89ee023be"
+}

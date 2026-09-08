@@ -1,0 +1,36 @@
+{
+ "unit": "PortMap",
+ "dir": "test/lib",
+ "files": [
+  "test/lib/PortMap.h",
+  "test/lib/PortMap.cpp"
+ ],
+ "lines": 107,
+ "test": true,
+ "intent": "Hands out non-conflicting TCP ports from a fixed range to BedrockTester instances so parallel tests don't collide, recycling returned ports once confirmed free.",
+ "objects": [
+  {
+   "name": "PortMap",
+   "kind": "class",
+   "role": "allocates ports sequentially from a fixed range, recycles returned ones, and confirms a port is bindable before handing it out"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Consistent with repo convention (_-prefixed private members); not S-prefixed, but it's test-only infrastructure rather than a libstuff shared utility type."
+ },
+ "depends_on": [
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b115.json",
+ "hash": "faf700137f857288"
+}

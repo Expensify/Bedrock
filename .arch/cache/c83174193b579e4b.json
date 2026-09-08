@@ -1,0 +1,36 @@
+{
+ "unit": "VersionMismatchTest",
+ "dir": "test/clustertest/tests",
+ "files": [
+  "test/clustertest/tests/VersionMismatchTest.cpp"
+ ],
+ "lines": 70,
+ "test": true,
+ "intent": "Cluster test verifying a follower on a different version than the leader escalates every command, reads included, instead of executing reads locally.",
+ "objects": [
+  {
+   "name": "VersionMismatchTest",
+   "kind": "struct",
+   "role": "tpunit fixture; runs two followers on a fake version in a 5-node cluster and checks read/write escalation"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Consistent with sibling clustertest files."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/clustertest/BedrockClusterTester.h"
+ ],
+ "_src": "b115.json",
+ "hash": "c83174193b579e4b"
+}

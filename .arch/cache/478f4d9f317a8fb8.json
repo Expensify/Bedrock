@@ -1,0 +1,36 @@
+{
+ "unit": "StatusTest",
+ "dir": "test/clustertest/tests",
+ "files": [
+  "test/clustertest/tests/StatusTest.cpp"
+ ],
+ "lines": 63,
+ "test": true,
+ "intent": "Cluster test verifying a Status command sent concurrently to every node in a 3-node cluster reports the correct leader/follower role and a peer list of the expected size from each node's own view.",
+ "objects": [
+  {
+   "name": "StatusTest",
+   "kind": "struct",
+   "role": "tpunit fixture; fires Status at all three nodes in parallel, one thread per node"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Consistent with sibling clustertest files."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/clustertest/BedrockClusterTester.h"
+ ],
+ "_src": "b115.json",
+ "hash": "478f4d9f317a8fb8"
+}

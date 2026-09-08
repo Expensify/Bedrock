@@ -1,0 +1,36 @@
+{
+ "unit": "PermafollowerTest",
+ "dir": "test/clustertest/tests",
+ "files": [
+  "test/clustertest/tests/PermafollowerTest.cpp"
+ ],
+ "lines": 53,
+ "test": true,
+ "intent": "Cluster test verifying a permafollower (priority 0) never counts toward write quorum: the cluster keeps committing once enough regular followers are down, whether or not the permafollower itself is up.",
+ "objects": [
+  {
+   "name": "PermafollowerTest",
+   "kind": "struct",
+   "role": "tpunit fixture; builds a 6-node cluster and commits with successively more nodes, including the permafollower, down"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Consistent with sibling clustertest files."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/clustertest/BedrockClusterTester.h"
+ ],
+ "_src": "b115.json",
+ "hash": "35cf6db3832d3d20"
+}
