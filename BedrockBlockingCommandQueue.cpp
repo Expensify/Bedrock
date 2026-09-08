@@ -204,24 +204,24 @@ string BedrockBlockingCommandQueue::getBlockingDimension(const string& identifie
     return "";
 }
 
-shared_ptr<BedrockBlockingCommandQueue::DimensionState> BedrockBlockingCommandQueue::_getOrCreateState(StateMap& map, const string& key)
+shared_ptr<BedrockBlockingCommandQueue::BlockingCategoryState> BedrockBlockingCommandQueue::_getOrCreateState(StateMap& map, const string& key)
 {
     lock_guard<decltype(map.mapMutex)> lock(map.mapMutex);
     auto [it, inserted] = map.states.try_emplace(key);
     if (inserted) {
-        it->second = make_shared<DimensionState>();
+        it->second = make_shared<BlockingCategoryState>();
     }
     return it->second;
 }
 
-shared_ptr<BedrockBlockingCommandQueue::DimensionState> BedrockBlockingCommandQueue::_getState(StateMap& map, const string& key)
+shared_ptr<BedrockBlockingCommandQueue::BlockingCategoryState> BedrockBlockingCommandQueue::_getState(StateMap& map, const string& key)
 {
     lock_guard<decltype(map.mapMutex)> lock(map.mapMutex);
     auto it = map.states.find(key);
     return it == map.states.end() ? nullptr : it->second;
 }
 
-void BedrockBlockingCommandQueue::_recordAndCheck(DimensionState& state, const string& dimension, const string& key, const Limits& limits, uint64_t now, uint64_t elapsedUS)
+void BedrockBlockingCommandQueue::_recordAndCheck(BlockingCategoryState& state, const string& dimension, const string& key, const Limits& limits, uint64_t now, uint64_t elapsedUS)
 {
     const uint64_t windowUS = limits.windowUS.load();
     const uint64_t thresholdUS = limits.thresholdUS.load();
@@ -274,7 +274,7 @@ void BedrockBlockingCommandQueue::_recordAndCheck(DimensionState& state, const s
     }
 }
 
-bool BedrockBlockingCommandQueue::_isBlocked(DimensionState& state, uint64_t now)
+bool BedrockBlockingCommandQueue::_isBlocked(BlockingCategoryState& state, uint64_t now)
 {
     lock_guard<decltype(state.m)> lock(state.m);
     return state.blockedUntil > now;

@@ -70,9 +70,9 @@ private:
     // An identifier's recently finished blocking-queue commands, oldest first.
     typedef deque<RecentlyFinishedCommand> RecentlyFinishedCommandList;
 
-    // Rate-limit state for one dimension. Each entry has its own mutex, so different identifiers never contend
+    // Rate-limit state for one blocking category. Each entry has its own mutex, so different identifiers never contend
     // on one lock. `blockedUntil` is when an active block ends, in microseconds; 0 means not blocked.
-    struct DimensionState
+    struct BlockingCategoryState
     {
         mutex m;
         RecentlyFinishedCommandList commands;
@@ -86,7 +86,7 @@ private:
     struct StateMap
     {
         mutable mutex mapMutex;
-        unordered_map<string, shared_ptr<DimensionState>> states;
+        unordered_map<string, shared_ptr<BlockingCategoryState>> states;
     };
 
     // The tunables for one dimension, in microseconds. Each one is atomic because the blocking thread reads
@@ -101,20 +101,20 @@ private:
     };
 
     // Return a shared_ptr to the state for `key` in `map`, creating it if absent. Holds map.mapMutex only briefly.
-    static shared_ptr<DimensionState> _getOrCreateState(StateMap& map, const string& key);
+    static shared_ptr<BlockingCategoryState> _getOrCreateState(StateMap& map, const string& key);
 
     // Return the state for `key` in `map`, or nullptr if absent. Holds map.mapMutex only briefly.
-    static shared_ptr<DimensionState> _getState(StateMap& map, const string& key);
+    static shared_ptr<BlockingCategoryState> _getState(StateMap& map, const string& key);
 
     // Append a sample that finished at `now` after `elapsedUS` to `state`, then block it for the block
     // duration when its windowed time exceeds the threshold. `dimension` and `key` label the log line. Reads
     // `limits` once up front so a concurrent retune can't change the window partway through. This is the
     // O(window) work; it never runs under the base `_queueMutex`.
-    static void _recordAndCheck(DimensionState& state, const string& dimension, const string& key, const Limits& limits, uint64_t now, uint64_t elapsedUS);
+    static void _recordAndCheck(BlockingCategoryState& state, const string& dimension, const string& key, const Limits& limits, uint64_t now, uint64_t elapsedUS);
 
     // True if `state` is inside an active block at `now`. O(1): reads only the block deadline, so the push and
     // dequeue hot paths stay cheap (dequeue runs under the base `_queueMutex`).
-    static bool _isBlocked(DimensionState& state, uint64_t now);
+    static bool _isBlocked(BlockingCategoryState& state, uint64_t now);
 
     // Log an identifier or command that is over this but under its block threshold, so heavy ones are visible
     // before they get blocked.
@@ -130,7 +130,7 @@ private:
     StateMap _commandStates;
 
     // The global rate limiter has no key, so it needs one state rather than a map of them.
-    DimensionState _globalState;
+    BlockingCategoryState _globalState;
 
     // setSharedRateLimiterWindow() and setSharedRateLimiterBlockDuration() write both of the first two, which
     // is what SetBlockingQueueTimeRateLimit exposes.
