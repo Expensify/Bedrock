@@ -1,0 +1,615 @@
+{
+ "dir": "libstuff",
+ "cluster": "sqlite-header-wire",
+ "units": [
+  {
+   "unit": "SData",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SData.h",
+    "libstuff/SData.cpp"
+   ],
+   "lines": 283,
+   "test": false,
+   "intent": "A generic HTTP-like message (method line, name/value header table, content body) used both for real HTTP and as Bedrock's internal command/message wire format.",
+   "objects": [
+    {
+     "name": "SData",
+     "kind": "struct",
+     "role": "methodLine/nameValueMap/content; map-like accessors; calc/test helpers; getVerb; serialize/deserialize to HTTP wire format"
+    },
+    {
+     "name": "operator<<(ostream&, const SData&)",
+     "kind": "free function",
+     "role": "stream helper, serializes"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SData::deserialize simdjson padding logic",
+     "why": "unconditionally reserves 32 extra bytes on any JSON-looking header value to satisfy simdjson's trailing-scratch-space requirement; a generic HTTP message container shaping its storage to one downstream JSON parser's needs",
+     "severity": "low",
+     "suggested_home": "wherever the simdjson parsing of these values actually happens"
+    },
+    {
+     "item": "SData::create",
+     "why": "marked **DEPRECATED** in favor of the constructor but still present as public API",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits; sits naturally beside SFastBuffer/STable"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent with repo convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SFastBuffer.h"
+   ],
+   "_src": "b005.json",
+   "hash": "406d084cae3f36c9"
+  },
+  {
+   "unit": "SDeburr",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SDeburr.h",
+    "libstuff/SDeburr.cpp"
+   ],
+   "lines": 277,
+   "test": false,
+   "intent": "Converts accented Unicode text to a lowercased ASCII-only approximation (lodash-style deburr) for search normalization, and exposes the same transform as a SQLite UDF.",
+   "objects": [
+    {
+     "name": "SDeburr::deburr(const unsigned char*)",
+     "kind": "static method",
+     "role": "public transform, hand-rolled UTF-8 decode"
+    },
+    {
+     "name": "SDeburr::deburr(const string&)",
+     "kind": "static method",
+     "role": "string overload"
+    },
+    {
+     "name": "SDeburr::registerSQLite",
+     "kind": "static method",
+     "role": "registers the DEBURR(text) SQLite UDF"
+    },
+    {
+     "name": "SDeburr::unicodeToAscii",
+     "kind": "private static method",
+     "role": "per-codepoint lookup into UNICODE_TO_ASCII_MAP"
+    },
+    {
+     "name": "SDeburr::UNICODE_TO_ASCII_MAP",
+     "kind": "private constexpr array",
+     "role": "Latin-1/Latin Extended-A codepoint-to-ASCII table"
+    },
+    {
+     "name": "sqliteDeburr",
+     "kind": "file-local lambda (in registerSQLite)",
+     "role": "the actual sqlite3_create_function_v2 callback"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent; minor param-name mismatch (input vs inputBytes) between header and .cpp"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/sqlite3.h"
+   ],
+   "_src": "b005.json",
+   "hash": "4adff63dbaa0469a"
+  },
+  {
+   "unit": "SQResult",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SQResult.h",
+    "libstuff/SQResult.cpp"
+   ],
+   "lines": 389,
+   "test": false,
+   "intent": "In-memory SQLite result set: rows of typed SQValue cells plus a shared header/column-name list, with by-name row access and JSON serialize/deserialize.",
+   "objects": [
+    {
+     "name": "SQResultRow",
+     "kind": "class",
+     "role": "one row; cells addressable by index or by column name via a back-pointer to its owning SQResult"
+    },
+    {
+     "name": "SQResult",
+     "kind": "class",
+     "role": "the result set: headers + rows, iteration, JSON serialize/deserialize, legacy text/JSON serialize wrappers around SQResultFormatter"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "SQResultRow::result (owning-SQResult back-pointer) is a somewhat generic member name, though comments and the friendship make the relationship clear"
+   },
+   "depends_on": [
+    "libstuff/SQValue.h",
+    "libstuff/libstuff.h",
+    "libstuff/SQResultFormatter.h"
+   ],
+   "_src": "b104.json",
+   "hash": "c35b59138d2806b1"
+  },
+  {
+   "unit": "SQResultFormatter",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SQResultFormatter.h",
+    "libstuff/SQResultFormatter.cpp"
+   ],
+   "lines": 588,
+   "test": false,
+   "intent": "Renders an SQResult into one of six sqlite3-shell-style text formats (column, CSV, tabs, JSON, quote, list) for CLI-style display or export.",
+   "objects": [
+    {
+     "name": "SQResultFormatter::FORMAT",
+     "kind": "enum class",
+     "role": "the six supported output formats"
+    },
+    {
+     "name": "SQResultFormatter::FORMAT_OPTIONS",
+     "kind": "class",
+     "role": "header/nullvalue/separator formatting options bundle"
+    },
+    {
+     "name": "SQResultFormatter",
+     "kind": "class",
+     "role": "static-only dispatcher (format()) plus one formatXXX() renderer per FORMAT value"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SQResultFormatter::FORMAT_OPTIONS::nullvalue / ::separator",
+     "why": "declared but never read by any formatXXX() implementation - dead configuration surface",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "utf8Next/isCombining/isWide/displayWidth (local lambdas in formatColumn)",
+     "why": "a generic UTF-8 display-width utility with no dependency on SQResult, trapped as local lambdas instead of being a reusable libstuff string-width helper",
+     "severity": "med",
+     "suggested_home": "libstuff/SString or a new text-width utility unit"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "lives beside SQResult, the type it formats"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "FORMAT_OPTIONS uses SCREAMING_CASE, unlike every other nested class/struct in the repo"
+   },
+   "depends_on": [
+    "libstuff/SQResult.h",
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b104.json",
+   "hash": "4a8f3c63c61a6b47"
+  },
+  {
+   "unit": "SQValue",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SQValue.h",
+    "libstuff/SQValue.cpp"
+   ],
+   "lines": 230,
+   "test": false,
+   "intent": "A tagged-value type mirroring SQLite's dynamic column typing (NONE/INTEGER/REAL/TEXT/BLOB), implicitly convertible to/from string for drop-in use wherever legacy code expects a string-typed value.",
+   "objects": [
+    {
+     "name": "SQValue",
+     "kind": "class",
+     "role": "TYPE enum + typed storage; constructors from int64_t/double/const char*/string; operator string(); friend operator+/==/!=; empty()/size(); operator<<"
+    },
+    {
+     "name": "SQValue::TYPE",
+     "kind": "enum class",
+     "role": "NONE/INTEGER/REAL/TEXT/BLOB"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Q naming matches other SQLite-adjacent types (SQResult, SQuery)"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent; integer/real/text all coexist rather than a union, a deliberate simplicity tradeoff"
+   },
+   "depends_on": [
+    "libstuff/sqlite3.h"
+   ],
+   "_src": "b005.json",
+   "hash": "1533ec5eb7a46985"
+  },
+  {
+   "unit": "SQliteParameter",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SQliteParameter.h",
+    "libstuff/SQliteParameter.cpp"
+   ],
+   "lines": 174,
+   "test": false,
+   "intent": "A single typed value bindable to a named sqlite3 prepared-statement parameter, with wire-safe serialize/deserialize so bound parameters can travel inside an SData header value.",
+   "objects": [
+    {
+     "name": "SQliteParameter",
+     "kind": "class",
+     "role": "Type enum class (Null/Int64/Double/Text/Blob), public value fields, static factories, serialize/deserialize, and param-name URI encode/decode"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "sits with the other SQLite-adjacent S-types (SQResult, SQValue) in libstuff"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b104.json",
+   "hash": "7a8131a8beeee7c9"
+  },
+  {
+   "unit": "STime",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/STime.cpp"
+   ],
+   "lines": 138,
+   "test": false,
+   "intent": "Free functions for libstuff's microsecond-precision timestamp type: now(), format/parse to and from human timestamps, and calendar helpers.",
+   "objects": [
+    {
+     "name": "STimeNow",
+     "kind": "function",
+     "role": "current time in microseconds"
+    },
+    {
+     "name": "STimeThisMorning",
+     "kind": "function",
+     "role": "timestamp for today at 00:00 GMT"
+    },
+    {
+     "name": "SDaysInMonth",
+     "kind": "function",
+     "role": "days in a given month/year"
+    },
+    {
+     "name": "SComposeTime",
+     "kind": "function",
+     "role": "formats a microsecond timestamp via strftime"
+    },
+    {
+     "name": "STimestampToEpoch",
+     "kind": "function",
+     "role": "parses a formatted timestamp to epoch seconds"
+    },
+    {
+     "name": "STimestampMSToEpoch",
+     "kind": "function",
+     "role": "parses a formatted timestamp (with optional fractional seconds) to epoch milliseconds"
+    },
+    {
+     "name": "SToTimeval",
+     "kind": "function",
+     "role": "splits a microsecond timestamp into a timeval"
+    },
+    {
+     "name": "SFirstOfMonth",
+     "kind": "function",
+     "role": "first-of-month date, offset by a number of months"
+    },
+    {
+     "name": "STIMESTAMP_MS",
+     "kind": "function",
+     "role": "formats a microsecond timestamp with millisecond precision"
+    },
+    {
+     "name": "SCURRENT_TIMESTAMP_MS",
+     "kind": "function",
+     "role": "STIMESTAMP_MS(STimeNow())"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "STime.cpp's public API",
+     "why": "declared in the libstuff.h catch-all rather than a dedicated STime.h, unlike other already-separated libstuff units",
+     "severity": "low",
+     "suggested_home": "libstuff/STime.h"
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "name fits the content but the file has no header of its own"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "declared in libstuff.h's catch-all rather than a dedicated header"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "STIMESTAMP_MS/SCURRENT_TIMESTAMP_MS use SCREAMING_CASE and read like macros, breaking from the PascalCase-after-S used by the rest of the file (STimeNow, SComposeTime)"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b104.json",
+   "hash": "4db822301ce7fa74"
+  },
+  {
+   "unit": "libstuff",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/libstuff.h",
+    "libstuff/libstuff.cpp"
+   ],
+   "lines": 4612,
+   "test": false,
+   "intent": "Bedrock's project-wide low-level utility header/implementation: the core types (SString, STable, SException, SStopwatch, SRECompiledRegex), the logging/assertion macros nearly every file uses, and free functions for strings, HTTP wire format, JSON, sockets, files, crypto, and SQLite query execution.",
+   "objects": [
+    {
+     "name": "STableComp",
+     "kind": "class",
+     "role": "Case-insensitive less-than comparator; STable's key comparator"
+    },
+    {
+     "name": "STableComp::nocase_compare",
+     "kind": "struct",
+     "role": "Per-character case-insensitive comparator used by STableComp"
+    },
+    {
+     "name": "SString",
+     "kind": "class",
+     "role": "String subclass adding implicit assign/construct from bool, char, arithmetic types, and string-convertible types"
+    },
+    {
+     "name": "STable",
+     "kind": "typedef",
+     "role": "Case-insensitive string-to-SString map; the project's canonical name/value table"
+    },
+    {
+     "name": "SException",
+     "kind": "class",
+     "role": "Exception carrying an HTTP-like method/headers/body triple plus an optional captured callstack"
+    },
+    {
+     "name": "SStopwatch",
+     "kind": "struct",
+     "role": "Elapsed-time/alarm timer built on atomic<uint64_t>"
+    },
+    {
+     "name": "SRECompiledRegex",
+     "kind": "class",
+     "role": "RAII owner of a compiled PCRE2 regex, move-only"
+    },
+    {
+     "name": "SAutoThreadPrefix",
+     "kind": "struct",
+     "role": "Scope guard that sets/restores the thread-local log prefix, log param, and command name"
+    },
+    {
+     "name": "std::atomic<string>",
+     "kind": "template specialization",
+     "role": "Mutex-backed atomic<string>, filling a standard-library gap"
+    },
+    {
+     "name": "fd_map",
+     "kind": "typedef",
+     "role": "map<int, pollfd> keyed by socket, used by the S_poll family"
+    },
+    {
+     "name": "Assertion/exception macros",
+     "kind": "macro group",
+     "role": "SASSERT, SASSERTEQUALS, SASSERTWARN, SASSERTWARNEQUALS, STHROW, STHROW_STACK"
+    },
+    {
+     "name": "Logging macros/globals",
+     "kind": "macro/global group",
+     "role": "SSYSLOG, SDEBUG/SINFO/SHMMM/SWARN/SALERT/SERROR, SWHEREAMI, _g_SLogMask, SSyslogFunc, SThreadLog{Prefix,Param,Name,Command}, isSyncThread, isBlockingCommitThread; SSyslogSocketDirect/SSyslogNoop backends and their socket pool are implemented in this .cpp"
+    },
+    {
+     "name": "Time functions/macros",
+     "kind": "function group (declared only)",
+     "role": "STIME_US_PER_*, STIME_HZ, STimeNow, STimeThisMorning, SDaysInMonth, SComposeTime, STimestampToEpoch, STimestampMSToEpoch, SToTimeval, SFirstOfMonth - implemented in STime.cpp"
+    },
+    {
+     "name": "Signal functions",
+     "kind": "function group (declared only)",
+     "role": "SInitializeSignals, SGetSignal, SCheckSignal, SGetSignals, SGetSignalDescription, SClearSignals, SStopSignalThread - implemented in SSignal.cpp"
+    },
+    {
+     "name": "Log-support functions",
+     "kind": "function group (declared only)",
+     "role": "SLogStackTrace, SWhitelistLogParams, SIsLogParamWhitelisted, addLogParams - implemented in SLog.cpp"
+    },
+    {
+     "name": "SInitialize/SSetSignalHandlerDieFunc/STerminationSignalCount",
+     "kind": "function group",
+     "role": "Process/thread bring-up and shutdown-signal bookkeeping"
+    },
+    {
+     "name": "SFluentdInitialize/SFluentdLog",
+     "kind": "function group",
+     "role": "Fluentd forward-protocol logging, with per-key redaction and syslog fallback"
+    },
+    {
+     "name": "Math/hex functions",
+     "kind": "function group",
+     "role": "SToHex (3 overloads), SFromHex, SStrFromHex, SBase32HexStringFromBase32, SHexStringFromBase32"
+    },
+    {
+     "name": "String utility functions",
+     "kind": "function group",
+     "role": "SToStr, SToFloat/SToInt/SToInt64/SToUInt64, SContains overloads, SIEquals/SIContains/SStartsWith/SEndsWith, SConstantTimeEquals/IEquals, SToLower/SToUpper, SCollapse/STrim/SStrip/SStripAllBut/SStripNonNum/SStripTrim, SEscape/SUnescape, SBefore/SAfter/SAfterLastOf/SAfterUpTo, SReplace/SReplaceAllBut/SReplaceAll, SStateNameToInt, SAppend, SIsValidSQLiteDateModifier"
+    },
+    {
+     "name": "Regex functions",
+     "kind": "function group",
+     "role": "SRECompile, SREMatch, SREMatchAll, SREReplace, SRedactSensitiveValues"
+    },
+    {
+     "name": "HTTP wire-format functions",
+     "kind": "function group",
+     "role": "SParseHTTP, SParseRequestMethodLine, SParseResponseMethodLine, SParseURI, SParseURIPath, SComposeHTTP, SComposePOST, SComposeHost, SParseHost, SHostIsValid, SGetDomain, SDecodeURIComponent, SEncodeURIComponent, plus file-local helpers _SParseHTTP_GetUpToNext/_SParseHTTP_GetUpToEnd/_SDecodeURIChar in the .cpp"
+    },
+    {
+     "name": "List functions",
+     "kind": "function group",
+     "role": "SParseIntegerList/Set/Vector, SParseList, SParseSet, SComposeList"
+    },
+    {
+     "name": "JSON functions",
+     "kind": "function group",
+     "role": "SToJSON, SComposeJSONArray, SComposeJSONObject, SParseJSONObject, SParseJSONArray, SGetJSONArrayFront, plus the file-local recursive-descent parser (_SParseJSONString/_SParseJSONArray/_SParseJSONObject/_SParseJSONValue) in the .cpp"
+    },
+    {
+     "name": "Network/socket functions",
+     "kind": "function group",
+     "role": "SToStr(sockaddr_in)/operator<<, SFDset, SFDAnySet, SResolveHost, SIPToAddr, S_socket, S_close, S_accept, S_recvfrom, S_recvappend, S_sendconsume, S_poll, SGetHostName, SGetPeerName, SCheckNetworkErrorType"
+    },
+    {
+     "name": "File functions",
+     "kind": "function group",
+     "role": "SFileExists, SFileLoad, SFileSave, SFileDelete, SFileCopy, SFileSize"
+    },
+    {
+     "name": "Crypto functions",
+     "kind": "function group",
+     "role": "SHashSHA1/SHA256, SEncodeBase64/SDecodeBase64, SHMACSHA1/SHA256, SAESEncrypt, SAESDecrypt, SAESDecryptNoStrip"
+    },
+    {
+     "name": "SQLite functions",
+     "kind": "function group",
+     "role": "SQ (7 overloads), SQList, SQueryLogOpen/Close, SQuery (4 overloads, including a busy-retry loop with named-parameter binding, corruption detection and slow-query logging), SQVerifyTable, SQVerifyTableExists; _g_sQueryLogFP is a file-local global in the .cpp"
+    },
+    {
+     "name": "Timestamp functions",
+     "kind": "function group",
+     "role": "SUNQUOTED_TIMESTAMP, STIMESTAMP, SUNQUOTED_CURRENT_TIMESTAMP, SCURRENT_TIMESTAMP implemented here; SCURRENT_TIMESTAMP_MS/STIMESTAMP_MS declared here but implemented in STime.cpp"
+    },
+    {
+     "name": "Misc functions",
+     "kind": "function group",
+     "role": "SGZip/SGUnzip, SParseCommandLine, SExecShell, SGetCPUUserTime, SGetCurrentExceptionName, STerminateHandler"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SQuery/SQVerifyTable/SQVerifyTableExists/SQ/SQList",
+     "why": "A full SQLite execution engine (busy-retry-on-SQLITE_BUSY loop, named-parameter binding, corruption detection, slow-query logging) declared and implemented in a generic string-utility header/source, while SQResult, SQValue, and SQliteParameter already live in this same directory as their own dedicated units",
+     "severity": "high",
+     "suggested_home": "A dedicated SQLite-execution unit alongside SQResult/SQValue/SQliteParameter"
+    },
+    {
+     "item": "SParseHTTP/SComposeHTTP/SParseURI/SParseURIPath/SComposePOST/SParseHost family",
+     "why": "A complete HTTP wire-format grammar (headers, chunked transfer-encoding, cookie folding, URI parsing) sitting in the generic utility file even though this directory already has a dedicated SHTTPSManager for HTTP transactions",
+     "severity": "med",
+     "suggested_home": "SHTTPSManager or a new SHTTPMessage unit"
+    },
+    {
+     "item": "SAESEncrypt/SAESDecrypt/SHashSHA1/SHashSHA256/SEncodeBase64/SDecodeBase64/SHMACSHA1/SHMACSHA256",
+     "why": "Self-contained mbedtls wrappers with no dependency on anything else in this file",
+     "severity": "med",
+     "suggested_home": "A new SCrypto unit"
+    },
+    {
+     "item": "S_socket/S_close/S_accept/S_recvfrom/S_recvappend/S_sendconsume/S_poll/SFDset/SFDAnySet",
+     "why": "Raw socket/poll primitives whose only real caller is STCPManager, the dedicated socket-management class that already lives in this same directory",
+     "severity": "low",
+     "suggested_home": "STCPManager"
+    },
+    {
+     "item": "SGZip/SGUnzip",
+     "why": "Gzip compression, unrelated to the string/HTTP/SQL utilities around it; small and self-contained",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "The direct-syslog-socket pool (SLogSocketFD/SLogSocketMutex/SLogSocketAddr/SSyslogSocketDirect/SSyslogNoop) in the .cpp",
+     "why": "A complete alternate logging transport with its own per-socket locking, sitting beside unrelated HTTP/JSON/SQL/crypto code, even though SLog.cpp already exists in this directory as the dedicated logging-support unit",
+     "severity": "med",
+     "suggested_home": "SLog.cpp"
+    },
+    {
+     "item": "_SParseHTTP_GetUpToNext/_SParseHTTP_GetUpToEnd/_SDecodeURIChar/_SParseJSONString/_SParseJSONArray/_SParseJSONObject/_SParseJSONValue",
+     "why": "Leading-underscore naming signals 'file-private' but none are declared static or placed in an anonymous namespace, so they have external linkage and could collide with an identically-named symbol in another translation unit",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "libstuff openly advertises itself as a catch-all, and libstuff/ is the shared-utility directory, so it fits its own name"
+   },
+   "location_fit": {
+    "score": 3,
+    "note": "Established repo pattern is to carve cohesive slices out of libstuff into their own units (SQResult, SData, STCPManager, SHTTPSManager, SSignal, SLog, STime already did); several slices that fit that pattern (SQL execution, crypto, HTTP wire format) still remain"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent 'S' prefix on public symbols; fd_map is the one lowercase unprefixed typedef; file-local helper functions use a leading underscore for 'private' but lack real internal linkage"
+   },
+   "depends_on": [
+    "libstuff/qrf.h",
+    "libstuff/SQliteParameter.h",
+    "libstuff/SQResult.h",
+    "libstuff/SData.h",
+    "libstuff/SFastBuffer.h",
+    "libstuff/SFluentdLogger.h",
+    "libstuff/sqlite3.h"
+   ],
+   "_src": "b103.json",
+   "hash": "d0447793a7008542"
+  }
+ ]
+}

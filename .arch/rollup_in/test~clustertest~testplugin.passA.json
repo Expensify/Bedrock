@@ -1,0 +1,122 @@
+{
+ "dir": "test/clustertest/testplugin",
+ "pass": "passA",
+ "subdirectories": [],
+ "units": [
+  {
+   "unit": "ExternPointer",
+   "dir": "test/clustertest/testplugin",
+   "files": [
+    "test/clustertest/testplugin/ExternPointer.cpp"
+   ],
+   "lines": 2,
+   "test": true,
+   "intent": "Defines a single uninitialized global int pointer whose sole purpose is to be dereferenced out of bounds by TestPlugin's generatesegfault* commands, giving clustertest a reliable way to crash the server on demand.",
+   "objects": [
+    {
+     "name": "__pointerToFakeIntArray",
+     "kind": "variable",
+     "role": "global int pointer, deliberately never allocated, read out of bounds to trigger a real segfault"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "__pointerToFakeIntArray as its own translation unit",
+     "why": "a single global exists as its own .cpp file; its only direct user in this batch is TestPlugin.cpp (extern-declared there), and the file's own comment references BadCommandTest, which only references the associated command names, not the symbol itself",
+     "severity": "low",
+     "suggested_home": "test/clustertest/testplugin/TestPlugin.cpp"
+    }
+   ],
+   "name_fit": {
+    "score": 3,
+    "note": "names the mechanism (extern pointer), not the intent (crash trigger)"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "fits alongside the plugin that uses it"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "double-underscore-prefixed identifier (__pointerToFakeIntArray) is a reserved-identifier violation at the language level, though the name is otherwise self-explanatory"
+   },
+   "depends_on": [],
+   "_src": "b113.json",
+   "hash": "e6f66aac372ddef9"
+  },
+  {
+   "unit": "TestPlugin",
+   "dir": "test/clustertest/testplugin",
+   "files": [
+    "test/clustertest/testplugin/TestPlugin.h",
+    "test/clustertest/testplugin/TestPlugin.cpp"
+   ],
+   "lines": 961,
+   "test": true,
+   "intent": "A BedrockPlugin loaded only by the cluster-test binary that exposes dozens of otherwise-unreachable server code paths (slow queries, deliberate crashes, HTTPS timeouts, escalation, prepare/commit hooks) as commands so clustertest can exercise them.",
+   "objects": [
+    {
+     "name": "TestHTTPSManager",
+     "kind": "class",
+     "role": "SHTTPSManager subclass for issuing/inspecting test HTTPS transactions, including a send that never writes to the socket for timeout testing"
+    },
+    {
+     "name": "BedrockPlugin_TestPlugin",
+     "kind": "class",
+     "role": "the test plugin itself; owns the HTTPS manager, a background unreplicated-delete thread, and lifecycle hooks (upgradeDatabase, stateChanged, onPrepareHandler, afterCommit)"
+    },
+    {
+     "name": "TestPluginCommand",
+     "kind": "class",
+     "role": "BedrockCommand subclass whose peek/process/postProcess dispatch on request.methodLine to drive each individual test scenario"
+    },
+    {
+     "name": "fileAppend",
+     "kind": "function",
+     "role": "file-local flock-guarded append helper used by the testescalate scenario to record ordering"
+    },
+    {
+     "name": "fileLockAndLoad",
+     "kind": "function",
+     "role": "file-local flock-guarded read helper paired with fileAppend"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "fileAppend / fileLockAndLoad",
+     "why": "generic flock-guarded file I/O helpers with no relation to plugin/command logic, defined as plain global functions in a plugin .cpp",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "BedrockPlugin_TestPlugin::arbitraryData / dataLock",
+     "why": "ad hoc static cross-command scratch storage that bypasses normal command/database plumbing entirely, held as globals for test convenience",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "clearly a test plugin, matches file/dir"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "correctly scoped to test/clustertest/testplugin"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "mostly consistent (BedrockPlugin_ prefix, _ on private members); arbitraryData/not_special are intentionally vague scratch names, and storeboradcasttimeouts is a typo baked into the command name"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "BedrockPlugin.h",
+    "BedrockServer.h",
+    "libstuff/SQResult.h",
+    "libstuff/SThread.h",
+    "sqlitecluster/SQLitePool.h"
+   ],
+   "_src": "b113.json",
+   "hash": "d26ea8599f58733b"
+  }
+ ],
+ "clusters": []
+}

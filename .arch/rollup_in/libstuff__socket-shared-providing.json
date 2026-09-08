@@ -1,0 +1,409 @@
+{
+ "dir": "libstuff",
+ "cluster": "socket-shared-providing",
+ "units": [
+  {
+   "unit": "SFastBuffer",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SFastBuffer.h",
+    "libstuff/SFastBuffer.cpp"
+   ],
+   "lines": 180,
+   "test": false,
+   "intent": "An append-friendly byte buffer that avoids repeated reallocation/erase on the front by tracking a front offset, used as socket send/recv buffers polled incrementally.",
+   "objects": [
+    {
+     "name": "SFastBuffer",
+     "kind": "class",
+     "role": "front/data storage; empty/size/c_str/clear/consumeFront/append/operator+=/=; startsWithHTTPRequest incremental HTTP-terminator scan"
+    },
+    {
+     "name": "operator<<(ostream&, const SFastBuffer&)",
+     "kind": "free function",
+     "role": "stream helper"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SFastBuffer::startsWithHTTPRequest and its nextToCheck/headerLength state",
+     "why": "bakes HTTP-specific framing (\\r\\n\\r\\n / \\n\\n terminator) knowledge into an otherwise protocol-agnostic buffer type",
+     "severity": "low",
+     "suggested_home": "a small HTTP-framing helper layered on top of SFastBuffer, rather than inside it"
+    },
+    {
+     "item": "SFastBuffer::contentLength (private member)",
+     "why": "reset to 0 in four places but never read or set to any other value anywhere in the file - dead/vestigial field",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "fits, slightly undercut by the HTTP-specific method"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent aside from the dead contentLength field"
+   },
+   "depends_on": [],
+   "_src": "b005.json",
+   "hash": "60b0d28e7467455a"
+  },
+  {
+   "unit": "SHTTPSManager",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SHTTPSManager.h",
+    "libstuff/SHTTPSManager.cpp"
+   ],
+   "lines": 341,
+   "test": false,
+   "intent": "Non-blocking base classes for making outbound HTTPS/HTTP requests driven from a poll() loop, tracking each as a Transaction with its own socket, timing, and response.",
+   "objects": [
+    {
+     "name": "SStandaloneHTTPSManager",
+     "kind": "class",
+     "role": "owns STCPManager sockets and drives Transactions through prePoll/postPoll; usable with no Bedrock plugin"
+    },
+    {
+     "name": "SStandaloneHTTPSManager::Transaction",
+     "kind": "struct",
+     "role": "one outbound request/response: socket, full request/response SData, timestamps, response code, scheduled start"
+    },
+    {
+     "name": "SHTTPSManager",
+     "kind": "class",
+     "role": "SStandaloneHTTPSManager bound to an owning BedrockPlugin"
+    },
+    {
+     "name": "SStandaloneHTTPSManager::initProxyAddressHTTPS",
+     "kind": "static method",
+     "role": "reads HTTPS_PROXY env var once to initialize proxyAddressHTTPS"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SHTTPSManager.cpp: #include <BedrockServer.h>, #include <sqlitecluster/SQLiteNode.h>",
+     "why": "neither BedrockServer:: nor SQLiteNode:: is referenced anywhere in the file; unused includes coupling libstuff to the application/clustering layers",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "SHTTPSManager (class)",
+     "why": "exists only to attach a BedrockPlugin& to the manager, so libstuff depends on BedrockPlugin.h - inverts the expected dependency direction",
+     "severity": "med",
+     "suggested_home": "near BedrockPlugin, or keep in libstuff but move the BedrockPlugin coupling into a thinner adapter"
+    },
+    {
+     "item": "SStandaloneHTTPSManager::Transaction::Transaction throwing on isBlockingCommitThread",
+     "why": "encodes a Bedrock-specific execution-model rule inside an otherwise generic transaction constructor",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "SStandaloneHTTPSManager fits well; SHTTPSManager less so given its BedrockPlugin dependency"
+   },
+   "location_fit": {
+    "score": 3,
+    "note": "SStandaloneHTTPSManager is a natural libstuff networking type; SHTTPSManager pulls in Bedrock application headers"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent; SHTTPSManager's protected `plugin` lacks the `_` prefix used by SStandaloneHTTPSManager's protected members"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/STCPManager.h",
+    "libstuff/SHTTPSProxySocket.h",
+    "libstuff/libstuff.h",
+    "BedrockPlugin.h",
+    "BedrockServer.h",
+    "sqlitecluster/SQLiteNode.h"
+   ],
+   "_src": "b005.json",
+   "hash": "02ee1ff926fbe4a8"
+  },
+  {
+   "unit": "SHTTPSProxySocket",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SHTTPSProxySocket.h",
+    "libstuff/SHTTPSProxySocket.cpp"
+   ],
+   "lines": 176,
+   "test": false,
+   "intent": "An STCPManager::Socket that negotiates an HTTP CONNECT tunnel through an HTTPS forward proxy, then switches to a normal TLS connection to the real destination once the tunnel is established.",
+   "objects": [
+    {
+     "name": "SHTTPSProxySocket",
+     "kind": "class (extends STCPManager::Socket)",
+     "role": "proxyAddress/hostname/requestID; proxyNegotiationComplete/filledPreSendBuffer flags; preSendBuffer (CONNECT request); overrides send/recv"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "private members proxyAddress, hostname, requestID, proxyNegotiationComplete, filledPreSendBuffer, preSendBuffer",
+     "why": "lack the repo's `_` prefix convention for private members, used elsewhere in this same batch (e.g. SStandaloneHTTPSManager's _pem, SSynchronizedQueue's _queue)",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "natural peer of STCPManager/SSSLState"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "unprefixed private members inconsistent with local convention"
+   },
+   "depends_on": [
+    "libstuff/SFastBuffer.h",
+    "libstuff/STCPManager.h",
+    "libstuff/SData.h",
+    "libstuff/libstuff.h",
+    "libstuff/SSSLState.h"
+   ],
+   "_src": "b005.json",
+   "hash": "ca34eddf5d9751c3"
+  },
+  {
+   "unit": "SMultiHostSocketPool",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SMultiHostSocketPool.h",
+    "libstuff/SMultiHostSocketPool.cpp"
+   ],
+   "lines": 48,
+   "test": false,
+   "intent": "Keys a separate SSocketPool per hostname so callers can get/return sockets to any number of hosts through one object instead of managing one SSocketPool per host themselves.",
+   "objects": [
+    {
+     "name": "SMultiHostSocketPool",
+     "kind": "class",
+     "role": "mutex-guarded map<host, SSocketPool>; getSocket/returnSocket find-or-create the per-host pool and delegate to it"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "does exactly what it says"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "sits naturally next to SSocketPool, which it wraps"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent S-prefix and _-member convention"
+   },
+   "depends_on": [
+    "libstuff/STCPManager.h",
+    "libstuff/SSocketPool.h"
+   ],
+   "_src": "b105.json",
+   "hash": "92b5adc96213def9"
+  },
+  {
+   "unit": "SRandom",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SRandom.h",
+    "libstuff/SRandom.cpp"
+   ],
+   "lines": 57,
+   "test": false,
+   "intent": "Static-only wrapper around a shared mt19937_64 generator providing the repo's common random-number needs: raw 64-bit values, bounded ranges, random alphanumeric strings, and weighted booleans.",
+   "objects": [
+    {
+     "name": "SRandom",
+     "kind": "class",
+     "role": "all-static utility; rand64/limitedRand64 draw integers, randStr builds an alphanumeric string, randBool does a Bernoulli trial"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "does exactly what it says"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "generic utility, fits libstuff"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent S-prefix and _-member convention"
+   },
+   "depends_on": [],
+   "_src": "b105.json",
+   "hash": "d9c1ddc55a28bb9f"
+  },
+  {
+   "unit": "SSSLState",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SSSLState.h",
+    "libstuff/SSSLState.cpp"
+   ],
+   "lines": 269,
+   "test": false,
+   "intent": "Thin wrapper around mbedTLS providing per-connection TLS handshake and send/recv over a raw socket fd, plus process-wide mbedTLS setup shared across all connections.",
+   "objects": [
+    {
+     "name": "SSSLState",
+     "kind": "class",
+     "role": "ssl/net_ctx per-connection state; initConfig/freeConfig for shared process-wide mbedTLS state; send/recv/sendConsume/recvAppend"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "natural peer of STCPManager/SHTTPSProxySocket"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent with repo convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SFastBuffer.h"
+   ],
+   "_src": "b005.json",
+   "hash": "8b3af04987c89675"
+  },
+  {
+   "unit": "SSocketPool",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SSocketPool.h",
+    "libstuff/SSocketPool.cpp"
+   ],
+   "lines": 168,
+   "test": false,
+   "intent": "Keep-alive connection pool for one host: hands out an existing idle STCPManager::Socket or opens a new one, and closes sockets idle past a timeout via a background thread.",
+   "objects": [
+    {
+     "name": "SSocketPool",
+     "kind": "class",
+     "role": "getSocket()/returnSocket() public API; _timeoutThreadFunc() (prunes expired sockets) and _getAddress() (caches/re-resolves the host address) private helpers"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "a thin pooling layer over STCPManager::Socket, belongs beside it"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent `_`-prefixed private members, bare public/const members"
+   },
+   "depends_on": [
+    "libstuff/STCPManager.h"
+   ],
+   "_src": "b104.json",
+   "hash": "a2c54b4ec35f02bf"
+  },
+  {
+   "unit": "SSynchronizedQueue",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SSynchronizedQueue.h"
+   ],
+   "lines": 175,
+   "test": false,
+   "intent": "A thread-safe FIFO queue that can be waited on inside a poll() loop alongside real sockets, by writing a byte to an internal pipe on every push so the queue's readiness multiplexes like a socket.",
+   "objects": [
+    {
+     "name": "SSynchronizedQueue<T>",
+     "kind": "class template",
+     "role": "_queue/_queueMutex/_pipeFD; prePoll/postPoll register/drain the wake pipe; clear/empty/front/pop/push/size/each"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits perfectly"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent, correctly _-prefixed protected members"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b005.json",
+   "hash": "36015b885d28265d"
+  },
+  {
+   "unit": "STCPManager",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/STCPManager.h",
+    "libstuff/STCPManager.cpp"
+   ],
+   "lines": 553,
+   "test": false,
+   "intent": "Convenience base providing the poll()-loop state machine (prePoll/postPoll) shared by every TCP-socket-managing class, plus the Socket and Port value types those managers operate on.",
+   "objects": [
+    {
+     "name": "STCPManager",
+     "kind": "struct",
+     "role": "namespace-like holder of static prePoll/postPoll/openPort; no data members of its own by design"
+    },
+    {
+     "name": "STCPManager::Socket",
+     "kind": "class",
+     "role": "per-connection state machine (RESOLVING/CONNECTING/CONNECTED/SHUTTINGDOWN/CLOSED); owns fd, buffers, optional SSL state, async DNS handle"
+    },
+    {
+     "name": "STCPManager::Port",
+     "kind": "class",
+     "role": "RAII wrapper for a listening socket fd and its host string"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "base class for the STCPNode/SQLiteServer hierarchy documented in class_hierarchy.md"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "in Socket's protected section, methods are `_`-prefixed but sibling protected data members (sendBuffer, sendRecvMutex, https, dnsResolution, hostToResolve, socketCount) are not"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SFastBuffer.h",
+    "libstuff/SResolver.h",
+    "libstuff/SSSLState.h"
+   ],
+   "_src": "b104.json",
+   "hash": "57ce8bc3df036605"
+  }
+ ]
+}

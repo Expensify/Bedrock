@@ -1,0 +1,323 @@
+{
+ "dir": "test/tests",
+ "cluster": "command-bedrock-integration",
+ "units": [
+  {
+   "unit": "BlockingCommandQueueTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/BlockingCommandQueueTest.cpp"
+   ],
+   "lines": 313,
+   "test": true,
+   "intent": "Unit tests for BedrockBlockingCommandQueue's per-identifier and per-command rate limiting: sliding-window accounting, partial credit at window edges, block-duration hold/clear, and log-prefix restoration around a blocked dequeue.",
+   "objects": [
+    {
+     "name": "TestBlockingCommandQueue",
+     "kind": "struct",
+     "role": "subclasses BedrockBlockingCommandQueue with a test-controlled clock and a makeCommand() helper"
+    },
+    {
+     "name": "BlockingCommandQueueTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 13 tests over rate-limit dimensions, window expiry, block duration, and prefix scoping"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "matches BedrockBlockingCommandQueue"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "TestBlockingCommandQueue's _now follows the underscore-private convention"
+   },
+   "depends_on": [
+    "BedrockBlockingCommandQueue.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b117.json",
+   "hash": "1eaf33edc977247c"
+  },
+  {
+   "unit": "ChainedHTTPTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/ChainedHTTPTest.cpp"
+   ],
+   "lines": 69,
+   "test": true,
+   "intent": "Integration test verifying a single chainedrequest command (via the clustertest test plugin) fans out to multiple external HTTP requests and reports each site's status.",
+   "objects": [
+    {
+     "name": "ChainedHTTPTest",
+     "kind": "struct",
+     "role": "tpunit fixture loading the clustertest testplugin and verifying plausible status codes for each fanned-out site"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling fixtures."
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SData.h",
+    "sqlitecluster/SQLiteNode.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b118.json",
+   "hash": "cb54bb3e85db10d5"
+  },
+  {
+   "unit": "CommandPortTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/CommandPortTest.cpp"
+   ],
+   "lines": 42,
+   "test": true,
+   "intent": "Verifies SuppressCommandPort/ClearCommandPort: closing the port records a reason in Status's commandPortBlockReasons, mismatched clears are no-ops, and matching clears reopen the port.",
+   "objects": [
+    {
+     "name": "CommandPortTest",
+     "kind": "struct",
+     "role": "tpunit fixture driving the suppress/status/clear-mismatch/clear-match sequence"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling fixtures."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b118.json",
+   "hash": "b26038700ab7c156"
+  },
+  {
+   "unit": "QueryTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/QueryTest.cpp"
+   ],
+   "lines": 130,
+   "test": true,
+   "intent": "Integration tests for Bedrock's Query command: malformed/missing/unterminated queries, single- and multi-statement execution, the no-WHERE DELETE guard, and SQLite's percentile/median aggregate functions.",
+   "objects": [
+    {
+     "name": "QueryTest",
+     "kind": "fixture",
+     "role": "tpunit fixture (BedrockTester-backed) with 8 tests"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "QueryTest::testPercentile",
+     "why": "verifies SQLite's built-in SQLITE_ENABLE_PERCENTILE aggregate functions (median/percentile/percentile_cont/percentile_disc) rather than anything specific to Bedrock's own Query command handling - effectively a build-flag/compiled-in-extension check riding on this fixture",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "3722e25a8f105610"
+  },
+  {
+   "unit": "ReadTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/ReadTest.cpp"
+   ],
+   "lines": 52,
+   "test": true,
+   "intent": "Smoke tests for the Query command handling a plain read-only SELECT, with and without an HTTP method line, plus rejection of a malformed (missing-semicolon) query.",
+   "objects": [
+    {
+     "name": "ReadTest",
+     "kind": "struct",
+     "role": "tpunit fixture running SELECT 1 through BedrockTester and checking the 502 rejection of a bad query"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 3,
+    "note": "Generic name for what is specifically a Query-command test; gives no hint it's about Query."
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "Fits among other single-command tests."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with sibling fixtures; only the top-level name is vague."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b118.json",
+   "hash": "9a45ab053ae2bf3f"
+  },
+  {
+   "unit": "SSLTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SSLTest.cpp"
+   ],
+   "lines": 97,
+   "test": true,
+   "intent": "Integration tests for outbound HTTPS: passthrough requests to real sites via a BedrockTester, and a proxied HTTPS transaction through SHTTPSProxySocket/SStandaloneHTTPSManager.",
+   "objects": [
+    {
+     "name": "SSLTest",
+     "kind": "struct",
+     "role": "tpunit fixture; test() exercises passthrough sendrequest to a real and a fake host, proxyTest() drives an SStandaloneHTTPSManager::Transaction through a local proxy"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling fixtures."
+   },
+   "depends_on": [
+    "libstuff/SHTTPSManager.h",
+    "libstuff/STCPManager.h",
+    "test/lib/tpunit++.hpp",
+    "libstuff/libstuff.h",
+    "libstuff/SData.h",
+    "sqlitecluster/SQLiteNode.h",
+    "test/lib/BedrockTester.h",
+    "libstuff/SHTTPSProxySocket.h"
+   ],
+   "_src": "b118.json",
+   "hash": "00752d4719cc394d"
+  },
+  {
+   "unit": "StatusTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/StatusTest.cpp"
+   ],
+   "lines": 21,
+   "test": true,
+   "intent": "Smoke test confirming the Status command's response includes expected diagnostic fields (plugins, outstandingFramesToCheckpoint, freelistCount, pageCount).",
+   "objects": [
+    {
+     "name": "StatusTest",
+     "kind": "struct",
+     "role": "tpunit fixture checking the Status response contains those field names"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling fixtures."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b118.json",
+   "hash": "b4413a98bd2a9f3c"
+  },
+  {
+   "unit": "WriteTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/WriteTest.cpp"
+   ],
+   "lines": 219,
+   "test": true,
+   "intent": "Integration tests for Bedrock's Query/Write command path: INSERT/UPDATE/DELETE, the no-WHERE safety guard, parallel writes, HTTP-style and shorthand syntax, and blocking of non-deterministic SQL functions on write.",
+   "objects": [
+    {
+     "name": "WriteTest",
+     "kind": "fixture",
+     "role": "tpunit fixture (BedrockTester-backed) with 15 tests over write-command behavior"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "WriteTest::keywordsAsValue",
+     "why": "asserts on a known SQL-parsing limitation (an UPDATE without a WHERE-safety marker is not aborted in this specific case) that the test comment says is tracked in an external Expensify issue, rather than asserting intended behavior",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SRandom.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "5fe7ba8d54d86e72"
+  }
+ ]
+}

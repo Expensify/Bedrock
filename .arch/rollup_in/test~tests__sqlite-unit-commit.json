@@ -1,0 +1,212 @@
+{
+ "dir": "test/tests",
+ "cluster": "sqlite-unit-commit",
+ "units": [
+  {
+   "unit": "AfterCommitCallbackTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/AfterCommitCallbackTest.cpp"
+   ],
+   "lines": 123,
+   "test": true,
+   "intent": "Tests SQLite's after-commit callback list: fires once per commit, not on rollback, not on a commit lost to a conflict, and is shared by a copy-constructed handle.",
+   "objects": [
+    {
+     "name": "AfterCommitCallbackTempDBFile",
+     "kind": "struct",
+     "role": "RAII temp-DB-file helper (mkstemp/unlink)"
+    },
+    {
+     "name": "AfterCommitCallbackTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 3 tests"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLite.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "37b72c865db5b839"
+  },
+  {
+   "unit": "SDeburrTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SDeburrTest.cpp"
+   ],
+   "lines": 86,
+   "test": true,
+   "intent": "Unit tests for SDeburr::deburr, the Unicode-to-ASCII transliteration helper (diacritics, ligatures, Turkish/Nordic/Slavic letters, emoji/CJK passthrough).",
+   "objects": [
+    {
+     "name": "SDeburrTest",
+     "kind": "struct",
+     "role": "tpunit fixture covering ASCII, diacritics, mixed text, combining marks, and language-specific cases"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling fixtures."
+   },
+   "depends_on": [
+    "libstuff/SDeburr.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b118.json",
+   "hash": "186258673379cbd4"
+  },
+  {
+   "unit": "SIsValidSQLiteDateModifierTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SIsValidSQLiteDateModifierTest.cpp"
+   ],
+   "lines": 75,
+   "test": true,
+   "intent": "Unit tests for the libstuff free function SIsValidSQLiteDateModifier, which validates strings like \"+1 DAY\" for use as SQLite date modifiers.",
+   "objects": [
+    {
+     "name": "SIsValidSQLiteDateModifierTest",
+     "kind": "struct",
+     "role": "tpunit fixture sweeping sign/magnitude/timeframe combinations and digit-count caps"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling fixtures."
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b118.json",
+   "hash": "e2e0c43f27d43bbe"
+  },
+  {
+   "unit": "SQLiteNodeTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SQLiteNodeTest.cpp"
+   ],
+   "lines": 170,
+   "test": true,
+   "intent": "Unit tests for SQLiteNode's sync-peer selection logic (fastest logged-in peer by latency, tie-broken by commit count) and name-based peer lookup.",
+   "objects": [
+    {
+     "name": "SQLiteNodeTester",
+     "kind": "class",
+     "role": "white-box test accessor exposing SQLiteNode's private _syncPeer and _updateSyncPeer(), granted friend access in SQLiteNode.h"
+    },
+    {
+     "name": "TestServer",
+     "kind": "class",
+     "role": "minimal no-op SQLiteServer stub needed to construct a SQLiteNode"
+    },
+    {
+     "name": "SQLiteNodeTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 2 tests: sync-peer re-selection and getPeerByName() lookup"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "SQLiteNodeTester clearly marked as test-only"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLiteCommand.h",
+    "sqlitecluster/SQLiteNode.h",
+    "sqlitecluster/SQLitePeer.h",
+    "sqlitecluster/SQLiteServer.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "a74d5a499bee1d90"
+  },
+  {
+   "unit": "WriteLocalUnreplicatedTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/WriteLocalUnreplicatedTest.cpp"
+   ],
+   "lines": 146,
+   "test": true,
+   "intent": "Unit tests for SQLite::writeLocalUnreplicated(): it leaves commit count and journal untouched, rolls back cleanly on a failed query, and behaves safely under a concurrent commit from another handle.",
+   "objects": [
+    {
+     "name": "WriteLocalUnreplicatedTempDBFile",
+     "kind": "struct",
+     "role": "RAII temp-DB-file helper (mkstemp/unlink)"
+    },
+    {
+     "name": "WriteLocalUnreplicatedTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 3 tests plus countJournalRows()/countRows() helpers"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLite.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "2e5f9ffa91ee8930"
+  }
+ ]
+}

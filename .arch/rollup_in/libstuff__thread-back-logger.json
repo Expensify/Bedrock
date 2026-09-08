@@ -1,0 +1,179 @@
+{
+ "dir": "libstuff",
+ "cluster": "thread-back-logger",
+ "units": [
+  {
+   "unit": "SFluentdLogger",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SFluentdLogger.h",
+    "libstuff/SFluentdLogger.cpp"
+   ],
+   "lines": 132,
+   "test": false,
+   "intent": "Async, non-blocking log shipper to a Fluentd TCP endpoint: callers push JSON records onto a lock-free ring buffer, a single background thread drains it and forwards to Fluentd, falling back to syslog() on failure.",
+   "objects": [
+    {
+     "name": "FluentdLogRecord",
+     "kind": "struct",
+     "role": "one queued record: syslog priority + JSON payload string"
+    },
+    {
+     "name": "SFluentdLogger",
+     "kind": "class",
+     "role": "log() public API; openSocket/sendAll/senderLoop implementation; inline static instance/tag act as a process-wide singleton handle"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "instance/tag are bare public statics implementing a global singleton, a different pattern from this class's own private instance members (host/port/buffer/senderThread)"
+   },
+   "depends_on": [
+    "libstuff/SRingBuffer.h",
+    "libstuff/SThread.h"
+   ],
+   "_src": "b104.json",
+   "hash": "4565b7db28aaf188"
+  },
+  {
+   "unit": "SResolver",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SResolver.h",
+    "libstuff/SResolver.cpp"
+   ],
+   "lines": 146,
+   "test": false,
+   "intent": "Asynchronous, poll()-able DNS resolution: SResolve() starts a lookup on a detached thread (or resolves a literal IP inline) and hands back a shared SResolution both sides can safely outlive each other on.",
+   "objects": [
+    {
+     "name": "SResolution",
+     "kind": "class",
+     "role": "PENDING/RESOLVED/FAILED state machine with a self-pipe fd for poll()-based completion notification"
+    },
+    {
+     "name": "SResolve",
+     "kind": "free function",
+     "role": "starts the lookup and returns the shared SResolution"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent `_`-prefixed private members, bare public members/methods"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b104.json",
+   "hash": "45fd3518f2c147d3"
+  },
+  {
+   "unit": "SRingBuffer",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SRingBuffer.h"
+   ],
+   "lines": 101,
+   "test": false,
+   "intent": "Lock-free, fixed-capacity, multi-producer/single-consumer ring buffer of T, used to hand log records from arbitrary caller threads to SFluentdLogger's sender thread without blocking.",
+   "objects": [
+    {
+     "name": "SRINGBUFFER_DEFAULT_CAPACITY",
+     "kind": "constant",
+     "role": "default slot count (10M)"
+    },
+    {
+     "name": "State",
+     "kind": "enum class",
+     "role": "Empty/Ready/Shutdown slot-occupancy tag"
+    },
+    {
+     "name": "SRingBuffer",
+     "kind": "class template",
+     "role": "push()/pop()/wait()/shutdown() lock-free buffer"
+    },
+    {
+     "name": "SRingBuffer::BufferElement",
+     "kind": "struct",
+     "role": "one slot: a T plus its atomic<State>"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "State",
+     "why": "declared at global scope instead of nested inside SRingBuffer, injecting a generic five-letter name into every translation unit that includes this header",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits; a generic buffer, not Fluentd-specific, though it has one caller today"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "fits, but its only consumer (SFluentdLogger) is the sole reason it lives in libstuff rather than a more general concurrency-utility location"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent aside from the unnested, overly-generic State noted above"
+   },
+   "depends_on": [],
+   "_src": "b104.json",
+   "hash": "045ab57d37d01200"
+  },
+  {
+   "unit": "SThread",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SThread.h"
+   ],
+   "lines": 66,
+   "test": false,
+   "intent": "Variadic function template that launches a thread like std::thread but captures any exception the callable throws and delivers it back to the caller through a std::future.",
+   "objects": [
+    {
+     "name": "SThread",
+     "kind": "function template",
+     "role": "wraps f(args...) in try/catch on a new thread, routes return value or caught exception through a promise/future, returns {thread, future}"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 3,
+    "note": "PascalCase, S-prefixed free function reads as a type/constructor call rather than a function, given repo convention reserves that style for classes"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "generic threading utility, fits libstuff"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "S-prefix on a lower-case-callable function template is inconsistent with the repo's S-prefix-for-types convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b105.json",
+   "hash": "a90c13e05dd5cfae"
+  }
+ ]
+}

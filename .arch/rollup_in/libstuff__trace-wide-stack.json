@@ -1,0 +1,199 @@
+{
+ "dir": "libstuff",
+ "cluster": "trace-wide-stack",
+ "units": [
+  {
+   "unit": "SLog",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SLog.cpp"
+   ],
+   "lines": 141,
+   "test": false,
+   "intent": "Global logging support: the process-wide log-level mask, stack-trace dumping for the SLOG macros, and a copy-on-write parameter whitelist that redacts unlisted structured log params.",
+   "objects": [
+    {
+     "name": "_g_SLogMask",
+     "kind": "global var",
+     "role": "atomic log-level bitmask read by the SLOG macros (declared extern in libstuff.h)"
+    },
+    {
+     "name": "GLOBAL_IS_LIVE",
+     "kind": "global var",
+     "role": "when false, an unwhitelisted log param throws instead of being silently redacted"
+    },
+    {
+     "name": "SLogStackTrace",
+     "kind": "function",
+     "role": "dumps the current call stack at a given log level"
+    },
+    {
+     "name": "PARAMS_WHITELIST",
+     "kind": "file-local static",
+     "role": "atomic<shared_ptr<const set<string>>> of allowed structured-log-param names, swapped via CAS"
+    },
+    {
+     "name": "addLogParams",
+     "kind": "function",
+     "role": "appends whitelisted/command-tagged params to a log message, redacting or throwing on the rest"
+    },
+    {
+     "name": "SWhitelistLogParams",
+     "kind": "function",
+     "role": "adds names to PARAMS_WHITELIST"
+    },
+    {
+     "name": "SIsLogParamWhitelisted",
+     "kind": "function",
+     "role": "queries PARAMS_WHITELIST"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SLog.cpp's public API (SLogStackTrace, SWhitelistLogParams, SIsLogParamWhitelisted, addLogParams)",
+     "why": "declared in the libstuff.h catch-all rather than a dedicated SLog.h, unlike other already-separated libstuff units",
+     "severity": "low",
+     "suggested_home": "libstuff/SLog.h"
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "name fits the content but the file has no header of its own"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "declared in libstuff.h's catch-all rather than a dedicated header"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "_g_SLogMask (S-prefixed global marker) and GLOBAL_IS_LIVE (spelled-out global) use two different conventions for the same idea in one file"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b104.json",
+   "hash": "f1538779bc49a1e0"
+  },
+  {
+   "unit": "SSignal",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SSignal.cpp"
+   ],
+   "lines": 307,
+   "test": false,
+   "intent": "Installs process-wide POSIX signal handling: crash signals get a best-effort stack trace logged/written to disk before abort(), and other signals are recorded in a bitmask that can optionally wake a poll loop.",
+   "objects": [
+    {
+     "name": "SSetSignalHandlerDieFunc",
+     "kind": "function",
+     "role": "installs the callback run just before a crash-signal abort to produce a final log line"
+    },
+    {
+     "name": "STerminationSignalCount",
+     "kind": "function",
+     "role": "count of SIGTERM/SIGINT seen so far"
+    },
+    {
+     "name": "SCheckSignal",
+     "kind": "function",
+     "role": "peek one bit of the pending signal bitmask"
+    },
+    {
+     "name": "SGetSignal",
+     "kind": "function",
+     "role": "peek-and-clear one bit of the pending signal bitmask"
+    },
+    {
+     "name": "SGetSignals",
+     "kind": "function",
+     "role": "read the whole pending signal bitmask"
+    },
+    {
+     "name": "SGetSignalDescription",
+     "kind": "function",
+     "role": "human-readable list of pending signal names"
+    },
+    {
+     "name": "SClearSignals",
+     "kind": "function",
+     "role": "reset the pending signal bitmask"
+    },
+    {
+     "name": "SInitializeSignals",
+     "kind": "function",
+     "role": "installs sigaction handlers and starts the background signal-handling thread"
+    },
+    {
+     "name": "SStopSignalThread",
+     "kind": "function",
+     "role": "stops and joins the signal-handling thread"
+    },
+    {
+     "name": "SSIGNAL_NOTIFY_INTERRUPT",
+     "kind": "extern void*",
+     "role": "optional pointer to an SSynchronizedQueue<bool>, pushed to on any signal"
+    },
+    {
+     "name": "SSignalHandlerDieFunc",
+     "kind": "thread_local function<string()>",
+     "role": "the die-func called on crash"
+    },
+    {
+     "name": "_SSignal_signalHandlerThreadFunc",
+     "kind": "file-local function",
+     "role": "background thread body: sigtimedwait loop dispatching signals"
+    },
+    {
+     "name": "_SSignal_StackTrace",
+     "kind": "file-local function",
+     "role": "crash-signal handler: builds/demangles/logs backtrace, writes crash file, calls die-func, aborts"
+    },
+    {
+     "name": "__SIGSTACK / sigStackSize",
+     "kind": "file-local statics",
+     "role": "64kb emergency altstack for signal delivery"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "_SSignal_StackTrace: SQLiteNode::KILLABLE_SQLITE_NODE->kill()",
+     "why": "a generic libstuff crash handler directly reaching into the sqlitecluster layer to kill peer connections on crash",
+     "severity": "med",
+     "suggested_home": null
+    },
+    {
+     "item": "hardcoded \"/tmp/bedrock_crash_{}.log\" path",
+     "why": "bakes a product-specific filename into an otherwise general-purpose signal handler",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "no SSignal.h",
+     "why": "the whole public API is declared in libstuff.h instead of a dedicated header, unlike most libstuff pairs",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "does exactly what the name implies"
+   },
+   "location_fit": {
+    "score": 3,
+    "note": "declarations live in libstuff.h rather than an SSignal.h; also entangled with sqlitecluster via KILLABLE_SQLITE_NODE"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "internal helpers consistently _SSignal_-prefixed; SSIGNAL_NOTIFY_INTERRUPT is an untyped void* though always cast to SSynchronizedQueue<bool>*"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SSynchronizedQueue.h",
+    "sqlitecluster/SQLiteNode.h"
+   ],
+   "_src": "b005.json",
+   "hash": "b5eb48f24b0fd4de"
+  }
+ ]
+}

@@ -1,0 +1,134 @@
+{
+ "dir": "test/tests",
+ "cluster": "fast-wake-buffer",
+ "units": [
+  {
+   "unit": "AsyncResolveTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/AsyncResolveTest.cpp"
+   ],
+   "lines": 206,
+   "test": true,
+   "intent": "Tests the deferred DNS resolution path in STCPManager::Socket and the underlying SResolve/SResolution API: synchronous fast paths, the deferred path, failure/wake behavior, and resolution lifetime independent of the caller.",
+   "objects": [
+    {
+     "name": "AsyncResolve",
+     "kind": "fixture",
+     "role": "tpunit fixture with 8 tests; struct/global-instance named AsyncResolve/__AsyncResolve rather than AsyncResolveTest/__AsyncResolveTest"
+    },
+    {
+     "name": "AsyncResolve::pollUntilSettled",
+     "kind": "method",
+     "role": "drives prePoll/S_poll/postPoll until a socket leaves RESOLVING/CONNECTING"
+    },
+    {
+     "name": "AsyncResolve::openTestPort",
+     "kind": "method",
+     "role": "opens a listening port from BedrockTester's port pool"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "struct AsyncResolve / instance __AsyncResolve",
+     "why": "the fixture struct and its global instance are named AsyncResolve/__AsyncResolve, inconsistent with the file's own name (AsyncResolveTest.cpp) and with every sibling test in this batch, which follow a Foo/FooTest/__FooTest pattern",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 3,
+    "note": "file name and struct/instance names disagree"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "struct/instance naming mismatch noted above"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SResolver.h",
+    "libstuff/STCPManager.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "572109ce8a4bb531"
+  },
+  {
+   "unit": "FastHTTPParsing",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/FastHTTPParsing.cpp"
+   ],
+   "lines": 107,
+   "test": true,
+   "intent": "Tests SFastBuffer::startsWithHTTPRequest(), the streaming detector for whether a full HTTP request has accumulated in a growing receive buffer.",
+   "objects": [
+    {
+     "name": "FastHTTPParsing",
+     "kind": "struct",
+     "role": "tpunit fixture testing startsWithHTTPRequest() across line endings, split buffers, and reset after an SData deserialize/consumeFront cycle"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 4,
+    "note": "Tests one specific predicate; name reads broader than that."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits alongside other protocol tests in test/tests."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling fixtures."
+   },
+   "depends_on": [
+    "libstuff/SFastBuffer.h",
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b118.json",
+   "hash": "6252746ea2733b71"
+  },
+  {
+   "unit": "SRingBufferTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SRingBufferTest.cpp"
+   ],
+   "lines": 339,
+   "test": true,
+   "intent": "Unit tests for the SRingBuffer template: push/pop state transitions, capacity limits, FIFO ordering, concurrent producers, and the shutdown/wake handshake between producer and consumer.",
+   "objects": [
+    {
+     "name": "SRingBufferTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 12 tests covering push/pop, capacity boundaries, FIFO order, multi-producer concurrency, producer-consumer wrap-around, and shutdown semantics"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "matches SRingBuffer under test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "test/tests, as expected"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent testXxx naming"
+   },
+   "depends_on": [
+    "libstuff/SRingBuffer.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "3b269f6f8b074533"
+  }
+ ]
+}
