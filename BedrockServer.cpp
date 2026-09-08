@@ -449,11 +449,16 @@ void BedrockServer::worker(int threadId)
             const string blockingIdentifier = (threadId == 0) ? command->blockingQueueRateLimitIdentifier : "";
             const string commandName = command->request.methodLine;
             const uint64_t blockingStart = (threadId == 0) ? STimeNow() : 0;
+            SQLite::resetCommitLockWait();
 
             runCommand(move(command), threadId == 0, false);
 
             if (blockingStart) {
-                _blockingCommandQueue.recordExecutionTime(blockingIdentifier, commandName, STimeNow() - blockingStart);
+                // Waiting for the commit lock is caused by unrelated cluster contention, so it isn't the identifier's
+                // work and must not count toward its rate limit.
+                const uint64_t elapsedUS = STimeNow() - blockingStart;
+                const uint64_t commitLockWaitUS = SQLite::getCommitLockWait();
+                _blockingCommandQueue.recordExecutionTime(blockingIdentifier, commandName, elapsedUS > commitLockWaitUS ? elapsedUS - commitLockWaitUS : 0);
             }
         } catch (const BedrockCommandQueue::timeout_error& e) {
             // No commands to process after 1 second.
