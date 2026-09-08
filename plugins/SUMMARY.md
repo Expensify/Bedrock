@@ -99,13 +99,14 @@ parent is better positioned to decide whether libstuff absorbs these as-is or
 whether a new peer location (e.g. a `libstuff/containers` or a plugin-support
 header) is warranted.
 
-**Pass B revisits that note — see §7 below** for how libstuff's own rollup
+**Pass B revisits that note — see "Inbound expectations, and misfits
+revisited" below** for how libstuff's own rollup
 sharpens (and in one case overturns) the "declined, libstuff is overloaded"
 call for these three items, and adds a fourth misfit this directory did not
 flag on its own: `Compression`'s undeclared inbound dependency from
 sqlitecluster.
 
-## 6. Role in the system
+## Role in the system
 
 Intended order: `libstuff -> sqlitecluster -> plugins -> root`. plugins sits
 correctly above sqlitecluster and below root — every unit here scores 5/5 on
@@ -139,22 +140,24 @@ only implementation of it. Once sqlitecluster calls libstuff directly, the
 undeclared inbound edge from sqlitecluster disappears and `plugins`'
 `depends_on_dirs` stays exactly what it already claims.
 
-## 7. Inbound expectations, and misfits revisited
+## Inbound expectations, and misfits revisited
 
 **Inbound expectations.** root depends on plugins for the five
 `BedrockPlugin_*` registrations and the `peek()`/`process()` pattern; test
 depends on it for Jobs-plugin coverage. Both are satisfied by what's
 exported here — no gap visible from this side. The one thing plugins
 *implicitly* promises outward and doesn't fully control is that nothing
-below it (sqlitecluster) reaches back in; §6 shows that promise is currently
-broken, unbeknownst to this directory until the sibling view made it
-visible. Concretely, add this as a misfit this directory now acknowledges:
+below it (sqlitecluster) reaches back in; "Role in the system" above shows
+that promise is currently broken, unbeknownst to this directory until the
+sibling view made it visible. Concretely, add this as a misfit this
+directory now acknowledges:
 
 - **`BedrockPlugin_Compression` has an undeclared caller in sqlitecluster**
   (`SQLite.cpp`, `SQLiteNode.cpp` call `compress`/`decompress` directly) —
   severity high (it's the root-flagged inverted-layering violation, seen
   from the callee's side); not resolvable inside `plugins/` alone since the
-  fix touches libstuff and sqlitecluster too. See §6 for the concrete plan.
+  fix touches libstuff and sqlitecluster too. See "Role in the system"
+  above for the concrete plan.
 
 **Misfits revisited (spec item 7).** With libstuff's own Pass A rollup now
 visible, the blanket "libstuff is overloaded, decline all three" call was
@@ -198,22 +201,26 @@ part of libstuff that isn't the overloaded part.
 theme: plugins/ holds each BedrockPlugin_* implementation — self-contained units that register request verbs with BedrockServer and answer them via peek()/process(), each owning whatever SQLite schema it needs.
 exports: [BedrockPlugin_Cache, BedrockPlugin_Compression, BedrockPlugin_DB, BedrockPlugin_Jobs, BedrockPlugin_MySQL, the peek()/process() BedrockCommand pattern used by all five, per-plugin SQLite schema ownership (cache/cacheSize, zstdDictionaries, jobs tables), MySQL wire-protocol compatibility shim]
 depends_on_dirs: [libstuff, sqlitecluster]
-depended_on_by: []
-misfit_count: {high: 1, med: 1, low: 4}
+depended_on_by: [root, test, sqlitecluster (undeclared/improper — see "Role in the system"; should be eliminated by the compression fix)]
+misfit_count: {high: 2, med: 1, low: 4}
 resolved_locally: 2
 escalate:
+  - item: "BedrockPlugin_Compression has an undeclared caller in sqlitecluster (SQLite.cpp, SQLiteNode.cpp call compress/decompress directly, bypassing plugins entirely)"
+    from: plugins/Compression.h,Compression.cpp (called from sqlitecluster/SQLite.cpp, sqlitecluster/SQLiteNode.cpp)
+    why: "the intended order (libstuff -> sqlitecluster -> plugins -> root) has plugins depending on sqlitecluster, never the reverse; sqlitecluster's own Pass B rollup reports this call, which plugins' Pass A view could not see since nothing about Compression.h looks wrong from inside plugins/"
+    suggested_home: "libstuff (e.g. libstuff/SCompress.h/.cpp) for a raw dictionary-based zstd compress/decompress primitive; Compression keeps UDF registration, zstdDictionaries schema, and dictionary loading on top of it; sqlitecluster calls libstuff directly instead of plugins/Compression.h. Root must arbitrate since the fix edits libstuff."
   - item: BedrockPlugin_Cache::LRUMap
     from: plugins/Cache.h
     why: fully generic string-keyed LRU tracker, no cache logic, trapped private to one plugin
-    suggested_home: libstuff (or a new shared containers location — libstuff is already overloaded, see note)
+    suggested_home: "a new libstuff subdirectory (e.g. libstuff/containers/), following the JSON/ precedent of libstuff spinning out a thematic subdirectory rather than adding to its overloaded flat catch-all file"
   - item: BedrockPlugin_DB::Sqlite3QRFSpecWrapper / parseSQLite3Args / generateErrorContextMessage
     from: plugins/DB.h,DB.cpp
     why: generic sqlite3-CLI arg/error layer wrapping libstuff/qrf.h, nothing DB-plugin-specific
-    suggested_home: libstuff/qrf.h or a new libstuff unit alongside it
+    suggested_home: "libstuff, colocated with qrf.h — qrf.h is already one of libstuff's small dedicated units, not the 4612-line catch-all file, so this placement doesn't touch the part of libstuff that's actually overloaded"
   - item: BedrockPlugin_Jobs::scopedDisableNoopMode
     from: plugins/Jobs.cpp
-    why: generic SQLite-noop RAII guard, file-local to Jobs.cpp, unreachable by other plugins that need it
-    suggested_home: libstuff or SQLite.h
+    why: "generic SQLite-noop RAII guard wrapping SQLite::setUpdateNoopMode/_noopUpdateMode, which sqlitecluster's own rollup places on the core SQLite class (documented as mock-only test support) — this was never a libstuff candidate"
+    suggested_home: sqlitecluster/SQLite.h, next to the noop-mode state it toggles
   - item: BedrockPlugin_Jobs::upgradeDatabase Expensify-specific index literals (jobsPriorityNextRunManualSmartScan*, jobsManualSmartscanReceiptID, jobsPriorityNextRunWWWProd/WWWStag)
     from: plugins/Jobs.cpp
     why: deployment-specific job-name literals baked into otherwise-generic job-queue schema DDL; needs a repo-wide customization seam, not a local fix
