@@ -169,7 +169,7 @@ public:
 
     // Deletes up to `batchSize` rows from one journal table, keeping the newest `-maxJournalSize` commits. A
     // `batchSize` of zero deletes nothing. Returns false if the delete did not commit, which happens when another
-    // commit lands underneath it. Must be called outside of a transaction.
+    // commit conflicts.
     bool trimJournalTable(size_t journalTableIndex, int64_t batchSize);
 
     // The number of journal tables in this database. Any index passed to `trimJournalTable` is taken modulo this.
