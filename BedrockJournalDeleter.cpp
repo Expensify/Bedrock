@@ -35,6 +35,9 @@ void BedrockJournalDeleter::start(SQLiteNodeState state)
 
     lock_guard<decltype(_lifecycleMutex)> lifecycleLock(_lifecycleMutex);
     if (_thread) {
+        // The thread clears a wake without trimming while the state isn't trimmable, so whatever the node journaled
+        // while it was catching up is still waiting. Wake it rather than leaving that until the next commit.
+        wake();
         return;
     }
 

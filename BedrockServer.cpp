@@ -106,7 +106,12 @@ void BedrockServer::sync()
 
     SQLite::journalZstdDictionaryID = args.calc("-journalZstdDictionaryID");
     if (args.isSet("-journalDeleterBatchSize")) {
-        BedrockJournalDeleter::deleterBatchSize = args.calc64("-journalDeleterBatchSize");
+        const int64_t journalDeleterBatchSize = args.calc64("-journalDeleterBatchSize");
+        if (journalDeleterBatchSize > 0) {
+            BedrockJournalDeleter::deleterBatchSize = journalDeleterBatchSize;
+        } else {
+            SWARN("Ignoring -journalDeleterBatchSize '" << args["-journalDeleterBatchSize"] << "', it must be greater than 0.");
+        }
     }
     vector<function<void()>> callbacks;
     for (const auto& plugin : plugins) {
@@ -1732,10 +1737,17 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             _detach = false;
         }
     } else if (SIEquals(command->request.methodLine, "SetJournalDeleter")) {
+        // `LIMIT 0` would silently stop trimming, and SQLite reads a negative limit as no limit at all.
+        const int64_t batchSize = command->request.calc64("batchSize");
+        if (command->request.isSet("batchSize") && batchSize <= 0) {
+            response.methodLine = "400 batchSize must be greater than 0";
+            return;
+        }
+
         response["oldEnabled"] = BedrockJournalDeleter::enableDeleterThread ? "true" : "false";
         response["oldBatchSize"] = to_string(BedrockJournalDeleter::deleterBatchSize.load());
         if (command->request.isSet("batchSize")) {
-            BedrockJournalDeleter::deleterBatchSize.store(command->request.calc64("batchSize"));
+            BedrockJournalDeleter::deleterBatchSize.store(batchSize);
         }
         if (command->request.isSet("enable")) {
             BedrockJournalDeleter::enableDeleterThread.store(command->request.test("enable"));
