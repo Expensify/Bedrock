@@ -1,0 +1,27 @@
+{
+ "dir": "test/clustertest/tests",
+ "pass": "passA",
+ "subdirectories": [],
+ "units": [],
+ "clusters": [
+  {
+   "label": "leader-cluster-follower",
+   "summary_file": "test/clustertest/tests/SUMMARY.leader-cluster-follower.md",
+   "unit_count": 15,
+   "rollup": "theme: Multi-node leader/follower cluster tests (BedrockClusterTester-driven) covering replication, command escalation, failover/lifecycle, version-skew handling, and status reporting.\nexports: [leader-failover and resync verification, follower-to-leader command escalation checks, replication-consistency checks (writes/schema changes/callbacks), rolling-upgrade and version-mismatch handling, cluster status/role reporting, BedrockClusterTester-based multi-node test harness usage]\ndepends_on_dirs: [test/clustertest, libstuff, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 2, low: 3}\nresolved_locally: 5\nescalate: []"
+  },
+  {
+   "label": "cluster-verifies-through",
+   "summary_file": "test/clustertest/tests/SUMMARY.cluster-verifies-through.md",
+   "unit_count": 5,
+   "rollup": "theme: cluster-level BedrockClusterTester scenarios that inject a specific stress or failure condition (rate-limit pressure, bound-param replication, write-conflict spam, journal-hash corruption, repeated leader death) and assert one correctness invariant survives it\nexports: [rate-limit-window-status-roundtrip, bound-param-journal-replication, conflict-spam-convergence, fork-corruption-abort, multi-leader-failure-synchronizing-transition]\ndepends_on_dirs: [libstuff, test/clustertest, test/lib, sqlitecluster]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 1}\nresolved_locally: 1\nescalate: []"
+  },
+  {
+   "label": "cluster-verifying-command",
+   "summary_file": "test/clustertest/tests/SUMMARY.cluster-verifying-command.md",
+   "unit_count": 16,
+   "rollup": "theme: cluster-integration tests grouped by shared \"cluster test verifying X\" phrasing, not by a common feature \u2014 actual subjects span compression, cluster-membership/priority control, command-execution edge cases, the Jobs plugin, and a SQLite constraint check\nexports: [BedrockClusterTester-driven multi-node integration test pattern, cluster-membership/priority command coverage (SetPriority, DoubleDetach, Permafollower, ControlCommand attach-prevention), command execution-edge-case coverage (timeouts, future/scheduled execution, HTTPS-thread interaction, prePeek/postProcess hooks, worker-thread exceptions, per-command timing), fast leader stand-down/failover under load, Jobs plugin coverage (FinishJob, job-ID reinitialization), journal compression verification, SQLite unique-constraint check]\ndepends_on_dirs: [libstuff, test/clustertest, test/lib, test/tests/jobs]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 1, low: 5}\nresolved_locally: 6\nescalate: []"
+  }
+ ],
+ "note": "This directory is WIDE. Its units are pre-grouped into the clusters above. Read the cluster summary files, NOT the individual units."
+}
