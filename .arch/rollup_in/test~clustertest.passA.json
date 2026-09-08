@@ -1,0 +1,128 @@
+{
+ "dir": "test/clustertest",
+ "pass": "passA",
+ "subdirectories": [
+  {
+   "dir": "test/clustertest/testplugin",
+   "summary_file": "test/clustertest/testplugin/SUMMARY.md",
+   "exists": true,
+   "rollup": "theme: Test-only BedrockPlugin (TestPlugin) that exposes internal server code paths as commands so the clustertest binary can exercise crashes, timeouts, escalation, and commit hooks.\nexports: [BedrockPlugin_TestPlugin, TestPluginCommand, TestHTTPSManager, generatesegfault* crash commands, testescalate ordering helpers]\ndepends_on_dirs: [libstuff, sqlitecluster, .]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 3}\nresolved_locally: 2\nescalate:\n  - item: fileAppend / fileLockAndLoad\n    from: test/clustertest/testplugin/TestPlugin.cpp\n    why: generic flock-guarded file I/O helpers with no plugin-specific logic, only used by one test scenario\n    suggested_home: libstuff"
+  },
+  {
+   "dir": "test/clustertest/tests",
+   "summary_file": "test/clustertest/tests/SUMMARY.md",
+   "exists": true,
+   "rollup": "theme: Bedrock's multi-node live-cluster integration suite \u2014 BedrockClusterTester-driven tests covering leader/follower replication, failover, escalation, membership/priority control, version-skew, and a long tail of individual command/plugin edge cases.\nexports: [BedrockClusterTester-based multi-node integration test harness pattern, leader-failover and resync verification, follower-to-leader command escalation checks, replication-consistency checks (writes/schema changes/callbacks/bound params), cluster-membership and priority control coverage, adversarial stress/failure-injection scenarios (rate limits, conflict spam, journal-fork abort, repeated leader death), Jobs-plugin and command-execution edge-case coverage]\ndepends_on_dirs: [test/clustertest, libstuff, test/lib, sqlitecluster, test/tests/jobs]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 3, low: 9}\nresolved_locally: 12\nescalate: []"
+  }
+ ],
+ "units": [
+  {
+   "unit": "BedrockClusterTester",
+   "dir": "test/clustertest",
+   "files": [
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "lines": 252,
+   "test": true,
+   "intent": "Header-only template that spins up a multi-node bedrock cluster (each node a BedrockTester subprocess), waits for every node to answer Status, and tears the cluster down leader-last so tests can exercise replication/consensus.",
+   "objects": [
+    {
+     "name": "ClusterSize",
+     "kind": "enum",
+     "role": "supported cluster sizes: 1, 3, 5, or 6 nodes"
+    },
+    {
+     "name": "ClusterTester<T>",
+     "kind": "class template",
+     "role": "builds/starts/stops a cluster of T (typically BedrockTester) instances with generated ports and peer lists"
+    },
+    {
+     "name": "BedrockClusterTester",
+     "kind": "typedef",
+     "role": "ClusterTester<BedrockTester>"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "ClusterTester<T>'s sized constructor: testplugin.so auto-detection block",
+     "why": "plugin-specific special-casing (checking cwd for testplugin/testplugin.so) inside an otherwise generic cluster-bootstrap helper; the code's own comment says it 'should get moved somewhere else, really. Probably inside TestPlugin.'",
+     "severity": "med",
+     "suggested_home": "TestPlugin or a test-fixture setup helper, per the code's own TODO comment"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "matches its contents."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "cluster test scaffolding belongs in test/clustertest."
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "the sized constructor's `_args` parameter uses the repo's private-member `_` prefix on a plain constructor parameter, not a member."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b112.json",
+   "hash": "f69751f0ccbddf27"
+  },
+  {
+   "unit": "main",
+   "dir": "test/clustertest",
+   "files": [
+    "test/clustertest/main.cpp"
+   ],
+   "lines": 112,
+   "test": true,
+   "intent": "Entry point for the cluster/replication test binary: parses the same family of CLI flags as test/main.cpp and drives tpunit::Tests::run, deliberately not resetting state between tests.",
+   "objects": [
+    {
+     "name": "sigclean",
+     "kind": "free function",
+     "role": "SIGINT handler that stops any running test servers before exiting"
+    },
+    {
+     "name": "log",
+     "kind": "free function",
+     "role": "execs `tail -f /var/log/syslog | grep bedrock` into log.txt; not called anywhere in this file"
+    },
+    {
+     "name": "main",
+     "kind": "free function",
+     "role": "parses args and runs the test suite (optionally repeated)"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "log()",
+     "why": "dead code - defined but never invoked from main; also a generic name that collides in intent with the repo's SINFO/SWARN logging macros despite doing something unrelated (execing into tail+grep)",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "a plain main.cpp test-binary entry point."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits test/clustertest."
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "`log` as a free-function name is generic and easily confused with actual logging."
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b112.json",
+   "hash": "2226ceba08af2bd0"
+  }
+ ],
+ "clusters": []
+}
