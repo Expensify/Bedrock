@@ -1,0 +1,407 @@
+{
+ "dir": "libstuff/JSON",
+ "pass": "passB",
+ "subdirectories": [],
+ "units": [
+  {
+   "unit": "Metrics",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Metrics.h",
+    "libstuff/JSON/Metrics.cpp"
+   ],
+   "lines": 48,
+   "test": false,
+   "intent": "A narrow, process-wide hook so an embedding application can observe JSON parse/serialize timing and document size, without the JSON package depending on that application.",
+   "objects": [
+    {
+     "name": "MetricsOperation",
+     "kind": "enum class",
+     "role": "PARSE or SERIALIZE"
+    },
+    {
+     "name": "MetricsObserver",
+     "kind": "type alias (function pointer)",
+     "role": "callback signature"
+    },
+    {
+     "name": "setMetricsObserver",
+     "kind": "free function",
+     "role": "installs/replaces the callback; nullptr disables reporting"
+    },
+    {
+     "name": "reportMetrics",
+     "kind": "free function",
+     "role": "invoked by Parser/Writer after each operation to notify the observer, if set"
+    },
+    {
+     "name": "(anonymous namespace) metricsObserver",
+     "kind": "file-local static",
+     "role": "atomic<MetricsObserver> backing storage; not declared in the header"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "clear and consistent"
+   },
+   "depends_on": [],
+   "_src": "b107.json",
+   "hash": "17a98b39e917093a"
+  },
+  {
+   "unit": "Parser",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Parser.h",
+    "libstuff/JSON/Parser.cpp"
+   ],
+   "lines": 69,
+   "test": false,
+   "intent": "Parse a JSON string into a JSON::Value tree, in a strict mode that throws on malformed input and a permissive mode that does not.",
+   "objects": [
+    {
+     "name": "Parser",
+     "kind": "class",
+     "role": "two static entry points, read() (throws JSON::InvalidArgument) and readUnsafe() (swallows parse errors), both driving a rapidjson::Reader over a SAXHandler"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "readUnsafe clearly signals the risk relative to read"
+   },
+   "depends_on": [
+    "libstuff/JSON/Value.h",
+    "libstuff/JSON/Metrics.h",
+    "libstuff/JSON/SAXHandler.h"
+   ],
+   "_src": "b107.json",
+   "hash": "9f30b8c7b56df2b5"
+  },
+  {
+   "unit": "SAXHandler",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/SAXHandler.h",
+    "libstuff/JSON/SAXHandler.cpp"
+   ],
+   "lines": 269,
+   "test": false,
+   "intent": "Implements rapidjson's SAX handler interface to build a JSON::Value tree (with nested objects/arrays) from the callback stream a rapidjson::Reader emits while parsing.",
+   "objects": [
+    {
+     "name": "SAXHandler",
+     "kind": "class",
+     "role": "implements the full rapidjson handler surface (Null/Bool/Int/Uint/Int64/Uint64/Double/String/StartObject/Key/EndObject/StartArray/EndArray/RawNumber), tracks a stack of in-progress Value contexts, hands off the finished root via getValue()"
+    },
+    {
+     "name": "SAXHandler::endContext",
+     "kind": "private method",
+     "role": "pops the current context and, inside an array, stages the next placeholder element"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "matches the rapidjson SAX handler convention it implements"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "interface names are fixed by rapidjson's contract; root is a manually new/deleted raw pointer later wrapped in a unique_ptr on hand-off, an ownership pattern worth a second look though not a naming issue"
+   },
+   "depends_on": [
+    "libstuff/JSON/Value.h"
+   ],
+   "_src": "b107.json",
+   "hash": "8c93f8fec8aa01fa"
+  },
+  {
+   "unit": "Serializable",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Serializable.h"
+   ],
+   "lines": 52,
+   "test": false,
+   "intent": "A CRTP base that documents and compile-time-enforces a toJSON()/fromJSON() contract on a derived type, without a vtable, so the derived type stays an aggregate.",
+   "objects": [
+    {
+     "name": "Serializable<Derived>",
+     "kind": "struct (CRTP template)",
+     "role": "base toJSON()/fromJSON() are static_assert stubs that fire only if the derived class fails to hide them via name hiding"
+    },
+    {
+     "name": "always_false_v<T>",
+     "kind": "template variable",
+     "role": "delays the static_assert failure to instantiation time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "a JSON-serialization contract helper, reasonably grouped here even though the CRTP trick itself is generic C++, not JSON-specific; no in-repo consumer currently derives from it"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "always_false_v follows established standard-library-style naming for this trait helper"
+   },
+   "depends_on": [
+    "libstuff/JSON/Value.h"
+   ],
+   "_src": "b107.json",
+   "hash": "96400b628c7880ea"
+  },
+  {
+   "unit": "Utils",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Utils.h",
+    "libstuff/JSON/Utils.cpp"
+   ],
+   "lines": 402,
+   "test": false,
+   "intent": "Static helpers for reading, merging, stripping, and sanitizing JSON::Value trees (key replace/strip/patch, path<->object conversion, transport-safe string sanitizing) used across Bedrock and consuming applications.",
+   "objects": [
+    {
+     "name": "Utils",
+     "kind": "class",
+     "role": "static utility class holding shared singleton JSON::Value constants and tree-manipulation helpers; no instance state"
+    },
+    {
+     "name": "Utils::EMPTY_OBJECT/EMPTY_ARRAY/NULL_VALUE/FALSE_VALUE/TRUE_VALUE/EMPTY_STRING/ZERO_INT_VALUE/MAX_INT_VALUE/ZERO_FLOAT_VALUE",
+     "kind": "static const data members",
+     "role": "shared singleton JSON::Value constants reused to avoid repeated construction"
+    },
+    {
+     "name": "Utils::sanitizeJSONStringForTransport",
+     "kind": "static method",
+     "role": "hand-rolled UTF-8 validator/control-byte stripper for outbound JSON strings"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "Utils::recursiveReplaceJSONKeys",
+     "why": "doc comment is written entirely in terms of one caller's domain (bankAccounts.additionalData, apiResult, errorAttemptsCount, assetReport) and names an external test (GetWithdrawalAccountsTest) not present in this repo; the algorithm is generic but the documentation ties a package the README describes as application-agnostic to one consumer's onyx-merge use case",
+     "severity": "med",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "generic JSON-tree utility grab-bag fits its name"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "belongs in libstuff/JSON alongside Value/Writer/Parser"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "clear camelCase methods; class name Utils is a generic catch-all but scoped under JSON:: so it doesn't collide with the repo's S-prefixed shared-utility convention"
+   },
+   "depends_on": [
+    "libstuff/JSON/Value.h"
+   ],
+   "_src": "b107.json",
+   "hash": "9b657049e6d834aa"
+  },
+  {
+   "unit": "Value",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Value.h",
+    "libstuff/JSON/Value.cpp"
+   ],
+   "lines": 2630,
+   "test": false,
+   "intent": "Declares and implements JSON::Value, Bedrock's in-memory JSON document node (scalar, array, or object), including its exception hierarchy and small helper types for building and iterating it.",
+   "objects": [
+    {
+     "name": "JSON::Error",
+     "kind": "class",
+     "role": "base exception for JSON errors; captures a stack trace via SException"
+    },
+    {
+     "name": "JSON::TypeError",
+     "kind": "class",
+     "role": "thrown when a Value is accessed/cast as the wrong ValueType"
+    },
+    {
+     "name": "JSON::NotFound",
+     "kind": "class",
+     "role": "thrown when a keyed or indexed member does not exist"
+    },
+    {
+     "name": "JSON::InvalidArgument",
+     "kind": "class",
+     "role": "thrown for malformed caller input, e.g. a non-numeric path key"
+    },
+    {
+     "name": "JSON::ValueType",
+     "kind": "enum",
+     "role": "discriminates which kind of JSON node a Value currently holds"
+    },
+    {
+     "name": "JSON::Value",
+     "kind": "class",
+     "role": "tagged-union JSON node: scalar storage plus shared_ptr-backed object/array storage and all accessors/mutators"
+    },
+    {
+     "name": "JSON::KeyValue",
+     "kind": "class",
+     "role": "move-only key/value pair used to build a Value object from an initializer_list"
+    },
+    {
+     "name": "JSON::_ArrayValue<T>",
+     "kind": "class template",
+     "role": "adapter giving a Value's array begin()/end() for range-based for loops"
+    },
+    {
+     "name": "JSON::_ObjectValue<T>",
+     "kind": "class template",
+     "role": "adapter giving a Value's object begin()/end() for range-based for loops"
+    },
+    {
+     "name": "JSON::ArrayValue / ConstArrayValue",
+     "kind": "typedef",
+     "role": "_ArrayValue<Value> / _ArrayValue<const Value>"
+    },
+    {
+     "name": "JSON::ObjectValue / ConstObjectValue",
+     "kind": "typedef",
+     "role": "_ObjectValue<Value> / _ObjectValue<const Value>"
+    },
+    {
+     "name": "JSON::logStackTraceOnEnsureTypeFailure",
+     "kind": "global",
+     "role": "thread_local debug flag toggling stack-trace logging on ensureType() failure"
+    },
+    {
+     "name": "operator<<(ostream&, const Value&)",
+     "kind": "function",
+     "role": "serializes a Value to a stream"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "JSON::logStackTraceOnEnsureTypeFailure",
+     "why": "mutable global-ish thread_local debug/diagnostics toggle declared inline in the core value-type header; reads like a logging switch, not part of the JSON data model",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "Value::mergeDeep(useSQLiteMergeBehavior)",
+     "why": "a generic JSON value type's merge API names a specific downstream consumer (SQLite) in its parameter; the behavior it selects is really just RFC 7386 JSON Merge Patch semantics",
+     "severity": "med",
+     "suggested_home": null
+    },
+    {
+     "item": "Value::startTime / Value::logSlowConstructor",
+     "why": "constructor-timing instrumentation adds a chrono::time_point member to every Value instance, even scalars that never touch it, purely to detect occasional slow map/vector-based construction",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "friend class SAXHandler",
+     "why": "grants SAXHandler direct access to Value's private storage for fast construction; the source comment itself calls this out as 'Coupling++'",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 3,
+    "note": "core type is JSON::Value, but the file also carries the exception hierarchy, KeyValue, and the array/object range adapters, none named after Value"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "sits correctly alongside Parser, Writer, SAXHandler, and Utils in libstuff/JSON"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "public API is descriptive and consistent; private members lack the repo's `_` prefix convention, and intValue/uintValue are two easily-confused fields disambiguated only by usingUnsigned"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/JSON/Writer.h",
+    "libstuff/JSON/Parser.h",
+    "libstuff/JSON/Utils.h"
+   ],
+   "_src": "b106.json",
+   "hash": "7bd782b20de92166"
+  },
+  {
+   "unit": "Writer",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Writer.h",
+    "libstuff/JSON/Writer.cpp"
+   ],
+   "lines": 350,
+   "test": false,
+   "intent": "A JSON serializer: build a document incrementally via an object/array cursor over rapidjson::Writer, or convert a whole JSON::Value tree to a string in one call (compact or pretty).",
+   "objects": [
+    {
+     "name": "Writer",
+     "kind": "class",
+     "role": "wraps rapidjson::Writer<StringBuffer>; instance API drives incremental construction, static serialize()/serializePretty() walk an existing JSON::Value tree directly"
+    },
+    {
+     "name": "Writer::serialize(value, writer)",
+     "kind": "private template method",
+     "role": "recursively walks a JSON::Value and feeds it to any rapidjson writer type; shared by serialize() and serializePretty()"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent startX/endX pairs; private writeValue overloads appropriately hidden behind public templates"
+   },
+   "depends_on": [
+    "libstuff/JSON/Value.h",
+    "libstuff/JSON/Metrics.h",
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b107.json",
+   "hash": "667f08cf52c8c9ee"
+  }
+ ],
+ "clusters": [],
+ "parent": {
+  "dir": "libstuff",
+  "summary_file": "libstuff/SUMMARY.md",
+  "rollup": "theme: Bedrock's dependency-free foundation layer - string/table/exception/logging core, poll()-loop networking, SQL-adjacent typed values and wire format, async threading primitives, an in-house JSON model, and process diagnostics - undercut by a 4612-line catch-all file that still duplicates several of its own dedicated units.\nexports: [libstuff-core (SString/STable/SException/SStopwatch/logging+assert macros), SData (generic HTTP-like wire message), SQResult/SQValue/SQliteParameter (typed SQL result set + bindable parameter), STCPManager/SHTTPSManager/SSSLState (poll()-loop socket/TLS/HTTPS stack), SLog/SSignal (process-wide logging + crash/signal handling), SThread/SRingBuffer/SFluentdLogger/SResolver (safe background-thread primitives and consumers), JSON::Value (in-house JSON document model, via JSON/)]\ndepends_on_dirs: [sqlitecluster, .]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 7, low: 6}\nresolved_locally: 8\nescalate:\n  - item: AutoScopeOnPrepare\n    from: libstuff/AutoScopeOnPrepare.h,cpp\n    why: includes sqlitecluster/SQLite.h directly and exists solely to scope a SQLite-specific callback; confirming the landing spot needs sqlitecluster's own view\n    suggested_home: sqlitecluster\n  - item: AutoTimer name collision\n    from: libstuff/AutoTimer.h,cpp\n    why: a second, unrelated AutoTimer class exists in BedrockCore.h outside libstuff's visibility; resolving the collision needs a view spanning both\n    suggested_home: null\n  - item: SData::deserialize simdjson padding logic\n    from: libstuff/SData.cpp\n    why: over-allocates for one downstream simdjson parser's requirement, but no consumer of SData that does simdjson parsing is visible anywhere in libstuff\n    suggested_home: wherever SData payloads are simdjson-parsed (not visible from libstuff)\n  - item: SHTTPSManager (class, depends on BedrockPlugin.h)\n    from: libstuff/SHTTPSManager.h\n    why: inverts libstuff's expected dependency direction on the application layer above it; SStandaloneHTTPSManager in the same file proves the coupling isn't load-bearing\n    suggested_home: near BedrockPlugin, or a thinner adapter in Bedrock proper leaving libstuff plugin-free\n  - item: \"_SSignal_StackTrace's direct call to SQLiteNode::KILLABLE_SQLITE_NODE->kill()\"\n    from: libstuff/SSignal.cpp\n    why: a generic libstuff crash handler reaching directly into the sqlitecluster layer; a layering decision the root must settle\n    suggested_home: null"
+ },
+ "siblings": []
+}

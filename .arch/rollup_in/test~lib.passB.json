@@ -1,0 +1,319 @@
+{
+ "dir": "test/lib",
+ "pass": "passB",
+ "subdirectories": [],
+ "units": [
+  {
+   "unit": "BedrockTester",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/BedrockTester.h",
+    "test/lib/BedrockTester.cpp"
+   ],
+   "lines": 876,
+   "test": true,
+   "intent": "Forks, execs, and manages one bedrock server subprocess for tests, and provides the request/response plumbing and direct DB access tests use against it.",
+   "objects": [
+    {
+     "name": "BedrockTester",
+     "kind": "class",
+     "role": "owns one bedrock server subprocess: starts/stops it, sends it commands over TCP, reads its DB file directly, and tracks all live instances for stopAll"
+    },
+    {
+     "name": "BedrockTester::autoAttachDebugger",
+     "kind": "member function",
+     "role": "speaks a small JSON-over-socket protocol to an LLDB RPC server to auto-attach a debugger to the spawned process"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BedrockTester::autoAttachDebugger",
+     "why": "A self-contained LLDB RPC-socket client with its own wire protocol, unrelated to running a server subprocess and sending it commands",
+     "severity": "med",
+     "suggested_home": "a standalone debug-attach helper, or null"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits; core per-server test harness class."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Repo-typical (_-prefixed private members); _commitCountBase vs. the reference member _commitCount is a little confusing on first read but is explained at the constructor."
+   },
+   "depends_on": [
+    "test/lib/PortMap.h",
+    "test/lib/tpunit++.hpp",
+    "libstuff/libstuff.h",
+    "libstuff/SData.h",
+    "libstuff/SFastBuffer.h",
+    "libstuff/SQResult.h",
+    "sqlitecluster/SQLite.h",
+    "test/lib/RemoteSQLite.h"
+   ],
+   "_src": "b115.json",
+   "hash": "f00c46658dbd7c08"
+  },
+  {
+   "unit": "PortMap",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/PortMap.h",
+    "test/lib/PortMap.cpp"
+   ],
+   "lines": 107,
+   "test": true,
+   "intent": "Hands out non-conflicting TCP ports from a fixed range to BedrockTester instances so parallel tests don't collide, recycling returned ports once confirmed free.",
+   "objects": [
+    {
+     "name": "PortMap",
+     "kind": "class",
+     "role": "allocates ports sequentially from a fixed range, recycles returned ones, and confirms a port is bindable before handing it out"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with repo convention (_-prefixed private members); not S-prefixed, but it's test-only infrastructure rather than a libstuff shared utility type."
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b115.json",
+   "hash": "faf700137f857288"
+  },
+  {
+   "unit": "PrintEquality",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/PrintEquality.h"
+   ],
+   "lines": 54,
+   "test": true,
+   "intent": "Backs tpunit++'s ASSERT_EQUAL/ASSERT_NOT_EQUAL family, printing both compared values with an = or != between them when an assertion fails.",
+   "objects": [
+    {
+     "name": "PrintEquality",
+     "kind": "class",
+     "role": "constructor-only helper templated on the two compared types; prints 'a (= or !=) b' to cout when constructed"
+    },
+    {
+     "name": "operator<<(ostream&, const list<T>&)",
+     "kind": "free function",
+     "role": "prints a list via SComposeList"
+    },
+    {
+     "name": "operator<<(ostream&, const set<T>&)",
+     "kind": "free function",
+     "role": "prints a set via SComposeList"
+    },
+    {
+     "name": "operator<<(ostream&, const map<T,U>&)",
+     "kind": "free function",
+     "role": "prints a map as one 'k: v' line per entry"
+    },
+    {
+     "name": "operator<<(ostream&, const optional<T>&)",
+     "kind": "free function",
+     "role": "prints the contained value or '(nullopt)'"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)",
+     "why": "Generic stream-formatting utilities with no dependency on PrintEquality or tpunit, bundled here only because PrintEquality's own printing happens to need them",
+     "severity": "med",
+     "suggested_home": "a shared stream-formatting utility header in libstuff, or null"
+    }
+   ],
+   "name_fit": {
+    "score": 3,
+    "note": "The file does far more than print equality - it defines general-purpose container-printing operators."
+   },
+   "location_fit": {
+    "score": 3,
+    "note": "Test-only placement is defensible for the class itself, less so for the generic operator<< overloads it carries."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "PrintEquality's own name matches its narrow job."
+   },
+   "depends_on": [],
+   "_src": "b115.json",
+   "hash": "f29d77201f001cff"
+  },
+  {
+   "unit": "RemoteSQLite",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/RemoteSQLite.h",
+    "test/lib/RemoteSQLite.cpp"
+   ],
+   "lines": 138,
+   "test": true,
+   "intent": "A client-side SQLite subclass that forwards every read/write to a BedrockTester's server as a Query command instead of touching a local DB file, so HC-Tree-mode tests can still use SQLite-shaped call sites.",
+   "objects": [
+    {
+     "name": "RemoteSQLite",
+     "kind": "class",
+     "role": "overrides SQLite's read/write/writeIdempotent family to serialize each call into a Query command sent via the owning BedrockTester"
+    },
+    {
+     "name": "RemoteSQLite::_runRemoteQuery",
+     "kind": "member function",
+     "role": "builds and sends the Query command with bound parameters as sql-param-<name> headers, shared by all public overrides"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits; test-only infrastructure paired with BedrockTester."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with the SQLite base class's naming and repo convention (_-prefixed private member/helper)."
+   },
+   "depends_on": [
+    "sqlitecluster/SQLite.h",
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b115.json",
+   "hash": "415165cd02497f92"
+  },
+  {
+   "unit": "TestHTTPS",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/TestHTTPS.h",
+    "test/lib/TestHTTPS.cpp"
+   ],
+   "lines": 47,
+   "test": true,
+   "intent": "A minimal SHTTPSManager subclass used by tests to make outbound HTTPS requests and read back their status code, with no product-specific response handling.",
+   "objects": [
+    {
+     "name": "TestHTTPS",
+     "kind": "class",
+     "role": "trivial SHTTPSManager subclass; exposes sendRequest publicly and parses the response status code out of the raw HTTP method line in _onRecv"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits; test-only HTTPS helper alongside the rest of test/lib."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent with SHTTPSManager's naming conventions."
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SHTTPSManager.h"
+   ],
+   "_src": "b115.json",
+   "hash": "c6c48f73f4795ab9"
+  },
+  {
+   "unit": "tpunit++",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/tpunit++.cpp"
+   ],
+   "lines": 606,
+   "test": true,
+   "intent": "Implements the tpunit++ micro test framework's runner: fixture registration, multithreaded execution with name filtering, before/after hooks, pass/fail bookkeeping, and console output.",
+   "objects": [
+    {
+     "name": "tpunit::_TestFixture",
+     "kind": "class",
+     "role": "fixture base; registers itself on construction and implements the whole run loop, per-class and per-test threading, method dispatch with exception trapping, and float-equality helpers"
+    },
+    {
+     "name": "tpunit::_TestFixture::method",
+     "kind": "struct",
+     "role": "one registered before/after/test callback; linked-list node"
+    },
+    {
+     "name": "tpunit::_TestFixture::stats",
+     "kind": "struct",
+     "role": "global pass/fail counters and failure-name set"
+    },
+    {
+     "name": "tpunit::_TestFixture::perFixtureStats",
+     "kind": "struct",
+     "role": "thread_local per-fixture assertion/exception/trace counters"
+    },
+    {
+     "name": "tpunit::TestFixture",
+     "kind": "class",
+     "role": "empty out-of-line destructor only"
+    },
+    {
+     "name": "tpunit::Tests::run",
+     "kind": "free function group",
+     "role": "public entry points that call into _TestFixture::tpunit_detail_do_run"
+    },
+    {
+     "name": "tpunit::tpunit_break_check_line",
+     "kind": "free function",
+     "role": "keeps short-form dot output readable when a verbose log line interrupts it"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 4,
+    "note": "It's the vendored micro-framework's implementation file; the ++ suffix is unusual but recognizable."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits; kept under test/lib with the rest of the test infrastructure."
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "registerTests taking 70 individually numbered method* parameters (m0..m69) is a design wart inherited from the upstream framework, not a naming defect, but it stands out."
+   },
+   "depends_on": [
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b115.json",
+   "hash": "b3895badc1f24cc1"
+  }
+ ],
+ "clusters": [],
+ "parent": {
+  "dir": "test",
+  "summary_file": "test/SUMMARY.md",
+  "rollup": "theme: Root of Bedrock's test tree \u2014 divides \"verify Bedrock\" into a harness layer (test/lib), a single-node command/support-library test suite (test/tests), and a multi-node cluster-integration subsystem (test/clustertest), tied together by the single-node test binary's entry point (main.cpp).\nexports: [single-node bedrock test-binary entry point (main.cpp), BedrockTester test harness + vendored tpunit++ framework (test/lib), single-node command and libstuff/JSON support-library test suite incl. Jobs-plugin coverage (test/tests), BedrockClusterTester multi-node cluster harness plus test-only plugin and cluster-integration test suite (test/clustertest)]\ndepends_on_dirs: [libstuff, libstuff/JSON, sqlitecluster, plugins]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 1, low: 2}\nresolved_locally: 0\nescalate:\n  - item: fileAppend / fileLockAndLoad\n    from: test/clustertest/testplugin/TestPlugin.cpp\n    why: generic flock-guarded file I/O helpers with no plugin-specific logic and no relation to any part of test/'s remit; belongs in a shared utility location outside this subtree\n    suggested_home: libstuff\n  - item: \"operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)\"\n    from: test/lib/PrintEquality.h\n    why: generic container-printing utilities with no tie to PrintEquality or testing, already built on libstuff's SComposeList\n    suggested_home: a shared stream-formatting utility header in libstuff\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: tests a compiled-in SQLite extension (percentile/median aggregates), not Bedrock's Query command handling; no better home exists within test/'s own subtree, and whether one exists elsewhere in the repo needs a wider view\n    suggested_home: null"
+ },
+ "siblings": [
+  {
+   "dir": "test/clustertest",
+   "rollup": "theme: Root of Bedrock's cluster-integration test subsystem \u2014 owns the multi-node cluster bootstrap harness (BedrockClusterTester) and the test-binary entrypoint that test/clustertest/testplugin and test/clustertest/tests are built on.\nexports: [BedrockClusterTester / ClusterTester<T> multi-node cluster harness, cluster-test binary entrypoint (CLI parsing, signal cleanup, test-run driver), TestPlugin test-only command surface for crashes/timeouts/escalation/commit-hooks (testplugin/), BedrockClusterTester-driven multi-node integration test suite covering replication/failover/escalation/membership/adversarial-stress (tests/)]\ndepends_on_dirs: [libstuff, test/lib, sqlitecluster, test/tests/jobs]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 1, low: 2}\nresolved_locally: 2\nescalate:\n  - item: fileAppend / fileLockAndLoad\n    from: test/clustertest/testplugin/TestPlugin.cpp\n    why: generic flock-guarded file I/O helpers with no plugin-specific logic and no relation to test/clustertest's remit either; belongs in a shared utility location\n    suggested_home: libstuff"
+  },
+  {
+   "dir": "test/tests",
+   "rollup": "theme: Bedrock's flat top-level test suite \u2014 one BedrockTester integration fixture per core server command, one unit fixture per libstuff/JSON support-library symbol, plus a dedicated Jobs-plugin subdirectory\nexports: [BedrockTester single-command integration pattern (Query/Write/Status/CommandPort/outbound-HTTP), BedrockBlockingCommandQueue rate-limit coverage, JSON::Value/Parser/Utils unit-test coverage, SQLite commit/rollback and SQLiteNode peer-selection coverage, libstuff primitive coverage (async DNS, ring buffer, string/date validators), Jobs-plugin command-suite coverage (via jobs/)]\ndepends_on_dirs: [libstuff, libstuff/JSON, plugins, sqlitecluster, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 1, med: 1, low: 12}\nresolved_locally: 13\nescalate:\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: tests a compiled-in SQLite extension (percentile/median aggregates), not Bedrock's Query command handling; unclear if a better home exists among unseen siblings\n    suggested_home: null"
+  }
+ ]
+}

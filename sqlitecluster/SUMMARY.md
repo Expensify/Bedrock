@@ -87,16 +87,103 @@ directory:
   friend is declared in the file) — resolved here: fix or delete the stale
   comment.
 
+Pass B does not change any of the above resolutions. It does sharpen the one
+escalated item — see §5.
+
+## 5. Role in the system
+
+The intended layering is `libstuff -> sqlitecluster -> plugins -> root`.
+sqlitecluster is the layer that turns libstuff's bare `sqlite3` handle and
+networking primitives into a consensus-replicated database — nothing else in
+the tree does distributed leader election or owns the journal/transaction
+lifecycle, so that half of "role in the system" is unambiguous and no sibling
+contests it.
+
+**Boundary with libstuff:** clean from this side — sqlitecluster only
+consumes libstuff (sqlite3.h, SQliteParameter, SQResult, SPerformanceTimer,
+SDeburr, libstuff.h, STCPManager, SSynchronizedQueue, SRandom) and exports
+nothing back. The leak on *this* boundary runs the other way: libstuff's own
+rollup escalates `AutoScopeOnPrepare` (a libstuff file that `#include`s
+`sqlitecluster/SQLite.h` to scope a SQLite-specific callback) and
+`_SSignal_StackTrace`'s direct call to `SQLiteNode::KILLABLE_SQLITE_NODE->kill()`
+— i.e., libstuff already expects sqlitecluster to be the landing spot for
+both. That is consistent with this directory's role: `AutoScopeOnPrepare`
+belongs here (it's exactly the SQLite-prepare-scoped callback machinery
+`SQLiteCore`'s own notification hook already does), and the `KILLABLE_SQLITE_NODE`
+static is already a sqlitecluster-owned mechanism (see §4) that a lower layer
+is reaching into rather than sqlitecluster reaching out — the inversion is
+libstuff's to fix, not this directory's, but this directory is the correct
+target for both.
+
+**Boundary with plugins — the one that leaks from this side:** the intended
+order has plugins depending on sqlitecluster, never the reverse, and plugins'
+own rollup agrees (its `depends_on_dirs` is `[libstuff, sqlitecluster]` only —
+it does not believe sqlitecluster depends on it). But `SQLite.cpp` and
+`SQLiteNode.cpp` both `#include <plugins/Compression.h>` and call
+`BedrockPlugin_Compression::compress/decompress` directly to (de)compress
+journal entries. This is a real, active dependency the other side's own
+rollup doesn't record — sqlitecluster escalated it in Pass A; plugins did not
+flag it, because from inside `plugins/Compression.h` looks like an ordinary,
+correctly-placed plugin with no outside reach of its own.
+
+**Concrete fix, applying root's rule (sink the shared primitive to the
+lowest layer both sides can use):** the piece both directories actually need
+is a dictionary-based zstd compress/decompress over a raw byte buffer — that
+has no inherent dependency on SQL, UDF registration, or the plugin/command
+framework. That primitive belongs in **libstuff** (e.g.
+`libstuff/SCompress.h/.cpp`), as a peer to libstuff's other self-contained
+algorithmic units (SDeburr, SReplace) rather than anything SQLite- or
+plugin-aware.
+- **sqlitecluster keeps:** the call sites in `SQLite.cpp`
+  (compress/decompress journal entries, register the UDFs at the storage
+  layer) and `SQLiteNode.cpp` (`_handleBeginTransaction`,
+  `_recvSynchronize`) — but calling libstuff's primitive directly.
+  `#include <plugins/Compression.h>` and every `BedrockPlugin_Compression`
+  reference are removed from both files; sqlitecluster's dependency on
+  `plugins` goes to zero, matching the intended order.
+- **plugins keeps:** `BedrockPlugin_Compression` as the SQL-facing surface —
+  registering `compress()`/`decompress()` as SQLite UDFs, owning the
+  `zstdDictionaries` table schema and startup dictionary loading, and
+  exposing the static helpers for non-SQL command callers — all now built on
+  top of the same libstuff primitive rather than being its only
+  implementation.
+- This is still an escalation, not a local resolution: it requires editing a
+  third directory (libstuff) this agent does not own, so root has to
+  arbitrate it, but the destination is now concrete rather than open.
+
+## 6. Inbound expectations
+
+What plugins, test, and root actually rely on sqlitecluster for is already
+exported correctly: `SQLiteNode`, `SQLitePeer`, `SQLiteCommand`,
+`SQLiteClusterMessenger`, `SQLitePool`, `SQLiteServer`, `SQLiteCore` all
+appear in the consuming siblings' own dependency lists with no gap visible
+from here.
+
+`SQLiteServer` is the one sanctioned channel for sqlitecluster to reach
+*upward* into its host without a compile-time dependency (it's a pure-virtual
+interface the host implements: `onNodeLogin`, `notifyStateChangeToPlugins`,
+`blockCommandPort`). The Compression dependency bypasses this sanctioned
+channel entirely — it reaches for a concrete plugin header and a concrete
+class instead of going through the interface built for exactly this purpose.
+That's a second way to describe the same violation: sqlitecluster already
+has an upward-callback mechanism; Compression just doesn't use it, and
+sinking the primitive to libstuff (§5) is preferred over routing compression
+through `SQLiteServer` since compression isn't inherently plugin-owned state.
+
+Nothing else a sibling depends on appears missing or accidentally exposed;
+the plugins/Compression reach is the only outbound-facing problem this
+directory has.
+
 <!-- ROLLUP
 theme: Replicated-SQLite engine — the transaction/journal handle, the leader/follower consensus node, and the wire-format/pooling plumbing that carries commands and connections through the cluster.
 exports: [SQLite, SQLiteNode, SQLitePeer, SQLiteCommand, SQLiteClusterMessenger, SQLitePool, SQLiteServer]
 depends_on_dirs: [libstuff, plugins, root (BedrockCommand.h, BedrockServer.h)]
-depended_on_by: []
+depended_on_by: [plugins, test, root]
 misfit_count: {high: 1, med: 2, low: 6}
 resolved_locally: 8
 escalate:
   - item: "SQLite.cpp and SQLiteNode.cpp both include plugins/Compression.h and call BedrockPlugin_Compression::compress/decompress to (de)compress journal entries"
     from: sqlitecluster/SQLite.cpp, sqlitecluster/SQLiteNode.cpp
-    why: the replication engine, which otherwise depends only on libstuff, depends upward on an application-level Bedrock command plugin — an inverted layering that two independent units converge on, so it is structural rather than a one-off
-    suggested_home: a libstuff- or sqlitecluster-level compression primitive that plugins/Compression itself builds on, instead of the reverse; deciding the exact seam requires a view above sqlitecluster that also sees plugins/
+    why: the replication engine, which otherwise depends only on libstuff, depends upward on an application-level Bedrock command plugin — an inverted layering that two independent units converge on, so it is structural rather than a one-off; plugins' own rollup does not record sqlitecluster as a dependent, confirming this reach is unacknowledged from the other side
+    suggested_home: "libstuff (e.g. libstuff/SCompress.h/.cpp) for a raw dictionary-based zstd compress/decompress primitive with no SQL or plugin awareness; sqlitecluster calls it directly and drops the plugins/Compression.h include entirely, while plugins/Compression keeps the UDF registration, zstdDictionaries schema, and dictionary-loading built on top of the same primitive. Requires editing libstuff, a directory neither sqlitecluster nor plugins owns, so root must arbitrate the actual move."
 -->

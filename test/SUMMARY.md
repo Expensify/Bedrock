@@ -93,6 +93,109 @@ this directory owns test infrastructure and test cases, not shared
 general-purpose utility code, so "the fix belongs in a production support
 library" is by definition outside its remit.
 
+**Revisiting the `libstuff` destination now that `libstuff`'s own rollup is
+visible.** `libstuff` describes itself as "undercut by a 4612-line catch-all
+file that still duplicates several of its own dedicated units," and
+separately escalates several of its own items outward (to `sqlitecluster`,
+to the application layer). It is not a stable dumping ground right now — it
+is itself flagged for decomposition. That changes the emphasis but not the
+destination for `fileAppend`/`fileLockAndLoad` and the container
+`operator<<` overloads: both are exactly the shape of thing `libstuff`
+already holds under "libstuff-core" (`SString`/`STable`/`SException`/logging
+macros) — small, dependency-free, generic utility code is squarely
+`libstuff`'s job, so `libstuff`-the-directory is still the right home. What's
+no longer safe to assume is that they belong in the 4612-line catch-all file
+that is the source of `libstuff`'s own problem; landing two more orphaned
+utilities there would repeat the exact anti-pattern `libstuff`'s own summary
+flags. Both should arrive as their own small dedicated units (a file-I/O
+helper header, a stream-formatting header) alongside `libstuff`'s other
+dedicated units, not folded into the catch-all file. It's also worth root
+noticing that `plugins/` independently escalates its own generic-utility
+misfits toward `libstuff` (`LRUMap`, a sqlite3-CLI arg/error wrapper,
+`scopedDisableNoopMode`) — three different subtrees converging on `libstuff`
+as the right home for generic shared code is itself an argument for giving
+`libstuff` room for a proper "shared utilities" unit during its
+decomposition, rather than treating each escalation as a one-off patch.
+`QueryTest::testPercentile` is unaffected by this — nothing in `libstuff`'s,
+`plugins`'s, or `sqlitecluster`'s visible rollups owns a SQLite-extension
+test home, so it is carried up with `suggested_home: null` unchanged.
+
+## 5. Role in the system
+
+`test/` owns *verification*, not production behavior, of everything below
+it: root's command pipeline (`BedrockServer`/`BedrockCommand`/`BedrockCore`/
+`BedrockCommandQueue`/`BedrockPlugin`/`BedrockConflictManager`), `plugins/`'s
+five `BedrockPlugin_*` implementations, `sqlitecluster`'s replicated-SQLite
+engine, and `libstuff`'s foundation layer. No sibling shares that role —
+`libstuff`, `plugins`, `sqlitecluster`, and root all own production behavior;
+`test/` owns none of it. The boundary is one-directional by construction:
+`test/` is the only directory in the tree whose `depends_on_dirs` draws from
+all of `libstuff`, `libstuff/JSON`, `sqlitecluster`, and `plugins` at once,
+and it is the only directory none of the others lists back in their own
+`depends_on_dirs`. In dependency terms `test/` is a strict leaf — nothing it
+exports is load-bearing for production code.
+
+That boundary mostly holds, but leaks in one place visible only from here:
+`test/clustertest/testplugin` is a real `BedrockPlugin_*` implementation (a
+"TestPlugin test-only command surface") that must be loaded through root's
+plugin-loading mechanism at runtime to drive cluster tests — the same
+contract `plugins/`'s five production plugins implement. So while no
+production code depends on `test/` at build/link time, root's plugin
+contract does have a live, if narrow, consumer inside `test/`: the interface
+`plugins/` implements against needs to stay open enough for a non-production,
+test-only plugin to keep registering through it. That never shows up as a
+directory dependency, but it's a real coupling root and `plugins/` should
+know about.
+
+Does `test/`'s shape actually mirror what `libstuff`/`plugins`/`sqlitecluster`
+claim to export? Only partially:
+
+- **`plugins/`** exports five plugins (Cache, Compression, DB, Jobs, MySQL).
+  `test/tests` mirrors exactly one of them structurally — a nested `jobs/`
+  subdirectory — and names no dedicated coverage for Cache, Compression, DB,
+  or MySQL anywhere in the visible rollups. Either those four are exercised
+  anonymously within the flat "one `BedrockTester` fixture per core server
+  command" set `test/tests` describes, or they aren't tested at the level of
+  a named plugin at all. From here that can't be distinguished, but the
+  asymmetry — Jobs alone gets a directory — is real, and suggests that
+  coverage grew organically rather than the suite being modeled 1:1 on
+  `plugins/`'s shape.
+- **`sqlitecluster/`** exports seven symbols (`SQLite`, `SQLiteNode`,
+  `SQLitePeer`, `SQLiteCommand`, `SQLiteClusterMessenger`, `SQLitePool`,
+  `SQLiteServer`). Named coverage across `test/tests` + `test/clustertest`
+  accounts for `SQLite` (commit/rollback) and `SQLiteNode` (peer-selection,
+  replication/failover/escalation) — the consensus core. `SQLitePeer`,
+  `SQLiteCommand`, `SQLiteClusterMessenger`, `SQLitePool`, and
+  `SQLiteServer` — the wire-format/pooling plumbing — have no named coverage
+  anywhere in this subtree's rollups.
+- **`libstuff/`** exports seven groups. `test/tests` names coverage for only
+  a slice of `libstuff-core` (async DNS, ring buffer, string/date
+  validators). `SData`, the `SQResult`/`SQValue`/`SQliteParameter` typed-SQL
+  layer, the entire `STCPManager`/`SHTTPSManager`/`SSSLState`
+  networking/TLS stack, `SLog`/`SSignal`, `SThread`, and `SFluentdLogger`
+  have no named coverage anywhere visible.
+
+This is the honest limit of what this rollup can claim: an export not named
+in a child's curated export list isn't proof of zero coverage — a fixture
+could exercise it without calling it out. But the same pattern repeating
+across three independent children (Jobs singled out; the consensus core
+named but the messenger/pool/server layer never mentioned; all of
+`libstuff`'s non-core surfaces silent) is consistent enough to be a real
+signal, not noise, and worth root treating it as such.
+
+## 6. Inbound expectations
+
+Because nothing in this subtree exports anything a sibling's
+`depends_on_dirs` lists, `test/` owes production code nothing in the
+conventional sense — `depended_on_by` stays empty. The one inbound
+expectation runs through the plugin contract described above: root's/
+`plugins/`'s `BedrockPlugin` registration mechanism must stay stable and
+generic enough for `test/clustertest/testplugin` to keep loading as a
+plugin, or the entire cluster-integration suite silently loses its ability
+to drive the behavior it exists to test. That's a narrow but real thing
+`test/` needs from root that isn't visible as a directory dependency, and
+nothing in the visible rollups suggests it's currently at risk.
+
 <!-- ROLLUP
 theme: Root of Bedrock's test tree — divides "verify Bedrock" into a harness layer (test/lib), a single-node command/support-library test suite (test/tests), and a multi-node cluster-integration subsystem (test/clustertest), tied together by the single-node test binary's entry point (main.cpp).
 exports: [single-node bedrock test-binary entry point (main.cpp), BedrockTester test harness + vendored tpunit++ framework (test/lib), single-node command and libstuff/JSON support-library test suite incl. Jobs-plugin coverage (test/tests), BedrockClusterTester multi-node cluster harness plus test-only plugin and cluster-integration test suite (test/clustertest)]

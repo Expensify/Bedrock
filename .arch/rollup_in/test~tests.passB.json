@@ -1,0 +1,55 @@
+{
+ "dir": "test/tests",
+ "pass": "passB",
+ "subdirectories": [
+  {
+   "dir": "test/tests/jobs",
+   "summary_file": "test/tests/jobs/SUMMARY.md",
+   "exists": true,
+   "rollup": "theme: Command-by-command test suite for the Jobs bedrock plugin, validating job state-machine transitions, priority/parent-child rules, and nextRun/repeat/retryAfter scheduling via BedrockTester-driven integration tests.\nexports: [JobTestHelper::getTimestampForDateTimeString, tpunit fixture-per-command test pattern, integration coverage for CreateJob(s)/GetJob(s)/UpdateJob/RetryJob/FailJob/CancelJob/DeleteJob/RequeueJobs/QueryJob]\ndepends_on_dirs: [libstuff, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 2}\nresolved_locally: 2\nescalate: []"
+  }
+ ],
+ "units": [],
+ "clusters": [
+  {
+   "label": "sqlite-unit-commit",
+   "summary_file": "test/tests/SUMMARY.sqlite-unit-commit.md",
+   "unit_count": 5,
+   "rollup": "theme: SQLite commit/write-path unit tests (diluted: 2 of 5 units are genuinely on-theme; 3 matched on shallow \"SQLite\" token overlap only)\nexports: [after-commit-callback semantics, writeLocalUnreplicated commit/rollback invariants, SIsValidSQLiteDateModifier string validation, SQLiteNode sync-peer selection, SDeburr Unicode transliteration tests]\ndepends_on_dirs: [libstuff, sqlitecluster, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 3}\nresolved_locally: 3\nescalate: []"
+  },
+  {
+   "label": "fast-wake-buffer",
+   "summary_file": "test/tests/SUMMARY.fast-wake-buffer.md",
+   "unit_count": 3,
+   "rollup": "theme: libstuff-level unit tests for socket/buffer primitives \u2014 genuinely wake/poll-themed for two of three units (async DNS resolution, ring-buffer producer/consumer handshake), with one unit (FastHTTPParsing) sharing only name-token overlap, not the wake/poll mechanism\nexports: [async DNS resolution test coverage (SResolver/STCPManager), HTTP-request-boundary detection test coverage (SFastBuffer), SRingBuffer concurrency/shutdown test coverage, wake/poll-driven test-loop pattern (pollUntilSettled) reusable by other async fixtures]\ndepends_on_dirs: [libstuff, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 1}\nresolved_locally: 1\nescalate: []"
+  },
+  {
+   "label": "command-bedrock-integration",
+   "summary_file": "test/tests/SUMMARY.command-bedrock-integration.md",
+   "unit_count": 8,
+   "rollup": "theme: BedrockTester-driven integration tests exercising individual Bedrock commands (Query/Write/Status/CommandPort/outbound-HTTP), plus one command-queue rate-limit unit test riding the same name-token cluster\nexports: [BedrockTester single-command integration pattern, Query/Write path safety-guard coverage (no-WHERE guard, non-deterministic-SQL block), CommandPort suppress/clear lifecycle test, outbound HTTP/HTTPS integration coverage (chained fan-out, SSL passthrough+proxy), Status response field contract test, BedrockBlockingCommandQueue rate-limit unit coverage]\ndepends_on_dirs: [libstuff, test/lib, sqlitecluster]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 3}\nresolved_locally: 2\nescalate:\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: tests a compiled-in SQLite extension (percentile/median aggregates), not Bedrock's Query command handling; unclear if a better home exists among unseen siblings\n    suggested_home: null"
+  },
+  {
+   "label": "json-unit-value",
+   "summary_file": "test/tests/SUMMARY.json-unit-value.md",
+   "unit_count": 9,
+   "rollup": "theme: JSON::Value/JSON::Utils unit-test coverage (4 of 9 units) plus four unrelated fixtures (MySQL, SFluentdLogger, STime) and one broad libstuff smoke test mis-clustered in by token overlap\nexports: [JSON::Value construction/cast/copy-semantics coverage, JSON::Value parse/serialize/metrics-hook coverage, JSON::Utils merge/merge-patch/sanitize/path coverage, libstuff free-function smoke coverage, MySQLUtils query-rewrite coverage, SFluentdLogger async-delivery coverage, STime epoch-conversion coverage]\ndepends_on_dirs: [libstuff, libstuff/JSON, plugins, sqlitecluster, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 1, med: 1, low: 5}\nresolved_locally: 6\nescalate:\n  - item: MySQLTest.cpp (whole file)\n    from: test/tests/MySQLTest.cpp\n    why: docstring claims plugin-level end-to-end coverage but every test reruns MySQLUtils:: free-function cases already covered by MySQLUtilsTest.cpp, with no plugin dispatch exercised\n    suggested_home: merge into test/tests/MySQLUtilsTest.cpp, or replace with a real plugin-level integration test"
+  }
+ ],
+ "note": "This directory is WIDE. Its units are pre-grouped into the clusters above. Read the cluster summary files, NOT the individual units.",
+ "parent": {
+  "dir": "test",
+  "summary_file": "test/SUMMARY.md",
+  "rollup": "theme: Root of Bedrock's test tree \u2014 divides \"verify Bedrock\" into a harness layer (test/lib), a single-node command/support-library test suite (test/tests), and a multi-node cluster-integration subsystem (test/clustertest), tied together by the single-node test binary's entry point (main.cpp).\nexports: [single-node bedrock test-binary entry point (main.cpp), BedrockTester test harness + vendored tpunit++ framework (test/lib), single-node command and libstuff/JSON support-library test suite incl. Jobs-plugin coverage (test/tests), BedrockClusterTester multi-node cluster harness plus test-only plugin and cluster-integration test suite (test/clustertest)]\ndepends_on_dirs: [libstuff, libstuff/JSON, sqlitecluster, plugins]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 1, low: 2}\nresolved_locally: 0\nescalate:\n  - item: fileAppend / fileLockAndLoad\n    from: test/clustertest/testplugin/TestPlugin.cpp\n    why: generic flock-guarded file I/O helpers with no plugin-specific logic and no relation to any part of test/'s remit; belongs in a shared utility location outside this subtree\n    suggested_home: libstuff\n  - item: \"operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)\"\n    from: test/lib/PrintEquality.h\n    why: generic container-printing utilities with no tie to PrintEquality or testing, already built on libstuff's SComposeList\n    suggested_home: a shared stream-formatting utility header in libstuff\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: tests a compiled-in SQLite extension (percentile/median aggregates), not Bedrock's Query command handling; no better home exists within test/'s own subtree, and whether one exists elsewhere in the repo needs a wider view\n    suggested_home: null"
+ },
+ "siblings": [
+  {
+   "dir": "test/clustertest",
+   "rollup": "theme: Root of Bedrock's cluster-integration test subsystem \u2014 owns the multi-node cluster bootstrap harness (BedrockClusterTester) and the test-binary entrypoint that test/clustertest/testplugin and test/clustertest/tests are built on.\nexports: [BedrockClusterTester / ClusterTester<T> multi-node cluster harness, cluster-test binary entrypoint (CLI parsing, signal cleanup, test-run driver), TestPlugin test-only command surface for crashes/timeouts/escalation/commit-hooks (testplugin/), BedrockClusterTester-driven multi-node integration test suite covering replication/failover/escalation/membership/adversarial-stress (tests/)]\ndepends_on_dirs: [libstuff, test/lib, sqlitecluster, test/tests/jobs]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 1, low: 2}\nresolved_locally: 2\nescalate:\n  - item: fileAppend / fileLockAndLoad\n    from: test/clustertest/testplugin/TestPlugin.cpp\n    why: generic flock-guarded file I/O helpers with no plugin-specific logic and no relation to test/clustertest's remit either; belongs in a shared utility location\n    suggested_home: libstuff"
+  },
+  {
+   "dir": "test/lib",
+   "rollup": "theme: Test-harness layer that forks and drives a real bedrock server subprocess for the test suite, plus the vendored micro test-framework tests run under.\nexports: [BedrockTester, PortMap, RemoteSQLite, TestHTTPS, tpunit++ framework runner, PrintEquality/ASSERT_EQUAL printing]\ndepends_on_dirs: [libstuff, sqlitecluster]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 2, low: 0}\nresolved_locally: 1\nescalate:\n  - item: \"operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)\"\n    from: test/lib/PrintEquality.h\n    why: Generic container-printing utilities with no tie to PrintEquality or testing, already built on libstuff's SComposeList\n    suggested_home: a shared stream-formatting utility header in libstuff"
+  }
+ ]
+}
