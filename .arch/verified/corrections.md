@@ -48,3 +48,62 @@ presenting these as design debt rather than defects.
 compiler-verified, zero risk), then Compression (the only one with runtime
 consequences), then SSignal as a pure layering point, then SHTTPSManager
 rewritten to target the 9-line subclass rather than a nonexistent include.
+
+## libstuff decomposition verification (third pass) — the largest correction
+
+The DIAGNOSIS holds. Six families occupy **1,928 of 3,816 real lines in
+libstuff.cpp (50.5%)**, excluding this project's inserted SUMMARY block
+(libstuff.cpp 1-92, libstuff.h 1-115).
+
+The PRESCRIPTION was wrong on the three biggest families. Repeated throughout
+this analysis was the claim that "dedicated units already exist, so the question
+is why this never moved." In each of these three, the named destination exists
+but owns a DIFFERENT concern.
+
+| Family | Lines | Claimed destination | Verdict |
+|---|---|---|---|
+| SQLite engine (`SQuery`/`SQVerifyTable*`/`SQList`) | 482 | `SQResult`/`SQValue`/`SQliteParameter` | **REFUTED.** Those are the data types `SQuery` consumes. `SQResult.cpp`, `SQliteParameter.cpp`, `SQResultFormatter.cpp` contain zero `sqlite3_` calls; `SQValue.cpp` has one. No execution unit exists — needs a NEW one. |
+| HTTP grammar (`SParseHTTP`/`SComposeHTTP`/`SParseURI*`) | 645 | `SHTTPSManager` | **REFUTED.** `SHTTPSManager` derives from `STCPManager` and manages Transaction lifecycle. It touches the grammar at exactly 2 sites, both `SParseURI` (`SHTTPSManager.cpp:251,268`). The real owner-consumer is `SData.cpp:46,142,147,157`. Needs a NEW unit. |
+| Socket primitives (`S_socket`/`S_poll`/`SFDset`...) | 467 | `STCPManager` ("only real caller") | **REFUTED.** 14 call sites across 10 files outside STCPManager, including the application's own poll loops: `BedrockServer.cpp:336,1235-1244,2183`, `sqlitecluster/SQLiteNode.cpp:2182,2201`, `BedrockCommand.cpp:217`, `main.cpp:452`. |
+| Crypto (AES/SHA/base64/HMAC) | 170 | a new `SCrypto` unit | **CONFIRMED** — and the cleanest. Two disjoint regions; only outward dependency is the `SASSERT` macro. `SSSLState` is not a counterexample (disjoint mbedtls surface). |
+| Syslog transport | 68 | `SLog.cpp` | **CONFIRMED.** `SLog.cpp` is only 178 lines / 5 symbols and holds no transport. Precedent: `SFluentdLogger` was extracted as a class but its free-function facade stayed behind (`libstuff.cpp:384-425`) — the same leave-the-facade pattern, twice. |
+| Gzip | 102 | — | **CONFIRMED but smaller and stranger.** `SGZip` has exactly one production caller (`SComposeHTTP`, `libstuff.cpp:1472`) so it is an HTTP helper; `SGUnzip` has ZERO production callers — only `test/tests/LibStuffTest.cpp:540`. Effectively dead. |
+
+### New defect found during verification
+
+`libstuff.h:118` includes `qrf.h`; `qrf.h:21` includes `sqlite3.h`. So all **78**
+translation units that include `libstuff.h` parse the SQLite C API —
+**+3,272 preprocessed lines each** (libstuff.h expands to 94,287). Only ~4
+subsystems use `sqlite3_qrf_spec`. `libstuff.h:142` still carries a now-dead
+`struct sqlite3;` forward declaration: the author intended to keep SQLite out of
+the header, and `qrf.h` silently defeated it.
+
+### Counter-arguments tested
+
+- **Inline performance — fails.** No function in any of the six families is
+  defined inline or as a template in the header. Moving them costs zero
+  inlining. (One constraint: `SQList<Container>` at `libstuff.h:855` calls
+  `SQ()`, so a SQL extraction must carry the `SQ` declarations.)
+- **Circular dependency — real for exactly one family.** `fd_map`
+  (`libstuff.h:763`) is the typedef the whole application's poll loop is written
+  against, and cannot follow `S_poll`/`SFDset` into `STCPManager.h` because that
+  header already includes `libstuff.h`. **This is why the socket family never
+  moved, and it is legitimate.** For HTTP the analogous cycle is already solved
+  and shipping (`libstuff.h:145` forward-declares `struct SData`), so there it
+  is a cost, not a blocker.
+- **Plugin ABI — real but narrow.** `bedrock` links `-rdynamic`; plugins are
+  `dlopen`ed and call these free functions with no linkage of their own
+  (`TestPlugin.cpp:889` calls `SParseURI`). That explains the blanket
+  never-mark-anything-static habit. It does NOT defend leaving code in place:
+  moving a function to another `.cpp` in the same binary changes neither its
+  mangled name nor its dynamic-symbol export. The ABI constrains renaming and
+  hiding, not moving.
+
+### Extraction order, by cost
+
+1. **Crypto** (170 ln) — self-contained but for `SASSERT`; new unit.
+2. **Syslog transport** (68 ln) — `SLog.cpp` is the obvious home.
+3. **Gzip** (102 ln) — audit `SGUnzip` for deletion first.
+4. **HTTP** (645 ln) — new unit; `SData` cycle to manage, technique already proven in-repo.
+5. **SQLite** (482 ln) — new unit; also fixes the `qrf.h` → `sqlite3.h` leak into 78 TUs.
+6. **Sockets** (467 ln) — genuinely blocked on `fd_map`. Do last, or not at all.
