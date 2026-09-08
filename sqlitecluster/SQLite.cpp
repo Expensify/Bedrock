@@ -966,6 +966,14 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
         guid = replicationHash.substr(0, 32);
     }
 
+    // Keep local generation disabled until every node can receive GUID hashes, including rollback versions.
+    static constexpr bool generateGUIDHashes = false;
+    if (replicationHash.empty() && generateGUIDHashes) {
+        string randomBytes(16, '\0');
+        sqlite3_randomness(static_cast<int>(randomBytes.size()), randomBytes.data());
+        guid = SToHex(randomBytes);
+    }
+
     // Pick a journal for this transaction.
     const int64_t journalID = _sharedData.nextJournalCount++;
     _journalName = _journalNames[journalID % _journalNames.size()];

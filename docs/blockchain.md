@@ -9,7 +9,7 @@ Though the blockchain hype has largely come and gone, it's worth pointing out th
 To be clear, Bedrock is not a "public" blockchain, like Bitcoin -- it is not designed to synchronize a series of records between thousands or millions of anonymous peers over the open internet.  Rather, Bedrock uses a "private" blockchain, meaning that a small cluster of servers (3-6) operating in a controlled environment connect to each other on an equal footing to synchronize a historical record of commits, and apply them in the same order.
 
 ## The Journal
-Under the hood it works like this:
+With chained hashes (the default), it works like this:
 
 * Journal entries have three columns:
     * `id` - Simple monotonic index
@@ -27,6 +27,15 @@ Under the hood it works like this:
 * After two nodes have connected and confirm they agree on the history up to a point, then if one has more data than the other, it will download each commit and apply it in turn -- every time confirming that it still agrees with the hash of the peer.
 
 The sum of all this ensures that all of the cluster stays in perfect sync (and refuses to talk to those nodes that have forked), all without any of them being "in charge".  This is the heart of what makes a distributed ledger so special, and has processed (as of this writing) 4,287,514,530 successful commits on the database to date.
+
+## GUID Transaction Hashes
+The journal and replication receivers also accept `GUID:SHA1`. The GUID is 16 random bytes encoded as 32 hex characters without hyphens. The digest is the same uppercase, 40-character hex SHA1 used by chained hashes, but its input is the GUID text followed by the current transaction's uncompressed SQL, without a colon or previous hash.
+
+This format checks only the current transaction's integrity. The GUID distinguishes independently created transactions even when their SQL is identical. Fork detection compares the complete stored hash and relies on transactions being applied contiguously, in order; it does not verify a cryptographic chain across GUID entries.
+
+Both formats can appear in the same journal. A chained hash following a GUID hash uses the entire previous `GUID:SHA1` string, followed by the current SQL, as its input. Neither storage nor transmission strips the GUID.
+
+Local GUID generation is implemented but hard-disabled in `SQLite::prepare()`. Deploy mixed-format readers everywhere before enabling generation. An older binary can continue writing chained hashes on a database that already contains GUID entries, but cannot replay GUID entries it has not received. Once generation is enabled, rollback versions that may need to synchronize must retain mixed-format reading.
 
 ## Technical Notes
 The above skips over a couple important details:
