@@ -1,0 +1,661 @@
+{
+ "dir": "test/tests/jobs",
+ "pass": "passB",
+ "subdirectories": [],
+ "units": [
+  {
+   "unit": "CancelJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/CancelJobTest.cpp"
+   ],
+   "lines": 393,
+   "test": true,
+   "intent": "tpunit fixture exercising the Jobs plugin's CancelJob command: rejects nonexistent jobs and jobs with children, ignores non-cancellable states, and correctly cancels QUEUED children while leaving siblings/parent state correct.",
+   "objects": [
+    {
+     "name": "CancelJobTest",
+     "kind": "struct (tpunit::TestFixture)",
+     "role": "one fixture per test, drives CreateJob/GetJob/FinishJob/CancelJob sequences and asserts resulting state"
+    },
+    {
+     "name": "__CancelJobTest",
+     "kind": "static instance",
+     "role": "registers the fixture with tpunit"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Matches the CancelJob command it tests."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Grouped with other per-command Jobs plugin tests."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling job tests."
+   },
+   "depends_on": [
+    "libstuff/SQResult.h",
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b119.json",
+   "hash": "e33e1619d11e17cf"
+  },
+  {
+   "unit": "CreateJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/CreateJobTest.cpp"
+   ],
+   "lines": 620,
+   "test": true,
+   "intent": "tpunit fixture exercising the Jobs plugin's CreateJob command: defaults, priority/data/repeat, unique-job merge/overwrite, parent/child validity, and the retryAfter lifecycle.",
+   "objects": [
+    {
+     "name": "CreateJobTest",
+     "kind": "struct (tpunit::TestFixture)",
+     "role": "one fixture per test, shares a BedrockTester, asserts DB state after CreateJob/GetJob/FinishJob calls"
+    },
+    {
+     "name": "__CreateJobTest",
+     "kind": "static instance",
+     "role": "registers the fixture with tpunit"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Matches the CreateJob command it tests."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Grouped with other per-command Jobs plugin tests."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling job tests."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "test/lib/BedrockTester.h",
+    "test/tests/jobs/JobTestHelper.h"
+   ],
+   "_src": "b119.json",
+   "hash": "2f23b73aab0a3c2d"
+  },
+  {
+   "unit": "CreateJobsTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/CreateJobsTest.cpp"
+   ],
+   "lines": 266,
+   "test": true,
+   "intent": "tpunit fixture exercising the Jobs plugin's bulk CreateJobs command: creating multiple jobs from a JSON array, rejecting malformed JSON, parent-running enforcement, mocked parent/child propagation, and unique/parent-mismatch conflicts.",
+   "objects": [
+    {
+     "name": "CreateJobsTest",
+     "kind": "struct (tpunit::TestFixture)",
+     "role": "one fixture per test, builds JSON job arrays and asserts CreateJobs behavior"
+    },
+    {
+     "name": "CreateJobsTest::_generateCreateJobContentJSON",
+     "kind": "private member function",
+     "role": "builds a reusable 2-job JSON array fixture"
+    },
+    {
+     "name": "__CreateJobsTest",
+     "kind": "static instance",
+     "role": "registers the fixture with tpunit"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Matches the CreateJobs (plural/bulk) command it tests."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Grouped with other per-command Jobs plugin tests."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling tests; `_generateCreateJobContentJSON` correctly uses the repo's `_` private-member prefix."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b119.json",
+   "hash": "6aad62ab1f9a33d0"
+  },
+  {
+   "unit": "DeleteJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/DeleteJobTest.cpp"
+   ],
+   "lines": 200,
+   "test": true,
+   "intent": "tpunit fixture exercising the Jobs plugin's DeleteJob command: rejects nonexistent jobs, jobs with children, and RUNNING jobs, allows deleting FINISHED jobs.",
+   "objects": [
+    {
+     "name": "DeleteJobTest",
+     "kind": "struct (tpunit::TestFixture)",
+     "role": "one fixture per test, drives Create/Get/Finish/DeleteJob sequences and asserts state or error"
+    },
+    {
+     "name": "__DeleteJobTest",
+     "kind": "static instance",
+     "role": "registers the fixture with tpunit"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Matches the DeleteJob command it tests."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Grouped with other per-command Jobs plugin tests."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling job tests."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b119.json",
+   "hash": "17e715ad9a16e616"
+  },
+  {
+   "unit": "FailJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/FailJobTest.cpp"
+   ],
+   "lines": 126,
+   "test": true,
+   "intent": "tpunit fixture exercising the Jobs plugin's FailJob command: rejects nonexistent jobs and jobs not in RUNNING/RUNQUEUED state, correctly marks RUNNING or RUNQUEUED jobs as FAILED.",
+   "objects": [
+    {
+     "name": "FailJobTest",
+     "kind": "struct (tpunit::TestFixture)",
+     "role": "one fixture per test, drives Create/Get/FailJob sequences and asserts state or error"
+    },
+    {
+     "name": "__FailJobTest",
+     "kind": "static instance",
+     "role": "registers the fixture with tpunit"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Matches the FailJob command it tests."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Grouped with other per-command Jobs plugin tests."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling job tests."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "test/lib/BedrockTester.h",
+    "test/tests/jobs/JobTestHelper.h"
+   ],
+   "_src": "b119.json",
+   "hash": "288e8692a957fda4"
+  },
+  {
+   "unit": "FailedJobReplyTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/FailedJobReplyTest.cpp"
+   ],
+   "lines": 173,
+   "test": true,
+   "intent": "tpunit fixture verifying that GetJob/GetJobs commands whose response can't be delivered (scheduled via commandExecuteTime) requeue their job(s) instead of losing them, and that the job(s) can be re-fetched afterward.",
+   "objects": [
+    {
+     "name": "FailedJobReplyTest",
+     "kind": "struct (tpunit::TestFixture)",
+     "role": "single test looping over {GetJob, GetJobs} x {with/without retryAfter}"
+    },
+    {
+     "name": "FailedJobReplyTest::failSendingResponse",
+     "kind": "test method",
+     "role": "creates job(s), forces an undeliverable fetch, confirms re-fetchability"
+    },
+    {
+     "name": "__FailedJobReplyTest",
+     "kind": "static instance",
+     "role": "registers the fixture with tpunit"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Describes exactly what it tests: replies that fail to send."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Grouped with other per-command Jobs plugin tests."
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "The comment above failSendingResponse (\"// Cannot cancel a job with children\") is copy-pasted from CancelJobTest and describes the wrong behavior."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b119.json",
+   "hash": "450c0d79009770d3"
+  },
+  {
+   "unit": "GetJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/GetJobTest.cpp"
+   ],
+   "lines": 971,
+   "test": true,
+   "intent": "Integration tests for the Jobs plugin's GetJob/GetJobs commands: dequeue ordering by priority/nextRun, parent/child relationships, error cases, and the CrashBedrockJob GLOB-pattern blacklist.",
+   "objects": [
+    {
+     "name": "isBetweenSecondsInclusive",
+     "kind": "function",
+     "role": "file-scope helper checking whether a formatted timestamp string falls within an inclusive second-by-second range"
+    },
+    {
+     "name": "GetJobTest",
+     "kind": "struct",
+     "role": "tpunit fixture covering GetJob/GetJobs ordering, multi-name lookups, retryable/paused parent-child jobs, error responses, and CrashBedrockJob blacklisting"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "isBetweenSecondsInclusive",
+     "why": "plain (non-static, non-anonymous-namespace) global function in a .cpp linked into a large multi-file test binary; generic name risks an ODR clash with an identically-named helper in another test file, even though none exists today",
+     "severity": "low",
+     "suggested_home": "static/anonymous-namespace within this file, or lifted into a shared test-helper header such as test/tests/jobs/JobTestHelper.h if other job tests need it"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits alongside other job-command tests."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Fixture and methods well named; the global helper's linkage/name choice is the one blemish."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b118.json",
+   "hash": "3a7c1f105d322921"
+  },
+  {
+   "unit": "GetJobsTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/GetJobsTest.cpp"
+   ],
+   "lines": 130,
+   "test": true,
+   "intent": "tpunit fixture exercising the Jobs plugin's bulk GetJobs command: fetching multiple jobs moves them to RUNQUEUED with a retryAfter-based nextRun, and after FinishJob each repeat modifier reschedules nextRun from the correct reference timestamp.",
+   "objects": [
+    {
+     "name": "absoluteDiff",
+     "kind": "free function",
+     "role": "unsigned seconds between two time_t values regardless of order"
+    },
+    {
+     "name": "getAllJobData",
+     "kind": "free function",
+     "role": "runs a raw Query command with -json ReadDBFlags to pull jobID/state/lastRun/nextRun for every jobs row"
+    },
+    {
+     "name": "GetJobsTest",
+     "kind": "struct (tpunit::TestFixture)",
+     "role": "single test creating three jobs with different repeat modifiers, fetching via GetJobs, then finishing and checking reschedule"
+    },
+    {
+     "name": "__GetJobsTest",
+     "kind": "static instance",
+     "role": "registers the fixture with tpunit"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "absoluteDiff, getAllJobData",
+     "why": "declared as plain file-scope free functions rather than static or in an anonymous namespace, unlike sibling test files which keep all helper logic inside the fixture struct; leaks symbol names into the test binary's global namespace",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Matches the GetJobs (plural/bulk) command it tests."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Grouped with other per-command Jobs plugin tests."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Names are clear; docked only for the file-scope-vs-anonymous-namespace helper placement noted above."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "test/lib/BedrockTester.h",
+    "test/tests/jobs/JobTestHelper.h"
+   ],
+   "_src": "b119.json",
+   "hash": "c816e80a48704a4d"
+  },
+  {
+   "unit": "InifiniteRetryAfterTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/InifiniteRetryAfterTest.cpp"
+   ],
+   "lines": 106,
+   "test": true,
+   "intent": "tpunit fixture verifying the retryAfter retry-limit: a job repeatedly fetched via retryAfter fails automatically after 10 tries, while a job with repeat that finishes within the limit has retryAfterCount cleared and returns to QUEUED.",
+   "objects": [
+    {
+     "name": "InfiniteRetryAfterJobTest",
+     "kind": "struct (tpunit::TestFixture)",
+     "role": "each test creates its own BedrockTester (no shared setupClass/tearDown) and loops GetJob calls checking retryAfterCount/state"
+    },
+    {
+     "name": "__InfiniteRetryAfterJobTest",
+     "kind": "static instance",
+     "role": "registers the fixture with tpunit"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 2,
+    "note": "Filename misspells \"Infinite\" as \"Inifinite\"; the struct and test-fixture-name string inside are both spelled correctly, so the file name does not match its own contents."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Grouped with other per-command Jobs plugin tests."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Internal names are consistent with each other and sibling tests; the only issue is the file-vs-struct spelling mismatch captured under name_fit."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b119.json",
+   "hash": "67348a75fe78cd98"
+  },
+  {
+   "unit": "JobTestHelper",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/JobTestHelper.h",
+    "test/tests/jobs/JobTestHelper.cpp"
+   ],
+   "lines": 17,
+   "test": true,
+   "intent": "Tiny shared helper for the Jobs plugin test suite: parses a jobs-table datetime string back into a time_t so tests can compute time deltas.",
+   "objects": [
+    {
+     "name": "JobTestHelper",
+     "kind": "class",
+     "role": "stateless, all-static helper class"
+    },
+    {
+     "name": "JobTestHelper::getTimestampForDateTimeString",
+     "kind": "static method",
+     "role": "parses \"%Y-%m-%d %H:%M:%S\" via strptime + mktime"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits; scoped to test/tests/jobs and named for its purpose."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "No S prefix needed - this is a test-only helper, not a shared libstuff utility type."
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b119.json",
+   "hash": "87631fa27b96a723"
+  },
+  {
+   "unit": "QueryJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/QueryJobTest.cpp"
+   ],
+   "lines": 62,
+   "test": true,
+   "intent": "tpunit fixture exercising the Jobs plugin's QueryJob command: given a jobID it returns the expected field count and values.",
+   "objects": [
+    {
+     "name": "QueryJobTest",
+     "kind": "struct (tpunit::TestFixture)",
+     "role": "single test creating a job then calling QueryJob and asserting response fields"
+    },
+    {
+     "name": "__QueryJobTest",
+     "kind": "static instance",
+     "role": "registers the fixture with tpunit"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Matches the QueryJob command it tests."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Grouped with other per-command Jobs plugin tests."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling job tests."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b119.json",
+   "hash": "b6ecac77c53af370"
+  },
+  {
+   "unit": "RequeueJobsTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/RequeueJobsTest.cpp"
+   ],
+   "lines": 282,
+   "test": true,
+   "intent": "tpunit fixture exercising the Jobs plugin's RequeueJobs command: moving RUNNING/RUNQUEUED jobs back to QUEUED singly and in bulk, auto-requeue behavior, bulk rename, and nextRun reset to created.",
+   "objects": [
+    {
+     "name": "RequeueJobsTest",
+     "kind": "struct (tpunit::TestFixture)",
+     "role": "one fixture per test, forces jobs into a state via GetJob then requeues and asserts"
+    },
+    {
+     "name": "__RequeueJobsTest",
+     "kind": "static instance",
+     "role": "registers the fixture with tpunit"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Matches the RequeueJobs command it tests."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Grouped with other per-command Jobs plugin tests."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling job tests."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "test/lib/BedrockTester.h",
+    "test/tests/jobs/JobTestHelper.h"
+   ],
+   "_src": "b119.json",
+   "hash": "a2d585ad02aaf347"
+  },
+  {
+   "unit": "RetryJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/RetryJobTest.cpp"
+   ],
+   "lines": 903,
+   "test": true,
+   "intent": "Integration tests for the Jobs plugin's RetryJob command: state/precondition errors, data updates, and the full nextRun/repeat/delay precedence and re-anchoring rules.",
+   "objects": [
+    {
+     "name": "RetryJobTest",
+     "kind": "struct",
+     "role": "tpunit fixture covering RetryJob errors, data/name/priority updates, and repeat/delay/nextRun precedence including missed-window re-anchoring"
+    },
+    {
+     "name": "RetryJobTest::getTimeInFuture",
+     "kind": "method",
+     "role": "private helper formatting a future wall-clock time as a SQLite-style datetime string"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Fits."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Fits alongside other job-command tests."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent with sibling fixtures."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "test/lib/BedrockTester.h",
+    "test/tests/jobs/JobTestHelper.h"
+   ],
+   "_src": "b118.json",
+   "hash": "508a146c916f6422"
+  },
+  {
+   "unit": "UpdateJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/UpdateJobTest.cpp"
+   ],
+   "lines": 153,
+   "test": true,
+   "intent": "tpunit fixture exercising the Jobs plugin's UpdateJob command: updating data/repeat/priority/nextRun, preserving numeric-looking string data values, updating mocked jobs, and clearing repeat via shouldClearRepeat.",
+   "objects": [
+    {
+     "name": "UpdateJobTest",
+     "kind": "struct (tpunit::TestFixture)",
+     "role": "one fixture per test, creates a job, calls UpdateJob, then verifies the DB row"
+    },
+    {
+     "name": "__UpdateJobTest",
+     "kind": "static instance",
+     "role": "registers the fixture with tpunit"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Matches the UpdateJob command it tests."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Grouped with other per-command Jobs plugin tests."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent naming, but unlike most siblings this fixture has no per-test tearDown resetting the jobs table (only tearDownClass), which is a latent state-leak risk between tests rather than a naming issue per se."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "test/lib/BedrockTester.h",
+    "test/tests/jobs/JobTestHelper.h"
+   ],
+   "_src": "b119.json",
+   "hash": "0bba37b4d2a15a2d"
+  }
+ ],
+ "clusters": [],
+ "parent": {
+  "dir": "test/tests",
+  "summary_file": "test/tests/SUMMARY.md",
+  "rollup": "theme: Bedrock's flat top-level test suite \u2014 one BedrockTester integration fixture per core server command, one unit fixture per libstuff/JSON support-library symbol, plus a dedicated Jobs-plugin subdirectory\nexports: [BedrockTester single-command integration pattern (Query/Write/Status/CommandPort/outbound-HTTP), BedrockBlockingCommandQueue rate-limit coverage, JSON::Value/Parser/Utils unit-test coverage, SQLite commit/rollback and SQLiteNode peer-selection coverage, libstuff primitive coverage (async DNS, ring buffer, string/date validators), Jobs-plugin command-suite coverage (via jobs/)]\ndepends_on_dirs: [libstuff, libstuff/JSON, plugins, sqlitecluster, test/lib]\ndepended_on_by: [test/clustertest]\nmisfit_count: {high: 1, med: 2, low: 12}\nresolved_locally: 13\nescalate:\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: tests a compiled-in SQLite extension (percentile/median aggregates), not Bedrock's Query command handling; unclear if a better home exists among unseen siblings\n    suggested_home: null\n  - item: JobTestHelper (shared Jobs test fixtures)\n    from: test/tests/jobs\n    why: depended on directly by test/clustertest/tests despite jobs/ being organized and described purely as single-node Jobs-plugin coverage, not a shared-fixture location\n    suggested_home: test/lib"
+ },
+ "siblings": [],
+ "sibling_clusters": [
+  {
+   "label": "sqlite-unit-commit",
+   "summary_file": "test/tests/SUMMARY.sqlite-unit-commit.md",
+   "rollup": "theme: SQLite commit/write-path unit tests (diluted: 2 of 5 units are genuinely on-theme; 3 matched on shallow \"SQLite\" token overlap only)\nexports: [after-commit-callback semantics, writeLocalUnreplicated commit/rollback invariants, SIsValidSQLiteDateModifier string validation, SQLiteNode sync-peer selection, SDeburr Unicode transliteration tests]\ndepends_on_dirs: [libstuff, sqlitecluster, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 3}\nresolved_locally: 3\nescalate: []"
+  },
+  {
+   "label": "fast-wake-buffer",
+   "summary_file": "test/tests/SUMMARY.fast-wake-buffer.md",
+   "rollup": "theme: libstuff-level unit tests for socket/buffer primitives \u2014 genuinely wake/poll-themed for two of three units (async DNS resolution, ring-buffer producer/consumer handshake), with one unit (FastHTTPParsing) sharing only name-token overlap, not the wake/poll mechanism\nexports: [async DNS resolution test coverage (SResolver/STCPManager), HTTP-request-boundary detection test coverage (SFastBuffer), SRingBuffer concurrency/shutdown test coverage, wake/poll-driven test-loop pattern (pollUntilSettled) reusable by other async fixtures]\ndepends_on_dirs: [libstuff, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 1}\nresolved_locally: 1\nescalate: []"
+  },
+  {
+   "label": "command-bedrock-integration",
+   "summary_file": "test/tests/SUMMARY.command-bedrock-integration.md",
+   "rollup": "theme: BedrockTester-driven integration tests exercising individual Bedrock commands (Query/Write/Status/CommandPort/outbound-HTTP), plus one command-queue rate-limit unit test riding the same name-token cluster\nexports: [BedrockTester single-command integration pattern, Query/Write path safety-guard coverage (no-WHERE guard, non-deterministic-SQL block), CommandPort suppress/clear lifecycle test, outbound HTTP/HTTPS integration coverage (chained fan-out, SSL passthrough+proxy), Status response field contract test, BedrockBlockingCommandQueue rate-limit unit coverage]\ndepends_on_dirs: [libstuff, test/lib, sqlitecluster]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 3}\nresolved_locally: 2\nescalate:\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: tests a compiled-in SQLite extension (percentile/median aggregates), not Bedrock's Query command handling; unclear if a better home exists among unseen siblings\n    suggested_home: null"
+  },
+  {
+   "label": "json-unit-value",
+   "summary_file": "test/tests/SUMMARY.json-unit-value.md",
+   "rollup": "theme: JSON::Value/JSON::Utils unit-test coverage (4 of 9 units) plus four unrelated fixtures (MySQL, SFluentdLogger, STime) and one broad libstuff smoke test mis-clustered in by token overlap\nexports: [JSON::Value construction/cast/copy-semantics coverage, JSON::Value parse/serialize/metrics-hook coverage, JSON::Utils merge/merge-patch/sanitize/path coverage, libstuff free-function smoke coverage, MySQLUtils query-rewrite coverage, SFluentdLogger async-delivery coverage, STime epoch-conversion coverage]\ndepends_on_dirs: [libstuff, libstuff/JSON, plugins, sqlitecluster, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 1, med: 1, low: 5}\nresolved_locally: 6\nescalate:\n  - item: MySQLTest.cpp (whole file)\n    from: test/tests/MySQLTest.cpp\n    why: docstring claims plugin-level end-to-end coverage but every test reruns MySQLUtils:: free-function cases already covered by MySQLUtilsTest.cpp, with no plugin dispatch exercised\n    suggested_home: merge into test/tests/MySQLUtilsTest.cpp, or replace with a real plugin-level integration test"
+  }
+ ]
+}

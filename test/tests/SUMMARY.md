@@ -130,18 +130,83 @@ clear and closed here.
   (percentile/median aggregates), not Bedrock's own `Query` command handling.
   Whether a better home exists (a dedicated SQLite-features test elsewhere in
   the repo) genuinely can't be judged from this directory alone.
-  **escalate** — the only item this directory forwards upward.
+  **escalate** — one of two items this directory forwards upward; the other
+  is new to Pass B, below.
+
+- **`JobTestHelper` (shared Jobs test fixtures), med — new in Pass B.** The
+  parent's rollup reveals that `test/clustertest/tests` depends directly on
+  `test/tests/jobs` (e.g. `JobTestHelper::getTimestampForDateTimeString`) for
+  shared Jobs-plugin test fixtures — a consumer neither this directory nor
+  `jobs/` itself had any way to see in Pass A, since it reaches in from a
+  sibling subtree two levels down on both sides. This is a **boundary
+  violation**, not a sanctioned shared-fixture arrangement: `jobs/`'s own
+  rollup describes it purely as single-node, command-by-command coverage of
+  the Jobs plugin (`depends_on_dirs: [libstuff, test/lib]`, nothing further),
+  with nothing marking it as a shared-infrastructure location — nothing about
+  it was designed to be imported by the cluster suite. The practical cost:
+  `jobs/` can no longer be freely restructured (a helper renamed, a file
+  moved) without someone remembering to check a consumer this directory's own
+  SUMMARY has no way to name. **Escalate** — the fix moves a symbol out of
+  this directory's own subtree into a shared location, which is a call for
+  the parent to arbitrate, not this directory alone. **Suggested home:**
+  `test/lib`, the one layer both `test/tests/jobs` and
+  `test/clustertest/tests` already depend on, so the fixture ends up
+  somewhere both suites declare a dependency on rather than one reaching
+  into the other's private subtree.
+
+## 5. Role in the system
+
+**What this directory owns that its siblings don't:** the single-node
+functional spec for Bedrock — one fixture per production command or
+support-library symbol, run against a single `BedrockTester`-driven server
+(or as a pure unit test with no server at all), covering the broadest
+breadth of anything in `test/`. It also owns the Jobs plugin's dedicated
+test subdirectory, the one place in `test/` organized by plugin rather than
+by loose symbol. Neither `test/lib` (harness only, no assertions) nor
+`test/clustertest` (multi-node behavior only) covers any of this.
+
+**Boundary with `test/lib`.** Clean and one-directional — this directory
+depends on `test/lib` for `BedrockTester` and the rest of the harness;
+nothing here is depended on back. No leak.
+
+**Boundary with `test/clustertest`.** This is where Pass B's main finding
+sits, from this side: `test/tests/jobs` — a subdirectory this directory
+owns and describes purely as single-node Jobs-plugin coverage — is depended
+on by `test/clustertest/tests` for shared fixtures. That boundary **leaks**;
+see the new Misfit above. The two suites (single-node vs. multi-node) are
+meant to be independently restructurable, and a hidden dependency from the
+other suite into a subdirectory here breaks that in one direction. Sharing
+a Jobs-specific test helper across both suites is legitimate in principle —
+they exercise the same plugin — but it should not live inside either
+suite's own private subtree; it belongs in `test/lib`, which both already
+depend on for everything else they share.
+
+## 6. Inbound expectations
+
+`test/clustertest` now names `test/tests/jobs` in its own
+`depends_on_dirs`, so `depended_on_by` below lists `test/clustertest`. What
+it relies on — `JobTestHelper`'s timestamp helper, at minimum — is present
+and working today; nothing is missing. What's exposed is exposed *by
+accident*, though: `jobs/`'s own rollup shows no sign it was written with an
+external consumer in mind, so the correct fix is not to formalize this
+export but to relocate the shared piece to a directory whose job is being a
+shared dependency (`test/lib`), leaving `test/tests/jobs` free to assume
+once again that it has no consumers outside `test/tests`.
 
 <!-- ROLLUP
 theme: Bedrock's flat top-level test suite — one BedrockTester integration fixture per core server command, one unit fixture per libstuff/JSON support-library symbol, plus a dedicated Jobs-plugin subdirectory
 exports: [BedrockTester single-command integration pattern (Query/Write/Status/CommandPort/outbound-HTTP), BedrockBlockingCommandQueue rate-limit coverage, JSON::Value/Parser/Utils unit-test coverage, SQLite commit/rollback and SQLiteNode peer-selection coverage, libstuff primitive coverage (async DNS, ring buffer, string/date validators), Jobs-plugin command-suite coverage (via jobs/)]
 depends_on_dirs: [libstuff, libstuff/JSON, plugins, sqlitecluster, test/lib]
-depended_on_by: []
-misfit_count: {high: 1, med: 1, low: 12}
+depended_on_by: [test/clustertest]
+misfit_count: {high: 1, med: 2, low: 12}
 resolved_locally: 13
 escalate:
   - item: QueryTest::testPercentile
     from: test/tests/QueryTest.cpp
     why: tests a compiled-in SQLite extension (percentile/median aggregates), not Bedrock's Query command handling; unclear if a better home exists among unseen siblings
     suggested_home: null
+  - item: JobTestHelper (shared Jobs test fixtures)
+    from: test/tests/jobs
+    why: depended on directly by test/clustertest/tests despite jobs/ being organized and described purely as single-node Jobs-plugin coverage, not a shared-fixture location
+    suggested_home: test/lib
 -->

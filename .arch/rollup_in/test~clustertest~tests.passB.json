@@ -1,0 +1,38 @@
+{
+ "dir": "test/clustertest/tests",
+ "pass": "passB",
+ "subdirectories": [],
+ "units": [],
+ "clusters": [
+  {
+   "label": "leader-cluster-follower",
+   "summary_file": "test/clustertest/tests/SUMMARY.leader-cluster-follower.md",
+   "unit_count": 15,
+   "rollup": "theme: Multi-node leader/follower cluster tests (BedrockClusterTester-driven) covering replication, command escalation, failover/lifecycle, version-skew handling, and status reporting.\nexports: [leader-failover and resync verification, follower-to-leader command escalation checks, replication-consistency checks (writes/schema changes/callbacks), rolling-upgrade and version-mismatch handling, cluster status/role reporting, BedrockClusterTester-based multi-node test harness usage]\ndepends_on_dirs: [test/clustertest, libstuff, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 2, low: 3}\nresolved_locally: 5\nescalate: []"
+  },
+  {
+   "label": "cluster-verifies-through",
+   "summary_file": "test/clustertest/tests/SUMMARY.cluster-verifies-through.md",
+   "unit_count": 5,
+   "rollup": "theme: cluster-level BedrockClusterTester scenarios that inject a specific stress or failure condition (rate-limit pressure, bound-param replication, write-conflict spam, journal-hash corruption, repeated leader death) and assert one correctness invariant survives it\nexports: [rate-limit-window-status-roundtrip, bound-param-journal-replication, conflict-spam-convergence, fork-corruption-abort, multi-leader-failure-synchronizing-transition]\ndepends_on_dirs: [libstuff, test/clustertest, test/lib, sqlitecluster]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 1}\nresolved_locally: 1\nescalate: []"
+  },
+  {
+   "label": "cluster-verifying-command",
+   "summary_file": "test/clustertest/tests/SUMMARY.cluster-verifying-command.md",
+   "unit_count": 16,
+   "rollup": "theme: cluster-integration tests grouped by shared \"cluster test verifying X\" phrasing, not by a common feature \u2014 actual subjects span compression, cluster-membership/priority control, command-execution edge cases, the Jobs plugin, and a SQLite constraint check\nexports: [BedrockClusterTester-driven multi-node integration test pattern, cluster-membership/priority command coverage (SetPriority, DoubleDetach, Permafollower, ControlCommand attach-prevention), command execution-edge-case coverage (timeouts, future/scheduled execution, HTTPS-thread interaction, prePeek/postProcess hooks, worker-thread exceptions, per-command timing), fast leader stand-down/failover under load, Jobs plugin coverage (FinishJob, job-ID reinitialization), journal compression verification, SQLite unique-constraint check]\ndepends_on_dirs: [libstuff, test/clustertest, test/lib, test/tests/jobs]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 1, low: 5}\nresolved_locally: 6\nescalate: []"
+  }
+ ],
+ "note": "This directory is WIDE. Its units are pre-grouped into the clusters above. Read the cluster summary files, NOT the individual units.",
+ "parent": {
+  "dir": "test/clustertest",
+  "summary_file": "test/clustertest/SUMMARY.md",
+  "rollup": "theme: Root of Bedrock's cluster-integration test subsystem \u2014 owns the multi-node cluster bootstrap harness (BedrockClusterTester) and the test-binary entrypoint that test/clustertest/testplugin and test/clustertest/tests are built on.\nexports: [BedrockClusterTester / ClusterTester<T> multi-node cluster harness, cluster-test binary entrypoint (CLI parsing, signal cleanup, test-run driver), TestPlugin test-only command surface for crashes/timeouts/escalation/commit-hooks (testplugin/), BedrockClusterTester-driven multi-node integration test suite covering replication/failover/escalation/membership/adversarial-stress (tests/)]\ndepends_on_dirs: [libstuff, test/lib, sqlitecluster, test/tests/jobs]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 3, low: 2}\nresolved_locally: 2\nescalate:\n  - item: fileAppend / fileLockAndLoad\n    from: test/clustertest/testplugin/TestPlugin.cpp\n    why: generic flock-guarded file I/O helpers with no plugin-specific logic and no relation to test/clustertest's remit either; belongs in a shared utility location\n    suggested_home: libstuff\n  - item: dependency on test/tests/jobs for shared Job fixtures\n    from: test/clustertest/tests\n    why: multi-node suite reaches into a sibling single-node suite's own subdirectory for shared fixtures; test/tests/jobs was never designed as a shared-fixture location\n    suggested_home: test/lib\n  - item: BedrockClusterTester.h (whole unit)\n    from: test/clustertest\n    why: generic ClusterTester<BedrockTester> composition over test/lib's harness, with no remaining clustertest-specific logic once the testplugin.so misfit above is fixed; organizationally a peer of BedrockTester, not an inhabitant of this directory\n    suggested_home: test/lib"
+ },
+ "siblings": [
+  {
+   "dir": "test/clustertest/testplugin",
+   "rollup": "theme: Test-only BedrockPlugin (TestPlugin) that exposes internal server code paths as commands so the clustertest binary can exercise crashes, timeouts, escalation, and commit hooks.\nexports: [BedrockPlugin_TestPlugin, TestPluginCommand, TestHTTPSManager, generatesegfault* crash commands, testescalate ordering helpers]\ndepends_on_dirs: [libstuff, sqlitecluster, .]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 3}\nresolved_locally: 2\nescalate:\n  - item: fileAppend / fileLockAndLoad\n    from: test/clustertest/testplugin/TestPlugin.cpp\n    why: generic flock-guarded file I/O helpers with no plugin-specific logic, only used by one test scenario\n    suggested_home: libstuff"
+  }
+ ]
+}
