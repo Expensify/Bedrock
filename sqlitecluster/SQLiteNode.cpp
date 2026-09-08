@@ -1327,6 +1327,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             } catch (const SException& e) {
                 // Transaction failed
                 SWARN("Synchronization failed '" << e.what() << "', reconnecting and re-SEARCHING.");
+                _db.rollback();
                 _reconnectPeer(_syncPeer);
                 _syncPeer = nullptr;
                 _changeState(SQLiteNodeState::SEARCHING);
@@ -1372,6 +1373,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             } catch (const SException& e) {
                 // Transaction failed
                 SWARN("Subscription failed '" << e.what() << "', reconnecting to leader and re-SEARCHING.");
+                _db.rollback();
                 _reconnectPeer(_leadPeer);
                 _changeState(SQLiteNodeState::SEARCHING);
                 throw e;
@@ -1837,13 +1839,15 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
             STHROW("failed to prepare transaction");
         }
         if (newHash != commit["Hash"]) {
-            _db.rollback();
             STHROW("potential hash mismatch");
         }
 
         // Transaction succeeded, commit and go to the next
         SDEBUG("Committing current transaction because _recvSynchronize: " << _db.getUncommittedQuery());
-        _db.commit(stateName(_state));
+        int result = _db.commit(stateName(_state));
+        if (result != SQLITE_OK) {
+            STHROW("failed to commit synchronized transaction: " + to_string(result));
+        }
 
         // Clear the list of committed transactions. We're synchronizing, so we don't need to send these.
         _db.popCommittedTransactions();
