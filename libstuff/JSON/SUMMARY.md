@@ -244,7 +244,7 @@ theme: Bedrock's in-house JSON document model (Value) plus the parse, serialize,
 exports: [JSON::Value, JSON::Parser (read/readUnsafe), JSON::Writer (serialize/serializePretty), JSON::Utils (tree merge/strip/sanitize helpers), JSON::Serializable<Derived> (toJSON/fromJSON contract), JSON metrics observer hook (setMetricsObserver/reportMetrics)]
 depends_on_dirs: [libstuff]
 depended_on_by: [test/tests (JSONParserTest/JSONTest/JSONUtilsTest/JSONValueTest - the only in-repo consumers found), external applications linking libjson.a (per JSON/README.md's staged-deployment build boundary; not visible from inside this repo) - no other in-repo directory (libstuff's own catch-all, sqlitecluster, plugins, BedrockServer/BedrockCore/BedrockCommand) references JSON::Value/Parser/Writer/Utils]
-misfit_count: {high: 0, med: 2, low: 3}
+misfit_count: {high: 1, med: 2, low: 3}
 resolved_locally: 5
 escalate:
   - item: "libstuff's catch-all JSON engine (SToJSON, SComposeJSONObject/Array, SParseJSONObject/Array, and private _SParseJSONValue/_SParseJSONObject/_SParseJSONArray/_SParseJSONString) duplicates this package's Parser/Writer and is the engine Bedrock's own production code (BedrockServer.cpp, BedrockCore.cpp, BedrockCommand.cpp, plugins/Jobs.cpp, sqlitecluster/SQLiteNode.cpp) actually calls; JSON::Value has no in-repo production callers"

@@ -78,6 +78,23 @@ directories exist and what they claim. Revise the file in place to add:
 
 Do not rewrite passes A's content wholesale — revise it. Keep the section order.
 
+**Pass B may discover misfits that did not exist in Pass A.** Sibling context
+regularly reveals a problem no one could see bottom-up — a duplicate
+implementation in a sibling, a boundary that only leaks when viewed from
+outside. That is Pass B working, not an error. When it happens, increment
+`misfit_count` as well as adding the `escalate` or `resolved_locally` entry, so
+the block still balances. A new finding that is not counted will trip the
+checker.
+
+**On the bounded fan-in constraint in Pass B.** The constraint is real and you
+should respect it. But if answering a question the pass explicitly asks you
+requires one targeted check outside your inputs — for instance, grepping to
+learn whether a type has any callers at all — do it, and say plainly in your
+report that you stepped outside and why. A correct finding obtained with one
+disclosed lookup beats a confidently wrong one obtained within bounds. What is
+forbidden is quietly reading around the constraint as a matter of habit,
+because that is what stops scaling.
+
 ## If the Write tool refuses your SUMMARY file
 
 The Write tool may decline a file named `SUMMARY*.md`, mistaking it for a

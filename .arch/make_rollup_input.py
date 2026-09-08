@@ -71,6 +71,18 @@ def build(d, phase):
         sibs = sorted(x for x in dirs if x and x != d and os.path.dirname(x) == pd)
         out['siblings'] = [{'dir': s, 'rollup': rollup_of(f'{s}/SUMMARY.md')} for s in sibs]
 
+        # When the parent is WIDE, its units live in clusters rather than in
+        # sibling directories — so those cluster summaries ARE this directory's
+        # real siblings. Without them a package like libstuff/JSON sees an empty
+        # siblings list and cannot tell what neighbouring territory its parent
+        # already covers, which is exactly the question Pass B exists to answer.
+        if parent in clusters:
+            out['sibling_clusters'] = [
+                {'label': c['label'],
+                 'summary_file': f"{parent}/SUMMARY.{c['label']}.md",
+                 'rollup': rollup_of(f"{parent}/SUMMARY.{c['label']}.md")}
+                for c in clusters[parent]]
+
     safe = (d or 'ROOT').replace('/', '~')
     path = f'.arch/rollup_in/{safe}.{phase}.json'
     json.dump(out, open(path, 'w'), indent=1)
