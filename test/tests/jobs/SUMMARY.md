@@ -73,15 +73,70 @@ resolved here rather than escalated:
   (anonymous namespace/`static`), with `JobTestHelper.h` as the consolidation
   point if reuse across files ever arises.
 
-No misfit in this batch needs a home outside `test/tests/jobs` — nothing
-escalates.
+No misfit *found bottom-up* needs a home outside `test/tests/jobs`. Pass B,
+with parent and cross-branch context now available, adds one more that does
+— see §5/§6.
+
+## 5. Role in the system
+
+Within `test/tests`, this directory's exclusive claim is the Jobs plugin.
+The sibling clusters cover SQLite commit/write-path unit tests, socket/buffer
+primitives, `BedrockTester` single-command integration (Query/Write/Status/
+CommandPort/HTTP), and JSON::Value/Utils coverage — none of them mention a
+Jobs command, and this directory doesn't stray into theirs. That boundary
+holds cleanly inside `test/tests`.
+
+It does not hold outside it. `test/clustertest/tests/FinishJobTest.cpp` — in
+a different top-level test directory, reached across the parent's own
+sibling boundary — `#include`s `test/tests/jobs/JobTestHelper.h` directly and
+calls its one static method six times (confirmed by grep). From this
+directory's own side, the honest answer to "is `test/tests/jobs` acting as a
+shared fixture library it was never meant to be" is **yes**: this directory's
+theme (§1) describes it as single-node, `BedrockTester`-driven Jobs-plugin
+coverage, full stop, and `JobTestHelper`'s own intent is "a tiny shared
+helper for the Jobs plugin test suite" — shared *within this directory*
+(it already serves five sibling fixtures here: `CreateJobTest`, `FailJobTest`,
+`GetJobsTest`, `RequeueJobsTest`, `RetryJobTest`). Nothing in either
+description anticipated a consumer outside `test/tests` entirely. It has
+ended up shared across a top-level test-tree boundary by accident of a
+convenient absolute include path, not by design.
+
+## 6. Inbound expectations
+
+Nothing within `test/tests` depends on this directory beyond what its own
+theme promises (Jobs-plugin coverage), and that is satisfied. Outward, the
+parent's rollup already recorded that `test/clustertest/tests` depends
+directly on this directory's `JobTestHelper`; that dependency is real and is
+the one thing this directory currently exposes by accident rather than by
+design. The fix isn't to keep it here and call it intentional —
+`test/tests/jobs` was never described, by itself or by its parent, as a
+shared-fixture location for other test suites — nor to duplicate the
+parsing logic in the consumer. Both this directory and the consumer converge
+on the same answer: the single static method
+(`getTimestampForDateTimeString`) that both need belongs in `test/lib`,
+alongside `BedrockTester` and the rest of the genuinely-shared test
+infrastructure, not in a plugin-specific test directory that merely happens
+to be reachable by path.
+
+This is a misfit Pass A could not see: from a bottom-up view alone, a tiny
+17-line internal helper used by five sibling files in the same directory
+looks entirely appropriate right where it is — and `location_fit`/`name_fit`
+both correctly scored it 5/5 for what Pass A could observe at the time. It
+takes the parent's and the cross-branch sibling's context to see that the
+same header has a consumer whose existence undercuts ever treating this as
+purely single-node-suite-local. Added as a new escalate entry below, with
+`misfit_count` incremented accordingly.
 
 <!-- ROLLUP
 theme: Command-by-command test suite for the Jobs bedrock plugin, validating job state-machine transitions, priority/parent-child rules, and nextRun/repeat/retryAfter scheduling via BedrockTester-driven integration tests.
 exports: [JobTestHelper::getTimestampForDateTimeString, tpunit fixture-per-command test pattern, integration coverage for CreateJob(s)/GetJob(s)/UpdateJob/RetryJob/FailJob/CancelJob/DeleteJob/RequeueJobs/QueryJob]
 depends_on_dirs: [libstuff, test/lib]
-depended_on_by: []
-misfit_count: {high: 0, med: 0, low: 2}
+depended_on_by: [test/clustertest/tests]
+misfit_count: {high: 0, med: 1, low: 2}
 resolved_locally: 2
-escalate: []
+escalate:
+  - item: JobTestHelper::getTimestampForDateTimeString
+    from: test/tests/jobs/JobTestHelper.h
+    why: reached directly by a consumer entirely outside test/tests (test/clustertest/tests/FinishJobTest.cpp), despite this directory being scoped and described as single-node Jobs-plugin coverage only, not a shared-fixture library
+    suggested_home: test/lib
 -->

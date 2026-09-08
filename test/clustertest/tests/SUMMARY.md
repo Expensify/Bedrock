@@ -106,17 +106,76 @@ none require a home outside this directory. Consolidated:
   `ASSERT_EQUAL(1,1)` that exercises nothing; leftover probe code.
   `resolved-locally`.
 
-Nothing in this directory needs escalation. Every misfit is either a
-same-file naming/hygiene issue or a test-coverage gap fixable inside the
-existing file, and all three cluster agents already made that call — this
-Pass A agent sees no reason to reopen it.
+Nothing found *bottom-up* needs escalation: every misfit above is a same-file
+naming/hygiene issue or a test-coverage gap fixable inside the existing file,
+and all three cluster agents already made that call. Pass B, with parent
+context now available, adds one more misfit that does need to escalate — see
+§5.
+
+## 5. Role in the system
+
+Within `test/clustertest`, this directory owns *the assertions*: every
+scenario that provisions a live multi-node cluster and checks a cross-node
+invariant holds. `test/clustertest/testplugin` owns the opposite half — the
+server-side command surface those assertions drive. The boundary between the
+two is clean in the direction that matters: this directory never includes
+`TestPlugin.h`/`TestPlugin.cpp` (confirmed by grep), it only speaks the wire
+protocol testplugin exposes. Nothing to fix there.
+
+The boundary that does leak is with `test/tests/jobs`, reached across an
+entirely different top-level test branch. `FinishJobTest.cpp` in this
+directory `#include`s `test/tests/jobs/JobTestHelper.h` and calls
+`JobTestHelper::getTimestampForDateTimeString` — the single static method it
+actually needs — six times. `test/tests/jobs` was designed (per its own
+theme) as single-node, `BedrockTester`-driven Jobs-plugin coverage, with no
+notion that a multi-node suite under a different top-level test directory
+would compile against one of its internal headers. The parent's rollup
+already flags this from its own vantage point; this Pass B confirms it from
+the consumer's side, and it was not visible bottom-up in Pass A — one
+`#include` line inside one file among 36 does not read as a misfit without
+the cross-branch context Pass B supplies. Added to this directory's own
+escalate list below, with `misfit_count` incremented accordingly.
+
+What this directory needs from `JobTestHelper` is narrow and mundane: one
+timestamp-parsing method, used for the same kind of nextRun/lastRun delta
+checks `test/tests/jobs`'s own fixtures use it for. Nothing about
+`FinishJobTest`'s usage is multi-node-specific — it's boilerplate the two
+suites happen to share because they both test the Jobs plugin's timing
+semantics, not because this directory needs anything cluster-specific from
+that header.
+
+Separately, `BedrockClusterTester`'s prospective move to `test/lib` (raised
+by the parent) affects every file in this directory mechanically — all 36
+units `#include <test/clustertest/BedrockClusterTester.h>` by full
+repo-relative path (confirmed by grep) — but not architecturally: this
+directory already lists `test/lib` in `depends_on_dirs` for `BedrockTester.h`,
+so the harness would simply move from one already-adjacent location to one
+already directly depended upon. From this directory's perspective it is a
+find/replace on an include path across the whole directory, not a design
+change, and requires no rework of any test logic.
+
+## 6. Inbound expectations
+
+Nothing in `test/clustertest` or its siblings imports symbols *from* this
+directory — each unit here is a self-registering `tpunit` fixture linked
+into the clustertest binary as a whole, not a library other code calls into.
+`depended_on_by` stays empty. What this directory is owed by its own
+dependencies, and receives cleanly, is `test/lib`'s `BedrockTester`/
+`TestHTTPS` machinery and `test/clustertest/testplugin`'s command surface —
+both covered in §5. The one place an expectation crosses a boundary it
+shouldn't is the `test/tests/jobs/JobTestHelper.h` reach above, which is this
+directory's obligation to stop relying on once that helper moves.
 
 <!-- ROLLUP
 theme: Bedrock's multi-node live-cluster integration suite — BedrockClusterTester-driven tests covering leader/follower replication, failover, escalation, membership/priority control, version-skew, and a long tail of individual command/plugin edge cases.
 exports: [BedrockClusterTester-based multi-node integration test harness pattern, leader-failover and resync verification, follower-to-leader command escalation checks, replication-consistency checks (writes/schema changes/callbacks/bound params), cluster-membership and priority control coverage, adversarial stress/failure-injection scenarios (rate limits, conflict spam, journal-fork abort, repeated leader death), Jobs-plugin and command-execution edge-case coverage]
 depends_on_dirs: [test/clustertest, libstuff, test/lib, sqlitecluster, test/tests/jobs]
 depended_on_by: []
-misfit_count: {high: 0, med: 3, low: 9}
+misfit_count: {high: 0, med: 4, low: 9}
 resolved_locally: 12
-escalate: []
+escalate:
+  - item: JobTestHelper::getTimestampForDateTimeString usage (via test/tests/jobs/JobTestHelper.h)
+    from: test/clustertest/tests/FinishJobTest.cpp
+    why: cross-branch reach into a sibling top-level test suite's own helper header, which test/tests/jobs was never designed to expose as a shared fixture; this directory needs only one static method from it
+    suggested_home: test/lib
 -->
