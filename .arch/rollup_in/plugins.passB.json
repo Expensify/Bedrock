@@ -1,0 +1,390 @@
+{
+ "dir": "plugins",
+ "pass": "passB",
+ "subdirectories": [],
+ "units": [
+  {
+   "unit": "Cache",
+   "dir": "plugins",
+   "files": [
+    "plugins/Cache.h",
+    "plugins/Cache.cpp"
+   ],
+   "lines": 374,
+   "test": false,
+   "intent": "A Bedrock plugin implementing a simple named-blob cache backed by a `cache` SQLite table with a trigger-maintained running size, paired with an in-memory LRU tracker used to decide what to evict, exposed via ReadCache/WriteCache.",
+   "objects": [
+    {
+     "name": "BedrockPlugin_Cache",
+     "kind": "class",
+     "role": "the plugin; owns the configured max cache size and LRU tracker, creates the cache/cacheSize tables and triggers"
+    },
+    {
+     "name": "BedrockPlugin_Cache::LRUMap",
+     "kind": "nested class",
+     "role": "mutex-protected least-recently-used tracker keyed by name, backed by a list plus a map"
+    },
+    {
+     "name": "BedrockPlugin_Cache::LRUMap::Entry",
+     "kind": "private nested struct",
+     "role": "one tracked key, holding iterators into both the list and map for O(1) removal"
+    },
+    {
+     "name": "BedrockPlugin_Cache::initCacheSize",
+     "kind": "static method",
+     "role": "parses a size string like '16GB' into a byte count, defaulting to 16GB"
+    },
+    {
+     "name": "BedrockPlugin_Cache::supportedRequestVerbs",
+     "kind": "static member",
+     "role": "the verb set this plugin answers to (ReadCache, WriteCache)"
+    },
+    {
+     "name": "BedrockCacheCommand",
+     "kind": "class",
+     "role": "BedrockCommand implementing peek() (ReadCache) and process() (WriteCache)"
+    },
+    {
+     "name": "BedrockCacheCommand::plugin",
+     "kind": "private inline method",
+     "role": "casts the base command's plugin pointer back to BedrockPlugin_Cache&"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BedrockPlugin_Cache::LRUMap",
+     "why": "a fully generic string-keyed LRU tracker with no cache-plugin-specific logic, nested privately inside one plugin instead of being a reusable libstuff container",
+     "severity": "low",
+     "suggested_home": "libstuff (e.g. a generic SLRUMap/SLRUCache container)"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "clearly the cache plugin"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "plugins/ alongside other BedrockPlugin_* implementations"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "_maxCacheSize and _lruMap use the underscore-prefix convention for private members but are declared in the class's public: section with no private: reset, so they are actually public despite the naming"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "BedrockPlugin.h",
+    "BedrockServer.h",
+    "libstuff/SQResult.h"
+   ],
+   "_src": "b109.json",
+   "hash": "c5e3f4f412fed421"
+  },
+  {
+   "unit": "Compression",
+   "dir": "plugins",
+   "files": [
+    "plugins/Compression.h",
+    "plugins/Compression.cpp"
+   ],
+   "lines": 414,
+   "test": false,
+   "intent": "A Bedrock plugin that registers zstd-dictionary-based compress()/decompress() SQLite user-defined functions, using dictionaries loaded once at startup from a dedicated DB table, plus equivalent static helpers for non-SQL callers.",
+   "objects": [
+    {
+     "name": "BedrockPlugin_Compression",
+     "kind": "class",
+     "role": "loads dictionaries at startup, creates the zstdDictionaries table, registers the SQLite UDFs, and exposes compress()/decompress(); has no BedrockCommand of its own"
+    },
+    {
+     "name": "BedrockPlugin_Compression::ZDictionaries",
+     "kind": "private struct",
+     "role": "pairs one dictionary ID's compiled ZSTD_CDict* and ZSTD_DDict*"
+    },
+    {
+     "name": "BedrockPlugin_Compression::_dictionaries",
+     "kind": "private static member",
+     "role": "map of dictionary ID to ZDictionaries, populated once at startup"
+    },
+    {
+     "name": "BedrockPlugin_Compression::COMPRESSION_LEVEL",
+     "kind": "static constexpr",
+     "role": "zstd level used for all dictionary-based compression"
+    },
+    {
+     "name": "sqliteCompress",
+     "kind": "file-local static function (.cpp)",
+     "role": "the compress(data, dictionaryID) SQLite UDF callback"
+    },
+    {
+     "name": "sqliteDecompress",
+     "kind": "file-local static function (.cpp)",
+     "role": "the decompress(data) SQLite UDF callback"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "clearly the compression plugin"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "plugins/ alongside other BedrockPlugin_* implementations"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent BedrockPlugin_<Name>/_ prefix conventions"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "BedrockPlugin.h",
+    "BedrockServer.h",
+    "libstuff/SQResult.h",
+    "libstuff/sqlite3.h"
+   ],
+   "_src": "b109.json",
+   "hash": "ae5530d534aa1b78"
+  },
+  {
+   "unit": "DB",
+   "dir": "plugins",
+   "files": [
+    "plugins/DB.h",
+    "plugins/DB.cpp"
+   ],
+   "lines": 490,
+   "test": false,
+   "intent": "The catch-all Bedrock plugin that exposes raw SQL as a command: clients send a Query request and get back the result formatted per sqlite3-CLI-style flags or as JSON, with named bound parameters.",
+   "objects": [
+    {
+     "name": "BedrockPlugin_DB",
+     "kind": "class",
+     "role": "the plugin; recognizes Query requests and hands them to BedrockDBCommand"
+    },
+    {
+     "name": "BedrockPlugin_DB::Sqlite3QRFSpecWrapper",
+     "kind": "class",
+     "role": "move-only RAII wrapper owning the heap strings a sqlite3_qrf_spec's char pointers point into"
+    },
+    {
+     "name": "BedrockPlugin_DB::parseSQLite3Args",
+     "kind": "static method",
+     "role": "parses sqlite3-CLI-style flags (-json, -csv, -separator, etc.) into a Sqlite3QRFSpecWrapper"
+    },
+    {
+     "name": "BedrockPlugin_DB::generateErrorContextMessage",
+     "kind": "static method",
+     "role": "builds a two-line, caret-pointing error snippet mimicking the sqlite3 CLI's error display"
+    },
+    {
+     "name": "BedrockDBCommand",
+     "kind": "class",
+     "role": "BedrockCommand implementing peek()/process() for arbitrary read/write SQL with named bound parameters from sql-param-<name> headers"
+    },
+    {
+     "name": "BedrockDBCommand::SQLiteFormatAppend",
+     "kind": "static private method",
+     "role": "write callback registered with the QRF formatter to accumulate output"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BedrockPlugin_DB::Sqlite3QRFSpecWrapper / parseSQLite3Args / generateErrorContextMessage",
+     "why": "a generic sqlite3-CLI argument-parsing and error-formatting layer around libstuff/qrf.h's C struct, none of it specific to being a request-command plugin",
+     "severity": "med",
+     "suggested_home": "libstuff/qrf.h or a new libstuff unit alongside it"
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "fits by convention as the original catch-all query plugin, though 'DB' alone doesn't convey that scope since every plugin touches the DB"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "plugins/ alongside other BedrockPlugin_* implementations"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Sqlite3QRFSpecWrapper's mixed casing matches the wrapped C API; depends on libstuff/SQliteParameter whose 'SQlite' capitalization is inconsistent with this codebase's usual 'SQLite'"
+   },
+   "depends_on": [
+    "libstuff/SQliteParameter.h",
+    "libstuff/libstuff.h",
+    "BedrockPlugin.h",
+    "libstuff/qrf.h",
+    "libstuff/sqlite3.h",
+    "libstuff/SQResultFormatter.h",
+    "BedrockServer.h",
+    "libstuff/SQResult.h"
+   ],
+   "_src": "b109.json",
+   "hash": "0780f3bd40ad55b5"
+  },
+  {
+   "unit": "Jobs",
+   "dir": "plugins",
+   "files": [
+    "plugins/Jobs.h",
+    "plugins/Jobs.cpp"
+   ],
+   "lines": 1740,
+   "test": false,
+   "intent": "BedrockPlugin implementing a priority-ordered, SQLite-backed scheduled job queue (create/dequeue/update/finish/retry/fail/cancel/delete, parent-child job chains, calendar-style repeat schedules, and an operational job-name blacklist).",
+   "objects": [
+    {
+     "name": "BedrockPlugin_Jobs",
+     "kind": "class",
+     "role": "Plugin entry point: jobs-table schema/index DDL, supported verb set, and the in-memory crashed-job GLOB blacklist synced to peers on login"
+    },
+    {
+     "name": "BedrockJobsCommand",
+     "kind": "class",
+     "role": "BedrockCommand implementing peek/process for every Jobs verb, plus repeat-schedule and retry-after helpers"
+    },
+    {
+     "name": "scopedDisableNoopMode",
+     "kind": "class",
+     "role": "File-local RAII guard that suspends SQLite's update-noop mode while a Jobs command processes"
+    },
+    {
+     "name": "REPEAT_REANCHOR_THRESHOLD_SECONDS",
+     "kind": "constant",
+     "role": "File-static cutoff below which a missed SCHEDULED repeat re-anchors to now instead of catching up serially"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BedrockPlugin_Jobs::upgradeDatabase (jobsPriorityNextRunManualSmartScan*, jobsManualSmartscanReceiptID, jobsPriorityNextRunWWWProd/WWWStag indexes)",
+     "why": "Hardcodes Expensify-specific job-name literals (manual/SmartScan*, www-prod/*, www-stag/*) as partial-index WHERE clauses inside an otherwise generic, reusable job-queue plugin",
+     "severity": "high",
+     "suggested_home": null
+    },
+    {
+     "item": "scopedDisableNoopMode",
+     "why": "Generic SQLite-noop RAII guard with no Jobs-specific logic, named outside repo type-naming convention, defined locally instead of in a shared header where other plugins needing it could reuse it",
+     "severity": "low",
+     "suggested_home": "libstuff or SQLite.h"
+    },
+    {
+     "item": "BedrockPlugin_Jobs crashed-job blacklist (getCrashedBedrockJobPatterns, onNodeLogin, _crashedBedrockJobPatterns, CrashBedrockJob/ClearCrashedBedrockJobs verbs)",
+     "why": "An operational kill-switch/ops-safety feature layered onto job scheduling; a distinct concern from job CRUD though tightly coupled to GetJob(s) peek/process",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Jobs.h/.cpp in plugins/ is exactly where a BedrockPlugin implementation belongs"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "Fits the plugin directory; the Expensify-specific index literals inside it are the location complaint, not the file itself"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Mostly _-prefixed private members and S-escaped 'safe*' SQL locals, but mockRequest/canEscalateImmediately skip the _ prefix used elsewhere, and scopedDisableNoopMode breaks the repo's type-naming casing"
+   },
+   "depends_on": [
+    "plugins/Jobs.h",
+    "BedrockPlugin.h",
+    "libstuff/libstuff.h",
+    "BedrockServer.h",
+    "libstuff/SQResult.h",
+    "sqlitecluster/SQLitePeer.h",
+    "sqlitecluster/SQLiteUtils.h"
+   ],
+   "_src": "b108.json",
+   "hash": "68fe8398f583019e"
+  },
+  {
+   "unit": "MySQL",
+   "dir": "plugins",
+   "files": [
+    "plugins/MySQL.h",
+    "plugins/MySQL.cpp"
+   ],
+   "lines": 1148,
+   "test": false,
+   "intent": "A Bedrock plugin that speaks the MySQL wire protocol on its own TCP port, translating recognized client queries into internal Query commands (or answering them directly) so unmodified MySQL clients can talk to a Bedrock/SQLite node.",
+   "objects": [
+    {
+     "name": "MySQLUtils",
+     "kind": "namespace/free-functions",
+     "role": "recognizes and picks apart specific client query shapes (VERSION(), CONNECTION_ID(), information_schema.*, SHOW KEYS FROM, foreign-key introspection) for rewriting into SQLite equivalents"
+    },
+    {
+     "name": "MySQLPacket",
+     "kind": "class",
+     "role": "encodes/decodes MySQL wire-protocol packet framing; builds handshake, OK, ERR, and query-response packets"
+    },
+    {
+     "name": "BedrockPlugin_MySQL",
+     "kind": "class",
+     "role": "the plugin; owns the MySQL-protocol port and translates between MySQL wire format and internal Query commands"
+    },
+    {
+     "name": "MYSQL_NUM_VARIABLES",
+     "kind": "macro",
+     "role": "element count of g_MySQLVariables"
+    },
+    {
+     "name": "g_MySQLVariables",
+     "kind": "global (extern array)",
+     "role": "table of fake MySQL server variables returned for SHOW VARIABLES / @@var"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "g_MySQLVariables",
+     "why": "~300-row hardcoded table of fake AWS-RDS MySQL server variables/values; pure static data embedded in the plugin's header/cpp rather than an external data file, dominating the file's line count",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "clearly the MySQL protocol plugin"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "plugins/ alongside other BedrockPlugin_* implementations"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent BedrockPlugin_<Name>/g_ conventions; mysqlVersion/MYSQL_NUM_VARIABLES/g_MySQLVariables mix three naming registers but each is correct for its category"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "BedrockPlugin.h",
+    "bedrockVersion.h",
+    "libstuff/SQResult.h",
+    "BedrockServer.h"
+   ],
+   "_src": "b109.json",
+   "hash": "ee9eaccdb115461c"
+  }
+ ],
+ "clusters": [],
+ "parent": {
+  "dir": "",
+  "summary_file": "SUMMARY.md",
+  "rollup": "theme: Bedrock's application layer \u2014 the per-node server, the command pipeline it drives, the plugin contract plugins/ implements against, and the process entry point \u2014 plus final resolution point for every misfit escalated from the whole subtree.\nexports: [BedrockServer, BedrockCommand, BedrockCore, BedrockCommandQueue/BedrockBlockingCommandQueue, BedrockPlugin, BedrockConflictManager/ConflictLockGuard, main() entry point]\ndepends_on_dirs: [libstuff, sqlitecluster, plugins]\ndepended_on_by: []\nmisfit_count: {high: 3, med: 12, low: 12}\nresolved_locally: 23\nescalate:\n  - item: \"BedrockCommand::getMethodName's 'returnValueList' legacy Auth hack\"\n    from: BedrockCommand.cpp\n    why: \"references an Auth plugin that does not appear in plugins/SUMMARY.md's export list (only Cache, Compression, DB, Jobs, MySQL); cannot confirm from visible summaries whether Auth still exists or this is dead code\"\n    suggested_home: null\n  - item: \"SData::deserialize simdjson padding logic\"\n    from: libstuff/SData.cpp\n    why: \"no consumer of SData that does simdjson parsing is visible anywhere in this subtree (libstuff, plugins, sqlitecluster, test, benchmarks); the consumer may not exist in this repo at all\"\n    suggested_home: null\n  - item: \"BedrockPlugin_Jobs::upgradeDatabase Expensify-specific index literals\"\n    from: plugins/Jobs.cpp\n    why: \"deployment-specific job-name literals baked into generic job-queue schema DDL; whether Bedrock needs a customization seam here or should accept this as intentional is a product/organizational decision, not an engineering one\"\n    suggested_home: null\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: \"tests a compiled-in SQLite percentile/median aggregate extension with no owning unit visible anywhere in the subtree; need to confirm the extension's existence and location before this test's home can be decided\"\n    suggested_home: null"
+ },
+ "siblings": [
+  {
+   "dir": "benchmarks",
+   "rollup": "theme: Standalone benchmark harness timing individual libstuff functions (currently only SDeburr/SReplace/SReplaceAll) with an optional git-baseline throughput comparison\nexports: [BenchmarkBase, BenchmarkResult, g_benchmarkResults, runBenchmarks, printComparison]\ndepends_on_dirs: [libstuff, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 1}\nresolved_locally: 0\nescalate:\n  - item: \"main() --baseline branch (git stash/checkout/rebuild orchestration)\"\n    from: benchmarks/main.cpp\n    why: Build/source-control orchestration embedded in the benchmark binary rather than driven externally\n    suggested_home: \"a wrapper shell script that runs the plain benchmark binary twice and diffs results; exact location needs a repo-wide view\""
+  },
+  {
+   "dir": "libstuff",
+   "rollup": "theme: Bedrock's dependency-free foundation layer - string/table/exception/logging core, poll()-loop networking, SQL-adjacent typed values and wire format, async threading primitives, an in-house JSON model, and process diagnostics - undercut by a 4612-line catch-all file that still duplicates several of its own dedicated units.\nexports: [libstuff-core (SString/STable/SException/SStopwatch/logging+assert macros), SData (generic HTTP-like wire message), SQResult/SQValue/SQliteParameter (typed SQL result set + bindable parameter), STCPManager/SHTTPSManager/SSSLState (poll()-loop socket/TLS/HTTPS stack), SLog/SSignal (process-wide logging + crash/signal handling), SThread/SRingBuffer/SFluentdLogger/SResolver (safe background-thread primitives and consumers), JSON::Value (in-house JSON document model, via JSON/)]\ndepends_on_dirs: [sqlitecluster, .]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 7, low: 6}\nresolved_locally: 8\nescalate:\n  - item: AutoScopeOnPrepare\n    from: libstuff/AutoScopeOnPrepare.h,cpp\n    why: includes sqlitecluster/SQLite.h directly and exists solely to scope a SQLite-specific callback; confirming the landing spot needs sqlitecluster's own view\n    suggested_home: sqlitecluster\n  - item: AutoTimer name collision\n    from: libstuff/AutoTimer.h,cpp\n    why: a second, unrelated AutoTimer class exists in BedrockCore.h outside libstuff's visibility; resolving the collision needs a view spanning both\n    suggested_home: null\n  - item: SData::deserialize simdjson padding logic\n    from: libstuff/SData.cpp\n    why: over-allocates for one downstream simdjson parser's requirement, but no consumer of SData that does simdjson parsing is visible anywhere in libstuff\n    suggested_home: wherever SData payloads are simdjson-parsed (not visible from libstuff)\n  - item: SHTTPSManager (class, depends on BedrockPlugin.h)\n    from: libstuff/SHTTPSManager.h\n    why: inverts libstuff's expected dependency direction on the application layer above it; SStandaloneHTTPSManager in the same file proves the coupling isn't load-bearing\n    suggested_home: near BedrockPlugin, or a thinner adapter in Bedrock proper leaving libstuff plugin-free\n  - item: \"_SSignal_StackTrace's direct call to SQLiteNode::KILLABLE_SQLITE_NODE->kill()\"\n    from: libstuff/SSignal.cpp\n    why: a generic libstuff crash handler reaching directly into the sqlitecluster layer; a layering decision the root must settle\n    suggested_home: null"
+  },
+  {
+   "dir": "sqlitecluster",
+   "rollup": "theme: Replicated-SQLite engine \u2014 the transaction/journal handle, the leader/follower consensus node, and the wire-format/pooling plumbing that carries commands and connections through the cluster.\nexports: [SQLite, SQLiteNode, SQLitePeer, SQLiteCommand, SQLiteClusterMessenger, SQLitePool, SQLiteServer]\ndepends_on_dirs: [libstuff, plugins, root (BedrockCommand.h, BedrockServer.h)]\ndepended_on_by: []\nmisfit_count: {high: 1, med: 2, low: 6}\nresolved_locally: 8\nescalate:\n  - item: \"SQLite.cpp and SQLiteNode.cpp both include plugins/Compression.h and call BedrockPlugin_Compression::compress/decompress to (de)compress journal entries\"\n    from: sqlitecluster/SQLite.cpp, sqlitecluster/SQLiteNode.cpp\n    why: the replication engine, which otherwise depends only on libstuff, depends upward on an application-level Bedrock command plugin \u2014 an inverted layering that two independent units converge on, so it is structural rather than a one-off\n    suggested_home: a libstuff- or sqlitecluster-level compression primitive that plugins/Compression itself builds on, instead of the reverse; deciding the exact seam requires a view above sqlitecluster that also sees plugins/"
+  },
+  {
+   "dir": "test",
+   "rollup": "theme: Root of Bedrock's test tree \u2014 divides \"verify Bedrock\" into a harness layer (test/lib), a single-node command/support-library test suite (test/tests), and a multi-node cluster-integration subsystem (test/clustertest), tied together by the single-node test binary's entry point (main.cpp).\nexports: [single-node bedrock test-binary entry point (main.cpp), BedrockTester test harness + vendored tpunit++ framework (test/lib), single-node command and libstuff/JSON support-library test suite incl. Jobs-plugin coverage (test/tests), BedrockClusterTester multi-node cluster harness plus test-only plugin and cluster-integration test suite (test/clustertest)]\ndepends_on_dirs: [libstuff, libstuff/JSON, sqlitecluster, plugins]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 1, low: 2}\nresolved_locally: 0\nescalate:\n  - item: fileAppend / fileLockAndLoad\n    from: test/clustertest/testplugin/TestPlugin.cpp\n    why: generic flock-guarded file I/O helpers with no plugin-specific logic and no relation to any part of test/'s remit; belongs in a shared utility location outside this subtree\n    suggested_home: libstuff\n  - item: \"operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)\"\n    from: test/lib/PrintEquality.h\n    why: generic container-printing utilities with no tie to PrintEquality or testing, already built on libstuff's SComposeList\n    suggested_home: a shared stream-formatting utility header in libstuff\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: tests a compiled-in SQLite extension (percentile/median aggregates), not Bedrock's Query command handling; no better home exists within test/'s own subtree, and whether one exists elsewhere in the repo needs a wider view\n    suggested_home: null"
+  }
+ ]
+}

@@ -1,0 +1,314 @@
+{
+ "dir": "benchmarks",
+ "pass": "passB",
+ "subdirectories": [],
+ "units": [
+  {
+   "unit": "BenchmarkBase",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "lines": 154,
+   "test": true,
+   "intent": "Small micro-framework for writing throughput benchmarks: subclasses mix this in alongside tpunit::TestFixture and call runBench() to time a function over warm-up and measured passes and record its throughput.",
+   "objects": [
+    {
+     "name": "BenchmarkResult",
+     "kind": "struct",
+     "role": "Throughput/elapsed-time/byte-count record for one named benchmark"
+    },
+    {
+     "name": "g_benchmarkResults",
+     "kind": "extern global",
+     "role": "Name-to-BenchmarkResult map shared across the whole benchmark binary; defined in main.cpp"
+    },
+    {
+     "name": "BenchmarkBase",
+     "kind": "class",
+     "role": "Mixin base class holding the owning fixture's name"
+    },
+    {
+     "name": "BenchmarkBase::setup/teardown",
+     "kind": "method group",
+     "role": "Overridable hooks run around each runBench() call"
+    },
+    {
+     "name": "BenchmarkBase::runBench",
+     "kind": "template method",
+     "role": "Warms up, times N iterations over a vector of inputs, computes MB/s, stores the result, and prints a summary line"
+    },
+    {
+     "name": "BenchmarkBase::getInputSize",
+     "kind": "template method",
+     "role": "Private helper sizing one input (string or integral only; else a static_assert failure)"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Exactly a base class for benchmarks"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly in benchmarks/"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "BenchmarkResult/BenchmarkBase don't carry the repo's `S` prefix used for shared libstuff-style utility types, unlike STable/SData, but that's a minor, acceptable inconsistency for test-only scaffolding"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b102.json",
+   "hash": "e3abd57adfd63ef6"
+  },
+  {
+   "unit": "SDeburrBench",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/SDeburrBench.cpp"
+   ],
+   "lines": 90,
+   "test": true,
+   "intent": "Self-contained tpunit fixture benchmarking libstuff's SDeburr::deburr() (accent/diacritic stripping) across ASCII, Latin-1, and mixed-script inputs at normal and high iteration counts.",
+   "objects": [
+    {
+     "name": "SDeburrBench",
+     "kind": "struct",
+     "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SDeburr::deburr() over a small fixed set of input strings"
+    },
+    {
+     "name": "SDeburrBench::benchShortASCII/benchLatin1/benchMixedLong",
+     "kind": "method group",
+     "role": "Vary the character set and length of the input"
+    },
+    {
+     "name": "SDeburrBench::benchShortASCIIHigh/benchLatin1High/benchMixedLongHigh",
+     "kind": "method group",
+     "role": "Same inputs, run at a much higher iteration count to stress steady-state throughput"
+    },
+    {
+     "name": "__SDeburrBench",
+     "kind": "file-scope global",
+     "role": "Self-registers the fixture with tpunit at static-init time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Named for exactly the function it benchmarks"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly in benchmarks/"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Fits repo/test convention"
+   },
+   "depends_on": [
+    "libstuff/SDeburr.h",
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "_src": "b102.json",
+   "hash": "00894e8922e0f82d"
+  },
+  {
+   "unit": "SReplaceAllBench",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/SReplaceAllBench.cpp"
+   ],
+   "lines": 100,
+   "test": true,
+   "intent": "Self-contained tpunit fixture benchmarking libstuff's SReplaceAll() -- replacing any character from a set with a single replacement character -- across inputs with varying densities and sizes of unsafe-character sets.",
+   "objects": [
+    {
+     "name": "SReplaceAllBench",
+     "kind": "struct",
+     "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SReplaceAll() over a small fixed set of input strings"
+    },
+    {
+     "name": "SReplaceAllBench::benchNoUnsafeChars/benchFewUnsafeChars/benchManyUnsafeChars",
+     "kind": "method group",
+     "role": "Vary how many characters in the input need replacing"
+    },
+    {
+     "name": "SReplaceAllBench::benchLongUnsafeList/benchURLSafe/benchAlphanumeric",
+     "kind": "method group",
+     "role": "Vary the size and shape of the unsafe-character set being matched against"
+    },
+    {
+     "name": "__SReplaceAllBench",
+     "kind": "file-scope global",
+     "role": "Self-registers the fixture with tpunit at static-init time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Named for exactly the function it benchmarks"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly in benchmarks/"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Fits repo/test convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "_src": "b102.json",
+   "hash": "4bfd6cd9c7705dcf"
+  },
+  {
+   "unit": "SReplaceBench",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/SReplaceBench.cpp"
+   ],
+   "lines": 110,
+   "test": true,
+   "intent": "Self-contained tpunit fixture benchmarking libstuff's SReplace() across match-count and find/replace length asymmetries.",
+   "objects": [
+    {
+     "name": "SReplaceBench",
+     "kind": "struct",
+     "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SReplace() over a small fixed set of input strings"
+    },
+    {
+     "name": "SReplaceBench::benchNoMatches/benchFewMatches/benchManyMatches",
+     "kind": "method group",
+     "role": "Vary how many substring matches are found"
+    },
+    {
+     "name": "SReplaceBench::benchLongFind/benchLongReplace",
+     "kind": "method group",
+     "role": "Vary whether the find or the replace argument is the long string"
+    },
+    {
+     "name": "SReplaceBench::benchShortToLong/benchLongToShort",
+     "kind": "method group",
+     "role": "Single-character find vs. a long replacement, and the reverse"
+    },
+    {
+     "name": "__SReplaceBench",
+     "kind": "file-scope global",
+     "role": "Self-registers the fixture with tpunit at static-init time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Named for exactly the function it benchmarks"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly in benchmarks/"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Fits repo/test convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "_src": "b102.json",
+   "hash": "633c06d2f9bfb352"
+  },
+  {
+   "unit": "main",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/main.cpp"
+   ],
+   "lines": 267,
+   "test": true,
+   "intent": "Entry point for the standalone benchmark binary: runs the tpunit-registered benchmark fixtures and, given a --baseline ref, also checks out that ref, rebuilds, reruns the benchmarks, restores the working tree, and prints a colored throughput comparison report.",
+   "objects": [
+    {
+     "name": "runBenchmarks",
+     "kind": "free function",
+     "role": "Clears g_benchmarkResults and invokes tpunit::Tests::run() with the given include/exclude filters"
+    },
+    {
+     "name": "printComparison",
+     "kind": "free function",
+     "role": "Formats a colored baseline-vs-current throughput table (new/improved/regressed/unchanged/removed) to stdout"
+    },
+    {
+     "name": "main",
+     "kind": "free function",
+     "role": "Parses --baseline/-only/-except/-v/--verbose/--help and orchestrates a plain run or the git-based baseline comparison workflow"
+    },
+    {
+     "name": "GREEN/RED/RESET/BOLD",
+     "kind": "free constants",
+     "role": "File-scope ANSI color codes"
+    },
+    {
+     "name": "SIGNIFICANT_CHANGE_THRESHOLD",
+     "kind": "free constant",
+     "role": "Percent-change cutoff used to classify a result as improved/regressed vs. unchanged"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "main (baseline-comparison branch)",
+     "why": "Shells out to git (stash/checkout/rev-parse) and reruns `make bench -j32` from inside the benchmark binary itself; this is build/source-control orchestration that reads more like a CI shell script than a benchmark runner",
+     "severity": "low",
+     "suggested_home": "a wrapper shell script driving the plain benchmark binary twice"
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "Conventional entry-point name for the benchmarks binary"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly the benchmarks/ driver"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Clear, descriptive names throughout"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "test/lib/tpunit++.hpp",
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "_src": "b102.json",
+   "hash": "f0b37d1e390857fb"
+  }
+ ],
+ "clusters": [],
+ "parent": {
+  "dir": "",
+  "summary_file": "SUMMARY.md",
+  "rollup": "theme: Bedrock's application layer \u2014 the per-node server, the command pipeline it drives, the plugin contract plugins/ implements against, and the process entry point \u2014 plus final resolution point for every misfit escalated from the whole subtree.\nexports: [BedrockServer, BedrockCommand, BedrockCore, BedrockCommandQueue/BedrockBlockingCommandQueue, BedrockPlugin, BedrockConflictManager/ConflictLockGuard, main() entry point]\ndepends_on_dirs: [libstuff, sqlitecluster, plugins]\ndepended_on_by: []\nmisfit_count: {high: 3, med: 12, low: 12}\nresolved_locally: 23\nescalate:\n  - item: \"BedrockCommand::getMethodName's 'returnValueList' legacy Auth hack\"\n    from: BedrockCommand.cpp\n    why: \"references an Auth plugin that does not appear in plugins/SUMMARY.md's export list (only Cache, Compression, DB, Jobs, MySQL); cannot confirm from visible summaries whether Auth still exists or this is dead code\"\n    suggested_home: null\n  - item: \"SData::deserialize simdjson padding logic\"\n    from: libstuff/SData.cpp\n    why: \"no consumer of SData that does simdjson parsing is visible anywhere in this subtree (libstuff, plugins, sqlitecluster, test, benchmarks); the consumer may not exist in this repo at all\"\n    suggested_home: null\n  - item: \"BedrockPlugin_Jobs::upgradeDatabase Expensify-specific index literals\"\n    from: plugins/Jobs.cpp\n    why: \"deployment-specific job-name literals baked into generic job-queue schema DDL; whether Bedrock needs a customization seam here or should accept this as intentional is a product/organizational decision, not an engineering one\"\n    suggested_home: null\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: \"tests a compiled-in SQLite percentile/median aggregate extension with no owning unit visible anywhere in the subtree; need to confirm the extension's existence and location before this test's home can be decided\"\n    suggested_home: null"
+ },
+ "siblings": [
+  {
+   "dir": "libstuff",
+   "rollup": "theme: Bedrock's dependency-free foundation layer - string/table/exception/logging core, poll()-loop networking, SQL-adjacent typed values and wire format, async threading primitives, an in-house JSON model, and process diagnostics - undercut by a 4612-line catch-all file that still duplicates several of its own dedicated units.\nexports: [libstuff-core (SString/STable/SException/SStopwatch/logging+assert macros), SData (generic HTTP-like wire message), SQResult/SQValue/SQliteParameter (typed SQL result set + bindable parameter), STCPManager/SHTTPSManager/SSSLState (poll()-loop socket/TLS/HTTPS stack), SLog/SSignal (process-wide logging + crash/signal handling), SThread/SRingBuffer/SFluentdLogger/SResolver (safe background-thread primitives and consumers), JSON::Value (in-house JSON document model, via JSON/)]\ndepends_on_dirs: [sqlitecluster, .]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 7, low: 6}\nresolved_locally: 8\nescalate:\n  - item: AutoScopeOnPrepare\n    from: libstuff/AutoScopeOnPrepare.h,cpp\n    why: includes sqlitecluster/SQLite.h directly and exists solely to scope a SQLite-specific callback; confirming the landing spot needs sqlitecluster's own view\n    suggested_home: sqlitecluster\n  - item: AutoTimer name collision\n    from: libstuff/AutoTimer.h,cpp\n    why: a second, unrelated AutoTimer class exists in BedrockCore.h outside libstuff's visibility; resolving the collision needs a view spanning both\n    suggested_home: null\n  - item: SData::deserialize simdjson padding logic\n    from: libstuff/SData.cpp\n    why: over-allocates for one downstream simdjson parser's requirement, but no consumer of SData that does simdjson parsing is visible anywhere in libstuff\n    suggested_home: wherever SData payloads are simdjson-parsed (not visible from libstuff)\n  - item: SHTTPSManager (class, depends on BedrockPlugin.h)\n    from: libstuff/SHTTPSManager.h\n    why: inverts libstuff's expected dependency direction on the application layer above it; SStandaloneHTTPSManager in the same file proves the coupling isn't load-bearing\n    suggested_home: near BedrockPlugin, or a thinner adapter in Bedrock proper leaving libstuff plugin-free\n  - item: \"_SSignal_StackTrace's direct call to SQLiteNode::KILLABLE_SQLITE_NODE->kill()\"\n    from: libstuff/SSignal.cpp\n    why: a generic libstuff crash handler reaching directly into the sqlitecluster layer; a layering decision the root must settle\n    suggested_home: null"
+  },
+  {
+   "dir": "plugins",
+   "rollup": "theme: plugins/ holds each BedrockPlugin_* implementation \u2014 self-contained units that register request verbs with BedrockServer and answer them via peek()/process(), each owning whatever SQLite schema it needs.\nexports: [BedrockPlugin_Cache, BedrockPlugin_Compression, BedrockPlugin_DB, BedrockPlugin_Jobs, BedrockPlugin_MySQL, the peek()/process() BedrockCommand pattern used by all five, per-plugin SQLite schema ownership (cache/cacheSize, zstdDictionaries, jobs tables), MySQL wire-protocol compatibility shim]\ndepends_on_dirs: [libstuff, sqlitecluster]\ndepended_on_by: []\nmisfit_count: {high: 1, med: 1, low: 4}\nresolved_locally: 2\nescalate:\n  - item: BedrockPlugin_Cache::LRUMap\n    from: plugins/Cache.h\n    why: fully generic string-keyed LRU tracker, no cache logic, trapped private to one plugin\n    suggested_home: libstuff (or a new shared containers location \u2014 libstuff is already overloaded, see note)\n  - item: BedrockPlugin_DB::Sqlite3QRFSpecWrapper / parseSQLite3Args / generateErrorContextMessage\n    from: plugins/DB.h,DB.cpp\n    why: generic sqlite3-CLI arg/error layer wrapping libstuff/qrf.h, nothing DB-plugin-specific\n    suggested_home: libstuff/qrf.h or a new libstuff unit alongside it\n  - item: BedrockPlugin_Jobs::scopedDisableNoopMode\n    from: plugins/Jobs.cpp\n    why: generic SQLite-noop RAII guard, file-local to Jobs.cpp, unreachable by other plugins that need it\n    suggested_home: libstuff or SQLite.h\n  - item: BedrockPlugin_Jobs::upgradeDatabase Expensify-specific index literals (jobsPriorityNextRunManualSmartScan*, jobsManualSmartscanReceiptID, jobsPriorityNextRunWWWProd/WWWStag)\n    from: plugins/Jobs.cpp\n    why: deployment-specific job-name literals baked into otherwise-generic job-queue schema DDL; needs a repo-wide customization seam, not a local fix\n    suggested_home: null"
+  },
+  {
+   "dir": "sqlitecluster",
+   "rollup": "theme: Replicated-SQLite engine \u2014 the transaction/journal handle, the leader/follower consensus node, and the wire-format/pooling plumbing that carries commands and connections through the cluster.\nexports: [SQLite, SQLiteNode, SQLitePeer, SQLiteCommand, SQLiteClusterMessenger, SQLitePool, SQLiteServer]\ndepends_on_dirs: [libstuff, plugins, root (BedrockCommand.h, BedrockServer.h)]\ndepended_on_by: []\nmisfit_count: {high: 1, med: 2, low: 6}\nresolved_locally: 8\nescalate:\n  - item: \"SQLite.cpp and SQLiteNode.cpp both include plugins/Compression.h and call BedrockPlugin_Compression::compress/decompress to (de)compress journal entries\"\n    from: sqlitecluster/SQLite.cpp, sqlitecluster/SQLiteNode.cpp\n    why: the replication engine, which otherwise depends only on libstuff, depends upward on an application-level Bedrock command plugin \u2014 an inverted layering that two independent units converge on, so it is structural rather than a one-off\n    suggested_home: a libstuff- or sqlitecluster-level compression primitive that plugins/Compression itself builds on, instead of the reverse; deciding the exact seam requires a view above sqlitecluster that also sees plugins/"
+  },
+  {
+   "dir": "test",
+   "rollup": "theme: Root of Bedrock's test tree \u2014 divides \"verify Bedrock\" into a harness layer (test/lib), a single-node command/support-library test suite (test/tests), and a multi-node cluster-integration subsystem (test/clustertest), tied together by the single-node test binary's entry point (main.cpp).\nexports: [single-node bedrock test-binary entry point (main.cpp), BedrockTester test harness + vendored tpunit++ framework (test/lib), single-node command and libstuff/JSON support-library test suite incl. Jobs-plugin coverage (test/tests), BedrockClusterTester multi-node cluster harness plus test-only plugin and cluster-integration test suite (test/clustertest)]\ndepends_on_dirs: [libstuff, libstuff/JSON, sqlitecluster, plugins]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 1, low: 2}\nresolved_locally: 0\nescalate:\n  - item: fileAppend / fileLockAndLoad\n    from: test/clustertest/testplugin/TestPlugin.cpp\n    why: generic flock-guarded file I/O helpers with no plugin-specific logic and no relation to any part of test/'s remit; belongs in a shared utility location outside this subtree\n    suggested_home: libstuff\n  - item: \"operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)\"\n    from: test/lib/PrintEquality.h\n    why: generic container-printing utilities with no tie to PrintEquality or testing, already built on libstuff's SComposeList\n    suggested_home: a shared stream-formatting utility header in libstuff\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: tests a compiled-in SQLite extension (percentile/median aggregates), not Bedrock's Query command handling; no better home exists within test/'s own subtree, and whether one exists elsewhere in the repo needs a wider view\n    suggested_home: null"
+  }
+ ]
+}

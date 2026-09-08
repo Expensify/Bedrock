@@ -1,0 +1,545 @@
+{
+ "dir": "sqlitecluster",
+ "pass": "passB",
+ "subdirectories": [],
+ "units": [
+  {
+   "unit": "SQLite",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLite.h",
+    "sqlitecluster/SQLite.cpp"
+   ],
+   "lines": 2374,
+   "test": false,
+   "intent": "Wraps a single sqlite3 handle with Bedrock's replicated-transaction model: journal-table bookkeeping, begin/read/write/prepare/commit/rollback, a cross-handle commit-order mutex, query result caching, conflict-location reporting, and authorizer/rewrite/whitelist hooks used by the sync layer and commands.",
+   "objects": [
+    {
+     "name": "SQLite",
+     "kind": "class",
+     "role": "owns the sqlite3* handle and drives the transaction/journal/replication lifecycle"
+    },
+    {
+     "name": "SQLite::Parameter",
+     "kind": "alias",
+     "role": "re-export of SQliteParameter for bound-parameter query calls"
+    },
+    {
+     "name": "SQLite::timeout_error",
+     "kind": "exception class",
+     "role": "thrown when a query exceeds its configured timeout"
+    },
+    {
+     "name": "SQLite::constraint_error",
+     "kind": "exception class",
+     "role": "marks a SQLITE_CONSTRAINT failure as a benign replication-ordering race rather than a real error"
+    },
+    {
+     "name": "SQLite::TRANSACTION_TYPE",
+     "kind": "enum class",
+     "role": "SHARED vs EXCLUSIVE transaction locking mode"
+    },
+    {
+     "name": "SQLite::SharedData",
+     "kind": "class (private nested)",
+     "role": "state shared by every SQLite handle on the same file: commit count/mutex, checkpoint state, prepared/committed transaction queues"
+    },
+    {
+     "name": "SQLite::COMMIT_DISABLED",
+     "kind": "static const int",
+     "role": "sentinel result code returned by commit() when commits are administratively disabled"
+    },
+    {
+     "name": "DBINFO",
+     "kind": "macro (SQLite.cpp)",
+     "role": "logs an SINFO line prefixed with the DB filename"
+    },
+    {
+     "name": "SharedDataLookupMapType",
+     "kind": "struct (SQLite.cpp, local to initializeSharedData)",
+     "role": "static process-lifetime filename -> SharedData* registry"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SQLite::enableRewrite / setRewriteHandler / _rewriteHandler",
+     "why": "query-rewriting exists, per its own comment, \"to support mocked requests and load testing\" - a test/mock-only feature wired directly into the production replicated-DB class",
+     "severity": "med",
+     "suggested_home": null
+    },
+    {
+     "item": "SQLite::setUpdateNoopMode / _noopUpdateMode",
+     "why": "noop-update mode is documented as existing only for `mockRequest`-enabled command testing, but lives as first-class state on the core DB class",
+     "severity": "med",
+     "suggested_home": null
+    },
+    {
+     "item": "BedrockPlugin_Compression::compress/decompress/registerSQLite calls in SQLite.cpp",
+     "why": "core sqlitecluster engine depends on plugins/Compression, a Bedrock command plugin, to compress journal entries and register SQLite UDFs - an inverted layering dependency for a library that otherwise only depends on libstuff",
+     "severity": "high",
+     "suggested_home": "a libstuff/sqlitecluster-level compression helper that plugins/Compression itself builds on, instead of the reverse"
+    },
+    {
+     "item": "Commented-out HC-Tree slow-commit diagnostic block inside SQLite::commit()",
+     "why": "~15 lines of disabled debug-logging code left in place rather than removed or gated behind a runtime flag",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "SQLite::SharedData::writeLock",
+     "why": "per its own comment this exists specifically to support the BlockWrites command - a single command's requirement implemented as a generic-looking member of the cross-handle SharedData structure",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "SQLite.h/.cpp is exactly the DB-engine wrapper class for sqlitecluster."
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "Right directory for the class itself; docked for reaching into plugins/Compression from a core library (see misfits)."
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Consistent `_`-prefixed privates overall, but getLastConflictIdentifier() actually returns _lastConflictPage while a separate thread_local _conflictIdentifier covers the HC-Tree case - two conflict-identity concepts share one public getter name."
+   },
+   "depends_on": [
+    "libstuff/sqlite3.h",
+    "libstuff/SQliteParameter.h",
+    "libstuff/SQResult.h",
+    "libstuff/SPerformanceTimer.h",
+    "libstuff/libstuff.h",
+    "libstuff/SDeburr.h",
+    "plugins/Compression.h"
+   ],
+   "_src": "b111.json",
+   "hash": "4df4c152a333f0ca"
+  },
+  {
+   "unit": "SQLiteClusterMessenger",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLiteClusterMessenger.h",
+    "sqlitecluster/SQLiteClusterMessenger.cpp"
+   ],
+   "lines": 430,
+   "test": false,
+   "intent": "Escalates a BedrockCommand from this node to another node in the cluster (leader, a named peer, or all peers) over a pooled TCP socket and fills in the command's response.",
+   "objects": [
+    {
+     "name": "SQLiteClusterMessenger",
+     "kind": "class",
+     "role": "opens/reuses a socket to a peer, sends a serialized command, and reads back its response"
+    },
+    {
+     "name": "SQLiteClusterMessenger::WaitForReadyResult",
+     "kind": "enum",
+     "role": "outcome of waiting for a socket to become ready (timeout, disconnect, abort, etc.)"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "clearly a messenger between nodes, sits correctly with SQLiteNode/SQLitePeer."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "belongs in sqlitecluster."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "two overloaded runOnPeer methods (bool vs. peer-name) have different retry semantics but the same name."
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SHTTPSManager.h",
+    "libstuff/SMultiHostSocketPool.h",
+    "BedrockCommand.h",
+    "sqlitecluster/SQLiteNode.h",
+    "sqlitecluster/SQLitePeer.h"
+   ],
+   "_src": "b112.json",
+   "hash": "a70d20f0e5aaf532"
+  },
+  {
+   "unit": "SQLiteCommand",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLiteCommand.h",
+    "sqlitecluster/SQLiteCommand.cpp"
+   ],
+   "lines": 154,
+   "test": false,
+   "intent": "Base representation of a command as it moves through the cluster: wire-format request/response, a cross-node id, completion flag, and escalation timing; BedrockCommand builds on top of it.",
+   "objects": [
+    {
+     "name": "SQLiteCommand",
+     "kind": "class",
+     "role": "holds request/response/id/timing for a command; move-only via a private backing field for the const `request` reference"
+    },
+    {
+     "name": "SQLiteCommand::preprocessRequest",
+     "kind": "static method",
+     "role": "assigns a requestID and warns on deprecated commandExecuteTime, run before `request` is bound"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SQLiteCommand::preprocessRequest's commandExecuteTime deprecation-warning branch",
+     "why": "deprecation-specific handling of one legacy wire field living inside an otherwise generic request-preprocessing helper",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "matches its contents."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "correctly the base type alongside the rest of sqlitecluster."
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "private backing field is named `privateRequest` instead of the repo's usual `_` prefix (e.g. `_request`), inconsistent with the rest of the codebase's own convention."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "sqlitecluster/SQLiteNode.h",
+    "libstuff/libstuff.h",
+    "libstuff/SRandom.h"
+   ],
+   "_src": "b112.json",
+   "hash": "8fdd34c17faf567c"
+  },
+  {
+   "unit": "SQLiteCore",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLiteCore.h",
+    "sqlitecluster/SQLiteCore.cpp"
+   ],
+   "lines": 86,
+   "test": false,
+   "intent": "Wraps commit/rollback of a SQLite database with the cluster-aware checks needed to do so safely: only commit while still leader, and run an optional plugin-notification hook during prepare.",
+   "objects": [
+    {
+     "name": "SQLiteCore",
+     "kind": "class",
+     "role": "commits or rolls back a transaction on a wrapped SQLite&, refusing to commit if the node is no longer leading"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 4,
+    "note": "\"Core\" is a bit generic but the content (commit/rollback gating) is coherent and singular."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "belongs with SQLite/SQLiteNode in sqlitecluster."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "notificationHandler's function-pointer parameter is named `_db`, echoing the class's own `_db` member despite being an unrelated parameter."
+   },
+   "depends_on": [
+    "libstuff/AutoScopeOnPrepare.h",
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLite.h",
+    "sqlitecluster/SQLiteNode.h",
+    "libstuff/sqlite3.h"
+   ],
+   "_src": "b112.json",
+   "hash": "358aec97e647f4b8"
+  },
+  {
+   "unit": "SQLiteNode",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLiteNode.h",
+    "sqlitecluster/SQLiteNode.cpp"
+   ],
+   "lines": 2964,
+   "test": false,
+   "intent": "A distributed, leader/follower, failover SQLite cluster node: maintains peer connections, drives the cluster's leader-election state machine (SEARCHING through LEADING/FOLLOWING), and replicates committed transactions between leader and followers.",
+   "objects": [
+    {
+     "name": "SQLiteNodeState",
+     "kind": "enum class",
+     "role": "the states a node cycles through in the cluster state machine"
+    },
+    {
+     "name": "SQLiteNode",
+     "kind": "class",
+     "role": "STCPManager subclass owning the peer list and command port; drives the state machine and replication"
+    },
+    {
+     "name": "PDEBUG/PINFO/PHMMM/PWARN",
+     "kind": "macro group (.cpp)",
+     "role": "logging macros that prefix a log line with \"->{peer->name}\", used wherever a peer is in scope"
+    },
+    {
+     "name": "synchronizeCount",
+     "kind": "file-local static atomic<size_t> (.cpp, inside _onMESSAGE)",
+     "role": "numbers each spawned synchronize-response thread for its SInitialize() label"
+    },
+    {
+     "name": "SQLiteNode::stateName/stateFromName lookup tables",
+     "kind": "function-local static maps (.cpp)",
+     "role": "translate between SQLiteNodeState and its string name"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "#include <plugins/Compression.h> and BedrockPlugin_Compression::decompress calls in SQLiteNode.cpp's _handleBeginTransaction and _recvSynchronize",
+     "why": "sqlitecluster/ is a lower-level replication library depending directly on one specific plugin under plugins/, inverting the codebase's normal dependency direction (plugins depend on sqlitecluster, not the reverse); sqlitecluster/SQLite.cpp has the same dependency, so it's an established pattern rather than unique to this file",
+     "severity": "med",
+     "suggested_home": null
+    },
+    {
+     "item": "SQLiteNode::KILLABLE_SQLITE_NODE / SQLiteNode::NODE_KILLED",
+     "why": "a global static pointer/flag letting process-wide signal-handling code reach into one specific node instance to kill its sockets; shutdown coordination bolted onto the node class rather than a dedicated signal-handling module",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "SQLiteNode::_priority / SQLiteNode::_syncPeer",
+     "why": "both carry inline comments marking them \"Remove\" with links to open GitHub issues (208449, 208439) -- acknowledged, unresolved design debt in the node's state tracking",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "matches its content exactly"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "sqlitecluster/ is exactly right for the cluster-replication node"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "consistent underscore-prefix for private members overall, but `pluginDB` is a private member with no underscore, and `messagesDeqeued` in _processPeerMessages is a typo for \"messagesDequeued\""
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SSynchronizedQueue.h",
+    "libstuff/STCPManager.h",
+    "sqlitecluster/SQLite.h",
+    "sqlitecluster/SQLitePool.h",
+    "libstuff/SRandom.h",
+    "libstuff/SQResult.h",
+    "sqlitecluster/SQLiteCommand.h",
+    "sqlitecluster/SQLitePeer.h",
+    "sqlitecluster/SQLiteServer.h",
+    "plugins/Compression.h"
+   ],
+   "_src": "b110.json",
+   "hash": "7fdd048b59c5cb54"
+  },
+  {
+   "unit": "SQLitePeer",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLitePeer.h",
+    "sqlitecluster/SQLitePeer.cpp"
+   ],
+   "lines": 425,
+   "test": false,
+   "intent": "Represents one other node in the cluster as seen from this node: its connection socket, replication state, and the synchronization/standup metadata SQLiteNode needs to run consensus.",
+   "objects": [
+    {
+     "name": "SQLitePeer",
+     "kind": "class",
+     "role": "one peer's connection + replication/consensus state, guarded by an internal mutex"
+    },
+    {
+     "name": "SQLitePeer::Response",
+     "kind": "enum",
+     "role": "a peer's vote on a standup request (NONE/APPROVE/DENY)"
+    },
+    {
+     "name": "SQLitePeer::PeerPostPollStatus",
+     "kind": "enum",
+     "role": "result of postPoll: OK, just-connected, socket error, or socket closed"
+    },
+    {
+     "name": "operator<<(ostream&, atomic<SQLitePeer::Response>&)",
+     "kind": "free function",
+     "role": "streams a Response's name"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SQLitePeer.h comment on `socket` member",
+     "why": "claims 'see friend class declaration above' but no friend is declared anywhere in this file - a stale/incorrect cross-reference left over from an earlier version",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "does exactly what the name says."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "belongs alongside SQLiteNode in sqlitecluster."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent S-prefix and trailing-underscore constructor params; the stale friend-class comment is a minor documentation defect."
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLiteNode.h",
+    "BedrockServer.h",
+    "libstuff/STCPManager.h",
+    "libstuff/SData.h",
+    "libstuff/SRandom.h"
+   ],
+   "_src": "b112.json",
+   "hash": "c2db323bdb64b8e9"
+  },
+  {
+   "unit": "SQLitePool",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLitePool.h",
+    "sqlitecluster/SQLitePool.cpp"
+   ],
+   "lines": 179,
+   "test": false,
+   "intent": "Hands out SQLite database handles to worker threads from a bounded pool, creating new handles lazily up to a max and blocking callers when it's exhausted.",
+   "objects": [
+    {
+     "name": "SQLitePool",
+     "kind": "class",
+     "role": "bounded pool of SQLite handles cloned from one base handle; get/initialize/return an index"
+    },
+    {
+     "name": "SQLiteScopedHandle",
+     "kind": "class",
+     "role": "RAII wrapper that returns its pool index to the pool when it goes out of scope"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "matches its contents exactly."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "belongs with SQLite.h in sqlitecluster."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent with repo convention; getIndex returns a bare size_t rather than a typed token, so any size_t can be passed to returnToPool."
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLite.h"
+   ],
+   "_src": "b112.json",
+   "hash": "8901b6b06e726a2f"
+  },
+  {
+   "unit": "SQLiteServer",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLiteServer.h"
+   ],
+   "lines": 21,
+   "test": false,
+   "intent": "Abstract interface a SQLiteNode uses to call back into whatever server embeds it: login notifications, state-change notifications to plugins, and command-port blocking.",
+   "objects": [
+    {
+     "name": "SQLiteServer",
+     "kind": "class",
+     "role": "pure-virtual interface (onNodeLogin, notifyStateChangeToPlugins, blockCommandPort, unblockCommandPort), extends STCPManager"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "matches its contents."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "the callback contract for SQLiteNode's host server belongs here."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "clear verb-based method names."
+   },
+   "depends_on": [
+    "sqlitecluster/SQLiteNode.h",
+    "libstuff/STCPManager.h"
+   ],
+   "_src": "b112.json",
+   "hash": "88b7a3f3c135424c"
+  },
+  {
+   "unit": "SQLiteUtils",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLiteUtils.h",
+    "sqlitecluster/SQLiteUtils.cpp"
+   ],
+   "lines": 44,
+   "test": false,
+   "intent": "Generates a random, table-unique int64 ID for use as a primary key.",
+   "objects": [
+    {
+     "name": "SQLiteUtils",
+     "kind": "class",
+     "role": "static-only helper; getRandomID picks a random ID and retries until it's not already present in the given table/column"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 3,
+    "note": "\"Utils\" is generic for a single-function class, though the single function itself is coherent."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "SQLite-specific ID generation belongs in sqlitecluster."
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "fine as far as it goes; a one-function Utils class invites unrelated helpers to accrete."
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SRandom.h",
+    "sqlitecluster/SQLite.h"
+   ],
+   "_src": "b112.json",
+   "hash": "9882d504dca0c760"
+  }
+ ],
+ "clusters": [],
+ "parent": {
+  "dir": "",
+  "summary_file": "SUMMARY.md",
+  "rollup": "theme: Bedrock's application layer \u2014 the per-node server, the command pipeline it drives, the plugin contract plugins/ implements against, and the process entry point \u2014 plus final resolution point for every misfit escalated from the whole subtree.\nexports: [BedrockServer, BedrockCommand, BedrockCore, BedrockCommandQueue/BedrockBlockingCommandQueue, BedrockPlugin, BedrockConflictManager/ConflictLockGuard, main() entry point]\ndepends_on_dirs: [libstuff, sqlitecluster, plugins]\ndepended_on_by: []\nmisfit_count: {high: 3, med: 12, low: 12}\nresolved_locally: 23\nescalate:\n  - item: \"BedrockCommand::getMethodName's 'returnValueList' legacy Auth hack\"\n    from: BedrockCommand.cpp\n    why: \"references an Auth plugin that does not appear in plugins/SUMMARY.md's export list (only Cache, Compression, DB, Jobs, MySQL); cannot confirm from visible summaries whether Auth still exists or this is dead code\"\n    suggested_home: null\n  - item: \"SData::deserialize simdjson padding logic\"\n    from: libstuff/SData.cpp\n    why: \"no consumer of SData that does simdjson parsing is visible anywhere in this subtree (libstuff, plugins, sqlitecluster, test, benchmarks); the consumer may not exist in this repo at all\"\n    suggested_home: null\n  - item: \"BedrockPlugin_Jobs::upgradeDatabase Expensify-specific index literals\"\n    from: plugins/Jobs.cpp\n    why: \"deployment-specific job-name literals baked into generic job-queue schema DDL; whether Bedrock needs a customization seam here or should accept this as intentional is a product/organizational decision, not an engineering one\"\n    suggested_home: null\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: \"tests a compiled-in SQLite percentile/median aggregate extension with no owning unit visible anywhere in the subtree; need to confirm the extension's existence and location before this test's home can be decided\"\n    suggested_home: null"
+ },
+ "siblings": [
+  {
+   "dir": "benchmarks",
+   "rollup": "theme: Standalone benchmark harness timing individual libstuff functions (currently only SDeburr/SReplace/SReplaceAll) with an optional git-baseline throughput comparison\nexports: [BenchmarkBase, BenchmarkResult, g_benchmarkResults, runBenchmarks, printComparison]\ndepends_on_dirs: [libstuff, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 1}\nresolved_locally: 0\nescalate:\n  - item: \"main() --baseline branch (git stash/checkout/rebuild orchestration)\"\n    from: benchmarks/main.cpp\n    why: Build/source-control orchestration embedded in the benchmark binary rather than driven externally\n    suggested_home: \"a wrapper shell script that runs the plain benchmark binary twice and diffs results; exact location needs a repo-wide view\""
+  },
+  {
+   "dir": "libstuff",
+   "rollup": "theme: Bedrock's dependency-free foundation layer - string/table/exception/logging core, poll()-loop networking, SQL-adjacent typed values and wire format, async threading primitives, an in-house JSON model, and process diagnostics - undercut by a 4612-line catch-all file that still duplicates several of its own dedicated units.\nexports: [libstuff-core (SString/STable/SException/SStopwatch/logging+assert macros), SData (generic HTTP-like wire message), SQResult/SQValue/SQliteParameter (typed SQL result set + bindable parameter), STCPManager/SHTTPSManager/SSSLState (poll()-loop socket/TLS/HTTPS stack), SLog/SSignal (process-wide logging + crash/signal handling), SThread/SRingBuffer/SFluentdLogger/SResolver (safe background-thread primitives and consumers), JSON::Value (in-house JSON document model, via JSON/)]\ndepends_on_dirs: [sqlitecluster, .]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 7, low: 6}\nresolved_locally: 8\nescalate:\n  - item: AutoScopeOnPrepare\n    from: libstuff/AutoScopeOnPrepare.h,cpp\n    why: includes sqlitecluster/SQLite.h directly and exists solely to scope a SQLite-specific callback; confirming the landing spot needs sqlitecluster's own view\n    suggested_home: sqlitecluster\n  - item: AutoTimer name collision\n    from: libstuff/AutoTimer.h,cpp\n    why: a second, unrelated AutoTimer class exists in BedrockCore.h outside libstuff's visibility; resolving the collision needs a view spanning both\n    suggested_home: null\n  - item: SData::deserialize simdjson padding logic\n    from: libstuff/SData.cpp\n    why: over-allocates for one downstream simdjson parser's requirement, but no consumer of SData that does simdjson parsing is visible anywhere in libstuff\n    suggested_home: wherever SData payloads are simdjson-parsed (not visible from libstuff)\n  - item: SHTTPSManager (class, depends on BedrockPlugin.h)\n    from: libstuff/SHTTPSManager.h\n    why: inverts libstuff's expected dependency direction on the application layer above it; SStandaloneHTTPSManager in the same file proves the coupling isn't load-bearing\n    suggested_home: near BedrockPlugin, or a thinner adapter in Bedrock proper leaving libstuff plugin-free\n  - item: \"_SSignal_StackTrace's direct call to SQLiteNode::KILLABLE_SQLITE_NODE->kill()\"\n    from: libstuff/SSignal.cpp\n    why: a generic libstuff crash handler reaching directly into the sqlitecluster layer; a layering decision the root must settle\n    suggested_home: null"
+  },
+  {
+   "dir": "plugins",
+   "rollup": "theme: plugins/ holds each BedrockPlugin_* implementation \u2014 self-contained units that register request verbs with BedrockServer and answer them via peek()/process(), each owning whatever SQLite schema it needs.\nexports: [BedrockPlugin_Cache, BedrockPlugin_Compression, BedrockPlugin_DB, BedrockPlugin_Jobs, BedrockPlugin_MySQL, the peek()/process() BedrockCommand pattern used by all five, per-plugin SQLite schema ownership (cache/cacheSize, zstdDictionaries, jobs tables), MySQL wire-protocol compatibility shim]\ndepends_on_dirs: [libstuff, sqlitecluster]\ndepended_on_by: []\nmisfit_count: {high: 1, med: 1, low: 4}\nresolved_locally: 2\nescalate:\n  - item: BedrockPlugin_Cache::LRUMap\n    from: plugins/Cache.h\n    why: fully generic string-keyed LRU tracker, no cache logic, trapped private to one plugin\n    suggested_home: libstuff (or a new shared containers location \u2014 libstuff is already overloaded, see note)\n  - item: BedrockPlugin_DB::Sqlite3QRFSpecWrapper / parseSQLite3Args / generateErrorContextMessage\n    from: plugins/DB.h,DB.cpp\n    why: generic sqlite3-CLI arg/error layer wrapping libstuff/qrf.h, nothing DB-plugin-specific\n    suggested_home: libstuff/qrf.h or a new libstuff unit alongside it\n  - item: BedrockPlugin_Jobs::scopedDisableNoopMode\n    from: plugins/Jobs.cpp\n    why: generic SQLite-noop RAII guard, file-local to Jobs.cpp, unreachable by other plugins that need it\n    suggested_home: libstuff or SQLite.h\n  - item: BedrockPlugin_Jobs::upgradeDatabase Expensify-specific index literals (jobsPriorityNextRunManualSmartScan*, jobsManualSmartscanReceiptID, jobsPriorityNextRunWWWProd/WWWStag)\n    from: plugins/Jobs.cpp\n    why: deployment-specific job-name literals baked into otherwise-generic job-queue schema DDL; needs a repo-wide customization seam, not a local fix\n    suggested_home: null"
+  },
+  {
+   "dir": "test",
+   "rollup": "theme: Root of Bedrock's test tree \u2014 divides \"verify Bedrock\" into a harness layer (test/lib), a single-node command/support-library test suite (test/tests), and a multi-node cluster-integration subsystem (test/clustertest), tied together by the single-node test binary's entry point (main.cpp).\nexports: [single-node bedrock test-binary entry point (main.cpp), BedrockTester test harness + vendored tpunit++ framework (test/lib), single-node command and libstuff/JSON support-library test suite incl. Jobs-plugin coverage (test/tests), BedrockClusterTester multi-node cluster harness plus test-only plugin and cluster-integration test suite (test/clustertest)]\ndepends_on_dirs: [libstuff, libstuff/JSON, sqlitecluster, plugins]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 1, low: 2}\nresolved_locally: 0\nescalate:\n  - item: fileAppend / fileLockAndLoad\n    from: test/clustertest/testplugin/TestPlugin.cpp\n    why: generic flock-guarded file I/O helpers with no plugin-specific logic and no relation to any part of test/'s remit; belongs in a shared utility location outside this subtree\n    suggested_home: libstuff\n  - item: \"operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)\"\n    from: test/lib/PrintEquality.h\n    why: generic container-printing utilities with no tie to PrintEquality or testing, already built on libstuff's SComposeList\n    suggested_home: a shared stream-formatting utility header in libstuff\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: tests a compiled-in SQLite extension (percentile/median aggregates), not Bedrock's Query command handling; no better home exists within test/'s own subtree, and whether one exists elsewhere in the repo needs a wider view\n    suggested_home: null"
+  }
+ ]
+}

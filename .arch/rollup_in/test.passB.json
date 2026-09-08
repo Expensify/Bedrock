@@ -1,0 +1,93 @@
+{
+ "dir": "test",
+ "pass": "passB",
+ "subdirectories": [
+  {
+   "dir": "test/clustertest",
+   "summary_file": "test/clustertest/SUMMARY.md",
+   "exists": true,
+   "rollup": "theme: Root of Bedrock's cluster-integration test subsystem \u2014 owns the multi-node cluster bootstrap harness (BedrockClusterTester) and the test-binary entrypoint that test/clustertest/testplugin and test/clustertest/tests are built on.\nexports: [BedrockClusterTester / ClusterTester<T> multi-node cluster harness, cluster-test binary entrypoint (CLI parsing, signal cleanup, test-run driver), TestPlugin test-only command surface for crashes/timeouts/escalation/commit-hooks (testplugin/), BedrockClusterTester-driven multi-node integration test suite covering replication/failover/escalation/membership/adversarial-stress (tests/)]\ndepends_on_dirs: [libstuff, test/lib, sqlitecluster, test/tests/jobs]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 1, low: 2}\nresolved_locally: 2\nescalate:\n  - item: fileAppend / fileLockAndLoad\n    from: test/clustertest/testplugin/TestPlugin.cpp\n    why: generic flock-guarded file I/O helpers with no plugin-specific logic and no relation to test/clustertest's remit either; belongs in a shared utility location\n    suggested_home: libstuff"
+  },
+  {
+   "dir": "test/lib",
+   "summary_file": "test/lib/SUMMARY.md",
+   "exists": true,
+   "rollup": "theme: Test-harness layer that forks and drives a real bedrock server subprocess for the test suite, plus the vendored micro test-framework tests run under.\nexports: [BedrockTester, PortMap, RemoteSQLite, TestHTTPS, tpunit++ framework runner, PrintEquality/ASSERT_EQUAL printing]\ndepends_on_dirs: [libstuff, sqlitecluster]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 2, low: 0}\nresolved_locally: 1\nescalate:\n  - item: \"operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)\"\n    from: test/lib/PrintEquality.h\n    why: Generic container-printing utilities with no tie to PrintEquality or testing, already built on libstuff's SComposeList\n    suggested_home: a shared stream-formatting utility header in libstuff"
+  },
+  {
+   "dir": "test/tests",
+   "summary_file": "test/tests/SUMMARY.md",
+   "exists": true,
+   "rollup": "theme: Bedrock's flat top-level test suite \u2014 one BedrockTester integration fixture per core server command, one unit fixture per libstuff/JSON support-library symbol, plus a dedicated Jobs-plugin subdirectory\nexports: [BedrockTester single-command integration pattern (Query/Write/Status/CommandPort/outbound-HTTP), BedrockBlockingCommandQueue rate-limit coverage, JSON::Value/Parser/Utils unit-test coverage, SQLite commit/rollback and SQLiteNode peer-selection coverage, libstuff primitive coverage (async DNS, ring buffer, string/date validators), Jobs-plugin command-suite coverage (via jobs/)]\ndepends_on_dirs: [libstuff, libstuff/JSON, plugins, sqlitecluster, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 1, med: 1, low: 12}\nresolved_locally: 13\nescalate:\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: tests a compiled-in SQLite extension (percentile/median aggregates), not Bedrock's Query command handling; unclear if a better home exists among unseen siblings\n    suggested_home: null"
+  }
+ ],
+ "units": [
+  {
+   "unit": "main",
+   "dir": "test",
+   "files": [
+    "test/main.cpp"
+   ],
+   "lines": 127,
+   "test": true,
+   "intent": "Entry point for the single-node bedrock test binary: parses CLI flags, configures logging/SSL, and drives tpunit::Tests::run over the registered test fixtures.",
+   "objects": [
+    {
+     "name": "sigclean",
+     "kind": "free function",
+     "role": "SIGINT handler that stops any running test servers before exiting"
+    },
+    {
+     "name": "main",
+     "kind": "free function",
+     "role": "parses args and runs the test suite (optionally repeated)"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "a plain main.cpp test-binary entry point."
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits test/."
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "fine."
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/libstuff.h",
+    "test/lib/BedrockTester.h",
+    "libstuff/SSSLState.h"
+   ],
+   "_src": "b112.json",
+   "hash": "0c43acb6168d2559"
+  }
+ ],
+ "clusters": [],
+ "parent": {
+  "dir": "",
+  "summary_file": "SUMMARY.md",
+  "rollup": "theme: Bedrock's application layer \u2014 the per-node server, the command pipeline it drives, the plugin contract plugins/ implements against, and the process entry point \u2014 plus final resolution point for every misfit escalated from the whole subtree.\nexports: [BedrockServer, BedrockCommand, BedrockCore, BedrockCommandQueue/BedrockBlockingCommandQueue, BedrockPlugin, BedrockConflictManager/ConflictLockGuard, main() entry point]\ndepends_on_dirs: [libstuff, sqlitecluster, plugins]\ndepended_on_by: []\nmisfit_count: {high: 3, med: 12, low: 12}\nresolved_locally: 23\nescalate:\n  - item: \"BedrockCommand::getMethodName's 'returnValueList' legacy Auth hack\"\n    from: BedrockCommand.cpp\n    why: \"references an Auth plugin that does not appear in plugins/SUMMARY.md's export list (only Cache, Compression, DB, Jobs, MySQL); cannot confirm from visible summaries whether Auth still exists or this is dead code\"\n    suggested_home: null\n  - item: \"SData::deserialize simdjson padding logic\"\n    from: libstuff/SData.cpp\n    why: \"no consumer of SData that does simdjson parsing is visible anywhere in this subtree (libstuff, plugins, sqlitecluster, test, benchmarks); the consumer may not exist in this repo at all\"\n    suggested_home: null\n  - item: \"BedrockPlugin_Jobs::upgradeDatabase Expensify-specific index literals\"\n    from: plugins/Jobs.cpp\n    why: \"deployment-specific job-name literals baked into generic job-queue schema DDL; whether Bedrock needs a customization seam here or should accept this as intentional is a product/organizational decision, not an engineering one\"\n    suggested_home: null\n  - item: QueryTest::testPercentile\n    from: test/tests/QueryTest.cpp\n    why: \"tests a compiled-in SQLite percentile/median aggregate extension with no owning unit visible anywhere in the subtree; need to confirm the extension's existence and location before this test's home can be decided\"\n    suggested_home: null"
+ },
+ "siblings": [
+  {
+   "dir": "benchmarks",
+   "rollup": "theme: Standalone benchmark harness timing individual libstuff functions (currently only SDeburr/SReplace/SReplaceAll) with an optional git-baseline throughput comparison\nexports: [BenchmarkBase, BenchmarkResult, g_benchmarkResults, runBenchmarks, printComparison]\ndepends_on_dirs: [libstuff, test/lib]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 0, low: 1}\nresolved_locally: 0\nescalate:\n  - item: \"main() --baseline branch (git stash/checkout/rebuild orchestration)\"\n    from: benchmarks/main.cpp\n    why: Build/source-control orchestration embedded in the benchmark binary rather than driven externally\n    suggested_home: \"a wrapper shell script that runs the plain benchmark binary twice and diffs results; exact location needs a repo-wide view\""
+  },
+  {
+   "dir": "libstuff",
+   "rollup": "theme: Bedrock's dependency-free foundation layer - string/table/exception/logging core, poll()-loop networking, SQL-adjacent typed values and wire format, async threading primitives, an in-house JSON model, and process diagnostics - undercut by a 4612-line catch-all file that still duplicates several of its own dedicated units.\nexports: [libstuff-core (SString/STable/SException/SStopwatch/logging+assert macros), SData (generic HTTP-like wire message), SQResult/SQValue/SQliteParameter (typed SQL result set + bindable parameter), STCPManager/SHTTPSManager/SSSLState (poll()-loop socket/TLS/HTTPS stack), SLog/SSignal (process-wide logging + crash/signal handling), SThread/SRingBuffer/SFluentdLogger/SResolver (safe background-thread primitives and consumers), JSON::Value (in-house JSON document model, via JSON/)]\ndepends_on_dirs: [sqlitecluster, .]\ndepended_on_by: []\nmisfit_count: {high: 0, med: 7, low: 6}\nresolved_locally: 8\nescalate:\n  - item: AutoScopeOnPrepare\n    from: libstuff/AutoScopeOnPrepare.h,cpp\n    why: includes sqlitecluster/SQLite.h directly and exists solely to scope a SQLite-specific callback; confirming the landing spot needs sqlitecluster's own view\n    suggested_home: sqlitecluster\n  - item: AutoTimer name collision\n    from: libstuff/AutoTimer.h,cpp\n    why: a second, unrelated AutoTimer class exists in BedrockCore.h outside libstuff's visibility; resolving the collision needs a view spanning both\n    suggested_home: null\n  - item: SData::deserialize simdjson padding logic\n    from: libstuff/SData.cpp\n    why: over-allocates for one downstream simdjson parser's requirement, but no consumer of SData that does simdjson parsing is visible anywhere in libstuff\n    suggested_home: wherever SData payloads are simdjson-parsed (not visible from libstuff)\n  - item: SHTTPSManager (class, depends on BedrockPlugin.h)\n    from: libstuff/SHTTPSManager.h\n    why: inverts libstuff's expected dependency direction on the application layer above it; SStandaloneHTTPSManager in the same file proves the coupling isn't load-bearing\n    suggested_home: near BedrockPlugin, or a thinner adapter in Bedrock proper leaving libstuff plugin-free\n  - item: \"_SSignal_StackTrace's direct call to SQLiteNode::KILLABLE_SQLITE_NODE->kill()\"\n    from: libstuff/SSignal.cpp\n    why: a generic libstuff crash handler reaching directly into the sqlitecluster layer; a layering decision the root must settle\n    suggested_home: null"
+  },
+  {
+   "dir": "plugins",
+   "rollup": "theme: plugins/ holds each BedrockPlugin_* implementation \u2014 self-contained units that register request verbs with BedrockServer and answer them via peek()/process(), each owning whatever SQLite schema it needs.\nexports: [BedrockPlugin_Cache, BedrockPlugin_Compression, BedrockPlugin_DB, BedrockPlugin_Jobs, BedrockPlugin_MySQL, the peek()/process() BedrockCommand pattern used by all five, per-plugin SQLite schema ownership (cache/cacheSize, zstdDictionaries, jobs tables), MySQL wire-protocol compatibility shim]\ndepends_on_dirs: [libstuff, sqlitecluster]\ndepended_on_by: []\nmisfit_count: {high: 1, med: 1, low: 4}\nresolved_locally: 2\nescalate:\n  - item: BedrockPlugin_Cache::LRUMap\n    from: plugins/Cache.h\n    why: fully generic string-keyed LRU tracker, no cache logic, trapped private to one plugin\n    suggested_home: libstuff (or a new shared containers location \u2014 libstuff is already overloaded, see note)\n  - item: BedrockPlugin_DB::Sqlite3QRFSpecWrapper / parseSQLite3Args / generateErrorContextMessage\n    from: plugins/DB.h,DB.cpp\n    why: generic sqlite3-CLI arg/error layer wrapping libstuff/qrf.h, nothing DB-plugin-specific\n    suggested_home: libstuff/qrf.h or a new libstuff unit alongside it\n  - item: BedrockPlugin_Jobs::scopedDisableNoopMode\n    from: plugins/Jobs.cpp\n    why: generic SQLite-noop RAII guard, file-local to Jobs.cpp, unreachable by other plugins that need it\n    suggested_home: libstuff or SQLite.h\n  - item: BedrockPlugin_Jobs::upgradeDatabase Expensify-specific index literals (jobsPriorityNextRunManualSmartScan*, jobsManualSmartscanReceiptID, jobsPriorityNextRunWWWProd/WWWStag)\n    from: plugins/Jobs.cpp\n    why: deployment-specific job-name literals baked into otherwise-generic job-queue schema DDL; needs a repo-wide customization seam, not a local fix\n    suggested_home: null"
+  },
+  {
+   "dir": "sqlitecluster",
+   "rollup": "theme: Replicated-SQLite engine \u2014 the transaction/journal handle, the leader/follower consensus node, and the wire-format/pooling plumbing that carries commands and connections through the cluster.\nexports: [SQLite, SQLiteNode, SQLitePeer, SQLiteCommand, SQLiteClusterMessenger, SQLitePool, SQLiteServer]\ndepends_on_dirs: [libstuff, plugins, root (BedrockCommand.h, BedrockServer.h)]\ndepended_on_by: []\nmisfit_count: {high: 1, med: 2, low: 6}\nresolved_locally: 8\nescalate:\n  - item: \"SQLite.cpp and SQLiteNode.cpp both include plugins/Compression.h and call BedrockPlugin_Compression::compress/decompress to (de)compress journal entries\"\n    from: sqlitecluster/SQLite.cpp, sqlitecluster/SQLiteNode.cpp\n    why: the replication engine, which otherwise depends only on libstuff, depends upward on an application-level Bedrock command plugin \u2014 an inverted layering that two independent units converge on, so it is structural rather than a one-off\n    suggested_home: a libstuff- or sqlitecluster-level compression primitive that plugins/Compression itself builds on, instead of the reverse; deciding the exact seam requires a view above sqlitecluster that also sees plugins/"
+  }
+ ]
+}
