@@ -1389,6 +1389,11 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                 return;
             }
 
+            // GUID hashes do not bind to previous history, so only our selected leader may extend it.
+            if (peer != _leadPeer) {
+                STHROW("transaction from non-leader");
+            }
+
             bool isReplicationRunning = false;
             {
                 lock_guard<mutex> lock(_replicateMutex);

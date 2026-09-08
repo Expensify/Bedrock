@@ -60,6 +60,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testGetPeerByName),
                                            TEST(SQLiteNodeTest::testMixedHashHistory),
                                            TEST(SQLiteNodeTest::testGUIDHashFailures),
+                                           TEST(SQLiteNodeTest::testReplicationRequiresLeader),
                                            TEST(SQLiteNodeTest::testSynchronizeCommitFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeWriteFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeConstraintFailure),
@@ -329,6 +330,35 @@ struct SQLiteNodeTest : tpunit::TestFixture
         for (const string failure : {"guid-value", "guid-digest", "guid-query", "guid-short", "guid-long", "guid-nonhex"}) {
             testReplicationFailure(failure);
         }
+    }
+
+    void testReplicationRequiresLeader()
+    {
+        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, 1000000000, "1.0");
+        SQLite& db = dbPool->getBase();
+        const uint64_t commitCount = db.getCommitCount();
+        const string committedHash = db.getCommittedHash();
+        node._changeState(SQLiteNodeState::FOLLOWING);
+        node._leadPeer = node.getPeerByName("peer1");
+        SQLitePeer* otherPeer = node.getPeerByName("peer2");
+        otherPeer->loggedIn = true;
+
+        SData transaction("TRANSACTION");
+        transaction["CommitCount"] = to_string(commitCount + 1);
+        transaction["NewCount"] = transaction["CommitCount"];
+        transaction["ID"] = transaction["CommitCount"];
+        transaction.content = "CREATE TABLE nonLeaderTransaction (id INTEGER);";
+        const string guid = "00000000000000000000000000000001";
+        transaction["NewHash"] = guid + ":" + SToHex(SHashSHA1(guid + transaction.content));
+        transaction["Hash"] = transaction["NewHash"];
+        node._onMESSAGE(otherPeer, transaction);
+
+        EXPECT_EQUAL(node._replicateThread, nullptr);
+        EXPECT_TRUE(node._replicateQueue.empty());
+        EXPECT_FALSE(db.insideTransaction());
+        EXPECT_EQUAL(db.getCommitCount(), commitCount);
+        EXPECT_EQUAL(db.getCommittedHash(), committedHash);
+        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM sqlite_master WHERE name = 'nonLeaderTransaction';"), "0");
     }
 
     void testReplicationFailure(const string& failure)
