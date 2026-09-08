@@ -97,6 +97,30 @@ priority = (severity × confidence × blast_radius) / effort
 helper that 60 files depend on outranks one nobody imports. Agents then write
 prose for the top N, rather than ranking everything.
 
+## 3b. Vendored detection is a UNIT property, not a file property
+
+Twice on Bedrock, third-party code was half-excluded because the marker sits in
+only one file of a pair:
+
+- `libstuff/qrf.{c,h}` — both carry the SQLite public-domain blessing, but the
+  hand-written exclusion list named only the `.c`. An agent annotated the
+  header before the content sniff caught it.
+- `test/lib/tpunit++.{hpp,cpp}` — the `.hpp` carries an external MIT header and
+  was excluded; the `.cpp` carries no header at all and was annotated. The unit
+  ended up split across the boundary.
+
+The fix is to propagate: **if any file in a unit is vendored, the whole unit
+is.** Detect per file, then decide per unit. On a large repo this matters much
+more than here — a vendored package typically carries its licence in one or two
+files out of hundreds, so per-file detection silently admits most of it.
+
+The `tpunit++` case also shows the judgement is not always binary. That `.cpp`
+has local modifications (`exitFlag`, `_verboseOutput`, thread-local test-name
+tracking), so it is a modified fork rather than pristine third-party code.
+Where a unit straddles the line, prefer excluding it and say so in the report,
+rather than generating refactoring advice for code the team does not own. Here
+it produced zero findings either way, so nothing turned on it.
+
 ## 4. Cache and resume
 
 Every unit record is keyed by `sha256(file contents)` in `.arch/cache/`. A
