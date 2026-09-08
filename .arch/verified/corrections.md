@@ -18,3 +18,33 @@ Recorded because a refactoring report is only useful if its factual claims hold.
 Deleting the dead `FinishJobTest` methods does NOT remove the cross-directory
 `JobTestHelper` dependency: 2 of the 6 call sites are in the dead
 `positiveDelay`, but 4 (`:434,435,498,556`) are in registered, live tests.
+
+## Layering verification (second pass)
+
+| Earlier claim | Verdict | Correction |
+|---|---|---|
+| `libstuff/SHTTPSManager.h` depends on `BedrockPlugin.h` | **REFUTED** | The header includes only `SData.h` and `STCPManager.h`. The reference is a forward declaration `class BedrockPlugin;` (`SHTTPSManager.h:42`) — minimal coupling, no compile-time reach. Stating it as an include is factually wrong. The real finding: `SStandaloneHTTPSManager` (`:44-98`) is complete and plugin-free, while `SHTTPSManager` (`:100-108`) is a 9-line subclass adding only `BedrockPlugin& plugin`, never read in-repo. |
+| ...therefore the coupling is not load-bearing | **DOES NOT FOLLOW** | `plugin` is `protected` and Bedrock `dlopen`s out-of-tree plugins (`main.cpp:188`, linked `-rdynamic`). External subclasses may use it. Removing the subclass is a potential API break for closed-source consumers. |
+| `SHTTPSManager.cpp` has 2 dead includes | **UNDERSTATED** | Three: `BedrockServer.h` (:39), `sqlitecluster/SQLiteNode.h` (:41), and `BedrockPlugin.h` (:38). Verified by deletion + `g++ -fsyntax-only -std=c++20 -I.` → exit 0. Removing all three severs the file's entire upward dependency. |
+| sqlitecluster depends on an application-level **command** plugin | **IMPRECISE** | `BedrockPlugin_Compression::getCommand` returns `nullptr` (`plugins/Compression.cpp:61-64`). It is a codec registered through the plugin mechanism, not a command handler. |
+| The Compression coupling is an inverted include | **UNDERSTATED** | It is a three-layer include cycle: `plugins/Compression.h:51` → `BedrockPlugin.h` → `BedrockCommand.h:50,51` → `sqlitecluster/SQLiteCommand.h:31` → `SQLiteNode.h`. And it is load-bearing at runtime: `_dictionaries` is populated only via `initializeFromDB` → `loadDictionariesFromDB` (`Compression.cpp:66-68`) from `BedrockServer.cpp:188`, so journal compression silently requires plugin registration. |
+| `SQLiteNode` calls decompress in `_handleBeginTransaction` | **INCOMPLETE** | Also `_recvSynchronize` (`SQLiteNode.cpp:1874`). The unit's own inserted SUMMARY misses this — do not inherit the error. |
+| `SSignal`'s `kill()` call is unsafe in a signal handler | **TRUE BUT MISLEADING AS A HEADLINE** | The handler is already unsafe by design and says so at `SSignal.cpp:266-269` (`malloc`, `backtrace`, `__cxa_demangle`, syslog). `kill()` is placed last, after logging, immediately before `abort()` (:350), so a hang costs only port release. Report the layering point; do not present signal-unsafety as a discovery. |
+| The intended layering is documented | **OVERSTATED** | `HIERARCHY.md` is this analysis's own generated tree, not repo documentation. `class_hierarchy.md` covers class relationships, not directory layering. The best textual evidence is `libstuff/README.md:2`. Do not claim a documented four-layer order. |
+
+### Completeness check
+All upward includes from libstuff were enumerated: exactly five, mapping
+one-to-one onto the claims above. No libstuff violations were missed.
+
+### Why none of this currently breaks
+`Makefile:25` links `-Wl,--start-group -lbedrock -lstuff -ljson -Wl,--end-group`.
+Group linking exists to resolve circular static-archive dependencies, so the
+build already concedes libstuff.a and libbedrock.a are mutually dependent.
+Nothing is broken today — which argues against urgency framing, and for
+presenting these as design debt rather than defects.
+
+### Recommended report order
+`AutoScopeOnPrepare` and the dead includes first (unambiguous,
+compiler-verified, zero risk), then Compression (the only one with runtime
+consequences), then SSignal as a pure layering point, then SHTTPSManager
+rewritten to target the 9-line subclass rather than a nonexistent include.
