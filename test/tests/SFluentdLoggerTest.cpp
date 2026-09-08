@@ -1,3 +1,31 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SFluentdLoggerTest.cpp
+ * Path:    test/tests/SFluentdLoggerTest.cpp
+ * Pair:    (declarations in libstuff/SFluentdLogger.h)
+ *
+ * INTENT
+ *   Tests SFluentdLogger's async buffering and delivery of
+ *   newline-delimited JSON log lines to a Fluentd-style TCP endpoint:
+ *   logging succeeds (buffered) with no server present, buffered
+ *   messages reach a real listener, and the destructor drains any
+ *   still-buffered messages before they can be lost.
+ *
+ * OBJECTS
+ *   MockServer - minimal raw-socket TCP server that accepts one
+ *     connection and counts newline-delimited messages on a background
+ *     thread.
+ *   SFluentdLoggerTest - tpunit fixture with 3 tests.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <thread>
 #include <chrono>
 #include <sys/socket.h>

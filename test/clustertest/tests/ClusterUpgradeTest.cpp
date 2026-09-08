@@ -1,3 +1,45 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    ClusterUpgradeTest.cpp
+ * Path:    test/clustertest/tests/ClusterUpgradeTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying rolling upgrades: it builds (or reuses) the most
+ *   recent released Bedrock binary, runs a mixed old/new-version 3-node
+ *   cluster through leader failover in both upgrade directions, and checks
+ *   that replication and previously-written rows survive throughout.
+ *
+ * OBJECTS
+ *   ClusterUpgradeTest             - tpunit fixture; the whole scenario
+ *   ClusterUpgradeTest::setup      - fetches recent git tags, builds (or
+ *                                    reuses a cached build of) the most
+ *                                    recent prior release via `git clone` +
+ *                                    `make`, then starts a 3-node cluster
+ *                                    on that release
+ *   ClusterUpgradeTest::teardown   - deletes the cluster tester
+ *   ClusterUpgradeTest::getVersions      - reads each node's Status version
+ *   ClusterUpgradeTest::getCommitCount   - reads one node's Status commit count
+ *   ClusterUpgradeTest::verifyReplication - writes a row and waits for every
+ *                                    running node to reach the resulting commit
+ *   ClusterUpgradeTest::test       - drives the upgrade sequence: restart
+ *                                    follower on new code, swap leader/follower
+ *                                    roles across versions, verify escalation
+ *                                    and replication work in both directions
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] setup()'s clone/checkout/compile pipeline (three system()
+ *   calls: git clone, git checkout, "CXX=clang++-18 ... make -j8") is full
+ *   build/release orchestration embedded in a test fixture, including a
+ *   hardcoded compiler version and a bare "brdata.txt" temp file name in the
+ *   working directory rather than one from BedrockTester::getTempFileName.
+ *   Better suited to a standalone setup script this test shells out to.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: an upgrade test alongside the other clustertest scenarios.
+ *
+ * NAMING QUALITY
+ *   Consistent with the rest of the fixture; prodBedrockName/
+ *   prodBedrockPluginName/newTestPlugin read clearly against each other.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <sys/stat.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

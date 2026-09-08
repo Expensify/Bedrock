@@ -1,0 +1,53 @@
+{
+ "unit": "BedrockClusterTester",
+ "dir": "test/clustertest",
+ "files": [
+  "test/clustertest/BedrockClusterTester.h"
+ ],
+ "lines": 252,
+ "test": true,
+ "intent": "Header-only template that spins up a multi-node bedrock cluster (each node a BedrockTester subprocess), waits for every node to answer Status, and tears the cluster down leader-last so tests can exercise replication/consensus.",
+ "objects": [
+  {
+   "name": "ClusterSize",
+   "kind": "enum",
+   "role": "supported cluster sizes: 1, 3, 5, or 6 nodes"
+  },
+  {
+   "name": "ClusterTester<T>",
+   "kind": "class template",
+   "role": "builds/starts/stops a cluster of T (typically BedrockTester) instances with generated ports and peer lists"
+  },
+  {
+   "name": "BedrockClusterTester",
+   "kind": "typedef",
+   "role": "ClusterTester<BedrockTester>"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "ClusterTester<T>'s sized constructor: testplugin.so auto-detection block",
+   "why": "plugin-specific special-casing (checking cwd for testplugin/testplugin.so) inside an otherwise generic cluster-bootstrap helper; the code's own comment says it 'should get moved somewhere else, really. Probably inside TestPlugin.'",
+   "severity": "med",
+   "suggested_home": "TestPlugin or a test-fixture setup helper, per the code's own TODO comment"
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "matches its contents."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "cluster test scaffolding belongs in test/clustertest."
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "the sized constructor's `_args` parameter uses the repo's private-member `_` prefix on a plain constructor parameter, not a member."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b112.json",
+ "hash": "f69751f0ccbddf27"
+}

@@ -1,3 +1,39 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SetPriorityTest.cpp
+ * Path:    test/clustertest/tests/SetPriorityTest.cpp
+ *
+ * INTENT
+ *   Cluster test for the SetPriority control command: validates its input
+ *   checking, then exercises priority-driven leadership changes, quorum
+ *   protection, and priority-conflict rejection across a 6-node cluster.
+ *
+ * OBJECTS
+ *   findPeer          - file-local helper; polls a node's Status peerList
+ *                        for a named peer's parsed STable, retrying until
+ *                        found or timeout
+ *   waitForPeerField   - file-local helper; polls until a named peer's
+ *                        given field equals an expected value
+ *   setPriority        - file-local helper; sends SetPriority with the
+ *                        given value and asserts a 200
+ *   SetPriorityTest             - tpunit fixture
+ *   SetPriorityTest::testValidation      - missing/reserved/negative
+ *                        priority values are rejected with 400s
+ *   SetPriorityTest::testPriorityScenarios - all six-node priority
+ *                        scenarios (pure repriority, forced stand-down in
+ *                        both directions, permafollower promotion/demotion,
+ *                        conflicting-priority rejection, and quorum-breaking
+ *                        rejection), run in one method to reuse one cluster
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: the SetPriority command test alongside its peers.
+ *
+ * NAMING QUALITY
+ *   Consistent camelCase helpers and test method names; setPriority (helper)
+ *   vs SetPriority (command/header key) reads clearly from context.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

@@ -1,3 +1,40 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    GracefulFailoverTest.cpp
+ * Path:    test/clustertest/tests/GracefulFailoverTest.cpp
+ *
+ * INTENT
+ *   Cluster test that keeps a 3-node cluster under continuous multi-client
+ *   read/write/HTTPS traffic while cycling leader and follower nodes through
+ *   graceful shutdown/restart and hard SIGKILL/restart, checking every
+ *   client response is either a normal 202/756 and nothing hangs or errors.
+ *
+ * OBJECTS
+ *   GracefulFailoverTest               - tpunit fixture; the whole scenario
+ *   GracefulFailoverTest::setup/teardown - own the BedrockClusterTester
+ *   GracefulFailoverTest::startClientThreads - spawns one thread per
+ *                                     simulated client, each looping
+ *                                     read/write/HTTPS-forget commands
+ *                                     against a rotating node until told
+ *                                     to stop, tallying response codes
+ *   GracefulFailoverTest::test         - runs the client load through a
+ *                                     graceful leader restart, a follower
+ *                                     stop/restart, and then repeats with
+ *                                     SIGKILL on leader and follower
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] GracefulFailoverTest::threads/counts/allresults (struct
+ *   members, sized in setup()) are shadowed by identically-named local
+ *   variables re-declared inside test(); the members are written once in
+ *   setup() and never read again. Dead state that reads as though it were
+ *   live because of the name collision.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a graceful-failover-under-load test with its peers.
+ *
+ * NAMING QUALITY
+ *   Reusing threads/counts/allresults as both member and shadowing local
+ *   names is misleading; otherwise consistent with sibling tests.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <libstuff/SRandom.h>
 #include <test/clustertest/BedrockClusterTester.h>

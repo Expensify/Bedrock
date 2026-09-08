@@ -1,3 +1,33 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    WriteLocalUnreplicatedTest.cpp
+ * Path:    test/tests/WriteLocalUnreplicatedTest.cpp
+ * Pair:    (declarations in sqlitecluster/SQLite.h)
+ *
+ * INTENT
+ *   Unit tests for SQLite::writeLocalUnreplicated(): the local-only
+ *   write path leaves the commit count and journal tables untouched, a
+ *   failed query rolls back cleanly so the handle stays usable, and the
+ *   call is safe under a concurrent commit from another handle on the
+ *   same database (a lost commit race surfaces as false rather than
+ *   throwing or corrupting the handle).
+ *
+ * OBJECTS
+ *   WriteLocalUnreplicatedTempDBFile - RAII temp-DB-file helper
+ *     (mkstemp/unlink).
+ *   WriteLocalUnreplicatedTest - tpunit fixture with 3 tests, plus
+ *     private helpers countJournalRows() and countRows() that read row
+ *     counts inside a transaction.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <thread>
 #include <unistd.h>
 

@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    AfterCommitCallbackTest.cpp
+ * Path:    test/tests/AfterCommitCallbackTest.cpp
+ * Pair:    (declarations in sqlitecluster/SQLite.h)
+ *
+ * INTENT
+ *   Tests SQLite's after-commit callback list: it fires exactly once
+ *   per successful commit, does not fire on rollback (including
+ *   prepare-then-rollback), does not fire for a transaction that loses
+ *   a commit race (SQLITE_BUSY_SNAPSHOT), and is shared by a handle
+ *   copy-constructed from another.
+ *
+ * OBJECTS
+ *   AfterCommitCallbackTempDBFile - RAII temp-DB-file helper
+ *     (mkstemp/unlink).
+ *   AfterCommitCallbackTest - tpunit fixture with 3 tests.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>

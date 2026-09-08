@@ -1,3 +1,32 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    main.cpp
+ * Path:    test/clustertest/main.cpp
+ * Pair:    (parallels test/main.cpp, but for cluster/replication tests)
+ *
+ * INTENT
+ *   Entry point for the cluster/replication test binary: parses the same
+ *   family of command-line flags as test/main.cpp and drives
+ *   tpunit::Tests::run, but deliberately does not reset state between tests
+ *   since these tests verify cluster/database integrity across a sequence.
+ *
+ * OBJECTS
+ *   sigclean  - SIGINT handler that stops any running test servers before exiting
+ *   log       - execs `tail -f /var/log/syslog | grep bedrock` into log.txt; not called anywhere in this file
+ *   main      - parses args and runs the test suite (optionally repeated)
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] log() - dead code: defined but never invoked from main, and
+ *   its own name is generic enough to collide in intent with the repo's
+ *   logging macros (SINFO/SWARN/etc.) despite doing something unrelated
+ *   (execing into `tail`+`grep`).
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a plain "main.cpp" test-binary entry point under test/clustertest.
+ *
+ * NAMING QUALITY
+ *   `log` as a free-function name is generic and easily confused with
+ *   actual logging; everything else is fine.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <iostream>
 #include <unistd.h>
 

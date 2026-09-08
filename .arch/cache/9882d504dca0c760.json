@@ -1,0 +1,38 @@
+{
+ "unit": "SQLiteUtils",
+ "dir": "sqlitecluster",
+ "files": [
+  "sqlitecluster/SQLiteUtils.h",
+  "sqlitecluster/SQLiteUtils.cpp"
+ ],
+ "lines": 44,
+ "test": false,
+ "intent": "Generates a random, table-unique int64 ID for use as a primary key.",
+ "objects": [
+  {
+   "name": "SQLiteUtils",
+   "kind": "class",
+   "role": "static-only helper; getRandomID picks a random ID and retries until it's not already present in the given table/column"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 3,
+  "note": "\"Utils\" is generic for a single-function class, though the single function itself is coherent."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "SQLite-specific ID generation belongs in sqlitecluster."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "fine as far as it goes; a one-function Utils class invites unrelated helpers to accrete."
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/SRandom.h",
+  "sqlitecluster/SQLite.h"
+ ],
+ "_src": "b112.json",
+ "hash": "9882d504dca0c760"
+}

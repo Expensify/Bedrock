@@ -1,3 +1,45 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    tpunit++.cpp
+ * Path:    test/lib/tpunit++.cpp
+ * Pair:    tpunit++.hpp (not in this batch; declares TestFixture, _TestFixture, method, and the
+ *          ASSERT_ and EXPECT_ macros this file's runner drives)
+ *
+ * INTENT
+ *   Implements the tpunit++ micro test framework's runner: fixture
+ *   registration, multithreaded execution with include/exclude name
+ *   filtering, before/after class and per-test hooks, pass/fail bookkeeping,
+ *   and the colored/summary console output, including a slowest-tests report.
+ *
+ * OBJECTS
+ *   tpunit::_TestFixture::method            - one registered before/after/test callback; linked-list node.
+ *   tpunit::_TestFixture::stats             - global pass/fail counters and failure-name set.
+ *   tpunit::_TestFixture::perFixtureStats   - thread_local per-fixture assertion/exception/trace counters.
+ *   tpunit::_TestFixture (ctor/dtor/registerTests/tpunit_detail_*) - fixture base: registers itself
+ *          at construction, and implements the run loop (tpunit_detail_do_run), per-class run
+ *          (tpunit_run_test_class), per-test threading (tpunit_detail_do_tests), method dispatch
+ *          with exception trapping (tpunit_detail_do_method/s), and float-equality comparison
+ *          helpers (tpunit_detail_fp_equal, both overloads).
+ *   tpunit::TestFixture::~TestFixture       - empty out-of-line destructor.
+ *   tpunit::Tests::run (both overloads)     - the public entry points that call into _TestFixture::tpunit_detail_do_run.
+ *   tpunit::tpunit_break_check_line         - free function; keeps short-form dot output readable
+ *          by inserting a newline before a verbose log line interrupts it.
+ *   File-local statics: exitFlag, _verboseOutput, _shortOutputColumn, and the thread_local
+ *          currentTestName/currentTestPtr/currentTestNameMutex - shared run-time state defined
+ *          here for the statics declared in the header.
+ *
+ * OUT OF PLACE
+ *   Nothing; this is the framework's implementation file and everything here serves that.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; it's a vendored/local micro-framework kept under test/lib alongside the other test
+ *   infrastructure it supports.
+ *
+ * NAMING QUALITY
+ *   Mostly consistent with the header's tpunit_detail_* naming. `registerTests` taking 70
+ *   individually-named `method* m0..m69` parameters (with a comment admitting "you're holding it
+ *   wrong" past that) is unusual API shape, though not a naming defect as such - more a design
+ *   wart inherited from the upstream framework this was vendored from.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "tpunit++.hpp"
 #include <string.h>
 #include <iostream>

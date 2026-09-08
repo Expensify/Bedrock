@@ -1,0 +1,42 @@
+{
+ "unit": "SQLitePool",
+ "dir": "sqlitecluster",
+ "files": [
+  "sqlitecluster/SQLitePool.h",
+  "sqlitecluster/SQLitePool.cpp"
+ ],
+ "lines": 179,
+ "test": false,
+ "intent": "Hands out SQLite database handles to worker threads from a bounded pool, creating new handles lazily up to a max and blocking callers when it's exhausted.",
+ "objects": [
+  {
+   "name": "SQLitePool",
+   "kind": "class",
+   "role": "bounded pool of SQLite handles cloned from one base handle; get/initialize/return an index"
+  },
+  {
+   "name": "SQLiteScopedHandle",
+   "kind": "class",
+   "role": "RAII wrapper that returns its pool index to the pool when it goes out of scope"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "matches its contents exactly."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "belongs with SQLite.h in sqlitecluster."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent with repo convention; getIndex returns a bare size_t rather than a typed token, so any size_t can be passed to returnToPool."
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "sqlitecluster/SQLite.h"
+ ],
+ "_src": "b112.json",
+ "hash": "8901b6b06e726a2f"
+}

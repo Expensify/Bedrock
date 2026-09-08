@@ -1,0 +1,37 @@
+{
+ "unit": "FastHTTPParsing",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/FastHTTPParsing.cpp"
+ ],
+ "lines": 107,
+ "test": true,
+ "intent": "Tests SFastBuffer::startsWithHTTPRequest(), the streaming detector for whether a full HTTP request has accumulated in a growing receive buffer.",
+ "objects": [
+  {
+   "name": "FastHTTPParsing",
+   "kind": "struct",
+   "role": "tpunit fixture testing startsWithHTTPRequest() across line endings, split buffers, and reset after an SData deserialize/consumeFront cycle"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 4,
+  "note": "Tests one specific predicate; name reads broader than that."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits alongside other protocol tests in test/tests."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling fixtures."
+ },
+ "depends_on": [
+  "libstuff/SFastBuffer.h",
+  "libstuff/SData.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b118.json",
+ "hash": "6252746ea2733b71"
+}

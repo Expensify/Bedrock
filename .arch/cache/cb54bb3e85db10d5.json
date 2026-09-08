@@ -1,0 +1,38 @@
+{
+ "unit": "ChainedHTTPTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/ChainedHTTPTest.cpp"
+ ],
+ "lines": 69,
+ "test": true,
+ "intent": "Integration test verifying a single chainedrequest command (via the clustertest test plugin) fans out to multiple external HTTP requests and reports each site's status.",
+ "objects": [
+  {
+   "name": "ChainedHTTPTest",
+   "kind": "struct",
+   "role": "tpunit fixture loading the clustertest testplugin and verifying plausible status codes for each fanned-out site"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling fixtures."
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/SData.h",
+  "sqlitecluster/SQLiteNode.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b118.json",
+ "hash": "cb54bb3e85db10d5"
+}

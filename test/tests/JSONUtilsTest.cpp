@@ -1,3 +1,34 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    JSONUtilsTest.cpp
+ * Path:    test/tests/JSONUtilsTest.cpp
+ * Pair:    JSONUtilsTest.h
+ *
+ * INTENT
+ *   Implements JSONUtilsTest (see the header for the full test list and
+ *   groupings).
+ *
+ * OBJECTS
+ *   (anonymous namespace)::SENSITIVE_KEYS - const set<string> {"ssn"},
+ *       the key set used by the stripOutFields and containAnyKeys
+ *       tests.
+ *   JSONUtilsTest::JSONUtilsTest - registers the 17 declared test
+ *       methods with tpunit, in the same order as the header.
+ *   JSONUtilsTest::<test methods> - implementations of the methods
+ *       declared in the header; see there for the full list.
+ *   JSONUtilsTest::getOldObject/getNewObject/assertObjectMerged -
+ *       private helpers backing mergeObjectJSON.
+ *   __JSONUtilsTest - file-scope instance that registers the fixture
+ *       with tpunit at static-init time.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Fits repo test convention; consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <test/tests/JSONUtilsTest.h>
 
 #include <libstuff/JSON/Utils.h>

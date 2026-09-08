@@ -1,0 +1,41 @@
+{
+ "unit": "QueryJobTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/QueryJobTest.cpp"
+ ],
+ "lines": 62,
+ "test": true,
+ "intent": "tpunit fixture exercising the Jobs plugin's QueryJob command: given a jobID it returns the expected field count and values.",
+ "objects": [
+  {
+   "name": "QueryJobTest",
+   "kind": "struct (tpunit::TestFixture)",
+   "role": "single test creating a job then calling QueryJob and asserting response fields"
+  },
+  {
+   "name": "__QueryJobTest",
+   "kind": "static instance",
+   "role": "registers the fixture with tpunit"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Matches the QueryJob command it tests."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Grouped with other per-command Jobs plugin tests."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling job tests."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b119.json",
+ "hash": "b6ecac77c53af370"
+}

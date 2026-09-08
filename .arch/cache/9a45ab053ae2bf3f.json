@@ -1,0 +1,36 @@
+{
+ "unit": "ReadTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/ReadTest.cpp"
+ ],
+ "lines": 52,
+ "test": true,
+ "intent": "Smoke tests for the Query command handling a plain read-only SELECT, with and without an HTTP method line, plus rejection of a malformed (missing-semicolon) query.",
+ "objects": [
+  {
+   "name": "ReadTest",
+   "kind": "struct",
+   "role": "tpunit fixture running SELECT 1 through BedrockTester and checking the 502 rejection of a bad query"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 3,
+  "note": "Generic name for what is specifically a Query-command test; gives no hint it's about Query."
+ },
+ "location_fit": {
+  "score": 4,
+  "note": "Fits among other single-command tests."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Consistent with sibling fixtures; only the top-level name is vague."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b118.json",
+ "hash": "9a45ab053ae2bf3f"
+}

@@ -1,0 +1,42 @@
+{
+ "unit": "DeleteJobTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/DeleteJobTest.cpp"
+ ],
+ "lines": 200,
+ "test": true,
+ "intent": "tpunit fixture exercising the Jobs plugin's DeleteJob command: rejects nonexistent jobs, jobs with children, and RUNNING jobs, allows deleting FINISHED jobs.",
+ "objects": [
+  {
+   "name": "DeleteJobTest",
+   "kind": "struct (tpunit::TestFixture)",
+   "role": "one fixture per test, drives Create/Get/Finish/DeleteJob sequences and asserts state or error"
+  },
+  {
+   "name": "__DeleteJobTest",
+   "kind": "static instance",
+   "role": "registers the fixture with tpunit"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Matches the DeleteJob command it tests."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Grouped with other per-command Jobs plugin tests."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling job tests."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b119.json",
+ "hash": "17e715ad9a16e616"
+}

@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockTester.cpp
+ * Path:    test/lib/BedrockTester.cpp
+ * Pair:    BedrockTester.h
+ *
+ * INTENT
+ *   Implements everything declared in BedrockTester.h - see that file for the class's purpose.
+ *
+ * OBJECTS
+ *   All members implement BedrockTester as declared in the header; nothing file-local is added.
+ *   Notably: `startServer` forks and execs the server binary (with optional valgrind wrapping
+ *   under `#ifdef VALGRIND`), `executeWaitMultipleData` runs a pool of threads that each open a
+ *   socket and drain the request queue, and `autoAttachDebugger` speaks a small JSON-over-socket
+ *   protocol to an LLDB RPC server named by the `BEDROCK_AUTO_ATTACH_DEBUGGER_CONFIG` env var.
+ *
+ * OUT OF PLACE
+ *   See BedrockTester.h for the `autoAttachDebugger` note; this file is where its body actually
+ *   lives (the LLDB RPC socket exchange).
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "BedrockTester.h"
 #include "libstuff/libstuff.h"
 

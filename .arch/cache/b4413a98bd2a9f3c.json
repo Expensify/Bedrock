@@ -1,0 +1,36 @@
+{
+ "unit": "StatusTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/StatusTest.cpp"
+ ],
+ "lines": 21,
+ "test": true,
+ "intent": "Smoke test confirming the Status command's response includes expected diagnostic fields (plugins, outstandingFramesToCheckpoint, freelistCount, pageCount).",
+ "objects": [
+  {
+   "name": "StatusTest",
+   "kind": "struct",
+   "role": "tpunit fixture checking the Status response contains those field names"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling fixtures."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b118.json",
+ "hash": "b4413a98bd2a9f3c"
+}

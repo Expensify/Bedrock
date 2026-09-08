@@ -1,0 +1,46 @@
+{
+ "unit": "FailedJobReplyTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/FailedJobReplyTest.cpp"
+ ],
+ "lines": 173,
+ "test": true,
+ "intent": "tpunit fixture verifying that GetJob/GetJobs commands whose response can't be delivered (scheduled via commandExecuteTime) requeue their job(s) instead of losing them, and that the job(s) can be re-fetched afterward.",
+ "objects": [
+  {
+   "name": "FailedJobReplyTest",
+   "kind": "struct (tpunit::TestFixture)",
+   "role": "single test looping over {GetJob, GetJobs} x {with/without retryAfter}"
+  },
+  {
+   "name": "FailedJobReplyTest::failSendingResponse",
+   "kind": "test method",
+   "role": "creates job(s), forces an undeliverable fetch, confirms re-fetchability"
+  },
+  {
+   "name": "__FailedJobReplyTest",
+   "kind": "static instance",
+   "role": "registers the fixture with tpunit"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Describes exactly what it tests: replies that fail to send."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Grouped with other per-command Jobs plugin tests."
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "The comment above failSendingResponse (\"// Cannot cancel a job with children\") is copy-pasted from CancelJobTest and describes the wrong behavior."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b119.json",
+ "hash": "450c0d79009770d3"
+}

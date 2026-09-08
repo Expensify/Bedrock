@@ -1,0 +1,46 @@
+{
+ "unit": "TimeoutTest",
+ "dir": "test/clustertest/tests",
+ "files": [
+  "test/clustertest/tests/TimeoutTest.cpp"
+ ],
+ "lines": 249,
+ "test": true,
+ "intent": "Cluster-level tpunit fixture covering command timeouts at every stage (peek, process, postProcess, total, HTTPS, future-commit) and client-disconnect behavior: an abandoned command rolls back and frees its slot, while a fire-and-forget command keeps running.",
+ "objects": [
+  {
+   "name": "sendRequestAndDisconnect",
+   "kind": "function",
+   "role": "file-local static helper that opens a raw socket to a tester's command port, sends one request, waits, then disconnects without reading a response"
+  },
+  {
+   "name": "TimeoutTest",
+   "kind": "struct",
+   "role": "tpunit::TestFixture testing timeout enforcement at each command stage and abort-on-disconnect vs. forget-command semantics"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "matches the timeout/abort behavior under test"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "cluster-level timeout test, correctly placed"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "specific, descriptive method names consistent with sibling test files"
+ },
+ "depends_on": [
+  "test/lib/tpunit++.hpp",
+  "BedrockCommand.h",
+  "libstuff/libstuff.h",
+  "libstuff/SData.h",
+  "libstuff/SFastBuffer.h",
+  "libstuff/SQResult.h",
+  "test/clustertest/BedrockClusterTester.h"
+ ],
+ "_src": "b113.json",
+ "hash": "07117a82dfbadc17"
+}

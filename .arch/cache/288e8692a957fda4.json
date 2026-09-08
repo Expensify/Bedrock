@@ -1,0 +1,43 @@
+{
+ "unit": "FailJobTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/FailJobTest.cpp"
+ ],
+ "lines": 126,
+ "test": true,
+ "intent": "tpunit fixture exercising the Jobs plugin's FailJob command: rejects nonexistent jobs and jobs not in RUNNING/RUNQUEUED state, correctly marks RUNNING or RUNQUEUED jobs as FAILED.",
+ "objects": [
+  {
+   "name": "FailJobTest",
+   "kind": "struct (tpunit::TestFixture)",
+   "role": "one fixture per test, drives Create/Get/FailJob sequences and asserts state or error"
+  },
+  {
+   "name": "__FailJobTest",
+   "kind": "static instance",
+   "role": "registers the fixture with tpunit"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Matches the FailJob command it tests."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Grouped with other per-command Jobs plugin tests."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling job tests."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "test/lib/BedrockTester.h",
+  "test/tests/jobs/JobTestHelper.h"
+ ],
+ "_src": "b119.json",
+ "hash": "288e8692a957fda4"
+}

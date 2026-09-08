@@ -1,0 +1,201 @@
+[
+ {
+  "unit": "SQLiteClusterMessenger",
+  "dir": "sqlitecluster",
+  "files": ["sqlitecluster/SQLiteClusterMessenger.h", "sqlitecluster/SQLiteClusterMessenger.cpp"],
+  "lines": 430,
+  "test": false,
+  "intent": "Escalates a BedrockCommand from this node to another node in the cluster (leader, a named peer, or all peers) over a pooled TCP socket and fills in the command's response.",
+  "objects": [
+    {"name": "SQLiteClusterMessenger", "kind": "class", "role": "opens/reuses a socket to a peer, sends a serialized command, and reads back its response"},
+    {"name": "SQLiteClusterMessenger::WaitForReadyResult", "kind": "enum", "role": "outcome of waiting for a socket to become ready (timeout, disconnect, abort, etc.)"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "clearly a messenger between nodes, sits correctly with SQLiteNode/SQLitePeer."},
+  "location_fit": {"score": 5, "note": "belongs in sqlitecluster."},
+  "naming_quality": {"score": 4, "note": "two overloaded runOnPeer methods (bool vs. peer-name) have different retry semantics but the same name."},
+  "depends_on": ["libstuff/libstuff.h", "libstuff/SHTTPSManager.h", "libstuff/SMultiHostSocketPool.h", "BedrockCommand.h", "sqlitecluster/SQLiteNode.h", "sqlitecluster/SQLitePeer.h"]
+ },
+ {
+  "unit": "SQLitePeer",
+  "dir": "sqlitecluster",
+  "files": ["sqlitecluster/SQLitePeer.h", "sqlitecluster/SQLitePeer.cpp"],
+  "lines": 425,
+  "test": false,
+  "intent": "Represents one other node in the cluster as seen from this node: its connection socket, replication state, and the synchronization/standup metadata SQLiteNode needs to run consensus.",
+  "objects": [
+    {"name": "SQLitePeer", "kind": "class", "role": "one peer's connection + replication/consensus state, guarded by an internal mutex"},
+    {"name": "SQLitePeer::Response", "kind": "enum", "role": "a peer's vote on a standup request (NONE/APPROVE/DENY)"},
+    {"name": "SQLitePeer::PeerPostPollStatus", "kind": "enum", "role": "result of postPoll: OK, just-connected, socket error, or socket closed"},
+    {"name": "operator<<(ostream&, atomic<SQLitePeer::Response>&)", "kind": "free function", "role": "streams a Response's name"}
+  ],
+  "misfits": [
+    {
+      "item": "SQLitePeer.h comment on `socket` member",
+      "why": "claims 'see friend class declaration above' but no friend is declared anywhere in this file - a stale/incorrect cross-reference left over from an earlier version",
+      "severity": "low",
+      "suggested_home": null
+    }
+  ],
+  "name_fit": {"score": 5, "note": "does exactly what the name says."},
+  "location_fit": {"score": 5, "note": "belongs alongside SQLiteNode in sqlitecluster."},
+  "naming_quality": {"score": 4, "note": "consistent S-prefix and trailing-underscore constructor params; the stale friend-class comment is a minor documentation defect."},
+  "depends_on": ["libstuff/libstuff.h", "sqlitecluster/SQLiteNode.h", "BedrockServer.h", "libstuff/STCPManager.h", "libstuff/SData.h", "libstuff/SRandom.h"]
+ },
+ {
+  "unit": "SQLitePool",
+  "dir": "sqlitecluster",
+  "files": ["sqlitecluster/SQLitePool.h", "sqlitecluster/SQLitePool.cpp"],
+  "lines": 179,
+  "test": false,
+  "intent": "Hands out SQLite database handles to worker threads from a bounded pool, creating new handles lazily up to a max and blocking callers when it's exhausted.",
+  "objects": [
+    {"name": "SQLitePool", "kind": "class", "role": "bounded pool of SQLite handles cloned from one base handle; get/initialize/return an index"},
+    {"name": "SQLiteScopedHandle", "kind": "class", "role": "RAII wrapper that returns its pool index to the pool when it goes out of scope"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "matches its contents exactly."},
+  "location_fit": {"score": 5, "note": "belongs with SQLite.h in sqlitecluster."},
+  "naming_quality": {"score": 4, "note": "consistent with repo convention; getIndex returns a bare size_t rather than a typed token, so any size_t can be passed to returnToPool."},
+  "depends_on": ["libstuff/libstuff.h", "sqlitecluster/SQLite.h"]
+ },
+ {
+  "unit": "SQLiteCommand",
+  "dir": "sqlitecluster",
+  "files": ["sqlitecluster/SQLiteCommand.h", "sqlitecluster/SQLiteCommand.cpp"],
+  "lines": 154,
+  "test": false,
+  "intent": "Base representation of a command as it moves through the cluster: wire-format request/response, a cross-node id, completion flag, and escalation timing; BedrockCommand builds on top of it.",
+  "objects": [
+    {"name": "SQLiteCommand", "kind": "class", "role": "holds request/response/id/timing for a command; move-only via a private backing field for the const `request` reference"},
+    {"name": "SQLiteCommand::preprocessRequest", "kind": "static method", "role": "assigns a requestID and warns on deprecated commandExecuteTime, run before `request` is bound"}
+  ],
+  "misfits": [
+    {
+      "item": "SQLiteCommand::preprocessRequest's commandExecuteTime deprecation-warning branch",
+      "why": "deprecation-specific handling of one legacy wire field living inside an otherwise generic request-preprocessing helper",
+      "severity": "low",
+      "suggested_home": null
+    }
+  ],
+  "name_fit": {"score": 5, "note": "matches its contents."},
+  "location_fit": {"score": 5, "note": "correctly the base type alongside the rest of sqlitecluster."},
+  "naming_quality": {"score": 3, "note": "private backing field is named `privateRequest` instead of the repo's usual `_` prefix (e.g. `_request`), inconsistent with the rest of the codebase's own convention."},
+  "depends_on": ["libstuff/SData.h", "sqlitecluster/SQLiteNode.h", "libstuff/libstuff.h", "libstuff/SRandom.h"]
+ },
+ {
+  "unit": "SQLiteCore",
+  "dir": "sqlitecluster",
+  "files": ["sqlitecluster/SQLiteCore.h", "sqlitecluster/SQLiteCore.cpp"],
+  "lines": 86,
+  "test": false,
+  "intent": "Wraps commit/rollback of a SQLite database with the cluster-aware checks needed to do so safely: only commit while still leader, and run an optional plugin-notification hook during prepare.",
+  "objects": [
+    {"name": "SQLiteCore", "kind": "class", "role": "commits or rolls back a transaction on a wrapped SQLite&, refusing to commit if the node is no longer leading"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 4, "note": "\"Core\" is a bit generic but the content (commit/rollback gating) is coherent and singular."},
+  "location_fit": {"score": 5, "note": "belongs with SQLite/SQLiteNode in sqlitecluster."},
+  "naming_quality": {"score": 4, "note": "notificationHandler's function-pointer parameter is named `_db`, echoing the class's own `_db` member despite being an unrelated parameter."},
+  "depends_on": ["libstuff/AutoScopeOnPrepare.h", "libstuff/libstuff.h", "sqlitecluster/SQLite.h", "sqlitecluster/SQLiteNode.h", "libstuff/sqlite3.h"]
+ },
+ {
+  "unit": "SQLiteUtils",
+  "dir": "sqlitecluster",
+  "files": ["sqlitecluster/SQLiteUtils.h", "sqlitecluster/SQLiteUtils.cpp"],
+  "lines": 44,
+  "test": false,
+  "intent": "Generates a random, table-unique int64 ID for use as a primary key.",
+  "objects": [
+    {"name": "SQLiteUtils", "kind": "class", "role": "static-only helper; getRandomID picks a random ID and retries until it's not already present in the given table/column"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 3, "note": "\"Utils\" is generic for a single-function class, though the single function itself is coherent."},
+  "location_fit": {"score": 5, "note": "SQLite-specific ID generation belongs in sqlitecluster."},
+  "naming_quality": {"score": 4, "note": "fine as far as it goes; a one-function Utils class invites unrelated helpers to accrete."},
+  "depends_on": ["libstuff/libstuff.h", "libstuff/SRandom.h", "sqlitecluster/SQLite.h"]
+ },
+ {
+  "unit": "SQLiteServer",
+  "dir": "sqlitecluster",
+  "files": ["sqlitecluster/SQLiteServer.h"],
+  "lines": 21,
+  "test": false,
+  "intent": "Abstract interface a SQLiteNode uses to call back into whatever server embeds it: login notifications, state-change notifications to plugins, and command-port blocking.",
+  "objects": [
+    {"name": "SQLiteServer", "kind": "class", "role": "pure-virtual interface (onNodeLogin, notifyStateChangeToPlugins, blockCommandPort, unblockCommandPort), extends STCPManager"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "matches its contents."},
+  "location_fit": {"score": 5, "note": "the callback contract for SQLiteNode's host server belongs here."},
+  "naming_quality": {"score": 5, "note": "clear verb-based method names."},
+  "depends_on": ["sqlitecluster/SQLiteNode.h", "libstuff/STCPManager.h"]
+ },
+ {
+  "unit": "main",
+  "dir": "test",
+  "files": ["test/main.cpp"],
+  "lines": 127,
+  "test": true,
+  "intent": "Entry point for the single-node bedrock test binary: parses CLI flags, configures logging/SSL, and drives tpunit::Tests::run over the registered test fixtures.",
+  "objects": [
+    {"name": "sigclean", "kind": "free function", "role": "SIGINT handler that stops any running test servers before exiting"},
+    {"name": "main", "kind": "free function", "role": "parses args and runs the test suite (optionally repeated)"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "a plain main.cpp test-binary entry point."},
+  "location_fit": {"score": 5, "note": "fits test/."},
+  "naming_quality": {"score": 5, "note": "fine."},
+  "depends_on": ["libstuff/SData.h", "libstuff/libstuff.h", "test/lib/BedrockTester.h", "libstuff/SSSLState.h"]
+ },
+ {
+  "unit": "BedrockClusterTester",
+  "dir": "test/clustertest",
+  "files": ["test/clustertest/BedrockClusterTester.h"],
+  "lines": 252,
+  "test": true,
+  "intent": "Header-only template that spins up a multi-node bedrock cluster (each node a BedrockTester subprocess), waits for every node to answer Status, and tears the cluster down leader-last so tests can exercise replication/consensus.",
+  "objects": [
+    {"name": "ClusterSize", "kind": "enum", "role": "supported cluster sizes: 1, 3, 5, or 6 nodes"},
+    {"name": "ClusterTester<T>", "kind": "class template", "role": "builds/starts/stops a cluster of T (typically BedrockTester) instances with generated ports and peer lists"},
+    {"name": "BedrockClusterTester", "kind": "typedef", "role": "ClusterTester<BedrockTester>"}
+  ],
+  "misfits": [
+    {
+      "item": "ClusterTester<T>'s sized constructor: testplugin.so auto-detection block",
+      "why": "plugin-specific special-casing (checking cwd for testplugin/testplugin.so) inside an otherwise generic cluster-bootstrap helper; the code's own comment says it 'should get moved somewhere else, really. Probably inside TestPlugin.'",
+      "severity": "med",
+      "suggested_home": "TestPlugin or a test-fixture setup helper, per the code's own TODO comment"
+    }
+  ],
+  "name_fit": {"score": 5, "note": "matches its contents."},
+  "location_fit": {"score": 5, "note": "cluster test scaffolding belongs in test/clustertest."},
+  "naming_quality": {"score": 3, "note": "the sized constructor's `_args` parameter uses the repo's private-member `_` prefix on a plain constructor parameter, not a member."},
+  "depends_on": ["libstuff/SData.h", "test/lib/BedrockTester.h"]
+ },
+ {
+  "unit": "main",
+  "dir": "test/clustertest",
+  "files": ["test/clustertest/main.cpp"],
+  "lines": 112,
+  "test": true,
+  "intent": "Entry point for the cluster/replication test binary: parses the same family of CLI flags as test/main.cpp and drives tpunit::Tests::run, deliberately not resetting state between tests.",
+  "objects": [
+    {"name": "sigclean", "kind": "free function", "role": "SIGINT handler that stops any running test servers before exiting"},
+    {"name": "log", "kind": "free function", "role": "execs `tail -f /var/log/syslog | grep bedrock` into log.txt; not called anywhere in this file"},
+    {"name": "main", "kind": "free function", "role": "parses args and runs the test suite (optionally repeated)"}
+  ],
+  "misfits": [
+    {
+      "item": "log()",
+      "why": "dead code - defined but never invoked from main; also a generic name that collides in intent with the repo's SINFO/SWARN logging macros despite doing something unrelated (execing into tail+grep)",
+      "severity": "low",
+      "suggested_home": null
+    }
+  ],
+  "name_fit": {"score": 5, "note": "a plain main.cpp test-binary entry point."},
+  "location_fit": {"score": 5, "note": "fits test/clustertest."},
+  "naming_quality": {"score": 3, "note": "`log` as a free-function name is generic and easily confused with actual logging."},
+  "depends_on": ["libstuff/libstuff.h", "libstuff/SData.h", "test/lib/BedrockTester.h"]
+ }
+]

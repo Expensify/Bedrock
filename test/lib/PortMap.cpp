@@ -1,3 +1,24 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    PortMap.cpp
+ * Path:    test/lib/PortMap.cpp
+ * Pair:    PortMap.h
+ *
+ * INTENT
+ *   Implements PortMap as declared in the header - see there for intent.
+ *
+ * OBJECTS
+ *   All members implement PortMap as declared in the header; nothing file-local is added.
+ *   `waitForPort` confirms availability by actually binding a throwaway socket to the port.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "PortMap.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>

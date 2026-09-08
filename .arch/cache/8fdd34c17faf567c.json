@@ -1,0 +1,51 @@
+{
+ "unit": "SQLiteCommand",
+ "dir": "sqlitecluster",
+ "files": [
+  "sqlitecluster/SQLiteCommand.h",
+  "sqlitecluster/SQLiteCommand.cpp"
+ ],
+ "lines": 154,
+ "test": false,
+ "intent": "Base representation of a command as it moves through the cluster: wire-format request/response, a cross-node id, completion flag, and escalation timing; BedrockCommand builds on top of it.",
+ "objects": [
+  {
+   "name": "SQLiteCommand",
+   "kind": "class",
+   "role": "holds request/response/id/timing for a command; move-only via a private backing field for the const `request` reference"
+  },
+  {
+   "name": "SQLiteCommand::preprocessRequest",
+   "kind": "static method",
+   "role": "assigns a requestID and warns on deprecated commandExecuteTime, run before `request` is bound"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "SQLiteCommand::preprocessRequest's commandExecuteTime deprecation-warning branch",
+   "why": "deprecation-specific handling of one legacy wire field living inside an otherwise generic request-preprocessing helper",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "matches its contents."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "correctly the base type alongside the rest of sqlitecluster."
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "private backing field is named `privateRequest` instead of the repo's usual `_` prefix (e.g. `_request`), inconsistent with the rest of the codebase's own convention."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "sqlitecluster/SQLiteNode.h",
+  "libstuff/libstuff.h",
+  "libstuff/SRandom.h"
+ ],
+ "_src": "b112.json",
+ "hash": "8fdd34c17faf567c"
+}

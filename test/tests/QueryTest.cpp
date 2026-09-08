@@ -1,3 +1,34 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    QueryTest.cpp
+ * Path:    test/tests/QueryTest.cpp
+ * Pair:    (exercises the Query command handled elsewhere)
+ *
+ * INTENT
+ *   Integration tests for Bedrock's Query command: missing, malformed,
+ *   and unterminated queries, successful single- and multi-statement
+ *   execution, the no-WHERE DELETE safety guard, and the SQLite
+ *   percentile/median aggregate functions being compiled in and
+ *   computing the expected values.
+ *
+ * OBJECTS
+ *   QueryTest - tpunit fixture (BEFORE_CLASS/AFTER_CLASS-managed
+ *     BedrockTester) with 8 tests.
+ *
+ * OUT OF PLACE
+ *   testPercentile [CANDIDATE] verifies SQLite's built-in
+ *   SQLITE_ENABLE_PERCENTILE aggregate functions (median, percentile,
+ *   percentile_cont, percentile_disc) rather than anything specific to
+ *   Bedrock's Query command handling - it is really a build-flag /
+ *   compiled-in-extension check riding on this fixture's tester setup.
+ *   Low severity; reasonable to keep here for convenience.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "libstuff/libstuff.h"
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>

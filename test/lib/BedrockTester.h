@@ -1,3 +1,35 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockTester.h
+ * Path:    test/lib/BedrockTester.h
+ * Pair:    BedrockTester.cpp
+ *
+ * INTENT
+ *   Manages one bedrock server process for tests: forks and execs the
+ *   binary with a generated set of arguments (its own DB file, ports,
+ *   plugins), waits for it to come up, and provides the request/response
+ *   plumbing (raw sockets, HTTP-ish parsing) tests use to talk to it. Also
+ *   offers read-only DB access that bypasses the server, for setup/assertions.
+ *
+ * OBJECTS
+ *   BedrockTester - forks/execs and owns one bedrock server subprocess; sends it commands over
+ *                   TCP and reads its DB file directly; tracks all live instances for `stopAll`.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] BedrockTester::autoAttachDebugger (declared here, defined in the .cpp) - an LLDB
+ *   RPC-socket client for auto-attaching a debugger to the spawned server. It's a self-contained
+ *   debugging convenience with its own wire protocol, unrelated to this class's job of running a
+ *   server and sending it commands; a standalone debug-support helper would fit better.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; it's the core per-server test harness class, located with the rest of the test
+ *   infrastructure under test/lib.
+ *
+ * NAMING QUALITY
+ *   Consistent and repo-typical (leading underscore on private members, no prefix on the public
+ *   `serverName`/`remoteMode`). `_commitCountBase` vs. the reference member `_commitCount` reads
+ *   a little confusingly on first pass, but the comment at the constructor clarifies it: the
+ *   reference lets an external counter be shared across multiple testers when supplied.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <signal.h>
 

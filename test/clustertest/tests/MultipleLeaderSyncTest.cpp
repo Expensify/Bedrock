@@ -1,3 +1,36 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    MultipleLeaderSyncTest.cpp
+ * Path:    test/clustertest/tests/MultipleLeaderSyncTest.cpp
+ *
+ * INTENT
+ *   Cluster test for successive leader failures on a 5-node cluster: kills
+ *   the leader twice in a row, pushing enough writes between failures that
+ *   the returning nodes must pass through SYNCHRONIZING before re-leading
+ *   or following, and verifies that state sequence is actually observed.
+ *
+ * OBJECTS
+ *   MultipleLeaderSyncTest                 - tpunit fixture
+ *   MultipleLeaderSyncTest::runTrivialWrites - issues a batch of trivial
+ *                        UPDATE/INSERT writes against a node to advance
+ *                        its commit count by a given amount
+ *   MultipleLeaderSyncTest::waitForCommit    - polls a node's Status until
+ *                        its commitCount reaches a minimum, or times out
+ *   MultipleLeaderSyncTest::test             - builds the 5-node cluster,
+ *                        fails leader twice while writing between failures,
+ *                        then restarts both downed nodes concurrently and
+ *                        uses one watcher thread per node to confirm each
+ *                        passes through the expected state sequence
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: multi-failure leader-sync scenario alongside its peers.
+ *
+ * NAMING QUALITY
+ *   Clear and consistent; the five bool flags (node2Leading,
+ *   node1Synchronizing, ...) read plainly against the threads that set them.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

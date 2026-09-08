@@ -1,3 +1,39 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    MySQLTest.cpp
+ * Path:    test/tests/MySQLTest.cpp
+ * Pair:    (declarations in plugins/MySQL.h)
+ *
+ * INTENT
+ *   Its header comment describes this as an end-to-end test of the
+ *   MySQL plugin's handling of VERSION()/connection_id(),
+ *   information_schema, SHOW KEYS, and foreign-key constraint queries;
+ *   in practice every test calls the same MySQLUtils:: free functions
+ *   as MySQLUtilsTest.cpp, with no plugin dispatch, socket protocol, or
+ *   command handling actually exercised. See OUT OF PLACE.
+ *
+ * OBJECTS
+ *   MySQLTest - tpunit fixture with 6 tests, each a thinner rerun of
+ *     cases already covered in MySQLUtilsTest.cpp.
+ *
+ * OUT OF PLACE
+ *   The file's premise [CANDIDATE] - it advertises itself as testing
+ *   "the actual plugin behavior end-to-end" as distinct from
+ *   MySQLUtilsTest.cpp's "utility functions," but every assertion here
+ *   calls the exact same MySQLUtils:: functions MySQLUtilsTest.cpp
+ *   already covers, just with fewer cases. This looks like duplicated
+ *   coverage rather than a genuine integration test; a real plugin-level
+ *   test would need to route a query through the MySQL plugin's command
+ *   handling, which nothing here does.
+ *
+ * NAME/LOCATION FIT
+ *   Fits the directory, but the name "MySQLTest" alongside
+ *   "MySQLUtilsTest" implies a plugin-vs-utils split the content does
+ *   not deliver.
+ *
+ * NAMING QUALITY
+ *   Fine on its own terms; the mismatch is in scope, not naming style.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <test/lib/tpunit++.hpp>
 #include <libstuff/libstuff.h>
 #include <plugins/MySQL.h>

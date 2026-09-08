@@ -1,0 +1,40 @@
+{
+ "unit": "ExternPointer",
+ "dir": "test/clustertest/testplugin",
+ "files": [
+  "test/clustertest/testplugin/ExternPointer.cpp"
+ ],
+ "lines": 2,
+ "test": true,
+ "intent": "Defines a single uninitialized global int pointer whose sole purpose is to be dereferenced out of bounds by TestPlugin's generatesegfault* commands, giving clustertest a reliable way to crash the server on demand.",
+ "objects": [
+  {
+   "name": "__pointerToFakeIntArray",
+   "kind": "variable",
+   "role": "global int pointer, deliberately never allocated, read out of bounds to trigger a real segfault"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "__pointerToFakeIntArray as its own translation unit",
+   "why": "a single global exists as its own .cpp file; its only direct user in this batch is TestPlugin.cpp (extern-declared there), and the file's own comment references BadCommandTest, which only references the associated command names, not the symbol itself",
+   "severity": "low",
+   "suggested_home": "test/clustertest/testplugin/TestPlugin.cpp"
+  }
+ ],
+ "name_fit": {
+  "score": 3,
+  "note": "names the mechanism (extern pointer), not the intent (crash trigger)"
+ },
+ "location_fit": {
+  "score": 4,
+  "note": "fits alongside the plugin that uses it"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "double-underscore-prefixed identifier (__pointerToFakeIntArray) is a reserved-identifier violation at the language level, though the name is otherwise self-explanatory"
+ },
+ "depends_on": [],
+ "_src": "b113.json",
+ "hash": "e6f66aac372ddef9"
+}

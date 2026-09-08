@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    PortMap.h
+ * Path:    test/lib/PortMap.h
+ * Pair:    PortMap.cpp
+ *
+ * INTENT
+ *   Hands out non-conflicting TCP ports (from a fixed range) to BedrockTester
+ *   instances, so parallel tests each spinning up their own server don't
+ *   collide, and reuses returned ports once they're confirmed free again.
+ *
+ * OBJECTS
+ *   PortMap - allocates ports sequentially from [START_PORT, MAX_PORT], recycling returned ones,
+ *             and checks a port is actually bindable before handing it out.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with repo convention (`_` prefix on private members). Not `S`-prefixed despite
+ *   being a small shared utility type, but it's test-only infrastructure rather than a libstuff
+ *   type, so the repo's `S`-prefix convention for shared utility types doesn't obviously apply.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <libstuff/libstuff.h>
 

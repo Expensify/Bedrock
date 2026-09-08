@@ -1,3 +1,39 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    LeadingTest.cpp
+ * Path:    test/clustertest/tests/LeadingTest.cpp
+ *
+ * INTENT
+ *   Cluster test covering the basic leader lifecycle: cluster comes up with
+ *   node 0 leading, failover to node 1 on leader stop, leader restart and
+ *   reclaiming leadership, and a follower resynchronizing after falling
+ *   behind while stopped.
+ *
+ * OBJECTS
+ *   LeadingTest                   - tpunit fixture
+ *   LeadingTest::setup/teardown   - own the BedrockClusterTester
+ *   LeadingTest::clusterUp        - polls until node 0 leads and 1/2 follow
+ *   LeadingTest::failover         - stops node 0, waits for node 1 to lead
+ *   LeadingTest::standDownTimeout - verifies a stuck HTTPS request doesn't
+ *                        block stand-down; present but commented out of the
+ *                        fixture's TEST() list ("disabled for speed") and
+ *                        so never runs
+ *   LeadingTest::restoreLeader    - restarts node 0, waits for the original
+ *                        leader/follower layout to return
+ *   LeadingTest::synchronizing    - stops a follower, writes 5000 rows to
+ *                        leader, restarts the follower and confirms it
+ *                        passes through SYNCHRONIZING before FOLLOWING
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] standDownTimeout is dead code: it is fully implemented but
+ *   permanently disabled by a comment rather than removed or gated behind a
+ *   flag, so it never executes as part of the suite.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: core leadership-transition test alongside its peers.
+ *
+ * NAMING QUALITY
+ *   Clear, consistent method names.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <libstuff/SRandom.h>
 #include <test/clustertest/BedrockClusterTester.h>

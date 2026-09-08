@@ -1,0 +1,60 @@
+{
+ "unit": "GetJobsTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/GetJobsTest.cpp"
+ ],
+ "lines": 130,
+ "test": true,
+ "intent": "tpunit fixture exercising the Jobs plugin's bulk GetJobs command: fetching multiple jobs moves them to RUNQUEUED with a retryAfter-based nextRun, and after FinishJob each repeat modifier reschedules nextRun from the correct reference timestamp.",
+ "objects": [
+  {
+   "name": "absoluteDiff",
+   "kind": "free function",
+   "role": "unsigned seconds between two time_t values regardless of order"
+  },
+  {
+   "name": "getAllJobData",
+   "kind": "free function",
+   "role": "runs a raw Query command with -json ReadDBFlags to pull jobID/state/lastRun/nextRun for every jobs row"
+  },
+  {
+   "name": "GetJobsTest",
+   "kind": "struct (tpunit::TestFixture)",
+   "role": "single test creating three jobs with different repeat modifiers, fetching via GetJobs, then finishing and checking reschedule"
+  },
+  {
+   "name": "__GetJobsTest",
+   "kind": "static instance",
+   "role": "registers the fixture with tpunit"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "absoluteDiff, getAllJobData",
+   "why": "declared as plain file-scope free functions rather than static or in an anonymous namespace, unlike sibling test files which keep all helper logic inside the fixture struct; leaks symbol names into the test binary's global namespace",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "Matches the GetJobs (plural/bulk) command it tests."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Grouped with other per-command Jobs plugin tests."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Names are clear; docked only for the file-scope-vs-anonymous-namespace helper placement noted above."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "test/lib/BedrockTester.h",
+  "test/tests/jobs/JobTestHelper.h"
+ ],
+ "_src": "b119.json",
+ "hash": "c816e80a48704a4d"
+}

@@ -1,3 +1,23 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLiteUtils.cpp
+ * Path:    sqlitecluster/SQLiteUtils.cpp
+ * Pair:    SQLiteUtils.h
+ *
+ * INTENT
+ *   Implementation; see the header.
+ *
+ * OBJECTS
+ *   Implements SQLiteUtils::getRandomID, declared in the header.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits its header.
+ *
+ * NAMING QUALITY
+ *   Fine.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "SQLiteUtils.h"
 
 #include <libstuff/libstuff.h>

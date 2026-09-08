@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    JSONParserTest.cpp
+ * Path:    test/tests/JSONParserTest.cpp
+ * Pair:    (declarations in libstuff/JSON/Value.h)
+ *
+ * INTENT
+ *   Unit tests for JSON::Value::parse(): every scalar type (null, bool,
+ *   int, an out-of-int64-range "huge" int, double, string), unicode
+ *   escape decoding, arrays and objects including nesting, and malformed
+ *   input rejection.
+ *
+ * OBJECTS
+ *   JSONParserTest - tpunit fixture with 14 tests, one per value shape
+ *     or edge case.
+ *
+ * OUT OF PLACE
+ *   Nothing beyond a mild coverage overlap noted under JSONTest.cpp
+ *   (also in this directory): both files parse nested JSON::Value
+ *   structures, though this one is scoped to parsing alone. [CANDIDATE]
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/JSON/Value.h>
 #include <test/lib/tpunit++.hpp>
 

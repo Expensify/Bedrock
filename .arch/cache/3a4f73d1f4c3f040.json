@@ -1,0 +1,44 @@
+{
+ "unit": "CompressionTest",
+ "dir": "test/clustertest/tests",
+ "files": [
+  "test/clustertest/tests/CompressionTest.cpp"
+ ],
+ "lines": 279,
+ "test": true,
+ "intent": "Cluster-level tpunit fixture verifying zstd journal compression: entries are uncompressed with no dictionary configured, compressed and smaller once one is, and decompress correctly on both compressed and uncompressed nodes, including after a full-cluster restart with compression enabled.",
+ "objects": [
+  {
+   "name": "CompressionTest",
+   "kind": "struct",
+   "role": "tpunit::TestFixture exercising journal compression across three staged tests sharing one cluster"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "CompressionTest::readDictionaryFile",
+   "why": "hardcodes two relative filesystem paths to locate the dictionary fixture depending on working directory, rather than using a shared test-fixture-path helper",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "matches the compression feature under test"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "cluster-level feature test, correctly placed"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent, descriptive helper names (readRawJournalEntrySize vs. readDecompressedJournalEntry)"
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "test/clustertest/BedrockClusterTester.h"
+ ],
+ "_src": "b113.json",
+ "hash": "3a4f73d1f4c3f040"
+}

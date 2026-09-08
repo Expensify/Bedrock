@@ -18,9 +18,31 @@ If a child's rollup is inadequate for a judgement you need to make, say so in
 your report rather than reading around it. That is a spec bug worth knowing
 about.
 
-## Two passes
+## Three passes
 
-You will be told which pass you are running.
+You will be told which pass you are running. Most directories run only A and B;
+Pass C exists solely for directories too wide to read in one go.
+
+### Pass C — cluster (wide directories only)
+
+Some directories have too many children for "read your immediate children" to be
+a real bound: `test/clustertest/tests` has 36, `libstuff` has 27, and on a large
+repo the equivalent number is in the hundreds. For these, the children are
+pre-grouped into thematic clusters (see `.arch/clusters.json`, computed
+algorithmically) and you summarize **one cluster**, not the directory.
+
+Write to `SUMMARY.<cluster-label>.md` inside the directory. Cover:
+
+1. What these units have in common — the reason they cluster.
+2. One line per unit.
+3. Misfits: anything in this cluster that does not fit *the cluster* (it may
+   still fit the directory — say so; that is a resolvable-locally case).
+4. The same trailing `ROLLUP` block, with `theme` describing the cluster.
+
+The directory's own Pass A agent then reads the cluster summaries instead of all
+N children, which restores a bounded fan-in. Do not try to describe the whole
+directory — you are only seeing part of it, and saying more than you know is
+exactly the failure this structure exists to prevent.
 
 ### Pass A — bottom-up (build)
 

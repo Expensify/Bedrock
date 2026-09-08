@@ -1,0 +1,43 @@
+{
+ "unit": "UpdateJobTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/UpdateJobTest.cpp"
+ ],
+ "lines": 153,
+ "test": true,
+ "intent": "tpunit fixture exercising the Jobs plugin's UpdateJob command: updating data/repeat/priority/nextRun, preserving numeric-looking string data values, updating mocked jobs, and clearing repeat via shouldClearRepeat.",
+ "objects": [
+  {
+   "name": "UpdateJobTest",
+   "kind": "struct (tpunit::TestFixture)",
+   "role": "one fixture per test, creates a job, calls UpdateJob, then verifies the DB row"
+  },
+  {
+   "name": "__UpdateJobTest",
+   "kind": "static instance",
+   "role": "registers the fixture with tpunit"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Matches the UpdateJob command it tests."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Grouped with other per-command Jobs plugin tests."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Consistent naming, but unlike most siblings this fixture has no per-test tearDown resetting the jobs table (only tearDownClass), which is a latent state-leak risk between tests rather than a naming issue per se."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "test/lib/BedrockTester.h",
+  "test/tests/jobs/JobTestHelper.h"
+ ],
+ "_src": "b119.json",
+ "hash": "0bba37b4d2a15a2d"
+}

@@ -1,3 +1,26 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    main.cpp
+ * Path:    test/main.cpp
+ *
+ * INTENT
+ *   Entry point for the single-node bedrock test binary: parses command-line
+ *   flags (-only/-except/-before/-after/-threads/-repeatCount/-v/-q/etc.),
+ *   configures logging and SSL, and drives tpunit::Tests::run over the
+ *   registered test fixtures.
+ *
+ * OBJECTS
+ *   sigclean  - SIGINT handler that stops any running test servers before exiting
+ *   main      - parses args and runs the test suite (optionally repeated)
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a plain "main.cpp" test-binary entry point under test/.
+ *
+ * NAMING QUALITY
+ *   Fine.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <iostream>
 
 #include <libstuff/SData.h>

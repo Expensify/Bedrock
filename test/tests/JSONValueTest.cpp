@@ -1,3 +1,72 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    JSONValueTest.cpp
+ * Path:    test/tests/JSONValueTest.cpp
+ *
+ * INTENT
+ *   A tpunit fixture testing JSON::Value's construction, type checking,
+ *   array/object containers, indexing, merge/path access, cast
+ *   operators, and copy/move/alias semantics.
+ *
+ * OBJECTS
+ *   JSONValueTest : tpunit::TestFixture - the fixture; groups its test
+ *       methods:
+ *       setBool/setBool2/setInt/setInt2/setBigInt/setDouble/setString -
+ *           operator= assigning native types; checks type()/serialize().
+ *       ctorNull/ctorBool/ctorBool2/ctorInt/ctorInt2/ctorBigInt/
+ *           ctorDouble/ctorString - the equivalent via constructor
+ *           overloads.
+ *       simpleArray/emptyArrayAccess/nestedArray - push_back/indexing/
+ *           back(), and NotFound on an empty or out-of-range array.
+ *       simpleObject/nestedObject - object assignment; a nested Value
+ *           is assigned by copy, not aliased.
+ *       invalidIndex/invalidKey - NotFound on bad index/key; a mutable
+ *           object auto-vivifies a key on assignment, a const one does
+ *           not.
+ *       extractString - extractStringWithDefault's pop-and-default
+ *           semantics.
+ *       concatenateArrays - arrayInsert range concatenation.
+ *       arbitraryDS - Value::fromDataStructure() building JSON from
+ *           native map/set containers, incl. set-driven de-duplication.
+ *       merge - merge()'s shallow key overwrite (as opposed to
+ *           mergeDeep, tested in JSONUtilsTest).
+ *       getAtPath - getValueAtPath() dotted nested lookup, incl.
+ *           missing paths.
+ *       serializeEmptyString - the empty-string-serializes-to-"\"\""
+ *           invariant.
+ *       castOperators - implicit cast-to-native-type operators and the
+ *           fill() out-param overload; TypeError on an incompatible
+ *           cast.
+ *       operatorThrows - the exact exception message contract across
+ *           operator[]/hasMember/size, for both const and non-const.
+ *       testSelfAssignment - regression guard: obj = obj[key] must not
+ *           corrupt or crash.
+ *       hasIndex - array bounds-check helper; TypeError when called on
+ *           a non-array.
+ *       convenienceCasts - Value::object()/singleItemArray() factory
+ *           helpers that sidestep brace-init ambiguity.
+ *       operators - operator[] semantics: copy-on-assign isolation
+ *           between objects, auto-vivified null for a missing key, and
+ *           r-value overloads that move rather than copy (verified via
+ *           iterator identity).
+ *       shallowCopyValue/shallowCopyToKey/preventTypeChangeInShallowCopy
+ *           - shallowCopy()'s aliasing semantics, and the guard against
+ *           changing a wrapper's type via shallowCopy (throws
+ *           SException).
+ *       getBoolFromBinaryIntOrBool - strict 0/1-only bool coercion for
+ *           signed/unsigned ints, bools, and values from parse().
+ *   __JSONValueTest - file-scope instance that registers the fixture
+ *       with tpunit at static-init time.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Mostly consistent camelCase scenario names; testSelfAssignment is
+ *   the only method prefixed with "test" while its siblings aren't.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/JSON/Value.h>
 #include <libstuff/libstuff.h>
 #include <test/lib/tpunit++.hpp>

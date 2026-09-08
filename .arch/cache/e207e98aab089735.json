@@ -1,0 +1,45 @@
+{
+ "unit": "FinishJobTest",
+ "dir": "test/clustertest/tests",
+ "files": [
+  "test/clustertest/tests/FinishJobTest.cpp"
+ ],
+ "lines": 605,
+ "test": true,
+ "intent": "Cluster-level tpunit fixture covering the Jobs plugin's FinishJob command: error cases, parent/child pause-and-requeue semantics, and repeat/delay/nextRun interactions.",
+ "objects": [
+  {
+   "name": "FinishJobTest",
+   "kind": "struct",
+   "role": "tpunit::TestFixture testing FinishJob's error handling, pause/requeue semantics, and repeat/delay/nextRun handling against a three-node cluster"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "FinishJobTest::negativeDelay / FinishJobTest::positiveDelay",
+   "why": "fully implemented test methods that are never registered via TEST(...) in the fixture's constructor, so they silently never run",
+   "severity": "med",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "matches the command under test"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "cluster-level command test, correctly placed"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "method names read as plain-English test descriptions, consistent with siblings"
+ },
+ "depends_on": [
+  "libstuff/SQResult.h",
+  "libstuff/SData.h",
+  "test/clustertest/BedrockClusterTester.h",
+  "test/tests/jobs/JobTestHelper.h"
+ ],
+ "_src": "b113.json",
+ "hash": "e207e98aab089735"
+}

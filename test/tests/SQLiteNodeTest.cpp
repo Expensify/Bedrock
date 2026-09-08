@@ -1,3 +1,35 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLiteNodeTest.cpp
+ * Path:    test/tests/SQLiteNodeTest.cpp
+ * Pair:    (declarations in sqlitecluster/SQLiteNode.h)
+ *
+ * INTENT
+ *   Unit tests for SQLiteNode's sync-peer selection logic (the
+ *   fastest logged-in peer by latency, tie-broken by commit count) and
+ *   for name-based peer lookup.
+ *
+ * OBJECTS
+ *   SQLiteNodeTester - white-box test accessor exposing SQLiteNode's
+ *     private _syncPeer and _updateSyncPeer() (granted friend access
+ *     in SQLiteNode.h).
+ *   TestServer - minimal SQLiteServer stub with no-op overrides, needed
+ *     only so a SQLiteNode can be constructed.
+ *   SQLiteNodeTest - tpunit fixture (BEFORE_CLASS/AFTER_CLASS-managed
+ *     temp DB file and SQLitePool) with 2 tests: sync-peer re-selection
+ *     as peer latency and login state change, and getPeerByName()
+ *     lookup including on an unsorted peer list.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent; SQLiteNodeTester's name makes clear it's a test-only
+ *   accessor rather than production code.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteCommand.h>
 #include <sqlitecluster/SQLiteNode.h>

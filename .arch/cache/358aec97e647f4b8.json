@@ -1,0 +1,40 @@
+{
+ "unit": "SQLiteCore",
+ "dir": "sqlitecluster",
+ "files": [
+  "sqlitecluster/SQLiteCore.h",
+  "sqlitecluster/SQLiteCore.cpp"
+ ],
+ "lines": 86,
+ "test": false,
+ "intent": "Wraps commit/rollback of a SQLite database with the cluster-aware checks needed to do so safely: only commit while still leader, and run an optional plugin-notification hook during prepare.",
+ "objects": [
+  {
+   "name": "SQLiteCore",
+   "kind": "class",
+   "role": "commits or rolls back a transaction on a wrapped SQLite&, refusing to commit if the node is no longer leading"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 4,
+  "note": "\"Core\" is a bit generic but the content (commit/rollback gating) is coherent and singular."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "belongs with SQLite/SQLiteNode in sqlitecluster."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "notificationHandler's function-pointer parameter is named `_db`, echoing the class's own `_db` member despite being an unrelated parameter."
+ },
+ "depends_on": [
+  "libstuff/AutoScopeOnPrepare.h",
+  "libstuff/libstuff.h",
+  "sqlitecluster/SQLite.h",
+  "sqlitecluster/SQLiteNode.h",
+  "libstuff/sqlite3.h"
+ ],
+ "_src": "b112.json",
+ "hash": "358aec97e647f4b8"
+}

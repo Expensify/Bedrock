@@ -1,0 +1,36 @@
+{
+ "unit": "SIsValidSQLiteDateModifierTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/SIsValidSQLiteDateModifierTest.cpp"
+ ],
+ "lines": 75,
+ "test": true,
+ "intent": "Unit tests for the libstuff free function SIsValidSQLiteDateModifier, which validates strings like \"+1 DAY\" for use as SQLite date modifiers.",
+ "objects": [
+  {
+   "name": "SIsValidSQLiteDateModifierTest",
+   "kind": "struct",
+   "role": "tpunit fixture sweeping sign/magnitude/timeframe combinations and digit-count caps"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling fixtures."
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "test/lib/tpunit++.hpp"
+ ],
+ "_src": "b118.json",
+ "hash": "e2e0c43f27d43bbe"
+}

@@ -1,0 +1,36 @@
+{
+ "unit": "STimeTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/STimeTest.cpp"
+ ],
+ "lines": 42,
+ "test": true,
+ "intent": "Unit tests for STimestampToEpoch and STimestampMSToEpoch, parsing a strftime-style format plus a timestamp string into a Unix epoch value.",
+ "objects": [
+  {
+   "name": "STimeTest",
+   "kind": "struct",
+   "role": "tpunit fixture checking whole-second and millisecond-resolution epoch conversions"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling fixtures."
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b118.json",
+ "hash": "b2133a317458d05f"
+}

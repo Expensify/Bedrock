@@ -1,0 +1,49 @@
+{
+ "unit": "GetJobTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/GetJobTest.cpp"
+ ],
+ "lines": 971,
+ "test": true,
+ "intent": "Integration tests for the Jobs plugin's GetJob/GetJobs commands: dequeue ordering by priority/nextRun, parent/child relationships, error cases, and the CrashBedrockJob GLOB-pattern blacklist.",
+ "objects": [
+  {
+   "name": "isBetweenSecondsInclusive",
+   "kind": "function",
+   "role": "file-scope helper checking whether a formatted timestamp string falls within an inclusive second-by-second range"
+  },
+  {
+   "name": "GetJobTest",
+   "kind": "struct",
+   "role": "tpunit fixture covering GetJob/GetJobs ordering, multi-name lookups, retryable/paused parent-child jobs, error responses, and CrashBedrockJob blacklisting"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "isBetweenSecondsInclusive",
+   "why": "plain (non-static, non-anonymous-namespace) global function in a .cpp linked into a large multi-file test binary; generic name risks an ODR clash with an identically-named helper in another test file, even though none exists today",
+   "severity": "low",
+   "suggested_home": "static/anonymous-namespace within this file, or lifted into a shared test-helper header such as test/tests/jobs/JobTestHelper.h if other job tests need it"
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits alongside other job-command tests."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Fixture and methods well named; the global helper's linkage/name choice is the one blemish."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b118.json",
+ "hash": "3a7c1f105d322921"
+}

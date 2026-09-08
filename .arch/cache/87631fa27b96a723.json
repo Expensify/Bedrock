@@ -1,0 +1,41 @@
+{
+ "unit": "JobTestHelper",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/JobTestHelper.h",
+  "test/tests/jobs/JobTestHelper.cpp"
+ ],
+ "lines": 17,
+ "test": true,
+ "intent": "Tiny shared helper for the Jobs plugin test suite: parses a jobs-table datetime string back into a time_t so tests can compute time deltas.",
+ "objects": [
+  {
+   "name": "JobTestHelper",
+   "kind": "class",
+   "role": "stateless, all-static helper class"
+  },
+  {
+   "name": "JobTestHelper::getTimestampForDateTimeString",
+   "kind": "static method",
+   "role": "parses \"%Y-%m-%d %H:%M:%S\" via strptime + mktime"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits; scoped to test/tests/jobs and named for its purpose."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "No S prefix needed - this is a test-only helper, not a shared libstuff utility type."
+ },
+ "depends_on": [
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b119.json",
+ "hash": "87631fa27b96a723"
+}

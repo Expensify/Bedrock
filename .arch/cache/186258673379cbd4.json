@@ -1,0 +1,36 @@
+{
+ "unit": "SDeburrTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/SDeburrTest.cpp"
+ ],
+ "lines": 86,
+ "test": true,
+ "intent": "Unit tests for SDeburr::deburr, the Unicode-to-ASCII transliteration helper (diacritics, ligatures, Turkish/Nordic/Slavic letters, emoji/CJK passthrough).",
+ "objects": [
+  {
+   "name": "SDeburrTest",
+   "kind": "struct",
+   "role": "tpunit fixture covering ASCII, diacritics, mixed text, combining marks, and language-specific cases"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling fixtures."
+ },
+ "depends_on": [
+  "libstuff/SDeburr.h",
+  "test/lib/tpunit++.hpp"
+ ],
+ "_src": "b118.json",
+ "hash": "186258673379cbd4"
+}

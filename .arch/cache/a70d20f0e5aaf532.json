@@ -1,0 +1,46 @@
+{
+ "unit": "SQLiteClusterMessenger",
+ "dir": "sqlitecluster",
+ "files": [
+  "sqlitecluster/SQLiteClusterMessenger.h",
+  "sqlitecluster/SQLiteClusterMessenger.cpp"
+ ],
+ "lines": 430,
+ "test": false,
+ "intent": "Escalates a BedrockCommand from this node to another node in the cluster (leader, a named peer, or all peers) over a pooled TCP socket and fills in the command's response.",
+ "objects": [
+  {
+   "name": "SQLiteClusterMessenger",
+   "kind": "class",
+   "role": "opens/reuses a socket to a peer, sends a serialized command, and reads back its response"
+  },
+  {
+   "name": "SQLiteClusterMessenger::WaitForReadyResult",
+   "kind": "enum",
+   "role": "outcome of waiting for a socket to become ready (timeout, disconnect, abort, etc.)"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "clearly a messenger between nodes, sits correctly with SQLiteNode/SQLitePeer."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "belongs in sqlitecluster."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "two overloaded runOnPeer methods (bool vs. peer-name) have different retry semantics but the same name."
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/SHTTPSManager.h",
+  "libstuff/SMultiHostSocketPool.h",
+  "BedrockCommand.h",
+  "sqlitecluster/SQLiteNode.h",
+  "sqlitecluster/SQLitePeer.h"
+ ],
+ "_src": "b112.json",
+ "hash": "a70d20f0e5aaf532"
+}

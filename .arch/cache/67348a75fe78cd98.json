@@ -1,0 +1,42 @@
+{
+ "unit": "InifiniteRetryAfterTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/InifiniteRetryAfterTest.cpp"
+ ],
+ "lines": 106,
+ "test": true,
+ "intent": "tpunit fixture verifying the retryAfter retry-limit: a job repeatedly fetched via retryAfter fails automatically after 10 tries, while a job with repeat that finishes within the limit has retryAfterCount cleared and returns to QUEUED.",
+ "objects": [
+  {
+   "name": "InfiniteRetryAfterJobTest",
+   "kind": "struct (tpunit::TestFixture)",
+   "role": "each test creates its own BedrockTester (no shared setupClass/tearDown) and loops GetJob calls checking retryAfterCount/state"
+  },
+  {
+   "name": "__InfiniteRetryAfterJobTest",
+   "kind": "static instance",
+   "role": "registers the fixture with tpunit"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 2,
+  "note": "Filename misspells \"Infinite\" as \"Inifinite\"; the struct and test-fixture-name string inside are both spelled correctly, so the file name does not match its own contents."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Grouped with other per-command Jobs plugin tests."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Internal names are consistent with each other and sibling tests; the only issue is the file-vs-struct spelling mismatch captured under name_fit."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b119.json",
+ "hash": "67348a75fe78cd98"
+}

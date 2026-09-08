@@ -1,0 +1,112 @@
+[
+ {
+  "unit": "TestPlugin",
+  "dir": "test/clustertest/testplugin",
+  "files": ["test/clustertest/testplugin/TestPlugin.h", "test/clustertest/testplugin/TestPlugin.cpp"],
+  "lines": 961,
+  "test": true,
+  "intent": "A BedrockPlugin loaded only by the cluster-test binary that exposes dozens of otherwise-unreachable server code paths (slow queries, deliberate crashes, HTTPS timeouts, escalation, prepare/commit hooks) as commands so clustertest can exercise them.",
+  "objects": [
+   {"name": "TestHTTPSManager", "kind": "class", "role": "SHTTPSManager subclass for issuing/inspecting test HTTPS transactions, including a send that never writes to the socket for timeout testing"},
+   {"name": "BedrockPlugin_TestPlugin", "kind": "class", "role": "the test plugin itself; owns the HTTPS manager, a background unreplicated-delete thread, and lifecycle hooks (upgradeDatabase, stateChanged, onPrepareHandler, afterCommit)"},
+   {"name": "TestPluginCommand", "kind": "class", "role": "BedrockCommand subclass whose peek/process/postProcess dispatch on request.methodLine to drive each individual test scenario"},
+   {"name": "fileAppend", "kind": "function", "role": "file-local flock-guarded append helper used by the testescalate scenario to record ordering"},
+   {"name": "fileLockAndLoad", "kind": "function", "role": "file-local flock-guarded read helper paired with fileAppend"}
+  ],
+  "misfits": [
+   {"item": "fileAppend / fileLockAndLoad", "why": "generic flock-guarded file I/O helpers with no relation to plugin/command logic, defined as plain global functions in a plugin .cpp", "severity": "low", "suggested_home": null},
+   {"item": "BedrockPlugin_TestPlugin::arbitraryData / dataLock", "why": "ad hoc static cross-command scratch storage that bypasses normal command/database plumbing entirely, held as globals for test convenience", "severity": "low", "suggested_home": null}
+  ],
+  "name_fit":       {"score": 5, "note": "clearly a test plugin, matches file/dir"},
+  "location_fit":   {"score": 5, "note": "correctly scoped to test/clustertest/testplugin"},
+  "naming_quality": {"score": 4, "note": "mostly consistent (BedrockPlugin_ prefix, _ on private members); arbitraryData/not_special are intentionally vague scratch names, and storeboradcasttimeouts is a typo baked into the command name"},
+  "depends_on": ["libstuff/libstuff.h", "BedrockPlugin.h", "BedrockServer.h", "libstuff/SQResult.h", "libstuff/SThread.h", "sqlitecluster/SQLitePool.h"]
+ },
+ {
+  "unit": "ExternPointer",
+  "dir": "test/clustertest/testplugin",
+  "files": ["test/clustertest/testplugin/ExternPointer.cpp"],
+  "lines": 2,
+  "test": true,
+  "intent": "Defines a single uninitialized global int pointer whose sole purpose is to be dereferenced out of bounds by TestPlugin's generatesegfault* commands, giving clustertest a reliable way to crash the server on demand.",
+  "objects": [
+   {"name": "__pointerToFakeIntArray", "kind": "variable", "role": "global int pointer, deliberately never allocated, read out of bounds to trigger a real segfault"}
+  ],
+  "misfits": [
+   {"item": "__pointerToFakeIntArray as its own translation unit", "why": "a single global exists as its own .cpp file; its only direct user in this batch is TestPlugin.cpp (extern-declared there), and the file's own comment references BadCommandTest, which only references the associated command names, not the symbol itself", "severity": "low", "suggested_home": "test/clustertest/testplugin/TestPlugin.cpp"}
+  ],
+  "name_fit":       {"score": 3, "note": "names the mechanism (extern pointer), not the intent (crash trigger)"},
+  "location_fit":   {"score": 4, "note": "fits alongside the plugin that uses it"},
+  "naming_quality": {"score": 3, "note": "double-underscore-prefixed identifier (__pointerToFakeIntArray) is a reserved-identifier violation at the language level, though the name is otherwise self-explanatory"},
+  "depends_on": []
+ },
+ {
+  "unit": "FinishJobTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/FinishJobTest.cpp"],
+  "lines": 605,
+  "test": true,
+  "intent": "Cluster-level tpunit fixture covering the Jobs plugin's FinishJob command: error cases, parent/child pause-and-requeue semantics, and repeat/delay/nextRun interactions.",
+  "objects": [
+   {"name": "FinishJobTest", "kind": "struct", "role": "tpunit::TestFixture testing FinishJob's error handling, pause/requeue semantics, and repeat/delay/nextRun handling against a three-node cluster"}
+  ],
+  "misfits": [
+   {"item": "FinishJobTest::negativeDelay / FinishJobTest::positiveDelay", "why": "fully implemented test methods that are never registered via TEST(...) in the fixture's constructor, so they silently never run", "severity": "med", "suggested_home": null}
+  ],
+  "name_fit":       {"score": 5, "note": "matches the command under test"},
+  "location_fit":   {"score": 5, "note": "cluster-level command test, correctly placed"},
+  "naming_quality": {"score": 4, "note": "method names read as plain-English test descriptions, consistent with siblings"},
+  "depends_on": ["libstuff/SQResult.h", "libstuff/SData.h", "test/clustertest/BedrockClusterTester.h", "test/tests/jobs/JobTestHelper.h"]
+ },
+ {
+  "unit": "ConflictSpamTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/ConflictSpamTest.cpp"],
+  "lines": 295,
+  "test": true,
+  "intent": "Cluster-level stress test that fires large volumes of conflicting writes at all three nodes concurrently, then verifies the cluster converges to identical data, journals, and row counts with zero request failures.",
+  "objects": [
+   {"name": "ConflictSpamTest", "kind": "struct", "role": "tpunit::TestFixture running a serial then a multi-threaded conflicting-write stress scenario against a default three-node cluster"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "matches its stress-test purpose"},
+  "location_fit":   {"score": 5, "note": "cluster-level consistency test, correctly placed"},
+  "naming_quality": {"score": 3, "note": "test method names `slow` and `spam` are generic on their own, though the class name and header comment supply context"},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "CompressionTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/CompressionTest.cpp"],
+  "lines": 279,
+  "test": true,
+  "intent": "Cluster-level tpunit fixture verifying zstd journal compression: entries are uncompressed with no dictionary configured, compressed and smaller once one is, and decompress correctly on both compressed and uncompressed nodes, including after a full-cluster restart with compression enabled.",
+  "objects": [
+   {"name": "CompressionTest", "kind": "struct", "role": "tpunit::TestFixture exercising journal compression across three staged tests sharing one cluster"}
+  ],
+  "misfits": [
+   {"item": "CompressionTest::readDictionaryFile", "why": "hardcodes two relative filesystem paths to locate the dictionary fixture depending on working directory, rather than using a shared test-fixture-path helper", "severity": "low", "suggested_home": null}
+  ],
+  "name_fit":       {"score": 5, "note": "matches the compression feature under test"},
+  "location_fit":   {"score": 5, "note": "cluster-level feature test, correctly placed"},
+  "naming_quality": {"score": 5, "note": "consistent, descriptive helper names (readRawJournalEntrySize vs. readDecompressedJournalEntry)"},
+  "depends_on": ["libstuff/SData.h", "libstuff/SQResult.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "TimeoutTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/TimeoutTest.cpp"],
+  "lines": 249,
+  "test": true,
+  "intent": "Cluster-level tpunit fixture covering command timeouts at every stage (peek, process, postProcess, total, HTTPS, future-commit) and client-disconnect behavior: an abandoned command rolls back and frees its slot, while a fire-and-forget command keeps running.",
+  "objects": [
+   {"name": "sendRequestAndDisconnect", "kind": "function", "role": "file-local static helper that opens a raw socket to a tester's command port, sends one request, waits, then disconnects without reading a response"},
+   {"name": "TimeoutTest", "kind": "struct", "role": "tpunit::TestFixture testing timeout enforcement at each command stage and abort-on-disconnect vs. forget-command semantics"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "matches the timeout/abort behavior under test"},
+  "location_fit":   {"score": 5, "note": "cluster-level timeout test, correctly placed"},
+  "naming_quality": {"score": 4, "note": "specific, descriptive method names consistent with sibling test files"},
+  "depends_on": ["test/lib/tpunit++.hpp", "BedrockCommand.h", "libstuff/libstuff.h", "libstuff/SData.h", "libstuff/SFastBuffer.h", "libstuff/SQResult.h", "test/clustertest/BedrockClusterTester.h"]
+ }
+]

@@ -1,0 +1,43 @@
+{
+ "unit": "RequeueJobsTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/RequeueJobsTest.cpp"
+ ],
+ "lines": 282,
+ "test": true,
+ "intent": "tpunit fixture exercising the Jobs plugin's RequeueJobs command: moving RUNNING/RUNQUEUED jobs back to QUEUED singly and in bulk, auto-requeue behavior, bulk rename, and nextRun reset to created.",
+ "objects": [
+  {
+   "name": "RequeueJobsTest",
+   "kind": "struct (tpunit::TestFixture)",
+   "role": "one fixture per test, forces jobs into a state via GetJob then requeues and asserts"
+  },
+  {
+   "name": "__RequeueJobsTest",
+   "kind": "static instance",
+   "role": "registers the fixture with tpunit"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Matches the RequeueJobs command it tests."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Grouped with other per-command Jobs plugin tests."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling job tests."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "test/lib/BedrockTester.h",
+  "test/tests/jobs/JobTestHelper.h"
+ ],
+ "_src": "b119.json",
+ "hash": "a2d585ad02aaf347"
+}

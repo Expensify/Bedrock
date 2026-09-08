@@ -1,0 +1,47 @@
+{
+ "unit": "CreateJobsTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/CreateJobsTest.cpp"
+ ],
+ "lines": 266,
+ "test": true,
+ "intent": "tpunit fixture exercising the Jobs plugin's bulk CreateJobs command: creating multiple jobs from a JSON array, rejecting malformed JSON, parent-running enforcement, mocked parent/child propagation, and unique/parent-mismatch conflicts.",
+ "objects": [
+  {
+   "name": "CreateJobsTest",
+   "kind": "struct (tpunit::TestFixture)",
+   "role": "one fixture per test, builds JSON job arrays and asserts CreateJobs behavior"
+  },
+  {
+   "name": "CreateJobsTest::_generateCreateJobContentJSON",
+   "kind": "private member function",
+   "role": "builds a reusable 2-job JSON array fixture"
+  },
+  {
+   "name": "__CreateJobsTest",
+   "kind": "static instance",
+   "role": "registers the fixture with tpunit"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Matches the CreateJobs (plural/bulk) command it tests."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Grouped with other per-command Jobs plugin tests."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling tests; `_generateCreateJobContentJSON` correctly uses the repo's `_` private-member prefix."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b119.json",
+ "hash": "6aad62ab1f9a33d0"
+}

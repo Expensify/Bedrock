@@ -1,0 +1,42 @@
+{
+ "unit": "SSLTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/SSLTest.cpp"
+ ],
+ "lines": 97,
+ "test": true,
+ "intent": "Integration tests for outbound HTTPS: passthrough requests to real sites via a BedrockTester, and a proxied HTTPS transaction through SHTTPSProxySocket/SStandaloneHTTPSManager.",
+ "objects": [
+  {
+   "name": "SSLTest",
+   "kind": "struct",
+   "role": "tpunit fixture; test() exercises passthrough sendrequest to a real and a fake host, proxyTest() drives an SStandaloneHTTPSManager::Transaction through a local proxy"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling fixtures."
+ },
+ "depends_on": [
+  "libstuff/SHTTPSManager.h",
+  "libstuff/STCPManager.h",
+  "test/lib/tpunit++.hpp",
+  "libstuff/libstuff.h",
+  "libstuff/SData.h",
+  "sqlitecluster/SQLiteNode.h",
+  "test/lib/BedrockTester.h",
+  "libstuff/SHTTPSProxySocket.h"
+ ],
+ "_src": "b118.json",
+ "hash": "00752d4719cc394d"
+}

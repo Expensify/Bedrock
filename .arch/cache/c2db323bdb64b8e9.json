@@ -1,0 +1,63 @@
+{
+ "unit": "SQLitePeer",
+ "dir": "sqlitecluster",
+ "files": [
+  "sqlitecluster/SQLitePeer.h",
+  "sqlitecluster/SQLitePeer.cpp"
+ ],
+ "lines": 425,
+ "test": false,
+ "intent": "Represents one other node in the cluster as seen from this node: its connection socket, replication state, and the synchronization/standup metadata SQLiteNode needs to run consensus.",
+ "objects": [
+  {
+   "name": "SQLitePeer",
+   "kind": "class",
+   "role": "one peer's connection + replication/consensus state, guarded by an internal mutex"
+  },
+  {
+   "name": "SQLitePeer::Response",
+   "kind": "enum",
+   "role": "a peer's vote on a standup request (NONE/APPROVE/DENY)"
+  },
+  {
+   "name": "SQLitePeer::PeerPostPollStatus",
+   "kind": "enum",
+   "role": "result of postPoll: OK, just-connected, socket error, or socket closed"
+  },
+  {
+   "name": "operator<<(ostream&, atomic<SQLitePeer::Response>&)",
+   "kind": "free function",
+   "role": "streams a Response's name"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "SQLitePeer.h comment on `socket` member",
+   "why": "claims 'see friend class declaration above' but no friend is declared anywhere in this file - a stale/incorrect cross-reference left over from an earlier version",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "does exactly what the name says."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "belongs alongside SQLiteNode in sqlitecluster."
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent S-prefix and trailing-underscore constructor params; the stale friend-class comment is a minor documentation defect."
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "sqlitecluster/SQLiteNode.h",
+  "BedrockServer.h",
+  "libstuff/STCPManager.h",
+  "libstuff/SData.h",
+  "libstuff/SRandom.h"
+ ],
+ "_src": "b112.json",
+ "hash": "c2db323bdb64b8e9"
+}

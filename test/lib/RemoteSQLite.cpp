@@ -1,3 +1,25 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    RemoteSQLite.cpp
+ * Path:    test/lib/RemoteSQLite.cpp
+ * Pair:    RemoteSQLite.h
+ *
+ * INTENT
+ *   Implements RemoteSQLite as declared in the header - see there for intent.
+ *
+ * OBJECTS
+ *   All members implement RemoteSQLite as declared in the header. `read(query, params, spec)`
+ *   (the sqlite3_qrf_spec overload) is deliberately left unimplemented and calls SERROR, since
+ *   formatted-output reads have no equivalent on the remote `Query` wire path yet.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "RemoteSQLite.h"
 
 #include <libstuff/SData.h>

@@ -1,3 +1,35 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockClusterTester.h
+ * Path:    test/clustertest/BedrockClusterTester.h
+ *
+ * INTENT
+ *   Header-only template that spins up a multi-node bedrock cluster (each
+ *   node run via a BedrockTester subprocess), waits for every node to answer
+ *   Status, and tears the cluster down in a safe order (followers first,
+ *   leader last) so tests can exercise replication/consensus behavior.
+ *
+ * OBJECTS
+ *   ClusterSize            - supported cluster sizes: 1, 3, 5, or 6 nodes
+ *   ClusterTester<T>       - builds/starts/stops a cluster of T (typically BedrockTester) instances with generated ports and peer lists
+ *   BedrockClusterTester   - typedef: ClusterTester<BedrockTester>
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] The testplugin.so auto-detection block in the sized
+ *   constructor (checking cwd for "testplugin/testplugin.so" and appending
+ *   it to pluginsToLoad) - plugin-specific special-casing inside an
+ *   otherwise generic cluster-bootstrap helper; the code's own comment says
+ *   "this should get moved somewhere else, really. Probably inside
+ *   TestPlugin."
+ *
+ * NAME/LOCATION FIT
+ *   Fits: cluster test scaffolding under test/clustertest.
+ *
+ * NAMING QUALITY
+ *   Mostly fine. The sized constructor's `_args` parameter uses the `_`
+ *   prefix the repo reserves for private members, on a plain constructor
+ *   parameter rather than a member (compare the local `args` map built
+ *   inside the same function from it).
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <iostream>
 #include <unistd.h>

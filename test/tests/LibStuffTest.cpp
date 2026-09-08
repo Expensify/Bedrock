@@ -1,3 +1,77 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    LibStuffTest.cpp
+ * Path:    test/tests/LibStuffTest.cpp
+ *
+ * INTENT
+ *   A tpunit fixture exercising most of libstuff's free-standing utility
+ *   functions in one place: crypto (AES/HMAC), JSON encode/decode, HTTP
+ *   parsing/composition, string/regex helpers, file IO, and SQLite bound
+ *   parameters, plus a few explicit security contracts (constant-time
+ *   compare, SQL-injection resistance, errno preservation).
+ *
+ * OBJECTS
+ *   TempDBFile - RAII helper that creates a unique temp file via
+ *       mkstemp() for use as a throwaway SQLite db, deleting it on
+ *       destruction.
+ *   LibStuff : tpunit::TestFixture - the fixture; groups ~37 test
+ *       methods:
+ *       testAutoThreadPrefixRestoresPreviousValues - SAUTOPREFIX
+ *           save/restore of the SThreadLog* thread-locals across nested
+ *           scopes.
+ *       testEncryptDecrpyt/testSHMACSHA1/testSHMACSHA256 - AES and
+ *           HMAC-SHA1/256 primitives.
+ *       testJSONDecode/testJSON - SParseJSONObject/Array and
+ *           SComposeJSONObject/Array round-trips, incl. float/
+ *           scientific-notation/NaN-Infinity formatting.
+ *       testEscapeUnescape/testTrim/testCollapse/testStrip - string
+ *           escaping and whitespace utilities.
+ *       testChunkedEncoding/SComposeHTTPTest - SParseHTTP request/
+ *           chunked-transfer parsing and SComposeHTTP response building,
+ *           incl. header-injection escaping.
+ *       testDaysInMonth/testFirstOfMonth - calendar arithmetic.
+ *       testGZip - SGZip/SGUnzip round trip.
+ *       testConstantTimeEquals - SConstantTimeEquals/IEquals timing-safe
+ *           compare.
+ *       testParseIntegerList/testSQList/testContains - list parsing/
+ *           composing and SQL-safe list quoting across container types.
+ *       testSData/testSTable - SData/STable auto-stringification of
+ *           assigned native types.
+ *       testFileIO - SFile* save/load/exists/size/delete.
+ *       testRandom - SRandom::rand64 smoke test.
+ *       testHexConversion/testBase32Conversion/
+ *           testEncodeDecodeURIComponent - encoding conversions.
+ *       SREMatchTest/SREReplaceTest - SRE* regex match/replace/compile
+ *           wrappers.
+ *       testSReplace/testSReplaceAll/testSReplaceAllBut - substring and
+ *           character-set replace helpers.
+ *       SQResultTest/testReturningClause/testSQueryBoundParameters/
+ *           testSQueryBoundParameterInjections - SQLite/SQResult read/
+ *           write, the RETURNING clause, named bound parameters, and
+ *           SQL-injection resistance.
+ *       SRedactSensitiveValuesTest - SRedactSensitiveValues log
+ *           scrubbing.
+ *       testSGetPeerNamePreservesErrno/testResolveHost - SGetPeerName
+ *           errno preservation and SResolveHost DNS/IP resolution.
+ *       testUpperLower - SToUpper/SToLower coverage; defined below but
+ *           never added to the constructor's TEST(...) list, so it
+ *           never runs.
+ *   __LibStuff - file-scope instance that registers the fixture with
+ *       tpunit at static-init time.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] LibStuff::testUpperLower (~line 702) is dead code: it is
+ *       a fully-written test but was never wired into the constructor's
+ *       TEST(...) list, so SToUpper/SToLower has no running coverage.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: mirrors libstuff/libstuff.h's own catch-all scope.
+ *
+ * NAMING QUALITY
+ *   Mostly consistent testXxx naming, but a handful of methods put
+ *   "Test" as a suffix instead (SREMatchTest, SQResultTest,
+ *   SRedactSensitiveValuesTest, SComposeHTTPTest) - inconsistent within
+ *   the same fixture.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <arpa/inet.h>
 #include <cstring>
 #include <unistd.h>

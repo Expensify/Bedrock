@@ -1,3 +1,26 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLiteServer.h
+ * Path:    sqlitecluster/SQLiteServer.h
+ *
+ * INTENT
+ *   Abstract interface a SQLiteNode uses to call back into whatever server
+ *   embeds it: login notifications, state-change notifications to plugins,
+ *   and command-port blocking. Implemented elsewhere (e.g. BedrockServer,
+ *   not in this batch).
+ *
+ * OBJECTS
+ *   SQLiteServer  - pure-virtual interface (onNodeLogin, notifyStateChangeToPlugins, blockCommandPort, unblockCommandPort), extends STCPManager
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: the callback contract for SQLiteNode's host server, alongside
+ *   SQLiteNode in sqlitecluster.
+ *
+ * NAMING QUALITY
+ *   Fine; method names are clear verbs matching their purpose.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 class SQLiteCommand;
 class SQLitePeer;

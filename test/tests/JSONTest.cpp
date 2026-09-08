@@ -1,3 +1,40 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    JSONTest.cpp
+ * Path:    test/tests/JSONTest.cpp
+ * Pair:    (declarations in libstuff/JSON/Value.h and libstuff/JSON/Metrics.h)
+ *
+ * INTENT
+ *   Unit tests for JSON::Value covering parse/serialize round-tripping
+ *   of nested values, exact-uint64 boundary handling, value equality
+ *   semantics, and the pluggable JSON::MetricsObserver hook that
+ *   reports parse/serialize call counts, durations, and payload sizes.
+ *
+ * OBJECTS
+ *   (anonymous namespace) MetricsRecord - struct capturing the fields a
+ *     test-installed observer records.
+ *   (anonymous namespace) metricsRecord (thread_local) / resetMetricsRecord()
+ *     / recordMetrics() - the test's JSON::MetricsObserver callback and
+ *     the helper that clears it between tests.
+ *   (anonymous namespace) ScopedMetricsObserver - RAII installer for
+ *     JSON::setMetricsObserver that always clears the observer again,
+ *     even on early return.
+ *   JSONTest - tpunit fixture with 5 tests.
+ *
+ * OUT OF PLACE
+ *   Mild coverage overlap with JSONParserTest.cpp (also in this
+ *   directory) [CANDIDATE]: both files parse nested JSON::Value
+ *   structures, and nothing documents the intended split between "basic
+ *   value-type parsing" (there) and "serialize/equality/metrics" (here).
+ *   Low severity - not wrong, just an undocumented boundary between two
+ *   same-directory files that reads as possible redundant coverage.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <cstddef>
 #include <cstdint>
 #include <limits>

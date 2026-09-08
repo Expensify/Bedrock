@@ -1,0 +1,42 @@
+{
+ "unit": "CancelJobTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/CancelJobTest.cpp"
+ ],
+ "lines": 393,
+ "test": true,
+ "intent": "tpunit fixture exercising the Jobs plugin's CancelJob command: rejects nonexistent jobs and jobs with children, ignores non-cancellable states, and correctly cancels QUEUED children while leaving siblings/parent state correct.",
+ "objects": [
+  {
+   "name": "CancelJobTest",
+   "kind": "struct (tpunit::TestFixture)",
+   "role": "one fixture per test, drives CreateJob/GetJob/FinishJob/CancelJob sequences and asserts resulting state"
+  },
+  {
+   "name": "__CancelJobTest",
+   "kind": "static instance",
+   "role": "registers the fixture with tpunit"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Matches the CancelJob command it tests."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Grouped with other per-command Jobs plugin tests."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling job tests."
+ },
+ "depends_on": [
+  "libstuff/SQResult.h",
+  "libstuff/SData.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b119.json",
+ "hash": "e33e1619d11e17cf"
+}

@@ -1,0 +1,43 @@
+{
+ "unit": "RetryJobTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/RetryJobTest.cpp"
+ ],
+ "lines": 903,
+ "test": true,
+ "intent": "Integration tests for the Jobs plugin's RetryJob command: state/precondition errors, data updates, and the full nextRun/repeat/delay precedence and re-anchoring rules.",
+ "objects": [
+  {
+   "name": "RetryJobTest",
+   "kind": "struct",
+   "role": "tpunit fixture covering RetryJob errors, data/name/priority updates, and repeat/delay/nextRun precedence including missed-window re-anchoring"
+  },
+  {
+   "name": "RetryJobTest::getTimeInFuture",
+   "kind": "method",
+   "role": "private helper formatting a future wall-clock time as a SQLite-style datetime string"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits alongside other job-command tests."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling fixtures."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "test/lib/BedrockTester.h",
+  "test/tests/jobs/JobTestHelper.h"
+ ],
+ "_src": "b118.json",
+ "hash": "508a146c916f6422"
+}

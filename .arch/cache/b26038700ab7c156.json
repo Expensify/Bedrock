@@ -1,0 +1,36 @@
+{
+ "unit": "CommandPortTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/CommandPortTest.cpp"
+ ],
+ "lines": 42,
+ "test": true,
+ "intent": "Verifies SuppressCommandPort/ClearCommandPort: closing the port records a reason in Status's commandPortBlockReasons, mismatched clears are no-ops, and matching clears reopen the port.",
+ "objects": [
+  {
+   "name": "CommandPortTest",
+   "kind": "struct",
+   "role": "tpunit fixture driving the suppress/status/clear-mismatch/clear-match sequence"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Fits."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling fixtures."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b118.json",
+ "hash": "b26038700ab7c156"
+}

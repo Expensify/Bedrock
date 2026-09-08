@@ -1,0 +1,43 @@
+{
+ "unit": "CreateJobTest",
+ "dir": "test/tests/jobs",
+ "files": [
+  "test/tests/jobs/CreateJobTest.cpp"
+ ],
+ "lines": 620,
+ "test": true,
+ "intent": "tpunit fixture exercising the Jobs plugin's CreateJob command: defaults, priority/data/repeat, unique-job merge/overwrite, parent/child validity, and the retryAfter lifecycle.",
+ "objects": [
+  {
+   "name": "CreateJobTest",
+   "kind": "struct (tpunit::TestFixture)",
+   "role": "one fixture per test, shares a BedrockTester, asserts DB state after CreateJob/GetJob/FinishJob calls"
+  },
+  {
+   "name": "__CreateJobTest",
+   "kind": "static instance",
+   "role": "registers the fixture with tpunit"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Matches the CreateJob command it tests."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Grouped with other per-command Jobs plugin tests."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent with sibling job tests."
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "test/lib/BedrockTester.h",
+  "test/tests/jobs/JobTestHelper.h"
+ ],
+ "_src": "b119.json",
+ "hash": "2f23b73aab0a3c2d"
+}

@@ -1,0 +1,36 @@
+{
+ "unit": "SQLiteServer",
+ "dir": "sqlitecluster",
+ "files": [
+  "sqlitecluster/SQLiteServer.h"
+ ],
+ "lines": 21,
+ "test": false,
+ "intent": "Abstract interface a SQLiteNode uses to call back into whatever server embeds it: login notifications, state-change notifications to plugins, and command-port blocking.",
+ "objects": [
+  {
+   "name": "SQLiteServer",
+   "kind": "class",
+   "role": "pure-virtual interface (onNodeLogin, notifyStateChangeToPlugins, blockCommandPort, unblockCommandPort), extends STCPManager"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "matches its contents."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "the callback contract for SQLiteNode's host server belongs here."
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "clear verb-based method names."
+ },
+ "depends_on": [
+  "sqlitecluster/SQLiteNode.h",
+  "libstuff/STCPManager.h"
+ ],
+ "_src": "b112.json",
+ "hash": "88b7a3f3c135424c"
+}

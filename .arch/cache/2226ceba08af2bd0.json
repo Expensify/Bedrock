@@ -1,0 +1,54 @@
+{
+ "unit": "main",
+ "dir": "test/clustertest",
+ "files": [
+  "test/clustertest/main.cpp"
+ ],
+ "lines": 112,
+ "test": true,
+ "intent": "Entry point for the cluster/replication test binary: parses the same family of CLI flags as test/main.cpp and drives tpunit::Tests::run, deliberately not resetting state between tests.",
+ "objects": [
+  {
+   "name": "sigclean",
+   "kind": "free function",
+   "role": "SIGINT handler that stops any running test servers before exiting"
+  },
+  {
+   "name": "log",
+   "kind": "free function",
+   "role": "execs `tail -f /var/log/syslog | grep bedrock` into log.txt; not called anywhere in this file"
+  },
+  {
+   "name": "main",
+   "kind": "free function",
+   "role": "parses args and runs the test suite (optionally repeated)"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "log()",
+   "why": "dead code - defined but never invoked from main; also a generic name that collides in intent with the repo's SINFO/SWARN logging macros despite doing something unrelated (execing into tail+grep)",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "a plain main.cpp test-binary entry point."
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits test/clustertest."
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "`log` as a free-function name is generic and easily confused with actual logging."
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/SData.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b112.json",
+ "hash": "2226ceba08af2bd0"
+}
