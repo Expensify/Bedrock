@@ -1,0 +1,61 @@
+[
+ {
+  "unit": "BedrockCommand",
+  "dir": "",
+  "files": [
+   "BedrockCommand.h",
+   "BedrockCommand.cpp"
+  ],
+  "kind": "pair",
+  "lines": 879,
+  "test": false,
+  "hash": "8e2d42713657f002"
+ },
+ {
+  "unit": "BedrockCore",
+  "dir": "",
+  "files": [
+   "BedrockCore.h",
+   "BedrockCore.cpp"
+  ],
+  "kind": "pair",
+  "lines": 575,
+  "test": false,
+  "hash": "53f0541ac29e5df3"
+ },
+ {
+  "unit": "main",
+  "dir": "",
+  "files": [
+   "main.cpp"
+  ],
+  "kind": "single",
+  "lines": 457,
+  "test": false,
+  "hash": "c3f81ed420e8bbba"
+ },
+ {
+  "unit": "BedrockBlockingCommandQueue",
+  "dir": "",
+  "files": [
+   "BedrockBlockingCommandQueue.h",
+   "BedrockBlockingCommandQueue.cpp"
+  ],
+  "kind": "pair",
+  "lines": 354,
+  "test": false,
+  "hash": "bc0815ce37e37479"
+ },
+ {
+  "unit": "BedrockCommandQueue",
+  "dir": "",
+  "files": [
+   "BedrockCommandQueue.h",
+   "BedrockCommandQueue.cpp"
+  ],
+  "kind": "pair",
+  "lines": 315,
+  "test": false,
+  "hash": "9aad786cd636a08a"
+ }
+]

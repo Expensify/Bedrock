@@ -1,0 +1,1789 @@
+{
+ "units": [
+  {
+   "unit": "libstuff",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/libstuff.h",
+    "libstuff/libstuff.cpp"
+   ],
+   "kind": "pair",
+   "lines": 4612,
+   "test": false,
+   "hash": "d0447793a7008542"
+  },
+  {
+   "unit": "BedrockServer",
+   "dir": "",
+   "files": [
+    "BedrockServer.h",
+    "BedrockServer.cpp"
+   ],
+   "kind": "pair",
+   "lines": 2972,
+   "test": false,
+   "hash": "97f2ea0ac2f2e51c"
+  },
+  {
+   "unit": "SQLiteNode",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLiteNode.h",
+    "sqlitecluster/SQLiteNode.cpp"
+   ],
+   "kind": "pair",
+   "lines": 2964,
+   "test": false,
+   "hash": "7fdd048b59c5cb54"
+  },
+  {
+   "unit": "Value",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Value.h",
+    "libstuff/JSON/Value.cpp"
+   ],
+   "kind": "pair",
+   "lines": 2630,
+   "test": false,
+   "hash": "7bd782b20de92166"
+  },
+  {
+   "unit": "SQLite",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLite.h",
+    "sqlitecluster/SQLite.cpp"
+   ],
+   "kind": "pair",
+   "lines": 2374,
+   "test": false,
+   "hash": "4df4c152a333f0ca"
+  },
+  {
+   "unit": "Jobs",
+   "dir": "plugins",
+   "files": [
+    "plugins/Jobs.h",
+    "plugins/Jobs.cpp"
+   ],
+   "kind": "pair",
+   "lines": 1740,
+   "test": false,
+   "hash": "68fe8398f583019e"
+  },
+  {
+   "unit": "LibStuffTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/LibStuffTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 1283,
+   "test": true,
+   "hash": "72a1473d5f29856e"
+  },
+  {
+   "unit": "MySQL",
+   "dir": "plugins",
+   "files": [
+    "plugins/MySQL.h",
+    "plugins/MySQL.cpp"
+   ],
+   "kind": "pair",
+   "lines": 1148,
+   "test": false,
+   "hash": "ee9eaccdb115461c"
+  },
+  {
+   "unit": "tpunit++",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/tpunit++.cpp",
+    "test/lib/tpunit++.hpp"
+   ],
+   "kind": "pair",
+   "lines": 1078,
+   "test": true,
+   "hash": "95c596a24c9c486a"
+  },
+  {
+   "unit": "GetJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/GetJobTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 971,
+   "test": true,
+   "hash": "3a7c1f105d322921"
+  },
+  {
+   "unit": "TestPlugin",
+   "dir": "test/clustertest/testplugin",
+   "files": [
+    "test/clustertest/testplugin/TestPlugin.h",
+    "test/clustertest/testplugin/TestPlugin.cpp"
+   ],
+   "kind": "pair",
+   "lines": 961,
+   "test": true,
+   "hash": "d26ea8599f58733b"
+  },
+  {
+   "unit": "RetryJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/RetryJobTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 903,
+   "test": true,
+   "hash": "508a146c916f6422"
+  },
+  {
+   "unit": "BedrockCommand",
+   "dir": "",
+   "files": [
+    "BedrockCommand.h",
+    "BedrockCommand.cpp"
+   ],
+   "kind": "pair",
+   "lines": 879,
+   "test": false,
+   "hash": "8e2d42713657f002"
+  },
+  {
+   "unit": "BedrockTester",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/BedrockTester.h",
+    "test/lib/BedrockTester.cpp"
+   ],
+   "kind": "pair",
+   "lines": 876,
+   "test": true,
+   "hash": "f00c46658dbd7c08"
+  },
+  {
+   "unit": "JSONValueTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/JSONValueTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 862,
+   "test": true,
+   "hash": "2b9504c57a28f501"
+  },
+  {
+   "unit": "sqlite3ext",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/sqlite3ext.h"
+   ],
+   "kind": "single",
+   "lines": 745,
+   "test": false,
+   "hash": "c36b48f03e8d105f"
+  },
+  {
+   "unit": "CreateJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/CreateJobTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 620,
+   "test": true,
+   "hash": "2f23b73aab0a3c2d"
+  },
+  {
+   "unit": "FinishJobTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/FinishJobTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 605,
+   "test": true,
+   "hash": "e207e98aab089735"
+  },
+  {
+   "unit": "SQResultFormatter",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SQResultFormatter.h",
+    "libstuff/SQResultFormatter.cpp"
+   ],
+   "kind": "pair",
+   "lines": 588,
+   "test": false,
+   "hash": "4a8f3c63c61a6b47"
+  },
+  {
+   "unit": "BedrockCore",
+   "dir": "",
+   "files": [
+    "BedrockCore.h",
+    "BedrockCore.cpp"
+   ],
+   "kind": "pair",
+   "lines": 575,
+   "test": false,
+   "hash": "53f0541ac29e5df3"
+  },
+  {
+   "unit": "STCPManager",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/STCPManager.h",
+    "libstuff/STCPManager.cpp"
+   ],
+   "kind": "pair",
+   "lines": 553,
+   "test": false,
+   "hash": "57ce8bc3df036605"
+  },
+  {
+   "unit": "DB",
+   "dir": "plugins",
+   "files": [
+    "plugins/DB.h",
+    "plugins/DB.cpp"
+   ],
+   "kind": "pair",
+   "lines": 490,
+   "test": false,
+   "hash": "0780f3bd40ad55b5"
+  },
+  {
+   "unit": "main",
+   "dir": "",
+   "files": [
+    "main.cpp"
+   ],
+   "kind": "single",
+   "lines": 457,
+   "test": false,
+   "hash": "c3f81ed420e8bbba"
+  },
+  {
+   "unit": "JSONUtilsTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/JSONUtilsTest.h",
+    "test/tests/JSONUtilsTest.cpp"
+   ],
+   "kind": "pair",
+   "lines": 453,
+   "test": true,
+   "hash": "eddd77fe96fab635"
+  },
+  {
+   "unit": "SQLiteClusterMessenger",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLiteClusterMessenger.h",
+    "sqlitecluster/SQLiteClusterMessenger.cpp"
+   ],
+   "kind": "pair",
+   "lines": 430,
+   "test": false,
+   "hash": "a70d20f0e5aaf532"
+  },
+  {
+   "unit": "SQLitePeer",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLitePeer.h",
+    "sqlitecluster/SQLitePeer.cpp"
+   ],
+   "kind": "pair",
+   "lines": 425,
+   "test": false,
+   "hash": "c2db323bdb64b8e9"
+  },
+  {
+   "unit": "Compression",
+   "dir": "plugins",
+   "files": [
+    "plugins/Compression.h",
+    "plugins/Compression.cpp"
+   ],
+   "kind": "pair",
+   "lines": 414,
+   "test": false,
+   "hash": "ae5530d534aa1b78"
+  },
+  {
+   "unit": "Utils",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Utils.h",
+    "libstuff/JSON/Utils.cpp"
+   ],
+   "kind": "pair",
+   "lines": 402,
+   "test": false,
+   "hash": "9b657049e6d834aa"
+  },
+  {
+   "unit": "CancelJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/CancelJobTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 393,
+   "test": true,
+   "hash": "e33e1619d11e17cf"
+  },
+  {
+   "unit": "SQResult",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SQResult.h",
+    "libstuff/SQResult.cpp"
+   ],
+   "kind": "pair",
+   "lines": 389,
+   "test": false,
+   "hash": "c35b59138d2806b1"
+  },
+  {
+   "unit": "Cache",
+   "dir": "plugins",
+   "files": [
+    "plugins/Cache.h",
+    "plugins/Cache.cpp"
+   ],
+   "kind": "pair",
+   "lines": 374,
+   "test": false,
+   "hash": "c5e3f4f412fed421"
+  },
+  {
+   "unit": "BedrockBlockingCommandQueue",
+   "dir": "",
+   "files": [
+    "BedrockBlockingCommandQueue.h",
+    "BedrockBlockingCommandQueue.cpp"
+   ],
+   "kind": "pair",
+   "lines": 354,
+   "test": false,
+   "hash": "bc0815ce37e37479"
+  },
+  {
+   "unit": "Writer",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Writer.h",
+    "libstuff/JSON/Writer.cpp"
+   ],
+   "kind": "pair",
+   "lines": 350,
+   "test": false,
+   "hash": "667f08cf52c8c9ee"
+  },
+  {
+   "unit": "SHTTPSManager",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SHTTPSManager.h",
+    "libstuff/SHTTPSManager.cpp"
+   ],
+   "kind": "pair",
+   "lines": 341,
+   "test": false,
+   "hash": "9f9f1455df85e191"
+  },
+  {
+   "unit": "SRingBufferTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SRingBufferTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 339,
+   "test": true,
+   "hash": "3b269f6f8b074533"
+  },
+  {
+   "unit": "BedrockCommandQueue",
+   "dir": "",
+   "files": [
+    "BedrockCommandQueue.h",
+    "BedrockCommandQueue.cpp"
+   ],
+   "kind": "pair",
+   "lines": 315,
+   "test": false,
+   "hash": "9aad786cd636a08a"
+  },
+  {
+   "unit": "BlockingCommandQueueTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/BlockingCommandQueueTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 313,
+   "test": true,
+   "hash": "1eaf33edc977247c"
+  },
+  {
+   "unit": "SSignal",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SSignal.cpp"
+   ],
+   "kind": "single",
+   "lines": 307,
+   "test": false,
+   "hash": "f5547c10ff2ebbea"
+  },
+  {
+   "unit": "ConflictSpamTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/ConflictSpamTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 295,
+   "test": true,
+   "hash": "00d3b91a37b43840"
+  },
+  {
+   "unit": "MySQLUtilsTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/MySQLUtilsTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 285,
+   "test": true,
+   "hash": "2ef0b991900bfb7d"
+  },
+  {
+   "unit": "SData",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SData.h",
+    "libstuff/SData.cpp"
+   ],
+   "kind": "pair",
+   "lines": 283,
+   "test": false,
+   "hash": "4dc9f8b084815f85"
+  },
+  {
+   "unit": "RequeueJobsTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/RequeueJobsTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 282,
+   "test": true,
+   "hash": "a2d585ad02aaf347"
+  },
+  {
+   "unit": "CompressionTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/CompressionTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 279,
+   "test": true,
+   "hash": "3a4f73d1f4c3f040"
+  },
+  {
+   "unit": "SDeburr",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SDeburr.h",
+    "libstuff/SDeburr.cpp"
+   ],
+   "kind": "pair",
+   "lines": 277,
+   "test": false,
+   "hash": "462645756f8701da"
+  },
+  {
+   "unit": "SAXHandler",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/SAXHandler.h",
+    "libstuff/JSON/SAXHandler.cpp"
+   ],
+   "kind": "pair",
+   "lines": 269,
+   "test": false,
+   "hash": "8c93f8fec8aa01fa"
+  },
+  {
+   "unit": "SSSLState",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SSSLState.h",
+    "libstuff/SSSLState.cpp"
+   ],
+   "kind": "pair",
+   "lines": 269,
+   "test": false,
+   "hash": "0341f3a3090b6d26"
+  },
+  {
+   "unit": "main",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/main.cpp"
+   ],
+   "kind": "single",
+   "lines": 267,
+   "test": true,
+   "hash": "f0b37d1e390857fb"
+  },
+  {
+   "unit": "CreateJobsTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/CreateJobsTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 266,
+   "test": true,
+   "hash": "6aad62ab1f9a33d0"
+  },
+  {
+   "unit": "BedrockClusterTester",
+   "dir": "test/clustertest",
+   "files": [
+    "test/clustertest/BedrockClusterTester.h"
+   ],
+   "kind": "single",
+   "lines": 252,
+   "test": true,
+   "hash": "f69751f0ccbddf27"
+  },
+  {
+   "unit": "TimeoutTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/TimeoutTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 249,
+   "test": true,
+   "hash": "07117a82dfbadc17"
+  },
+  {
+   "unit": "ClusterUpgradeTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/ClusterUpgradeTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 243,
+   "test": true,
+   "hash": "8ce686f1907afb7e"
+  },
+  {
+   "unit": "VMTouch",
+   "dir": "",
+   "files": [
+    "VMTouch.h",
+    "VMTouch.cpp"
+   ],
+   "kind": "pair",
+   "lines": 232,
+   "test": false,
+   "hash": "717c4521066fec8c"
+  },
+  {
+   "unit": "SQValue",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SQValue.h",
+    "libstuff/SQValue.cpp"
+   ],
+   "kind": "pair",
+   "lines": 230,
+   "test": false,
+   "hash": "31cd6f169bf75562"
+  },
+  {
+   "unit": "GracefulFailoverTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/GracefulFailoverTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 228,
+   "test": true,
+   "hash": "30c88b82ae807526"
+  },
+  {
+   "unit": "WriteTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/WriteTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 219,
+   "test": true,
+   "hash": "5fe7ba8d54d86e72"
+  },
+  {
+   "unit": "BedrockPlugin",
+   "dir": "",
+   "files": [
+    "BedrockPlugin.h",
+    "BedrockPlugin.cpp"
+   ],
+   "kind": "pair",
+   "lines": 212,
+   "test": false,
+   "hash": "f3da86a31bf66a94"
+  },
+  {
+   "unit": "SetPriorityTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/SetPriorityTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 210,
+   "test": true,
+   "hash": "f54c1605fc93f4ca"
+  },
+  {
+   "unit": "AsyncResolveTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/AsyncResolveTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 206,
+   "test": true,
+   "hash": "572109ce8a4bb531"
+  },
+  {
+   "unit": "qrf",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/qrf.h"
+   ],
+   "kind": "single",
+   "lines": 200,
+   "test": false,
+   "hash": "acc4e96f2ef27877"
+  },
+  {
+   "unit": "DeleteJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/DeleteJobTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 200,
+   "test": true,
+   "hash": "17e715ad9a16e616"
+  },
+  {
+   "unit": "LeadingTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/LeadingTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 190,
+   "test": true,
+   "hash": "51e7b58788a71636"
+  },
+  {
+   "unit": "JSONParserTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/JSONParserTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 189,
+   "test": true,
+   "hash": "7b19ed4abee192d3"
+  },
+  {
+   "unit": "MultipleLeaderSyncTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/MultipleLeaderSyncTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 187,
+   "test": true,
+   "hash": "552225259128f264"
+  },
+  {
+   "unit": "SFastBuffer",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SFastBuffer.h",
+    "libstuff/SFastBuffer.cpp"
+   ],
+   "kind": "pair",
+   "lines": 180,
+   "test": false,
+   "hash": "0073a926ce9a34b0"
+  },
+  {
+   "unit": "SQLitePool",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLitePool.h",
+    "sqlitecluster/SQLitePool.cpp"
+   ],
+   "kind": "pair",
+   "lines": 179,
+   "test": false,
+   "hash": "8901b6b06e726a2f"
+  },
+  {
+   "unit": "SHTTPSProxySocket",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SHTTPSProxySocket.h",
+    "libstuff/SHTTPSProxySocket.cpp"
+   ],
+   "kind": "pair",
+   "lines": 176,
+   "test": false,
+   "hash": "b3a16ac04d2a385a"
+  },
+  {
+   "unit": "SSynchronizedQueue",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SSynchronizedQueue.h"
+   ],
+   "kind": "single",
+   "lines": 175,
+   "test": false,
+   "hash": "37ff24f96376de1d"
+  },
+  {
+   "unit": "SQliteParameter",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SQliteParameter.h",
+    "libstuff/SQliteParameter.cpp"
+   ],
+   "kind": "pair",
+   "lines": 174,
+   "test": false,
+   "hash": "7a8131a8beeee7c9"
+  },
+  {
+   "unit": "FailedJobReplyTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/FailedJobReplyTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 173,
+   "test": true,
+   "hash": "450c0d79009770d3"
+  },
+  {
+   "unit": "SQLiteNodeTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SQLiteNodeTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 170,
+   "test": true,
+   "hash": "a74d5a499bee1d90"
+  },
+  {
+   "unit": "SSocketPool",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SSocketPool.h",
+    "libstuff/SSocketPool.cpp"
+   ],
+   "kind": "pair",
+   "lines": 168,
+   "test": false,
+   "hash": "a2c54b4ec35f02bf"
+  },
+  {
+   "unit": "MySQLTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/MySQLTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 157,
+   "test": true,
+   "hash": "9bd30990384218ca"
+  },
+  {
+   "unit": "BenchmarkBase",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "kind": "single",
+   "lines": 154,
+   "test": true,
+   "hash": "e3abd57adfd63ef6"
+  },
+  {
+   "unit": "SQLiteCommand",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLiteCommand.h",
+    "sqlitecluster/SQLiteCommand.cpp"
+   ],
+   "kind": "pair",
+   "lines": 154,
+   "test": false,
+   "hash": "8fdd34c17faf567c"
+  },
+  {
+   "unit": "UpdateJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/UpdateJobTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 153,
+   "test": true,
+   "hash": "0bba37b4d2a15a2d"
+  },
+  {
+   "unit": "SResolver",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SResolver.h",
+    "libstuff/SResolver.cpp"
+   ],
+   "kind": "pair",
+   "lines": 146,
+   "test": false,
+   "hash": "45fd3518f2c147d3"
+  },
+  {
+   "unit": "WriteLocalUnreplicatedTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/WriteLocalUnreplicatedTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 146,
+   "test": true,
+   "hash": "2e5f9ffa91ee8930"
+  },
+  {
+   "unit": "BlockingQueueRateLimitTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/BlockingQueueRateLimitTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 143,
+   "test": true,
+   "hash": "4e88be02d8be4a9f"
+  },
+  {
+   "unit": "SLog",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SLog.cpp"
+   ],
+   "kind": "single",
+   "lines": 141,
+   "test": false,
+   "hash": "f1538779bc49a1e0"
+  },
+  {
+   "unit": "BoundParametersTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/BoundParametersTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 141,
+   "test": true,
+   "hash": "19d6d1007c596ccb"
+  },
+  {
+   "unit": "ForkCheckTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/ForkCheckTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 139,
+   "test": true,
+   "hash": "8b840ed801e4e0da"
+  },
+  {
+   "unit": "JSONTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/JSONTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 139,
+   "test": true,
+   "hash": "661803184a6fbc93"
+  },
+  {
+   "unit": "STime",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/STime.cpp"
+   ],
+   "kind": "single",
+   "lines": 138,
+   "test": false,
+   "hash": "4db822301ce7fa74"
+  },
+  {
+   "unit": "RemoteSQLite",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/RemoteSQLite.h",
+    "test/lib/RemoteSQLite.cpp"
+   ],
+   "kind": "pair",
+   "lines": 138,
+   "test": true,
+   "hash": "415165cd02497f92"
+  },
+  {
+   "unit": "SFluentdLoggerTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SFluentdLoggerTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 136,
+   "test": true,
+   "hash": "4e42260e58198d7c"
+  },
+  {
+   "unit": "SFluentdLogger",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SFluentdLogger.h",
+    "libstuff/SFluentdLogger.cpp"
+   ],
+   "kind": "pair",
+   "lines": 132,
+   "test": false,
+   "hash": "4565b7db28aaf188"
+  },
+  {
+   "unit": "QueryTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/QueryTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 130,
+   "test": true,
+   "hash": "3722e25a8f105610"
+  },
+  {
+   "unit": "GetJobsTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/GetJobsTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 130,
+   "test": true,
+   "hash": "c816e80a48704a4d"
+  },
+  {
+   "unit": "BadCommandTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/BadCommandTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 127,
+   "test": true,
+   "hash": "3216b0afb99f8ce4"
+  },
+  {
+   "unit": "main",
+   "dir": "test",
+   "files": [
+    "test/main.cpp"
+   ],
+   "kind": "single",
+   "lines": 127,
+   "test": true,
+   "hash": "0c43acb6168d2559"
+  },
+  {
+   "unit": "ConflictLockGuard",
+   "dir": "",
+   "files": [
+    "ConflictLockGuard.h",
+    "ConflictLockGuard.cpp"
+   ],
+   "kind": "pair",
+   "lines": 126,
+   "test": false,
+   "hash": "d0cafeb3080d06d3"
+  },
+  {
+   "unit": "FailJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/FailJobTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 126,
+   "test": true,
+   "hash": "288e8692a957fda4"
+  },
+  {
+   "unit": "HTTPSTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/HTTPSTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 123,
+   "test": true,
+   "hash": "2aba4b061bc3f18a"
+  },
+  {
+   "unit": "AfterCommitCallbackTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/AfterCommitCallbackTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 123,
+   "test": true,
+   "hash": "37b72c865db5b839"
+  },
+  {
+   "unit": "FastStandDownTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/FastStandDownTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 120,
+   "test": true,
+   "hash": "5e04ec8dd08ffbfe"
+  },
+  {
+   "unit": "main",
+   "dir": "test/clustertest",
+   "files": [
+    "test/clustertest/main.cpp"
+   ],
+   "kind": "single",
+   "lines": 112,
+   "test": true,
+   "hash": "2226ceba08af2bd0"
+  },
+  {
+   "unit": "TimingTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/TimingTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 111,
+   "test": true,
+   "hash": "2deef8e5b9556ecd"
+  },
+  {
+   "unit": "SReplaceBench",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/SReplaceBench.cpp"
+   ],
+   "kind": "single",
+   "lines": 110,
+   "test": true,
+   "hash": "633c06d2f9bfb352"
+  },
+  {
+   "unit": "EscalateTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/EscalateTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 107,
+   "test": true,
+   "hash": "a39badef636cd2ae"
+  },
+  {
+   "unit": "PortMap",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/PortMap.h",
+    "test/lib/PortMap.cpp"
+   ],
+   "kind": "pair",
+   "lines": 107,
+   "test": true,
+   "hash": "faf700137f857288"
+  },
+  {
+   "unit": "FastHTTPParsing",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/FastHTTPParsing.cpp"
+   ],
+   "kind": "single",
+   "lines": 107,
+   "test": true,
+   "hash": "6252746ea2733b71"
+  },
+  {
+   "unit": "InifiniteRetryAfterTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/InifiniteRetryAfterTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 106,
+   "test": true,
+   "hash": "67348a75fe78cd98"
+  },
+  {
+   "unit": "SRingBuffer",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SRingBuffer.h"
+   ],
+   "kind": "single",
+   "lines": 101,
+   "test": false,
+   "hash": "045ab57d37d01200"
+  },
+  {
+   "unit": "SReplaceAllBench",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/SReplaceAllBench.cpp"
+   ],
+   "kind": "single",
+   "lines": 100,
+   "test": true,
+   "hash": "4bfd6cd9c7705dcf"
+  },
+  {
+   "unit": "HTTPSBlockingCommitTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/HTTPSBlockingCommitTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 99,
+   "test": true,
+   "hash": "d4ddb46208c20df5"
+  },
+  {
+   "unit": "JobIDTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/JobIDTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 97,
+   "test": true,
+   "hash": "e47a1866f5522984"
+  },
+  {
+   "unit": "SSLTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SSLTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 97,
+   "test": true,
+   "hash": "00752d4719cc394d"
+  },
+  {
+   "unit": "BedrockConflictManager",
+   "dir": "",
+   "files": [
+    "BedrockConflictManager.h",
+    "BedrockConflictManager.cpp"
+   ],
+   "kind": "pair",
+   "lines": 91,
+   "test": false,
+   "hash": "4f01557f5e96b604"
+  },
+  {
+   "unit": "PrePeekPostProcessTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/PrePeekPostProcessTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 91,
+   "test": true,
+   "hash": "0e5c2f57280eb851"
+  },
+  {
+   "unit": "SDeburrBench",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/SDeburrBench.cpp"
+   ],
+   "kind": "single",
+   "lines": 90,
+   "test": true,
+   "hash": "00894e8922e0f82d"
+  },
+  {
+   "unit": "BroadcastTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/BroadcastTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 87,
+   "test": true,
+   "hash": "27cfb318553110c8"
+  },
+  {
+   "unit": "FutureExecutionTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/FutureExecutionTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 87,
+   "test": true,
+   "hash": "adea879c0912693d"
+  },
+  {
+   "unit": "SQLiteCore",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLiteCore.h",
+    "sqlitecluster/SQLiteCore.cpp"
+   ],
+   "kind": "pair",
+   "lines": 86,
+   "test": false,
+   "hash": "358aec97e647f4b8"
+  },
+  {
+   "unit": "SDeburrTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SDeburrTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 86,
+   "test": true,
+   "hash": "186258673379cbd4"
+  },
+  {
+   "unit": "SPerformanceTimer",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SPerformanceTimer.h",
+    "libstuff/SPerformanceTimer.cpp"
+   ],
+   "kind": "pair",
+   "lines": 77,
+   "test": false,
+   "hash": "38a2f8eac563d048"
+  },
+  {
+   "unit": "WriteLocalUnreplicatedClusterTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/WriteLocalUnreplicatedClusterTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 77,
+   "test": true,
+   "hash": "1c21dd331d0a7817"
+  },
+  {
+   "unit": "SIsValidSQLiteDateModifierTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SIsValidSQLiteDateModifierTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 75,
+   "test": true,
+   "hash": "e2e0c43f27d43bbe"
+  },
+  {
+   "unit": "VersionMismatchTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/VersionMismatchTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 70,
+   "test": true,
+   "hash": "c83174193b579e4b"
+  },
+  {
+   "unit": "Parser",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Parser.h",
+    "libstuff/JSON/Parser.cpp"
+   ],
+   "kind": "pair",
+   "lines": 69,
+   "test": false,
+   "hash": "9f30b8c7b56df2b5"
+  },
+  {
+   "unit": "ChainedHTTPTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/ChainedHTTPTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 69,
+   "test": true,
+   "hash": "cb54bb3e85db10d5"
+  },
+  {
+   "unit": "AutoTimer",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/AutoTimer.h",
+    "libstuff/AutoTimer.cpp"
+   ],
+   "kind": "pair",
+   "lines": 66,
+   "test": false,
+   "hash": "9db0b7d7bcbda010"
+  },
+  {
+   "unit": "SThread",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SThread.h"
+   ],
+   "kind": "single",
+   "lines": 66,
+   "test": false,
+   "hash": "a90c13e05dd5cfae"
+  },
+  {
+   "unit": "SynchronousCommandsTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/SynchronousCommandsTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 66,
+   "test": true,
+   "hash": "065b6696b0517485"
+  },
+  {
+   "unit": "AfterCommitCallbackClusterTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/AfterCommitCallbackClusterTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 65,
+   "test": true,
+   "hash": "6df2fadef9c1d1e7"
+  },
+  {
+   "unit": "StatusTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/StatusTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 63,
+   "test": true,
+   "hash": "478f4d9f317a8fb8"
+  },
+  {
+   "unit": "UpgradeTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/UpgradeTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 62,
+   "test": true,
+   "hash": "480af2b27097c2fc"
+  },
+  {
+   "unit": "QueryJobTest",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/QueryJobTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 62,
+   "test": true,
+   "hash": "b6ecac77c53af370"
+  },
+  {
+   "unit": "StatusHandlingCommandsTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/StatusHandlingCommandsTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 60,
+   "test": true,
+   "hash": "a31693c05b2ce879"
+  },
+  {
+   "unit": "SRandom",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SRandom.h",
+    "libstuff/SRandom.cpp"
+   ],
+   "kind": "pair",
+   "lines": 57,
+   "test": false,
+   "hash": "d9c1ddc55a28bb9f"
+  },
+  {
+   "unit": "PrintEquality",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/PrintEquality.h"
+   ],
+   "kind": "single",
+   "lines": 54,
+   "test": true,
+   "hash": "f29d77201f001cff"
+  },
+  {
+   "unit": "ControlCommandTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/ControlCommandTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 53,
+   "test": true,
+   "hash": "2bad5b9cb6248ec2"
+  },
+  {
+   "unit": "MassiveQueryTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/MassiveQueryTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 53,
+   "test": true,
+   "hash": "0af5f97f4d1ffee5"
+  },
+  {
+   "unit": "PermafollowerTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/PermafollowerTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 53,
+   "test": true,
+   "hash": "35cf6db3832d3d20"
+  },
+  {
+   "unit": "Serializable",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Serializable.h"
+   ],
+   "kind": "single",
+   "lines": 52,
+   "test": false,
+   "hash": "96400b628c7880ea"
+  },
+  {
+   "unit": "DoubleDetachTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/DoubleDetachTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 52,
+   "test": true,
+   "hash": "633173b89ee023be"
+  },
+  {
+   "unit": "ReadTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/ReadTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 52,
+   "test": true,
+   "hash": "9a45ab053ae2bf3f"
+  },
+  {
+   "unit": "UpgradeDBTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/UpgradeDBTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 51,
+   "test": true,
+   "hash": "876c10dd6cf5f463"
+  },
+  {
+   "unit": "Metrics",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Metrics.h",
+    "libstuff/JSON/Metrics.cpp"
+   ],
+   "kind": "pair",
+   "lines": 48,
+   "test": false,
+   "hash": "17a98b39e917093a"
+  },
+  {
+   "unit": "SMultiHostSocketPool",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SMultiHostSocketPool.h",
+    "libstuff/SMultiHostSocketPool.cpp"
+   ],
+   "kind": "pair",
+   "lines": 48,
+   "test": false,
+   "hash": "92b5adc96213def9"
+  },
+  {
+   "unit": "TestHTTPS",
+   "dir": "test/lib",
+   "files": [
+    "test/lib/TestHTTPS.h",
+    "test/lib/TestHTTPS.cpp"
+   ],
+   "kind": "pair",
+   "lines": 47,
+   "test": true,
+   "hash": "c6c48f73f4795ab9"
+  },
+  {
+   "unit": "SQLiteUtils",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLiteUtils.h",
+    "sqlitecluster/SQLiteUtils.cpp"
+   ],
+   "kind": "pair",
+   "lines": 44,
+   "test": false,
+   "hash": "9882d504dca0c760"
+  },
+  {
+   "unit": "CommandPortTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/CommandPortTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 42,
+   "test": true,
+   "hash": "b26038700ab7c156"
+  },
+  {
+   "unit": "STimeTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/STimeTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 42,
+   "test": true,
+   "hash": "b2133a317458d05f"
+  },
+  {
+   "unit": "AutoScopeOnPrepare",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/AutoScopeOnPrepare.h",
+    "libstuff/AutoScopeOnPrepare.cpp"
+   ],
+   "kind": "pair",
+   "lines": 33,
+   "test": false,
+   "hash": "10183823cd6c81c1"
+  },
+  {
+   "unit": "ThreadExceptionTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/ThreadExceptionTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 23,
+   "test": true,
+   "hash": "628cd8c2ac172b5b"
+  },
+  {
+   "unit": "SQLiteServer",
+   "dir": "sqlitecluster",
+   "files": [
+    "sqlitecluster/SQLiteServer.h"
+   ],
+   "kind": "single",
+   "lines": 21,
+   "test": false,
+   "hash": "88b7a3f3c135424c"
+  },
+  {
+   "unit": "UniqueConstraintsTest",
+   "dir": "test/clustertest/tests",
+   "files": [
+    "test/clustertest/tests/UniqueConstraintsTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 21,
+   "test": true,
+   "hash": "0512cab1c7c260f1"
+  },
+  {
+   "unit": "StatusTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/StatusTest.cpp"
+   ],
+   "kind": "single",
+   "lines": 21,
+   "test": true,
+   "hash": "b4413a98bd2a9f3c"
+  },
+  {
+   "unit": "JobTestHelper",
+   "dir": "test/tests/jobs",
+   "files": [
+    "test/tests/jobs/JobTestHelper.h",
+    "test/tests/jobs/JobTestHelper.cpp"
+   ],
+   "kind": "pair",
+   "lines": 17,
+   "test": true,
+   "hash": "87631fa27b96a723"
+  },
+  {
+   "unit": "bedrockVersion",
+   "dir": "",
+   "files": [
+    "bedrockVersion.h"
+   ],
+   "kind": "single",
+   "lines": 12,
+   "test": false,
+   "hash": "e7bd86b4a93189e8"
+  },
+  {
+   "unit": "version",
+   "dir": "",
+   "files": [
+    "version.h"
+   ],
+   "kind": "single",
+   "lines": 4,
+   "test": false,
+   "hash": "6fc4f14586cda5ad"
+  },
+  {
+   "unit": "ExternPointer",
+   "dir": "test/clustertest/testplugin",
+   "files": [
+    "test/clustertest/testplugin/ExternPointer.cpp"
+   ],
+   "kind": "single",
+   "lines": 2,
+   "test": true,
+   "hash": "e6f66aac372ddef9"
+  }
+ ],
+ "non_code_authored": [
+  ".clang-format",
+  ".clangd.example",
+  ".gitattributes",
+  ".github/PULL_REQUEST_TEMPLATE.md",
+  ".github/actions/composite/download-binaries/action.yml",
+  ".github/workflows/bedrock.yml",
+  ".gitignore",
+  ".gitmodules",
+  ".uncrustify.cfg",
+  "COPYING",
+  "Makefile",
+  "README.md",
+  "benchmarks/Makefile",
+  "benchmarks/README.md",
+  "ci_build.sh",
+  "ci_style.sh",
+  "ci_tests.sh",
+  "ci_utils.sh",
+  "class_hierarchy.md",
+  "configs/bedrock.conf",
+  "configs/bedrock.init",
+  "configs/bedrock.service",
+  "configs/bedrock_prerequisites.service",
+  "docker/Dockerfile",
+  "docker/README.md",
+  "docker/build_and_extract.sh",
+  "docker/docker-compose.yml",
+  "docker/libstuff/bedrock.sh",
+  "docs/CNAME",
+  "docs/_config.yml",
+  "docs/_layouts/default.html",
+  "docs/blockchain.md",
+  "docs/cache.md",
+  "docs/cli.md",
+  "docs/db.md",
+  "docs/index.md",
+  "docs/jobs.md",
+  "docs/multizone.md",
+  "docs/mysql.md",
+  "docs/status.md",
+  "docs/synchronization.md",
+  "docs/vs_mysql.md",
+  "expensify.ca.crt.enc",
+  "format.sh",
+  "libstuff/JSON/README.md",
+  "libstuff/README.md",
+  "mbedtls",
+  "plugins/Cache.md",
+  "plugins/Jobs.md",
+  "sqlitecluster/index.markdown",
+  "style.sh",
+  "test/Makefile",
+  "test/sample_data/journal.dict",
+  "test/sample_data/lottoNumbers.json",
+  "use_clang"
+ ]
+}

@@ -1,0 +1,200 @@
+[
+ {
+  "unit": "ClusterUpgradeTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/ClusterUpgradeTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 243,
+  "test": true,
+  "hash": "8ce686f1907afb7e"
+ },
+ {
+  "unit": "GracefulFailoverTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/GracefulFailoverTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 228,
+  "test": true,
+  "hash": "30c88b82ae807526"
+ },
+ {
+  "unit": "SetPriorityTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/SetPriorityTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 210,
+  "test": true,
+  "hash": "f54c1605fc93f4ca"
+ },
+ {
+  "unit": "LeadingTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/LeadingTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 190,
+  "test": true,
+  "hash": "51e7b58788a71636"
+ },
+ {
+  "unit": "MultipleLeaderSyncTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/MultipleLeaderSyncTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 187,
+  "test": true,
+  "hash": "552225259128f264"
+ },
+ {
+  "unit": "BlockingQueueRateLimitTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/BlockingQueueRateLimitTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 143,
+  "test": true,
+  "hash": "4e88be02d8be4a9f"
+ },
+ {
+  "unit": "BoundParametersTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/BoundParametersTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 141,
+  "test": true,
+  "hash": "19d6d1007c596ccb"
+ },
+ {
+  "unit": "ForkCheckTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/ForkCheckTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 139,
+  "test": true,
+  "hash": "8b840ed801e4e0da"
+ },
+ {
+  "unit": "BadCommandTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/BadCommandTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 127,
+  "test": true,
+  "hash": "3216b0afb99f8ce4"
+ },
+ {
+  "unit": "HTTPSTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/HTTPSTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 123,
+  "test": true,
+  "hash": "2aba4b061bc3f18a"
+ },
+ {
+  "unit": "FastStandDownTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/FastStandDownTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 120,
+  "test": true,
+  "hash": "5e04ec8dd08ffbfe"
+ },
+ {
+  "unit": "TimingTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/TimingTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 111,
+  "test": true,
+  "hash": "2deef8e5b9556ecd"
+ },
+ {
+  "unit": "EscalateTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/EscalateTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 107,
+  "test": true,
+  "hash": "a39badef636cd2ae"
+ },
+ {
+  "unit": "HTTPSBlockingCommitTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/HTTPSBlockingCommitTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 99,
+  "test": true,
+  "hash": "d4ddb46208c20df5"
+ },
+ {
+  "unit": "JobIDTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/JobIDTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 97,
+  "test": true,
+  "hash": "e47a1866f5522984"
+ },
+ {
+  "unit": "PrePeekPostProcessTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/PrePeekPostProcessTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 91,
+  "test": true,
+  "hash": "0e5c2f57280eb851"
+ },
+ {
+  "unit": "BroadcastTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/BroadcastTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 87,
+  "test": true,
+  "hash": "27cfb318553110c8"
+ },
+ {
+  "unit": "FutureExecutionTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/FutureExecutionTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 87,
+  "test": true,
+  "hash": "adea879c0912693d"
+ }
+]

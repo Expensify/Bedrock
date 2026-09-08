@@ -1,0 +1,154 @@
+[
+ {
+  "unit": "SQliteParameter",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SQliteParameter.h",
+   "libstuff/SQliteParameter.cpp"
+  ],
+  "kind": "pair",
+  "lines": 174,
+  "test": false,
+  "hash": "7a8131a8beeee7c9"
+ },
+ {
+  "unit": "SSocketPool",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SSocketPool.h",
+   "libstuff/SSocketPool.cpp"
+  ],
+  "kind": "pair",
+  "lines": 168,
+  "test": false,
+  "hash": "a2c54b4ec35f02bf"
+ },
+ {
+  "unit": "SResolver",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SResolver.h",
+   "libstuff/SResolver.cpp"
+  ],
+  "kind": "pair",
+  "lines": 146,
+  "test": false,
+  "hash": "45fd3518f2c147d3"
+ },
+ {
+  "unit": "SLog",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SLog.cpp"
+  ],
+  "kind": "single",
+  "lines": 141,
+  "test": false,
+  "hash": "f1538779bc49a1e0"
+ },
+ {
+  "unit": "STime",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/STime.cpp"
+  ],
+  "kind": "single",
+  "lines": 138,
+  "test": false,
+  "hash": "4db822301ce7fa74"
+ },
+ {
+  "unit": "SFluentdLogger",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SFluentdLogger.h",
+   "libstuff/SFluentdLogger.cpp"
+  ],
+  "kind": "pair",
+  "lines": 132,
+  "test": false,
+  "hash": "4565b7db28aaf188"
+ },
+ {
+  "unit": "SRingBuffer",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SRingBuffer.h"
+  ],
+  "kind": "single",
+  "lines": 101,
+  "test": false,
+  "hash": "045ab57d37d01200"
+ },
+ {
+  "unit": "SPerformanceTimer",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SPerformanceTimer.h",
+   "libstuff/SPerformanceTimer.cpp"
+  ],
+  "kind": "pair",
+  "lines": 77,
+  "test": false,
+  "hash": "38a2f8eac563d048"
+ },
+ {
+  "unit": "AutoTimer",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/AutoTimer.h",
+   "libstuff/AutoTimer.cpp"
+  ],
+  "kind": "pair",
+  "lines": 66,
+  "test": false,
+  "hash": "9db0b7d7bcbda010"
+ },
+ {
+  "unit": "SThread",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SThread.h"
+  ],
+  "kind": "single",
+  "lines": 66,
+  "test": false,
+  "hash": "a90c13e05dd5cfae"
+ },
+ {
+  "unit": "SRandom",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SRandom.h",
+   "libstuff/SRandom.cpp"
+  ],
+  "kind": "pair",
+  "lines": 57,
+  "test": false,
+  "hash": "d9c1ddc55a28bb9f"
+ },
+ {
+  "unit": "SMultiHostSocketPool",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SMultiHostSocketPool.h",
+   "libstuff/SMultiHostSocketPool.cpp"
+  ],
+  "kind": "pair",
+  "lines": 48,
+  "test": false,
+  "hash": "92b5adc96213def9"
+ },
+ {
+  "unit": "AutoScopeOnPrepare",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/AutoScopeOnPrepare.h",
+   "libstuff/AutoScopeOnPrepare.cpp"
+  ],
+  "kind": "pair",
+  "lines": 33,
+  "test": false,
+  "hash": "10183823cd6c81c1"
+ }
+]

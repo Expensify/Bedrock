@@ -1,0 +1,14 @@
+[
+ {
+  "unit": "SQLite",
+  "dir": "sqlitecluster",
+  "files": [
+   "sqlitecluster/SQLite.h",
+   "sqlitecluster/SQLite.cpp"
+  ],
+  "kind": "pair",
+  "lines": 2374,
+  "test": false,
+  "hash": "4df4c152a333f0ca"
+ }
+]

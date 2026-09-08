@@ -1,0 +1,168 @@
+[
+ {
+  "unit": "WriteLocalUnreplicatedClusterTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/WriteLocalUnreplicatedClusterTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 77,
+  "test": true,
+  "hash": "1c21dd331d0a7817"
+ },
+ {
+  "unit": "VersionMismatchTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/VersionMismatchTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 70,
+  "test": true,
+  "hash": "c83174193b579e4b"
+ },
+ {
+  "unit": "SynchronousCommandsTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/SynchronousCommandsTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 66,
+  "test": true,
+  "hash": "065b6696b0517485"
+ },
+ {
+  "unit": "AfterCommitCallbackClusterTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/AfterCommitCallbackClusterTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 65,
+  "test": true,
+  "hash": "6df2fadef9c1d1e7"
+ },
+ {
+  "unit": "StatusTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/StatusTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 63,
+  "test": true,
+  "hash": "478f4d9f317a8fb8"
+ },
+ {
+  "unit": "UpgradeTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/UpgradeTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 62,
+  "test": true,
+  "hash": "480af2b27097c2fc"
+ },
+ {
+  "unit": "StatusHandlingCommandsTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/StatusHandlingCommandsTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 60,
+  "test": true,
+  "hash": "a31693c05b2ce879"
+ },
+ {
+  "unit": "ControlCommandTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/ControlCommandTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 53,
+  "test": true,
+  "hash": "2bad5b9cb6248ec2"
+ },
+ {
+  "unit": "MassiveQueryTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/MassiveQueryTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 53,
+  "test": true,
+  "hash": "0af5f97f4d1ffee5"
+ },
+ {
+  "unit": "PermafollowerTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/PermafollowerTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 53,
+  "test": true,
+  "hash": "35cf6db3832d3d20"
+ },
+ {
+  "unit": "DoubleDetachTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/DoubleDetachTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 52,
+  "test": true,
+  "hash": "633173b89ee023be"
+ },
+ {
+  "unit": "UpgradeDBTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/UpgradeDBTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 51,
+  "test": true,
+  "hash": "876c10dd6cf5f463"
+ },
+ {
+  "unit": "ThreadExceptionTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/ThreadExceptionTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 23,
+  "test": true,
+  "hash": "628cd8c2ac172b5b"
+ },
+ {
+  "unit": "UniqueConstraintsTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/UniqueConstraintsTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 21,
+  "test": true,
+  "hash": "0512cab1c7c260f1"
+ },
+ {
+  "unit": "tpunit++",
+  "dir": "test/lib",
+  "files": [
+   "test/lib/tpunit++.cpp",
+   "test/lib/tpunit++.hpp"
+  ],
+  "kind": "pair",
+  "lines": 1078,
+  "test": true,
+  "hash": "95c596a24c9c486a"
+ }
+]

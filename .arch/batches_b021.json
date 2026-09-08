@@ -1,0 +1,124 @@
+[
+ {
+  "unit": "CancelJobTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/CancelJobTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 393,
+  "test": true,
+  "hash": "e33e1619d11e17cf"
+ },
+ {
+  "unit": "RequeueJobsTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/RequeueJobsTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 282,
+  "test": true,
+  "hash": "a2d585ad02aaf347"
+ },
+ {
+  "unit": "CreateJobsTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/CreateJobsTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 266,
+  "test": true,
+  "hash": "6aad62ab1f9a33d0"
+ },
+ {
+  "unit": "DeleteJobTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/DeleteJobTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 200,
+  "test": true,
+  "hash": "17e715ad9a16e616"
+ },
+ {
+  "unit": "FailedJobReplyTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/FailedJobReplyTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 173,
+  "test": true,
+  "hash": "450c0d79009770d3"
+ },
+ {
+  "unit": "UpdateJobTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/UpdateJobTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 153,
+  "test": true,
+  "hash": "0bba37b4d2a15a2d"
+ },
+ {
+  "unit": "GetJobsTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/GetJobsTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 130,
+  "test": true,
+  "hash": "c816e80a48704a4d"
+ },
+ {
+  "unit": "FailJobTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/FailJobTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 126,
+  "test": true,
+  "hash": "288e8692a957fda4"
+ },
+ {
+  "unit": "InifiniteRetryAfterTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/InifiniteRetryAfterTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 106,
+  "test": true,
+  "hash": "67348a75fe78cd98"
+ },
+ {
+  "unit": "QueryJobTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/QueryJobTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 62,
+  "test": true,
+  "hash": "b6ecac77c53af370"
+ },
+ {
+  "unit": "JobTestHelper",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/JobTestHelper.h",
+   "test/tests/jobs/JobTestHelper.cpp"
+  ],
+  "kind": "pair",
+  "lines": 17,
+  "test": true,
+  "hash": "87631fa27b96a723"
+ }
+]

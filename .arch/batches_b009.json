@@ -1,0 +1,14 @@
+[
+ {
+  "unit": "Jobs",
+  "dir": "plugins",
+  "files": [
+   "plugins/Jobs.h",
+   "plugins/Jobs.cpp"
+  ],
+  "kind": "pair",
+  "lines": 1740,
+  "test": false,
+  "hash": "68fe8398f583019e"
+ }
+]

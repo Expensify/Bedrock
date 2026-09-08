@@ -1,0 +1,200 @@
+[
+ {
+  "unit": "AsyncResolveTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/AsyncResolveTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 206,
+  "test": true,
+  "hash": "572109ce8a4bb531"
+ },
+ {
+  "unit": "JSONParserTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/JSONParserTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 189,
+  "test": true,
+  "hash": "7b19ed4abee192d3"
+ },
+ {
+  "unit": "SQLiteNodeTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/SQLiteNodeTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 170,
+  "test": true,
+  "hash": "a74d5a499bee1d90"
+ },
+ {
+  "unit": "MySQLTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/MySQLTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 157,
+  "test": true,
+  "hash": "9bd30990384218ca"
+ },
+ {
+  "unit": "WriteLocalUnreplicatedTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/WriteLocalUnreplicatedTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 146,
+  "test": true,
+  "hash": "2e5f9ffa91ee8930"
+ },
+ {
+  "unit": "JSONTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/JSONTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 139,
+  "test": true,
+  "hash": "661803184a6fbc93"
+ },
+ {
+  "unit": "SFluentdLoggerTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/SFluentdLoggerTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 136,
+  "test": true,
+  "hash": "4e42260e58198d7c"
+ },
+ {
+  "unit": "QueryTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/QueryTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 130,
+  "test": true,
+  "hash": "3722e25a8f105610"
+ },
+ {
+  "unit": "AfterCommitCallbackTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/AfterCommitCallbackTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 123,
+  "test": true,
+  "hash": "37b72c865db5b839"
+ },
+ {
+  "unit": "FastHTTPParsing",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/FastHTTPParsing.cpp"
+  ],
+  "kind": "single",
+  "lines": 107,
+  "test": true,
+  "hash": "6252746ea2733b71"
+ },
+ {
+  "unit": "SSLTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/SSLTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 97,
+  "test": true,
+  "hash": "00752d4719cc394d"
+ },
+ {
+  "unit": "SDeburrTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/SDeburrTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 86,
+  "test": true,
+  "hash": "186258673379cbd4"
+ },
+ {
+  "unit": "SIsValidSQLiteDateModifierTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/SIsValidSQLiteDateModifierTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 75,
+  "test": true,
+  "hash": "e2e0c43f27d43bbe"
+ },
+ {
+  "unit": "ChainedHTTPTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/ChainedHTTPTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 69,
+  "test": true,
+  "hash": "cb54bb3e85db10d5"
+ },
+ {
+  "unit": "ReadTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/ReadTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 52,
+  "test": true,
+  "hash": "9a45ab053ae2bf3f"
+ },
+ {
+  "unit": "CommandPortTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/CommandPortTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 42,
+  "test": true,
+  "hash": "b26038700ab7c156"
+ },
+ {
+  "unit": "STimeTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/STimeTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 42,
+  "test": true,
+  "hash": "b2133a317458d05f"
+ },
+ {
+  "unit": "StatusTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/StatusTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 21,
+  "test": true,
+  "hash": "b4413a98bd2a9f3c"
+ }
+]

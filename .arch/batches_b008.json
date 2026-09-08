@@ -1,0 +1,73 @@
+[
+ {
+  "unit": "Utils",
+  "dir": "libstuff/JSON",
+  "files": [
+   "libstuff/JSON/Utils.h",
+   "libstuff/JSON/Utils.cpp"
+  ],
+  "kind": "pair",
+  "lines": 402,
+  "test": false,
+  "hash": "9b657049e6d834aa"
+ },
+ {
+  "unit": "Writer",
+  "dir": "libstuff/JSON",
+  "files": [
+   "libstuff/JSON/Writer.h",
+   "libstuff/JSON/Writer.cpp"
+  ],
+  "kind": "pair",
+  "lines": 350,
+  "test": false,
+  "hash": "667f08cf52c8c9ee"
+ },
+ {
+  "unit": "SAXHandler",
+  "dir": "libstuff/JSON",
+  "files": [
+   "libstuff/JSON/SAXHandler.h",
+   "libstuff/JSON/SAXHandler.cpp"
+  ],
+  "kind": "pair",
+  "lines": 269,
+  "test": false,
+  "hash": "8c93f8fec8aa01fa"
+ },
+ {
+  "unit": "Parser",
+  "dir": "libstuff/JSON",
+  "files": [
+   "libstuff/JSON/Parser.h",
+   "libstuff/JSON/Parser.cpp"
+  ],
+  "kind": "pair",
+  "lines": 69,
+  "test": false,
+  "hash": "9f30b8c7b56df2b5"
+ },
+ {
+  "unit": "Serializable",
+  "dir": "libstuff/JSON",
+  "files": [
+   "libstuff/JSON/Serializable.h"
+  ],
+  "kind": "single",
+  "lines": 52,
+  "test": false,
+  "hash": "96400b628c7880ea"
+ },
+ {
+  "unit": "Metrics",
+  "dir": "libstuff/JSON",
+  "files": [
+   "libstuff/JSON/Metrics.h",
+   "libstuff/JSON/Metrics.cpp"
+  ],
+  "kind": "pair",
+  "lines": 48,
+  "test": false,
+  "hash": "17a98b39e917093a"
+ }
+]

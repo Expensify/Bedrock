@@ -1,0 +1,14 @@
+[
+ {
+  "unit": "libstuff",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/libstuff.h",
+   "libstuff/libstuff.cpp"
+  ],
+  "kind": "pair",
+  "lines": 4612,
+  "test": false,
+  "hash": "d0447793a7008542"
+ }
+]

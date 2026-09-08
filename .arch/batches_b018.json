@@ -1,0 +1,69 @@
+[
+ {
+  "unit": "JSONValueTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/JSONValueTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 862,
+  "test": true,
+  "hash": "2b9504c57a28f501"
+ },
+ {
+  "unit": "JSONUtilsTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/JSONUtilsTest.h",
+   "test/tests/JSONUtilsTest.cpp"
+  ],
+  "kind": "pair",
+  "lines": 453,
+  "test": true,
+  "hash": "eddd77fe96fab635"
+ },
+ {
+  "unit": "SRingBufferTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/SRingBufferTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 339,
+  "test": true,
+  "hash": "3b269f6f8b074533"
+ },
+ {
+  "unit": "BlockingCommandQueueTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/BlockingCommandQueueTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 313,
+  "test": true,
+  "hash": "1eaf33edc977247c"
+ },
+ {
+  "unit": "MySQLUtilsTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/MySQLUtilsTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 285,
+  "test": true,
+  "hash": "2ef0b991900bfb7d"
+ },
+ {
+  "unit": "WriteTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/WriteTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 219,
+  "test": true,
+  "hash": "5fe7ba8d54d86e72"
+ }
+]

@@ -1,0 +1,69 @@
+[
+ {
+  "unit": "TestPlugin",
+  "dir": "test/clustertest/testplugin",
+  "files": [
+   "test/clustertest/testplugin/TestPlugin.h",
+   "test/clustertest/testplugin/TestPlugin.cpp"
+  ],
+  "kind": "pair",
+  "lines": 961,
+  "test": true,
+  "hash": "d26ea8599f58733b"
+ },
+ {
+  "unit": "ExternPointer",
+  "dir": "test/clustertest/testplugin",
+  "files": [
+   "test/clustertest/testplugin/ExternPointer.cpp"
+  ],
+  "kind": "single",
+  "lines": 2,
+  "test": true,
+  "hash": "e6f66aac372ddef9"
+ },
+ {
+  "unit": "FinishJobTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/FinishJobTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 605,
+  "test": true,
+  "hash": "e207e98aab089735"
+ },
+ {
+  "unit": "ConflictSpamTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/ConflictSpamTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 295,
+  "test": true,
+  "hash": "00d3b91a37b43840"
+ },
+ {
+  "unit": "CompressionTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/CompressionTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 279,
+  "test": true,
+  "hash": "3a4f73d1f4c3f040"
+ },
+ {
+  "unit": "TimeoutTest",
+  "dir": "test/clustertest/tests",
+  "files": [
+   "test/clustertest/tests/TimeoutTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 249,
+  "test": true,
+  "hash": "07117a82dfbadc17"
+ }
+]

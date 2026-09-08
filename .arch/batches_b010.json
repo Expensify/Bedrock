@@ -1,0 +1,50 @@
+[
+ {
+  "unit": "MySQL",
+  "dir": "plugins",
+  "files": [
+   "plugins/MySQL.h",
+   "plugins/MySQL.cpp"
+  ],
+  "kind": "pair",
+  "lines": 1148,
+  "test": false,
+  "hash": "ee9eaccdb115461c"
+ },
+ {
+  "unit": "DB",
+  "dir": "plugins",
+  "files": [
+   "plugins/DB.h",
+   "plugins/DB.cpp"
+  ],
+  "kind": "pair",
+  "lines": 490,
+  "test": false,
+  "hash": "0780f3bd40ad55b5"
+ },
+ {
+  "unit": "Compression",
+  "dir": "plugins",
+  "files": [
+   "plugins/Compression.h",
+   "plugins/Compression.cpp"
+  ],
+  "kind": "pair",
+  "lines": 414,
+  "test": false,
+  "hash": "ae5530d534aa1b78"
+ },
+ {
+  "unit": "Cache",
+  "dir": "plugins",
+  "files": [
+   "plugins/Cache.h",
+   "plugins/Cache.cpp"
+  ],
+  "kind": "pair",
+  "lines": 374,
+  "test": false,
+  "hash": "c5e3f4f412fed421"
+ }
+]

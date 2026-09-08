@@ -1,0 +1,118 @@
+[
+ {
+  "unit": "SQLiteClusterMessenger",
+  "dir": "sqlitecluster",
+  "files": [
+   "sqlitecluster/SQLiteClusterMessenger.h",
+   "sqlitecluster/SQLiteClusterMessenger.cpp"
+  ],
+  "kind": "pair",
+  "lines": 430,
+  "test": false,
+  "hash": "a70d20f0e5aaf532"
+ },
+ {
+  "unit": "SQLitePeer",
+  "dir": "sqlitecluster",
+  "files": [
+   "sqlitecluster/SQLitePeer.h",
+   "sqlitecluster/SQLitePeer.cpp"
+  ],
+  "kind": "pair",
+  "lines": 425,
+  "test": false,
+  "hash": "c2db323bdb64b8e9"
+ },
+ {
+  "unit": "SQLitePool",
+  "dir": "sqlitecluster",
+  "files": [
+   "sqlitecluster/SQLitePool.h",
+   "sqlitecluster/SQLitePool.cpp"
+  ],
+  "kind": "pair",
+  "lines": 179,
+  "test": false,
+  "hash": "8901b6b06e726a2f"
+ },
+ {
+  "unit": "SQLiteCommand",
+  "dir": "sqlitecluster",
+  "files": [
+   "sqlitecluster/SQLiteCommand.h",
+   "sqlitecluster/SQLiteCommand.cpp"
+  ],
+  "kind": "pair",
+  "lines": 154,
+  "test": false,
+  "hash": "8fdd34c17faf567c"
+ },
+ {
+  "unit": "SQLiteCore",
+  "dir": "sqlitecluster",
+  "files": [
+   "sqlitecluster/SQLiteCore.h",
+   "sqlitecluster/SQLiteCore.cpp"
+  ],
+  "kind": "pair",
+  "lines": 86,
+  "test": false,
+  "hash": "358aec97e647f4b8"
+ },
+ {
+  "unit": "SQLiteUtils",
+  "dir": "sqlitecluster",
+  "files": [
+   "sqlitecluster/SQLiteUtils.h",
+   "sqlitecluster/SQLiteUtils.cpp"
+  ],
+  "kind": "pair",
+  "lines": 44,
+  "test": false,
+  "hash": "9882d504dca0c760"
+ },
+ {
+  "unit": "SQLiteServer",
+  "dir": "sqlitecluster",
+  "files": [
+   "sqlitecluster/SQLiteServer.h"
+  ],
+  "kind": "single",
+  "lines": 21,
+  "test": false,
+  "hash": "88b7a3f3c135424c"
+ },
+ {
+  "unit": "main",
+  "dir": "test",
+  "files": [
+   "test/main.cpp"
+  ],
+  "kind": "single",
+  "lines": 127,
+  "test": true,
+  "hash": "0c43acb6168d2559"
+ },
+ {
+  "unit": "BedrockClusterTester",
+  "dir": "test/clustertest",
+  "files": [
+   "test/clustertest/BedrockClusterTester.h"
+  ],
+  "kind": "single",
+  "lines": 252,
+  "test": true,
+  "hash": "f69751f0ccbddf27"
+ },
+ {
+  "unit": "main",
+  "dir": "test/clustertest",
+  "files": [
+   "test/clustertest/main.cpp"
+  ],
+  "kind": "single",
+  "lines": 112,
+  "test": true,
+  "hash": "2226ceba08af2bd0"
+ }
+]

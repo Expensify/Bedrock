@@ -1,0 +1,92 @@
+# Directory Rollup Spec (Phase 3)
+
+You are writing or revising the `SUMMARY.md` for **one directory**.
+
+## The hard constraint: bounded fan-in
+
+You see **only your immediate children**. Specifically:
+
+- the unit records for files directly in this directory, and
+- the `SUMMARY.md` of each direct subdirectory (already written).
+
+You do **not** get the transitive subtree, and you must not go read it. This is
+deliberate: the algorithm has to hold on repos 100x this size, where reading a
+subtree is impossible. Work from your children's rollup blocks — they were
+written to carry exactly what you need.
+
+If a child's rollup is inadequate for a judgement you need to make, say so in
+your report rather than reading around it. That is a spec bug worth knowing
+about.
+
+## Two passes
+
+You will be told which pass you are running.
+
+### Pass A — bottom-up (build)
+
+Answer, from your children:
+
+1. **Theme.** What is this directory *for*? One line, then a short paragraph.
+   Not "a collection of X" — say what job it does for the system.
+2. **Contents.** Table of direct children (units and subdirectories), one line
+   each. This is the only place a listing belongs.
+3. **Coherence.** Do these children belong together? Name the ones that fit the
+   theme least. A directory that is really two directories wearing a trenchcoat
+   should be described as such.
+4. **Misfits.** Consolidate what your children flagged. For each, decide:
+   - **Resolvable here** — the better home is inside this directory. Say where.
+     Mark it `resolved-locally`. It stops here and does not propagate.
+   - **Escalate** — the better home is outside this directory, or the decision
+     needs a wider view. Mark it `escalate` and it goes into your rollup block.
+   Being decisive here is what keeps the volume reaching the root manageable.
+
+### Pass B — top-down (situate)
+
+You now also get **your parent's rollup block**, including which sibling
+directories exist and what they claim. Revise the file in place to add:
+
+5. **Role in the system.** What this directory owns that its siblings do not.
+   Where the boundary with each relevant sibling actually falls, and whether
+   that boundary currently leaks.
+6. **Inbound expectations.** Given what the parent and siblings say they depend
+   on, what does this directory owe outward? Is anything they rely on missing,
+   or exposed by accident?
+7. Revisit item 4: a misfit you escalated may now be resolvable, and something
+   you thought fine may now look wrong next to a sibling. Update it.
+
+Do not rewrite passes A's content wholesale — revise it. Keep the section order.
+
+## Required trailing block
+
+Every `SUMMARY.md` must end with this block, exactly this shape. The parent
+directory's agent reads *this* rather than your prose, so it must stand alone.
+
+```
+<!-- ROLLUP
+theme: one line
+exports: [3-8 concepts this directory offers outward]
+depends_on_dirs: [repo-relative dirs this subtree includes from]
+depended_on_by: [filled in during pass B; leave [] in pass A]
+misfit_count: {high: N, med: N, low: N}
+resolved_locally: N
+escalate:
+  - item: symbol or file
+    from: path
+    why: one line
+    suggested_home: best guess or null
+-->
+```
+
+Keep `escalate` short. If everything escalates, you have not done step 4.
+
+## Length
+
+Proportional to the directory. A leaf directory of four small units needs half a
+page. `libstuff/` or `test/` needs more. Never pad the contents table into a
+substitute for analysis — the analysis is the point, the table is scaffolding.
+
+## Reporting back
+
+Reply with only: the directory, pass, misfit counts (resolved vs escalated), the
+single most significant structural observation, and any place your children's
+rollups were inadequate.

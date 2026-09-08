@@ -1,0 +1,127 @@
+[
+ {
+  "unit": "VMTouch",
+  "dir": "",
+  "files": [
+   "VMTouch.h",
+   "VMTouch.cpp"
+  ],
+  "kind": "pair",
+  "lines": 232,
+  "test": false,
+  "hash": "717c4521066fec8c"
+ },
+ {
+  "unit": "BedrockPlugin",
+  "dir": "",
+  "files": [
+   "BedrockPlugin.h",
+   "BedrockPlugin.cpp"
+  ],
+  "kind": "pair",
+  "lines": 212,
+  "test": false,
+  "hash": "f3da86a31bf66a94"
+ },
+ {
+  "unit": "ConflictLockGuard",
+  "dir": "",
+  "files": [
+   "ConflictLockGuard.h",
+   "ConflictLockGuard.cpp"
+  ],
+  "kind": "pair",
+  "lines": 126,
+  "test": false,
+  "hash": "d0cafeb3080d06d3"
+ },
+ {
+  "unit": "BedrockConflictManager",
+  "dir": "",
+  "files": [
+   "BedrockConflictManager.h",
+   "BedrockConflictManager.cpp"
+  ],
+  "kind": "pair",
+  "lines": 91,
+  "test": false,
+  "hash": "4f01557f5e96b604"
+ },
+ {
+  "unit": "bedrockVersion",
+  "dir": "",
+  "files": [
+   "bedrockVersion.h"
+  ],
+  "kind": "single",
+  "lines": 12,
+  "test": false,
+  "hash": "e7bd86b4a93189e8"
+ },
+ {
+  "unit": "version",
+  "dir": "",
+  "files": [
+   "version.h"
+  ],
+  "kind": "single",
+  "lines": 4,
+  "test": false,
+  "hash": "6fc4f14586cda5ad"
+ },
+ {
+  "unit": "main",
+  "dir": "benchmarks",
+  "files": [
+   "benchmarks/main.cpp"
+  ],
+  "kind": "single",
+  "lines": 267,
+  "test": true,
+  "hash": "f0b37d1e390857fb"
+ },
+ {
+  "unit": "BenchmarkBase",
+  "dir": "benchmarks",
+  "files": [
+   "benchmarks/BenchmarkBase.h"
+  ],
+  "kind": "single",
+  "lines": 154,
+  "test": true,
+  "hash": "e3abd57adfd63ef6"
+ },
+ {
+  "unit": "SReplaceBench",
+  "dir": "benchmarks",
+  "files": [
+   "benchmarks/SReplaceBench.cpp"
+  ],
+  "kind": "single",
+  "lines": 110,
+  "test": true,
+  "hash": "633c06d2f9bfb352"
+ },
+ {
+  "unit": "SReplaceAllBench",
+  "dir": "benchmarks",
+  "files": [
+   "benchmarks/SReplaceAllBench.cpp"
+  ],
+  "kind": "single",
+  "lines": 100,
+  "test": true,
+  "hash": "4bfd6cd9c7705dcf"
+ },
+ {
+  "unit": "SDeburrBench",
+  "dir": "benchmarks",
+  "files": [
+   "benchmarks/SDeburrBench.cpp"
+  ],
+  "kind": "single",
+  "lines": 90,
+  "test": true,
+  "hash": "00894e8922e0f82d"
+ }
+]
