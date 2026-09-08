@@ -1,0 +1,161 @@
+[
+ {
+  "item": "SData::deserialize simdjson padding logic",
+  "from": "libstuff/SData.cpp",
+  "why": "\"no consumer of SData that does simdjson parsing is visible anywhere in this subtree (libstuff, plugins, sqlitecluster, test, benchmarks); the consumer may not ",
+  "home": "null",
+  "authority": "SUMMARY.md",
+  "also_reported_by": [
+   "libstuff/SUMMARY.md",
+   "libstuff/SUMMARY.sqlite-header-wire.md"
+  ]
+ },
+ {
+  "item": "BedrockPlugin_Jobs::upgradeDatabase Expensify-specific index literals",
+  "from": "plugins/Jobs.cpp",
+  "why": "\"deployment-specific job-name literals baked into generic job-queue schema DDL; whether Bedrock needs a customization seam here or should accept this as intenti",
+  "home": "null",
+  "authority": "SUMMARY.md",
+  "also_reported_by": [
+   "plugins/SUMMARY.md"
+  ]
+ },
+ {
+  "item": "QueryTest::testPercentile",
+  "from": "test/tests/QueryTest.cpp",
+  "why": "\"tests a compiled-in SQLite percentile/median aggregate extension with no owning unit visible anywhere in the subtree; need to confirm the extension's existence",
+  "home": "null",
+  "authority": "SUMMARY.md",
+  "also_reported_by": [
+   "test/SUMMARY.md"
+  ]
+ },
+ {
+  "item": "_SSignal_StackTrace's direct call to SQLiteNode::KILLABLE_SQLITE_NODE->kill()",
+  "from": "libstuff/SSignal.cpp",
+  "why": "a generic libstuff crash handler reaching directly into the sqlitecluster layer; unlike AutoScopeOnPrepare this has a genuine generic half (a crash-time callbac",
+  "home": "\"split - generic hook API in libstuff/SSignal, concrete kill() registration in sqlitecluster\"",
+  "authority": "libstuff/SUMMARY.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "AutoTimer",
+  "from": "libstuff/AutoTimer.h,cpp",
+  "why": "name collides with an unrelated AutoTimer class in BedrockCore.h; resolving needs a view spanning both directories",
+  "home": "null",
+  "authority": "libstuff/SUMMARY.raii-auto-clock.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "SHTTPSManager.cpp includes of BedrockServer.h and sqlitecluster/SQLiteNode.h",
+  "from": "libstuff/SHTTPSManager.cpp",
+  "why": "neither header's symbols are referenced in the file; unused cross-layer coupling",
+  "home": "null",
+  "authority": "libstuff/SUMMARY.socket-shared-providing.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "SRandom (whole unit)",
+  "from": "libstuff/SRandom.h/.cpp",
+  "why": "fits the libstuff directory but not this cluster's socket/poll theme - a clustering artifact, not a location problem",
+  "home": "a different cluster (or its own) within libstuff; directory placement is already fine",
+  "authority": "libstuff/SUMMARY.socket-shared-providing.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "SAESEncrypt/SAESDecrypt/SHashSHA1/SHashSHA256/SEncodeBase64/SDecodeBase64/SHMACSHA1/SHMACSHA256",
+  "from": "libstuff/libstuff.cpp",
+  "why": "self-contained crypto wrappers with no dependency on the rest of the file",
+  "home": "a new SCrypto unit (does not appear to exist yet)",
+  "authority": "libstuff/SUMMARY.sqlite-header-wire.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "direct-syslog-socket pool (SLogSocketFD/SSyslogSocketDirect/SSyslogNoop)",
+  "from": "libstuff/libstuff.cpp",
+  "why": "a complete alternate logging transport sitting amid unrelated HTTP/JSON/SQL/crypto code",
+  "home": "SLog.cpp (dedicated logging unit, not in this cluster)",
+  "authority": "libstuff/SUMMARY.sqlite-header-wire.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "S_socket/S_close/S_accept/S_recvfrom/S_recvappend/S_sendconsume/S_poll/SFDset/SFDAnySet",
+  "from": "libstuff/libstuff.cpp",
+  "why": "raw socket/poll primitives whose only real caller is STCPManager",
+  "home": "STCPManager (not in this cluster)",
+  "authority": "libstuff/SUMMARY.sqlite-header-wire.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "SGZip/SGUnzip",
+  "from": "libstuff/libstuff.cpp",
+  "why": "gzip compression unrelated to the surrounding string/HTTP/SQL utilities",
+  "home": "null",
+  "authority": "libstuff/SUMMARY.sqlite-header-wire.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "SLog.cpp and SSignal.cpp have no dedicated headers (SLog.h / SSignal.h)",
+  "from": "libstuff/SLog.cpp, libstuff/SSignal.cpp",
+  "why": "both declare their public API in libstuff.h's catch-all instead of their own header, unlike other separated libstuff units; a directory-wide header-convention q",
+  "home": "\"libstuff/SLog.h, libstuff/SSignal.h\"",
+  "authority": "libstuff/SUMMARY.trace-wide-stack.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)",
+  "from": "test/lib/PrintEquality.h",
+  "why": "generic container-printing utilities with no tie to PrintEquality or testing, already built on libstuff's SComposeList",
+  "home": "a shared stream-formatting utility header in libstuff",
+  "authority": "test/SUMMARY.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "dependency on test/tests/jobs for shared Job fixtures",
+  "from": "test/clustertest/tests",
+  "why": "multi-node suite reaches into a sibling single-node suite's own subdirectory for shared fixtures; test/tests/jobs was never designed as a shared-fixture locatio",
+  "home": "test/lib",
+  "authority": "test/clustertest/SUMMARY.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "BedrockClusterTester.h (whole unit)",
+  "from": "test/clustertest",
+  "why": "generic ClusterTester<BedrockTester> composition over test/lib's harness, with no remaining clustertest-specific logic once the testplugin.so misfit above is fi",
+  "home": "test/lib",
+  "authority": "test/clustertest/SUMMARY.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "JobTestHelper (shared Jobs test fixtures)",
+  "from": "test/tests/jobs",
+  "why": "depended on directly by test/clustertest/tests despite jobs/ being organized and described purely as single-node Jobs-plugin coverage, not a shared-fixture loca",
+  "home": "test/lib",
+  "authority": "test/tests/SUMMARY.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "BedrockPlugin_Cache::LRUMap",
+  "from": "plugins/Cache.h",
+  "why": "fully generic string-keyed LRU tracker, no cache logic, trapped private to one plugin",
+  "home": "\"a new libstuff subdirectory (e.g. libstuff/containers/), following the JSON/ precedent of libstuff spinning out a thematic subdirectory rather than adding to its overloaded flat catch-all file\"",
+  "authority": "plugins/SUMMARY.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "BedrockPlugin_DB::Sqlite3QRFSpecWrapper / parseSQLite3Args / generateErrorContextMessage",
+  "from": "plugins/DB.h,DB.cpp",
+  "why": "generic sqlite3-CLI arg/error layer wrapping libstuff/qrf.h, nothing DB-plugin-specific",
+  "home": "\"libstuff, colocated with qrf.h \u2014 qrf.h is already one of libstuff's small dedicated units, not the 4612-line catch-all file, so this placement doesn't touch the part of libstuff that's actually overloaded\"",
+  "authority": "plugins/SUMMARY.md",
+  "also_reported_by": []
+ },
+ {
+  "item": "BedrockPlugin_Jobs::scopedDisableNoopMode",
+  "from": "plugins/Jobs.cpp",
+  "why": "\"generic SQLite-noop RAII guard wrapping SQLite::setUpdateNoopMode/_noopUpdateMode, which sqlitecluster's own rollup places on the core SQLite class (documented",
+  "home": "sqlitecluster/SQLite.h, next to the noop-mode state it toggles",
+  "authority": "plugins/SUMMARY.md",
+  "also_reported_by": []
+ }
+]
