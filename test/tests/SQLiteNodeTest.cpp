@@ -1,4 +1,5 @@
 #include <libstuff/libstuff.h>
+#include <plugins/Compression.h>
 #include <sqlitecluster/SQLiteCommand.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLitePeer.h>
@@ -57,6 +58,8 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            AFTER(SQLiteNodeTest::rollback),
                                            TEST(SQLiteNodeTest::testFindSyncPeer),
                                            TEST(SQLiteNodeTest::testGetPeerByName),
+                                           TEST(SQLiteNodeTest::testMixedHashHistory),
+                                           TEST(SQLiteNodeTest::testGUIDHashFailures),
                                            TEST(SQLiteNodeTest::testSynchronizeCommitFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeWriteFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeConstraintFailure),
@@ -186,27 +189,153 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
     void testSynchronizeCommitFailure()
     {
-        testSynchronizeFailure("commit");
+        testReplicationFailure("commit");
     }
 
     void testSynchronizeWriteFailure()
     {
-        testSynchronizeFailure("write");
+        testReplicationFailure("write");
     }
 
     void testSynchronizeHashMismatch()
     {
-        testSynchronizeFailure("hash");
+        testReplicationFailure("hash");
     }
 
     void testSynchronizeConstraintFailure()
     {
-        testSynchronizeFailure("constraint");
+        testReplicationFailure("constraint");
     }
 
-    void testSynchronizeFailure(const string& failure)
+    void testMixedHashHistory()
     {
-        for (bool subscribing : {false, true}) {
+        const vector<string> queries = {
+            "CREATE TABLE IF NOT EXISTS hashTest (value INTEGER);DELETE FROM hashTest;",
+            "INSERT INTO hashTest VALUES (1);",
+            "INSERT INTO hashTest VALUES (1);",
+            "INSERT INTO hashTest VALUES (2);",
+            "",
+        };
+        const vector<string> guids = {
+            "", "00000000000000000000000000aBcDeF", "00000000000000000000000000abcde0", "",
+            "00000000000000000000000000000001",
+        };
+        for (const string mode : {"live", "sync", "subscription"}) {
+            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, 1000000000, "1.0");
+            SQLite& db = dbPool->getBase();
+            SQLitePeer* peer = node.getPeerByName("peer1");
+            const uint64_t commitCount = db.getCommitCount();
+            string previousHash = db.getCommittedHash();
+            vector<string> hashes;
+            const bool live = mode == "live";
+            const bool subscribing = mode == "subscription";
+            node._changeState(live ? SQLiteNodeState::FOLLOWING :
+                              subscribing ? SQLiteNodeState::SUBSCRIBING : SQLiteNodeState::SYNCHRONIZING);
+            peer->loggedIn = true;
+            if (live || subscribing) {
+                node._leadPeer = peer;
+            } else {
+                node._syncPeer = peer;
+            }
+            SData response(subscribing ? "SUBSCRIPTION_APPROVED" : "SYNCHRONIZE_RESPONSE");
+            for (size_t i = 0; i < queries.size(); ++i) {
+                const string hash = guids[i].empty() ? SToHex(SHashSHA1(previousHash + queries[i])) :
+                    guids[i] + ":" + SToHex(SHashSHA1(guids[i] + queries[i]));
+                hashes.push_back(hash);
+                previousHash = hash;
+                string content = queries[i];
+                // Mix raw and compressed wire SQL without changing the global journal compression setting.
+                if (i == 2 || i == 3) {
+                    content.resize(ZSTD_compressBound(queries[i].size()));
+                    const size_t size = ZSTD_compress(content.data(), content.size(), queries[i].data(), queries[i].size(), 3);
+                    ASSERT_FALSE(ZSTD_isError(size));
+                    content.resize(size);
+                }
+                if (live) {
+                    SData transaction("TRANSACTION");
+                    transaction["ID"] = to_string(commitCount + i + 1);
+                    transaction["NewCount"] = transaction["ID"];
+                    transaction["NewHash"] = hash;
+                    transaction.content = content;
+                    node._handleBeginTransaction(db, peer, transaction);
+                    ASSERT_TRUE(node._handlePrepareTransaction(db, peer, transaction, STimeNow()));
+                    EXPECT_EQUAL(db.getUncommittedHash(), hash);
+                    ASSERT_EQUAL(node._handleCommitTransaction(db, peer, commitCount + i + 1, hash), SQLITE_OK);
+                    EXPECT_EQUAL(db.getCommittedHash(), hash);
+                } else {
+                    SData commit("COMMIT");
+                    commit["CommitIndex"] = to_string(commitCount + i + 1);
+                    commit["Hash"] = hash;
+                    commit.content = content;
+                    response.content += commit.serialize();
+                }
+            }
+            if (!live) {
+                response["CommitCount"] = to_string(commitCount + queries.size());
+                response["Hash"] = hashes.back();
+                response["NumCommits"] = to_string(queries.size());
+                node._onMESSAGE(peer, response);
+            }
+            EXPECT_TRUE(node.getState() == (live || subscribing ? SQLiteNodeState::FOLLOWING : SQLiteNodeState::WAITING));
+            EXPECT_EQUAL(db.getCommitCount(), commitCount + queries.size());
+            EXPECT_EQUAL(db.getCommittedHash(), hashes.back());
+            EXPECT_NOT_EQUAL(hashes[1], hashes[2]);
+            EXPECT_FALSE(db.insideTransaction());
+            EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM hashTest;"), "3");
+            for (size_t i = 0; i < queries.size(); ++i) {
+                string query, hash;
+                ASSERT_TRUE(db.getCommit(commitCount + i + 1, &query, &hash));
+                EXPECT_EQUAL(query, queries[i]);
+                EXPECT_EQUAL(hash, hashes[i]);
+            }
+        }
+
+        const uint64_t commitCount = dbPool->getBase().getCommitCount();
+        const string committedHash = dbPool->getBase().getCommittedHash();
+        ASSERT_EQUAL(committedHash, guids.back() + ":" + SToHex(SHashSHA1(guids.back())));
+        // SharedData is cached by filename forever. A fresh path forces the tail to be loaded from the journal.
+        char restartedFilename[sizeof(filename)] = "br_sync_dbXXXXXX";
+        const int fd = mkstemp(restartedFilename);
+        ASSERT_TRUE(fd >= 0);
+        close(fd);
+        dbPool.reset();
+        for (const string suffix : {"", "-pagemap", "-log-0"}) {
+            if (suffix.empty() || access((string(filename) + suffix).c_str(), F_OK) == 0) {
+                const int result = rename((string(filename) + suffix).c_str(), (string(restartedFilename) + suffix).c_str());
+                EXPECT_EQUAL(result, 0);
+            }
+        }
+        memcpy(filename, restartedFilename, sizeof(filename));
+        dbPool = make_shared<SQLitePool>(10, filename, 1000000, 5000, 0, 0, BedrockTester::ENABLE_HCTREE);
+        SQLite& db = dbPool->getBase();
+        EXPECT_EQUAL(db.getCommitCount(), commitCount);
+        EXPECT_EQUAL(db.getCommittedHash(), committedHash);
+        const string query = "INSERT INTO hashTest VALUES (3);";
+        ASSERT_TRUE(db.beginTransaction());
+        ASSERT_TRUE(db.writeUnmodified(query));
+        ASSERT_TRUE(db.prepare());
+        const string legacyHash = SToHex(SHashSHA1(committedHash + query));
+        EXPECT_EQUAL(db.getUncommittedHash().size(), (size_t) 40);
+        EXPECT_EQUAL(db.getUncommittedHash(), legacyHash);
+        ASSERT_EQUAL(db.commit(), SQLITE_OK);
+        string storedHash;
+        ASSERT_TRUE(db.getCommit(commitCount + 1, nullptr, &storedHash));
+        EXPECT_EQUAL(storedHash, legacyHash);
+        EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM hashTest;"), "4");
+    }
+
+    void testGUIDHashFailures()
+    {
+        for (const string failure : {"guid-value", "guid-digest", "guid-query", "guid-short", "guid-long", "guid-nonhex"}) {
+            testReplicationFailure(failure);
+        }
+    }
+
+    void testReplicationFailure(const string& failure)
+    {
+        for (const string mode : {"sync", "subscription", "live"}) {
+            const bool live = mode == "live";
+            const bool subscribing = mode == "subscription";
             SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, 1000000000, "1.0");
             SQLite& db = dbPool->getBase();
             SQLite other(db);
@@ -222,15 +351,21 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
             // Prepare a valid wire payload without advancing the receiver's committed state.
             const string query = "INSERT INTO syncTest VALUES (1);";
+            const string guid = "00000000000000000000000000aBcDeF";
+            const string expectedHash = failure.find("guid-") == 0 ? guid + ":" + SToHex(SHashSHA1(guid + query)) : "";
             ASSERT_TRUE(db.beginTransaction());
             ASSERT_TRUE(db.writeUnmodified(query));
             string hash;
-            ASSERT_TRUE(db.prepare(nullptr, &hash));
+            ASSERT_TRUE(db.prepare(nullptr, &hash, chrono::hours(24), nullptr, expectedHash));
+            if (!expectedHash.empty()) {
+                EXPECT_EQUAL(hash, expectedHash);
+            }
             SData commit("COMMIT");
             commit["CommitIndex"] = to_string(commitCount + 1);
             commit["Hash"] = hash;
             commit.content = db.getUncommittedQuery();
             db.rollback();
+            const SData validCommit = commit;
 
             SData response(subscribing ? "SUBSCRIPTION_APPROVED" : "SYNCHRONIZE_RESPONSE");
             response["CommitCount"] = commit["CommitIndex"];
@@ -238,10 +373,11 @@ struct SQLiteNodeTest : tpunit::TestFixture
             response["NumCommits"] = "1";
             response.content = commit.serialize();
 
-            const SQLiteNodeState state = subscribing ? SQLiteNodeState::SUBSCRIBING : SQLiteNodeState::SYNCHRONIZING;
+            const SQLiteNodeState state = live ? SQLiteNodeState::FOLLOWING :
+                subscribing ? SQLiteNodeState::SUBSCRIBING : SQLiteNodeState::SYNCHRONIZING;
             node._changeState(state);
             peer->loggedIn = true;
-            if (subscribing) {
+            if (live || subscribing) {
                 node._leadPeer = peer;
             } else {
                 node._syncPeer = peer;
@@ -252,18 +388,59 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 commit.content = query + "INSERT INTO missingSyncTable VALUES (1);";
             } else if (failure == "constraint") {
                 commit.content = query + query;
+            } else if (failure == "guid-value") {
+                commit["Hash"][0] = '1';
+            } else if (failure == "guid-digest") {
+                commit["Hash"].back() = hash.back() == '0' ? '1' : '0';
+            } else if (failure == "guid-query") {
+                commit.content = "INSERT INTO syncTest VALUES (2);";
+            } else if (failure == "guid-short" || failure == "guid-long" || failure == "guid-nonhex") {
+                const string invalidGUID = failure == "guid-short" ? guid.substr(1) :
+                    failure == "guid-long" ? guid + "0" : guid.substr(0, 31) + "g";
+                // The digest is correct for this invalid GUID, so rejection must not rely on a hash mismatch alone.
+                commit["Hash"] = invalidGUID + ":" + SToHex(SHashSHA1(invalidGUID + query));
             } else {
                 commit["Hash"] = "incorrect hash";
             }
-            SData failedResponse = response;
-            failedResponse.content = commit.serialize();
-            node._onMESSAGE(peer, failedResponse);
+            string replicationError;
+            auto receive = [&](const SData& incoming) {
+                if (!live) {
+                    SData incomingResponse = response;
+                    incomingResponse.content = incoming.serialize();
+                    node._onMESSAGE(peer, incomingResponse);
+                    return;
+                }
+                SData transaction("TRANSACTION");
+                transaction["ID"] = incoming["CommitIndex"];
+                transaction["NewCount"] = incoming["CommitIndex"];
+                transaction["NewHash"] = incoming["Hash"];
+                transaction.content = incoming.content;
+                try {
+                    node._handleBeginTransaction(db, peer, transaction);
+                    if (!node._handlePrepareTransaction(db, peer, transaction, STimeNow())) {
+                        STHROW("prepare failed");
+                    }
+                    if (node._handleCommitTransaction(db, peer, transaction.calcU64("NewCount"), transaction["NewHash"]) != SQLITE_OK) {
+                        STHROW("commit failed");
+                    }
+                } catch (const exception& e) {
+                    // Exercise the same cleanup as the replication worker, without starting an asynchronous thread.
+                    replicationError = e.what();
+                    node._onReplicationError(db, peer, transaction, e.what());
+                }
+            };
+            receive(commit);
 
             EXPECT_TRUE(db.getLastTransactionType() == SQLite::TRANSACTION_TYPE::EXCLUSIVE);
-            EXPECT_TRUE(node.getState() == SQLiteNodeState::SEARCHING);
-            EXPECT_EQUAL(node._syncPeer, nullptr);
-            EXPECT_EQUAL(node._leadPeer.load(), nullptr);
-            EXPECT_FALSE(peer->loggedIn);
+            EXPECT_TRUE(node.getState() == (live ? SQLiteNodeState::FOLLOWING : SQLiteNodeState::SEARCHING));
+            if (live && (failure == "hash" || failure == "guid-value" || failure == "guid-digest" || failure == "guid-query")) {
+                EXPECT_TRUE(SContains(replicationError, "hash mismatch:"));
+            }
+            if (!live) {
+                EXPECT_EQUAL(node._syncPeer, nullptr);
+                EXPECT_EQUAL(node._leadPeer.load(), nullptr);
+                EXPECT_FALSE(peer->loggedIn);
+            }
             EXPECT_FALSE(db.insideTransaction());
             EXPECT_TRUE(sqlite3_get_autocommit(db.getDBHandle()));
             EXPECT_TRUE(db.getUncommittedHash().empty());
@@ -285,20 +462,24 @@ struct SQLiteNodeTest : tpunit::TestFixture
             EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM syncTest;"), "0");
 
             // Retry the valid response on the same handle without any test-side rollback.
+            db.setCommitEnabled(true);
             node._changeState(state);
             peer->loggedIn = true;
-            if (subscribing) {
+            if (live || subscribing) {
                 node._leadPeer = peer;
             } else {
                 node._syncPeer = peer;
             }
-            node._onMESSAGE(peer, response);
-            EXPECT_TRUE(node.getState() == (subscribing ? SQLiteNodeState::FOLLOWING : SQLiteNodeState::WAITING));
+            receive(validCommit);
+            EXPECT_TRUE(node.getState() == (live || subscribing ? SQLiteNodeState::FOLLOWING : SQLiteNodeState::WAITING));
             EXPECT_EQUAL(db.getCommitCount(), commitCount + 1);
             EXPECT_EQUAL(db.getCommittedHash(), hash);
             EXPECT_FALSE(db.insideTransaction());
             EXPECT_TRUE(db.getUncommittedHash().empty());
             EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM syncTest;"), "1");
+            string storedHash;
+            ASSERT_TRUE(db.getCommit(commitCount + 1, nullptr, &storedHash));
+            EXPECT_EQUAL(storedHash, hash);
         }
     }
 } __SQLiteNodeTest;
