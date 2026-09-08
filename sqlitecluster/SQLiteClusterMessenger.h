@@ -1,3 +1,29 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLiteClusterMessenger.h
+ * Path:    sqlitecluster/SQLiteClusterMessenger.h
+ * Pair:    SQLiteClusterMessenger.cpp
+ *
+ * INTENT
+ *   Escalates a BedrockCommand from this node to another node in the cluster
+ *   (leader, a named peer, or all peers) over a plain TCP socket, using a
+ *   pooled connection, and fills in the command's response.
+ *
+ * OBJECTS
+ *   SQLiteClusterMessenger                       - opens/reuses a socket to a peer, sends a serialized command, and reads back its response
+ *   SQLiteClusterMessenger::WaitForReadyResult   - outcome of waiting for a socket to become readable/writable (timeout, disconnect, abort, etc.)
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a messenger between SQLiteNodes, alongside the rest of sqlitecluster.
+ *
+ * NAMING QUALITY
+ *   Consistent with repo convention (S-prefixed helper types used as members,
+ *   `_` on private methods/members). The two overloads of `runOnPeer` (bool
+ *   leader-flag vs. string peer name) have different retry semantics per
+ *   their comments but share a name, which is easy to call by mistake.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/libstuff.h>
 #include <libstuff/SHTTPSManager.h>
 #include <libstuff/SMultiHostSocketPool.h>

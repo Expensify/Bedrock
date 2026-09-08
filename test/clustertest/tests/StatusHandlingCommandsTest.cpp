@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    StatusHandlingCommandsTest.cpp
+ * Path:    test/clustertest/tests/StatusHandlingCommandsTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying that `GET /status/handlingCommands` on a follower
+ *   whose leader is temporarily down reports the follower's own LEADING/
+ *   FOLLOWING transition correctly, and never claims a version mismatch just
+ *   because it briefly has no leader to compare its version against.
+ *
+ * OBJECTS
+ *   StatusHandlingCommandsTest        - tpunit fixture, single free-standing test.
+ *   StatusHandlingCommandsTest::test - stops the leader, polls the follower's status/handlingCommands
+ *                                       endpoint on a background thread, then restarts the leader.
+ *   __StatusHandlingCommandsTest      - static instance that registers the fixture with tpunit.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test files.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

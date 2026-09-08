@@ -1,3 +1,27 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    ControlCommandTest.cpp
+ * Path:    test/clustertest/tests/ControlCommandTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying that a "preventattach" control command sent to
+ *   the test plugin blocks a subsequent Attach from succeeding until its
+ *   internal delay has passed.
+ *
+ * OBJECTS
+ *   ControlCommandTest                    - tpunit fixture; brings up a default cluster.
+ *   ControlCommandTest::testPreventAttach - detaches a follower, tells the plugin to prevent
+ *                                            attaching, confirms Attach is refused then later allowed.
+ *   __ControlCommandTest                  - static instance that registers the fixture with tpunit.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] #include <iostream> - unused in this file.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test files.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <iostream>
 
 #include <libstuff/SData.h>

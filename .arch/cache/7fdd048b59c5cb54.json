@@ -1,0 +1,85 @@
+{
+ "unit": "SQLiteNode",
+ "dir": "sqlitecluster",
+ "files": [
+  "sqlitecluster/SQLiteNode.h",
+  "sqlitecluster/SQLiteNode.cpp"
+ ],
+ "lines": 2964,
+ "test": false,
+ "intent": "A distributed, leader/follower, failover SQLite cluster node: maintains peer connections, drives the cluster's leader-election state machine (SEARCHING through LEADING/FOLLOWING), and replicates committed transactions between leader and followers.",
+ "objects": [
+  {
+   "name": "SQLiteNodeState",
+   "kind": "enum class",
+   "role": "the states a node cycles through in the cluster state machine"
+  },
+  {
+   "name": "SQLiteNode",
+   "kind": "class",
+   "role": "STCPManager subclass owning the peer list and command port; drives the state machine and replication"
+  },
+  {
+   "name": "PDEBUG/PINFO/PHMMM/PWARN",
+   "kind": "macro group (.cpp)",
+   "role": "logging macros that prefix a log line with \"->{peer->name}\", used wherever a peer is in scope"
+  },
+  {
+   "name": "synchronizeCount",
+   "kind": "file-local static atomic<size_t> (.cpp, inside _onMESSAGE)",
+   "role": "numbers each spawned synchronize-response thread for its SInitialize() label"
+  },
+  {
+   "name": "SQLiteNode::stateName/stateFromName lookup tables",
+   "kind": "function-local static maps (.cpp)",
+   "role": "translate between SQLiteNodeState and its string name"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "#include <plugins/Compression.h> and BedrockPlugin_Compression::decompress calls in SQLiteNode.cpp's _handleBeginTransaction and _recvSynchronize",
+   "why": "sqlitecluster/ is a lower-level replication library depending directly on one specific plugin under plugins/, inverting the codebase's normal dependency direction (plugins depend on sqlitecluster, not the reverse); sqlitecluster/SQLite.cpp has the same dependency, so it's an established pattern rather than unique to this file",
+   "severity": "med",
+   "suggested_home": null
+  },
+  {
+   "item": "SQLiteNode::KILLABLE_SQLITE_NODE / SQLiteNode::NODE_KILLED",
+   "why": "a global static pointer/flag letting process-wide signal-handling code reach into one specific node instance to kill its sockets; shutdown coordination bolted onto the node class rather than a dedicated signal-handling module",
+   "severity": "low",
+   "suggested_home": null
+  },
+  {
+   "item": "SQLiteNode::_priority / SQLiteNode::_syncPeer",
+   "why": "both carry inline comments marking them \"Remove\" with links to open GitHub issues (208449, 208439) -- acknowledged, unresolved design debt in the node's state tracking",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "matches its content exactly"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "sqlitecluster/ is exactly right for the cluster-replication node"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "consistent underscore-prefix for private members overall, but `pluginDB` is a private member with no underscore, and `messagesDeqeued` in _processPeerMessages is a typo for \"messagesDequeued\""
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/SSynchronizedQueue.h",
+  "libstuff/STCPManager.h",
+  "sqlitecluster/SQLite.h",
+  "sqlitecluster/SQLitePool.h",
+  "libstuff/SRandom.h",
+  "libstuff/SQResult.h",
+  "sqlitecluster/SQLiteCommand.h",
+  "sqlitecluster/SQLitePeer.h",
+  "sqlitecluster/SQLiteServer.h",
+  "plugins/Compression.h"
+ ],
+ "_src": "b110.json",
+ "hash": "7fdd048b59c5cb54"
+}

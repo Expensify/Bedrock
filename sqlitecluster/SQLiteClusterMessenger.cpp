@@ -1,3 +1,27 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLiteClusterMessenger.cpp
+ * Path:    sqlitecluster/SQLiteClusterMessenger.cpp
+ * Pair:    SQLiteClusterMessenger.h
+ *
+ * INTENT
+ *   Implementation; see the header for the class's purpose.
+ *
+ * OBJECTS
+ *   (local) labels map in waitForReady - maps POLLOUT/POLLIN to "send"/"recv" for logging.
+ *   All other symbols are declared in the header; this file implements them,
+ *   including the private helpers waitForReady, setErrorResponse,
+ *   commandWillCloseSocket, _sendCommandOnSocket, and _getSocketForAddress.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits its header.
+ *
+ * NAMING QUALITY
+ *   Fine. Logging tags use a literal "[HTTPESC]" prefix baked into many call
+ *   sites rather than a shared constant, which is a minor duplication risk.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "libstuff/libstuff.h"
 #include <BedrockCommand.h>
 #include <sqlitecluster/SQLiteClusterMessenger.h>

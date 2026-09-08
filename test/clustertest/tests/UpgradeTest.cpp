@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    UpgradeTest.cpp
+ * Path:    test/clustertest/tests/UpgradeTest.cpp
+ *
+ * INTENT
+ *   Regression guard (see PR #1293) against a bug where sending multiple
+ *   commands on one socket to a follower running a different version than
+ *   the leader caused the second command to hang.
+ *
+ * OBJECTS
+ *   UpgradeTest                                          - tpunit fixture, single free-standing test.
+ *   UpgradeTest::mismatchedFollowerSendMultipleCommands - bumps one follower's version, sends two
+ *                                                          commands on a shared socket, checks both reply.
+ *   __UpgradeTest                                        - static instance that registers the fixture with tpunit.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] #include <libstuff/SRandom.h> - nothing in this file calls into SRandom; looks
+ *   like a leftover from an earlier version of the test.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test files. The file's own comment questions
+ *   whether the test is still worth keeping - a maintenance note, not a
+ *   naming problem.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <libstuff/SRandom.h>
 #include <test/clustertest/BedrockClusterTester.h>

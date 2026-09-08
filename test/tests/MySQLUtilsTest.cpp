@@ -1,3 +1,29 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    MySQLUtilsTest.cpp
+ * Path:    test/tests/MySQLUtilsTest.cpp
+ * Pair:    (declarations in plugins/MySQL.h)
+ *
+ * INTENT
+ *   Unit tests for the free functions in the MySQLUtils namespace that
+ *   pattern-match and rewrite MySQL-compatibility queries: VERSION() and
+ *   connection_id() calls (with optional alias), information_schema
+ *   table/view/column queries, SHOW KEYS, and foreign-key constraint
+ *   lookups, plus table-name extraction for each.
+ *
+ * OBJECTS
+ *   MySQLUtilsTest - tpunit fixture with 12 tests, one per parsing or
+ *     detection function and its edge/negative cases.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent; test names mirror the MySQLUtils function names closely.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <test/lib/tpunit++.hpp>
 #include <libstuff/libstuff.h>
 #include <plugins/MySQL.h>

@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    MassiveQueryTest.cpp
+ * Path:    test/clustertest/tests/MassiveQueryTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying that a large, long-running write ("bigquery")
+ *   sent to a follower is escalated to the leader, committed, and replicated
+ *   out to every other follower, confirmed here by polling for a matching
+ *   commit count.
+ *
+ * OBJECTS
+ *   MassiveQueryTest        - tpunit fixture, single free-standing test.
+ *   MassiveQueryTest::test - sends the query to a follower, then polls a second follower's
+ *                             `Status` until its commit count catches up.
+ *   __MassiveQueryTest      - static instance that registers the fixture with tpunit.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test files.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

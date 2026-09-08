@@ -1,3 +1,51 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    TimeoutTest.cpp
+ * Path:    test/clustertest/tests/TimeoutTest.cpp
+ *
+ * INTENT
+ *   Cluster-level tpunit test fixture covering command timeouts across
+ *   every stage (peek, process, postProcess, total, HTTPS request,
+ *   future-commit wait) and the behavior of client disconnects: an
+ *   abandoned command must roll back and free its slot, while a
+ *   fire-and-forget command must keep running after its socket closes.
+ *
+ * OBJECTS
+ *   sendRequestAndDisconnect (file-local static free function) - opens a
+ *       raw socket to a tester's command port, writes one request, waits
+ *       `holdForUS`, then closes the socket without reading a response,
+ *       simulating a client that disconnects mid-command.
+ *   TimeoutTest (struct, extends tpunit::TestFixture) - registers each
+ *       test method below against a single default BedrockClusterTester.
+ *   TimeoutTest::setup/teardown - allocate/free the cluster tester.
+ *   TimeoutTest::test/longerThanDefaultProcess - assert `slowquery`
+ *       times out during peek, including past the default process
+ *       timeout when only the peek timeout is set.
+ *   TimeoutTest::testprocess/testPostProcess - assert `slowprocessquery`/
+ *       `testPostProcessTimeout` time out at their respective stages.
+ *   TimeoutTest::totalTimeout/httpsRequestTimeout/futureCommitTimeout -
+ *       assert timeout on an unanswered HTTPS request, on a request that
+ *       is never sent, and on waiting for a commit count that never
+ *       arrives.
+ *   TimeoutTest::abortDuringProcessRollsBack - disconnects mid-write via
+ *       sendRequestAndDisconnect and asserts the command is abandoned
+ *       (commandCount falls back to 1) and its write is rolled back.
+ *   TimeoutTest::abortDuringEscalationRollsBack - same, but sent to a
+ *       follower so the abort must propagate through escalation to the
+ *       leader, where the row-count check is actually performed.
+ *   TimeoutTest::forgetCommandNotAborted - asserts a `Connection: forget`
+ *       command keeps running and eventually commits after its socket
+ *       closes, rather than being aborted like a real disconnect.
+ *
+ * OUT OF PLACE
+ *   Nothing - every method targets some facet of timeout/abort behavior.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; a cluster-level timeout/abort test under test/clustertest/tests.
+ *
+ * NAMING QUALITY
+ *   Method names are specific and describe the scenario under test;
+ *   consistent with sibling files in this directory.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "test/lib/tpunit++.hpp"
 #include <BedrockCommand.h>
 #include <libstuff/libstuff.h>

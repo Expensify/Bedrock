@@ -1,3 +1,27 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLitePeer.cpp
+ * Path:    sqlitecluster/SQLitePeer.cpp
+ * Pair:    SQLitePeer.h
+ *
+ * INTENT
+ *   Implementation; see the header for the class's purpose.
+ *
+ * OBJECTS
+ *   All symbols are declared in the header; this file implements the
+ *   constructor/destructor and every member function, including the private
+ *   static isPermafollower.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits its header.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header. `#define SLOGPREFIX` is redefined here
+ *   (undef'd first) to tag log lines with the peer name, a common pattern
+ *   in this codebase.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "SQLitePeer.h"
 #include "BedrockServer.h"
 #include "libstuff/STCPManager.h"

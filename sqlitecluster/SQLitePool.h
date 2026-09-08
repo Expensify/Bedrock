@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLitePool.h
+ * Path:    sqlitecluster/SQLitePool.h
+ * Pair:    SQLitePool.cpp
+ *
+ * INTENT
+ *   Hands out SQLite database handles to worker threads from a bounded pool,
+ *   creating new handles lazily up to a max, and blocking callers when the
+ *   pool is exhausted until one is returned.
+ *
+ * OBJECTS
+ *   SQLitePool          - bounded pool of SQLite handles cloned from one base handle; get/initialize/return an index
+ *   SQLiteScopedHandle   - RAII wrapper that returns its pool index when it goes out of scope
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: pooling of SQLite handles, alongside SQLite.h in sqlitecluster.
+ *
+ * NAMING QUALITY
+ *   Consistent (S-prefix on types, `_` on private members). `getIndex`
+ *   returning a bare size_t rather than a typed handle/token is a little
+ *   easy to misuse (any size_t can be passed to returnToPool).
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLite.h>

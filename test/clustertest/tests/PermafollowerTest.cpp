@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    PermafollowerTest.cpp
+ * Path:    test/clustertest/tests/PermafollowerTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying that a permafollower (priority 0, the 6th node in
+ *   a 6-node cluster) never counts toward write quorum: the cluster keeps
+ *   committing once enough regular followers are down, whether or not the
+ *   permafollower itself is up.
+ *
+ * OBJECTS
+ *   PermafollowerTest        - tpunit fixture, single free-standing test.
+ *   PermafollowerTest::test - builds a 6-node cluster, confirms node 5's priority is 0, then commits
+ *                              with 2 regular followers down, then again with the permafollower down too.
+ *   __PermafollowerTest      - static instance that registers the fixture with tpunit.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test files.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

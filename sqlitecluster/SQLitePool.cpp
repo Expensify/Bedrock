@@ -1,3 +1,24 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLitePool.cpp
+ * Path:    sqlitecluster/SQLitePool.cpp
+ * Pair:    SQLitePool.h
+ *
+ * INTENT
+ *   Implementation; see the header for the class's purpose.
+ *
+ * OBJECTS
+ *   All symbols are declared in the header; this file implements every
+ *   member of SQLitePool and SQLiteScopedHandle.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits its header.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/libstuff.h>
 #include "SQLite.h"
 #include "SQLitePool.h"

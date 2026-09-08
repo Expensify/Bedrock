@@ -1,3 +1,39 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    RetryJobTest.cpp
+ * Path:    test/tests/jobs/RetryJobTest.cpp
+ * Pair:    JobTestHelper.h (shared test helper, not in this batch)
+ *
+ * INTENT
+ *   Integration tests for the Jobs plugin's RetryJob command: state and
+ *   precondition errors (non-existent job, wrong state, unpaused parent),
+ *   data updates, delay validation, and the full matrix of
+ *   nextRun/repeat/delay precedence and re-anchoring rules (including
+ *   SCHEDULED repeats that missed their window, long-interval and
+ *   snapping-modifier repeats that must NOT re-anchor, and the
+ *   retryAfter+SCHEDULED "ReceiptScan" case where GetJob stashes the
+ *   original nextRun for RetryJob to re-anchor against).
+ *
+ * OBJECTS
+ *   RetryJobTest  - tpunit::TestFixture; setupClass/tearDown/tearDownClass
+ *                   manage a shared BedrockTester with the Jobs+DB
+ *                   plugins and reset the jobs table between tests; the
+ *                   TEST-registered methods cover the scenarios in INTENT
+ *                   above; `getTimeInFuture` is a private (fixture-member)
+ *                   helper formatting a future wall-clock time as a
+ *                   SQLite-style datetime string.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: named for and scoped to the RetryJob command, located under
+ *   test/tests/jobs with the other job-command tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling fixtures. Test method names are long but
+ *   descriptive of the specific repeat/re-anchoring case each covers.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>

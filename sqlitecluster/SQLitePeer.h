@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLitePeer.h
+ * Path:    sqlitecluster/SQLitePeer.h
+ * Pair:    SQLitePeer.cpp
+ *
+ * INTENT
+ *   Represents one other node in the cluster as seen from this node: its
+ *   connection socket, replication state (commit count/hash), and the
+ *   synchronization/standup metadata SQLiteNode needs to run consensus.
+ *
+ * OBJECTS
+ *   SQLitePeer                      - one peer's connection + replication/consensus state, guarded by an internal mutex
+ *   SQLitePeer::Response            - a peer's vote on a standup request (NONE/APPROVE/DENY)
+ *   SQLitePeer::PeerPostPollStatus  - result of postPoll: OK, just-connected, socket error, or socket closed
+ *   operator<<(ostream&, atomic<SQLitePeer::Response>&) - streams a Response's name
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: peer state alongside SQLiteNode in sqlitecluster.
+ *
+ * NAMING QUALITY
+ *   Mostly consistent (S-prefix, trailing underscore on constructor params).
+ *   The comment on `socket` claims "see friend class declaration above" but
+ *   no friend is declared in this file - a stale cross-reference.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/libstuff.h>
 #include <sqlitecluster/SQLiteNode.h>
 

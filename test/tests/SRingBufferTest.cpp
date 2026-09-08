@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SRingBufferTest.cpp
+ * Path:    test/tests/SRingBufferTest.cpp
+ * Pair:    (declarations in libstuff/SRingBuffer.h)
+ *
+ * INTENT
+ *   Unit tests for the SRingBuffer template: push/pop state transitions,
+ *   capacity limits, FIFO ordering, concurrent producers, and the
+ *   shutdown/wake handshake between producer and consumer.
+ *
+ * OBJECTS
+ *   SRingBufferTest - tpunit fixture with 12 tests covering basic
+ *     push/pop, empty/full boundaries, FIFO order, multi-producer
+ *     concurrency, a producer-consumer pair with wrap-around, shutdown
+ *     delivery ordering and wake-up, data integrity across many
+ *     wrap-arounds, and a capacity-of-one edge case.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Test names are descriptive and follow the file's testXxx convention.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <thread>
 #include <vector>
 #include <atomic>

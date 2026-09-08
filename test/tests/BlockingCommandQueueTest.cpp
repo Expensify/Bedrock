@@ -1,3 +1,36 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BlockingCommandQueueTest.cpp
+ * Path:    test/tests/BlockingCommandQueueTest.cpp
+ * Pair:    (declarations in BedrockBlockingCommandQueue.h)
+ *
+ * INTENT
+ *   Unit tests for BedrockBlockingCommandQueue's per-identifier and
+ *   per-command rate limiting: sliding-window accounting, partial
+ *   credit at window edges, block-duration hold/clear, and log-prefix
+ *   restoration around a rate-limited dequeue.
+ *
+ * OBJECTS
+ *   TestBlockingCommandQueue - subclasses BedrockBlockingCommandQueue to
+ *     inject a test-controlled clock (overrides _now()) and adds a
+ *     static makeCommand() helper that builds a BedrockCommand tagged
+ *     with a given rate-limit identifier.
+ *   BlockingCommandQueueTest - tpunit fixture with 13 tests covering
+ *     threshold blocking per dimension, identifier independence, the
+ *     rejection messages surfaced by push()/get(), log-prefix scoping,
+ *     window expiry, partial credit, block-duration behavior, disabled
+ *     thresholds, and clearRateLimits().
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent; TestBlockingCommandQueue's _now override follows the
+ *   repo's underscore convention for the private member it shadows.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <BedrockBlockingCommandQueue.h>
 #include <test/lib/tpunit++.hpp>
 

@@ -1,0 +1,65 @@
+[
+ {
+  "unit": "SQLite",
+  "dir": "sqlitecluster",
+  "files": ["sqlitecluster/SQLite.h", "sqlitecluster/SQLite.cpp"],
+  "lines": 2374,
+  "test": false,
+  "intent": "Wraps a single sqlite3 handle with Bedrock's replicated-transaction model: journal-table bookkeeping, begin/read/write/prepare/commit/rollback, a cross-handle commit-order mutex, query result caching, conflict-location reporting, and authorizer/rewrite/whitelist hooks used by the sync layer and commands.",
+  "objects": [
+   {"name": "SQLite", "kind": "class", "role": "owns the sqlite3* handle and drives the transaction/journal/replication lifecycle"},
+   {"name": "SQLite::Parameter", "kind": "alias", "role": "re-export of SQliteParameter for bound-parameter query calls"},
+   {"name": "SQLite::timeout_error", "kind": "exception class", "role": "thrown when a query exceeds its configured timeout"},
+   {"name": "SQLite::constraint_error", "kind": "exception class", "role": "marks a SQLITE_CONSTRAINT failure as a benign replication-ordering race rather than a real error"},
+   {"name": "SQLite::TRANSACTION_TYPE", "kind": "enum class", "role": "SHARED vs EXCLUSIVE transaction locking mode"},
+   {"name": "SQLite::SharedData", "kind": "class (private nested)", "role": "state shared by every SQLite handle on the same file: commit count/mutex, checkpoint state, prepared/committed transaction queues"},
+   {"name": "SQLite::COMMIT_DISABLED", "kind": "static const int", "role": "sentinel result code returned by commit() when commits are administratively disabled"},
+   {"name": "DBINFO", "kind": "macro (SQLite.cpp)", "role": "logs an SINFO line prefixed with the DB filename"},
+   {"name": "SharedDataLookupMapType", "kind": "struct (SQLite.cpp, local to initializeSharedData)", "role": "static process-lifetime filename -> SharedData* registry"}
+  ],
+  "misfits": [
+   {
+    "item": "SQLite::enableRewrite / setRewriteHandler / _rewriteHandler",
+    "why": "query-rewriting exists, per its own comment, \"to support mocked requests and load testing\" - a test/mock-only feature wired directly into the production replicated-DB class",
+    "severity": "med",
+    "suggested_home": null
+   },
+   {
+    "item": "SQLite::setUpdateNoopMode / _noopUpdateMode",
+    "why": "noop-update mode is documented as existing only for `mockRequest`-enabled command testing, but lives as first-class state on the core DB class",
+    "severity": "med",
+    "suggested_home": null
+   },
+   {
+    "item": "BedrockPlugin_Compression::compress/decompress/registerSQLite calls in SQLite.cpp",
+    "why": "core sqlitecluster engine depends on plugins/Compression, a Bedrock command plugin, to compress journal entries and register SQLite UDFs - an inverted layering dependency for a library that otherwise only depends on libstuff",
+    "severity": "high",
+    "suggested_home": "a libstuff/sqlitecluster-level compression helper that plugins/Compression itself builds on, instead of the reverse"
+   },
+   {
+    "item": "Commented-out HC-Tree slow-commit diagnostic block inside SQLite::commit()",
+    "why": "~15 lines of disabled debug-logging code left in place rather than removed or gated behind a runtime flag",
+    "severity": "low",
+    "suggested_home": null
+   },
+   {
+    "item": "SQLite::SharedData::writeLock",
+    "why": "per its own comment this exists specifically to support the BlockWrites command - a single command's requirement implemented as a generic-looking member of the cross-handle SharedData structure",
+    "severity": "low",
+    "suggested_home": null
+   }
+  ],
+  "name_fit": {"score": 5, "note": "SQLite.h/.cpp is exactly the DB-engine wrapper class for sqlitecluster."},
+  "location_fit": {"score": 4, "note": "Right directory for the class itself; docked for reaching into plugins/Compression from a core library (see misfits)."},
+  "naming_quality": {"score": 3, "note": "Consistent `_`-prefixed privates overall, but getLastConflictIdentifier() actually returns _lastConflictPage while a separate thread_local _conflictIdentifier covers the HC-Tree case - two conflict-identity concepts share one public getter name."},
+  "depends_on": [
+   "libstuff/sqlite3.h",
+   "libstuff/SQliteParameter.h",
+   "libstuff/SQResult.h",
+   "libstuff/SPerformanceTimer.h",
+   "libstuff/libstuff.h",
+   "libstuff/SDeburr.h",
+   "plugins/Compression.h"
+  ]
+ }
+]
