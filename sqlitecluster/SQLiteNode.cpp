@@ -1836,7 +1836,7 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
             STHROW("failed to write transaction");
         }
         string newHash;
-        if (!_db.prepare(nullptr, &newHash)) {
+        if (!_db.prepare(nullptr, &newHash, chrono::hours(24), nullptr, commit["Hash"])) {
             STHROW("failed to prepare transaction");
         }
         if (newHash != commit["Hash"]) {
@@ -2037,7 +2037,7 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
     }
 
     bool success = true;
-    if (!db.prepare()) {
+    if (!db.prepare(nullptr, nullptr, chrono::hours(24), nullptr, message["NewHash"])) {
         SALERT("failed to prepare transaction");
         success = false;
         db.rollback();

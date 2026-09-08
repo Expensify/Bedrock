@@ -952,9 +952,19 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     return true;
 }
 
-bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr)
+bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr, const string& replicationHash)
 {
     SASSERT(_insideTransaction);
+
+    string guid;
+    if (replicationHash.find(':') != string::npos) {
+        if (replicationHash.size() != 73 || replicationHash[32] != ':' ||
+            replicationHash.substr(0, 32).find_first_not_of("0123456789ABCDEFabcdef") != string::npos) {
+            SWARN("Invalid GUID transaction hash format");
+            return false;
+        }
+        guid = replicationHash.substr(0, 32);
+    }
 
     // Pick a journal for this transaction.
     const int64_t journalID = _sharedData.nextJournalCount++;
@@ -1060,8 +1070,12 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     commitCount = _sharedData.commitCount;
 
     // Queue up the journal entry
-    string lastCommittedHash = getCommittedHash(); // This is why we need the lock.
-    _uncommittedHash = SToHex(SHashSHA1(lastCommittedHash + _uncommittedQuery));
+    if (guid.empty()) {
+        // Legacy commits chain from the entire previous hash, including GUID:SHA1 when present.
+        _uncommittedHash = SToHex(SHashSHA1(getCommittedHash() + _uncommittedQuery));
+    } else {
+        _uncommittedHash = guid + ":" + SToHex(SHashSHA1(guid + _uncommittedQuery));
+    }
     uint64_t before = STimeNow();
 
     // Update the passed-in reference values
