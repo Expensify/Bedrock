@@ -1,0 +1,41 @@
+{
+ "unit": "BlockingCommandQueueTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/BlockingCommandQueueTest.cpp"
+ ],
+ "lines": 313,
+ "test": true,
+ "intent": "Unit tests for BedrockBlockingCommandQueue's per-identifier and per-command rate limiting: sliding-window accounting, partial credit at window edges, block-duration hold/clear, and log-prefix restoration around a blocked dequeue.",
+ "objects": [
+  {
+   "name": "TestBlockingCommandQueue",
+   "kind": "struct",
+   "role": "subclasses BedrockBlockingCommandQueue with a test-controlled clock and a makeCommand() helper"
+  },
+  {
+   "name": "BlockingCommandQueueTest",
+   "kind": "fixture",
+   "role": "tpunit fixture with 13 tests over rate-limit dimensions, window expiry, block duration, and prefix scoping"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "matches BedrockBlockingCommandQueue"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "TestBlockingCommandQueue's _now follows the underscore-private convention"
+ },
+ "depends_on": [
+  "BedrockBlockingCommandQueue.h",
+  "test/lib/tpunit++.hpp"
+ ],
+ "_src": "b117.json",
+ "hash": "1eaf33edc977247c"
+}

@@ -1,0 +1,44 @@
+{
+ "unit": "WriteTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/WriteTest.cpp"
+ ],
+ "lines": 219,
+ "test": true,
+ "intent": "Integration tests for Bedrock's Query/Write command path: INSERT/UPDATE/DELETE, the no-WHERE safety guard, parallel writes, HTTP-style and shorthand syntax, and blocking of non-deterministic SQL functions on write.",
+ "objects": [
+  {
+   "name": "WriteTest",
+   "kind": "fixture",
+   "role": "tpunit fixture (BedrockTester-backed) with 15 tests over write-command behavior"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "WriteTest::keywordsAsValue",
+   "why": "asserts on a known SQL-parsing limitation (an UPDATE without a WHERE-safety marker is not aborted in this specific case) that the test comment says is tracked in an external Expensify issue, rather than asserting intended behavior",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent"
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/SRandom.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b117.json",
+ "hash": "5fe7ba8d54d86e72"
+}

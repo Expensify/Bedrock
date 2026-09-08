@@ -1,3 +1,36 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    FutureExecutionTest.cpp
+ * Path:    test/clustertest/tests/FutureExecutionTest.cpp
+ *
+ * INTENT
+ *   Cluster test for leader-only scheduled ("future") command execution:
+ *   a write scheduled a few seconds out isn't applied early but does land
+ *   once its time passes, and a command depending on a commit count that
+ *   will never arrive times out ("555 Timeout") rather than hanging.
+ *
+ * OBJECTS
+ *   FutureExecutionTest                     - tpunit fixture
+ *   FutureExecutionTest::setup/teardown     - own the BedrockClusterTester
+ *   FutureExecutionTest::FutureExecution    - schedules an insert a few
+ *                        seconds in the future, confirms it's absent
+ *                        immediately after and present once the delay passes
+ *   FutureExecutionTest::FutureExecutionTimeout - a query with a
+ *                        commitCount that will never be reached and a
+ *                        100ms timeout returns "555 Timeout"
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] #include <fstream> is unused; no stream type from it appears
+ *   anywhere in the file.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a scheduled-execution test alongside its peers.
+ *
+ * NAMING QUALITY
+ *   FutureExecution/FutureExecutionTimeout are PascalCase, unlike every
+ *   other TEST() method in this file's siblings (testXxx-style camelCase),
+ *   and echo the fixture's own name closely enough to read as constructors
+ *   at a glance.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <fstream>
 
 #include <libstuff/SData.h>

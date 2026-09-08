@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    JobIDTest.cpp
+ * Path:    test/clustertest/tests/JobIDTest.cpp
+ *
+ * INTENT
+ *   Regression test verifying a node that becomes leader after a restart
+ *   correctly re-initializes the jobs table's last-used ID (including when
+ *   that ID is 0) so newly created jobs don't fail on a unique-ID conflict.
+ *
+ * OBJECTS
+ *   JobIDTest                - tpunit fixture
+ *   JobIDTest::setup/teardown - own the BedrockClusterTester
+ *   JobIDTest::test           - creates a job on leader, restarts the
+ *                        follower, stops leader so the restarted follower
+ *                        takes over, creates another job there, restarts the
+ *                        original leader so it takes back over, creates one
+ *                        more job, and finally drains all three via GetJobs
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a jobs-ID regression test alongside its peers.
+ *
+ * NAMING QUALITY
+ *   Clear; consistent with sibling tests.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

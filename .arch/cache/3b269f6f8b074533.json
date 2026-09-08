@@ -1,0 +1,36 @@
+{
+ "unit": "SRingBufferTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/SRingBufferTest.cpp"
+ ],
+ "lines": 339,
+ "test": true,
+ "intent": "Unit tests for the SRingBuffer template: push/pop state transitions, capacity limits, FIFO ordering, concurrent producers, and the shutdown/wake handshake between producer and consumer.",
+ "objects": [
+  {
+   "name": "SRingBufferTest",
+   "kind": "fixture",
+   "role": "tpunit fixture with 12 tests covering push/pop, capacity boundaries, FIFO order, multi-producer concurrency, producer-consumer wrap-around, and shutdown semantics"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "matches SRingBuffer under test"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "test/tests, as expected"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent testXxx naming"
+ },
+ "depends_on": [
+  "libstuff/SRingBuffer.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b117.json",
+ "hash": "3b269f6f8b074533"
+}

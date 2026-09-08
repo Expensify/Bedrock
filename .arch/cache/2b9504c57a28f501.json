@@ -1,0 +1,137 @@
+{
+ "unit": "JSONValueTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/JSONValueTest.cpp"
+ ],
+ "lines": 862,
+ "test": true,
+ "intent": "A tpunit fixture testing JSON::Value's construction, type checking, array/object containers, indexing, merge/path access, cast operators, and copy/move/alias semantics.",
+ "objects": [
+  {
+   "name": "JSONValueTest",
+   "kind": "struct",
+   "role": "tpunit::TestFixture grouping test methods for JSON::Value"
+  },
+  {
+   "name": "JSONValueTest::setBool/setBool2/setInt/setInt2/setBigInt/setDouble/setString",
+   "kind": "method group",
+   "role": "operator= assigning native types; checks type()/serialize()"
+  },
+  {
+   "name": "JSONValueTest::ctorNull/ctorBool/ctorBool2/ctorInt/ctorInt2/ctorBigInt/ctorDouble/ctorString",
+   "kind": "method group",
+   "role": "equivalent construction via constructor overloads"
+  },
+  {
+   "name": "JSONValueTest::simpleArray/emptyArrayAccess/nestedArray",
+   "kind": "method group",
+   "role": "array push_back/indexing/back(), NotFound on empty/out-of-range"
+  },
+  {
+   "name": "JSONValueTest::simpleObject/nestedObject",
+   "kind": "method group",
+   "role": "object assignment; nested Value assigned by copy, not aliased"
+  },
+  {
+   "name": "JSONValueTest::invalidIndex/invalidKey",
+   "kind": "method group",
+   "role": "NotFound on bad index/key; mutable auto-vivifies a key, const does not"
+  },
+  {
+   "name": "JSONValueTest::extractString",
+   "kind": "method",
+   "role": "extractStringWithDefault pop-and-default semantics"
+  },
+  {
+   "name": "JSONValueTest::concatenateArrays",
+   "kind": "method",
+   "role": "arrayInsert range concatenation"
+  },
+  {
+   "name": "JSONValueTest::arbitraryDS",
+   "kind": "method",
+   "role": "Value::fromDataStructure() building JSON from native map/set containers, incl. de-duplication via set"
+  },
+  {
+   "name": "JSONValueTest::merge",
+   "kind": "method",
+   "role": "merge()'s shallow key overwrite, as opposed to mergeDeep"
+  },
+  {
+   "name": "JSONValueTest::getAtPath",
+   "kind": "method",
+   "role": "getValueAtPath() dotted nested lookup incl. missing paths"
+  },
+  {
+   "name": "JSONValueTest::serializeEmptyString",
+   "kind": "method",
+   "role": "empty-string serialize invariant"
+  },
+  {
+   "name": "JSONValueTest::castOperators",
+   "kind": "method",
+   "role": "implicit cast operators and fill() out-param overload; TypeError on incompatible cast"
+  },
+  {
+   "name": "JSONValueTest::operatorThrows",
+   "kind": "method",
+   "role": "exact exception message contract across operator[]/hasMember/size, const and non-const"
+  },
+  {
+   "name": "JSONValueTest::testSelfAssignment",
+   "kind": "method",
+   "role": "regression guard: obj = obj[key] must not corrupt or crash"
+  },
+  {
+   "name": "JSONValueTest::hasIndex",
+   "kind": "method",
+   "role": "array bounds-check helper; TypeError on non-array"
+  },
+  {
+   "name": "JSONValueTest::convenienceCasts",
+   "kind": "method",
+   "role": "Value::object()/singleItemArray() factory helpers avoiding brace-init ambiguity"
+  },
+  {
+   "name": "JSONValueTest::operators",
+   "kind": "method",
+   "role": "operator[] semantics: copy-on-assign isolation, auto-vivified null, r-value overloads move rather than copy"
+  },
+  {
+   "name": "JSONValueTest::shallowCopyValue/shallowCopyToKey/preventTypeChangeInShallowCopy",
+   "kind": "method group",
+   "role": "shallowCopy() aliasing semantics and the guard against changing a wrapper's type via shallowCopy"
+  },
+  {
+   "name": "JSONValueTest::getBoolFromBinaryIntOrBool",
+   "kind": "method",
+   "role": "strict 0/1-only bool coercion for signed/unsigned ints, bools, and parsed values"
+  },
+  {
+   "name": "__JSONValueTest",
+   "kind": "file-scope global",
+   "role": "self-registers the fixture with tpunit at static-init time"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Named for exactly what it tests: JSON::Value"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "test/tests/ is correct for this"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Consistent camelCase scenario names; testSelfAssignment is the only one prefixed with test while siblings aren't"
+ },
+ "depends_on": [
+  "libstuff/JSON/Value.h",
+  "libstuff/libstuff.h",
+  "test/lib/tpunit++.hpp"
+ ],
+ "_src": "b116.json",
+ "hash": "2b9504c57a28f501"
+}

@@ -1,3 +1,34 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    HTTPSTest.cpp
+ * Path:    test/clustertest/tests/HTTPSTest.cpp
+ *
+ * INTENT
+ *   Cluster test aiming to provoke (not deterministically prove) a conflict
+ *   between a command's HTTPS request and its own retried peek/process, by
+ *   spamming a mix of HTTPS and plain conflicting commands at all nodes and
+ *   checking testplugin's sendrequest never runs peek more than once for
+ *   the same HTTPS attempt.
+ *
+ * OBJECTS
+ *   HTTPSTest                        - tpunit fixture
+ *   HTTPSTest::setup/teardown        - own the BedrockClusterTester
+ *   HTTPSTest::testMultipleRequests  - sendrequest with a 3x HTTPS-request
+ *                        count returns 3 response lines
+ *   HTTPSTest::testWaitForHTTPSRequests - httpswait command returns 200
+ *   HTTPSTest::test                  - spams a mix of sendrequest and
+ *                        conflicting idcollision commands across three
+ *                        threads/nodes and checks every response is 200
+ *                        with the expected presence/absence of a body
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: the HTTPS-conflict test alongside its peers.
+ *
+ * NAMING QUALITY
+ *   Clear; consistent with sibling tests.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "libstuff/libstuff.h"
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>

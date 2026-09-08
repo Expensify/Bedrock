@@ -1,3 +1,37 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    EscalateTest.cpp
+ * Path:    test/clustertest/tests/EscalateTest.cpp
+ *
+ * INTENT
+ *   Cluster test for command escalation from follower to leader: a
+ *   follower-received command reaches leader and is processed correctly,
+ *   escalation survives serializing command data across the wire (including
+ *   a deserialize-failure path), and the escalation socket is safely reused
+ *   (or not) between requests.
+ *
+ * OBJECTS
+ *   EscalateTest                       - tpunit fixture
+ *   EscalateTest::setup/teardown       - own the BedrockClusterTester
+ *   EscalateTest::test                 - sends a follower command whose
+ *                        completion is verified via a shared temp file, then
+ *                        confirms the server is still alive afterward
+ *   EscalateTest::testSerializedData    - checks EscalateSerializedData
+ *                        round-trips the escalating/escalated node names
+ *   EscalateTest::testSerializedDataException - checks a forced deserialize
+ *                        failure returns "500 BAD DESERIALIZE"
+ *   EscalateTest::socketReuse           - sends the same escalating command
+ *                        twice, with and without Connection: close, to
+ *                        exercise the follower's escalation-socket pooling
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a command-escalation test alongside its peers.
+ *
+ * NAMING QUALITY
+ *   Clear; consistent with sibling tests.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "libstuff/libstuff.h"
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>

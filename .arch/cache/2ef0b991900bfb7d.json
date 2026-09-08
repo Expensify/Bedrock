@@ -1,0 +1,37 @@
+{
+ "unit": "MySQLUtilsTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/MySQLUtilsTest.cpp"
+ ],
+ "lines": 285,
+ "test": true,
+ "intent": "Unit tests for the MySQLUtils namespace's query pattern-matching and rewriting: VERSION()/connection_id() calls, information_schema queries, SHOW KEYS, and foreign-key constraint lookups, plus table-name extraction.",
+ "objects": [
+  {
+   "name": "MySQLUtilsTest",
+   "kind": "fixture",
+   "role": "tpunit fixture with 12 tests, one per parsing/detection function and its edge cases"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "matches MySQLUtils"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "test names mirror MySQLUtils function names"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "plugins/MySQL.h",
+  "test/lib/tpunit++.hpp"
+ ],
+ "_src": "b117.json",
+ "hash": "2ef0b991900bfb7d"
+}

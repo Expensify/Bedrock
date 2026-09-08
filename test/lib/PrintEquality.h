@@ -1,3 +1,36 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    PrintEquality.h
+ * Path:    test/lib/PrintEquality.h
+ *
+ * INTENT
+ *   Backs the tpunit++ ASSERT_EQUAL/ASSERT_NOT_EQUAL family: on a failed
+ *   comparison, its constructor prints both compared values with an "="
+ *   or "!=" between them so a failing assertion's actual values show up in
+ *   the test output.
+ *
+ * OBJECTS
+ *   PrintEquality - constructor-only helper; templated on the two compared types, prints
+ *                   `a (= or !=) b` to cout when constructed.
+ *   operator<<(ostream&, const list<T>&)      - free function; prints a list via SComposeList.
+ *   operator<<(ostream&, const set<T>&)       - free function; prints a set via SComposeList.
+ *   operator<<(ostream&, const map<T,U>&)     - free function; prints a map as one "k: v" line per entry.
+ *   operator<<(ostream&, const optional<T>&)  - free function; prints the contained value or "(nullopt)".
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] The four `operator<<` overloads for list/set/map/optional are generic stream-
+ *   formatting utilities with no dependency on PrintEquality or tpunit, bundled here only because
+ *   PrintEquality's own printing happens to need them. A shared stream-formatting header (e.g. in
+ *   libstuff) would let non-test code use the same overloads instead of only test code that
+ *   happens to include this file.
+ *
+ * NAME/LOCATION FIT
+ *   Partial fit: the file does far more than print equality - it defines general-purpose
+ *   container-printing operators the class itself merely calls into.
+ *
+ * NAMING QUALITY
+ *   PrintEquality's name matches its own narrow job; the operator<< overloads it drags in are
+ *   unnamed (operator overloads) so the naming question doesn't really apply to them.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 
 #include <iostream>

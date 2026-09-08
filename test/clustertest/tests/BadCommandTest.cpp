@@ -1,3 +1,29 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BadCommandTest.cpp
+ * Path:    test/clustertest/tests/BadCommandTest.cpp
+ *
+ * INTENT
+ *   Cluster test that leader handles misbehaving commands safely: unhandled
+ *   exceptions in peek/process return 500s without crashing the server, an
+ *   exception message with control characters is URL-encoded rather than
+ *   corrupting the reply, and commands that actually crash the server cause
+ *   a clean failover, with the follower then refusing the identical command.
+ *
+ * OBJECTS
+ *   BadCommandTest        - tpunit fixture
+ *   BadCommandTest::test  - the whole scenario, retried up to twice since a
+ *                        crash-and-failover isn't guaranteed to land cleanly
+ *                        on the first attempt
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: an error-handling test alongside its peers.
+ *
+ * NAMING QUALITY
+ *   Clear; consistent with sibling tests.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

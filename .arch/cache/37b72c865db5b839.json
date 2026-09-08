@@ -1,0 +1,42 @@
+{
+ "unit": "AfterCommitCallbackTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/AfterCommitCallbackTest.cpp"
+ ],
+ "lines": 123,
+ "test": true,
+ "intent": "Tests SQLite's after-commit callback list: fires once per commit, not on rollback, not on a commit lost to a conflict, and is shared by a copy-constructed handle.",
+ "objects": [
+  {
+   "name": "AfterCommitCallbackTempDBFile",
+   "kind": "struct",
+   "role": "RAII temp-DB-file helper (mkstemp/unlink)"
+  },
+  {
+   "name": "AfterCommitCallbackTest",
+   "kind": "fixture",
+   "role": "tpunit fixture with 3 tests"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "sqlitecluster/SQLite.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b117.json",
+ "hash": "37b72c865db5b839"
+}

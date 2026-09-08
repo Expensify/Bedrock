@@ -1,0 +1,43 @@
+{
+ "unit": "JSONParserTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/JSONParserTest.cpp"
+ ],
+ "lines": 189,
+ "test": true,
+ "intent": "Unit tests for JSON::Value::parse(): scalar types, unicode escape decoding, arrays/objects including nesting, and malformed-input error handling.",
+ "objects": [
+  {
+   "name": "JSONParserTest",
+   "kind": "fixture",
+   "role": "tpunit fixture with 14 tests, one per JSON value shape or edge case"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "JSONParserTest (nested-value parsing coverage)",
+   "why": "overlaps JSONTest.cpp's testParseAndSerializeNestedValue, which also parses nested JSON::Value structures; no documented split of responsibility between the two same-directory files",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 4,
+  "note": "fits, modulo overlap with JSONTest"
+ },
+ "location_fit": {
+  "score": 4,
+  "note": "fits, modulo overlap with JSONTest"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent"
+ },
+ "depends_on": [
+  "libstuff/JSON/Value.h",
+  "test/lib/tpunit++.hpp"
+ ],
+ "_src": "b117.json",
+ "hash": "7b19ed4abee192d3"
+}

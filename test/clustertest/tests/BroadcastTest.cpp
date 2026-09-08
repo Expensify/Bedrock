@@ -1,3 +1,34 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BroadcastTest.cpp
+ * Path:    test/clustertest/tests/BroadcastTest.cpp
+ *
+ * INTENT
+ *   Cluster test for testplugin's broadcast-with-timeouts command: verifies
+ *   a broadcast command's peekedAt timestamp and process/broadcast timeouts
+ *   are received correctly by every follower it's sent to.
+ *
+ * OBJECTS
+ *   BroadcastCommandTest                 - tpunit fixture (note: named
+ *                        BroadcastCommandTest, not BroadcastTest)
+ *   BroadcastCommandTest::setup/teardown  - own the BedrockClusterTester
+ *   BroadcastCommandTest::test            - sends broadcastwithtimeouts to
+ *                        leader, then reads getbroadcasttimeouts back from
+ *                        both followers and checks the stored peekedAt/
+ *                        processTimeout/timeout/not_special values on each
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   [CANDIDATE] The file is BroadcastTest.cpp but its fixture class and
+ *   registered fixture name are BroadcastCommandTest/"BroadcastCommand",
+ *   and the global instance is __BroadcastCommandTest — the file and its
+ *   contents disagree on the test's name.
+ *
+ * NAMING QUALITY
+ *   Internally consistent (BroadcastCommandTest throughout); the mismatch
+ *   is with the filename, not within the file itself.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "test/lib/tpunit++.hpp"
 #include <iostream>
 

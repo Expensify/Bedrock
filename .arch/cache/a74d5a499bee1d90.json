@@ -1,0 +1,50 @@
+{
+ "unit": "SQLiteNodeTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/SQLiteNodeTest.cpp"
+ ],
+ "lines": 170,
+ "test": true,
+ "intent": "Unit tests for SQLiteNode's sync-peer selection logic (fastest logged-in peer by latency, tie-broken by commit count) and name-based peer lookup.",
+ "objects": [
+  {
+   "name": "SQLiteNodeTester",
+   "kind": "class",
+   "role": "white-box test accessor exposing SQLiteNode's private _syncPeer and _updateSyncPeer(), granted friend access in SQLiteNode.h"
+  },
+  {
+   "name": "TestServer",
+   "kind": "class",
+   "role": "minimal no-op SQLiteServer stub needed to construct a SQLiteNode"
+  },
+  {
+   "name": "SQLiteNodeTest",
+   "kind": "fixture",
+   "role": "tpunit fixture with 2 tests: sync-peer re-selection and getPeerByName() lookup"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "SQLiteNodeTester clearly marked as test-only"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "sqlitecluster/SQLiteCommand.h",
+  "sqlitecluster/SQLiteNode.h",
+  "sqlitecluster/SQLitePeer.h",
+  "sqlitecluster/SQLiteServer.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b117.json",
+ "hash": "a74d5a499bee1d90"
+}

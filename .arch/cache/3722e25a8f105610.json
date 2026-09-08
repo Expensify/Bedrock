@@ -1,0 +1,44 @@
+{
+ "unit": "QueryTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/QueryTest.cpp"
+ ],
+ "lines": 130,
+ "test": true,
+ "intent": "Integration tests for Bedrock's Query command: malformed/missing/unterminated queries, single- and multi-statement execution, the no-WHERE DELETE guard, and SQLite's percentile/median aggregate functions.",
+ "objects": [
+  {
+   "name": "QueryTest",
+   "kind": "fixture",
+   "role": "tpunit fixture (BedrockTester-backed) with 8 tests"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "QueryTest::testPercentile",
+   "why": "verifies SQLite's built-in SQLITE_ENABLE_PERCENTILE aggregate functions (median/percentile/percentile_cont/percentile_disc) rather than anything specific to Bedrock's own Query command handling - effectively a build-flag/compiled-in-extension check riding on this fixture",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/SData.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b117.json",
+ "hash": "3722e25a8f105610"
+}

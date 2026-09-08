@@ -1,0 +1,60 @@
+{
+ "unit": "JSONTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/JSONTest.cpp"
+ ],
+ "lines": 139,
+ "test": true,
+ "intent": "Unit tests for JSON::Value covering parse/serialize round-tripping, exact-uint64 boundary handling, equality semantics, and the pluggable JSON::MetricsObserver hook.",
+ "objects": [
+  {
+   "name": "(anonymous)::MetricsRecord",
+   "kind": "struct",
+   "role": "captures fields a test-installed metrics observer records"
+  },
+  {
+   "name": "(anonymous)::metricsRecord / resetMetricsRecord / recordMetrics",
+   "kind": "free",
+   "role": "the test's JSON::MetricsObserver callback and its reset helper"
+  },
+  {
+   "name": "(anonymous)::ScopedMetricsObserver",
+   "kind": "class",
+   "role": "RAII installer/uninstaller for JSON::setMetricsObserver"
+  },
+  {
+   "name": "JSONTest",
+   "kind": "fixture",
+   "role": "tpunit fixture with 5 tests"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "JSONTest (nested-value parsing coverage)",
+   "why": "overlaps JSONParserTest.cpp, which also parses nested JSON::Value structures; the split between \"basic value-type parsing\" and \"serialize/equality/metrics\" across the two files is not documented anywhere",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 4,
+  "note": "fits, modulo overlap with JSONParserTest"
+ },
+ "location_fit": {
+  "score": 4,
+  "note": "fits, modulo overlap with JSONParserTest"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent"
+ },
+ "depends_on": [
+  "libstuff/JSON/Metrics.h",
+  "libstuff/JSON/Parser.h",
+  "libstuff/JSON/Value.h",
+  "test/lib/tpunit++.hpp"
+ ],
+ "_src": "b117.json",
+ "hash": "661803184a6fbc93"
+}

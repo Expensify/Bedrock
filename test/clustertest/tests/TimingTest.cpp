@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    TimingTest.cpp
+ * Path:    test/clustertest/tests/TimingTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying testplugin's per-command timing instrumentation:
+ *   leader reports its own non-zero peek/process/total times, followers
+ *   report only peek plus the leader's upstream peek/process/total times
+ *   for escalated writes, and peek+process never exceeds the reported total.
+ *
+ * OBJECTS
+ *   TimingTest        - tpunit fixture
+ *   TimingTest::test  - runs a write command (retrying until timing fields
+ *                        appear) and a read command on every node, checking
+ *                        the timing invariants above for each
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a command-timing test alongside its peers.
+ *
+ * NAMING QUALITY
+ *   Clear; consistent with sibling tests.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

@@ -1,0 +1,100 @@
+{
+ "unit": "JSONUtilsTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/JSONUtilsTest.h",
+  "test/tests/JSONUtilsTest.cpp"
+ ],
+ "lines": 453,
+ "test": true,
+ "intent": "A tpunit fixture unit-testing JSON::Utils's merge, merge-patch, field-stripping, key-search, string-extraction, transport-sanitization, and JSON-path functions.",
+ "objects": [
+  {
+   "name": "JSONUtilsTest",
+   "kind": "class",
+   "role": "tpunit::TestFixture declaring/registering 17 public test methods for JSON::Utils"
+  },
+  {
+   "name": "JSONUtilsTest::mergeObjectsOverwritesRightOrder/mergeObjectsHandlesLeftNonObject/mergeObjectsHandlesRightNonObject/mergeObjectsBothNonObjectsToEmptyObject",
+   "kind": "method group",
+   "role": "mergeDeep() edge cases with non-object operands"
+  },
+  {
+   "name": "JSONUtilsTest::mergeDeepWithSQLiteBehavior",
+   "kind": "method",
+   "role": "useSQLiteMergeBehavior's effect on null keys (delete vs preserve) and arrays (replace vs concat)"
+  },
+  {
+   "name": "JSONUtilsTest::applyJSONMergePatchNonObjectPatchReplaces/applyJSONMergePatchNonObjectExistingTreatedAsEmptyObject",
+   "kind": "method group",
+   "role": "RFC 7396 merge-patch semantics matching SQLite's JSON_PATCH"
+  },
+  {
+   "name": "JSONUtilsTest::mergeObjectJSON",
+   "kind": "method",
+   "role": "full deep-merge scenario across nested objects/arrays/strings"
+  },
+  {
+   "name": "JSONUtilsTest::stripOutFields/removeObjectKeysWithNullValues/containAnyKeys",
+   "kind": "method group",
+   "role": "recursive key removal and key-presence search"
+  },
+  {
+   "name": "JSONUtilsTest::getFirstString",
+   "kind": "method",
+   "role": "scalar-or-first-array-element string extraction"
+  },
+  {
+   "name": "JSONUtilsTest::parseOrDefault",
+   "kind": "method",
+   "role": "fallback value on parse failure"
+  },
+  {
+   "name": "JSONUtilsTest::sanitizeJSONStringForTransportStripsControlBytes/sanitizeJSONStringForTransportPreservesValidUTF8/sanitizeJSONStringForTransportRejectsInvalidMultiByte",
+   "kind": "method group",
+   "role": "control-byte stripping and UTF-8 validation"
+  },
+  {
+   "name": "JSONUtilsTest::parseJSONPath",
+   "kind": "method",
+   "role": "dotted/quoted JSON-path segment splitting"
+  },
+  {
+   "name": "JSONUtilsTest::getOldObject/getNewObject/assertObjectMerged",
+   "kind": "method group",
+   "role": "private helpers backing mergeObjectJSON"
+  },
+  {
+   "name": "(anonymous namespace)::SENSITIVE_KEYS",
+   "kind": "file-local const",
+   "role": "const set<string> {\"ssn\"} used by stripOutFields/containAnyKeys tests"
+  },
+  {
+   "name": "__JSONUtilsTest",
+   "kind": "file-scope global",
+   "role": "self-registers the fixture with tpunit at static-init time"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Named for exactly what it tests: JSON::Utils"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "test/tests/ is correct for this"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Consistent, descriptive scenario names; fits repo test convention"
+ },
+ "depends_on": [
+  "test/tests/JSONUtilsTest.h",
+  "libstuff/JSON/Utils.h",
+  "libstuff/JSON/Value.h",
+  "libstuff/libstuff.h",
+  "test/lib/tpunit++.hpp"
+ ],
+ "_src": "b116.json",
+ "hash": "eddd77fe96fab635"
+}

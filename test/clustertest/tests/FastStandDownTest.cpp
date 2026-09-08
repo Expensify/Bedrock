@@ -1,3 +1,35 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    FastStandDownTest.cpp
+ * Path:    test/clustertest/tests/FastStandDownTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying leader can stand down quickly even with slow
+ *   work outstanding: a command stuck in a 5s HTTPS request, and a command
+ *   scheduled 5s in the future, must not block a leader stand-down/failover,
+ *   yet still complete and be escalated/committed correctly afterward.
+ *
+ * OBJECTS
+ *   FastStandDownTest                - tpunit fixture
+ *   FastStandDownTest::setup/teardown - own the BedrockClusterTester
+ *   FastStandDownTest::testHTTPSRequests   - starts a slow HTTPS command on
+ *                        leader, stops leader mid-request, confirms the new
+ *                        leader takes over quickly and the command's
+ *                        response shows it was escalated and processed there
+ *   FastStandDownTest::testFutureCommands  - same shape for a command
+ *                        scheduled to execute 5s in the future: confirms
+ *                        stand-down isn't blocked, but the old leader's
+ *                        shutdown doesn't complete before the delay elapses,
+ *                        and the write lands on the new leader
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a stand-down-latency test alongside its peers.
+ *
+ * NAMING QUALITY
+ *   Clear; consistent with sibling tests.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <iostream>
 
 #include <libstuff/SData.h>

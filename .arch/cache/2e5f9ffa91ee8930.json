@@ -1,0 +1,42 @@
+{
+ "unit": "WriteLocalUnreplicatedTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/WriteLocalUnreplicatedTest.cpp"
+ ],
+ "lines": 146,
+ "test": true,
+ "intent": "Unit tests for SQLite::writeLocalUnreplicated(): it leaves commit count and journal untouched, rolls back cleanly on a failed query, and behaves safely under a concurrent commit from another handle.",
+ "objects": [
+  {
+   "name": "WriteLocalUnreplicatedTempDBFile",
+   "kind": "struct",
+   "role": "RAII temp-DB-file helper (mkstemp/unlink)"
+  },
+  {
+   "name": "WriteLocalUnreplicatedTest",
+   "kind": "fixture",
+   "role": "tpunit fixture with 3 tests plus countJournalRows()/countRows() helpers"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "sqlitecluster/SQLite.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b117.json",
+ "hash": "2e5f9ffa91ee8930"
+}

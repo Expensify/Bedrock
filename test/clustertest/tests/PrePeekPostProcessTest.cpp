@@ -1,3 +1,45 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    PrePeekPostProcessTest.cpp
+ * Path:    test/clustertest/tests/PrePeekPostProcessTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying testplugin commands can hook prePeek/postProcess
+ *   in addition to peek/process, that data returned from each stage reaches
+ *   the client response, and that DB writes made in process() are visible
+ *   in postProcess() but not in peek() (before) or prePeek() (before that).
+ *
+ * OBJECTS
+ *   checkWithoutThis()               - file-local free function; a no-op
+ *                        tautological assertion (ASSERT_EQUAL(1, 1)) called
+ *                        once from prePeek() to confirm a free function can
+ *                        be called from a fixture method with no `this`
+ *   PrePeekPostProcessTest            - tpunit fixture
+ *   PrePeekPostProcessTest::setup/teardown - own the BedrockClusterTester
+ *   PrePeekPostProcessTest::prePeek        - prepeekcommand: checks prePeek/
+ *                        peek info round-trip and the row isn't inserted yet
+ *   PrePeekPostProcessTest::prePeekThrow   - prepeekcommand w/ shouldThrow:
+ *                        checks the resulting "501 ERROR"
+ *   PrePeekPostProcessTest::postProcess    - postprocesscommand: checks
+ *                        peek/process/postProcess info round-trip and that
+ *                        a row inserted during process() is absent at peek
+ *                        time but present at postProcess time
+ *   PrePeekPostProcessTest::prePeekPostProcess - prepeekpostprocesscommand:
+ *                        same, but the row is deleted during process(), so
+ *                        it's present at peek time and gone at postProcess
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] checkWithoutThis(): a free function asserting a hardcoded
+ *   tautology, not exercising any Bedrock behavior itself. It reads as a
+ *   leftover probe (e.g. confirming a plain function is callable from a
+ *   fixture method) rather than part of the test's stated intent.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a prePeek/postProcess hook test alongside its peers.
+ *
+ * NAMING QUALITY
+ *   Clear method names; checkWithoutThis's name doesn't convey what it does
+ *   or why it exists.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <BedrockCommand.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>

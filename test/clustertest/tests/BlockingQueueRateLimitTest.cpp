@@ -1,3 +1,35 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BlockingQueueRateLimitTest.cpp
+ * Path:    test/clustertest/tests/BlockingQueueRateLimitTest.cpp
+ *
+ * INTENT
+ *   Cluster test for the blocking-queue time-based rate limiter: verifies
+ *   the SetBlockingQueueTimeRateLimit control command's window/threshold
+ *   settings are reflected in Status, and that a burst of conflicting
+ *   commands sharing an identifier actually trips per-identifier blocking
+ *   (503s) once its threshold is exceeded.
+ *
+ * OBJECTS
+ *   BlockingQueueRateLimitTest              - tpunit fixture
+ *   BlockingQueueRateLimitTest::setup/teardown - own the BedrockClusterTester
+ *   BlockingQueueRateLimitTest::before       - runs before each TEST(): clears
+ *                        rate-limit state and resets conflict retries
+ *   BlockingQueueRateLimitTest::testControlCommands  - sets window/threshold
+ *                        values and checks they round-trip through Status
+ *   BlockingQueueRateLimitTest::testTimeRateLimiting - forces conflicts on a
+ *                        shared identifier from three threads at once, then
+ *                        checks some requests were refused (503), the count
+ *                        adds up, and the identifier shows blocked in Status
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: the blocking-queue rate-limit test alongside its peers.
+ *
+ * NAMING QUALITY
+ *   Clear; consistent with sibling control-command tests.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

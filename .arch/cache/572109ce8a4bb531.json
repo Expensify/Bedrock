@@ -1,0 +1,55 @@
+{
+ "unit": "AsyncResolveTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/AsyncResolveTest.cpp"
+ ],
+ "lines": 206,
+ "test": true,
+ "intent": "Tests the deferred DNS resolution path in STCPManager::Socket and the underlying SResolve/SResolution API: synchronous fast paths, the deferred path, failure/wake behavior, and resolution lifetime independent of the caller.",
+ "objects": [
+  {
+   "name": "AsyncResolve",
+   "kind": "fixture",
+   "role": "tpunit fixture with 8 tests; struct/global-instance named AsyncResolve/__AsyncResolve rather than AsyncResolveTest/__AsyncResolveTest"
+  },
+  {
+   "name": "AsyncResolve::pollUntilSettled",
+   "kind": "method",
+   "role": "drives prePoll/S_poll/postPoll until a socket leaves RESOLVING/CONNECTING"
+  },
+  {
+   "name": "AsyncResolve::openTestPort",
+   "kind": "method",
+   "role": "opens a listening port from BedrockTester's port pool"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "struct AsyncResolve / instance __AsyncResolve",
+   "why": "the fixture struct and its global instance are named AsyncResolve/__AsyncResolve, inconsistent with the file's own name (AsyncResolveTest.cpp) and with every sibling test in this batch, which follow a Foo/FooTest/__FooTest pattern",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 3,
+  "note": "file name and struct/instance names disagree"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "struct/instance naming mismatch noted above"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/SResolver.h",
+  "libstuff/STCPManager.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b117.json",
+ "hash": "572109ce8a4bb531"
+}

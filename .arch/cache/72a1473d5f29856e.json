@@ -1,0 +1,152 @@
+{
+ "unit": "LibStuffTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/LibStuffTest.cpp"
+ ],
+ "lines": 1283,
+ "test": true,
+ "intent": "A tpunit fixture exercising most of libstuff's free-standing utility functions (crypto, JSON, HTTP parsing/composition, string/regex helpers, file IO, SQLite bound parameters) plus a few explicit security contracts.",
+ "objects": [
+  {
+   "name": "TempDBFile",
+   "kind": "struct",
+   "role": "RAII temp file (via mkstemp) used as a throwaway SQLite db for tests"
+  },
+  {
+   "name": "LibStuff",
+   "kind": "struct",
+   "role": "tpunit::TestFixture grouping ~37 test methods covering most of libstuff's free functions"
+  },
+  {
+   "name": "LibStuff::testAutoThreadPrefixRestoresPreviousValues",
+   "kind": "method",
+   "role": "SAUTOPREFIX thread-local save/restore across nested scopes"
+  },
+  {
+   "name": "LibStuff::testEncryptDecrpyt/testSHMACSHA1/testSHMACSHA256",
+   "kind": "method group",
+   "role": "AES and HMAC-SHA1/256 primitives"
+  },
+  {
+   "name": "LibStuff::testJSONDecode/testJSON",
+   "kind": "method group",
+   "role": "JSON parse/compose round-trips incl. float/scientific-notation/NaN-Infinity formatting"
+  },
+  {
+   "name": "LibStuff::testEscapeUnescape/testTrim/testCollapse/testStrip",
+   "kind": "method group",
+   "role": "string escaping and whitespace utilities"
+  },
+  {
+   "name": "LibStuff::testChunkedEncoding/SComposeHTTPTest",
+   "kind": "method group",
+   "role": "HTTP request/chunked parsing and response composition incl. header-injection escaping"
+  },
+  {
+   "name": "LibStuff::testDaysInMonth/testFirstOfMonth",
+   "kind": "method group",
+   "role": "calendar arithmetic"
+  },
+  {
+   "name": "LibStuff::testGZip",
+   "kind": "method",
+   "role": "SGZip/SGUnzip round trip"
+  },
+  {
+   "name": "LibStuff::testConstantTimeEquals",
+   "kind": "method",
+   "role": "timing-safe string compare"
+  },
+  {
+   "name": "LibStuff::testParseIntegerList/testSQList/testContains",
+   "kind": "method group",
+   "role": "list parsing/composing and SQL-safe list quoting across container types"
+  },
+  {
+   "name": "LibStuff::testSData/testSTable",
+   "kind": "method group",
+   "role": "SData/STable auto-stringification of assigned native types"
+  },
+  {
+   "name": "LibStuff::testFileIO",
+   "kind": "method",
+   "role": "SFile* save/load/exists/size/delete"
+  },
+  {
+   "name": "LibStuff::testRandom",
+   "kind": "method",
+   "role": "SRandom::rand64 smoke test"
+  },
+  {
+   "name": "LibStuff::testHexConversion/testBase32Conversion/testEncodeDecodeURIComponent",
+   "kind": "method group",
+   "role": "encoding conversions"
+  },
+  {
+   "name": "LibStuff::SREMatchTest/SREReplaceTest",
+   "kind": "method group",
+   "role": "SRE* regex match/replace/compile wrappers"
+  },
+  {
+   "name": "LibStuff::testSReplace/testSReplaceAll/testSReplaceAllBut",
+   "kind": "method group",
+   "role": "substring and character-set replace helpers"
+  },
+  {
+   "name": "LibStuff::SQResultTest/testReturningClause/testSQueryBoundParameters/testSQueryBoundParameterInjections",
+   "kind": "method group",
+   "role": "SQLite/SQResult read/write, RETURNING clause, bound parameters, and SQL-injection resistance"
+  },
+  {
+   "name": "LibStuff::SRedactSensitiveValuesTest",
+   "kind": "method",
+   "role": "SRedactSensitiveValues log scrubbing"
+  },
+  {
+   "name": "LibStuff::testSGetPeerNamePreservesErrno/testResolveHost",
+   "kind": "method group",
+   "role": "SGetPeerName errno preservation and SResolveHost DNS/IP resolution"
+  },
+  {
+   "name": "LibStuff::testUpperLower",
+   "kind": "method",
+   "role": "SToUpper/SToLower coverage; dead code, never registered in the TEST() list"
+  },
+  {
+   "name": "__LibStuff",
+   "kind": "file-scope global",
+   "role": "self-registers the fixture with tpunit at static-init time"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "LibStuff::testUpperLower",
+   "why": "Fully written test method for SToUpper/SToLower is never added to the constructor's TEST(...) list, so it never executes; SToUpper/SToLower have no running coverage",
+   "severity": "med",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "Named for exactly what it tests: libstuff"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "test/tests/ is correct for this"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "Most methods use testXxx, but several (SREMatchTest, SQResultTest, SRedactSensitiveValuesTest, SComposeHTTPTest) suffix Test instead, inconsistent within one fixture"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/SData.h",
+  "libstuff/SQResult.h",
+  "libstuff/SRandom.h",
+  "sqlitecluster/SQLite.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b116.json",
+ "hash": "72a1473d5f29856e"
+}

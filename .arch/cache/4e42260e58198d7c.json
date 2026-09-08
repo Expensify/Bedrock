@@ -1,0 +1,41 @@
+{
+ "unit": "SFluentdLoggerTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/SFluentdLoggerTest.cpp"
+ ],
+ "lines": 136,
+ "test": true,
+ "intent": "Tests SFluentdLogger's async buffering and delivery of newline-delimited JSON log lines to a Fluentd-style TCP endpoint, including draining on destruction.",
+ "objects": [
+  {
+   "name": "MockServer",
+   "kind": "class",
+   "role": "minimal raw-socket TCP server counting newline-delimited messages on a background thread"
+  },
+  {
+   "name": "SFluentdLoggerTest",
+   "kind": "fixture",
+   "role": "tpunit fixture with 3 tests"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent"
+ },
+ "depends_on": [
+  "libstuff/SFluentdLogger.h",
+  "test/lib/BedrockTester.h"
+ ],
+ "_src": "b117.json",
+ "hash": "4e42260e58198d7c"
+}

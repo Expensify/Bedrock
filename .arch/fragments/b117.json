@@ -1,0 +1,263 @@
+[
+ {
+  "unit": "SRingBufferTest",
+  "dir": "test/tests",
+  "files": ["test/tests/SRingBufferTest.cpp"],
+  "lines": 339,
+  "test": true,
+  "intent": "Unit tests for the SRingBuffer template: push/pop state transitions, capacity limits, FIFO ordering, concurrent producers, and the shutdown/wake handshake between producer and consumer.",
+  "objects": [
+   {"name": "SRingBufferTest", "kind": "fixture", "role": "tpunit fixture with 12 tests covering push/pop, capacity boundaries, FIFO order, multi-producer concurrency, producer-consumer wrap-around, and shutdown semantics"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "matches SRingBuffer under test"},
+  "location_fit":   {"score": 5, "note": "test/tests, as expected"},
+  "naming_quality": {"score": 5, "note": "consistent testXxx naming"},
+  "depends_on": ["libstuff/SRingBuffer.h", "test/lib/BedrockTester.h"]
+ },
+ {
+  "unit": "BlockingCommandQueueTest",
+  "dir": "test/tests",
+  "files": ["test/tests/BlockingCommandQueueTest.cpp"],
+  "lines": 313,
+  "test": true,
+  "intent": "Unit tests for BedrockBlockingCommandQueue's per-identifier and per-command rate limiting: sliding-window accounting, partial credit at window edges, block-duration hold/clear, and log-prefix restoration around a blocked dequeue.",
+  "objects": [
+   {"name": "TestBlockingCommandQueue", "kind": "struct", "role": "subclasses BedrockBlockingCommandQueue with a test-controlled clock and a makeCommand() helper"},
+   {"name": "BlockingCommandQueueTest", "kind": "fixture", "role": "tpunit fixture with 13 tests over rate-limit dimensions, window expiry, block duration, and prefix scoping"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "matches BedrockBlockingCommandQueue"},
+  "location_fit":   {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 5, "note": "TestBlockingCommandQueue's _now follows the underscore-private convention"},
+  "depends_on": ["BedrockBlockingCommandQueue.h", "test/lib/tpunit++.hpp"]
+ },
+ {
+  "unit": "MySQLUtilsTest",
+  "dir": "test/tests",
+  "files": ["test/tests/MySQLUtilsTest.cpp"],
+  "lines": 285,
+  "test": true,
+  "intent": "Unit tests for the MySQLUtils namespace's query pattern-matching and rewriting: VERSION()/connection_id() calls, information_schema queries, SHOW KEYS, and foreign-key constraint lookups, plus table-name extraction.",
+  "objects": [
+   {"name": "MySQLUtilsTest", "kind": "fixture", "role": "tpunit fixture with 12 tests, one per parsing/detection function and its edge cases"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "matches MySQLUtils"},
+  "location_fit":   {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 5, "note": "test names mirror MySQLUtils function names"},
+  "depends_on": ["libstuff/libstuff.h", "plugins/MySQL.h", "test/lib/tpunit++.hpp"]
+ },
+ {
+  "unit": "WriteTest",
+  "dir": "test/tests",
+  "files": ["test/tests/WriteTest.cpp"],
+  "lines": 219,
+  "test": true,
+  "intent": "Integration tests for Bedrock's Query/Write command path: INSERT/UPDATE/DELETE, the no-WHERE safety guard, parallel writes, HTTP-style and shorthand syntax, and blocking of non-deterministic SQL functions on write.",
+  "objects": [
+   {"name": "WriteTest", "kind": "fixture", "role": "tpunit fixture (BedrockTester-backed) with 15 tests over write-command behavior"}
+  ],
+  "misfits": [
+   {
+    "item": "WriteTest::keywordsAsValue",
+    "why": "asserts on a known SQL-parsing limitation (an UPDATE without a WHERE-safety marker is not aborted in this specific case) that the test comment says is tracked in an external Expensify issue, rather than asserting intended behavior",
+    "severity": "low",
+    "suggested_home": null
+   }
+  ],
+  "name_fit":       {"score": 5, "note": "fits"},
+  "location_fit":   {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 5, "note": "consistent"},
+  "depends_on": ["libstuff/SData.h", "libstuff/SRandom.h", "test/lib/BedrockTester.h"]
+ },
+ {
+  "unit": "AsyncResolveTest",
+  "dir": "test/tests",
+  "files": ["test/tests/AsyncResolveTest.cpp"],
+  "lines": 206,
+  "test": true,
+  "intent": "Tests the deferred DNS resolution path in STCPManager::Socket and the underlying SResolve/SResolution API: synchronous fast paths, the deferred path, failure/wake behavior, and resolution lifetime independent of the caller.",
+  "objects": [
+   {"name": "AsyncResolve", "kind": "fixture", "role": "tpunit fixture with 8 tests; struct/global-instance named AsyncResolve/__AsyncResolve rather than AsyncResolveTest/__AsyncResolveTest"},
+   {"name": "AsyncResolve::pollUntilSettled", "kind": "method", "role": "drives prePoll/S_poll/postPoll until a socket leaves RESOLVING/CONNECTING"},
+   {"name": "AsyncResolve::openTestPort", "kind": "method", "role": "opens a listening port from BedrockTester's port pool"}
+  ],
+  "misfits": [
+   {
+    "item": "struct AsyncResolve / instance __AsyncResolve",
+    "why": "the fixture struct and its global instance are named AsyncResolve/__AsyncResolve, inconsistent with the file's own name (AsyncResolveTest.cpp) and with every sibling test in this batch, which follow a Foo/FooTest/__FooTest pattern",
+    "severity": "low",
+    "suggested_home": null
+   }
+  ],
+  "name_fit":       {"score": 3, "note": "file name and struct/instance names disagree"},
+  "location_fit":   {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 3, "note": "struct/instance naming mismatch noted above"},
+  "depends_on": ["libstuff/libstuff.h", "libstuff/SResolver.h", "libstuff/STCPManager.h", "test/lib/BedrockTester.h"]
+ },
+ {
+  "unit": "JSONParserTest",
+  "dir": "test/tests",
+  "files": ["test/tests/JSONParserTest.cpp"],
+  "lines": 189,
+  "test": true,
+  "intent": "Unit tests for JSON::Value::parse(): scalar types, unicode escape decoding, arrays/objects including nesting, and malformed-input error handling.",
+  "objects": [
+   {"name": "JSONParserTest", "kind": "fixture", "role": "tpunit fixture with 14 tests, one per JSON value shape or edge case"}
+  ],
+  "misfits": [
+   {
+    "item": "JSONParserTest (nested-value parsing coverage)",
+    "why": "overlaps JSONTest.cpp's testParseAndSerializeNestedValue, which also parses nested JSON::Value structures; no documented split of responsibility between the two same-directory files",
+    "severity": "low",
+    "suggested_home": null
+   }
+  ],
+  "name_fit":       {"score": 4, "note": "fits, modulo overlap with JSONTest"},
+  "location_fit":   {"score": 4, "note": "fits, modulo overlap with JSONTest"},
+  "naming_quality": {"score": 5, "note": "consistent"},
+  "depends_on": ["libstuff/JSON/Value.h", "test/lib/tpunit++.hpp"]
+ },
+ {
+  "unit": "SQLiteNodeTest",
+  "dir": "test/tests",
+  "files": ["test/tests/SQLiteNodeTest.cpp"],
+  "lines": 170,
+  "test": true,
+  "intent": "Unit tests for SQLiteNode's sync-peer selection logic (fastest logged-in peer by latency, tie-broken by commit count) and name-based peer lookup.",
+  "objects": [
+   {"name": "SQLiteNodeTester", "kind": "class", "role": "white-box test accessor exposing SQLiteNode's private _syncPeer and _updateSyncPeer(), granted friend access in SQLiteNode.h"},
+   {"name": "TestServer", "kind": "class", "role": "minimal no-op SQLiteServer stub needed to construct a SQLiteNode"},
+   {"name": "SQLiteNodeTest", "kind": "fixture", "role": "tpunit fixture with 2 tests: sync-peer re-selection and getPeerByName() lookup"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "fits"},
+  "location_fit":   {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 5, "note": "SQLiteNodeTester clearly marked as test-only"},
+  "depends_on": ["libstuff/libstuff.h", "sqlitecluster/SQLiteCommand.h", "sqlitecluster/SQLiteNode.h", "sqlitecluster/SQLitePeer.h", "sqlitecluster/SQLiteServer.h", "test/lib/BedrockTester.h"]
+ },
+ {
+  "unit": "MySQLTest",
+  "dir": "test/tests",
+  "files": ["test/tests/MySQLTest.cpp"],
+  "lines": 157,
+  "test": true,
+  "intent": "Despite its header comment describing it as an end-to-end plugin test, this file calls the same MySQLUtils:: free functions as MySQLUtilsTest.cpp, with fewer cases and no plugin dispatch exercised.",
+  "objects": [
+   {"name": "MySQLTest", "kind": "fixture", "role": "tpunit fixture with 6 tests, each a thinner rerun of cases already covered in MySQLUtilsTest"}
+  ],
+  "misfits": [
+   {
+    "item": "MySQLTest.cpp (whole file)",
+    "why": "its docstring claims to test \"the actual plugin behavior end-to-end\" as distinct from MySQLUtilsTest.cpp's \"utility functions,\" but every test calls the exact same MySQLUtils:: functions MySQLUtilsTest.cpp already covers; no plugin command handling, socket protocol, or dispatch is exercised, so the claimed integration-test distinction does not hold and this reads as duplicated coverage",
+    "severity": "high",
+    "suggested_home": "merge into test/tests/MySQLUtilsTest.cpp, or replace with a real plugin-level integration test if one is wanted"
+   }
+  ],
+  "name_fit":       {"score": 2, "note": "name implies plugin-level coverage the content doesn't deliver"},
+  "location_fit":   {"score": 3, "note": "right directory, but redundant with a sibling file"},
+  "naming_quality": {"score": 3, "note": "fine in isolation; the MySQLTest vs MySQLUtilsTest distinction is not honored by content"},
+  "depends_on": ["libstuff/libstuff.h", "plugins/MySQL.h", "test/lib/tpunit++.hpp"]
+ },
+ {
+  "unit": "WriteLocalUnreplicatedTest",
+  "dir": "test/tests",
+  "files": ["test/tests/WriteLocalUnreplicatedTest.cpp"],
+  "lines": 146,
+  "test": true,
+  "intent": "Unit tests for SQLite::writeLocalUnreplicated(): it leaves commit count and journal untouched, rolls back cleanly on a failed query, and behaves safely under a concurrent commit from another handle.",
+  "objects": [
+   {"name": "WriteLocalUnreplicatedTempDBFile", "kind": "struct", "role": "RAII temp-DB-file helper (mkstemp/unlink)"},
+   {"name": "WriteLocalUnreplicatedTest", "kind": "fixture", "role": "tpunit fixture with 3 tests plus countJournalRows()/countRows() helpers"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "fits"},
+  "location_fit":   {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 5, "note": "consistent"},
+  "depends_on": ["libstuff/libstuff.h", "sqlitecluster/SQLite.h", "test/lib/BedrockTester.h"]
+ },
+ {
+  "unit": "JSONTest",
+  "dir": "test/tests",
+  "files": ["test/tests/JSONTest.cpp"],
+  "lines": 139,
+  "test": true,
+  "intent": "Unit tests for JSON::Value covering parse/serialize round-tripping, exact-uint64 boundary handling, equality semantics, and the pluggable JSON::MetricsObserver hook.",
+  "objects": [
+   {"name": "(anonymous)::MetricsRecord", "kind": "struct", "role": "captures fields a test-installed metrics observer records"},
+   {"name": "(anonymous)::metricsRecord / resetMetricsRecord / recordMetrics", "kind": "free", "role": "the test's JSON::MetricsObserver callback and its reset helper"},
+   {"name": "(anonymous)::ScopedMetricsObserver", "kind": "class", "role": "RAII installer/uninstaller for JSON::setMetricsObserver"},
+   {"name": "JSONTest", "kind": "fixture", "role": "tpunit fixture with 5 tests"}
+  ],
+  "misfits": [
+   {
+    "item": "JSONTest (nested-value parsing coverage)",
+    "why": "overlaps JSONParserTest.cpp, which also parses nested JSON::Value structures; the split between \"basic value-type parsing\" and \"serialize/equality/metrics\" across the two files is not documented anywhere",
+    "severity": "low",
+    "suggested_home": null
+   }
+  ],
+  "name_fit":       {"score": 4, "note": "fits, modulo overlap with JSONParserTest"},
+  "location_fit":   {"score": 4, "note": "fits, modulo overlap with JSONParserTest"},
+  "naming_quality": {"score": 4, "note": "consistent"},
+  "depends_on": ["libstuff/JSON/Metrics.h", "libstuff/JSON/Parser.h", "libstuff/JSON/Value.h", "test/lib/tpunit++.hpp"]
+ },
+ {
+  "unit": "SFluentdLoggerTest",
+  "dir": "test/tests",
+  "files": ["test/tests/SFluentdLoggerTest.cpp"],
+  "lines": 136,
+  "test": true,
+  "intent": "Tests SFluentdLogger's async buffering and delivery of newline-delimited JSON log lines to a Fluentd-style TCP endpoint, including draining on destruction.",
+  "objects": [
+   {"name": "MockServer", "kind": "class", "role": "minimal raw-socket TCP server counting newline-delimited messages on a background thread"},
+   {"name": "SFluentdLoggerTest", "kind": "fixture", "role": "tpunit fixture with 3 tests"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "fits"},
+  "location_fit":   {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 5, "note": "consistent"},
+  "depends_on": ["libstuff/SFluentdLogger.h", "test/lib/BedrockTester.h"]
+ },
+ {
+  "unit": "QueryTest",
+  "dir": "test/tests",
+  "files": ["test/tests/QueryTest.cpp"],
+  "lines": 130,
+  "test": true,
+  "intent": "Integration tests for Bedrock's Query command: malformed/missing/unterminated queries, single- and multi-statement execution, the no-WHERE DELETE guard, and SQLite's percentile/median aggregate functions.",
+  "objects": [
+   {"name": "QueryTest", "kind": "fixture", "role": "tpunit fixture (BedrockTester-backed) with 8 tests"}
+  ],
+  "misfits": [
+   {
+    "item": "QueryTest::testPercentile",
+    "why": "verifies SQLite's built-in SQLITE_ENABLE_PERCENTILE aggregate functions (median/percentile/percentile_cont/percentile_disc) rather than anything specific to Bedrock's own Query command handling - effectively a build-flag/compiled-in-extension check riding on this fixture",
+    "severity": "low",
+    "suggested_home": null
+   }
+  ],
+  "name_fit":       {"score": 5, "note": "fits"},
+  "location_fit":   {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 5, "note": "consistent"},
+  "depends_on": ["libstuff/libstuff.h", "libstuff/SData.h", "test/lib/BedrockTester.h"]
+ },
+ {
+  "unit": "AfterCommitCallbackTest",
+  "dir": "test/tests",
+  "files": ["test/tests/AfterCommitCallbackTest.cpp"],
+  "lines": 123,
+  "test": true,
+  "intent": "Tests SQLite's after-commit callback list: fires once per commit, not on rollback, not on a commit lost to a conflict, and is shared by a copy-constructed handle.",
+  "objects": [
+   {"name": "AfterCommitCallbackTempDBFile", "kind": "struct", "role": "RAII temp-DB-file helper (mkstemp/unlink)"},
+   {"name": "AfterCommitCallbackTest", "kind": "fixture", "role": "tpunit fixture with 3 tests"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "fits"},
+  "location_fit":   {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 5, "note": "consistent"},
+  "depends_on": ["libstuff/libstuff.h", "sqlitecluster/SQLite.h", "test/lib/BedrockTester.h"]
+ }
+]

@@ -1,0 +1,127 @@
+[
+  {
+    "unit": "LibStuffTest",
+    "dir": "test/tests",
+    "files": ["test/tests/LibStuffTest.cpp"],
+    "lines": 1283,
+    "test": true,
+    "intent": "A tpunit fixture exercising most of libstuff's free-standing utility functions (crypto, JSON, HTTP parsing/composition, string/regex helpers, file IO, SQLite bound parameters) plus a few explicit security contracts.",
+    "objects": [
+      {"name": "TempDBFile", "kind": "struct", "role": "RAII temp file (via mkstemp) used as a throwaway SQLite db for tests"},
+      {"name": "LibStuff", "kind": "struct", "role": "tpunit::TestFixture grouping ~37 test methods covering most of libstuff's free functions"},
+      {"name": "LibStuff::testAutoThreadPrefixRestoresPreviousValues", "kind": "method", "role": "SAUTOPREFIX thread-local save/restore across nested scopes"},
+      {"name": "LibStuff::testEncryptDecrpyt/testSHMACSHA1/testSHMACSHA256", "kind": "method group", "role": "AES and HMAC-SHA1/256 primitives"},
+      {"name": "LibStuff::testJSONDecode/testJSON", "kind": "method group", "role": "JSON parse/compose round-trips incl. float/scientific-notation/NaN-Infinity formatting"},
+      {"name": "LibStuff::testEscapeUnescape/testTrim/testCollapse/testStrip", "kind": "method group", "role": "string escaping and whitespace utilities"},
+      {"name": "LibStuff::testChunkedEncoding/SComposeHTTPTest", "kind": "method group", "role": "HTTP request/chunked parsing and response composition incl. header-injection escaping"},
+      {"name": "LibStuff::testDaysInMonth/testFirstOfMonth", "kind": "method group", "role": "calendar arithmetic"},
+      {"name": "LibStuff::testGZip", "kind": "method", "role": "SGZip/SGUnzip round trip"},
+      {"name": "LibStuff::testConstantTimeEquals", "kind": "method", "role": "timing-safe string compare"},
+      {"name": "LibStuff::testParseIntegerList/testSQList/testContains", "kind": "method group", "role": "list parsing/composing and SQL-safe list quoting across container types"},
+      {"name": "LibStuff::testSData/testSTable", "kind": "method group", "role": "SData/STable auto-stringification of assigned native types"},
+      {"name": "LibStuff::testFileIO", "kind": "method", "role": "SFile* save/load/exists/size/delete"},
+      {"name": "LibStuff::testRandom", "kind": "method", "role": "SRandom::rand64 smoke test"},
+      {"name": "LibStuff::testHexConversion/testBase32Conversion/testEncodeDecodeURIComponent", "kind": "method group", "role": "encoding conversions"},
+      {"name": "LibStuff::SREMatchTest/SREReplaceTest", "kind": "method group", "role": "SRE* regex match/replace/compile wrappers"},
+      {"name": "LibStuff::testSReplace/testSReplaceAll/testSReplaceAllBut", "kind": "method group", "role": "substring and character-set replace helpers"},
+      {"name": "LibStuff::SQResultTest/testReturningClause/testSQueryBoundParameters/testSQueryBoundParameterInjections", "kind": "method group", "role": "SQLite/SQResult read/write, RETURNING clause, bound parameters, and SQL-injection resistance"},
+      {"name": "LibStuff::SRedactSensitiveValuesTest", "kind": "method", "role": "SRedactSensitiveValues log scrubbing"},
+      {"name": "LibStuff::testSGetPeerNamePreservesErrno/testResolveHost", "kind": "method group", "role": "SGetPeerName errno preservation and SResolveHost DNS/IP resolution"},
+      {"name": "LibStuff::testUpperLower", "kind": "method", "role": "SToUpper/SToLower coverage; dead code, never registered in the TEST() list"},
+      {"name": "__LibStuff", "kind": "file-scope global", "role": "self-registers the fixture with tpunit at static-init time"}
+    ],
+    "misfits": [
+      {
+        "item": "LibStuff::testUpperLower",
+        "why": "Fully written test method for SToUpper/SToLower is never added to the constructor's TEST(...) list, so it never executes; SToUpper/SToLower have no running coverage",
+        "severity": "med",
+        "suggested_home": null
+      }
+    ],
+    "name_fit": {"score": 5, "note": "Named for exactly what it tests: libstuff"},
+    "location_fit": {"score": 5, "note": "test/tests/ is correct for this"},
+    "naming_quality": {"score": 3, "note": "Most methods use testXxx, but several (SREMatchTest, SQResultTest, SRedactSensitiveValuesTest, SComposeHTTPTest) suffix Test instead, inconsistent within one fixture"},
+    "depends_on": [
+      "libstuff/libstuff.h",
+      "libstuff/SData.h",
+      "libstuff/SQResult.h",
+      "libstuff/SRandom.h",
+      "sqlitecluster/SQLite.h",
+      "test/lib/BedrockTester.h"
+    ]
+  },
+  {
+    "unit": "JSONValueTest",
+    "dir": "test/tests",
+    "files": ["test/tests/JSONValueTest.cpp"],
+    "lines": 862,
+    "test": true,
+    "intent": "A tpunit fixture testing JSON::Value's construction, type checking, array/object containers, indexing, merge/path access, cast operators, and copy/move/alias semantics.",
+    "objects": [
+      {"name": "JSONValueTest", "kind": "struct", "role": "tpunit::TestFixture grouping test methods for JSON::Value"},
+      {"name": "JSONValueTest::setBool/setBool2/setInt/setInt2/setBigInt/setDouble/setString", "kind": "method group", "role": "operator= assigning native types; checks type()/serialize()"},
+      {"name": "JSONValueTest::ctorNull/ctorBool/ctorBool2/ctorInt/ctorInt2/ctorBigInt/ctorDouble/ctorString", "kind": "method group", "role": "equivalent construction via constructor overloads"},
+      {"name": "JSONValueTest::simpleArray/emptyArrayAccess/nestedArray", "kind": "method group", "role": "array push_back/indexing/back(), NotFound on empty/out-of-range"},
+      {"name": "JSONValueTest::simpleObject/nestedObject", "kind": "method group", "role": "object assignment; nested Value assigned by copy, not aliased"},
+      {"name": "JSONValueTest::invalidIndex/invalidKey", "kind": "method group", "role": "NotFound on bad index/key; mutable auto-vivifies a key, const does not"},
+      {"name": "JSONValueTest::extractString", "kind": "method", "role": "extractStringWithDefault pop-and-default semantics"},
+      {"name": "JSONValueTest::concatenateArrays", "kind": "method", "role": "arrayInsert range concatenation"},
+      {"name": "JSONValueTest::arbitraryDS", "kind": "method", "role": "Value::fromDataStructure() building JSON from native map/set containers, incl. de-duplication via set"},
+      {"name": "JSONValueTest::merge", "kind": "method", "role": "merge()'s shallow key overwrite, as opposed to mergeDeep"},
+      {"name": "JSONValueTest::getAtPath", "kind": "method", "role": "getValueAtPath() dotted nested lookup incl. missing paths"},
+      {"name": "JSONValueTest::serializeEmptyString", "kind": "method", "role": "empty-string serialize invariant"},
+      {"name": "JSONValueTest::castOperators", "kind": "method", "role": "implicit cast operators and fill() out-param overload; TypeError on incompatible cast"},
+      {"name": "JSONValueTest::operatorThrows", "kind": "method", "role": "exact exception message contract across operator[]/hasMember/size, const and non-const"},
+      {"name": "JSONValueTest::testSelfAssignment", "kind": "method", "role": "regression guard: obj = obj[key] must not corrupt or crash"},
+      {"name": "JSONValueTest::hasIndex", "kind": "method", "role": "array bounds-check helper; TypeError on non-array"},
+      {"name": "JSONValueTest::convenienceCasts", "kind": "method", "role": "Value::object()/singleItemArray() factory helpers avoiding brace-init ambiguity"},
+      {"name": "JSONValueTest::operators", "kind": "method", "role": "operator[] semantics: copy-on-assign isolation, auto-vivified null, r-value overloads move rather than copy"},
+      {"name": "JSONValueTest::shallowCopyValue/shallowCopyToKey/preventTypeChangeInShallowCopy", "kind": "method group", "role": "shallowCopy() aliasing semantics and the guard against changing a wrapper's type via shallowCopy"},
+      {"name": "JSONValueTest::getBoolFromBinaryIntOrBool", "kind": "method", "role": "strict 0/1-only bool coercion for signed/unsigned ints, bools, and parsed values"},
+      {"name": "__JSONValueTest", "kind": "file-scope global", "role": "self-registers the fixture with tpunit at static-init time"}
+    ],
+    "misfits": [],
+    "name_fit": {"score": 5, "note": "Named for exactly what it tests: JSON::Value"},
+    "location_fit": {"score": 5, "note": "test/tests/ is correct for this"},
+    "naming_quality": {"score": 4, "note": "Consistent camelCase scenario names; testSelfAssignment is the only one prefixed with test while siblings aren't"},
+    "depends_on": [
+      "libstuff/JSON/Value.h",
+      "libstuff/libstuff.h",
+      "test/lib/tpunit++.hpp"
+    ]
+  },
+  {
+    "unit": "JSONUtilsTest",
+    "dir": "test/tests",
+    "files": ["test/tests/JSONUtilsTest.h", "test/tests/JSONUtilsTest.cpp"],
+    "lines": 453,
+    "test": true,
+    "intent": "A tpunit fixture unit-testing JSON::Utils's merge, merge-patch, field-stripping, key-search, string-extraction, transport-sanitization, and JSON-path functions.",
+    "objects": [
+      {"name": "JSONUtilsTest", "kind": "class", "role": "tpunit::TestFixture declaring/registering 17 public test methods for JSON::Utils"},
+      {"name": "JSONUtilsTest::mergeObjectsOverwritesRightOrder/mergeObjectsHandlesLeftNonObject/mergeObjectsHandlesRightNonObject/mergeObjectsBothNonObjectsToEmptyObject", "kind": "method group", "role": "mergeDeep() edge cases with non-object operands"},
+      {"name": "JSONUtilsTest::mergeDeepWithSQLiteBehavior", "kind": "method", "role": "useSQLiteMergeBehavior's effect on null keys (delete vs preserve) and arrays (replace vs concat)"},
+      {"name": "JSONUtilsTest::applyJSONMergePatchNonObjectPatchReplaces/applyJSONMergePatchNonObjectExistingTreatedAsEmptyObject", "kind": "method group", "role": "RFC 7396 merge-patch semantics matching SQLite's JSON_PATCH"},
+      {"name": "JSONUtilsTest::mergeObjectJSON", "kind": "method", "role": "full deep-merge scenario across nested objects/arrays/strings"},
+      {"name": "JSONUtilsTest::stripOutFields/removeObjectKeysWithNullValues/containAnyKeys", "kind": "method group", "role": "recursive key removal and key-presence search"},
+      {"name": "JSONUtilsTest::getFirstString", "kind": "method", "role": "scalar-or-first-array-element string extraction"},
+      {"name": "JSONUtilsTest::parseOrDefault", "kind": "method", "role": "fallback value on parse failure"},
+      {"name": "JSONUtilsTest::sanitizeJSONStringForTransportStripsControlBytes/sanitizeJSONStringForTransportPreservesValidUTF8/sanitizeJSONStringForTransportRejectsInvalidMultiByte", "kind": "method group", "role": "control-byte stripping and UTF-8 validation"},
+      {"name": "JSONUtilsTest::parseJSONPath", "kind": "method", "role": "dotted/quoted JSON-path segment splitting"},
+      {"name": "JSONUtilsTest::getOldObject/getNewObject/assertObjectMerged", "kind": "method group", "role": "private helpers backing mergeObjectJSON"},
+      {"name": "(anonymous namespace)::SENSITIVE_KEYS", "kind": "file-local const", "role": "const set<string> {\"ssn\"} used by stripOutFields/containAnyKeys tests"},
+      {"name": "__JSONUtilsTest", "kind": "file-scope global", "role": "self-registers the fixture with tpunit at static-init time"}
+    ],
+    "misfits": [],
+    "name_fit": {"score": 5, "note": "Named for exactly what it tests: JSON::Utils"},
+    "location_fit": {"score": 5, "note": "test/tests/ is correct for this"},
+    "naming_quality": {"score": 5, "note": "Consistent, descriptive scenario names; fits repo test convention"},
+    "depends_on": [
+      "test/tests/JSONUtilsTest.h",
+      "libstuff/JSON/Utils.h",
+      "libstuff/JSON/Value.h",
+      "libstuff/libstuff.h",
+      "test/lib/tpunit++.hpp"
+    ]
+  }
+]

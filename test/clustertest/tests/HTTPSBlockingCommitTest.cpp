@@ -1,3 +1,37 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    HTTPSBlockingCommitTest.cpp
+ * Path:    test/clustertest/tests/HTTPSBlockingCommitTest.cpp
+ *
+ * INTENT
+ *   Cluster test (github.com/Expensify/Expensify#661688) verifying a command
+ *   that would issue an HTTPS request while running on the serialized
+ *   blockingCommit thread (worker 0) is refused ("500 Refused") instead of
+ *   being allowed to stall that thread on a network round-trip, whether the
+ *   refusal is detected before or during peek's wait.
+ *
+ * OBJECTS
+ *   HTTPSBlockingCommitTest                    - tpunit fixture
+ *   HTTPSBlockingCommitTest::setup/teardown     - own the BedrockClusterTester
+ *                        and lower/restore MaxConflictRetries so contention
+ *                        reliably escalates work onto worker 0
+ *   HTTPSBlockingCommitTest::runAndVerifyRefusals - fires many concurrent,
+ *                        mutually-conflicting httpsblockingcommit commands
+ *                        across all nodes and checks every one gets a
+ *                        response, with at least one refusal
+ *   HTTPSBlockingCommitTest::testRefusedViaPreCheck  - refusal via the
+ *                        worker loop's pre-check (peek returns false)
+ *   HTTPSBlockingCommitTest::testRefusedViaPeekThrow - refusal via the
+ *                        throw path inside peek's HTTPS wait
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a blocking-commit-thread regression test alongside its peers.
+ *
+ * NAMING QUALITY
+ *   Clear; consistent with sibling tests.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

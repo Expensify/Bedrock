@@ -4266,6 +4266,144 @@
    "hash": "0c43acb6168d2559"
   },
   {
+   "unit": "AfterCommitCallbackTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/AfterCommitCallbackTest.cpp"
+   ],
+   "lines": 123,
+   "test": true,
+   "intent": "Tests SQLite's after-commit callback list: fires once per commit, not on rollback, not on a commit lost to a conflict, and is shared by a copy-constructed handle.",
+   "objects": [
+    {
+     "name": "AfterCommitCallbackTempDBFile",
+     "kind": "struct",
+     "role": "RAII temp-DB-file helper (mkstemp/unlink)"
+    },
+    {
+     "name": "AfterCommitCallbackTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 3 tests"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLite.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "37b72c865db5b839"
+  },
+  {
+   "unit": "AsyncResolveTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/AsyncResolveTest.cpp"
+   ],
+   "lines": 206,
+   "test": true,
+   "intent": "Tests the deferred DNS resolution path in STCPManager::Socket and the underlying SResolve/SResolution API: synchronous fast paths, the deferred path, failure/wake behavior, and resolution lifetime independent of the caller.",
+   "objects": [
+    {
+     "name": "AsyncResolve",
+     "kind": "fixture",
+     "role": "tpunit fixture with 8 tests; struct/global-instance named AsyncResolve/__AsyncResolve rather than AsyncResolveTest/__AsyncResolveTest"
+    },
+    {
+     "name": "AsyncResolve::pollUntilSettled",
+     "kind": "method",
+     "role": "drives prePoll/S_poll/postPoll until a socket leaves RESOLVING/CONNECTING"
+    },
+    {
+     "name": "AsyncResolve::openTestPort",
+     "kind": "method",
+     "role": "opens a listening port from BedrockTester's port pool"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "struct AsyncResolve / instance __AsyncResolve",
+     "why": "the fixture struct and its global instance are named AsyncResolve/__AsyncResolve, inconsistent with the file's own name (AsyncResolveTest.cpp) and with every sibling test in this batch, which follow a Foo/FooTest/__FooTest pattern",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 3,
+    "note": "file name and struct/instance names disagree"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "struct/instance naming mismatch noted above"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SResolver.h",
+    "libstuff/STCPManager.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "572109ce8a4bb531"
+  },
+  {
+   "unit": "BlockingCommandQueueTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/BlockingCommandQueueTest.cpp"
+   ],
+   "lines": 313,
+   "test": true,
+   "intent": "Unit tests for BedrockBlockingCommandQueue's per-identifier and per-command rate limiting: sliding-window accounting, partial credit at window edges, block-duration hold/clear, and log-prefix restoration around a blocked dequeue.",
+   "objects": [
+    {
+     "name": "TestBlockingCommandQueue",
+     "kind": "struct",
+     "role": "subclasses BedrockBlockingCommandQueue with a test-controlled clock and a makeCommand() helper"
+    },
+    {
+     "name": "BlockingCommandQueueTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 13 tests over rate-limit dimensions, window expiry, block duration, and prefix scoping"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "matches BedrockBlockingCommandQueue"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "TestBlockingCommandQueue's _now follows the underscore-private convention"
+   },
+   "depends_on": [
+    "BedrockBlockingCommandQueue.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b117.json",
+   "hash": "1eaf33edc977247c"
+  },
+  {
    "unit": "ChainedHTTPTest",
    "dir": "test/tests",
    "files": [
@@ -4377,6 +4515,623 @@
    "hash": "6252746ea2733b71"
   },
   {
+   "unit": "JSONParserTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/JSONParserTest.cpp"
+   ],
+   "lines": 189,
+   "test": true,
+   "intent": "Unit tests for JSON::Value::parse(): scalar types, unicode escape decoding, arrays/objects including nesting, and malformed-input error handling.",
+   "objects": [
+    {
+     "name": "JSONParserTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 14 tests, one per JSON value shape or edge case"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "JSONParserTest (nested-value parsing coverage)",
+     "why": "overlaps JSONTest.cpp's testParseAndSerializeNestedValue, which also parses nested JSON::Value structures; no documented split of responsibility between the two same-directory files",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "fits, modulo overlap with JSONTest"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "fits, modulo overlap with JSONTest"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/JSON/Value.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b117.json",
+   "hash": "7b19ed4abee192d3"
+  },
+  {
+   "unit": "JSONTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/JSONTest.cpp"
+   ],
+   "lines": 139,
+   "test": true,
+   "intent": "Unit tests for JSON::Value covering parse/serialize round-tripping, exact-uint64 boundary handling, equality semantics, and the pluggable JSON::MetricsObserver hook.",
+   "objects": [
+    {
+     "name": "(anonymous)::MetricsRecord",
+     "kind": "struct",
+     "role": "captures fields a test-installed metrics observer records"
+    },
+    {
+     "name": "(anonymous)::metricsRecord / resetMetricsRecord / recordMetrics",
+     "kind": "free",
+     "role": "the test's JSON::MetricsObserver callback and its reset helper"
+    },
+    {
+     "name": "(anonymous)::ScopedMetricsObserver",
+     "kind": "class",
+     "role": "RAII installer/uninstaller for JSON::setMetricsObserver"
+    },
+    {
+     "name": "JSONTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 5 tests"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "JSONTest (nested-value parsing coverage)",
+     "why": "overlaps JSONParserTest.cpp, which also parses nested JSON::Value structures; the split between \"basic value-type parsing\" and \"serialize/equality/metrics\" across the two files is not documented anywhere",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "fits, modulo overlap with JSONParserTest"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "fits, modulo overlap with JSONParserTest"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/JSON/Metrics.h",
+    "libstuff/JSON/Parser.h",
+    "libstuff/JSON/Value.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b117.json",
+   "hash": "661803184a6fbc93"
+  },
+  {
+   "unit": "JSONUtilsTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/JSONUtilsTest.h",
+    "test/tests/JSONUtilsTest.cpp"
+   ],
+   "lines": 453,
+   "test": true,
+   "intent": "A tpunit fixture unit-testing JSON::Utils's merge, merge-patch, field-stripping, key-search, string-extraction, transport-sanitization, and JSON-path functions.",
+   "objects": [
+    {
+     "name": "JSONUtilsTest",
+     "kind": "class",
+     "role": "tpunit::TestFixture declaring/registering 17 public test methods for JSON::Utils"
+    },
+    {
+     "name": "JSONUtilsTest::mergeObjectsOverwritesRightOrder/mergeObjectsHandlesLeftNonObject/mergeObjectsHandlesRightNonObject/mergeObjectsBothNonObjectsToEmptyObject",
+     "kind": "method group",
+     "role": "mergeDeep() edge cases with non-object operands"
+    },
+    {
+     "name": "JSONUtilsTest::mergeDeepWithSQLiteBehavior",
+     "kind": "method",
+     "role": "useSQLiteMergeBehavior's effect on null keys (delete vs preserve) and arrays (replace vs concat)"
+    },
+    {
+     "name": "JSONUtilsTest::applyJSONMergePatchNonObjectPatchReplaces/applyJSONMergePatchNonObjectExistingTreatedAsEmptyObject",
+     "kind": "method group",
+     "role": "RFC 7396 merge-patch semantics matching SQLite's JSON_PATCH"
+    },
+    {
+     "name": "JSONUtilsTest::mergeObjectJSON",
+     "kind": "method",
+     "role": "full deep-merge scenario across nested objects/arrays/strings"
+    },
+    {
+     "name": "JSONUtilsTest::stripOutFields/removeObjectKeysWithNullValues/containAnyKeys",
+     "kind": "method group",
+     "role": "recursive key removal and key-presence search"
+    },
+    {
+     "name": "JSONUtilsTest::getFirstString",
+     "kind": "method",
+     "role": "scalar-or-first-array-element string extraction"
+    },
+    {
+     "name": "JSONUtilsTest::parseOrDefault",
+     "kind": "method",
+     "role": "fallback value on parse failure"
+    },
+    {
+     "name": "JSONUtilsTest::sanitizeJSONStringForTransportStripsControlBytes/sanitizeJSONStringForTransportPreservesValidUTF8/sanitizeJSONStringForTransportRejectsInvalidMultiByte",
+     "kind": "method group",
+     "role": "control-byte stripping and UTF-8 validation"
+    },
+    {
+     "name": "JSONUtilsTest::parseJSONPath",
+     "kind": "method",
+     "role": "dotted/quoted JSON-path segment splitting"
+    },
+    {
+     "name": "JSONUtilsTest::getOldObject/getNewObject/assertObjectMerged",
+     "kind": "method group",
+     "role": "private helpers backing mergeObjectJSON"
+    },
+    {
+     "name": "(anonymous namespace)::SENSITIVE_KEYS",
+     "kind": "file-local const",
+     "role": "const set<string> {\"ssn\"} used by stripOutFields/containAnyKeys tests"
+    },
+    {
+     "name": "__JSONUtilsTest",
+     "kind": "file-scope global",
+     "role": "self-registers the fixture with tpunit at static-init time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Named for exactly what it tests: JSON::Utils"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "test/tests/ is correct for this"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Consistent, descriptive scenario names; fits repo test convention"
+   },
+   "depends_on": [
+    "test/tests/JSONUtilsTest.h",
+    "libstuff/JSON/Utils.h",
+    "libstuff/JSON/Value.h",
+    "libstuff/libstuff.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b116.json",
+   "hash": "eddd77fe96fab635"
+  },
+  {
+   "unit": "JSONValueTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/JSONValueTest.cpp"
+   ],
+   "lines": 862,
+   "test": true,
+   "intent": "A tpunit fixture testing JSON::Value's construction, type checking, array/object containers, indexing, merge/path access, cast operators, and copy/move/alias semantics.",
+   "objects": [
+    {
+     "name": "JSONValueTest",
+     "kind": "struct",
+     "role": "tpunit::TestFixture grouping test methods for JSON::Value"
+    },
+    {
+     "name": "JSONValueTest::setBool/setBool2/setInt/setInt2/setBigInt/setDouble/setString",
+     "kind": "method group",
+     "role": "operator= assigning native types; checks type()/serialize()"
+    },
+    {
+     "name": "JSONValueTest::ctorNull/ctorBool/ctorBool2/ctorInt/ctorInt2/ctorBigInt/ctorDouble/ctorString",
+     "kind": "method group",
+     "role": "equivalent construction via constructor overloads"
+    },
+    {
+     "name": "JSONValueTest::simpleArray/emptyArrayAccess/nestedArray",
+     "kind": "method group",
+     "role": "array push_back/indexing/back(), NotFound on empty/out-of-range"
+    },
+    {
+     "name": "JSONValueTest::simpleObject/nestedObject",
+     "kind": "method group",
+     "role": "object assignment; nested Value assigned by copy, not aliased"
+    },
+    {
+     "name": "JSONValueTest::invalidIndex/invalidKey",
+     "kind": "method group",
+     "role": "NotFound on bad index/key; mutable auto-vivifies a key, const does not"
+    },
+    {
+     "name": "JSONValueTest::extractString",
+     "kind": "method",
+     "role": "extractStringWithDefault pop-and-default semantics"
+    },
+    {
+     "name": "JSONValueTest::concatenateArrays",
+     "kind": "method",
+     "role": "arrayInsert range concatenation"
+    },
+    {
+     "name": "JSONValueTest::arbitraryDS",
+     "kind": "method",
+     "role": "Value::fromDataStructure() building JSON from native map/set containers, incl. de-duplication via set"
+    },
+    {
+     "name": "JSONValueTest::merge",
+     "kind": "method",
+     "role": "merge()'s shallow key overwrite, as opposed to mergeDeep"
+    },
+    {
+     "name": "JSONValueTest::getAtPath",
+     "kind": "method",
+     "role": "getValueAtPath() dotted nested lookup incl. missing paths"
+    },
+    {
+     "name": "JSONValueTest::serializeEmptyString",
+     "kind": "method",
+     "role": "empty-string serialize invariant"
+    },
+    {
+     "name": "JSONValueTest::castOperators",
+     "kind": "method",
+     "role": "implicit cast operators and fill() out-param overload; TypeError on incompatible cast"
+    },
+    {
+     "name": "JSONValueTest::operatorThrows",
+     "kind": "method",
+     "role": "exact exception message contract across operator[]/hasMember/size, const and non-const"
+    },
+    {
+     "name": "JSONValueTest::testSelfAssignment",
+     "kind": "method",
+     "role": "regression guard: obj = obj[key] must not corrupt or crash"
+    },
+    {
+     "name": "JSONValueTest::hasIndex",
+     "kind": "method",
+     "role": "array bounds-check helper; TypeError on non-array"
+    },
+    {
+     "name": "JSONValueTest::convenienceCasts",
+     "kind": "method",
+     "role": "Value::object()/singleItemArray() factory helpers avoiding brace-init ambiguity"
+    },
+    {
+     "name": "JSONValueTest::operators",
+     "kind": "method",
+     "role": "operator[] semantics: copy-on-assign isolation, auto-vivified null, r-value overloads move rather than copy"
+    },
+    {
+     "name": "JSONValueTest::shallowCopyValue/shallowCopyToKey/preventTypeChangeInShallowCopy",
+     "kind": "method group",
+     "role": "shallowCopy() aliasing semantics and the guard against changing a wrapper's type via shallowCopy"
+    },
+    {
+     "name": "JSONValueTest::getBoolFromBinaryIntOrBool",
+     "kind": "method",
+     "role": "strict 0/1-only bool coercion for signed/unsigned ints, bools, and parsed values"
+    },
+    {
+     "name": "__JSONValueTest",
+     "kind": "file-scope global",
+     "role": "self-registers the fixture with tpunit at static-init time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Named for exactly what it tests: JSON::Value"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "test/tests/ is correct for this"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent camelCase scenario names; testSelfAssignment is the only one prefixed with test while siblings aren't"
+   },
+   "depends_on": [
+    "libstuff/JSON/Value.h",
+    "libstuff/libstuff.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b116.json",
+   "hash": "2b9504c57a28f501"
+  },
+  {
+   "unit": "LibStuffTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/LibStuffTest.cpp"
+   ],
+   "lines": 1283,
+   "test": true,
+   "intent": "A tpunit fixture exercising most of libstuff's free-standing utility functions (crypto, JSON, HTTP parsing/composition, string/regex helpers, file IO, SQLite bound parameters) plus a few explicit security contracts.",
+   "objects": [
+    {
+     "name": "TempDBFile",
+     "kind": "struct",
+     "role": "RAII temp file (via mkstemp) used as a throwaway SQLite db for tests"
+    },
+    {
+     "name": "LibStuff",
+     "kind": "struct",
+     "role": "tpunit::TestFixture grouping ~37 test methods covering most of libstuff's free functions"
+    },
+    {
+     "name": "LibStuff::testAutoThreadPrefixRestoresPreviousValues",
+     "kind": "method",
+     "role": "SAUTOPREFIX thread-local save/restore across nested scopes"
+    },
+    {
+     "name": "LibStuff::testEncryptDecrpyt/testSHMACSHA1/testSHMACSHA256",
+     "kind": "method group",
+     "role": "AES and HMAC-SHA1/256 primitives"
+    },
+    {
+     "name": "LibStuff::testJSONDecode/testJSON",
+     "kind": "method group",
+     "role": "JSON parse/compose round-trips incl. float/scientific-notation/NaN-Infinity formatting"
+    },
+    {
+     "name": "LibStuff::testEscapeUnescape/testTrim/testCollapse/testStrip",
+     "kind": "method group",
+     "role": "string escaping and whitespace utilities"
+    },
+    {
+     "name": "LibStuff::testChunkedEncoding/SComposeHTTPTest",
+     "kind": "method group",
+     "role": "HTTP request/chunked parsing and response composition incl. header-injection escaping"
+    },
+    {
+     "name": "LibStuff::testDaysInMonth/testFirstOfMonth",
+     "kind": "method group",
+     "role": "calendar arithmetic"
+    },
+    {
+     "name": "LibStuff::testGZip",
+     "kind": "method",
+     "role": "SGZip/SGUnzip round trip"
+    },
+    {
+     "name": "LibStuff::testConstantTimeEquals",
+     "kind": "method",
+     "role": "timing-safe string compare"
+    },
+    {
+     "name": "LibStuff::testParseIntegerList/testSQList/testContains",
+     "kind": "method group",
+     "role": "list parsing/composing and SQL-safe list quoting across container types"
+    },
+    {
+     "name": "LibStuff::testSData/testSTable",
+     "kind": "method group",
+     "role": "SData/STable auto-stringification of assigned native types"
+    },
+    {
+     "name": "LibStuff::testFileIO",
+     "kind": "method",
+     "role": "SFile* save/load/exists/size/delete"
+    },
+    {
+     "name": "LibStuff::testRandom",
+     "kind": "method",
+     "role": "SRandom::rand64 smoke test"
+    },
+    {
+     "name": "LibStuff::testHexConversion/testBase32Conversion/testEncodeDecodeURIComponent",
+     "kind": "method group",
+     "role": "encoding conversions"
+    },
+    {
+     "name": "LibStuff::SREMatchTest/SREReplaceTest",
+     "kind": "method group",
+     "role": "SRE* regex match/replace/compile wrappers"
+    },
+    {
+     "name": "LibStuff::testSReplace/testSReplaceAll/testSReplaceAllBut",
+     "kind": "method group",
+     "role": "substring and character-set replace helpers"
+    },
+    {
+     "name": "LibStuff::SQResultTest/testReturningClause/testSQueryBoundParameters/testSQueryBoundParameterInjections",
+     "kind": "method group",
+     "role": "SQLite/SQResult read/write, RETURNING clause, bound parameters, and SQL-injection resistance"
+    },
+    {
+     "name": "LibStuff::SRedactSensitiveValuesTest",
+     "kind": "method",
+     "role": "SRedactSensitiveValues log scrubbing"
+    },
+    {
+     "name": "LibStuff::testSGetPeerNamePreservesErrno/testResolveHost",
+     "kind": "method group",
+     "role": "SGetPeerName errno preservation and SResolveHost DNS/IP resolution"
+    },
+    {
+     "name": "LibStuff::testUpperLower",
+     "kind": "method",
+     "role": "SToUpper/SToLower coverage; dead code, never registered in the TEST() list"
+    },
+    {
+     "name": "__LibStuff",
+     "kind": "file-scope global",
+     "role": "self-registers the fixture with tpunit at static-init time"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "LibStuff::testUpperLower",
+     "why": "Fully written test method for SToUpper/SToLower is never added to the constructor's TEST(...) list, so it never executes; SToUpper/SToLower have no running coverage",
+     "severity": "med",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Named for exactly what it tests: libstuff"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "test/tests/ is correct for this"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Most methods use testXxx, but several (SREMatchTest, SQResultTest, SRedactSensitiveValuesTest, SComposeHTTPTest) suffix Test instead, inconsistent within one fixture"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SData.h",
+    "libstuff/SQResult.h",
+    "libstuff/SRandom.h",
+    "sqlitecluster/SQLite.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b116.json",
+   "hash": "72a1473d5f29856e"
+  },
+  {
+   "unit": "MySQLTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/MySQLTest.cpp"
+   ],
+   "lines": 157,
+   "test": true,
+   "intent": "Despite its header comment describing it as an end-to-end plugin test, this file calls the same MySQLUtils:: free functions as MySQLUtilsTest.cpp, with fewer cases and no plugin dispatch exercised.",
+   "objects": [
+    {
+     "name": "MySQLTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 6 tests, each a thinner rerun of cases already covered in MySQLUtilsTest"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "MySQLTest.cpp (whole file)",
+     "why": "its docstring claims to test \"the actual plugin behavior end-to-end\" as distinct from MySQLUtilsTest.cpp's \"utility functions,\" but every test calls the exact same MySQLUtils:: functions MySQLUtilsTest.cpp already covers; no plugin command handling, socket protocol, or dispatch is exercised, so the claimed integration-test distinction does not hold and this reads as duplicated coverage",
+     "severity": "high",
+     "suggested_home": "merge into test/tests/MySQLUtilsTest.cpp, or replace with a real plugin-level integration test if one is wanted"
+    }
+   ],
+   "name_fit": {
+    "score": 2,
+    "note": "name implies plugin-level coverage the content doesn't deliver"
+   },
+   "location_fit": {
+    "score": 3,
+    "note": "right directory, but redundant with a sibling file"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "fine in isolation; the MySQLTest vs MySQLUtilsTest distinction is not honored by content"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "plugins/MySQL.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b117.json",
+   "hash": "9bd30990384218ca"
+  },
+  {
+   "unit": "MySQLUtilsTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/MySQLUtilsTest.cpp"
+   ],
+   "lines": 285,
+   "test": true,
+   "intent": "Unit tests for the MySQLUtils namespace's query pattern-matching and rewriting: VERSION()/connection_id() calls, information_schema queries, SHOW KEYS, and foreign-key constraint lookups, plus table-name extraction.",
+   "objects": [
+    {
+     "name": "MySQLUtilsTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 12 tests, one per parsing/detection function and its edge cases"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "matches MySQLUtils"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "test names mirror MySQLUtils function names"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "plugins/MySQL.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b117.json",
+   "hash": "2ef0b991900bfb7d"
+  },
+  {
+   "unit": "QueryTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/QueryTest.cpp"
+   ],
+   "lines": 130,
+   "test": true,
+   "intent": "Integration tests for Bedrock's Query command: malformed/missing/unterminated queries, single- and multi-statement execution, the no-WHERE DELETE guard, and SQLite's percentile/median aggregate functions.",
+   "objects": [
+    {
+     "name": "QueryTest",
+     "kind": "fixture",
+     "role": "tpunit fixture (BedrockTester-backed) with 8 tests"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "QueryTest::testPercentile",
+     "why": "verifies SQLite's built-in SQLITE_ENABLE_PERCENTILE aggregate functions (median/percentile/percentile_cont/percentile_disc) rather than anything specific to Bedrock's own Query command handling - effectively a build-flag/compiled-in-extension check riding on this fixture",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SData.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "3722e25a8f105610"
+  },
+  {
    "unit": "ReadTest",
    "dir": "test/tests",
    "files": [
@@ -4449,6 +5204,47 @@
    "hash": "186258673379cbd4"
   },
   {
+   "unit": "SFluentdLoggerTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SFluentdLoggerTest.cpp"
+   ],
+   "lines": 136,
+   "test": true,
+   "intent": "Tests SFluentdLogger's async buffering and delivery of newline-delimited JSON log lines to a Fluentd-style TCP endpoint, including draining on destruction.",
+   "objects": [
+    {
+     "name": "MockServer",
+     "kind": "class",
+     "role": "minimal raw-socket TCP server counting newline-delimited messages on a background thread"
+    },
+    {
+     "name": "SFluentdLoggerTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 3 tests"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/SFluentdLogger.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "4e42260e58198d7c"
+  },
+  {
    "unit": "SIsValidSQLiteDateModifierTest",
    "dir": "test/tests",
    "files": [
@@ -4483,6 +5279,92 @@
    ],
    "_src": "b118.json",
    "hash": "e2e0c43f27d43bbe"
+  },
+  {
+   "unit": "SQLiteNodeTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SQLiteNodeTest.cpp"
+   ],
+   "lines": 170,
+   "test": true,
+   "intent": "Unit tests for SQLiteNode's sync-peer selection logic (fastest logged-in peer by latency, tie-broken by commit count) and name-based peer lookup.",
+   "objects": [
+    {
+     "name": "SQLiteNodeTester",
+     "kind": "class",
+     "role": "white-box test accessor exposing SQLiteNode's private _syncPeer and _updateSyncPeer(), granted friend access in SQLiteNode.h"
+    },
+    {
+     "name": "TestServer",
+     "kind": "class",
+     "role": "minimal no-op SQLiteServer stub needed to construct a SQLiteNode"
+    },
+    {
+     "name": "SQLiteNodeTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 2 tests: sync-peer re-selection and getPeerByName() lookup"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "SQLiteNodeTester clearly marked as test-only"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLiteCommand.h",
+    "sqlitecluster/SQLiteNode.h",
+    "sqlitecluster/SQLitePeer.h",
+    "sqlitecluster/SQLiteServer.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "a74d5a499bee1d90"
+  },
+  {
+   "unit": "SRingBufferTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/SRingBufferTest.cpp"
+   ],
+   "lines": 339,
+   "test": true,
+   "intent": "Unit tests for the SRingBuffer template: push/pop state transitions, capacity limits, FIFO ordering, concurrent producers, and the shutdown/wake handshake between producer and consumer.",
+   "objects": [
+    {
+     "name": "SRingBufferTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 12 tests covering push/pop, capacity boundaries, FIFO order, multi-producer concurrency, producer-consumer wrap-around, and shutdown semantics"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "matches SRingBuffer under test"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "test/tests, as expected"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent testXxx naming"
+   },
+   "depends_on": [
+    "libstuff/SRingBuffer.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "3b269f6f8b074533"
   },
   {
    "unit": "SSLTest",
@@ -4597,6 +5479,92 @@
    ],
    "_src": "b118.json",
    "hash": "b4413a98bd2a9f3c"
+  },
+  {
+   "unit": "WriteLocalUnreplicatedTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/WriteLocalUnreplicatedTest.cpp"
+   ],
+   "lines": 146,
+   "test": true,
+   "intent": "Unit tests for SQLite::writeLocalUnreplicated(): it leaves commit count and journal untouched, rolls back cleanly on a failed query, and behaves safely under a concurrent commit from another handle.",
+   "objects": [
+    {
+     "name": "WriteLocalUnreplicatedTempDBFile",
+     "kind": "struct",
+     "role": "RAII temp-DB-file helper (mkstemp/unlink)"
+    },
+    {
+     "name": "WriteLocalUnreplicatedTest",
+     "kind": "fixture",
+     "role": "tpunit fixture with 3 tests plus countJournalRows()/countRows() helpers"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLite.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "2e5f9ffa91ee8930"
+  },
+  {
+   "unit": "WriteTest",
+   "dir": "test/tests",
+   "files": [
+    "test/tests/WriteTest.cpp"
+   ],
+   "lines": 219,
+   "test": true,
+   "intent": "Integration tests for Bedrock's Query/Write command path: INSERT/UPDATE/DELETE, the no-WHERE safety guard, parallel writes, HTTP-style and shorthand syntax, and blocking of non-deterministic SQL functions on write.",
+   "objects": [
+    {
+     "name": "WriteTest",
+     "kind": "fixture",
+     "role": "tpunit fixture (BedrockTester-backed) with 15 tests over write-command behavior"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "WriteTest::keywordsAsValue",
+     "why": "asserts on a known SQL-parsing limitation (an UPDATE without a WHERE-safety marker is not aborted in this specific case) that the test comment says is tracked in an external Expensify issue, rather than asserting intended behavior",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/SRandom.h",
+    "test/lib/BedrockTester.h"
+   ],
+   "_src": "b117.json",
+   "hash": "5fe7ba8d54d86e72"
   },
   {
    "unit": "CancelJobTest",
@@ -5267,7 +6235,7 @@
  "rollups": {},
  "coverage": {
   "total": 150,
-  "annotated": 96,
+  "annotated": 112,
   "missing": [
    "test/clustertest/tests/AfterCommitCallbackClusterTest",
    "test/clustertest/tests/BadCommandTest",
@@ -5306,23 +6274,7 @@
    "test/lib/PrintEquality",
    "test/lib/RemoteSQLite",
    "test/lib/TestHTTPS",
-   "test/lib/tpunit++",
-   "test/tests/AfterCommitCallbackTest",
-   "test/tests/AsyncResolveTest",
-   "test/tests/BlockingCommandQueueTest",
-   "test/tests/JSONParserTest",
-   "test/tests/JSONTest",
-   "test/tests/JSONUtilsTest",
-   "test/tests/JSONValueTest",
-   "test/tests/LibStuffTest",
-   "test/tests/MySQLTest",
-   "test/tests/MySQLUtilsTest",
-   "test/tests/QueryTest",
-   "test/tests/SFluentdLoggerTest",
-   "test/tests/SQLiteNodeTest",
-   "test/tests/SRingBufferTest",
-   "test/tests/WriteLocalUnreplicatedTest",
-   "test/tests/WriteTest"
+   "test/lib/tpunit++"
   ],
   "orphan": []
  }

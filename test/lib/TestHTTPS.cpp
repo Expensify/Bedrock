@@ -1,3 +1,25 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    TestHTTPS.cpp
+ * Path:    test/lib/TestHTTPS.cpp
+ * Pair:    TestHTTPS.h
+ *
+ * INTENT
+ *   Implements TestHTTPS as declared in the header - see there for intent.
+ *
+ * OBJECTS
+ *   All members implement TestHTTPS as declared in the header; nothing file-local is added.
+ *   `_onRecv` parses the numeric status out of an HTTP method line by skipping past the first
+ *   space (the "HTTP/X.Y" token) to the next non-space run, defaulting to 400 if that parse fails.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "TestHTTPS.h"
 
 TestHTTPS::~TestHTTPS()

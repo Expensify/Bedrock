@@ -1,3 +1,39 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BoundParametersTest.cpp
+ * Path:    test/clustertest/tests/BoundParametersTest.cpp
+ *
+ * INTENT
+ *   Regression test (PR #2600) for leader/follower divergence with named
+ *   bound SQL parameters: confirms a leader write using ":name" parameters
+ *   both round-trips correctly to followers and journals the inlined SQL
+ *   literal rather than the raw placeholder text, and exercises the same
+ *   path through the RemoteSQLite forwarding client.
+ *
+ * OBJECTS
+ *   BoundParametersTest                  - tpunit fixture
+ *   BoundParametersTest::setup/teardown  - own a 3-node BedrockClusterTester
+ *   BoundParametersTest::queryServer      - runs a JSON-format Query and
+ *                        deserializes the SQResult
+ *   BoundParametersTest::getCommitCount   - reads a node's Status commit count
+ *   BoundParametersTest::readJournalText  - reads and decompresses one
+ *                        journal row's query text for a given commit ID
+ *   BoundParametersTest::testBoundParamReplication - writes a bound-param
+ *                        value on leader, waits for followers to catch up,
+ *                        and checks both the replicated row and each node's
+ *                        journal text (inlined literal, no placeholder names)
+ *   BoundParametersTest::testRemoteSQLiteForwardsParams - writes and reads
+ *                        back a row through RemoteSQLite with bound params,
+ *                        checking values didn't bind to NULL
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a bound-parameter replication regression test with its peers.
+ *
+ * NAMING QUALITY
+ *   Clear method names; consistent with sibling tests.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/clustertest/BedrockClusterTester.h>

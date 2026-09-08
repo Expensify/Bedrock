@@ -1,0 +1,44 @@
+{
+ "unit": "MySQLTest",
+ "dir": "test/tests",
+ "files": [
+  "test/tests/MySQLTest.cpp"
+ ],
+ "lines": 157,
+ "test": true,
+ "intent": "Despite its header comment describing it as an end-to-end plugin test, this file calls the same MySQLUtils:: free functions as MySQLUtilsTest.cpp, with fewer cases and no plugin dispatch exercised.",
+ "objects": [
+  {
+   "name": "MySQLTest",
+   "kind": "fixture",
+   "role": "tpunit fixture with 6 tests, each a thinner rerun of cases already covered in MySQLUtilsTest"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "MySQLTest.cpp (whole file)",
+   "why": "its docstring claims to test \"the actual plugin behavior end-to-end\" as distinct from MySQLUtilsTest.cpp's \"utility functions,\" but every test calls the exact same MySQLUtils:: functions MySQLUtilsTest.cpp already covers; no plugin command handling, socket protocol, or dispatch is exercised, so the claimed integration-test distinction does not hold and this reads as duplicated coverage",
+   "severity": "high",
+   "suggested_home": "merge into test/tests/MySQLUtilsTest.cpp, or replace with a real plugin-level integration test if one is wanted"
+  }
+ ],
+ "name_fit": {
+  "score": 2,
+  "note": "name implies plugin-level coverage the content doesn't deliver"
+ },
+ "location_fit": {
+  "score": 3,
+  "note": "right directory, but redundant with a sibling file"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "fine in isolation; the MySQLTest vs MySQLUtilsTest distinction is not honored by content"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "plugins/MySQL.h",
+  "test/lib/tpunit++.hpp"
+ ],
+ "_src": "b117.json",
+ "hash": "9bd30990384218ca"
+}
