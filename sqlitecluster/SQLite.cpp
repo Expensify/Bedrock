@@ -870,6 +870,11 @@ size_t SQLite::getJournalTableCount() const
 
 bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
 {
+    // A batch size of zero deletes nothing, which is how the deleter pauses without stopping its thread.
+    if (!batchSize) {
+        return true;
+    }
+
     const string& journalName = _journalNames[journalTableIndex % _journalNames.size()];
 
     // If the commitCount is less than the max journal size, keep everything. Otherwise, keep everything from

@@ -26,7 +26,8 @@ struct JournalDeleterTest : tpunit::TestFixture
                               TEST(JournalDeleterTest::prepareLeavesTheJournalUntouched),
                               TEST(JournalDeleterTest::trimRemovesEntriesOlderThanTheMax),
                               TEST(JournalDeleterTest::trimKeepsEverythingWhenUnderTheMax),
-                              TEST(JournalDeleterTest::trimHonoursTheBatchSize))
+                              TEST(JournalDeleterTest::trimHonoursTheBatchSize),
+                              TEST(JournalDeleterTest::aZeroBatchSizeDeletesNothing))
     {
     }
 
@@ -119,5 +120,17 @@ struct JournalDeleterTest : tpunit::TestFixture
         }
 
         ASSERT_EQUAL(countJournalRows(db, oldRows), oldRowsBefore - (int64_t) db.getJournalTableCount());
+    }
+    void aZeroBatchSizeDeletesNothing()
+    {
+        JournalDeleterTempDBFile dbFile;
+        SQLite db(dbFile.filename, 1000, maxJournalSize, 1);
+        commitTransactions(db, 30);
+
+        for (size_t table = 0; table < db.getJournalTableCount(); table++) {
+            ASSERT_TRUE(db.trimJournalTable(table, 0));
+        }
+
+        ASSERT_EQUAL(countJournalRows(db), 30);
     }
 } __JournalDeleterTest;
