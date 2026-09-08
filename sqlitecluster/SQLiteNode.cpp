@@ -1324,14 +1324,14 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                     // Also, extend our timeout so long as we're still alive
                     _stateTimeout = STimeNow() + RECV_TIMEOUT + SRandom::rand64() % STIME_US_PER_S * 5;
                 }
-            } catch (const SException& e) {
+            } catch (const exception& e) {
                 // Transaction failed
                 SWARN("Synchronization failed '" << e.what() << "', reconnecting and re-SEARCHING.");
                 _db.rollback();
                 _reconnectPeer(_syncPeer);
                 _syncPeer = nullptr;
                 _changeState(SQLiteNodeState::SEARCHING);
-                throw e;
+                STHROW(e.what());
             }
         } else if (SIEquals(message.methodLine, "SUBSCRIBE")) {
             // SUBSCRIBE: Sent by a node in the WAITING state to the current leader to begin FOLLOWING. Respond
@@ -1370,13 +1370,13 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                 SINFO("Subscription complete, at commitCount #" << _db.getCommitCount() << " (" << _db.getCommittedHash()
                       << "), FOLLOWING");
                 _changeState(SQLiteNodeState::FOLLOWING);
-            } catch (const SException& e) {
+            } catch (const exception& e) {
                 // Transaction failed
                 SWARN("Subscription failed '" << e.what() << "', reconnecting to leader and re-SEARCHING.");
                 _db.rollback();
                 _reconnectPeer(_leadPeer);
                 _changeState(SQLiteNodeState::SEARCHING);
-                throw e;
+                STHROW(e.what());
             }
         } else if (SIEquals(message.methodLine, "TRANSACTION")) {
             if (_state != SQLiteNodeState::FOLLOWING) {

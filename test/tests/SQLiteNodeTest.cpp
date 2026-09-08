@@ -59,6 +59,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testGetPeerByName),
                                            TEST(SQLiteNodeTest::testSynchronizeCommitFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeWriteFailure),
+                                           TEST(SQLiteNodeTest::testSynchronizeConstraintFailure),
                                            TEST(SQLiteNodeTest::testSynchronizeHashMismatch))
     {
     }
@@ -83,6 +84,8 @@ struct SQLiteNodeTest : tpunit::TestFixture
     {
         dbPool.reset();
         unlink(filename);
+        unlink((string(filename) + "-pagemap").c_str());
+        unlink((string(filename) + "-log-0").c_str());
     }
 
     void rollback()
@@ -196,6 +199,11 @@ struct SQLiteNodeTest : tpunit::TestFixture
         testSynchronizeFailure("hash");
     }
 
+    void testSynchronizeConstraintFailure()
+    {
+        testSynchronizeFailure("constraint");
+    }
+
     void testSynchronizeFailure(const string& failure)
     {
         for (bool subscribing : {false, true}) {
@@ -242,6 +250,8 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 db.setCommitEnabled(false);
             } else if (failure == "write") {
                 commit.content = query + "INSERT INTO missingSyncTable VALUES (1);";
+            } else if (failure == "constraint") {
+                commit.content = query + query;
             } else {
                 commit["Hash"] = "incorrect hash";
             }
