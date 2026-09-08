@@ -40,16 +40,15 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         resetConflict["MaxConflictRetries"] = "3";
         leader.executeWaitVerifyContent(resetConflict, "200", true);
 
-        // The global dimension is on by default. Disable it so it can't reject anything in the tests that
-        // aren't about it; testGlobalRateLimiting turns it back on.
+        // The global rate limiter is on by default, so we disable it for tests unrelated to it.
         SData disableGlobal("SetBlockingQueueTimeRateLimit");
-        disableGlobal["globalThresholdMS"] = "0";
+        disableGlobal["globalRateLimiterThresholdMS"] = "0";
         leader.executeWaitVerifyContent(disableGlobal, "200", true);
 
         SData status("Status");
         STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
         ASSERT_EQUAL(json["blockingBlockedIdentifiers"], "");
-        ASSERT_EQUAL(json["blockingGlobalBlocked"], "false");
+        ASSERT_EQUAL(json["globalRateLimiterTriggered"], "false");
     }
 
     void testControlCommands()
@@ -62,9 +61,9 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         setLimits["identifierThresholdMS"] = "20000";
         setLimits["commandThresholdMS"] = "40000";
         setLimits["blockDurationMS"] = "60000";
-        setLimits["globalWindowMS"] = "60000";
-        setLimits["globalThresholdMS"] = "55000";
-        setLimits["globalBlockDurationMS"] = "60000";
+        setLimits["globalRateLimiterWindowMS"] = "60000";
+        setLimits["globalRateLimiterThresholdMS"] = "55000";
+        setLimits["globalRateLimiterBlockDurationMS"] = "60000";
         leader.executeWaitVerifyContent(setLimits, "200", true);
 
         SData status("Status");
@@ -73,9 +72,9 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         ASSERT_EQUAL(json["blockingIdentifierThresholdMS"], "20000");
         ASSERT_EQUAL(json["blockingCommandThresholdMS"], "40000");
         ASSERT_EQUAL(json["blockingBlockDurationMS"], "60000");
-        ASSERT_EQUAL(json["blockingGlobalWindowMS"], "60000");
-        ASSERT_EQUAL(json["blockingGlobalThresholdMS"], "55000");
-        ASSERT_EQUAL(json["blockingGlobalBlockDurationMS"], "60000");
+        ASSERT_EQUAL(json["globalRateLimiterWindowMS"], "60000");
+        ASSERT_EQUAL(json["globalRateLimiterThresholdMS"], "55000");
+        ASSERT_EQUAL(json["globalRateLimiterBlockDurationMS"], "60000");
     }
 
     void testTimeRateLimiting()
@@ -159,24 +158,22 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
     {
         BedrockTester& leader = tester->getTester(0);
 
-        // Disable both per-sender dimensions so only the global one can reject anything, and give it a tiny
-        // threshold so a burst of conflicting commands saturates the blocking thread.
+        // Disable the identifier and command dimensions so only the global rate limiter can reject
+        // anything, with a tiny threshold so a small burst trips it.
         SData setLimits("SetBlockingQueueTimeRateLimit");
         setLimits["identifierThresholdMS"] = "0";
         setLimits["commandThresholdMS"] = "0";
-        setLimits["globalWindowMS"] = "180000";
-        setLimits["globalThresholdMS"] = "10";
-        setLimits["globalBlockDurationMS"] = "60000";
+        setLimits["globalRateLimiterWindowMS"] = "180000";
+        setLimits["globalRateLimiterThresholdMS"] = "10";
+        setLimits["globalRateLimiterBlockDurationMS"] = "60000";
         leader.executeWaitVerifyContent(setLimits, "200", true);
 
-        // Force conflicts so commands escalate to the blocking queue and run on worker 0, which is what
-        // accumulates the global time.
+        // Force conflicts so these run on worker 0, which is what accumulates the time.
         SData setConflict("SetConflictParams");
         setConflict["MaxConflictRetries"] = "1";
         leader.executeWaitVerifyContent(setConflict, "200", true);
 
-        // Every command uses its own identifier, so neither per-sender dimension would ever see enough time to
-        // trip. Only the global dimension can reject these.
+        // Every command uses its own identifier, so only the global rate limiter can reject these.
         atomic<int> count503(0);
         atomic<int> count200(0);
         list<thread> threads;
@@ -210,10 +207,10 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         // Enforcement is happening, so we should see some 503s.
         ASSERT_TRUE(count503.load() > 0);
 
-        // The global dimension did all the rejecting, so no identifier or command is blocked.
+        // The global rate limiter did all the rejecting, so no identifier or command is blocked.
         SData status("Status");
         STable json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingGlobalBlocked"], "true");
+        ASSERT_EQUAL(json["globalRateLimiterTriggered"], "true");
         ASSERT_EQUAL(json["blockingBlockedIdentifiers"], "");
         ASSERT_EQUAL(json["blockingBlockedCommands"], "");
 
@@ -222,7 +219,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         leader.executeWaitVerifyContent(clearBlocks, "200", true);
 
         json = SParseJSONObject(leader.executeWaitVerifyContent(status, "200", true));
-        ASSERT_EQUAL(json["blockingGlobalBlocked"], "false");
+        ASSERT_EQUAL(json["globalRateLimiterTriggered"], "false");
 
         // Reset leader state.
         SData resetConflict("SetConflictParams");
@@ -230,7 +227,7 @@ struct BlockingQueueRateLimitTest : tpunit::TestFixture
         leader.executeWaitVerifyContent(resetConflict, "200", true);
 
         SData resetLimit("SetBlockingQueueTimeRateLimit");
-        resetLimit["globalThresholdMS"] = "0";
+        resetLimit["globalRateLimiterThresholdMS"] = "0";
         leader.executeWaitVerifyContent(resetLimit, "200", true);
     }
 } __BlockingQueueRateLimitTest;

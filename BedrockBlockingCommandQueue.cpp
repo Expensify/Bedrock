@@ -79,7 +79,7 @@ size_t BedrockBlockingCommandQueue::clearRateLimits()
         _commandStates.states.clear();
     }
     {
-        // The global dimension is a single state rather than a tracked key, so it isn't part of the count.
+        // The global rate limiter has no key, so it isn't part of the count.
         lock_guard<decltype(_globalState.m)> lock(_globalState.m);
         _globalState.commands.clear();
         _globalState.blockedUntil = 0;
@@ -119,47 +119,47 @@ STable BedrockBlockingCommandQueue::getState()
     content["blockingBlockedIdentifiers"] = SComposeList(blockedIdentifiers);
     content["blockingTrackedCommands"] = to_string(trackedCommands);
     content["blockingBlockedCommands"] = SComposeList(blockedCommands);
-    content["blockingGlobalWindowMS"] = to_string(_globalLimits.windowUS.load() / 1000);
-    content["blockingGlobalThresholdMS"] = to_string(_globalLimits.thresholdUS.load() / 1000);
-    content["blockingGlobalBlockDurationMS"] = to_string(_globalLimits.blockDurationUS.load() / 1000);
-    content["blockingGlobalBlocked"] = _isBlocked(_globalState, now) ? "true" : "false";
+    content["globalRateLimiterWindowMS"] = to_string(_globalLimits.windowUS.load() / 1000);
+    content["globalRateLimiterThresholdMS"] = to_string(_globalLimits.thresholdUS.load() / 1000);
+    content["globalRateLimiterBlockDurationMS"] = to_string(_globalLimits.blockDurationUS.load() / 1000);
+    content["globalRateLimiterTriggered"] = _isBlocked(_globalState, now) ? "true" : "false";
     return content;
 }
 
-uint64_t BedrockBlockingCommandQueue::setWindow(const uint64_t windowUS)
+uint64_t BedrockBlockingCommandQueue::setSharedRateLimiterWindow(const uint64_t windowUS)
 {
     _commandLimits.windowUS.store(windowUS);
     return _identifierLimits.windowUS.exchange(windowUS);
 }
 
-uint64_t BedrockBlockingCommandQueue::setIdentifierThreshold(const uint64_t thresholdUS)
+uint64_t BedrockBlockingCommandQueue::setBlockingIdentifierThreshold(const uint64_t thresholdUS)
 {
     return _identifierLimits.thresholdUS.exchange(thresholdUS);
 }
 
-uint64_t BedrockBlockingCommandQueue::setCommandThreshold(const uint64_t thresholdUS)
+uint64_t BedrockBlockingCommandQueue::setBlockingCommandThreshold(const uint64_t thresholdUS)
 {
     return _commandLimits.thresholdUS.exchange(thresholdUS);
 }
 
-uint64_t BedrockBlockingCommandQueue::setBlockDuration(const uint64_t durationUS)
+uint64_t BedrockBlockingCommandQueue::setSharedRateLimiterBlockDuration(const uint64_t durationUS)
 {
     _commandLimits.blockDurationUS.store(durationUS);
     return _identifierLimits.blockDurationUS.exchange(durationUS);
 }
 
-uint64_t BedrockBlockingCommandQueue::setGlobalWindow(const uint64_t windowUS)
+uint64_t BedrockBlockingCommandQueue::setGlobalRateLimiterWindow(const uint64_t windowUS)
 {
     return _globalLimits.windowUS.exchange(windowUS);
 }
 
-uint64_t BedrockBlockingCommandQueue::setGlobalThreshold(const uint64_t thresholdUS)
+uint64_t BedrockBlockingCommandQueue::setGlobalRateLimiterThreshold(const uint64_t thresholdUS)
 {
     _globalLimits.logThresholdUS.store(thresholdUS * GLOBAL_LOG_PERCENT / 100);
     return _globalLimits.thresholdUS.exchange(thresholdUS);
 }
 
-uint64_t BedrockBlockingCommandQueue::setGlobalBlockDuration(const uint64_t durationUS)
+uint64_t BedrockBlockingCommandQueue::setGlobalRateLimiterBlockDuration(const uint64_t durationUS)
 {
     return _globalLimits.blockDurationUS.exchange(durationUS);
 }
@@ -175,7 +175,7 @@ void BedrockBlockingCommandQueue::recordExecutionTime(const string& identifier, 
         _recordAndCheck(*_getOrCreateState(_commandStates, commandName), "command", commandName, _commandLimits, now, elapsedUS);
     }
 
-    // Every command counts toward the global dimension, whoever sent it.
+    // Every command counts toward the global rate limiter, whoever sent it.
     if (_globalLimits.thresholdUS.load()) {
         _recordAndCheck(_globalState, "global", "", _globalLimits, now, elapsedUS);
     }
@@ -264,7 +264,7 @@ void BedrockBlockingCommandQueue::_recordAndCheck(DimensionState& state, const s
             {"blockDurationMS", to_string(blockDurationUS / 1000)}
         });
     } else if (logThresholdUS && total > logThresholdUS) {
-        // Log-only monitoring: the dimension is heavy but still under its block threshold.
+        // Heavy, but still under its block threshold.
         SINFO("Blocking queue rate limit above logging threshold", {
             {"dimension", dimension},
             {"identifier", key},

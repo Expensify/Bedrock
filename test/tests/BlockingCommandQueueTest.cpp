@@ -50,22 +50,22 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
                                                      TEST(BlockingCommandQueueTest::testBlockDurationHoldsThenClears),
                                                      TEST(BlockingCommandQueueTest::testDisabledThresholdsNeverBlock),
                                                      TEST(BlockingCommandQueueTest::testClearResets),
-                                                     TEST(BlockingCommandQueueTest::testGlobalOverThresholdBlocksEveryone),
-                                                     TEST(BlockingCommandQueueTest::testGlobalRejectsOnPushAndDequeue),
-                                                     TEST(BlockingCommandQueueTest::testGlobalBlockTakesPrecedence),
-                                                     TEST(BlockingCommandQueueTest::testGlobalWindowIsIndependent),
-                                                     TEST(BlockingCommandQueueTest::testGlobalBlockDurationHoldsThenClears),
-                                                     TEST(BlockingCommandQueueTest::testClearResetsGlobalBlock))
+                                                     TEST(BlockingCommandQueueTest::testGlobalRateLimiterOverThresholdBlocksEveryone),
+                                                     TEST(BlockingCommandQueueTest::testGlobalRateLimiterRejectsOnPushAndDequeue),
+                                                     TEST(BlockingCommandQueueTest::testGlobalRateLimiterTakesPrecedence),
+                                                     TEST(BlockingCommandQueueTest::testGlobalRateLimiterWindowIsIndependent),
+                                                     TEST(BlockingCommandQueueTest::testGlobalRateLimiterBlockDurationHoldsThenClears),
+                                                     TEST(BlockingCommandQueueTest::testClearResetsGlobalRateLimiter))
     {
     }
 
     void testIdentifierOverThresholdBlocks()
     {
         TestBlockingCommandQueue queue;
-        queue.setWindow(100);
-        queue.setIdentifierThreshold(50);
-        queue.setCommandThreshold(0);
-        queue.setBlockDuration(1000);
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setSharedRateLimiterBlockDuration(1000);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 30);
@@ -78,9 +78,9 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     void testUnderThresholdNotBlocked()
     {
         TestBlockingCommandQueue queue;
-        queue.setWindow(100);
-        queue.setIdentifierThreshold(50);
-        queue.setCommandThreshold(0);
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 40);
@@ -90,9 +90,9 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     void testIdentifiersAreIndependent()
     {
         TestBlockingCommandQueue queue;
-        queue.setWindow(100);
-        queue.setIdentifierThreshold(50);
-        queue.setCommandThreshold(0);
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 60);
@@ -104,9 +104,9 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     {
         // With the identifier dimension disabled, a command over its threshold blocks for every identifier.
         TestBlockingCommandQueue queue;
-        queue.setWindow(100);
-        queue.setIdentifierThreshold(0);
-        queue.setCommandThreshold(50);
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(0);
+        queue.setBlockingCommandThreshold(50);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 60);
@@ -118,8 +118,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     void testPushReportsRateLimitDimensions()
     {
         TestBlockingCommandQueue identifierQueue;
-        identifierQueue.setIdentifierThreshold(50);
-        identifierQueue.setCommandThreshold(0);
+        identifierQueue.setBlockingIdentifierThreshold(50);
+        identifierQueue.setBlockingCommandThreshold(0);
         identifierQueue.setNow(1000);
         identifierQueue.recordExecutionTime("acct1", "cmd", 60);
 
@@ -133,8 +133,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_TRUE(identifierRejected);
 
         TestBlockingCommandQueue commandQueue;
-        commandQueue.setIdentifierThreshold(0);
-        commandQueue.setCommandThreshold(50);
+        commandQueue.setBlockingIdentifierThreshold(0);
+        commandQueue.setBlockingCommandThreshold(50);
         commandQueue.setNow(1000);
         commandQueue.recordExecutionTime("acct1", "cmd", 60);
 
@@ -148,8 +148,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_TRUE(commandRejected);
 
         TestBlockingCommandQueue bothDimensionsQueue;
-        bothDimensionsQueue.setIdentifierThreshold(50);
-        bothDimensionsQueue.setCommandThreshold(50);
+        bothDimensionsQueue.setBlockingIdentifierThreshold(50);
+        bothDimensionsQueue.setBlockingCommandThreshold(50);
         bothDimensionsQueue.setNow(1000);
         bothDimensionsQueue.recordExecutionTime("acct1", "cmd", 60);
 
@@ -166,8 +166,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     void testDequeueReportsRateLimitDimensions()
     {
         TestBlockingCommandQueue identifierQueue;
-        identifierQueue.setIdentifierThreshold(50);
-        identifierQueue.setCommandThreshold(0);
+        identifierQueue.setBlockingIdentifierThreshold(50);
+        identifierQueue.setBlockingCommandThreshold(0);
         identifierQueue.setNow(1000);
         identifierQueue.push(identifierQueue.makeCommand("acct1", "cmd"));
         identifierQueue.recordExecutionTime("acct1", "cmd", 60);
@@ -177,8 +177,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_EQUAL(identifierCommand->response.methodLine, "503 Blocking queue rate limited (identifier)");
 
         TestBlockingCommandQueue commandQueue;
-        commandQueue.setIdentifierThreshold(0);
-        commandQueue.setCommandThreshold(50);
+        commandQueue.setBlockingIdentifierThreshold(0);
+        commandQueue.setBlockingCommandThreshold(50);
         commandQueue.setNow(1000);
         commandQueue.push(commandQueue.makeCommand("acct2", "cmd"));
         commandQueue.recordExecutionTime("acct1", "cmd", 60);
@@ -193,8 +193,8 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         // `_dequeue()`'s prefix is scoped, so it must be gone once `get()` returns: the blocking worker sets its own
         // prefix after `get()` and would otherwise inherit a stale one.
         TestBlockingCommandQueue queue;
-        queue.setIdentifierThreshold(50);
-        queue.setCommandThreshold(0);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
         queue.setNow(1000);
         queue.push(queue.makeCommand("acct1", "cmd", "rejected1", "rejected@example.com"));
         queue.recordExecutionTime("acct1", "cmd", 60);
@@ -217,9 +217,9 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     {
         // An empty identifier is skipped, but the command dimension still applies.
         TestBlockingCommandQueue queue;
-        queue.setWindow(100);
-        queue.setIdentifierThreshold(50);
-        queue.setCommandThreshold(50);
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(50);
         queue.setNow(1000);
 
         queue.recordExecutionTime("", "cmd", 60);
@@ -230,10 +230,10 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     {
         // A sample older than the window no longer counts toward the threshold.
         TestBlockingCommandQueue queue;
-        queue.setWindow(100);
-        queue.setIdentifierThreshold(50);
-        queue.setCommandThreshold(0);
-        queue.setBlockDuration(1000);
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setSharedRateLimiterBlockDuration(1000);
         queue.setNow(1000);
 
         // One 40us sample, under the 50us threshold on its own.
@@ -251,10 +251,10 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     {
         // A sample counts only for the part that still lies inside the window.
         TestBlockingCommandQueue queue;
-        queue.setWindow(100);
-        queue.setIdentifierThreshold(35);
-        queue.setCommandThreshold(0);
-        queue.setBlockDuration(1000);
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(35);
+        queue.setBlockingCommandThreshold(0);
+        queue.setSharedRateLimiterBlockDuration(1000);
         queue.setNow(1000);
 
         // 30us sample, under the 35us threshold.
@@ -271,10 +271,10 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     void testBlockDurationHoldsThenClears()
     {
         TestBlockingCommandQueue queue;
-        queue.setWindow(100);
-        queue.setIdentifierThreshold(50);
-        queue.setCommandThreshold(0);
-        queue.setBlockDuration(500);
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setSharedRateLimiterBlockDuration(500);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 60);
@@ -292,10 +292,10 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     void testDisabledThresholdsNeverBlock()
     {
         TestBlockingCommandQueue queue;
-        queue.setWindow(100);
-        queue.setIdentifierThreshold(0);
-        queue.setCommandThreshold(0);
-        queue.setGlobalThreshold(0);
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(0);
+        queue.setBlockingCommandThreshold(0);
+        queue.setGlobalRateLimiterThreshold(0);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 1000000);
@@ -305,10 +305,10 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
     void testClearResets()
     {
         TestBlockingCommandQueue queue;
-        queue.setWindow(100);
-        queue.setIdentifierThreshold(50);
-        queue.setCommandThreshold(0);
-        queue.setBlockDuration(1000);
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setSharedRateLimiterBlockDuration(1000);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 60);
@@ -318,16 +318,16 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
     }
 
-    void testGlobalOverThresholdBlocksEveryone()
+    void testGlobalRateLimiterOverThresholdBlocksEveryone()
     {
-        // The global dimension counts every command, so a burst spread over several identifiers trips it even
+        // The global rate limiter counts every command, so a burst of commands with different identifiers trips it even
         // though no single identifier or command is over a limit of its own.
         TestBlockingCommandQueue queue;
-        queue.setIdentifierThreshold(0);
-        queue.setCommandThreshold(0);
-        queue.setGlobalWindow(100);
-        queue.setGlobalThreshold(50);
-        queue.setGlobalBlockDuration(1000);
+        queue.setBlockingIdentifierThreshold(0);
+        queue.setBlockingCommandThreshold(0);
+        queue.setGlobalRateLimiterWindow(100);
+        queue.setGlobalRateLimiterThreshold(50);
+        queue.setGlobalRateLimiterBlockDuration(1000);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd1", 30);
@@ -339,12 +339,12 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_EQUAL(queue.getBlockingDimension("", ""), "global");
     }
 
-    void testGlobalRejectsOnPushAndDequeue()
+    void testGlobalRateLimiterRejectsOnPushAndDequeue()
     {
         TestBlockingCommandQueue pushQueue;
-        pushQueue.setIdentifierThreshold(0);
-        pushQueue.setCommandThreshold(0);
-        pushQueue.setGlobalThreshold(50);
+        pushQueue.setBlockingIdentifierThreshold(0);
+        pushQueue.setBlockingCommandThreshold(0);
+        pushQueue.setGlobalRateLimiterThreshold(50);
         pushQueue.setNow(1000);
         pushQueue.recordExecutionTime("acct1", "cmd", 60);
 
@@ -357,11 +357,11 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         }
         ASSERT_TRUE(pushRejected);
 
-        // Commands that were already queued are rejected on the way out, so a backlog drains instead of running.
+        // Commands that were already queued get rejected on the way out, so a backlog drains instead of running.
         TestBlockingCommandQueue dequeueQueue;
-        dequeueQueue.setIdentifierThreshold(0);
-        dequeueQueue.setCommandThreshold(0);
-        dequeueQueue.setGlobalThreshold(50);
+        dequeueQueue.setBlockingIdentifierThreshold(0);
+        dequeueQueue.setBlockingCommandThreshold(0);
+        dequeueQueue.setGlobalRateLimiterThreshold(50);
         dequeueQueue.setNow(1000);
         dequeueQueue.push(dequeueQueue.makeCommand("acct2", "otherCmd"));
         dequeueQueue.recordExecutionTime("acct1", "cmd", 60);
@@ -371,55 +371,55 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_EQUAL(command->response.methodLine, "503 Blocking queue rate limited (global)");
     }
 
-    void testGlobalBlockTakesPrecedence()
+    void testGlobalRateLimiterTakesPrecedence()
     {
-        // One command can trip the identifier and the global dimension at once. The reject reports global,
+        // One command can trip the identifier and the global rate limiter at once. The reject reports global,
         // because that is the one that also rejects everybody else.
         TestBlockingCommandQueue queue;
-        queue.setWindow(100);
-        queue.setIdentifierThreshold(50);
-        queue.setCommandThreshold(0);
-        queue.setBlockDuration(1000);
-        queue.setGlobalWindow(100);
-        queue.setGlobalThreshold(50);
-        queue.setGlobalBlockDuration(1000);
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(50);
+        queue.setBlockingCommandThreshold(0);
+        queue.setSharedRateLimiterBlockDuration(1000);
+        queue.setGlobalRateLimiterWindow(100);
+        queue.setGlobalRateLimiterThreshold(50);
+        queue.setGlobalRateLimiterBlockDuration(1000);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 60);
         ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
     }
 
-    void testGlobalWindowIsIndependent()
+    void testGlobalRateLimiterWindowIsIndependent()
     {
-        // The global dimension has its own window, so a sample that has aged out of the shared window can still
-        // count toward the global threshold.
+        // The global rate limiter has its own window, so a sample that has aged out of the shared window can
+        // still count toward the global threshold.
         TestBlockingCommandQueue queue;
-        queue.setWindow(100);
-        queue.setIdentifierThreshold(0);
-        queue.setCommandThreshold(0);
-        queue.setGlobalWindow(1000);
-        queue.setGlobalThreshold(50);
-        queue.setGlobalBlockDuration(1000);
+        queue.setSharedRateLimiterWindow(100);
+        queue.setBlockingIdentifierThreshold(0);
+        queue.setBlockingCommandThreshold(0);
+        queue.setGlobalRateLimiterWindow(1000);
+        queue.setGlobalRateLimiterThreshold(50);
+        queue.setGlobalRateLimiterBlockDuration(1000);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 30);
         ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
 
-        // 500us later the first sample is far outside the 100us shared window but inside the 1000us global
-        // window, so all 30us of it still counts and the second sample takes the total to 60 (> 50).
+        // The clock is now 500us past the first sample, which puts it outside the 100us shared window but
+        // inside the 1000us global window. All 30us of it still counts, so the total reaches 60 (> 50).
         queue.setNow(1500);
         queue.recordExecutionTime("acct1", "cmd", 30);
         ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "global");
     }
 
-    void testGlobalBlockDurationHoldsThenClears()
+    void testGlobalRateLimiterBlockDurationHoldsThenClears()
     {
         TestBlockingCommandQueue queue;
-        queue.setIdentifierThreshold(0);
-        queue.setCommandThreshold(0);
-        queue.setGlobalWindow(100);
-        queue.setGlobalThreshold(50);
-        queue.setGlobalBlockDuration(500);
+        queue.setBlockingIdentifierThreshold(0);
+        queue.setBlockingCommandThreshold(0);
+        queue.setGlobalRateLimiterWindow(100);
+        queue.setGlobalRateLimiterThreshold(50);
+        queue.setGlobalRateLimiterBlockDuration(500);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 60);
@@ -433,14 +433,14 @@ struct BlockingCommandQueueTest : tpunit::TestFixture
         ASSERT_EQUAL(queue.getBlockingDimension("acct1", "cmd"), "");
     }
 
-    void testClearResetsGlobalBlock()
+    void testClearResetsGlobalRateLimiter()
     {
         TestBlockingCommandQueue queue;
-        queue.setIdentifierThreshold(0);
-        queue.setCommandThreshold(0);
-        queue.setGlobalWindow(100);
-        queue.setGlobalThreshold(50);
-        queue.setGlobalBlockDuration(1000);
+        queue.setBlockingIdentifierThreshold(0);
+        queue.setBlockingCommandThreshold(0);
+        queue.setGlobalRateLimiterWindow(100);
+        queue.setGlobalRateLimiterThreshold(50);
+        queue.setGlobalRateLimiterBlockDuration(1000);
         queue.setNow(1000);
 
         queue.recordExecutionTime("acct1", "cmd", 60);
