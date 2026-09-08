@@ -1,0 +1,9 @@
+{
+ "test/clustertest/tests/FinishJobTest.cpp": [
+  "negativeDelay",
+  "positiveDelay"
+ ],
+ "test/tests/LibStuffTest.cpp": [
+  "testUpperLower"
+ ]
+}

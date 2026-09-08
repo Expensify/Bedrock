@@ -1,0 +1,369 @@
+[
+ {
+  "unit": "WriteLocalUnreplicatedClusterTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/WriteLocalUnreplicatedClusterTest.cpp"],
+  "lines": 77,
+  "test": true,
+  "intent": "Cluster test verifying a write made through the plugin's writeLocalUnreplicated path commits on the leader without being journaled or replicated to followers, while normal replicated commits keep working around it.",
+  "objects": [
+    {"name": "WriteLocalUnreplicatedClusterTest", "kind": "struct", "role": "tpunit fixture that runs the unreplicated-write test against a default 3-node cluster"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "libstuff/SQResult.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "VersionMismatchTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/VersionMismatchTest.cpp"],
+  "lines": 70,
+  "test": true,
+  "intent": "Cluster test verifying a follower on a different version than the leader escalates every command, reads included, instead of executing reads locally.",
+  "objects": [
+    {"name": "VersionMismatchTest", "kind": "struct", "role": "tpunit fixture; runs two followers on a fake version in a 5-node cluster and checks read/write escalation"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "SynchronousCommandsTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/SynchronousCommandsTest.cpp"],
+  "lines": 66,
+  "test": true,
+  "intent": "Cluster test verifying -synchronousCommands routes the named command to the blocking commit thread both directly on the leader and when escalated from a follower, while an unlisted command sharing the same handler still commits on a regular worker thread.",
+  "objects": [
+    {"name": "SynchronousCommandsTest", "kind": "struct", "role": "tpunit fixture covering the leader, escalated-follower, and negative-control cases"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files; well-commented."},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "AfterCommitCallbackClusterTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/AfterCommitCallbackClusterTest.cpp"],
+  "lines": 65,
+  "test": true,
+  "intent": "Cluster test verifying an after-commit callback fires both when the leader commits a write itself and when a follower applies that write via replication.",
+  "objects": [
+    {"name": "AfterCommitCallbackClusterTest", "kind": "struct", "role": "tpunit fixture; polls the plugin's after-commit counter on leader and follower around one write"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "StatusTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/StatusTest.cpp"],
+  "lines": 63,
+  "test": true,
+  "intent": "Cluster test verifying a Status command sent concurrently to every node in a 3-node cluster reports the correct leader/follower role and a peer list of the expected size from each node's own view.",
+  "objects": [
+    {"name": "StatusTest", "kind": "struct", "role": "tpunit fixture; fires Status at all three nodes in parallel, one thread per node"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "UpgradeTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/UpgradeTest.cpp"],
+  "lines": 62,
+  "test": true,
+  "intent": "Regression guard against a bug (PR #1293) where sending multiple commands on one socket to a follower running a different version than the leader caused the second command to hang.",
+  "objects": [
+    {"name": "UpgradeTest", "kind": "struct", "role": "tpunit fixture; single test that bumps a follower's version and pipelines two commands on one socket"}
+  ],
+  "misfits": [
+    {
+      "item": "#include <libstuff/SRandom.h>",
+      "why": "Nothing in this file calls into SRandom; looks like a leftover from an earlier version of the test",
+      "severity": "low",
+      "suggested_home": null
+    }
+  ],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "libstuff/SRandom.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "StatusHandlingCommandsTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/StatusHandlingCommandsTest.cpp"],
+  "lines": 60,
+  "test": true,
+  "intent": "Cluster test verifying GET /status/handlingCommands on a follower whose leader is briefly down reports the follower's own LEADING/FOLLOWING transition correctly and never claims a version mismatch just because it has no leader to compare against.",
+  "objects": [
+    {"name": "StatusHandlingCommandsTest", "kind": "struct", "role": "tpunit fixture; stops the leader, polls a follower's status endpoint on a background thread, restarts the leader"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "ControlCommandTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/ControlCommandTest.cpp"],
+  "lines": 53,
+  "test": true,
+  "intent": "Cluster test verifying a preventattach control command sent to the test plugin blocks a subsequent Attach until its internal delay passes.",
+  "objects": [
+    {"name": "ControlCommandTest", "kind": "struct", "role": "tpunit fixture; detaches a follower, prevents attach via the plugin, confirms attach is refused then later allowed"}
+  ],
+  "misfits": [
+    {
+      "item": "#include <iostream>",
+      "why": "Unused in this file",
+      "severity": "low",
+      "suggested_home": null
+    }
+  ],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "MassiveQueryTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/MassiveQueryTest.cpp"],
+  "lines": 53,
+  "test": true,
+  "intent": "Cluster test verifying a large, long-running write sent to a follower is escalated to the leader, committed, and replicated to every other follower.",
+  "objects": [
+    {"name": "MassiveQueryTest", "kind": "struct", "role": "tpunit fixture; sends a bigquery command then polls a follower's commit count until it catches up"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "PermafollowerTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/PermafollowerTest.cpp"],
+  "lines": 53,
+  "test": true,
+  "intent": "Cluster test verifying a permafollower (priority 0) never counts toward write quorum: the cluster keeps committing once enough regular followers are down, whether or not the permafollower itself is up.",
+  "objects": [
+    {"name": "PermafollowerTest", "kind": "struct", "role": "tpunit fixture; builds a 6-node cluster and commits with successively more nodes, including the permafollower, down"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "DoubleDetachTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/DoubleDetachTest.cpp"],
+  "lines": 52,
+  "test": true,
+  "intent": "Cluster test verifying detaching an already-detached follower is rejected rather than accepted a second time, and that the node re-attaches cleanly.",
+  "objects": [
+    {"name": "DoubleDetachTest", "kind": "struct", "role": "tpunit fixture; sets a follower's priority, detaches it twice, then re-attaches"}
+  ],
+  "misfits": [
+    {
+      "item": "#include <iostream>",
+      "why": "Unused in this file",
+      "severity": "low",
+      "suggested_home": null
+    }
+  ],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "UpgradeDBTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/UpgradeDBTest.cpp"],
+  "lines": 51,
+  "test": true,
+  "intent": "Cluster test verifying a schema change made by upgradeDatabase replicates to every follower, by writing a row on the leader and reading it back locally on every node.",
+  "objects": [
+    {"name": "UpgradeDBTest", "kind": "struct", "role": "tpunit fixture; writes on the leader, waits for followers' commit counts to match, reads the row on all nodes"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "ThreadExceptionTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/ThreadExceptionTest.cpp"],
+  "lines": 23,
+  "test": true,
+  "intent": "Cluster test verifying an exception thrown on a worker thread surfaces as a proper 500 error response rather than crashing or hanging the server.",
+  "objects": [
+    {"name": "ThreadExceptionTest", "kind": "struct", "role": "tpunit fixture; sends the ThreadException command plain, then again with rethrow=true"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "UniqueConstraintsTest",
+  "dir": "test/clustertest/tests",
+  "files": ["test/clustertest/tests/UniqueConstraintsTest.cpp"],
+  "lines": 21,
+  "test": true,
+  "intent": "Cluster test verifying a duplicate-key INSERT is accepted the first time and rejected with 400 the second time by SQLite's unique-constraint check.",
+  "objects": [
+    {"name": "UniqueConstraintsTest", "kind": "struct", "role": "tpunit fixture; sends the same INSERT twice and checks each response code"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with sibling clustertest files."},
+  "depends_on": ["libstuff/SData.h", "test/clustertest/BedrockClusterTester.h"]
+ },
+ {
+  "unit": "BedrockTester",
+  "dir": "test/lib",
+  "files": ["test/lib/BedrockTester.h", "test/lib/BedrockTester.cpp"],
+  "lines": 876,
+  "test": true,
+  "intent": "Forks, execs, and manages one bedrock server subprocess for tests, and provides the request/response plumbing and direct DB access tests use against it.",
+  "objects": [
+    {"name": "BedrockTester", "kind": "class", "role": "owns one bedrock server subprocess: starts/stops it, sends it commands over TCP, reads its DB file directly, and tracks all live instances for stopAll"},
+    {"name": "BedrockTester::autoAttachDebugger", "kind": "member function", "role": "speaks a small JSON-over-socket protocol to an LLDB RPC server to auto-attach a debugger to the spawned process"}
+  ],
+  "misfits": [
+    {
+      "item": "BedrockTester::autoAttachDebugger",
+      "why": "A self-contained LLDB RPC-socket client with its own wire protocol, unrelated to running a server subprocess and sending it commands",
+      "severity": "med",
+      "suggested_home": "a standalone debug-attach helper, or null"
+    }
+  ],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits; core per-server test harness class."},
+  "naming_quality":  {"score": 4, "note": "Repo-typical (_-prefixed private members); _commitCountBase vs. the reference member _commitCount is a little confusing on first read but is explained at the constructor."},
+  "depends_on": ["test/lib/PortMap.h", "test/lib/tpunit++.hpp", "libstuff/libstuff.h", "libstuff/SData.h", "libstuff/SFastBuffer.h", "libstuff/SQResult.h", "sqlitecluster/SQLite.h", "test/lib/RemoteSQLite.h"]
+ },
+ {
+  "unit": "tpunit++",
+  "dir": "test/lib",
+  "files": ["test/lib/tpunit++.cpp"],
+  "lines": 606,
+  "test": true,
+  "intent": "Implements the tpunit++ micro test framework's runner: fixture registration, multithreaded execution with name filtering, before/after hooks, pass/fail bookkeeping, and console output.",
+  "objects": [
+    {"name": "tpunit::_TestFixture", "kind": "class", "role": "fixture base; registers itself on construction and implements the whole run loop, per-class and per-test threading, method dispatch with exception trapping, and float-equality helpers"},
+    {"name": "tpunit::_TestFixture::method", "kind": "struct", "role": "one registered before/after/test callback; linked-list node"},
+    {"name": "tpunit::_TestFixture::stats", "kind": "struct", "role": "global pass/fail counters and failure-name set"},
+    {"name": "tpunit::_TestFixture::perFixtureStats", "kind": "struct", "role": "thread_local per-fixture assertion/exception/trace counters"},
+    {"name": "tpunit::TestFixture", "kind": "class", "role": "empty out-of-line destructor only"},
+    {"name": "tpunit::Tests::run", "kind": "free function group", "role": "public entry points that call into _TestFixture::tpunit_detail_do_run"},
+    {"name": "tpunit::tpunit_break_check_line", "kind": "free function", "role": "keeps short-form dot output readable when a verbose log line interrupts it"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 4, "note": "It's the vendored micro-framework's implementation file; the ++ suffix is unusual but recognizable."},
+  "location_fit":   {"score": 5, "note": "Fits; kept under test/lib with the rest of the test infrastructure."},
+  "naming_quality":  {"score": 3, "note": "registerTests taking 70 individually numbered method* parameters (m0..m69) is a design wart inherited from the upstream framework, not a naming defect, but it stands out."},
+  "depends_on": ["test/lib/tpunit++.hpp"]
+ },
+ {
+  "unit": "RemoteSQLite",
+  "dir": "test/lib",
+  "files": ["test/lib/RemoteSQLite.h", "test/lib/RemoteSQLite.cpp"],
+  "lines": 138,
+  "test": true,
+  "intent": "A client-side SQLite subclass that forwards every read/write to a BedrockTester's server as a Query command instead of touching a local DB file, so HC-Tree-mode tests can still use SQLite-shaped call sites.",
+  "objects": [
+    {"name": "RemoteSQLite", "kind": "class", "role": "overrides SQLite's read/write/writeIdempotent family to serialize each call into a Query command sent via the owning BedrockTester"},
+    {"name": "RemoteSQLite::_runRemoteQuery", "kind": "member function", "role": "builds and sends the Query command with bound parameters as sql-param-<name> headers, shared by all public overrides"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits; test-only infrastructure paired with BedrockTester."},
+  "naming_quality":  {"score": 4, "note": "Consistent with the SQLite base class's naming and repo convention (_-prefixed private member/helper)."},
+  "depends_on": ["sqlitecluster/SQLite.h", "libstuff/SData.h", "test/lib/BedrockTester.h"]
+ },
+ {
+  "unit": "PortMap",
+  "dir": "test/lib",
+  "files": ["test/lib/PortMap.h", "test/lib/PortMap.cpp"],
+  "lines": 107,
+  "test": true,
+  "intent": "Hands out non-conflicting TCP ports from a fixed range to BedrockTester instances so parallel tests don't collide, recycling returned ports once confirmed free.",
+  "objects": [
+    {"name": "PortMap", "kind": "class", "role": "allocates ports sequentially from a fixed range, recycles returned ones, and confirms a port is bindable before handing it out"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits."},
+  "naming_quality":  {"score": 4, "note": "Consistent with repo convention (_-prefixed private members); not S-prefixed, but it's test-only infrastructure rather than a libstuff shared utility type."},
+  "depends_on": ["libstuff/libstuff.h"]
+ },
+ {
+  "unit": "PrintEquality",
+  "dir": "test/lib",
+  "files": ["test/lib/PrintEquality.h"],
+  "lines": 54,
+  "test": true,
+  "intent": "Backs tpunit++'s ASSERT_EQUAL/ASSERT_NOT_EQUAL family, printing both compared values with an = or != between them when an assertion fails.",
+  "objects": [
+    {"name": "PrintEquality", "kind": "class", "role": "constructor-only helper templated on the two compared types; prints 'a (= or !=) b' to cout when constructed"},
+    {"name": "operator<<(ostream&, const list<T>&)", "kind": "free function", "role": "prints a list via SComposeList"},
+    {"name": "operator<<(ostream&, const set<T>&)", "kind": "free function", "role": "prints a set via SComposeList"},
+    {"name": "operator<<(ostream&, const map<T,U>&)", "kind": "free function", "role": "prints a map as one 'k: v' line per entry"},
+    {"name": "operator<<(ostream&, const optional<T>&)", "kind": "free function", "role": "prints the contained value or '(nullopt)'"}
+  ],
+  "misfits": [
+    {
+      "item": "operator<<(ostream&, const list<T>&/set<T>&/map<T,U>&/optional<T>&)",
+      "why": "Generic stream-formatting utilities with no dependency on PrintEquality or tpunit, bundled here only because PrintEquality's own printing happens to need them",
+      "severity": "med",
+      "suggested_home": "a shared stream-formatting utility header in libstuff, or null"
+    }
+  ],
+  "name_fit":       {"score": 3, "note": "The file does far more than print equality - it defines general-purpose container-printing operators."},
+  "location_fit":   {"score": 3, "note": "Test-only placement is defensible for the class itself, less so for the generic operator<< overloads it carries."},
+  "naming_quality":  {"score": 4, "note": "PrintEquality's own name matches its narrow job."},
+  "depends_on": []
+ },
+ {
+  "unit": "TestHTTPS",
+  "dir": "test/lib",
+  "files": ["test/lib/TestHTTPS.h", "test/lib/TestHTTPS.cpp"],
+  "lines": 47,
+  "test": true,
+  "intent": "A minimal SHTTPSManager subclass used by tests to make outbound HTTPS requests and read back their status code, with no product-specific response handling.",
+  "objects": [
+    {"name": "TestHTTPS", "kind": "class", "role": "trivial SHTTPSManager subclass; exposes sendRequest publicly and parses the response status code out of the raw HTTP method line in _onRecv"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "Fits."},
+  "location_fit":   {"score": 5, "note": "Fits; test-only HTTPS helper alongside the rest of test/lib."},
+  "naming_quality":  {"score": 4, "note": "Consistent with SHTTPSManager's naming conventions."},
+  "depends_on": ["libstuff/libstuff.h", "libstuff/SHTTPSManager.h"]
+ }
+]
