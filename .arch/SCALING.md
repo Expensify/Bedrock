@@ -121,6 +121,38 @@ Where a unit straddles the line, prefer excluding it and say so in the report,
 rather than generating refactoring advice for code the team does not own. Here
 it produced zero findings either way, so nothing turned on it.
 
+## 3c. The analysis contaminates its own searches
+
+This pass writes two kinds of artifact into the repo it is analysing: a
+`/* SUMMARY */` block in every source file, and machine-readable findings under
+`.arch/`. Both name symbols in prose. Any later grep therefore finds our own
+output and counts it as evidence.
+
+Measured during verification, per claim, phantom hits by source:
+
+| Claim | Real code hits | In SUMMARY blocks | In `.arch/` |
+|---|---|---|---|
+| `SVERSION` dead | 2 | 5 | 24 |
+| simdjson consumer | 1 | 3 | 40 |
+| `commandPortSuppressionReasons` | 1 | 1 | 6 |
+
+`.arch/` is the larger contaminant, by a wide margin — worse than the in-file
+annotations everyone thinks to exclude. This already caused one real error: a
+dead-test scan missed `LibStuffTest::testUpperLower` because the SUMMARY block
+mentioning it looked like a call site.
+
+Rules that follow:
+
+1. Any tool or agent grepping the repo after Phase 2 must exclude BOTH the
+   `/* SUMMARY */` line ranges and the `.arch/` tree.
+2. Verification should classify every hit as real-code / in-annotation /
+   in-artifact and report the split, rather than reporting a bare count.
+3. Prefer running verification against a pristine checkout (`git show
+   <pre-annotation-ref>:<path>`) where practical.
+
+At App scale this gets worse, not better: ~8,800 annotated files and a far
+larger `.arch/` tree mean a naive grep is mostly self-echo.
+
 ## 4. Cache and resume
 
 Every unit record is keyed by `sha256(file contents)` in `.arch/cache/`. A
