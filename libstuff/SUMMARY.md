@@ -65,7 +65,17 @@ their own members but not each other — from here, several "suggested home:
 not in this cluster, unconfirmed" targets are directly visible and can be
 closed out now.
 
-**Resolved locally (8) — target confirmed to exist in this directory:**
+**Pass B update:** with the parent's rollup in hand — the stated layer order
+`libstuff -> sqlitecluster -> plugins -> root` and its fix rule ("sink the
+shared primitive down to the lowest layer both sides can use, rather than
+reaching upward") — two of the five items originally escalated turn out to be
+decidable without anyone's wider view after all, and move down into Resolved
+locally below. The other three (`AutoScopeOnPrepare`, `SData`'s simdjson
+padding, `SSignal`'s `kill()` call) are exactly the escalations root's own
+rollup is silent on for two of them and explicit on for the third — see each
+entry and §5 for what that silence does and doesn't tell us.
+
+**Resolved locally (10) — target confirmed to exist in this directory:**
 
 - **SParseHTTP/SComposeHTTP/SParseURI/SParseHost family** (`libstuff.cpp`) —
   sqlite-header-wire flagged this as a full HTTP wire-grammar duplicating
@@ -118,35 +128,83 @@ closed out now.
   notes, already resolved within that cluster). **Resolved: give both
   `SLog.h` and `SSignal.h` their own headers**, moving their declarations out
   of `libstuff.h`.
+- **[Pass B] AutoTimer name collision** (`libstuff/AutoTimer.h/.cpp` vs. an
+  unrelated `AutoTimer` in `BedrockCore.h`) — escalated in Pass A for lack of
+  visibility into `BedrockCore.h`. Root's own rollup, which *can* see both
+  sides, does not list this collision among its own escalations — meaning
+  root either already resolved it on its end or found the two don't actually
+  collide (different namespace/TU). Either way, nothing about the fix
+  requires libstuff to wait: libstuff's copy can be renamed unilaterally (it's
+  a small, locally-used RAII timer, not part of any documented external
+  contract) without needing BedrockCore.h to change in lockstep. **Resolved:
+  rename `libstuff`'s `AutoTimer` to something more specific (e.g.
+  `SScopeTimer`)** so the ambiguity is gone from this side regardless of what
+  root does with its own copy.
+- **[Pass B] `SHTTPSManager` (class) depends on `BedrockPlugin.h`** —
+  escalated in Pass A as inverting libstuff's dependency direction on the
+  application layer. Root's rollup now names the general fix for exactly this
+  shape of problem (sqlitecluster/SQLite.cpp reaching up into
+  plugins/Compression.h is the case that produced the rule): *sink the shared
+  primitive down to the lowest layer both sides can use, rather than reaching
+  upward*. Applied here, the "shared primitive" isn't `BedrockPlugin` itself —
+  it's whatever narrow contract `SHTTPSManager` actually needs from it (almost
+  certainly a callback/registration surface for routing a completed HTTPS
+  response back into command processing). `SStandaloneHTTPSManager`, already
+  living in the same file with no such dependency, is proof the networking
+  logic itself doesn't need it. **Resolved: replace the concrete
+  `BedrockPlugin.h` include with a generic virtual hook or `std::function`
+  callback interface defined in `SHTTPSManager.h` itself** — a libstuff-side
+  change with no coordination needed to decide *that* it should happen (root
+  will need to update its own derived classes to implement the new interface,
+  but that is root's normal cost of consuming libstuff, not a reason to keep
+  this escalated). This is the one item Pass A had marked escalate purely for
+  lack of a naming for the general principle — now that root has named it,
+  the decision itself no longer needs a wider view.
 
-**Escalate (5) — genuinely need a view above libstuff:**
+**Escalate (3) — still cross the libstuff/sqlitecluster boundary and genuinely
+need a view outside libstuff:**
 
 - **AutoScopeOnPrepare** (`libstuff/AutoScopeOnPrepare.h/.cpp`) — `#include`s
   `sqlitecluster/SQLite.h` directly and exists only to scope a SQLite-specific
-  callback. Suggested home `sqlitecluster` is a sibling directory this pass
-  cannot see into (no `sqlitecluster/SUMMARY.md` in view) — the root needs to
-  confirm there's a real landing spot there before this moves.
-- **AutoTimer name collision** (`libstuff/AutoTimer.h/.cpp` vs. an unrelated
-  `AutoTimer` in `BedrockCore.h`) — same name, different purpose, genuinely
-  confusable; resolving needs visibility into wherever `BedrockCore.h` rolls
-  up, which is outside libstuff.
+  callback. **[Pass B]** `sqlitecluster` is now visible as a sibling and its
+  own rollup lists no naming conflict or objection, so the destination is
+  confirmed, not merely guessed — but unlike `SHTTPSManager`, there is no
+  generic half to sink down: `AutoScopeOnPrepare` is 100% SQLite-specific, so
+  the fix is a straight relocation *out of* libstuff, not a local interface
+  change. Since libstuff is already the floor of the stack (`libstuff ->
+  sqlitecluster -> plugins -> root`), reaching up can only be fixed by moving
+  the file up to the layer that needs it — an action outside this directory,
+  so this stays an escalate entry even though the decision itself is now
+  final. **Confirmed destination: move `AutoScopeOnPrepare.h/.cpp` into
+  `sqlitecluster`.**
 - **`SData::deserialize` simdjson padding logic** (`libstuff/SData.cpp`) — a
   generic message container over-allocating 32 bytes to satisfy one
-  downstream parser's requirement. No unit in any of libstuff's five clusters
-  does simdjson parsing of `SData` payloads, so the actual consumer — and
-  therefore the right owner of this padding decision — is outside this
-  directory's visible children.
-- **`SHTTPSManager` (class) depends on `BedrockPlugin.h`** — inverts
-  libstuff's expected dependency direction on the application layer above it
-  (`SStandaloneHTTPSManager`, in the same file, proves the coupling isn't
-  load-bearing for the networking logic itself). Whether the fix is a thinner
-  adapter living in Bedrock proper or something else is a layering call the
-  root must make.
+  downstream parser's requirement. **[Pass B]** Root's own Pass A rollup
+  escalates this identical item, verbatim in spirit, after seeing the *entire*
+  subtree (libstuff, sqlitecluster, plugins, test, benchmarks) — and still
+  finds no simdjson consumer of `SData` anywhere. That is stronger evidence
+  than this pass could produce alone: it means either the real consumer lives
+  outside this repository entirely (a separate service parsing shipped `SData`
+  payloads with simdjson) or the padding is speculative and should be removed.
+  Neither libstuff nor root can settle which from what's visible in this
+  subtree — this one may simply not be resolvable from inside the repo at all.
 - **`_SSignal_StackTrace` calls `SQLiteNode::KILLABLE_SQLITE_NODE->kill()`**
   (`libstuff/SSignal.cpp`) — a generic crash handler reaching directly into
-  `sqlitecluster` to kill peer connections on crash. Same shape as the
-  `SHTTPSManager`/`BedrockPlugin` issue: a layering violation only the root
-  can settle, since it involves a directory this pass doesn't see.
+  `sqlitecluster` to kill peer connections on crash. **[Pass B]** Unlike
+  `AutoScopeOnPrepare`, this one *does* have a generic half that could sink
+  down per root's rule: `SSignal` already owns "process-wide crash/signal
+  handling" as its whole remit, so a generic callback-registration hook
+  (`SSignal::setCrashKillFunction(std::function<void()>)` or similar) fits
+  naturally inside libstuff, with `sqlitecluster` registering
+  `SQLiteNode::kill()` into it at startup instead of `SSignal.cpp` including
+  `SQLiteNode.h` and calling it directly. That would remove the upward
+  `#include` entirely. It stays escalate rather than resolved-locally because
+  confirming it needs to know how `SQLiteNode`'s lifecycle/shutdown actually
+  works today — sqlitecluster's one-line rollup entry doesn't carry that, and
+  Pass B's bounded fan-in means this pass cannot go read `SQLiteNode.cpp` to
+  check. **Suggested split: generic hook API in `libstuff/SSignal`, concrete
+  registration call in `sqlitecluster`** — same shape of fix as
+  `SHTTPSManager`, one layer further out.
 
 **Note on `JSON/`:** its own rollup reports `misfit_count: {high:0, med:2,
 low:3}`, `resolved_locally: 5`, `escalate: []` — every misfit it found was
