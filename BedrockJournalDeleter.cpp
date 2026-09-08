@@ -23,7 +23,6 @@ void BedrockJournalDeleter::wake()
 
 bool BedrockJournalDeleter::isTrimmableState(SQLiteNodeState state)
 {
-    // These are the states we commit in, and a node catching up journals faster than any other.
     return state == SQLiteNodeState::LEADING || state == SQLiteNodeState::FOLLOWING ||
            state == SQLiteNodeState::STANDINGDOWN || state == SQLiteNodeState::SYNCHRONIZING;
 }
@@ -36,8 +35,6 @@ void BedrockJournalDeleter::start(SQLiteNodeState state)
 
     lock_guard<decltype(_lifecycleMutex)> lifecycleLock(_lifecycleMutex);
     if (_thread) {
-        // The thread clears a wake without trimming while the state isn't trimmable, so anything the node journaled
-        // in one of those states is still waiting. Wake it rather than leaving that until the next commit.
         wake();
         return;
     }
