@@ -1,3 +1,32 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SReplaceBench.cpp
+ * Path:    benchmarks/SReplaceBench.cpp
+ *
+ * INTENT
+ *   Self-contained tpunit fixture benchmarking libstuff's SReplace()
+ *   across match-count and find/replace length asymmetries.
+ *
+ * OBJECTS
+ *   SReplaceBench - tpunit::TestFixture + BenchmarkBase; each bench*
+ *       method times SReplace() over a small fixed set of input strings.
+ *       benchNoMatches/benchFewMatches/benchManyMatches - vary how many
+ *           substring matches are found.
+ *       benchLongFind/benchLongReplace - vary whether the find or the
+ *           replace argument is the long string.
+ *       benchShortToLong/benchLongToShort - single-character find vs. a
+ *           long replacement, and the reverse.
+ *   __SReplaceBench - file-scope instance that self-registers the
+ *       fixture with tpunit at static-init time.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Fits repo convention.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/libstuff.h>
 #include "BenchmarkBase.h"
 

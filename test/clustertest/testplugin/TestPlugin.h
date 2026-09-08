@@ -1,3 +1,42 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    TestPlugin.h
+ * Path:    test/clustertest/testplugin/TestPlugin.h
+ * Pair:    TestPlugin.cpp
+ *
+ * INTENT
+ *   Declares a BedrockPlugin loaded only by the cluster-test binary,
+ *   exposing dozens of otherwise-unreachable code paths (slow queries,
+ *   deliberate crashes, HTTPS timeouts, escalation, prepare/commit hooks)
+ *   as commands so clustertest can exercise them from outside the process.
+ *
+ * OBJECTS
+ *   TestHTTPSManager - SHTTPSManager subclass used to issue and inspect
+ *       outbound HTTPS transactions from test commands, including a
+ *       send() that never actually writes to the socket (httpsDontSend)
+ *       so timeout paths can be tested without real network activity.
+ *   BedrockPlugin_TestPlugin - the plugin itself; owns a TestHTTPSManager,
+ *       a background thread that services unreplicated deletes off the
+ *       command path, static cross-command scratch state
+ *       (dataLock/arbitraryData), and hooks for upgradeDatabase,
+ *       stateChanged, onPrepareHandler, and afterCommit counting.
+ *   TestPluginCommand - BedrockCommand subclass whose peek/process/
+ *       postProcess branch on request.methodLine to drive each individual
+ *       test scenario.
+ *
+ * OUT OF PLACE
+ *   Nothing - the whole point of this unit is to be a grab-bag of test
+ *   hooks; that is its stated intent, not an accident.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives under test/clustertest/testplugin alongside the other
+ *   test-only plugin scaffolding.
+ *
+ * NAMING QUALITY
+ *   Mostly consistent with repo convention (_ on private members,
+ *   BedrockPlugin_ prefix matching other plugins). `arbitraryData` and
+ *   `not_special` are self-consciously vague/test-only names, which is
+ *   fine for scratch state but worth flagging as intentionally throwaway.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <condition_variable>
 #include <thread>

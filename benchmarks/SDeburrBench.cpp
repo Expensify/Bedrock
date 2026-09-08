@@ -1,3 +1,33 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SDeburrBench.cpp
+ * Path:    benchmarks/SDeburrBench.cpp
+ *
+ * INTENT
+ *   Self-contained tpunit fixture benchmarking libstuff's
+ *   SDeburr::deburr() (accent/diacritic stripping) across ASCII,
+ *   Latin-1, and mixed-script inputs at normal and high iteration counts.
+ *
+ * OBJECTS
+ *   SDeburrBench - tpunit::TestFixture + BenchmarkBase; each bench*
+ *       method times SDeburr::deburr() over a small fixed set of input
+ *       strings.
+ *       benchShortASCII/benchLatin1/benchMixedLong - vary the character
+ *           set and length of the input.
+ *       benchShortASCIIHigh/benchLatin1High/benchMixedLongHigh - same
+ *           inputs, run at a much higher iteration count to stress
+ *           steady-state throughput.
+ *   __SDeburrBench - file-scope instance that self-registers the
+ *       fixture with tpunit at static-init time.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Fits repo convention.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SDeburr.h>
 #include "BenchmarkBase.h"
 

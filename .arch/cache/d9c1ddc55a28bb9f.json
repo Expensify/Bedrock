@@ -1,0 +1,34 @@
+{
+ "unit": "SRandom",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SRandom.h",
+  "libstuff/SRandom.cpp"
+ ],
+ "lines": 57,
+ "test": false,
+ "intent": "Static-only wrapper around a shared mt19937_64 generator providing the repo's common random-number needs: raw 64-bit values, bounded ranges, random alphanumeric strings, and weighted booleans.",
+ "objects": [
+  {
+   "name": "SRandom",
+   "kind": "class",
+   "role": "all-static utility; rand64/limitedRand64 draw integers, randStr builds an alphanumeric string, randBool does a Bernoulli trial"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "does exactly what it says"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "generic utility, fits libstuff"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent S-prefix and _-member convention"
+ },
+ "depends_on": [],
+ "_src": "b105.json",
+ "hash": "d9c1ddc55a28bb9f"
+}

@@ -1,0 +1,196 @@
+[
+ {
+  "unit": "SQResultFormatter",
+  "dir": "libstuff",
+  "files": ["libstuff/SQResultFormatter.h", "libstuff/SQResultFormatter.cpp"],
+  "lines": 588,
+  "test": false,
+  "intent": "Renders an SQResult into one of six sqlite3-shell-style text formats (column, CSV, tabs, JSON, quote, list) for CLI-style display or export.",
+  "objects": [
+   {"name": "SQResultFormatter::FORMAT", "kind": "enum class", "role": "the six supported output formats"},
+   {"name": "SQResultFormatter::FORMAT_OPTIONS", "kind": "class", "role": "header/nullvalue/separator formatting options bundle"},
+   {"name": "SQResultFormatter", "kind": "class", "role": "static-only dispatcher (format()) plus one formatXXX() renderer per FORMAT value"}
+  ],
+  "misfits": [
+   {"item": "SQResultFormatter::FORMAT_OPTIONS::nullvalue / ::separator", "why": "declared but never read by any formatXXX() implementation - dead configuration surface", "severity": "low", "suggested_home": null},
+   {"item": "utf8Next/isCombining/isWide/displayWidth (local lambdas in formatColumn)", "why": "a generic UTF-8 display-width utility with no dependency on SQResult, trapped as local lambdas instead of being a reusable libstuff string-width helper", "severity": "med", "suggested_home": "libstuff/SString or a new text-width utility unit"}
+  ],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "lives beside SQResult, the type it formats"},
+  "naming_quality": {"score": 3, "note": "FORMAT_OPTIONS uses SCREAMING_CASE, unlike every other nested class/struct in the repo"},
+  "depends_on": ["libstuff/SQResult.h", "libstuff/libstuff.h"]
+ },
+ {
+  "unit": "STCPManager",
+  "dir": "libstuff",
+  "files": ["libstuff/STCPManager.h", "libstuff/STCPManager.cpp"],
+  "lines": 553,
+  "test": false,
+  "intent": "Convenience base providing the poll()-loop state machine (prePoll/postPoll) shared by every TCP-socket-managing class, plus the Socket and Port value types those managers operate on.",
+  "objects": [
+   {"name": "STCPManager", "kind": "struct", "role": "namespace-like holder of static prePoll/postPoll/openPort; no data members of its own by design"},
+   {"name": "STCPManager::Socket", "kind": "class", "role": "per-connection state machine (RESOLVING/CONNECTING/CONNECTED/SHUTTINGDOWN/CLOSED); owns fd, buffers, optional SSL state, async DNS handle"},
+   {"name": "STCPManager::Port", "kind": "class", "role": "RAII wrapper for a listening socket fd and its host string"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "base class for the STCPNode/SQLiteServer hierarchy documented in class_hierarchy.md"},
+  "naming_quality": {"score": 3, "note": "in Socket's protected section, methods are `_`-prefixed but sibling protected data members (sendBuffer, sendRecvMutex, https, dnsResolution, hostToResolve, socketCount) are not"},
+  "depends_on": ["libstuff/libstuff.h", "libstuff/SFastBuffer.h", "libstuff/SResolver.h", "libstuff/SSSLState.h"]
+ },
+ {
+  "unit": "SQResult",
+  "dir": "libstuff",
+  "files": ["libstuff/SQResult.h", "libstuff/SQResult.cpp"],
+  "lines": 389,
+  "test": false,
+  "intent": "In-memory SQLite result set: rows of typed SQValue cells plus a shared header/column-name list, with by-name row access and JSON serialize/deserialize.",
+  "objects": [
+   {"name": "SQResultRow", "kind": "class", "role": "one row; cells addressable by index or by column name via a back-pointer to its owning SQResult"},
+   {"name": "SQResult", "kind": "class", "role": "the result set: headers + rows, iteration, JSON serialize/deserialize, legacy text/JSON serialize wrappers around SQResultFormatter"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 4, "note": "SQResultRow::result (owning-SQResult back-pointer) is a somewhat generic member name, though comments and the friendship make the relationship clear"},
+  "depends_on": ["libstuff/SQValue.h", "libstuff/libstuff.h", "libstuff/SQResultFormatter.h"]
+ },
+ {
+  "unit": "SQliteParameter",
+  "dir": "libstuff",
+  "files": ["libstuff/SQliteParameter.h", "libstuff/SQliteParameter.cpp"],
+  "lines": 174,
+  "test": false,
+  "intent": "A single typed value bindable to a named sqlite3 prepared-statement parameter, with wire-safe serialize/deserialize so bound parameters can travel inside an SData header value.",
+  "objects": [
+   {"name": "SQliteParameter", "kind": "class", "role": "Type enum class (Null/Int64/Double/Text/Blob), public value fields, static factories, serialize/deserialize, and param-name URI encode/decode"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "sits with the other SQLite-adjacent S-types (SQResult, SQValue) in libstuff"},
+  "naming_quality": {"score": 5, "note": "consistent"},
+  "depends_on": ["libstuff/libstuff.h"]
+ },
+ {
+  "unit": "SSocketPool",
+  "dir": "libstuff",
+  "files": ["libstuff/SSocketPool.h", "libstuff/SSocketPool.cpp"],
+  "lines": 168,
+  "test": false,
+  "intent": "Keep-alive connection pool for one host: hands out an existing idle STCPManager::Socket or opens a new one, and closes sockets idle past a timeout via a background thread.",
+  "objects": [
+   {"name": "SSocketPool", "kind": "class", "role": "getSocket()/returnSocket() public API; _timeoutThreadFunc() (prunes expired sockets) and _getAddress() (caches/re-resolves the host address) private helpers"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "a thin pooling layer over STCPManager::Socket, belongs beside it"},
+  "naming_quality": {"score": 5, "note": "consistent `_`-prefixed private members, bare public/const members"},
+  "depends_on": ["libstuff/STCPManager.h"]
+ },
+ {
+  "unit": "SResolver",
+  "dir": "libstuff",
+  "files": ["libstuff/SResolver.h", "libstuff/SResolver.cpp"],
+  "lines": 146,
+  "test": false,
+  "intent": "Asynchronous, poll()-able DNS resolution: SResolve() starts a lookup on a detached thread (or resolves a literal IP inline) and hands back a shared SResolution both sides can safely outlive each other on.",
+  "objects": [
+   {"name": "SResolution", "kind": "class", "role": "PENDING/RESOLVED/FAILED state machine with a self-pipe fd for poll()-based completion notification"},
+   {"name": "SResolve", "kind": "free function", "role": "starts the lookup and returns the shared SResolution"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 5, "note": "consistent `_`-prefixed private members, bare public members/methods"},
+  "depends_on": ["libstuff/libstuff.h"]
+ },
+ {
+  "unit": "SLog",
+  "dir": "libstuff",
+  "files": ["libstuff/SLog.cpp"],
+  "lines": 141,
+  "test": false,
+  "intent": "Global logging support: the process-wide log-level mask, stack-trace dumping for the SLOG macros, and a copy-on-write parameter whitelist that redacts unlisted structured log params.",
+  "objects": [
+   {"name": "_g_SLogMask", "kind": "global var", "role": "atomic log-level bitmask read by the SLOG macros (declared extern in libstuff.h)"},
+   {"name": "GLOBAL_IS_LIVE", "kind": "global var", "role": "when false, an unwhitelisted log param throws instead of being silently redacted"},
+   {"name": "SLogStackTrace", "kind": "function", "role": "dumps the current call stack at a given log level"},
+   {"name": "PARAMS_WHITELIST", "kind": "file-local static", "role": "atomic<shared_ptr<const set<string>>> of allowed structured-log-param names, swapped via CAS"},
+   {"name": "addLogParams", "kind": "function", "role": "appends whitelisted/command-tagged params to a log message, redacting or throwing on the rest"},
+   {"name": "SWhitelistLogParams", "kind": "function", "role": "adds names to PARAMS_WHITELIST"},
+   {"name": "SIsLogParamWhitelisted", "kind": "function", "role": "queries PARAMS_WHITELIST"}
+  ],
+  "misfits": [
+   {"item": "SLog.cpp's public API (SLogStackTrace, SWhitelistLogParams, SIsLogParamWhitelisted, addLogParams)", "why": "declared in the libstuff.h catch-all rather than a dedicated SLog.h, unlike other already-separated libstuff units", "severity": "low", "suggested_home": "libstuff/SLog.h"}
+  ],
+  "name_fit": {"score": 4, "note": "name fits the content but the file has no header of its own"},
+  "location_fit": {"score": 4, "note": "declared in libstuff.h's catch-all rather than a dedicated header"},
+  "naming_quality": {"score": 3, "note": "_g_SLogMask (S-prefixed global marker) and GLOBAL_IS_LIVE (spelled-out global) use two different conventions for the same idea in one file"},
+  "depends_on": ["libstuff/libstuff.h"]
+ },
+ {
+  "unit": "STime",
+  "dir": "libstuff",
+  "files": ["libstuff/STime.cpp"],
+  "lines": 138,
+  "test": false,
+  "intent": "Free functions for libstuff's microsecond-precision timestamp type: now(), format/parse to and from human timestamps, and calendar helpers.",
+  "objects": [
+   {"name": "STimeNow", "kind": "function", "role": "current time in microseconds"},
+   {"name": "STimeThisMorning", "kind": "function", "role": "timestamp for today at 00:00 GMT"},
+   {"name": "SDaysInMonth", "kind": "function", "role": "days in a given month/year"},
+   {"name": "SComposeTime", "kind": "function", "role": "formats a microsecond timestamp via strftime"},
+   {"name": "STimestampToEpoch", "kind": "function", "role": "parses a formatted timestamp to epoch seconds"},
+   {"name": "STimestampMSToEpoch", "kind": "function", "role": "parses a formatted timestamp (with optional fractional seconds) to epoch milliseconds"},
+   {"name": "SToTimeval", "kind": "function", "role": "splits a microsecond timestamp into a timeval"},
+   {"name": "SFirstOfMonth", "kind": "function", "role": "first-of-month date, offset by a number of months"},
+   {"name": "STIMESTAMP_MS", "kind": "function", "role": "formats a microsecond timestamp with millisecond precision"},
+   {"name": "SCURRENT_TIMESTAMP_MS", "kind": "function", "role": "STIMESTAMP_MS(STimeNow())"}
+  ],
+  "misfits": [
+   {"item": "STime.cpp's public API", "why": "declared in the libstuff.h catch-all rather than a dedicated STime.h, unlike other already-separated libstuff units", "severity": "low", "suggested_home": "libstuff/STime.h"}
+  ],
+  "name_fit": {"score": 4, "note": "name fits the content but the file has no header of its own"},
+  "location_fit": {"score": 4, "note": "declared in libstuff.h's catch-all rather than a dedicated header"},
+  "naming_quality": {"score": 3, "note": "STIMESTAMP_MS/SCURRENT_TIMESTAMP_MS use SCREAMING_CASE and read like macros, breaking from the PascalCase-after-S used by the rest of the file (STimeNow, SComposeTime)"},
+  "depends_on": ["libstuff/libstuff.h"]
+ },
+ {
+  "unit": "SFluentdLogger",
+  "dir": "libstuff",
+  "files": ["libstuff/SFluentdLogger.h", "libstuff/SFluentdLogger.cpp"],
+  "lines": 132,
+  "test": false,
+  "intent": "Async, non-blocking log shipper to a Fluentd TCP endpoint: callers push JSON records onto a lock-free ring buffer, a single background thread drains it and forwards to Fluentd, falling back to syslog() on failure.",
+  "objects": [
+   {"name": "FluentdLogRecord", "kind": "struct", "role": "one queued record: syslog priority + JSON payload string"},
+   {"name": "SFluentdLogger", "kind": "class", "role": "log() public API; openSocket/sendAll/senderLoop implementation; inline static instance/tag act as a process-wide singleton handle"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 4, "note": "instance/tag are bare public statics implementing a global singleton, a different pattern from this class's own private instance members (host/port/buffer/senderThread)"},
+  "depends_on": ["libstuff/SRingBuffer.h", "libstuff/SThread.h"]
+ },
+ {
+  "unit": "SRingBuffer",
+  "dir": "libstuff",
+  "files": ["libstuff/SRingBuffer.h"],
+  "lines": 101,
+  "test": false,
+  "intent": "Lock-free, fixed-capacity, multi-producer/single-consumer ring buffer of T, used to hand log records from arbitrary caller threads to SFluentdLogger's sender thread without blocking.",
+  "objects": [
+   {"name": "SRINGBUFFER_DEFAULT_CAPACITY", "kind": "constant", "role": "default slot count (10M)"},
+   {"name": "State", "kind": "enum class", "role": "Empty/Ready/Shutdown slot-occupancy tag"},
+   {"name": "SRingBuffer", "kind": "class template", "role": "push()/pop()/wait()/shutdown() lock-free buffer"},
+   {"name": "SRingBuffer::BufferElement", "kind": "struct", "role": "one slot: a T plus its atomic<State>"}
+  ],
+  "misfits": [
+   {"item": "State", "why": "declared at global scope instead of nested inside SRingBuffer, injecting a generic five-letter name into every translation unit that includes this header", "severity": "low", "suggested_home": null}
+  ],
+  "name_fit": {"score": 5, "note": "fits; a generic buffer, not Fluentd-specific, though it has one caller today"},
+  "location_fit": {"score": 4, "note": "fits, but its only consumer (SFluentdLogger) is the sole reason it lives in libstuff rather than a more general concurrency-utility location"},
+  "naming_quality": {"score": 4, "note": "consistent aside from the unnested, overly-generic State noted above"},
+  "depends_on": []
+ }
+]

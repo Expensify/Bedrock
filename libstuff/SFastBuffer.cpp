@@ -1,3 +1,26 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SFastBuffer.cpp
+ * Path:    libstuff/SFastBuffer.cpp
+ * Pair:    SFastBuffer.h
+ *
+ * INTENT
+ *   Implements SFastBuffer; see the header.
+ *
+ * OBJECTS
+ *   No file-local additions beyond the header's declared API. `append`
+ *   only condenses the buffer back to offset 0 (memmove + optional
+ *   shrink_to_fit) when it would have to reallocate anyway, to amortize cost.
+ *
+ * OUT OF PLACE
+ *   Nothing beyond what's already noted in the header (startsWithHTTPRequest).
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "SFastBuffer.h"
 #include <cstring>
 

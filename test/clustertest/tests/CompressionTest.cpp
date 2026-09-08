@@ -1,3 +1,51 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    CompressionTest.cpp
+ * Path:    test/clustertest/tests/CompressionTest.cpp
+ *
+ * INTENT
+ *   Cluster-level tpunit test fixture verifying zstd journal compression:
+ *   that entries are stored uncompressed before a dictionary is
+ *   configured, compressed and smaller once it is, decompress correctly
+ *   on both compressed and uncompressed nodes, and stay correct once the
+ *   whole cluster restarts with compression enabled.
+ *
+ * OBJECTS
+ *   CompressionTest (struct, extends tpunit::TestFixture) - registers
+ *       testCompressionDisabled, testCompressionEnabled, and
+ *       testAllNodesCompressed, run in that order against one shared
+ *       three-node cluster.
+ *   CompressionTest::setup/teardown - reads test/sample_data/journal.dict,
+ *       hex-encodes it into a seed INSERT for the zstdDictionaries table,
+ *       and starts/stops the cluster.
+ *   CompressionTest::readDictionaryFile - loads the dictionary fixture
+ *       file, trying two relative paths depending on working directory.
+ *   CompressionTest::generateLongQuery - builds a large multi-row INSERT
+ *       to produce journal entries big enough for compression to matter.
+ *   CompressionTest::queryServer/getCommitCount/queryJournal/
+ *       readRawJournalEntrySize/readDecompressedJournalEntry - helpers
+ *       that round-trip Query/Status commands through a node and parse
+ *       their JSON responses.
+ *   CompressionTest::testCompressionDisabled - writes with no dictionary
+ *       configured and confirms raw and decompressed journal content
+ *       both equal the original query, on leader and a synced follower.
+ *   CompressionTest::testCompressionEnabled - restarts the leader with
+ *       -journalZstdDictionaryID set, confirms its journal entry is
+ *       smaller than the original and still decompresses correctly, and
+ *       that a follower without the flag still decompresses fine.
+ *   CompressionTest::testAllNodesCompressed - restarts all three nodes
+ *       with the dictionary flag and confirms compression, decompression,
+ *       row content, and total row count agree across the whole cluster.
+ *
+ * OUT OF PLACE
+ *   Nothing - all methods serve verifying journal compression end to end.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; a cluster-level feature test under test/clustertest/tests.
+ *
+ * NAMING QUALITY
+ *   Consistent and descriptive; helper names match what they return
+ *   (readRawJournalEntrySize vs. readDecompressedJournalEntry).
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <fstream>
 
 #include <libstuff/SData.h>

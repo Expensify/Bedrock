@@ -1,0 +1,65 @@
+{
+ "unit": "Compression",
+ "dir": "plugins",
+ "files": [
+  "plugins/Compression.h",
+  "plugins/Compression.cpp"
+ ],
+ "lines": 414,
+ "test": false,
+ "intent": "A Bedrock plugin that registers zstd-dictionary-based compress()/decompress() SQLite user-defined functions, using dictionaries loaded once at startup from a dedicated DB table, plus equivalent static helpers for non-SQL callers.",
+ "objects": [
+  {
+   "name": "BedrockPlugin_Compression",
+   "kind": "class",
+   "role": "loads dictionaries at startup, creates the zstdDictionaries table, registers the SQLite UDFs, and exposes compress()/decompress(); has no BedrockCommand of its own"
+  },
+  {
+   "name": "BedrockPlugin_Compression::ZDictionaries",
+   "kind": "private struct",
+   "role": "pairs one dictionary ID's compiled ZSTD_CDict* and ZSTD_DDict*"
+  },
+  {
+   "name": "BedrockPlugin_Compression::_dictionaries",
+   "kind": "private static member",
+   "role": "map of dictionary ID to ZDictionaries, populated once at startup"
+  },
+  {
+   "name": "BedrockPlugin_Compression::COMPRESSION_LEVEL",
+   "kind": "static constexpr",
+   "role": "zstd level used for all dictionary-based compression"
+  },
+  {
+   "name": "sqliteCompress",
+   "kind": "file-local static function (.cpp)",
+   "role": "the compress(data, dictionaryID) SQLite UDF callback"
+  },
+  {
+   "name": "sqliteDecompress",
+   "kind": "file-local static function (.cpp)",
+   "role": "the decompress(data) SQLite UDF callback"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "clearly the compression plugin"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "plugins/ alongside other BedrockPlugin_* implementations"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent BedrockPlugin_<Name>/_ prefix conventions"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "BedrockPlugin.h",
+  "BedrockServer.h",
+  "libstuff/SQResult.h",
+  "libstuff/sqlite3.h"
+ ],
+ "_src": "b109.json",
+ "hash": "ae5530d534aa1b78"
+}

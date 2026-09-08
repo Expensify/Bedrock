@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SSocketPool.h
+ * Path:    libstuff/SSocketPool.h
+ * Pair:    SSocketPool.cpp
+ *
+ * INTENT
+ *   Keep-alive connection pool for one host: hands out an existing idle
+ *   STCPManager::Socket or opens a new one, and closes sockets that sit idle past a
+ *   timeout via a dedicated background thread.
+ *
+ * OBJECTS
+ *   SSocketPool - getSocket()/returnSocket() public API; _timeoutThreadFunc() (runs on
+ *     its own thread, prunes expired sockets) and _getAddress() (caches the resolved
+ *     address for `host`, re-resolving after addressTimeout) private helpers.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; a thin pooling layer over STCPManager::Socket, so it belongs beside it.
+ *
+ * NAMING QUALITY
+ *   Consistent: `_`-prefixed private members/methods, bare public/const members.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 #include <libstuff/STCPManager.h>
 #include <chrono>

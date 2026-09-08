@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SIsValidSQLiteDateModifierTest.cpp
+ * Path:    test/tests/SIsValidSQLiteDateModifierTest.cpp
+ *
+ * INTENT
+ *   Unit tests for the libstuff free function SIsValidSQLiteDateModifier,
+ *   which validates strings like "+1 DAY" / "-999 SECONDS" for use as
+ *   SQLite date modifiers.
+ *
+ * OBJECTS
+ *   SIsValidSQLiteDateModifierTest  - tpunit::TestFixture; a single test
+ *                                     sweeping +/-1, +/-999 (singular and
+ *                                     plural units) across every
+ *                                     timeframe, plus the digit-count caps
+ *                                     (8 digits allowed for SECONDS, 3 for
+ *                                     everything else).
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: named for and scoped to exactly the one function it tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling fixtures.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/libstuff.h>
 #include <test/lib/tpunit++.hpp>
 

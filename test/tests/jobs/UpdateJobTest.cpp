@@ -1,3 +1,31 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    UpdateJobTest.cpp
+ * Path:    test/tests/jobs/UpdateJobTest.cpp
+ *
+ * INTENT
+ *   tpunit fixture exercising the Jobs plugin's `UpdateJob` command:
+ *   updating data/repeat/priority/nextRun, preserving numeric-looking
+ *   string values in the JSON data field, updating mocked jobs, and
+ *   clearing `repeat` via `shouldClearRepeat`.
+ *
+ * OBJECTS
+ *   UpdateJobTest          - tpunit::TestFixture; one BedrockTester per class,
+ *                            each test creates a job, calls UpdateJob, then
+ *                            reads the DB row back to verify the change.
+ *   __UpdateJobTest        - static instance that registers the fixture.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives with the other per-command Jobs plugin tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling job tests. Note this fixture has no tearDown
+ *   between tests (only tearDownClass) [CANDIDATE], unlike most siblings
+ *   which reset the jobs table after every test.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>

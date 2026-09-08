@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    WriteLocalUnreplicatedClusterTest.cpp
+ * Path:    test/clustertest/tests/WriteLocalUnreplicatedClusterTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying that a write issued through the test plugin's
+ *   "writeLocalUnreplicated" path commits on the leader without ever being
+ *   journaled or shipped to followers, while the cluster's normal replicated
+ *   commits keep working before and after.
+ *
+ * OBJECTS
+ *   WriteLocalUnreplicatedClusterTest              - tpunit fixture; brings up a default (3-node)
+ *                                                     cluster and runs the single test below.
+ *   WriteLocalUnreplicatedClusterTest::countRowsWithID - helper, counts rows in `test` matching an id on one node.
+ *   WriteLocalUnreplicatedClusterTest::doesNotReachPeers - the test: deletes a row unreplicated on the leader and
+ *                                                     confirms it survives on the follower.
+ *   __WriteLocalUnreplicatedClusterTest            - static instance that registers the fixture with tpunit.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives alongside the other clustertest cases it resembles.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test files in this directory.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/clustertest/BedrockClusterTester.h>

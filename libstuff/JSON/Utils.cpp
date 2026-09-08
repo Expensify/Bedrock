@@ -1,3 +1,27 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Utils.cpp
+ * Path:    libstuff/JSON/Utils.cpp
+ * Pair:    Utils.h
+ *
+ * INTENT
+ *   Implements JSON::Utils; see Utils.h.
+ *
+ * OBJECTS
+ *   Utils (impl) - implements every method declared in Utils.h. No
+ *   file-local helpers or statics beyond the declared static members.
+ *   sanitizeJSONStringForTransport hand-rolls a byte-by-byte UTF-8
+ *   validator/control-byte stripper rather than using a library.
+ *
+ * OUT OF PLACE
+ *   Nothing beyond what Utils.h already flags (recursiveReplaceJSONKeys).
+ *
+ * NAME/LOCATION FIT
+ *   Fits; pairs with Utils.h.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "Utils.h"
 
 using namespace std;

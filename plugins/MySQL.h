@@ -1,3 +1,53 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    MySQL.h
+ * Path:    plugins/MySQL.h
+ * Pair:    MySQL.cpp
+ *
+ * INTENT
+ *   Declares a Bedrock plugin that impersonates a MySQL server on the wire so
+ *   unmodified MySQL clients (and tools such as Alteryx) can talk to a
+ *   Bedrock/SQLite node. It owns its own TCP port and protocol framing rather
+ *   than routing through the normal BedrockCommand pipeline.
+ *
+ * OBJECTS
+ *   MySQLUtils (namespace)          - free functions that recognize and pick
+ *                                      apart specific client query shapes
+ *                                      (VERSION(), CONNECTION_ID(),
+ *                                      information_schema.*, SHOW KEYS FROM,
+ *                                      foreign-key introspection) so they can
+ *                                      be rewritten into SQLite equivalents.
+ *   MySQLPacket        - encodes/decodes the MySQL wire-protocol packet
+ *                         header+payload framing; builds handshake, OK, ERR,
+ *                         and tabular query-response packets.
+ *   BedrockPlugin_MySQL - the plugin itself: opens the MySQL-protocol port,
+ *                         accepts raw client requests, translates recognized
+ *                         queries into internal "Query" commands (or answers
+ *                         them directly), and converts the DB response back
+ *                         into MySQL wire format. getCommand() always returns
+ *                         null: this plugin has no BedrockCommand of its own.
+ *   MYSQL_NUM_VARIABLES (macro)     - element count of g_MySQLVariables.
+ *   g_MySQLVariables (extern)       - table of fake MySQL server variables
+ *                                      returned for SHOW VARIABLES / @@var.
+ *
+ * OUT OF PLACE
+ *   g_MySQLVariables [CANDIDATE] - a ~300-row hardcoded table of fake AWS-RDS
+ *   MySQL server variables/values. It is pure static data, not protocol
+ *   logic, and its bulk dominates this header/cpp; it would read better as a
+ *   generated or external data file than as a C++ array declared alongside
+ *   the plugin's actual behavior.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: it is the MySQL-protocol plugin, filed under plugins/ alongside
+ *   the other BedrockPlugin_* implementations.
+ *
+ * NAMING QUALITY
+ *   Consistent with repo convention: BedrockPlugin_<Name> for the plugin
+ *   class, g_ prefix for the extern global. mysqlVersion (lowerCamel
+ *   constexpr member) sits next to MYSQL_NUM_VARIABLES (a macro) and
+ *   g_MySQLVariables (a global) — three different naming registers for
+ *   related "MySQL protocol constant" concepts, but each follows its own
+ *   category's convention correctly.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <libstuff/libstuff.h>
 #include <BedrockPlugin.h>

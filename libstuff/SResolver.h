@@ -1,3 +1,29 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SResolver.h
+ * Path:    libstuff/SResolver.h
+ * Pair:    SResolver.cpp
+ *
+ * INTENT
+ *   Asynchronous, poll()-able DNS resolution: SResolve() starts a lookup on a detached
+ *   thread (or resolves a literal IP inline) and hands back a shared SResolution that
+ *   both sides can safely outlive each other on.
+ *
+ * OBJECTS
+ *   SResolution - PENDING/RESOLVED/FAILED state machine; a self-pipe (getFD()) that
+ *     becomes readable on completion; getAddr() valid once RESOLVED; complete() is
+ *     called exactly once, from the resolving thread.
+ *   SResolve()  - free function; starts the lookup and returns the SResolution.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent: `_`-prefixed private members, bare public members/methods.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 #include <atomic>
 #include <memory>

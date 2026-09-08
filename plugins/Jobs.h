@@ -1,3 +1,35 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Jobs.h
+ * Path:    plugins/Jobs.h
+ * Pair:    Jobs.cpp
+ *
+ * INTENT
+ *   Declares the Bedrock plugin that turns a "jobs" table into a scheduled,
+ *   priority-ordered work queue: workers dequeue with GetJob(s), report
+ *   progress with UpdateJob, and finish/retry/fail/cancel/delete jobs, with
+ *   optional parent/child job chains and calendar-style repeat schedules.
+ *
+ * OBJECTS
+ *   BedrockPlugin_Jobs         - Plugin entry point; owns the jobs table schema (upgradeDatabase), the set of
+ *                                supported verbs, and an in-memory GLOB-pattern blacklist ("crashed" jobs) that
+ *                                is synced to peers on login and surfaced via getInfo.
+ *   BedrockJobsCommand         - BedrockCommand subclass that implements peek/process for every Jobs verb.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] MAX_SIZE_NAME's comment ("...around 50 job names") and the crashed-job blacklist plumbing
+ *   (getCrashedBedrockJobPatterns, onNodeLogin, _crashedBedrockJobPattern*) describe an operational kill-switch
+ *   feature layered onto a generic job-queue interface; not wrong, but it is a distinct concern from job
+ *   CRUD/scheduling and could be its own small plugin-facing component.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: a job-queue plugin named Jobs.h living in plugins/ alongside the repo's other BedrockPlugin
+ *   implementations (Cache, Compression, DB, MySQL).
+ *
+ * NAMING QUALITY
+ *   Mostly consistent with repo convention (_ prefix on private members, S-prefixed shared types). One gap:
+ *   BedrockJobsCommand::mockRequest and ::canEscalateImmediately are private but lack the _ prefix used by the
+ *   class's other private members (_hasPendingChildJobs, _validatePriority, etc.).
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <libstuff/libstuff.h>
 #include "../BedrockPlugin.h"

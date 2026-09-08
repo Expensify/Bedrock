@@ -1,3 +1,25 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SResolver.cpp
+ * Path:    libstuff/SResolver.cpp
+ * Pair:    SResolver.h
+ *
+ * INTENT
+ *   Implementation of SResolution's pipe-based completion notification and SResolve()'s
+ *   literal-IP fast path / detached-thread lookup.
+ *
+ * OBJECTS
+ *   No file-local helpers; all functions implement declarations from SResolver.h.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "SResolver.h"
 
 #include <cstring>

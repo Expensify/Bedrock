@@ -1,5 +1,41 @@
 [
  {
+  "unit": "SQResultFormatter",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SQResultFormatter.h",
+   "libstuff/SQResultFormatter.cpp"
+  ],
+  "kind": "pair",
+  "lines": 588,
+  "test": false,
+  "hash": "4a8f3c63c61a6b47"
+ },
+ {
+  "unit": "STCPManager",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/STCPManager.h",
+   "libstuff/STCPManager.cpp"
+  ],
+  "kind": "pair",
+  "lines": 553,
+  "test": false,
+  "hash": "57ce8bc3df036605"
+ },
+ {
+  "unit": "SQResult",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SQResult.h",
+   "libstuff/SQResult.cpp"
+  ],
+  "kind": "pair",
+  "lines": 389,
+  "test": false,
+  "hash": "c35b59138d2806b1"
+ },
+ {
   "unit": "SQliteParameter",
   "dir": "libstuff",
   "files": [
@@ -79,76 +115,5 @@
   "lines": 101,
   "test": false,
   "hash": "045ab57d37d01200"
- },
- {
-  "unit": "SPerformanceTimer",
-  "dir": "libstuff",
-  "files": [
-   "libstuff/SPerformanceTimer.h",
-   "libstuff/SPerformanceTimer.cpp"
-  ],
-  "kind": "pair",
-  "lines": 77,
-  "test": false,
-  "hash": "38a2f8eac563d048"
- },
- {
-  "unit": "AutoTimer",
-  "dir": "libstuff",
-  "files": [
-   "libstuff/AutoTimer.h",
-   "libstuff/AutoTimer.cpp"
-  ],
-  "kind": "pair",
-  "lines": 66,
-  "test": false,
-  "hash": "9db0b7d7bcbda010"
- },
- {
-  "unit": "SThread",
-  "dir": "libstuff",
-  "files": [
-   "libstuff/SThread.h"
-  ],
-  "kind": "single",
-  "lines": 66,
-  "test": false,
-  "hash": "a90c13e05dd5cfae"
- },
- {
-  "unit": "SRandom",
-  "dir": "libstuff",
-  "files": [
-   "libstuff/SRandom.h",
-   "libstuff/SRandom.cpp"
-  ],
-  "kind": "pair",
-  "lines": 57,
-  "test": false,
-  "hash": "d9c1ddc55a28bb9f"
- },
- {
-  "unit": "SMultiHostSocketPool",
-  "dir": "libstuff",
-  "files": [
-   "libstuff/SMultiHostSocketPool.h",
-   "libstuff/SMultiHostSocketPool.cpp"
-  ],
-  "kind": "pair",
-  "lines": 48,
-  "test": false,
-  "hash": "92b5adc96213def9"
- },
- {
-  "unit": "AutoScopeOnPrepare",
-  "dir": "libstuff",
-  "files": [
-   "libstuff/AutoScopeOnPrepare.h",
-   "libstuff/AutoScopeOnPrepare.cpp"
-  ],
-  "kind": "pair",
-  "lines": 33,
-  "test": false,
-  "hash": "10183823cd6c81c1"
  }
 ]

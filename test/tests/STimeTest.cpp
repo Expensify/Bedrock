@@ -1,3 +1,29 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    STimeTest.cpp
+ * Path:    test/tests/STimeTest.cpp
+ *
+ * INTENT
+ *   Unit tests for the libstuff free functions STimestampToEpoch and
+ *   STimestampMSToEpoch, which parse a strftime-style format string plus
+ *   a timestamp string (with or without fractional seconds) into a Unix
+ *   epoch value.
+ *
+ * OBJECTS
+ *   STimeTest  - tpunit::TestFixture; testSTimestampToEpoch checks whole
+ *                seconds against known epoch values, testSTimestampMSToEpoch
+ *                checks millisecond-resolution values with varying
+ *                fractional-second widths.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: named for and scoped to the STime* helpers it tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling fixtures.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/libstuff.h>
 #include <test/lib/BedrockTester.h>
 

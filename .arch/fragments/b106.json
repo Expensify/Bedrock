@@ -1,0 +1,35 @@
+[
+ {
+  "unit": "Value",
+  "dir": "libstuff/JSON",
+  "files": ["libstuff/JSON/Value.h", "libstuff/JSON/Value.cpp"],
+  "lines": 2630,
+  "test": false,
+  "intent": "Declares and implements JSON::Value, Bedrock's in-memory JSON document node (scalar, array, or object), including its exception hierarchy and small helper types for building and iterating it.",
+  "objects": [
+    {"name": "JSON::Error", "kind": "class", "role": "base exception for JSON errors; captures a stack trace via SException"},
+    {"name": "JSON::TypeError", "kind": "class", "role": "thrown when a Value is accessed/cast as the wrong ValueType"},
+    {"name": "JSON::NotFound", "kind": "class", "role": "thrown when a keyed or indexed member does not exist"},
+    {"name": "JSON::InvalidArgument", "kind": "class", "role": "thrown for malformed caller input, e.g. a non-numeric path key"},
+    {"name": "JSON::ValueType", "kind": "enum", "role": "discriminates which kind of JSON node a Value currently holds"},
+    {"name": "JSON::Value", "kind": "class", "role": "tagged-union JSON node: scalar storage plus shared_ptr-backed object/array storage and all accessors/mutators"},
+    {"name": "JSON::KeyValue", "kind": "class", "role": "move-only key/value pair used to build a Value object from an initializer_list"},
+    {"name": "JSON::_ArrayValue<T>", "kind": "class template", "role": "adapter giving a Value's array begin()/end() for range-based for loops"},
+    {"name": "JSON::_ObjectValue<T>", "kind": "class template", "role": "adapter giving a Value's object begin()/end() for range-based for loops"},
+    {"name": "JSON::ArrayValue / ConstArrayValue", "kind": "typedef", "role": "_ArrayValue<Value> / _ArrayValue<const Value>"},
+    {"name": "JSON::ObjectValue / ConstObjectValue", "kind": "typedef", "role": "_ObjectValue<Value> / _ObjectValue<const Value>"},
+    {"name": "JSON::logStackTraceOnEnsureTypeFailure", "kind": "global", "role": "thread_local debug flag toggling stack-trace logging on ensureType() failure"},
+    {"name": "operator<<(ostream&, const Value&)", "kind": "function", "role": "serializes a Value to a stream"}
+  ],
+  "misfits": [
+    {"item": "JSON::logStackTraceOnEnsureTypeFailure", "why": "mutable global-ish thread_local debug/diagnostics toggle declared inline in the core value-type header; reads like a logging switch, not part of the JSON data model", "severity": "low", "suggested_home": null},
+    {"item": "Value::mergeDeep(useSQLiteMergeBehavior)", "why": "a generic JSON value type's merge API names a specific downstream consumer (SQLite) in its parameter; the behavior it selects is really just RFC 7386 JSON Merge Patch semantics", "severity": "med", "suggested_home": null},
+    {"item": "Value::startTime / Value::logSlowConstructor", "why": "constructor-timing instrumentation adds a chrono::time_point member to every Value instance, even scalars that never touch it, purely to detect occasional slow map/vector-based construction", "severity": "low", "suggested_home": null},
+    {"item": "friend class SAXHandler", "why": "grants SAXHandler direct access to Value's private storage for fast construction; the source comment itself calls this out as 'Coupling++'", "severity": "low", "suggested_home": null}
+  ],
+  "name_fit": {"score": 3, "note": "core type is JSON::Value, but the file also carries the exception hierarchy, KeyValue, and the array/object range adapters, none named after Value"},
+  "location_fit": {"score": 5, "note": "sits correctly alongside Parser, Writer, SAXHandler, and Utils in libstuff/JSON"},
+  "naming_quality": {"score": 3, "note": "public API is descriptive and consistent; private members lack the repo's `_` prefix convention, and intValue/uintValue are two easily-confused fields disambiguated only by usingUnsigned"},
+  "depends_on": ["libstuff/libstuff.h", "libstuff/JSON/Writer.h", "libstuff/JSON/Parser.h", "libstuff/JSON/Utils.h"]
+ }
+]

@@ -1,0 +1,47 @@
+{
+ "unit": "SHTTPSProxySocket",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SHTTPSProxySocket.h",
+  "libstuff/SHTTPSProxySocket.cpp"
+ ],
+ "lines": 176,
+ "test": false,
+ "intent": "An STCPManager::Socket that negotiates an HTTP CONNECT tunnel through an HTTPS forward proxy, then switches to a normal TLS connection to the real destination once the tunnel is established.",
+ "objects": [
+  {
+   "name": "SHTTPSProxySocket",
+   "kind": "class (extends STCPManager::Socket)",
+   "role": "proxyAddress/hostname/requestID; proxyNegotiationComplete/filledPreSendBuffer flags; preSendBuffer (CONNECT request); overrides send/recv"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "private members proxyAddress, hostname, requestID, proxyNegotiationComplete, filledPreSendBuffer, preSendBuffer",
+   "why": "lack the repo's `_` prefix convention for private members, used elsewhere in this same batch (e.g. SStandaloneHTTPSManager's _pem, SSynchronizedQueue's _queue)",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "natural peer of STCPManager/SSSLState"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "unprefixed private members inconsistent with local convention"
+ },
+ "depends_on": [
+  "libstuff/SFastBuffer.h",
+  "libstuff/STCPManager.h",
+  "libstuff/SData.h",
+  "libstuff/libstuff.h",
+  "libstuff/SSSLState.h"
+ ],
+ "_src": "b005.json",
+ "hash": "ca34eddf5d9751c3"
+}

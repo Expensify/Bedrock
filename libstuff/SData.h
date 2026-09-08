@@ -1,3 +1,31 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SData.h
+ * Path:    libstuff/SData.h
+ * Pair:    SData.cpp
+ *
+ * INTENT
+ *   A generic HTTP-like message: a method line, a name/value header table,
+ *   and a content body. Used both for real HTTP messages and as Bedrock's
+ *   internal command/message wire format.
+ *
+ * OBJECTS
+ *   SData (struct)              - methodLine, nameValueMap (STable), content;
+ *                                 map-like operator[]/emplace/set/erase/merge;
+ *                                 calc/calc64/calcU64/test accessors; getVerb;
+ *                                 serialize/deserialize to and from HTTP wire format.
+ *   operator<<(ostream&, const SData&) - inline stream helper, serializes.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; sits naturally beside SFastBuffer/STable in libstuff.
+ *
+ * NAMING QUALITY
+ *   Consistent with repo convention. `create()` is marked **DEPRECATED** in
+ *   the doc comment but still present as public API - dead-ish legacy method.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 #include <string>
 

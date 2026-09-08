@@ -1,0 +1,76 @@
+{
+ "unit": "Cache",
+ "dir": "plugins",
+ "files": [
+  "plugins/Cache.h",
+  "plugins/Cache.cpp"
+ ],
+ "lines": 374,
+ "test": false,
+ "intent": "A Bedrock plugin implementing a simple named-blob cache backed by a `cache` SQLite table with a trigger-maintained running size, paired with an in-memory LRU tracker used to decide what to evict, exposed via ReadCache/WriteCache.",
+ "objects": [
+  {
+   "name": "BedrockPlugin_Cache",
+   "kind": "class",
+   "role": "the plugin; owns the configured max cache size and LRU tracker, creates the cache/cacheSize tables and triggers"
+  },
+  {
+   "name": "BedrockPlugin_Cache::LRUMap",
+   "kind": "nested class",
+   "role": "mutex-protected least-recently-used tracker keyed by name, backed by a list plus a map"
+  },
+  {
+   "name": "BedrockPlugin_Cache::LRUMap::Entry",
+   "kind": "private nested struct",
+   "role": "one tracked key, holding iterators into both the list and map for O(1) removal"
+  },
+  {
+   "name": "BedrockPlugin_Cache::initCacheSize",
+   "kind": "static method",
+   "role": "parses a size string like '16GB' into a byte count, defaulting to 16GB"
+  },
+  {
+   "name": "BedrockPlugin_Cache::supportedRequestVerbs",
+   "kind": "static member",
+   "role": "the verb set this plugin answers to (ReadCache, WriteCache)"
+  },
+  {
+   "name": "BedrockCacheCommand",
+   "kind": "class",
+   "role": "BedrockCommand implementing peek() (ReadCache) and process() (WriteCache)"
+  },
+  {
+   "name": "BedrockCacheCommand::plugin",
+   "kind": "private inline method",
+   "role": "casts the base command's plugin pointer back to BedrockPlugin_Cache&"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "BedrockPlugin_Cache::LRUMap",
+   "why": "a fully generic string-keyed LRU tracker with no cache-plugin-specific logic, nested privately inside one plugin instead of being a reusable libstuff container",
+   "severity": "low",
+   "suggested_home": "libstuff (e.g. a generic SLRUMap/SLRUCache container)"
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "clearly the cache plugin"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "plugins/ alongside other BedrockPlugin_* implementations"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "_maxCacheSize and _lruMap use the underscore-prefix convention for private members but are declared in the class's public: section with no private: reset, so they are actually public despite the naming"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "BedrockPlugin.h",
+  "BedrockServer.h",
+  "libstuff/SQResult.h"
+ ],
+ "_src": "b109.json",
+ "hash": "c5e3f4f412fed421"
+}

@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    ReadTest.cpp
+ * Path:    test/tests/ReadTest.cpp
+ *
+ * INTENT
+ *   Smoke tests for bedrock's "Query" command handling a plain read-only
+ *   SELECT: with and without an HTTP method line, and confirming a query
+ *   missing its trailing semicolon is rejected.
+ *
+ * OBJECTS
+ *   ReadTest  - tpunit::TestFixture; simpleRead/simpleReadWithHttp run
+ *               "SELECT 1;" through a fresh BedrockTester and check the
+ *               returned value; readNoSemicolon checks the 502 rejection
+ *               of a malformed query.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   "ReadTest" is a generic name for what is specifically a Query-command
+ *   test; fits its location among other single-command tests in
+ *   test/tests but the name gives little hint that it's about Query.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling fixtures.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 

@@ -1,3 +1,29 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    CreateJobTest.cpp
+ * Path:    test/tests/jobs/CreateJobTest.cpp
+ *
+ * INTENT
+ *   tpunit fixture exercising the Jobs plugin's `CreateJob` command: field
+ *   defaults, priority/data/repeat handling, unique-job merge/overwrite
+ *   semantics, parent/child validity rules, and the retryAfter lifecycle
+ *   (RUNQUEUED requeue timing, retryAfterCount bookkeeping).
+ *
+ * OBJECTS
+ *   CreateJobTest         - tpunit::TestFixture; one BedrockTester per class,
+ *                           each test creates/queries jobs then asserts DB state.
+ *   __CreateJobTest        - static instance that registers the fixture.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives with the other per-command Jobs plugin tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling job tests (setupClass/tearDown/tearDownClass,
+ *   `__ClassName` instance convention).
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <iostream>
 #include <unistd.h>
 

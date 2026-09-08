@@ -1,3 +1,51 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockCommand.h
+ * Path:    BedrockCommand.h
+ * Pair:    BedrockCommand.cpp
+ *
+ * INTENT
+ *   Represents a single client request as it moves through Bedrock's
+ *   prePeek/peek/process/postProcess pipeline. Extends SQLiteCommand with
+ *   plugin ownership, HTTPS sub-request tracking, per-phase timing, timeout
+ *   policy, and crash-diagnostic state consumed by BedrockCore and the
+ *   command queues.
+ *
+ * OBJECTS
+ *   BedrockCommand              - class; the per-request unit of work. Virtual
+ *                                  prePeek/peek/process/postProcess hooks that
+ *                                  plugins override, plus HTTPS request
+ *                                  lifecycle, timing, and timeout bookkeeping.
+ *   BedrockCommand::TIMING_INFO - enum; phase labels for timing samples,
+ *                                  including "BLOCKING_*" variants recorded
+ *                                  on the blocking commit thread.
+ *   BedrockCommand::STAGE       - enum class; which pipeline stage reset()
+ *                                  is being invoked for.
+ *   BedrockCommand::GrowOnlyList<T> - nested template; append-only wrapper
+ *                                  around list<T> (no erase), used to hold
+ *                                  httpsRequests so iterators stay stable.
+ *   BedrockCommand::CrashMap    - nested class (public map<string, SString>);
+ *                                  a subset of request name/value pairs used
+ *                                  to fingerprint commands that may have
+ *                                  caused a server crash.
+ *
+ * OUT OF PLACE
+ *   GrowOnlyList is a generic, command-agnostic container template defined
+ *   inline inside BedrockCommand [CANDIDATE] - it has no dependency on
+ *   BedrockCommand and would fit better as a reusable libstuff utility.
+ *   getMethodName()'s special-casing of a "returnValueList" suffix is
+ *   documented in-code as a hack for one legacy plugin format [CANDIDATE] -
+ *   plugin-specific naming logic living in the generic base command class.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: top-level location alongside BedrockCore/BedrockServer matches the
+ *   repo's convention for core command-pipeline types.
+ *
+ * NAMING QUALITY
+ *   Mostly consistent (`_` on non-public members, `S`-prefixed shared types
+ *   used correctly). TIMING_INFO is a plain (unscoped) enum sitting right
+ *   next to STAGE, which correctly uses `enum class` - an inconsistent
+ *   choice between two sibling enums in the same class.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <libstuff/SHTTPSManager.h>
 #include <sqlitecluster/SQLiteCommand.h>

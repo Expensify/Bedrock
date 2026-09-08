@@ -1,0 +1,41 @@
+{
+ "unit": "SResolver",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SResolver.h",
+  "libstuff/SResolver.cpp"
+ ],
+ "lines": 146,
+ "test": false,
+ "intent": "Asynchronous, poll()-able DNS resolution: SResolve() starts a lookup on a detached thread (or resolves a literal IP inline) and hands back a shared SResolution both sides can safely outlive each other on.",
+ "objects": [
+  {
+   "name": "SResolution",
+   "kind": "class",
+   "role": "PENDING/RESOLVED/FAILED state machine with a self-pipe fd for poll()-based completion notification"
+  },
+  {
+   "name": "SResolve",
+   "kind": "free function",
+   "role": "starts the lookup and returns the shared SResolution"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent `_`-prefixed private members, bare public members/methods"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b104.json",
+ "hash": "45fd3518f2c147d3"
+}

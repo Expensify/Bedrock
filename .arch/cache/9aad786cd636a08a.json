@@ -1,0 +1,47 @@
+{
+ "unit": "BedrockCommandQueue",
+ "dir": "",
+ "files": [
+  "BedrockCommandQueue.h",
+  "BedrockCommandQueue.cpp"
+ ],
+ "lines": 315,
+ "test": false,
+ "intent": "A thread-safe, time-ordered queue of BedrockCommands keyed by scheduled time and timeout, from which worker threads block-and-wait for the next command that is either already timed out or due to run.",
+ "objects": [
+  {
+   "name": "BedrockCommandQueue",
+   "kind": "class",
+   "role": "push/get/_dequeue, the timed-out-vs-scheduled ordering rule, and empty/size/clear/getAll queries"
+  },
+  {
+   "name": "BedrockCommandQueue::timeout_error",
+   "kind": "nested exception class",
+   "role": "thrown by get() when its wait window elapses with nothing available"
+  },
+  {
+   "name": "BedrockCommandQueue::ItemTimeoutPair",
+   "kind": "protected nested struct",
+   "role": "pairs a queued command with its timeout for the parallel _lookupByTimeout index"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "Timeout and Scheduled are both bare uint64_t typedefs, mutually assignable with nothing at the type level stopping one being passed where the other is expected"
+ },
+ "depends_on": [
+  "BedrockCommand.h",
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b101.json",
+ "hash": "9aad786cd636a08a"
+}

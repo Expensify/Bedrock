@@ -1,3 +1,36 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SSLTest.cpp
+ * Path:    test/tests/SSLTest.cpp
+ *
+ * INTENT
+ *   Integration tests for outbound HTTPS handling: that a bedrock node
+ *   can proxy a "sendrequest" command to a real external site over TLS
+ *   (and correctly reports failure for an unresolvable host), and that
+ *   SStandaloneHTTPSManager/SHTTPSProxySocket can drive a request through
+ *   an HTTP CONNECT-style proxy to completion.
+ *
+ * OBJECTS
+ *   SSLTest  - tpunit::TestFixture; `test` spins up a BedrockTester with
+ *              the clustertest test plugin and issues passthrough requests
+ *              to google.com and a deliberately-fake host; `proxyTest`
+ *              builds an SStandaloneHTTPSManager::Transaction directly,
+ *              attaches an SHTTPSProxySocket pointed at a local squid
+ *              proxy, and hand-pumps prePoll/postPoll until a response
+ *              arrives.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: an SSL/HTTPS-focused test alongside the other command/protocol
+ *   tests in test/tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling fixtures. `proxyTest` depends on a local
+ *   squid install (noted in-code as unavailable on GitHub Actions), which
+ *   is an environment fragility rather than a naming issue.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "libstuff/SHTTPSManager.h"
 #include "libstuff/STCPManager.h"
 #include "test/lib/tpunit++.hpp"

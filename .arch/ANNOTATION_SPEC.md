@@ -20,8 +20,24 @@ You will be given a list of units. For each one you must do TWO things:
   and before the code.
 - Do **not** modify any other line of the file. No reformatting, no reordering
   includes, no fixing what you find. You are annotating, not refactoring.
-- Never break compilation. The block is a `/* ... */` comment; make sure you do
-  not nest `*/` inside it.
+- Never break compilation. The block is a `/* ... */` comment.
+
+### The `*/` hazard — this WILL bite you, verify explicitly
+
+Writing about C++ makes it very easy to type `*/` by accident. `const char*/string`,
+`T*/U`, `int*/*count*/` — each of these silently **terminates your comment early**
+and dumps the remaining prose into the token stream as code. The file then fails
+to compile, and the cause is not obvious from the error.
+
+The calibration run hit this exactly once, on the phrase `const char*/string`.
+
+So: **after writing each block, re-read it and search for `*/`.** There must be
+exactly one, and it must be the final line. If prose needs a pointer type, write
+`const char *` with a space, or say "char pointer". Do not rely on remembering
+this while composing — check afterwards, every time.
+
+A validator (`.arch/validate.py`) runs after your batch and will catch this, but
+finding it yourself is cheaper than a repair pass.
 
 ### Format
 
@@ -70,6 +86,23 @@ the other three sections are frequently one line each and should be.
 For the `.cpp` of a pair, keep `INTENT` to one line pointing at the header and
 spend the space on implementation-only detail. Do not duplicate the header's
 block.
+
+### Units with no header of their own
+
+Some `.cpp` files are single-file units because their declarations live in a
+shared header elsewhere (e.g. `SSignal.cpp`, declared in `libstuff.h`). For
+these:
+
+- Treat the shared header's declarations as "the header" for the purpose of
+  deciding what is public vs file-local.
+- Name that header explicitly in the `Pair:` line, like
+  `Pair: (declarations in libstuff/libstuff.h)`.
+- Being declared in a catch-all shared header is itself worth noting under
+  `OUT OF PLACE` if the symbol has no business being in a catch-all.
+
+If a unit's obvious counterpart file exists but is not in your batch, do not go
+annotate it — it is either in another batch or deliberately excluded as
+third-party. Note its existence in `Pair:` and move on.
 
 ### Judgement
 

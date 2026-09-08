@@ -1,0 +1,107 @@
+[
+ {
+  "unit": "MySQL",
+  "dir": "plugins",
+  "files": ["plugins/MySQL.h", "plugins/MySQL.cpp"],
+  "lines": 1148,
+  "test": false,
+  "intent": "A Bedrock plugin that speaks the MySQL wire protocol on its own TCP port, translating recognized client queries into internal Query commands (or answering them directly) so unmodified MySQL clients can talk to a Bedrock/SQLite node.",
+  "objects": [
+   {"name": "MySQLUtils", "kind": "namespace/free-functions", "role": "recognizes and picks apart specific client query shapes (VERSION(), CONNECTION_ID(), information_schema.*, SHOW KEYS FROM, foreign-key introspection) for rewriting into SQLite equivalents"},
+   {"name": "MySQLPacket", "kind": "class", "role": "encodes/decodes MySQL wire-protocol packet framing; builds handshake, OK, ERR, and query-response packets"},
+   {"name": "BedrockPlugin_MySQL", "kind": "class", "role": "the plugin; owns the MySQL-protocol port and translates between MySQL wire format and internal Query commands"},
+   {"name": "MYSQL_NUM_VARIABLES", "kind": "macro", "role": "element count of g_MySQLVariables"},
+   {"name": "g_MySQLVariables", "kind": "global (extern array)", "role": "table of fake MySQL server variables returned for SHOW VARIABLES / @@var"}
+  ],
+  "misfits": [
+   {
+    "item": "g_MySQLVariables",
+    "why": "~300-row hardcoded table of fake AWS-RDS MySQL server variables/values; pure static data embedded in the plugin's header/cpp rather than an external data file, dominating the file's line count",
+    "severity": "low",
+    "suggested_home": null
+   }
+  ],
+  "name_fit":       {"score": 5, "note": "clearly the MySQL protocol plugin"},
+  "location_fit":   {"score": 5, "note": "plugins/ alongside other BedrockPlugin_* implementations"},
+  "naming_quality": {"score": 4, "note": "consistent BedrockPlugin_<Name>/g_ conventions; mysqlVersion/MYSQL_NUM_VARIABLES/g_MySQLVariables mix three naming registers but each is correct for its category"},
+  "depends_on": ["libstuff/libstuff.h", "BedrockPlugin.h", "bedrockVersion.h", "libstuff/SQResult.h", "BedrockServer.h"]
+ },
+ {
+  "unit": "DB",
+  "dir": "plugins",
+  "files": ["plugins/DB.h", "plugins/DB.cpp"],
+  "lines": 490,
+  "test": false,
+  "intent": "The catch-all Bedrock plugin that exposes raw SQL as a command: clients send a Query request and get back the result formatted per sqlite3-CLI-style flags or as JSON, with named bound parameters.",
+  "objects": [
+   {"name": "BedrockPlugin_DB", "kind": "class", "role": "the plugin; recognizes Query requests and hands them to BedrockDBCommand"},
+   {"name": "BedrockPlugin_DB::Sqlite3QRFSpecWrapper", "kind": "class", "role": "move-only RAII wrapper owning the heap strings a sqlite3_qrf_spec's char pointers point into"},
+   {"name": "BedrockPlugin_DB::parseSQLite3Args", "kind": "static method", "role": "parses sqlite3-CLI-style flags (-json, -csv, -separator, etc.) into a Sqlite3QRFSpecWrapper"},
+   {"name": "BedrockPlugin_DB::generateErrorContextMessage", "kind": "static method", "role": "builds a two-line, caret-pointing error snippet mimicking the sqlite3 CLI's error display"},
+   {"name": "BedrockDBCommand", "kind": "class", "role": "BedrockCommand implementing peek()/process() for arbitrary read/write SQL with named bound parameters from sql-param-<name> headers"},
+   {"name": "BedrockDBCommand::SQLiteFormatAppend", "kind": "static private method", "role": "write callback registered with the QRF formatter to accumulate output"}
+  ],
+  "misfits": [
+   {
+    "item": "BedrockPlugin_DB::Sqlite3QRFSpecWrapper / parseSQLite3Args / generateErrorContextMessage",
+    "why": "a generic sqlite3-CLI argument-parsing and error-formatting layer around libstuff/qrf.h's C struct, none of it specific to being a request-command plugin",
+    "severity": "med",
+    "suggested_home": "libstuff/qrf.h or a new libstuff unit alongside it"
+   }
+  ],
+  "name_fit":       {"score": 4, "note": "fits by convention as the original catch-all query plugin, though 'DB' alone doesn't convey that scope since every plugin touches the DB"},
+  "location_fit":   {"score": 5, "note": "plugins/ alongside other BedrockPlugin_* implementations"},
+  "naming_quality": {"score": 3, "note": "Sqlite3QRFSpecWrapper's mixed casing matches the wrapped C API; depends on libstuff/SQliteParameter whose 'SQlite' capitalization is inconsistent with this codebase's usual 'SQLite'"},
+  "depends_on": ["libstuff/SQliteParameter.h", "libstuff/libstuff.h", "BedrockPlugin.h", "libstuff/qrf.h", "libstuff/sqlite3.h", "libstuff/SQResultFormatter.h", "BedrockServer.h", "libstuff/SQResult.h"]
+ },
+ {
+  "unit": "Compression",
+  "dir": "plugins",
+  "files": ["plugins/Compression.h", "plugins/Compression.cpp"],
+  "lines": 414,
+  "test": false,
+  "intent": "A Bedrock plugin that registers zstd-dictionary-based compress()/decompress() SQLite user-defined functions, using dictionaries loaded once at startup from a dedicated DB table, plus equivalent static helpers for non-SQL callers.",
+  "objects": [
+   {"name": "BedrockPlugin_Compression", "kind": "class", "role": "loads dictionaries at startup, creates the zstdDictionaries table, registers the SQLite UDFs, and exposes compress()/decompress(); has no BedrockCommand of its own"},
+   {"name": "BedrockPlugin_Compression::ZDictionaries", "kind": "private struct", "role": "pairs one dictionary ID's compiled ZSTD_CDict* and ZSTD_DDict*"},
+   {"name": "BedrockPlugin_Compression::_dictionaries", "kind": "private static member", "role": "map of dictionary ID to ZDictionaries, populated once at startup"},
+   {"name": "BedrockPlugin_Compression::COMPRESSION_LEVEL", "kind": "static constexpr", "role": "zstd level used for all dictionary-based compression"},
+   {"name": "sqliteCompress", "kind": "file-local static function (.cpp)", "role": "the compress(data, dictionaryID) SQLite UDF callback"},
+   {"name": "sqliteDecompress", "kind": "file-local static function (.cpp)", "role": "the decompress(data) SQLite UDF callback"}
+  ],
+  "misfits": [],
+  "name_fit":       {"score": 5, "note": "clearly the compression plugin"},
+  "location_fit":   {"score": 5, "note": "plugins/ alongside other BedrockPlugin_* implementations"},
+  "naming_quality": {"score": 4, "note": "consistent BedrockPlugin_<Name>/_ prefix conventions"},
+  "depends_on": ["libstuff/libstuff.h", "BedrockPlugin.h", "BedrockServer.h", "libstuff/SQResult.h", "libstuff/sqlite3.h"]
+ },
+ {
+  "unit": "Cache",
+  "dir": "plugins",
+  "files": ["plugins/Cache.h", "plugins/Cache.cpp"],
+  "lines": 374,
+  "test": false,
+  "intent": "A Bedrock plugin implementing a simple named-blob cache backed by a `cache` SQLite table with a trigger-maintained running size, paired with an in-memory LRU tracker used to decide what to evict, exposed via ReadCache/WriteCache.",
+  "objects": [
+   {"name": "BedrockPlugin_Cache", "kind": "class", "role": "the plugin; owns the configured max cache size and LRU tracker, creates the cache/cacheSize tables and triggers"},
+   {"name": "BedrockPlugin_Cache::LRUMap", "kind": "nested class", "role": "mutex-protected least-recently-used tracker keyed by name, backed by a list plus a map"},
+   {"name": "BedrockPlugin_Cache::LRUMap::Entry", "kind": "private nested struct", "role": "one tracked key, holding iterators into both the list and map for O(1) removal"},
+   {"name": "BedrockPlugin_Cache::initCacheSize", "kind": "static method", "role": "parses a size string like '16GB' into a byte count, defaulting to 16GB"},
+   {"name": "BedrockPlugin_Cache::supportedRequestVerbs", "kind": "static member", "role": "the verb set this plugin answers to (ReadCache, WriteCache)"},
+   {"name": "BedrockCacheCommand", "kind": "class", "role": "BedrockCommand implementing peek() (ReadCache) and process() (WriteCache)"},
+   {"name": "BedrockCacheCommand::plugin", "kind": "private inline method", "role": "casts the base command's plugin pointer back to BedrockPlugin_Cache&"}
+  ],
+  "misfits": [
+   {
+    "item": "BedrockPlugin_Cache::LRUMap",
+    "why": "a fully generic string-keyed LRU tracker with no cache-plugin-specific logic, nested privately inside one plugin instead of being a reusable libstuff container",
+    "severity": "low",
+    "suggested_home": "libstuff (e.g. a generic SLRUMap/SLRUCache container)"
+   }
+  ],
+  "name_fit":       {"score": 5, "note": "clearly the cache plugin"},
+  "location_fit":   {"score": 5, "note": "plugins/ alongside other BedrockPlugin_* implementations"},
+  "naming_quality": {"score": 3, "note": "_maxCacheSize and _lruMap use the underscore-prefix convention for private members but are declared in the class's public: section with no private: reset, so they are actually public despite the naming"},
+  "depends_on": ["libstuff/libstuff.h", "BedrockPlugin.h", "BedrockServer.h", "libstuff/SQResult.h"]
+ }
+]

@@ -1,3 +1,39 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    ConflictSpamTest.cpp
+ * Path:    test/clustertest/tests/ConflictSpamTest.cpp
+ *
+ * INTENT
+ *   Cluster-level "worst case" stress test that fires lots of
+ *   conflicting writes at all three nodes concurrently, then verifies
+ *   the cluster still converges to identical data, journals, and row
+ *   counts everywhere and that no command failed.
+ *
+ * OBJECTS
+ *   ConflictSpamTest (struct, extends tpunit::TestFixture) - registers
+ *       `slow` and `spam` as the two tests to run against a default
+ *       three-node BedrockClusterTester.
+ *   ConflictSpamTest::setup/teardown - allocate/free the cluster tester
+ *       and reset the shared command-ID counter.
+ *   ConflictSpamTest::slow - sends a handful of colliding "idcollision"
+ *       writes round-robin to each node, then polls until all three
+ *       nodes' `test` tables agree.
+ *   ConflictSpamTest::spam - spins up one thread per node to fire 200
+ *       colliding writes each in parallel, then cross-checks each node's
+ *       journal table names, per-journal max IDs, full table contents,
+ *       and total row count for equality, plus that zero requests failed.
+ *
+ * OUT OF PLACE
+ *   Nothing - this is a targeted stress/consistency test and stays
+ *   within that scope throughout.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; a cluster-level consistency test under test/clustertest/tests.
+ *
+ * NAMING QUALITY
+ *   `slow` and `spam` are generic names outside the context of the
+ *   surrounding comment explaining the fixture's intent, but the class
+ *   name and header comment make the scope clear.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

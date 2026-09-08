@@ -1,3 +1,29 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockConflictManager.cpp
+ * Path:    BedrockConflictManager.cpp
+ * Pair:    BedrockConflictManager.h
+ *
+ * INTENT
+ *   Implements BedrockConflictManager -- see BedrockConflictManager.h.
+ *
+ * OBJECTS
+ *   BedrockConflictManager::BedrockConflictManager - empty default
+ *       constructor.
+ *   BedrockConflictManager::recordTables - under lock, increments the
+ *       command's total count and, for each table not named "journal*"
+ *       or "json_each", its per-table use count.
+ *   BedrockConflictManager::generateReport - under lock, renders one text
+ *       block per command with its total count and per-table counts.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Matches the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "BedrockConflictManager.h"
 #include <libstuff/libstuff.h>
 

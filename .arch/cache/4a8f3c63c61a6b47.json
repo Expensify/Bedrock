@@ -1,0 +1,60 @@
+{
+ "unit": "SQResultFormatter",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SQResultFormatter.h",
+  "libstuff/SQResultFormatter.cpp"
+ ],
+ "lines": 588,
+ "test": false,
+ "intent": "Renders an SQResult into one of six sqlite3-shell-style text formats (column, CSV, tabs, JSON, quote, list) for CLI-style display or export.",
+ "objects": [
+  {
+   "name": "SQResultFormatter::FORMAT",
+   "kind": "enum class",
+   "role": "the six supported output formats"
+  },
+  {
+   "name": "SQResultFormatter::FORMAT_OPTIONS",
+   "kind": "class",
+   "role": "header/nullvalue/separator formatting options bundle"
+  },
+  {
+   "name": "SQResultFormatter",
+   "kind": "class",
+   "role": "static-only dispatcher (format()) plus one formatXXX() renderer per FORMAT value"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "SQResultFormatter::FORMAT_OPTIONS::nullvalue / ::separator",
+   "why": "declared but never read by any formatXXX() implementation - dead configuration surface",
+   "severity": "low",
+   "suggested_home": null
+  },
+  {
+   "item": "utf8Next/isCombining/isWide/displayWidth (local lambdas in formatColumn)",
+   "why": "a generic UTF-8 display-width utility with no dependency on SQResult, trapped as local lambdas instead of being a reusable libstuff string-width helper",
+   "severity": "med",
+   "suggested_home": "libstuff/SString or a new text-width utility unit"
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "lives beside SQResult, the type it formats"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "FORMAT_OPTIONS uses SCREAMING_CASE, unlike every other nested class/struct in the repo"
+ },
+ "depends_on": [
+  "libstuff/SQResult.h",
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b104.json",
+ "hash": "4a8f3c63c61a6b47"
+}

@@ -1,3 +1,71 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockServer.cpp
+ * Path:    BedrockServer.cpp
+ * Pair:    BedrockServer.h
+ *
+ * INTENT
+ *   Implements BedrockServer; see BedrockServer.h. This file is the whole runtime: the sync thread's main loop, the
+ *   worker thread's dequeue/process/commit loop, per-socket request handling, and the status/control command surface.
+ *
+ * OBJECTS
+ *   BedrockServer::syncWrapper/sync         - the sync thread body: brings up the SQLiteNode and DB pool, starts workers,
+ *                                              drives the SQLiteNode's poll/update loop, runs the one-time DB upgrade
+ *                                              command on a new leader, and drains the shutdown sequence
+ *   BedrockServer::worker                   - worker thread body: pulls a command off the main or blocking queue and
+ *                                              hands it to runCommand, forever, until told to stop
+ *   BedrockServer::runCommand               - the core peek/process/commit/retry state machine for a single command,
+ *                                              including escalation to leader/peer, conflict retry with backoff, and
+ *                                              handoff to the blocking commit queue
+ *   BedrockServer::handleSocket             - per-connection thread: polls one client socket, deserializes requests,
+ *                                              and runs each resulting command on its own thread so it can watch for
+ *                                              client disconnect/abort while the command runs
+ *   BedrockServer::buildCommandFromRequest   - turns a raw request into a command via the plugins, handling
+ *                                              fire-and-forget replies and deserializing attached HTTPS sub-requests
+ *   BedrockServer::_reply                    - sends a completed command's response back over its socket (or via its
+ *                                              owning plugin)
+ *   BedrockServer::_status/_isStatusCommand  - implements the Status/isFollower/handlingCommands/Ping status commands
+ *   BedrockServer::_control/_isControlCommand/
+ *     _isNonSecureControlCommand             - implements the localhost-only control command surface (BeginBackup,
+ *                                              SuppressCommandPort/ClearCommandPort, ClearCrashCommands, ConflictReport,
+ *                                              Detach/Attach, EnableSQLTracing, CRASH_COMMAND, ClearBlockingQueue,
+ *                                              SetConflictParams/SetConflictPageLocks, SetBlockingQueueTimeRateLimit,
+ *                                              BlockWrites/UnblockWrites, SetMaxSocketThreads, SetPriority, GetCommitHash)
+ *   BedrockServer::_wouldCrash/_generateCrashMessage/onNodeLogin
+ *                                            - tracks commands known to have crashed a node and refuses to run them
+ *                                              again, broadcasting the block list to peers and new logins
+ *   BedrockServer::_beginShutdown/shutdownComplete/isShuttingDown
+ *                                            - drives the shutdown/standdown state machine described at length in the
+ *                                              header's leading comment
+ *   BedrockServer::_acceptSockets           - accepts pending connections on all open ports and spawns a handleSocket
+ *                                              thread per connection, with backpressure once too many are outstanding
+ *   BedrockServer::BedrockServerUpgradeCommand::_buildRequest/(ctor)/peek/process
+ *                                            - the nested upgrade command's implementation: calls upgradeDatabase on
+ *                                              every plugin inside one write transaction
+ *   shutdownTimer (unnamed struct, file scope) - four steady_clock timestamps updated as shutdown progresses, logged
+ *                                              once in the destructor to report how long each phase took
+ *   __quiesceLock/__quiesceShouldUnlock/__quiesceThread (file-scope globals)
+ *                                            - hold the single outstanding exclusive-DB-lock thread used to implement
+ *                                              the BlockWrites/UnblockWrites control commands
+ *
+ * OUT OF PLACE
+ *   __quiesceLock/__quiesceShouldUnlock/__quiesceThread [CANDIDATE] - these are plain (non-static) globals with
+ *   external linkage, not BedrockServer members, so nothing prevents a name collision if another translation unit
+ *   ever declares the same names; their double-leading-underscore names are also identifiers reserved to the
+ *   implementation by the C++ standard, not meant for use here. This state (which thread holds the DB quiesce lock)
+ *   is exactly the kind of thing the rest of the file keeps as private BedrockServer members.
+ *
+ *   BedrockServer::_control [CANDIDATE] - one function directly owns the tuning knobs of several otherwise-separate
+ *   subsystems (conflict retry counts and page-lock policy, the blocking queue's rate-limit windows, DB quiesce,
+ *   socket-thread caps, sync-node priority, journal hash lookup) rather than delegating to them. Plausible each
+ *   subsystem should own parsing its own control command.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: implementation file for the class declared in the paired header.
+ *
+ * NAMING QUALITY
+ *   Follows the file's own `_` convention for private methods/members throughout, except the quiesce globals noted
+ *   above, whose names are both non-conforming and reserved.
+ * ─────────────────────────────────────────────────────────────────────*/
 // Manages connections to a single instance of the bedrock server.
 #include "BedrockServer.h"
 #include "BedrockCommand.h"

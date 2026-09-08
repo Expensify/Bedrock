@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockConflictManager.h
+ * Path:    BedrockConflictManager.h
+ * Pair:    BedrockConflictManager.cpp
+ *
+ * INTENT
+ *   Tracks how often each command name touches which database tables
+ *   during commit conflicts, for profiling which commands/tables conflict
+ *   most.
+ *
+ * OBJECTS
+ *   BedrockConflictManagerCommandInfo - per-command tally: a total count
+ *       plus a table-name to use-count map.
+ *   BedrockConflictManager - thread-safe collector; recordTables() tallies
+ *       one command's table touches, generateReport() renders a
+ *       plaintext summary.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   The private mutex `m` breaks the repo's leading-underscore convention
+ *   for private members, while `_commandInfo` right below it follows it.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <list>
 #include <map>

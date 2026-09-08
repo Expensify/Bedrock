@@ -1,3 +1,52 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLite.h
+ * Path:    sqlitecluster/SQLite.h
+ * Pair:    SQLite.cpp
+ *
+ * INTENT
+ *   Wraps a single sqlite3 database handle with everything Bedrock's
+ *   replicated-transaction model needs on top of raw sqlite: journal-table
+ *   bookkeeping, begin/read/write/prepare/commit/rollback, a commit-order
+ *   mutex shared across handles on the same file, query result caching,
+ *   conflict-location reporting, and hooks (authorizer/rewrite/whitelist)
+ *   used by the sync layer and by individual commands.
+ *
+ * OBJECTS
+ *   SQLite                    - the class; owns the sqlite3* handle and drives the whole
+ *                                transaction/journal/replication lifecycle described above.
+ *   SQLite::Parameter          - alias for SQliteParameter, re-exported so callers can write
+ *                                SQLite::Parameter::text(...) etc.
+ *   SQLite::timeout_error      - exception thrown when a query exceeds its configured timeout.
+ *   SQLite::constraint_error   - exception marking a SQLITE_CONSTRAINT failure as a benign
+ *                                replication-ordering race (see the long comment above it)
+ *                                rather than a real caller error.
+ *   SQLite::TRANSACTION_TYPE   - enum {SHARED, EXCLUSIVE}; EXCLUSIVE locks the shared commit
+ *                                mutex for the whole transaction instead of just at prepare/commit.
+ *   SQLite::SharedData         - private nested class holding state shared by every SQLite
+ *                                handle open on the same underlying file: commit count and
+ *                                commit-order mutex, checkpoint-in-progress flag and outstanding
+ *                                WAL frame counts, and the prepared/committed transaction queues
+ *                                used to ship commits out to replication.
+ *   COMMIT_DISABLED            - sentinel value returned by commit() in place of a real sqlite3
+ *                                result code when commits have been administratively disabled.
+ *
+ * OUT OF PLACE
+ *   enableRewrite/setRewriteHandler/_rewriteHandler [CANDIDATE]: query rewriting exists, per its
+ *     own comment, "to support mocked requests and load testing" - a test/mock-only concern
+ *     wired directly into the production replicated-DB class.
+ *   setUpdateNoopMode/getUpdateNoopMode [CANDIDATE]: same shape of problem - noop-update mode is
+ *     documented as existing for `mockRequest`-enabled commands only.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: this is the DB engine class for sqlitecluster. It's the one type here without the
+ *   repo's usual `S` prefix, but that's because it deliberately mirrors the `sqlite3` type it wraps.
+ *
+ * NAMING QUALITY
+ *   Mostly consistent (`_` on privates, clear verbs on methods). getLastConflictIdentifier()
+ *   actually returns _lastConflictPage, not anything called "identifier" internally, while a
+ *   separate thread_local _conflictIdentifier exists for the HC-Tree (table/key hash) conflict
+ *   case - two distinct "which query conflicted" concepts share one public getter name.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <libstuff/sqlite3.h>
 #include <libstuff/SQliteParameter.h>

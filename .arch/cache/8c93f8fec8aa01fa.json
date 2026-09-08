@@ -1,0 +1,41 @@
+{
+ "unit": "SAXHandler",
+ "dir": "libstuff/JSON",
+ "files": [
+  "libstuff/JSON/SAXHandler.h",
+  "libstuff/JSON/SAXHandler.cpp"
+ ],
+ "lines": 269,
+ "test": false,
+ "intent": "Implements rapidjson's SAX handler interface to build a JSON::Value tree (with nested objects/arrays) from the callback stream a rapidjson::Reader emits while parsing.",
+ "objects": [
+  {
+   "name": "SAXHandler",
+   "kind": "class",
+   "role": "implements the full rapidjson handler surface (Null/Bool/Int/Uint/Int64/Uint64/Double/String/StartObject/Key/EndObject/StartArray/EndArray/RawNumber), tracks a stack of in-progress Value contexts, hands off the finished root via getValue()"
+  },
+  {
+   "name": "SAXHandler::endContext",
+   "kind": "private method",
+   "role": "pops the current context and, inside an array, stages the next placeholder element"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "matches the rapidjson SAX handler convention it implements"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "interface names are fixed by rapidjson's contract; root is a manually new/deleted raw pointer later wrapped in a unique_ptr on hand-off, an ownership pattern worth a second look though not a naming issue"
+ },
+ "depends_on": [
+  "libstuff/JSON/Value.h"
+ ],
+ "_src": "b107.json",
+ "hash": "8c93f8fec8aa01fa"
+}

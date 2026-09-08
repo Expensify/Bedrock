@@ -1,3 +1,32 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockCommand.cpp
+ * Path:    BedrockCommand.cpp
+ * Pair:    BedrockCommand.h
+ *
+ * INTENT
+ *   Implements BedrockCommand as declared in BedrockCommand.h.
+ *
+ * OBJECTS
+ *   BedrockCommand:: (all methods) - construction/destruction, timing
+ *     start/stop/finalize, HTTPS request wait/serialize/deserialize loops,
+ *     prePoll/postPoll dispatch across httpsRequests, and timeout math.
+ *   No file-local (anonymous-namespace or static) helpers beyond the
+ *   header's own static data members (_commandCount, _noopHTTPSManager,
+ *   defaultPluginName), which are defined here.
+ *
+ * OUT OF PLACE
+ *   finalizeTimingInfo() builds and logs a large, hardcoded set of
+ *   timing-metric names and an "upstream" promotion scheme for
+ *   leader/follower timing comparison [CANDIDATE] - this is a sizeable
+ *   reporting/telemetry routine bundled into the command class itself
+ *   rather than a separate metrics helper.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; pairs directly with BedrockCommand.h.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <cstdint>
 #include <libstuff/libstuff.h>
 #include <libstuff/SHTTPSManager.h>

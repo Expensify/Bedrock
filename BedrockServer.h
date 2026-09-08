@@ -1,3 +1,34 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockServer.h
+ * Path:    BedrockServer.h
+ * Pair:    BedrockServer.cpp
+ *
+ * INTENT
+ *   Declares the top-level server object for a single Bedrock node: it owns the
+ *   sync thread and worker thread pool, the command queues, the listening ports,
+ *   the loaded plugins, and the shutdown/detach state machine, and implements the
+ *   SQLiteServer callback interface that SQLiteNode uses to talk back to it.
+ *
+ * OBJECTS
+ *   BedrockServer                              - the server: owns threads, queues, ports, plugins, and DB pool; implements SQLiteServer
+ *   BedrockServer::SHUTDOWN_STATE               - enum of the shutdown state machine's four states (RUNNING/START_SHUTDOWN/COMMANDS_FINISHED/DONE)
+ *   BedrockServer::BedrockServerUpgradeCommand  - nested BedrockCommand that runs each plugin's DB schema upgrade once, the first time this node stands up as leader
+ *
+ * OUT OF PLACE
+ *   commandPortSuppressionReasons [CANDIDATE] - public list<string> whose doc comment references an "instance of
+ *   commandPortSuppressionCount", a type that does not exist anywhere in this repo, and the member itself is never
+ *   read or written by this file or (per repo-wide search) anywhere else. Looks like a leftover from a refactor of
+ *   suppressCommandPort/blockCommandPort.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: this is the root-level orchestrator class the hierarchy doc names as SQLiteServer's other concrete
+ *   subclass, and it lives at repo root alongside its peers (BedrockCommand, BedrockPlugin).
+ *
+ * NAMING QUALITY
+ *   Consistent `_` prefix on private members. isUpgradeComplete() is explicitly kept as a documented legacy alias
+ *   for dbReadyToHandleRequests(), which is honest about the duplication rather than confusing. suppressCommandPort()
+ *   is likewise marked "Legacy version of" blockCommandPort/unblockCommandPort.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <chrono>
 #include <libstuff/libstuff.h>

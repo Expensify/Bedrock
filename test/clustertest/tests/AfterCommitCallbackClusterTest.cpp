@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    AfterCommitCallbackClusterTest.cpp
+ * Path:    test/clustertest/tests/AfterCommitCallbackClusterTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying that an after-commit callback fires both when the
+ *   leader commits a write itself and when a follower applies that same
+ *   write via replication.
+ *
+ * OBJECTS
+ *   AfterCommitCallbackClusterTest                      - tpunit fixture; brings up a default cluster.
+ *   AfterCommitCallbackClusterTest::getAfterCommitCount - reads the plugin's running callback counter off a node.
+ *   AfterCommitCallbackClusterTest::firesOnFollowerReplication - the test: writes on the leader, polls both
+ *                                                          nodes' counters until each has advanced.
+ *   __AfterCommitCallbackClusterTest                    - static instance that registers the fixture with tpunit.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test files.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

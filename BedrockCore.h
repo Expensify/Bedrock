@@ -1,3 +1,38 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockCore.h
+ * Path:    BedrockCore.h
+ * Pair:    BedrockCore.cpp
+ *
+ * INTENT
+ *   Runs a BedrockCommand's prePeek/peek/process/postProcess lifecycle
+ *   against a specific SQLite db and transaction, translating thrown
+ *   exceptions into HTTP-style response codes. This is the execution layer
+ *   sitting between a BedrockServer worker thread and one command.
+ *
+ * OBJECTS
+ *   BedrockCore              - class (extends SQLiteCore); prePeekCommand/
+ *                               peekCommand/processCommand/postProcessCommand,
+ *                               timeout/abort checks, and exception handling
+ *                               for a command running against _db.
+ *   BedrockCore::RESULT      - enum class; outcome codes from peekCommand/
+ *                               processCommand (COMPLETE, SHOULD_PROCESS,
+ *                               NEEDS_COMMIT, NO_COMMIT_REQUIRED,
+ *                               SERVER_NOT_LEADING).
+ *   BedrockCore::AutoTimer   - nested RAII class; records one timing entry
+ *                               into command->timingInfo spanning its own
+ *                               lifetime.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; sits at the repo root as the execution engine beside
+ *   BedrockCommand and BedrockServer.
+ *
+ * NAMING QUALITY
+ *   Consistent; `_server` follows the `_` convention for private members,
+ *   RESULT's values are self-explanatory.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <BedrockCommand.h>
 #include <sqlitecluster/SQLiteCore.h>

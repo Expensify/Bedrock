@@ -1,3 +1,40 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SLog.cpp
+ * Path:    libstuff/SLog.cpp
+ * Pair:    (declarations in libstuff/libstuff.h)
+ *
+ * INTENT
+ *   Global logging support: the process-wide log-level mask, stack-trace dumping for
+ *   the SLOG macros, and a copy-on-write parameter whitelist that redacts any
+ *   structured log param (`{{key, value}}`) not explicitly allowed, so arbitrary
+ *   caller data can't leak into logs unreviewed.
+ *
+ * OBJECTS
+ *   _g_SLogMask       - global atomic log-level bitmask read by the SLOG macros (declared extern in libstuff.h).
+ *   GLOBAL_IS_LIVE    - global atomic flag; when false (non-production), an unwhitelisted
+ *     log param throws instead of being silently redacted, to catch the omission in dev/test.
+ *   SLogStackTrace()  - dumps the current call stack at a given log level.
+ *   PARAMS_WHITELIST  - file-local static atomic<shared_ptr<const set<string>>>, the
+ *     allowed structured-log-param names; swapped via CAS so readers stay lock-free.
+ *   addLogParams()    - appends whitelisted (or command-tagged) params to a log message,
+ *     redacting/throwing on anything not in PARAMS_WHITELIST.
+ *   SWhitelistLogParams() / SIsLogParamWhitelisted() - mutate/query PARAMS_WHITELIST.
+ *
+ * OUT OF PLACE
+ *   Nothing - this is what libstuff.h's forward-declared logging globals are the
+ *   implementation of; the file matches its role, just not its own header.
+ *
+ * NAME/LOCATION FIT
+ *   Name fits the content (logging internals). [CANDIDATE] Declared in the libstuff.h
+ *   catch-all rather than a dedicated SLog.h, so callers can't see this file's
+ *   contract without reading libstuff.h in full.
+ *
+ * NAMING QUALITY
+ *   `_g_SLogMask` mixes a `_g` (global) marker with the `S`-prefix convention, unlike
+ *   `GLOBAL_IS_LIVE`, which spells "global" out in full - two different conventions
+ *   for the same idea (a process-wide global) in one file.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "libstuff.h"
 #include <execinfo.h> // for backtrace*
 #include <memory>

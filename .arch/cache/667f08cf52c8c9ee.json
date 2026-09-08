@@ -1,0 +1,43 @@
+{
+ "unit": "Writer",
+ "dir": "libstuff/JSON",
+ "files": [
+  "libstuff/JSON/Writer.h",
+  "libstuff/JSON/Writer.cpp"
+ ],
+ "lines": 350,
+ "test": false,
+ "intent": "A JSON serializer: build a document incrementally via an object/array cursor over rapidjson::Writer, or convert a whole JSON::Value tree to a string in one call (compact or pretty).",
+ "objects": [
+  {
+   "name": "Writer",
+   "kind": "class",
+   "role": "wraps rapidjson::Writer<StringBuffer>; instance API drives incremental construction, static serialize()/serializePretty() walk an existing JSON::Value tree directly"
+  },
+  {
+   "name": "Writer::serialize(value, writer)",
+   "kind": "private template method",
+   "role": "recursively walks a JSON::Value and feeds it to any rapidjson writer type; shared by serialize() and serializePretty()"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent startX/endX pairs; private writeValue overloads appropriately hidden behind public templates"
+ },
+ "depends_on": [
+  "libstuff/JSON/Value.h",
+  "libstuff/JSON/Metrics.h",
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b107.json",
+ "hash": "667f08cf52c8c9ee"
+}

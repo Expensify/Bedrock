@@ -1,3 +1,33 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    CreateJobsTest.cpp
+ * Path:    test/tests/jobs/CreateJobsTest.cpp
+ *
+ * INTENT
+ *   tpunit fixture exercising the Jobs plugin's bulk `CreateJobs` command:
+ *   creating multiple jobs from a JSON array in one call, rejecting
+ *   malformed JSON, enforcing the parent-must-be-running rule, mocked
+ *   parent/child propagation, and unique-child/parent-mismatch conflicts.
+ *
+ * OBJECTS
+ *   CreateJobsTest                    - tpunit::TestFixture; one BedrockTester
+ *                                       per class, each test builds a JSON
+ *                                       job array and asserts CreateJobs behavior.
+ *   CreateJobsTest::_generateCreateJobContentJSON
+ *                                     - private helper building a 2-job JSON
+ *                                       array fixture reused by several tests.
+ *   __CreateJobsTest                  - static instance that registers the fixture.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives with the other per-command Jobs plugin tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling job tests; `_generateCreateJobContentJSON` uses
+ *   the repo's `_` private-member prefix correctly.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>

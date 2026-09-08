@@ -1,3 +1,27 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    STCPManager.cpp
+ * Path:    libstuff/STCPManager.cpp
+ * Pair:    STCPManager.h
+ *
+ * INTENT
+ *   Implementation of prePoll/postPoll (the shared poll()-loop state machine driving
+ *   every Socket through DNS resolution, connect, SSL handshake, data transfer, and
+ *   shutdown) plus Socket and Port's constructors/destructors and send/recv methods.
+ *
+ * OBJECTS
+ *   No file-local (anonymous-namespace) helpers; all functions implement members
+ *   declared in STCPManager.h.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header; see STCPManager.h for the one naming note.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "STCPManager.h"
 
 #include <unistd.h>

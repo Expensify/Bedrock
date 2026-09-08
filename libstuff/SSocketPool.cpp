@@ -1,3 +1,27 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SSocketPool.cpp
+ * Path:    libstuff/SSocketPool.cpp
+ * Pair:    SSocketPool.h
+ *
+ * INTENT
+ *   Implementation of SSocketPool: getSocket() pops a pooled socket and liveness-checks
+ *   it with a zero-timeout poll() before handing it out, falling back to a fresh
+ *   connection; returnSocket() pushes a socket back with a timestamp; the timeout
+ *   thread sleeps until the oldest pooled socket expires and prunes it.
+ *
+ * OBJECTS
+ *   No file-local helpers; all functions implement SSocketPool members.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "SSocketPool.h"
 
 SSocketPool::SSocketPool(const string& host)

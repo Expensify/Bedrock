@@ -1,3 +1,95 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    libstuff.cpp
+ * Path:    libstuff/libstuff.cpp
+ * Pair:    libstuff.h
+ *
+ * INTENT
+ *   Implements most of the free functions libstuff.h declares - see the
+ *   header for the full public surface. This file does not implement the
+ *   time, signal, or log-support functions declared there; those live in
+ *   STime.cpp, SSignal.cpp, and SLog.cpp respectively.
+ *
+ * OBJECTS
+ *   SInitialize, SLogSetThreadPrefix, SLogSetThreadName - process/thread bring-up and thread-local
+ *                                     log-prefix setters
+ *   SException::{ctor,what,details,hasStackTrace,logStackTrace}, SGetCallstack - exception/callstack
+ *                                     capture and demangling
+ *   SSyslogSocketDirect, SSyslogNoop - alternate syslog backends selected via the SSyslogFunc pointer
+ *   SFluentdInitialize, SFluentdLog  - Fluentd forward-protocol logging, with per-key redaction via
+ *                                     SIsLogParamWhitelisted and syslog fallback on send failure
+ *   Math/hex                        - SToHex (3 overloads), SFromHex, SStrFromHex,
+ *                                     SBase32HexStringFromBase32, SHexStringFromBase32
+ *   String utilities                 - SToLower/SToUpper, SIContains, SStartsWith (2), STrim,
+ *                                     SCollapse, SStrip (2), SEscape (2), SUnescape (2), SReplace,
+ *                                     SReplaceAllBut, SReplaceAll, SStateNameToInt,
+ *                                     SConstantTimeEquals/SConstantTimeIEquals, SParseIntegerList/
+ *                                     Set/Vector, SParseList (2), SParseSet, SParseCommandLine,
+ *                                     SStripAllBut, SStripNonNum, SStripTrim, SBefore, SAfter,
+ *                                     SAfterLastOf, SAfterUpTo, SAppend (2), SContains (4 overloads),
+ *                                     SIEquals, SEndsWith, SToFloat, SToInt, SToInt64, SToUInt64
+ *   _SParseHTTP_GetUpToNext,
+ *   _SParseHTTP_GetUpToEnd (file-local, external linkage) - line-tokenizing helpers shared by the
+ *                                     HTTP parser below
+ *   HTTP                             - SParseHTTP (2, including the char-buffer core parser that
+ *                                     handles chunked transfer-encoding and Set-Cookie folding),
+ *                                     SParseRequestMethodLine, SParseResponseMethodLine,
+ *                                     _SDecodeURIChar (file-local), SParseURI (2), SParseURIPath (2),
+ *                                     SComposeHTTP (2), SComposePOST, SParseHost, SEncodeURIComponent,
+ *                                     SDecodeURIComponent (2), SGetDomain, SComposeHost, SHostIsValid
+ *   JSON                             - SToJSON (2), SComposeJSONObject, _SParseJSONString,
+ *                                     _SParseJSONArray, _SParseJSONObject, _SParseJSONValue
+ *                                     (file-local recursive-descent parser, driven by the
+ *                                     function-local _JSONWS/_JSONTEST/_JSONASSERTPTR/_JSONLOG
+ *                                     macros), SParseJSONObject, SParseJSONArray, SGetJSONArrayFront
+ *   SGZip, SGUnzip                   - zlib gzip compress/decompress
+ *   Network                          - SIPToAddr, SResolveHost, S_socket (2), S_close, S_recvfrom,
+ *                                     S_accept, SCheckNetworkErrorType, S_recvappend, S_sendconsume,
+ *                                     SFDset, SFDAnySet, S_poll, SGetHostName, SGetPeerName
+ *   Crypto                           - SAESEncrypt, SAESDecrypt (2), SAESDecryptNoStrip (2),
+ *                                     SHashSHA1, SHashSHA256, SEncodeBase64 (2), SDecodeBase64 (2),
+ *                                     SHMACSHA1, SHMACSHA256
+ *   File                             - SFileExists, SFileLoad (2), SFileSave, SFileCopy, SFileDelete,
+ *                                     SFileSize
+ *   SQLite                           - SQList (the non-template overload), SQueryLogOpen,
+ *                                     SQueryLogClose, SQuery (the canonical form plus 3 convenience
+ *                                     overloads), SQVerifyTable, SQVerifyTableExists, SQ (7 overloads)
+ *   Misc                             - SGetCurrentExceptionName, STerminateHandler,
+ *                                     SIsValidSQLiteDateModifier, SREMatch (2), SREMatchAll (2),
+ *                                     SRECompiledRegex::{ctor,dtor,move-ctor,move-assign}, SRECompile,
+ *                                     SREReplace (2), SRedactSensitiveValues, SStopwatch::{ctor (2),
+ *                                     elapsed, ringing, start, ding}, SLogLevel,
+ *                                     SAutoThreadPrefix::{ctor (2), dtor}, SToStr(sockaddr_in) and
+ *                                     its operator<<, STableComp::operator()/nocase_compare::
+ *                                     operator(), SGetCPUUserTime, SExecShell
+ *   Timestamps                       - SUNQUOTED_TIMESTAMP, STIMESTAMP, SUNQUOTED_CURRENT_TIMESTAMP,
+ *                                     SCURRENT_TIMESTAMP (STIMESTAMP_MS and SCURRENT_TIMESTAMP_MS are
+ *                                     declared in the header but implemented in STime.cpp, not here)
+ *   File-local statics/globals       - SProcessName (thread_local), MAX_LOG_QUERY_SIZE, the direct-
+ *                                     syslog-socket pool (S_LOG_SOCKET_MAX, SLogSocketFD,
+ *                                     SLogSocketMutex, SLogSocketCurrentOffset, SLogSocketAddr,
+ *                                     SLogSocketsInitialized), _g_sQueryLogFP, and the S_errno/
+ *                                     S_NOTINITIALISED, the S_E-prefixed errno aliases, and
+ *                                     S_COOKIE_SEPARATOR
+ *
+ * OUT OF PLACE
+ *   Implementation half of the header's misfits (SQuery, crypto, HTTP parsing, socket primitives -
+ *   see libstuff.h for details).
+ *   [CANDIDATE] The direct-syslog-socket pool (SLogSocketFD/SLogSocketMutex/SLogSocketAddr/
+ *     SSyslogSocketDirect/SSyslogNoop) is a complete alternate logging transport with its own
+ *     per-socket locking, sitting beside unrelated HTTP/JSON/SQL/crypto code, even though SLog.cpp
+ *     already exists in this directory as the dedicated logging-support unit.
+ *
+ * NAME/LOCATION FIT
+ *   Matches the header it implements; see libstuff.h for the directory-level discussion.
+ *
+ * NAMING QUALITY
+ *   Follows the header's 'S' convention. The leading-underscore file-local helpers
+ *   (_SParseHTTP_GetUpToNext, _SParseJSONValue, _SDecodeURIChar, etc.) signal "private" by
+ *   convention only - none are declared `static` or placed in an anonymous namespace, so they have
+ *   external linkage despite the naming intent. The "_g_" prefix (_g_SLogMask, _g_sQueryLogFP) is
+ *   used consistently for module-global mutable state, matching between the header's extern
+ *   declaration and this file's file-local counterpart.
+ * ─────────────────────────────────────────────────────────────────────*/
 // --------------------------------------------------------------------------
 // libstuff.cpp
 // --------------------------------------------------------------------------

@@ -1,3 +1,29 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    RequeueJobsTest.cpp
+ * Path:    test/tests/jobs/RequeueJobsTest.cpp
+ *
+ * INTENT
+ *   tpunit fixture exercising the Jobs plugin's `RequeueJobs` command:
+ *   moving RUNNING/RUNQUEUED jobs back to QUEUED (singly and in bulk),
+ *   the auto-requeue-then-fail-after-retries path, bulk rename via the
+ *   `name` parameter, and that nextRun is reset to match `created`.
+ *
+ * OBJECTS
+ *   RequeueJobsTest        - tpunit::TestFixture; one BedrockTester per class,
+ *                            each test creates jobs, forces them into a
+ *                            state via GetJob, then requeues and asserts.
+ *   __RequeueJobsTest      - static instance that registers the fixture.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives with the other per-command Jobs plugin tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling job tests.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>

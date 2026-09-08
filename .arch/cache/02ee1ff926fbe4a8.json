@@ -1,0 +1,76 @@
+{
+ "unit": "SHTTPSManager",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SHTTPSManager.h",
+  "libstuff/SHTTPSManager.cpp"
+ ],
+ "lines": 341,
+ "test": false,
+ "intent": "Non-blocking base classes for making outbound HTTPS/HTTP requests driven from a poll() loop, tracking each as a Transaction with its own socket, timing, and response.",
+ "objects": [
+  {
+   "name": "SStandaloneHTTPSManager",
+   "kind": "class",
+   "role": "owns STCPManager sockets and drives Transactions through prePoll/postPoll; usable with no Bedrock plugin"
+  },
+  {
+   "name": "SStandaloneHTTPSManager::Transaction",
+   "kind": "struct",
+   "role": "one outbound request/response: socket, full request/response SData, timestamps, response code, scheduled start"
+  },
+  {
+   "name": "SHTTPSManager",
+   "kind": "class",
+   "role": "SStandaloneHTTPSManager bound to an owning BedrockPlugin"
+  },
+  {
+   "name": "SStandaloneHTTPSManager::initProxyAddressHTTPS",
+   "kind": "static method",
+   "role": "reads HTTPS_PROXY env var once to initialize proxyAddressHTTPS"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "SHTTPSManager.cpp: #include <BedrockServer.h>, #include <sqlitecluster/SQLiteNode.h>",
+   "why": "neither BedrockServer:: nor SQLiteNode:: is referenced anywhere in the file; unused includes coupling libstuff to the application/clustering layers",
+   "severity": "low",
+   "suggested_home": null
+  },
+  {
+   "item": "SHTTPSManager (class)",
+   "why": "exists only to attach a BedrockPlugin& to the manager, so libstuff depends on BedrockPlugin.h - inverts the expected dependency direction",
+   "severity": "med",
+   "suggested_home": "near BedrockPlugin, or keep in libstuff but move the BedrockPlugin coupling into a thinner adapter"
+  },
+  {
+   "item": "SStandaloneHTTPSManager::Transaction::Transaction throwing on isBlockingCommitThread",
+   "why": "encodes a Bedrock-specific execution-model rule inside an otherwise generic transaction constructor",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 4,
+  "note": "SStandaloneHTTPSManager fits well; SHTTPSManager less so given its BedrockPlugin dependency"
+ },
+ "location_fit": {
+  "score": 3,
+  "note": "SStandaloneHTTPSManager is a natural libstuff networking type; SHTTPSManager pulls in Bedrock application headers"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent; SHTTPSManager's protected `plugin` lacks the `_` prefix used by SStandaloneHTTPSManager's protected members"
+ },
+ "depends_on": [
+  "libstuff/SData.h",
+  "libstuff/STCPManager.h",
+  "libstuff/SHTTPSProxySocket.h",
+  "libstuff/libstuff.h",
+  "BedrockPlugin.h",
+  "BedrockServer.h",
+  "sqlitecluster/SQLiteNode.h"
+ ],
+ "_src": "b005.json",
+ "hash": "02ee1ff926fbe4a8"
+}

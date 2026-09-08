@@ -1,3 +1,26 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SFluentdLogger.cpp
+ * Path:    libstuff/SFluentdLogger.cpp
+ * Pair:    SFluentdLogger.h
+ *
+ * INTENT
+ *   Implementation of SFluentdLogger: opens/reopens the Fluentd TCP connection lazily,
+ *   and runs senderLoop() on its own thread, pop()ing the ring buffer and blocking via
+ *   buffer->wait() when it's empty until push() or shutdown() wakes it.
+ *
+ * OBJECTS
+ *   No file-local helpers; all functions implement SFluentdLogger members.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SFluentdLogger.h>
 #include <libstuff/SThread.h>
 

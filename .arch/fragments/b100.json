@@ -1,0 +1,52 @@
+[
+ {
+  "unit": "BedrockServer",
+  "dir": "",
+  "files": ["BedrockServer.h", "BedrockServer.cpp"],
+  "lines": 2972,
+  "test": false,
+  "intent": "The top-level per-node server object: owns the sync thread and worker thread pool, the command queues, the listening ports, the loaded plugins and DB pool, and the shutdown/detach state machine, implementing the SQLiteServer interface SQLiteNode uses to call back into it.",
+  "objects": [
+    {"name": "BedrockServer", "kind": "class", "role": "The server: owns threads, queues, ports, plugins, and DB pool; implements SQLiteServer"},
+    {"name": "BedrockServer::SHUTDOWN_STATE", "kind": "enum", "role": "The four states of the shutdown state machine (RUNNING/START_SHUTDOWN/COMMANDS_FINISHED/DONE)"},
+    {"name": "BedrockServer::BedrockServerUpgradeCommand", "kind": "class", "role": "Nested BedrockCommand that runs every plugin's DB schema upgrade once, the first time this node stands up as leader"},
+    {"name": "BedrockServer::syncWrapper/sync", "kind": "function group", "role": "Sync thread body: brings up SQLiteNode/DB pool, starts workers, drives the poll/update loop, runs the upgrade command, drains shutdown"},
+    {"name": "BedrockServer::worker", "kind": "function", "role": "Worker thread body: dequeues from the main or blocking queue and calls runCommand in a loop"},
+    {"name": "BedrockServer::runCommand", "kind": "function", "role": "Core peek/process/commit/retry state machine for one command, including escalation and conflict-retry backoff"},
+    {"name": "BedrockServer::handleSocket", "kind": "function", "role": "Per-connection thread: polls a client socket, deserializes requests, runs each command on its own thread to watch for disconnect/abort"},
+    {"name": "BedrockServer::buildCommandFromRequest", "kind": "function", "role": "Builds a command from a raw request via the plugins, handling fire-and-forget and attached HTTPS sub-requests"},
+    {"name": "BedrockServer::_reply", "kind": "function", "role": "Sends a completed command's response back over its socket or via its owning plugin"},
+    {"name": "BedrockServer::_status/_isStatusCommand", "kind": "function group", "role": "Implements the Status/isFollower/handlingCommands/Ping status commands"},
+    {"name": "BedrockServer::_control/_isControlCommand/_isNonSecureControlCommand", "kind": "function group", "role": "Implements the localhost-only control command surface (BeginBackup, SuppressCommandPort, ClearCrashCommands, ConflictReport, Detach/Attach, EnableSQLTracing, CRASH_COMMAND, ClearBlockingQueue, SetConflictParams/SetConflictPageLocks, SetBlockingQueueTimeRateLimit, BlockWrites/UnblockWrites, SetMaxSocketThreads, SetPriority, GetCommitHash)"},
+    {"name": "BedrockServer::_wouldCrash/_generateCrashMessage/onNodeLogin", "kind": "function group", "role": "Tracks commands known to have crashed a node, refuses to rerun them, broadcasts the block list to peers"},
+    {"name": "BedrockServer::_beginShutdown/shutdownComplete/isShuttingDown", "kind": "function group", "role": "Drives the shutdown/standdown state machine documented at length in the header"},
+    {"name": "BedrockServer::_acceptSockets", "kind": "function", "role": "Accepts pending connections on all open ports and spawns a handleSocket thread per connection"},
+    {"name": "shutdownTimer", "kind": "struct (file-local, unnamed)", "role": "Four steady_clock timestamps logged once in the destructor to report shutdown-phase durations"},
+    {"name": "__quiesceLock/__quiesceShouldUnlock/__quiesceThread", "kind": "global state (file-local)", "role": "Hold the single outstanding exclusive-DB-lock thread used to implement BlockWrites/UnblockWrites"}
+  ],
+  "misfits": [
+    {
+      "item": "__quiesceLock/__quiesceShouldUnlock/__quiesceThread",
+      "why": "Plain (non-static) file-scope globals with external linkage rather than BedrockServer members, holding exactly the kind of per-server state (which thread owns the DB quiesce lock) this file otherwise keeps private; their double-leading-underscore names are also identifiers reserved to the implementation by the C++ standard",
+      "severity": "high",
+      "suggested_home": null
+    },
+    {
+      "item": "BedrockServer::commandPortSuppressionReasons",
+      "why": "Public list<string> whose doc comment references an 'instance of commandPortSuppressionCount', a type that does not exist anywhere in the repo; the member itself is never read or written anywhere, a dead vestige of an earlier refactor of suppressCommandPort",
+      "severity": "med",
+      "suggested_home": null
+    },
+    {
+      "item": "BedrockServer::_control",
+      "why": "One ~250-line function directly owns the tuning knobs of several otherwise-separate subsystems (conflict retry counts and page-lock policy, the blocking queue's rate-limit windows, DB quiesce, socket-thread caps, sync-node priority, journal hash lookup) instead of delegating each to its own subsystem",
+      "severity": "med",
+      "suggested_home": null
+    }
+  ],
+  "name_fit": {"score": 5, "note": "BedrockServer.h/.cpp is exactly the server class it names"},
+  "location_fit": {"score": 5, "note": "Root-level orchestrator alongside its peers (BedrockCommand, BedrockPlugin), matching class_hierarchy.md's placement of BedrockServer as SQLiteServer's concrete subclass"},
+  "naming_quality": {"score": 3, "note": "Consistent `_` prefix on private members and honestly-labeled legacy aliases (isUpgradeComplete, suppressCommandPort), but the reserved double-underscore quiesce globals are a real violation"},
+  "depends_on": ["libstuff/libstuff.h", "sqlitecluster/SQLiteNode.h", "sqlitecluster/SQLiteServer.h", "sqlitecluster/SQLiteClusterMessenger.h", "BedrockPlugin.h", "BedrockCommandQueue.h", "BedrockConflictManager.h", "BedrockBlockingCommandQueue.h", "BedrockCommand.h", "bedrockVersion.h", "BedrockCore.h", "libstuff/SRandom.h", "libstuff/AutoTimer.h", "ConflictLockGuard.h", "sqlitecluster/SQLitePeer.h"]
+ }
+]

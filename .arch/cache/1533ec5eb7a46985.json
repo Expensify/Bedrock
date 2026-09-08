@@ -1,0 +1,41 @@
+{
+ "unit": "SQValue",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SQValue.h",
+  "libstuff/SQValue.cpp"
+ ],
+ "lines": 230,
+ "test": false,
+ "intent": "A tagged-value type mirroring SQLite's dynamic column typing (NONE/INTEGER/REAL/TEXT/BLOB), implicitly convertible to/from string for drop-in use wherever legacy code expects a string-typed value.",
+ "objects": [
+  {
+   "name": "SQValue",
+   "kind": "class",
+   "role": "TYPE enum + typed storage; constructors from int64_t/double/const char*/string; operator string(); friend operator+/==/!=; empty()/size(); operator<<"
+  },
+  {
+   "name": "SQValue::TYPE",
+   "kind": "enum class",
+   "role": "NONE/INTEGER/REAL/TEXT/BLOB"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Q naming matches other SQLite-adjacent types (SQResult, SQuery)"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent; integer/real/text all coexist rather than a union, a deliberate simplicity tradeoff"
+ },
+ "depends_on": [
+  "libstuff/sqlite3.h"
+ ],
+ "_src": "b005.json",
+ "hash": "1533ec5eb7a46985"
+}

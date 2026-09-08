@@ -1,3 +1,33 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Value.cpp
+ * Path:    libstuff/JSON/Value.cpp
+ * Pair:    Value.h
+ *
+ * INTENT
+ *   Implements JSON::Value as declared in Value.h; see that file for the
+ *   type's role.
+ *
+ * OBJECTS
+ *   Implements every constructor, operator, accessor, and mutator declared
+ *   in Value.h (construction/copy/move, operator[], push_back/erase/insert,
+ *   merge/mergeDeep, ensureType, typeToName, serialize/parse, iterators, etc.).
+ *   No file-local (anonymous-namespace or static) helpers are added beyond
+ *   what the header declares.
+ *
+ * OUT OF PLACE
+ *   Nothing beyond what's already noted in Value.h (mergeDeep's SQLite-named
+ *   parameter, and the logSlowConstructor/startTime profiling machinery
+ *   threaded through several constructors here).
+ *
+ * NAME/LOCATION FIT
+ *   Fits its header.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header. The same switch-over-ValueType logic is
+ *   duplicated across the copy constructor, move constructor, copy
+ *   assignment, and operator==; a naming non-issue, but notable repetition.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "Value.h"
 #include "Writer.h"
 #include "Parser.h"

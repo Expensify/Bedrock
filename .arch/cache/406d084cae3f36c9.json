@@ -1,0 +1,55 @@
+{
+ "unit": "SData",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SData.h",
+  "libstuff/SData.cpp"
+ ],
+ "lines": 283,
+ "test": false,
+ "intent": "A generic HTTP-like message (method line, name/value header table, content body) used both for real HTTP and as Bedrock's internal command/message wire format.",
+ "objects": [
+  {
+   "name": "SData",
+   "kind": "struct",
+   "role": "methodLine/nameValueMap/content; map-like accessors; calc/test helpers; getVerb; serialize/deserialize to HTTP wire format"
+  },
+  {
+   "name": "operator<<(ostream&, const SData&)",
+   "kind": "free function",
+   "role": "stream helper, serializes"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "SData::deserialize simdjson padding logic",
+   "why": "unconditionally reserves 32 extra bytes on any JSON-looking header value to satisfy simdjson's trailing-scratch-space requirement; a generic HTTP message container shaping its storage to one downstream JSON parser's needs",
+   "severity": "low",
+   "suggested_home": "wherever the simdjson parsing of these values actually happens"
+  },
+  {
+   "item": "SData::create",
+   "why": "marked **DEPRECATED** in favor of the constructor but still present as public API",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits; sits naturally beside SFastBuffer/STable"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent with repo convention"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/SFastBuffer.h"
+ ],
+ "_src": "b005.json",
+ "hash": "406d084cae3f36c9"
+}

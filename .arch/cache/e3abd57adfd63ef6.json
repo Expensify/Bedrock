@@ -1,0 +1,61 @@
+{
+ "unit": "BenchmarkBase",
+ "dir": "benchmarks",
+ "files": [
+  "benchmarks/BenchmarkBase.h"
+ ],
+ "lines": 154,
+ "test": true,
+ "intent": "Small micro-framework for writing throughput benchmarks: subclasses mix this in alongside tpunit::TestFixture and call runBench() to time a function over warm-up and measured passes and record its throughput.",
+ "objects": [
+  {
+   "name": "BenchmarkResult",
+   "kind": "struct",
+   "role": "Throughput/elapsed-time/byte-count record for one named benchmark"
+  },
+  {
+   "name": "g_benchmarkResults",
+   "kind": "extern global",
+   "role": "Name-to-BenchmarkResult map shared across the whole benchmark binary; defined in main.cpp"
+  },
+  {
+   "name": "BenchmarkBase",
+   "kind": "class",
+   "role": "Mixin base class holding the owning fixture's name"
+  },
+  {
+   "name": "BenchmarkBase::setup/teardown",
+   "kind": "method group",
+   "role": "Overridable hooks run around each runBench() call"
+  },
+  {
+   "name": "BenchmarkBase::runBench",
+   "kind": "template method",
+   "role": "Warms up, times N iterations over a vector of inputs, computes MB/s, stores the result, and prints a summary line"
+  },
+  {
+   "name": "BenchmarkBase::getInputSize",
+   "kind": "template method",
+   "role": "Private helper sizing one input (string or integral only; else a static_assert failure)"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Exactly a base class for benchmarks"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Correctly in benchmarks/"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "BenchmarkResult/BenchmarkBase don't carry the repo's `S` prefix used for shared libstuff-style utility types, unlike STable/SData, but that's a minor, acceptable inconsistency for test-only scaffolding"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "test/lib/tpunit++.hpp"
+ ],
+ "_src": "b102.json",
+ "hash": "e3abd57adfd63ef6"
+}

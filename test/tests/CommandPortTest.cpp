@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    CommandPortTest.cpp
+ * Path:    test/tests/CommandPortTest.cpp
+ *
+ * INTENT
+ *   Verifies the SuppressCommandPort / ClearCommandPort command-port
+ *   controls: closing the port records a reason in Status's
+ *   commandPortBlockReasons, a ClearCommandPort with a mismatched reason
+ *   is a no-op, and clearing with the matching reason reopens the port.
+ *
+ * OBJECTS
+ *   CommandPortTest  - tpunit::TestFixture; single `test` drives the
+ *                      suppress/status/clear-mismatch/clear-match sequence
+ *                      against a BedrockTester.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: alongside the other command tests in test/tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling fixtures.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 

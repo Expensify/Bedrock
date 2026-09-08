@@ -1,3 +1,36 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SHTTPSManager.cpp
+ * Path:    libstuff/SHTTPSManager.cpp
+ * Pair:    SHTTPSManager.h
+ *
+ * INTENT
+ *   Implements SStandaloneHTTPSManager/SHTTPSManager; see the header.
+ *
+ * OBJECTS
+ *   SStandaloneHTTPSManager::initProxyAddressHTTPS (static) - reads
+ *     HTTPS_PROXY once to initialize the static proxyAddressHTTPS.
+ *   postPoll - the bulk of the file: deserializes the response as it
+ *     streams in, decides completeness (Content-Length, 204, or EOF),
+ *     handles partial-response-then-close, and computes the next
+ *     activity/timeout deadline.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] `#include <BedrockServer.h>` and `#include <sqlitecluster/SQLiteNode.h>`
+ *     - neither BedrockServer:: nor SQLiteNode:: is referenced anywhere in this
+ *     file; unused includes that pull the Bedrock application and clustering
+ *     layers into a libstuff translation unit.
+ *   [CANDIDATE] Transaction::Transaction throwing on `isBlockingCommitThread`
+ *     - encodes a Bedrock-specific execution-model rule (worker 0 / blocking
+ *     commit thread must not make HTTPS calls) inside an otherwise generic
+ *     transaction constructor.
+ *
+ * NAME/LOCATION FIT
+ *   Fits the header's summary.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "SHTTPSManager.h"
 #include "SHTTPSProxySocket.h"
 #include "libstuff/STCPManager.h"

@@ -1,0 +1,42 @@
+{
+ "unit": "SFluentdLogger",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SFluentdLogger.h",
+  "libstuff/SFluentdLogger.cpp"
+ ],
+ "lines": 132,
+ "test": false,
+ "intent": "Async, non-blocking log shipper to a Fluentd TCP endpoint: callers push JSON records onto a lock-free ring buffer, a single background thread drains it and forwards to Fluentd, falling back to syslog() on failure.",
+ "objects": [
+  {
+   "name": "FluentdLogRecord",
+   "kind": "struct",
+   "role": "one queued record: syslog priority + JSON payload string"
+  },
+  {
+   "name": "SFluentdLogger",
+   "kind": "class",
+   "role": "log() public API; openSocket/sendAll/senderLoop implementation; inline static instance/tag act as a process-wide singleton handle"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "instance/tag are bare public statics implementing a global singleton, a different pattern from this class's own private instance members (host/port/buffer/senderThread)"
+ },
+ "depends_on": [
+  "libstuff/SRingBuffer.h",
+  "libstuff/SThread.h"
+ ],
+ "_src": "b104.json",
+ "hash": "4565b7db28aaf188"
+}

@@ -1,3 +1,46 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Jobs.cpp
+ * Path:    plugins/Jobs.cpp
+ * Pair:    Jobs.h
+ *
+ * INTENT
+ *   Implements the Jobs plugin declared in Jobs.h: the jobs table schema/indexes and every verb's
+ *   peek/process logic (create, dequeue, update, finish/retry/fail/cancel/delete/requeue, and the
+ *   crashed-job blacklist admin commands).
+ *
+ * OBJECTS
+ *   REPEAT_REANCHOR_THRESHOLD_SECONDS (file-static) - Cutoff below which a missed SCHEDULED repeat is
+ *                                                      re-anchored to "now" instead of catching up serially.
+ *   scopedDisableNoopMode (file-local class)         - RAII guard that suspends SQLite's update-noop mode for
+ *                                                       the duration of BedrockJobsCommand::process.
+ *   BedrockPlugin_Jobs::*        - getName/getInfo/onNodeLogin/getCrashedBedrockJobPatterns/upgradeDatabase/
+ *                                  getCommand, plus the static supportedRequestVerbs table and the
+ *                                  jobs-table/index DDL (see OUT OF PLACE).
+ *   BedrockJobsCommand::*        - canEscalateImmediately, peek (validation + the three commands that can
+ *                                  resolve without a leader round-trip), process (implements every verb),
+ *                                  _constructNextRunDATETIME (repeat-syntax evaluator and SCHEDULED
+ *                                  re-anchoring), _hasPendingChildJobs, _validatePriority,
+ *                                  _handleFailedRetryAfterQuery, handleFailedReply (re-queues jobs whose
+ *                                  response failed to reach the worker).
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] upgradeDatabase's partial indexes (jobsPriorityNextRunManualSmartScan*, jobsManualSmartscanReceiptID,
+ *   jobsPriorityNextRunWWWProd/WWWStag) hardcode Expensify product concepts (SmartScan receipt processing,
+ *   www-prod/www-stag environments) as GLOB literals inside an otherwise generic job-queue plugin. This ties a
+ *   reusable Bedrock component to one consumer's job-naming scheme; a generic engine has no way to know about
+ *   "manual/SmartScan*" jobs.
+ *   [CANDIDATE] scopedDisableNoopMode's name breaks the repo's type-naming convention (no leading capital / S
+ *   prefix used elsewhere for such helpers) and it is generic enough to belong in a shared header rather than
+ *   being redefined per plugin that needs it.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: implementation for the Jobs plugin, alongside Jobs.h.
+ *
+ * NAMING QUALITY
+ *   See Jobs.h for the mockRequest/canEscalateImmediately underscore-prefix gap. Otherwise consistent:
+ *   SQL string variables are prefixed "safe" once quoted (safeFirstRun, safeData, safeNumResults), matching the
+ *   repo's SQ()-escaping idiom.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "Jobs.h"
 
 #include <BedrockServer.h>

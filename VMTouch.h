@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    VMTouch.h
+ * Path:    VMTouch.h
+ * Pair:    VMTouch.cpp
+ *
+ * INTENT
+ *   Declares a small static-only utility for inspecting, and optionally
+ *   forcing, how much of a file is currently resident in the OS page
+ *   cache -- used to pre-warm a database file into memory before serving
+ *   traffic.
+ *
+ * OBJECTS
+ *   VMTouch - static-only class; check() reports (and optionally touches)
+ *             page-cache residency for a given file path.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits the name. Sits at the repo root as a standalone utility rather
+ *   than under libstuff with the rest of the reusable, Bedrock-agnostic
+ *   helpers -- arguably belongs there instead.
+ *
+ * NAMING QUALITY
+ *   Mostly camelCase (isPageAligned, bytes2pages, check), but
+ *   is_mincore_page_resident and do_nothing break that with snake_case.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <cstdint>
 
 /*

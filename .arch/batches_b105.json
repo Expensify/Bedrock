@@ -1,0 +1,73 @@
+[
+ {
+  "unit": "SPerformanceTimer",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SPerformanceTimer.h",
+   "libstuff/SPerformanceTimer.cpp"
+  ],
+  "kind": "pair",
+  "lines": 77,
+  "test": false,
+  "hash": "38a2f8eac563d048"
+ },
+ {
+  "unit": "AutoTimer",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/AutoTimer.h",
+   "libstuff/AutoTimer.cpp"
+  ],
+  "kind": "pair",
+  "lines": 66,
+  "test": false,
+  "hash": "9db0b7d7bcbda010"
+ },
+ {
+  "unit": "SThread",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SThread.h"
+  ],
+  "kind": "single",
+  "lines": 66,
+  "test": false,
+  "hash": "a90c13e05dd5cfae"
+ },
+ {
+  "unit": "SRandom",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SRandom.h",
+   "libstuff/SRandom.cpp"
+  ],
+  "kind": "pair",
+  "lines": 57,
+  "test": false,
+  "hash": "d9c1ddc55a28bb9f"
+ },
+ {
+  "unit": "SMultiHostSocketPool",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/SMultiHostSocketPool.h",
+   "libstuff/SMultiHostSocketPool.cpp"
+  ],
+  "kind": "pair",
+  "lines": 48,
+  "test": false,
+  "hash": "92b5adc96213def9"
+ },
+ {
+  "unit": "AutoScopeOnPrepare",
+  "dir": "libstuff",
+  "files": [
+   "libstuff/AutoScopeOnPrepare.h",
+   "libstuff/AutoScopeOnPrepare.cpp"
+  ],
+  "kind": "pair",
+  "lines": 33,
+  "test": false,
+  "hash": "10183823cd6c81c1"
+ }
+]

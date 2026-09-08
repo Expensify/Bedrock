@@ -1,3 +1,58 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Value.h
+ * Path:    libstuff/JSON/Value.h
+ * Pair:    Value.cpp
+ *
+ * INTENT
+ *   Declares JSON::Value, Bedrock's in-memory representation of a JSON
+ *   document node (scalar, array, or object), plus the exception types
+ *   and small helper types used to build and traverse it.
+ *
+ * OBJECTS
+ *   JSON::Error            - base exception for JSON errors, captures a stack trace
+ *   JSON::TypeError        - thrown when a Value is accessed/cast as the wrong type
+ *   JSON::NotFound         - thrown when a keyed or indexed member does not exist
+ *   JSON::InvalidArgument  - thrown for malformed caller input (e.g. bad path key)
+ *   JSON::ValueType        - enum of the JSON node kinds (INT, FLOAT, BOOL, STRING, OBJECT, ARRAY, NIL)
+ *   JSON::Value            - the tagged-union JSON node; scalar storage plus shared_ptr-backed
+ *                            object/array storage and all accessors/mutators
+ *   JSON::KeyValue         - move-only key/value pair used to build Value objects from initializer lists
+ *   JSON::_ArrayValue<T>   - adapter giving a Value begin()/end() over its array for range-for
+ *   JSON::_ObjectValue<T>  - adapter giving a Value begin()/end() over its object for range-for
+ *   JSON::ArrayValue, ConstArrayValue   - typedefs of _ArrayValue<Value>, _ArrayValue<const Value>
+ *   JSON::ObjectValue, ConstObjectValue - typedefs of _ObjectValue<Value>, _ObjectValue<const Value>
+ *   operator<<(ostream&, const Value&)  - serializes a Value to a stream
+ *   operator<<(ostream&, const _ArrayValue<T>&), operator<<(..., const _ObjectValue<T>&)
+ *                          - forward to the wrapped Value's stream operator
+ *   logStackTraceOnEnsureTypeFailure - thread_local debug flag: when set, a failed
+ *                          ensureType() logs a stack trace
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] logStackTraceOnEnsureTypeFailure is mutable global-ish debug state
+ *   declared inline in the core value-type header; it reads like a logging/
+ *   diagnostics switch, not part of the JSON data model.
+ *   [CANDIDATE] Value::mergeDeep's useSQLiteMergeBehavior parameter bakes a specific
+ *   downstream consumer's name ("SQLite") into an otherwise generic JSON value type;
+ *   the behavior it selects is really just RFC 7386 JSON Merge Patch semantics.
+ *   [CANDIDATE] `friend class SAXHandler` (flagged in the code itself as "Coupling++")
+ *   lets the SAX parser reach into Value's private storage; defensible for
+ *   performance but a real encapsulation break.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: libstuff/JSON/Value.{h,cpp} for JSON::Value. The file also carries the
+ *   JSON exception hierarchy, KeyValue, and the _ArrayValue/_ObjectValue range
+ *   adapters, none of which is named "Value" - reasonable given how tightly
+ *   coupled they are to it, but the file does more than its name promises.
+ *
+ * NAMING QUALITY
+ *   Mixed. Public API names (getStringMemberWithDefault, mergeDeep, etc.) are
+ *   descriptive and consistent. But Value's protected/private data members
+ *   (valueType, stringValue, objectValue, arrayValue, usingUnsigned, startTime)
+ *   carry no `_` prefix, unlike the repo's private-member convention; and
+ *   intValue/uintValue are two separate, easily confused storage fields
+ *   disambiguated only by the separate usingUnsigned bool.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 
 #include <atomic>

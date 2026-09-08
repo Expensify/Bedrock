@@ -1,3 +1,45 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLiteNode.cpp
+ * Path:    sqlitecluster/SQLiteNode.cpp
+ * Pair:    SQLiteNode.h
+ *
+ * INTENT
+ *   Implements the SQLiteNode state machine and peer-message handling
+ *   declared in SQLiteNode.h.
+ *
+ * OBJECTS
+ *   SQLiteNode - full implementation: construction/teardown, the
+ *     update() state machine (SEARCHING..FOLLOWING), _onMESSAGE's
+ *     per-message-type handling, the _replicate() replication thread
+ *     loop, synchronization (_queueSynchronize/_recvSynchronize), and
+ *     peer socket I/O (prePoll/postPoll/_acceptSocket).
+ *   PDEBUG/PINFO/PHMMM/PWARN - file-local logging macros that prefix a
+ *     log line with "->{peer->name}"; used throughout in place of the
+ *     plain S*-family macros whenever a `peer` is in scope.
+ *   synchronizeCount - file-local static atomic<size_t> (inside
+ *     _onMESSAGE's SYNCHRONIZE handling) used only to number each
+ *     spawned synchronize-response thread for its SInitialize() label.
+ *   stateName() / stateFromName() lookup tables - function-local static
+ *     maps translating between SQLiteNodeState and its string name.
+ *
+ * OUT OF PLACE
+ *   #include <plugins/Compression.h> and the calls it enables to
+ *     BedrockPlugin_Compression::decompress in _handleBeginTransaction
+ *     and _recvSynchronize [CANDIDATE] - sqlitecluster/ is a lower-level
+ *     replication library; depending on one specific plugin under
+ *     plugins/ inverts the codebase's normal dependency direction.
+ *     (sqlitecluster/SQLite.cpp has the same dependency, so this is an
+ *     established pattern here, not unique to this file.)
+ *
+ * NAME/LOCATION FIT
+ *   Fits; pairs with SQLiteNode.h.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header's underscore-prefix convention.
+ *   `messagesDeqeued` in _processPeerMessages is a typo for
+ *   "messagesDequeued".
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "SQLiteNode.h"
 #include "sqlitecluster/SQLite.h"
 

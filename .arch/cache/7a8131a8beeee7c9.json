@@ -1,0 +1,36 @@
+{
+ "unit": "SQliteParameter",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SQliteParameter.h",
+  "libstuff/SQliteParameter.cpp"
+ ],
+ "lines": 174,
+ "test": false,
+ "intent": "A single typed value bindable to a named sqlite3 prepared-statement parameter, with wire-safe serialize/deserialize so bound parameters can travel inside an SData header value.",
+ "objects": [
+  {
+   "name": "SQliteParameter",
+   "kind": "class",
+   "role": "Type enum class (Null/Int64/Double/Text/Blob), public value fields, static factories, serialize/deserialize, and param-name URI encode/decode"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "sits with the other SQLite-adjacent S-types (SQResult, SQValue) in libstuff"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b104.json",
+ "hash": "7a8131a8beeee7c9"
+}

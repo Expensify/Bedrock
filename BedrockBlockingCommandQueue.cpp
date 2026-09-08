@@ -1,3 +1,25 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockBlockingCommandQueue.cpp
+ * Path:    BedrockBlockingCommandQueue.cpp
+ * Pair:    BedrockBlockingCommandQueue.h
+ *
+ * INTENT
+ *   Implements BedrockBlockingCommandQueue as declared in the header: the
+ *   push()/_dequeue() rate-limit checks and the sliding-window bookkeeping
+ *   (_recordAndCheck/_isBlocked/_getOrCreateState/_getState) behind them.
+ *
+ * OBJECTS
+ *   BedrockBlockingCommandQueue:: (all methods) - no file-local additions.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; pairs directly with BedrockBlockingCommandQueue.h.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <BedrockBlockingCommandQueue.h>
 
 void BedrockBlockingCommandQueue::startTiming(unique_ptr<BedrockCommand>& command)

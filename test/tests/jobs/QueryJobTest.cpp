@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    QueryJobTest.cpp
+ * Path:    test/tests/jobs/QueryJobTest.cpp
+ *
+ * INTENT
+ *   tpunit fixture exercising the Jobs plugin's `QueryJob` command: given
+ *   a jobID, it must return the expected field count and values (name,
+ *   nextRun, repeat, data, priority, created).
+ *
+ * OBJECTS
+ *   QueryJobTest           - tpunit::TestFixture; single test that creates
+ *                            a job then calls QueryJob and asserts the
+ *                            response fields.
+ *   __QueryJobTest         - static instance that registers the fixture.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives with the other per-command Jobs plugin tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling job tests.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>
 

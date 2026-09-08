@@ -1,0 +1,56 @@
+{
+ "unit": "SReplaceBench",
+ "dir": "benchmarks",
+ "files": [
+  "benchmarks/SReplaceBench.cpp"
+ ],
+ "lines": 110,
+ "test": true,
+ "intent": "Self-contained tpunit fixture benchmarking libstuff's SReplace() across match-count and find/replace length asymmetries.",
+ "objects": [
+  {
+   "name": "SReplaceBench",
+   "kind": "struct",
+   "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SReplace() over a small fixed set of input strings"
+  },
+  {
+   "name": "SReplaceBench::benchNoMatches/benchFewMatches/benchManyMatches",
+   "kind": "method group",
+   "role": "Vary how many substring matches are found"
+  },
+  {
+   "name": "SReplaceBench::benchLongFind/benchLongReplace",
+   "kind": "method group",
+   "role": "Vary whether the find or the replace argument is the long string"
+  },
+  {
+   "name": "SReplaceBench::benchShortToLong/benchLongToShort",
+   "kind": "method group",
+   "role": "Single-character find vs. a long replacement, and the reverse"
+  },
+  {
+   "name": "__SReplaceBench",
+   "kind": "file-scope global",
+   "role": "Self-registers the fixture with tpunit at static-init time"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Named for exactly the function it benchmarks"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Correctly in benchmarks/"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Fits repo/test convention"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "benchmarks/BenchmarkBase.h"
+ ],
+ "_src": "b102.json",
+ "hash": "633c06d2f9bfb352"
+}

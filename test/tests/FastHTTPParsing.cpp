@@ -1,3 +1,34 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    FastHTTPParsing.cpp
+ * Path:    test/tests/FastHTTPParsing.cpp
+ *
+ * INTENT
+ *   Unit tests for SFastBuffer::startsWithHTTPRequest(), the streaming
+ *   detector that tells a socket handler whether a full HTTP request
+ *   (headers plus declared content-length body) has accumulated in a
+ *   growing receive buffer yet.
+ *
+ * OBJECTS
+ *   FastHTTPParsing  - tpunit::TestFixture; exercises simple success/fail
+ *                       cases, both CRLF and LF line endings, buffers fed
+ *                       in split chunks, and re-detection after an SData
+ *                       deserialize/consumeFront cycle "resets" the buffer
+ *                       for a second pipelined request.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: it lives under test/tests alongside other command/protocol
+ *   tests, though the name reads as testing "fast HTTP parsing" broadly
+ *   when it in fact tests one specific predicate (startsWithHTTPRequest).
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test fixtures (PascalCase struct name, global
+ *   `__FastHTTPParsing` instance). Method names (simpleSuccess, blank,
+ *   splitSeparators, reset) are clear and test-specific.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SFastBuffer.h>
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>

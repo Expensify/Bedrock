@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Parser.h
+ * Path:    libstuff/JSON/Parser.h
+ * Pair:    Parser.cpp
+ *
+ * INTENT
+ *   Parse a JSON string into a JSON::Value tree, in a strict mode that
+ *   throws on malformed input and a permissive mode that does not.
+ *
+ * OBJECTS
+ *   Parser  - class; two static entry points, read() (throws
+ *             JSON::InvalidArgument on parse failure) and readUnsafe()
+ *             (swallows parse errors and returns whatever partial value
+ *             resulted).
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   "readUnsafe" clearly signals the risk relative to "read"; good.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 
 #include <memory>

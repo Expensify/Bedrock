@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQliteParameter.h
+ * Path:    libstuff/SQliteParameter.h
+ * Pair:    SQliteParameter.cpp
+ *
+ * INTENT
+ *   A single typed value bindable to a named sqlite3 prepared-statement parameter
+ *   (`:name`/`@name`/`$name`), plus a wire-safe serialize/deserialize pair so bound
+ *   parameters can travel as a plain string inside an SData header value.
+ *
+ * OBJECTS
+ *   SQliteParameter - Type enum class (Null/Int64/Double/Text/Blob); public type/
+ *     value fields; static factories null/i/d/text/blob; serialize/deserialize;
+ *     uriEncodeParamName/uriDecodeParamName for embedding the placeholder name
+ *     (which starts with a reserved punctuation character) in an SData header name.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; sits with the other SQLite-adjacent S-types (SQResult, SQValue) in libstuff.
+ *
+ * NAMING QUALITY
+ *   Consistent. Public fields left undecorated (no `_`) per the public-data-member
+ *   convention used across this class family (SQValue, SQResult).
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 #include <cstdint>
 #include <string>

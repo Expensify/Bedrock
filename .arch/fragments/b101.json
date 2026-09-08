@@ -1,0 +1,110 @@
+[
+ {
+  "unit": "BedrockCommand",
+  "dir": "",
+  "files": ["BedrockCommand.h", "BedrockCommand.cpp"],
+  "lines": 879,
+  "test": false,
+  "intent": "Represents a single client command as it flows through Bedrock's prePeek/peek/process/postProcess pipeline, tracking plugin ownership, HTTPS sub-requests, per-phase timing, timeout policy, and crash-diagnostic state.",
+  "objects": [
+    {"name": "BedrockCommand", "kind": "class", "role": "extends SQLiteCommand; the per-request unit of work with virtual peek/process hooks for plugins to override"},
+    {"name": "BedrockCommand::TIMING_INFO", "kind": "enum", "role": "phase labels for timing samples, including BLOCKING_* variants for the blocking commit thread"},
+    {"name": "BedrockCommand::STAGE", "kind": "enum class", "role": "which pipeline stage reset() is being called for"},
+    {"name": "BedrockCommand::GrowOnlyList<T>", "kind": "nested template class", "role": "append-only wrapper around list<T> (no erase); holds httpsRequests so iterators stay stable"},
+    {"name": "BedrockCommand::CrashMap", "kind": "nested class (public map<string, SString>)", "role": "subset of request name/value pairs used to fingerprint commands that may have caused a crash"}
+  ],
+  "misfits": [
+    {"item": "BedrockCommand::GrowOnlyList<T>", "why": "a generic, command-agnostic container template with no dependency on BedrockCommand, defined inline inside it", "severity": "low", "suggested_home": "libstuff (as a reusable append-only-list utility)"},
+    {"item": "BedrockCommand::getMethodName", "why": "special-cases a 'returnValueList' suffix documented in-code as a hack to support one legacy plugin format (Auth's old Get), inside the generic base command class", "severity": "med", "suggested_home": "the Auth plugin, or null"},
+    {"item": "BedrockCommand.cpp: finalizeTimingInfo", "why": "a sizeable timing-metrics/logging routine (per-phase totals, upstream-value promotion, a long SINFO composition) bundled into the command class itself rather than a separate metrics helper", "severity": "low", "suggested_home": null}
+  ],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 4, "note": "top-level, consistent with other core command-pipeline types (BedrockCore, BedrockServer)"},
+  "naming_quality": {"score": 4, "note": "consistent `_` on non-public members; TIMING_INFO is a plain unscoped enum sitting beside STAGE, which correctly uses enum class"},
+  "depends_on": ["libstuff/SHTTPSManager.h", "sqlitecluster/SQLiteCommand.h", "BedrockPlugin.h", "libstuff/libstuff.h", "sqlitecluster/SQLite.h", "BedrockServer.h"]
+ },
+ {
+  "unit": "BedrockCore",
+  "dir": "",
+  "files": ["BedrockCore.h", "BedrockCore.cpp"],
+  "lines": 575,
+  "test": false,
+  "intent": "Runs a BedrockCommand's prePeek/peek/process/postProcess lifecycle against a specific SQLite db and transaction, translating thrown exceptions into HTTP-style response codes.",
+  "objects": [
+    {"name": "BedrockCore", "kind": "class", "role": "extends SQLiteCore; executes a command's lifecycle methods against _db, handling timeouts/aborts/exceptions"},
+    {"name": "BedrockCore::RESULT", "kind": "enum class", "role": "outcome codes from peekCommand/processCommand (COMPLETE, SHOULD_PROCESS, NEEDS_COMMIT, NO_COMMIT_REQUIRED, SERVER_NOT_LEADING)"},
+    {"name": "BedrockCore::AutoTimer", "kind": "nested RAII class", "role": "records one timing entry into command->timingInfo spanning its own lifetime"},
+    {"name": "AutoScopeRewrite", "kind": "file-local class (BedrockCore.cpp)", "role": "RAII enable/disable of SQLite's query-rewrite hook for one process() call"}
+  ],
+  "misfits": [
+    {"item": "AutoScopeRewrite", "why": "defined at file scope in BedrockCore.cpp without `static` or an anonymous namespace, so its file-local intent relies on convention rather than being enforced", "severity": "low", "suggested_home": null}
+  ],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "fits; sits at the repo root as the execution engine beside BedrockCommand and BedrockServer"},
+  "naming_quality": {"score": 4, "note": "consistent; `_server` follows the `_` convention for private members"},
+  "depends_on": ["BedrockCommand.h", "sqlitecluster/SQLiteCore.h", "BedrockServer.h", "BedrockPlugin.h", "libstuff/libstuff.h"]
+ },
+ {
+  "unit": "main",
+  "dir": "",
+  "files": ["main.cpp"],
+  "lines": 457,
+  "test": false,
+  "intent": "Process entry point for the Bedrock server binary: parses arguments, applies defaults, handles one-shot maintenance flags, loads plugins, initializes SQLite/SSL/signal handling, and runs the main poll loop.",
+  "objects": [
+    {"name": "main", "kind": "function", "role": "entry point; startup/shutdown sequencing and the main prePoll/poll/postPoll loop"},
+    {"name": "RetrySystem", "kind": "function", "role": "runs a shell command via system(), retrying up to 3 times with a 5s backoff, fatal SERROR if it never succeeds"},
+    {"name": "VacuumDB", "kind": "function", "role": "shells out to `sqlite3 <db> 'VACUUM;'` via RetrySystem"},
+    {"name": "BackupDB", "kind": "function", "role": "copies the db file plus its -wal/-shm sidecars into BACKUP_DIR"},
+    {"name": "loadPlugins", "kind": "function", "role": "registers built-in plugins by name and dlopen/dlsym's any plugin named in -plugins that isn't built in"}
+  ],
+  "misfits": [
+    {"item": "VacuumDB / BackupDB / BACKUP_DIR", "why": "shell out to the external `sqlite3` binary and hardcode a `/var/tmp/` backup path inside the process entry point; BACKUP_DIR is the only path in this file not configurable via args like everything else here", "severity": "low", "suggested_home": null},
+    {"item": "loadPlugins", "why": "a self-contained dlopen/dlsym plugin-registration subsystem implemented as a free function in main.cpp", "severity": "med", "suggested_home": "BedrockPlugin.h/.cpp"}
+  ],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 3, "note": "RetrySystem/VacuumDB/BackupDB use PascalCase while loadPlugins uses camelCase, for free functions at the same file scope"},
+  "depends_on": ["BedrockServer.h", "BedrockPlugin.h", "plugins/Cache.h", "plugins/DB.h", "plugins/Jobs.h", "plugins/MySQL.h", "plugins/Compression.h", "libstuff/libstuff.h", "libstuff/SSSLState.h", "sqlitecluster/SQLite.h", "VMTouch.h"]
+ },
+ {
+  "unit": "BedrockBlockingCommandQueue",
+  "dir": "",
+  "files": ["BedrockBlockingCommandQueue.h", "BedrockBlockingCommandQueue.cpp"],
+  "lines": 354,
+  "test": false,
+  "intent": "A BedrockCommandQueue subclass, used for the blocking commit thread's queue, that adds per-identifier and per-command-name sliding-window rate limiting, rejecting commands whose key has spent too much recent time on the queue.",
+  "objects": [
+    {"name": "BedrockBlockingCommandQueue", "kind": "class", "role": "extends BedrockCommandQueue; adds rate-limit checks to push()/_dequeue() plus configuration and status reporting"},
+    {"name": "BedrockBlockingCommandQueue::RecentlyFinishedCommand", "kind": "struct", "role": "one timed sample (finishTime, elapsedTime) in the sliding window"},
+    {"name": "BedrockBlockingCommandQueue::RecentlyFinishedCommandList", "kind": "typedef", "role": "deque<RecentlyFinishedCommand>, oldest first"},
+    {"name": "BedrockBlockingCommandQueue::IdentifierState", "kind": "struct", "role": "one tracked key's mutex, recent-sample deque, and block-until deadline"},
+    {"name": "BedrockBlockingCommandQueue::StateMap", "kind": "struct", "role": "mutex-guarded unordered_map<string, shared_ptr<IdentifierState>>; one instance each for identifiers and command names"}
+  ],
+  "misfits": [
+    {"item": "IdentifierState / StateMap / _recordAndCheck / _isBlocked", "why": "a generic string-keyed sliding-window rate limiter with no dependency on BedrockCommand, implemented as private nested machinery of a command-queue subclass", "severity": "low", "suggested_home": "libstuff, as a general-purpose rate limiter"}
+  ],
+  "name_fit": {"score": 4, "note": "'Blocking' refers to the blocking commit thread's queue, which this class serves; the rate-limiting role isn't in the name"},
+  "location_fit": {"score": 5, "note": "fits; sits beside its base class BedrockCommandQueue"},
+  "naming_quality": {"score": 4, "note": "consistent `_` prefix on private members; Identifier vs Command dimensions named distinctly with no confusable aliasing"},
+  "depends_on": ["BedrockCommandQueue.h", "BedrockCommand.h"]
+ },
+ {
+  "unit": "BedrockCommandQueue",
+  "dir": "",
+  "files": ["BedrockCommandQueue.h", "BedrockCommandQueue.cpp"],
+  "lines": 315,
+  "test": false,
+  "intent": "A thread-safe, time-ordered queue of BedrockCommands keyed by scheduled time and timeout, from which worker threads block-and-wait for the next command that is either already timed out or due to run.",
+  "objects": [
+    {"name": "BedrockCommandQueue", "kind": "class", "role": "push/get/_dequeue, the timed-out-vs-scheduled ordering rule, and empty/size/clear/getAll queries"},
+    {"name": "BedrockCommandQueue::timeout_error", "kind": "nested exception class", "role": "thrown by get() when its wait window elapses with nothing available"},
+    {"name": "BedrockCommandQueue::ItemTimeoutPair", "kind": "protected nested struct", "role": "pairs a queued command with its timeout for the parallel _lookupByTimeout index"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 3, "note": "Timeout and Scheduled are both bare uint64_t typedefs, mutually assignable with nothing at the type level stopping one being passed where the other is expected"},
+  "depends_on": ["BedrockCommand.h", "libstuff/libstuff.h"]
+ }
+]

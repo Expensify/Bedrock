@@ -1,3 +1,34 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SPerformanceTimer.cpp
+ * Path:    libstuff/SPerformanceTimer.cpp
+ * Pair:    SPerformanceTimer.h
+ *
+ * INTENT
+ *   Implements SPerformanceTimer; see the header for the public contract.
+ *
+ * OBJECTS
+ *   SPerformanceTimer::SPerformanceTimer  - seeds defaults/totals maps and
+ *                                            the initial log-interval clock.
+ *   SPerformanceTimer::start              - records the current type and
+ *                                            start time.
+ *   SPerformanceTimer::stop               - accumulates elapsed time into
+ *                                            `_totals` under `_lastType`,
+ *                                            triggers a log + reset every
+ *                                            10 seconds, returns elapsed
+ *                                            microseconds.
+ *   SPerformanceTimer::log                - formats each type's total as
+ *                                            "ms (pct%)" and emits one
+ *                                            SINFO line via SComposeList.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Fits repo convention.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <chrono>
 #include <libstuff/libstuff.h>
 #include "SPerformanceTimer.h"

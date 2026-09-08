@@ -1,3 +1,37 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    main.cpp
+ * Path:    benchmarks/main.cpp
+ *
+ * INTENT
+ *   Entry point for the standalone benchmark binary. Runs the tpunit-
+ *   registered benchmark fixtures and, given a --baseline ref, also
+ *   checks out that ref, rebuilds, reruns the benchmarks, restores the
+ *   working tree, and prints a colored throughput comparison report.
+ *
+ * OBJECTS
+ *   runBenchmarks - clears g_benchmarkResults and invokes
+ *       tpunit::Tests::run() with the given include/exclude filters.
+ *   printComparison - formats a colored baseline-vs-current throughput
+ *       table (new/improved/regressed/unchanged/removed) to stdout.
+ *   main - parses --baseline/-only/-except/-v/--verbose/--help and
+ *       orchestrates either a plain run or the git-based baseline
+ *       comparison workflow (stash, checkout, `make bench`, restore).
+ *   GREEN/RED/RESET/BOLD - file-scope ANSI color-code constants.
+ *   SIGNIFICANT_CHANGE_THRESHOLD - percent-change cutoff used to
+ *       classify a result as improved/regressed vs. unchanged.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] The baseline-comparison path shells out to git
+ *   (stash/checkout/rev-parse) and reruns `make bench -j32` from inside
+ *   this C++ binary -- build/source-control orchestration that reads
+ *   more like a CI shell script than benchmark-runner logic.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; the benchmarks driver, in benchmarks/.
+ *
+ * NAMING QUALITY
+ *   Fits repo convention; descriptive throughout.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <iostream>
 #include <map>
 #include <set>

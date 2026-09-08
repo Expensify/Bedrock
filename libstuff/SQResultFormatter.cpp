@@ -1,3 +1,34 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQResultFormatter.cpp
+ * Path:    libstuff/SQResultFormatter.cpp
+ * Pair:    SQResultFormatter.h
+ *
+ * INTENT
+ *   Implementation of the six formatXXX() renderers declared in SQResultFormatter.h.
+ *
+ * OBJECTS
+ *   SQResultFormatter::format/formatColumn/formatCSV/formatTabs/formatQuote/formatJSON
+ *     - the implementations; formatColumn is by far the largest, handling embedded
+ *       newlines (multi-line cells) and Unicode display-width-aware column padding.
+ *   (file-local, inside formatColumn) utf8Next/isCombining/isWide/displayWidth/
+ *     padToWidth/expandTabs/splitLines - lambda helpers implementing a small UTF-8-aware
+ *     terminal-width text layout engine, used only here.
+ *   (file-local, inside formatQuote) isNumeric/quoteSQL - lambda helpers for SQL-literal quoting.
+ *   (file-local, inside formatCSV) needsQuoting/quoteCSV - lambda helpers for RFC-4180-ish CSV quoting.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] The UTF-8/display-width lambda helpers in formatColumn (utf8Next,
+ *   isCombining, isWide, displayWidth) are a generic string-width utility with no
+ *   dependency on SQResult; they're trapped as local lambdas here instead of living
+ *   in libstuff as a reusable string-width helper.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent, descriptive local names throughout.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "SQResultFormatter.h"
 #include <libstuff/libstuff.h>
 

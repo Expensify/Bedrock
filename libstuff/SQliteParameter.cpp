@@ -1,3 +1,25 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQliteParameter.cpp
+ * Path:    libstuff/SQliteParameter.cpp
+ * Pair:    SQliteParameter.h
+ *
+ * INTENT
+ *   Implementation of SQliteParameter's factories, serialize/deserialize, and
+ *   parameter-name URI-style encode/decode.
+ *
+ * OBJECTS
+ *   No file-local helpers; all functions implement SQliteParameter members.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "SQliteParameter.h"
 
 #include "libstuff.h"

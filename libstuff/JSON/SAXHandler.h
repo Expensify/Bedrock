@@ -1,3 +1,35 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SAXHandler.h
+ * Path:    libstuff/JSON/SAXHandler.h
+ * Pair:    SAXHandler.cpp
+ *
+ * INTENT
+ *   Implements rapidjson's SAX handler interface to build a JSON::Value
+ *   tree (with nested objects/arrays) from the stream of callbacks a
+ *   rapidjson::Reader emits while parsing.
+ *
+ * OBJECTS
+ *   SAXHandler  - class; implements the full handler surface a
+ *                 rapidjson::Reader expects (Null, Bool, Int, Uint,
+ *                 Int64, Uint64, Double, String, StartObject, Key,
+ *                 EndObject, StartArray, EndArray, RawNumber), tracks a
+ *                 stack of in-progress Value contexts, and hands off the
+ *                 finished root via getValue().
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; name matches the rapidjson SAX handler convention it implements.
+ *
+ * NAMING QUALITY
+ *   Interface method names are fixed by rapidjson's contract. Internal
+ *   members (contexts, tempArrayContentLists, root, ownershipGiven) are
+ *   clear; root is a manually new/deleted raw pointer that getValue()
+ *   later wraps in a unique_ptr on hand-off, an ownership pattern worth
+ *   a second look but not a naming problem.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 
 #include <cstddef>

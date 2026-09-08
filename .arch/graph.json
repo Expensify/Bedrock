@@ -1,15 +1,36 @@
 {
  "depends": {
-  "libstuff": [
-   "SData",
-   "SFastBuffer",
-   "SFluentdLogger",
-   "SQResult",
-   "SQliteParameter",
-   "qrf"
+  "BedrockBlockingCommandQueue": [
+   "BedrockCommandQueue"
+  ],
+  "BedrockCommand": [
+   "BedrockPlugin",
+   "BedrockServer",
+   "libstuff/SHTTPSManager",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLite",
+   "sqlitecluster/SQLiteCommand"
+  ],
+  "BedrockCommandQueue": [
+   "BedrockCommand",
+   "libstuff/libstuff"
+  ],
+  "BedrockConflictManager": [
+   "libstuff/libstuff"
+  ],
+  "BedrockCore": [
+   "BedrockCommand",
+   "BedrockPlugin",
+   "BedrockServer",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLiteCore"
+  ],
+  "BedrockPlugin": [
+   "BedrockCommand",
+   "BedrockServer",
+   "libstuff/libstuff"
   ],
   "BedrockServer": [
-   "AutoTimer",
    "BedrockBlockingCommandQueue",
    "BedrockCommand",
    "BedrockCommandQueue",
@@ -17,1394 +38,1353 @@
    "BedrockCore",
    "BedrockPlugin",
    "ConflictLockGuard",
-   "SQLiteClusterMessenger",
-   "SQLiteNode",
-   "SQLitePeer",
-   "SQLiteServer",
-   "SRandom",
    "bedrockVersion",
-   "libstuff"
+   "libstuff/AutoTimer",
+   "libstuff/SRandom",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLiteClusterMessenger",
+   "sqlitecluster/SQLiteNode",
+   "sqlitecluster/SQLitePeer",
+   "sqlitecluster/SQLiteServer"
   ],
-  "SQLiteNode": [
-   "Compression",
-   "SQLite",
-   "SQLiteCommand",
-   "SQLitePeer",
-   "SQLitePool",
-   "SQLiteServer",
-   "SQResult",
-   "SRandom",
-   "SSynchronizedQueue",
-   "STCPManager",
-   "libstuff"
+  "VMTouch": [
+   "libstuff/libstuff"
   ],
-  "Value": [
-   "Parser",
-   "Utils",
-   "Writer",
-   "libstuff"
+  "benchmarks/BenchmarkBase": [
+   "libstuff/libstuff"
   ],
-  "SQLite": [
-   "Compression",
-   "SDeburr",
-   "SPerformanceTimer",
-   "SQResult",
-   "SQliteParameter",
-   "libstuff"
+  "benchmarks/SDeburrBench": [
+   "benchmarks/BenchmarkBase",
+   "libstuff/SDeburr"
   ],
-  "Jobs": [
+  "benchmarks/SReplaceAllBench": [
+   "benchmarks/BenchmarkBase",
+   "libstuff/libstuff"
+  ],
+  "benchmarks/SReplaceBench": [
+   "benchmarks/BenchmarkBase",
+   "libstuff/libstuff"
+  ],
+  "benchmarks/main": [
+   "benchmarks/BenchmarkBase",
+   "libstuff/libstuff"
+  ],
+  "libstuff/AutoScopeOnPrepare": [
+   "sqlitecluster/SQLite"
+  ],
+  "libstuff/AutoTimer": [
+   "libstuff/libstuff"
+  ],
+  "libstuff/JSON/Parser": [
+   "libstuff/JSON/Metrics",
+   "libstuff/JSON/SAXHandler",
+   "libstuff/JSON/Value"
+  ],
+  "libstuff/JSON/SAXHandler": [
+   "libstuff/JSON/Value"
+  ],
+  "libstuff/JSON/Serializable": [
+   "libstuff/JSON/Value"
+  ],
+  "libstuff/JSON/Utils": [
+   "libstuff/JSON/Value"
+  ],
+  "libstuff/JSON/Value": [
+   "libstuff/JSON/Parser",
+   "libstuff/JSON/Utils",
+   "libstuff/JSON/Writer",
+   "libstuff/libstuff"
+  ],
+  "libstuff/JSON/Writer": [
+   "libstuff/JSON/Metrics",
+   "libstuff/JSON/Value",
+   "libstuff/libstuff"
+  ],
+  "libstuff/SData": [
+   "libstuff/SFastBuffer",
+   "libstuff/libstuff"
+  ],
+  "libstuff/SDeburr": [
+   "libstuff/libstuff"
+  ],
+  "libstuff/SFluentdLogger": [
+   "libstuff/SRingBuffer",
+   "libstuff/SThread"
+  ],
+  "libstuff/SHTTPSManager": [
    "BedrockPlugin",
    "BedrockServer",
-   "SQLitePeer",
-   "SQLiteUtils",
-   "SQResult",
-   "libstuff"
+   "libstuff/SData",
+   "libstuff/SHTTPSProxySocket",
+   "libstuff/STCPManager",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLiteNode"
   ],
-  "LibStuffTest": [
-   "BedrockTester",
-   "SData",
-   "SQLite",
-   "SQResult",
-   "SRandom",
-   "libstuff"
+  "libstuff/SHTTPSProxySocket": [
+   "libstuff/SData",
+   "libstuff/SFastBuffer",
+   "libstuff/SSSLState",
+   "libstuff/STCPManager",
+   "libstuff/libstuff"
   ],
-  "MySQL": [
-   "BedrockPlugin",
-   "BedrockServer",
-   "SQResult",
-   "bedrockVersion",
-   "libstuff"
+  "libstuff/SLog": [
+   "libstuff/libstuff"
   ],
-  "tpunit++": [
-   "PrintEquality"
+  "libstuff/SMultiHostSocketPool": [
+   "libstuff/SSocketPool",
+   "libstuff/STCPManager"
   ],
-  "GetJobTest": [
-   "BedrockTester",
-   "SData",
-   "SQResult"
+  "libstuff/SPerformanceTimer": [
+   "libstuff/libstuff"
   ],
-  "TestPlugin": [
-   "BedrockPlugin",
-   "BedrockServer",
-   "SQLitePool",
-   "SQResult",
-   "SThread",
-   "libstuff"
+  "libstuff/SQResult": [
+   "libstuff/SQResultFormatter",
+   "libstuff/SQValue",
+   "libstuff/libstuff"
   ],
-  "RetryJobTest": [
-   "BedrockTester",
-   "JobTestHelper",
-   "SData",
-   "SQResult"
+  "libstuff/SQResultFormatter": [
+   "libstuff/SQResult",
+   "libstuff/libstuff"
   ],
-  "BedrockCommand": [
-   "BedrockPlugin",
-   "BedrockServer",
-   "SHTTPSManager",
-   "SQLite",
-   "SQLiteCommand",
-   "libstuff"
+  "libstuff/SQliteParameter": [
+   "libstuff/libstuff"
   ],
-  "BedrockTester": [
-   "PortMap",
-   "RemoteSQLite",
-   "SData",
-   "SFastBuffer",
-   "SQLite",
-   "SQResult",
-   "libstuff",
-   "tpunit++"
+  "libstuff/SResolver": [
+   "libstuff/libstuff"
   ],
-  "JSONValueTest": [
-   "Value",
-   "libstuff",
-   "tpunit++"
+  "libstuff/SSSLState": [
+   "libstuff/SFastBuffer",
+   "libstuff/libstuff"
   ],
-  "CreateJobTest": [
-   "BedrockTester",
-   "JobTestHelper",
-   "SData",
-   "SQResult"
+  "libstuff/SSignal": [
+   "libstuff/SSynchronizedQueue",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLiteNode"
   ],
-  "FinishJobTest": [
-   "BedrockClusterTester",
-   "JobTestHelper",
-   "SData",
-   "SQResult"
+  "libstuff/SSocketPool": [
+   "libstuff/STCPManager"
   ],
-  "SQResultFormatter": [
-   "SQResult",
-   "libstuff"
+  "libstuff/SSynchronizedQueue": [
+   "libstuff/libstuff"
   ],
-  "BedrockCore": [
-   "BedrockCommand",
-   "BedrockPlugin",
-   "BedrockServer",
-   "SQLiteCore",
-   "libstuff"
+  "libstuff/STCPManager": [
+   "libstuff/SFastBuffer",
+   "libstuff/SResolver",
+   "libstuff/SSSLState",
+   "libstuff/libstuff"
   ],
-  "STCPManager": [
-   "SFastBuffer",
-   "SResolver",
-   "SSSLState",
-   "libstuff"
+  "libstuff/SThread": [
+   "libstuff/libstuff"
   ],
-  "DB": [
-   "BedrockPlugin",
-   "BedrockServer",
-   "SQResult",
-   "SQResultFormatter",
-   "SQliteParameter",
-   "libstuff",
-   "qrf"
+  "libstuff/STime": [
+   "libstuff/libstuff"
+  ],
+  "libstuff/libstuff": [
+   "libstuff/SData",
+   "libstuff/SFastBuffer",
+   "libstuff/SFluentdLogger",
+   "libstuff/SQResult",
+   "libstuff/SQliteParameter"
   ],
   "main": [
    "BedrockPlugin",
    "BedrockServer",
-   "BedrockTester",
-   "BenchmarkBase",
-   "Cache",
-   "Compression",
-   "DB",
-   "Jobs",
-   "MySQL",
-   "SData",
-   "SQLite",
-   "SSSLState",
    "VMTouch",
    "bedrockVersion",
-   "libstuff",
-   "tpunit++"
+   "libstuff/SSSLState",
+   "libstuff/libstuff",
+   "plugins/Cache",
+   "plugins/Compression",
+   "plugins/DB",
+   "plugins/Jobs",
+   "plugins/MySQL",
+   "sqlitecluster/SQLite"
   ],
-  "JSONUtilsTest": [
-   "Utils",
-   "Value",
-   "libstuff",
-   "tpunit++"
-  ],
-  "SQLiteClusterMessenger": [
-   "BedrockCommand",
-   "SHTTPSManager",
-   "SMultiHostSocketPool",
-   "SQLiteNode",
-   "SQLitePeer",
-   "libstuff"
-  ],
-  "SQLitePeer": [
-   "BedrockServer",
-   "SData",
-   "SQLiteNode",
-   "SRandom",
-   "STCPManager",
-   "libstuff"
-  ],
-  "Compression": [
+  "plugins/Cache": [
    "BedrockPlugin",
    "BedrockServer",
-   "SQResult",
-   "libstuff"
+   "libstuff/SQResult",
+   "libstuff/libstuff"
   ],
-  "Utils": [
-   "Value"
-  ],
-  "CancelJobTest": [
-   "BedrockTester",
-   "SData",
-   "SQResult"
-  ],
-  "SQResult": [
-   "SQResultFormatter",
-   "SQValue",
-   "libstuff"
-  ],
-  "Cache": [
+  "plugins/Compression": [
    "BedrockPlugin",
    "BedrockServer",
-   "SQResult",
-   "libstuff"
+   "libstuff/SQResult",
+   "libstuff/libstuff"
   ],
-  "BedrockBlockingCommandQueue": [
-   "BedrockCommandQueue"
-  ],
-  "Writer": [
-   "Metrics",
-   "Value",
-   "libstuff"
-  ],
-  "SHTTPSManager": [
+  "plugins/DB": [
    "BedrockPlugin",
    "BedrockServer",
-   "SData",
-   "SHTTPSProxySocket",
-   "SQLiteNode",
-   "STCPManager",
-   "libstuff"
+   "libstuff/SQResult",
+   "libstuff/SQResultFormatter",
+   "libstuff/SQliteParameter",
+   "libstuff/libstuff"
   ],
-  "SRingBufferTest": [
-   "BedrockTester",
-   "SRingBuffer"
-  ],
-  "BedrockCommandQueue": [
-   "BedrockCommand",
-   "libstuff"
-  ],
-  "BlockingCommandQueueTest": [
-   "BedrockBlockingCommandQueue",
-   "tpunit++"
-  ],
-  "SSignal": [
-   "SQLiteNode",
-   "SSynchronizedQueue",
-   "libstuff"
-  ],
-  "ConflictSpamTest": [
-   "BedrockClusterTester",
-   "SData"
-  ],
-  "MySQLUtilsTest": [
-   "MySQL",
-   "libstuff",
-   "tpunit++"
-  ],
-  "SData": [
-   "SFastBuffer",
-   "libstuff"
-  ],
-  "RequeueJobsTest": [
-   "BedrockTester",
-   "JobTestHelper",
-   "SData",
-   "SQResult"
-  ],
-  "CompressionTest": [
-   "BedrockClusterTester",
-   "SData",
-   "SQResult"
-  ],
-  "SDeburr": [
-   "libstuff"
-  ],
-  "SAXHandler": [
-   "Value"
-  ],
-  "SSSLState": [
-   "SFastBuffer",
-   "libstuff"
-  ],
-  "CreateJobsTest": [
-   "BedrockTester",
-   "SData",
-   "SQResult"
-  ],
-  "BedrockClusterTester": [
-   "BedrockTester",
-   "SData"
-  ],
-  "TimeoutTest": [
-   "BedrockClusterTester",
-   "BedrockCommand",
-   "SData",
-   "SFastBuffer",
-   "SQResult",
-   "libstuff",
-   "tpunit++"
-  ],
-  "ClusterUpgradeTest": [
-   "BedrockClusterTester"
-  ],
-  "VMTouch": [
-   "libstuff"
-  ],
-  "GracefulFailoverTest": [
-   "BedrockClusterTester",
-   "SData",
-   "SRandom"
-  ],
-  "WriteTest": [
-   "BedrockTester",
-   "SData",
-   "SRandom"
-  ],
-  "BedrockPlugin": [
-   "BedrockCommand",
+  "plugins/Jobs": [
+   "BedrockPlugin",
    "BedrockServer",
-   "libstuff"
+   "libstuff/SQResult",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLitePeer",
+   "sqlitecluster/SQLiteUtils"
   ],
-  "SetPriorityTest": [
-   "BedrockClusterTester",
-   "SData"
+  "plugins/MySQL": [
+   "BedrockPlugin",
+   "BedrockServer",
+   "bedrockVersion",
+   "libstuff/SQResult",
+   "libstuff/libstuff"
   ],
-  "AsyncResolveTest": [
-   "BedrockTester",
-   "SResolver",
-   "STCPManager",
-   "libstuff"
+  "sqlitecluster/SQLite": [
+   "libstuff/SDeburr",
+   "libstuff/SPerformanceTimer",
+   "libstuff/SQResult",
+   "libstuff/SQliteParameter",
+   "libstuff/libstuff",
+   "plugins/Compression"
   ],
-  "DeleteJobTest": [
-   "BedrockTester",
-   "SData",
-   "SQResult"
-  ],
-  "LeadingTest": [
-   "BedrockClusterTester",
-   "SData",
-   "SRandom"
-  ],
-  "JSONParserTest": [
-   "Value",
-   "tpunit++"
-  ],
-  "MultipleLeaderSyncTest": [
-   "BedrockClusterTester",
-   "SData"
-  ],
-  "SQLitePool": [
-   "SQLite",
-   "libstuff"
-  ],
-  "SHTTPSProxySocket": [
-   "SData",
-   "SFastBuffer",
-   "SSSLState",
-   "STCPManager",
-   "libstuff"
-  ],
-  "SSynchronizedQueue": [
-   "libstuff"
-  ],
-  "SQliteParameter": [
-   "libstuff"
-  ],
-  "FailedJobReplyTest": [
-   "BedrockTester",
-   "SData"
-  ],
-  "SQLiteNodeTest": [
-   "BedrockTester",
-   "SQLiteCommand",
-   "SQLiteNode",
-   "SQLitePeer",
-   "SQLiteServer",
-   "libstuff"
-  ],
-  "SSocketPool": [
-   "STCPManager"
-  ],
-  "MySQLTest": [
-   "MySQL",
-   "libstuff",
-   "tpunit++"
-  ],
-  "BenchmarkBase": [
-   "libstuff",
-   "tpunit++"
-  ],
-  "SQLiteCommand": [
-   "SData",
-   "SQLiteNode",
-   "SRandom",
-   "libstuff"
-  ],
-  "UpdateJobTest": [
-   "BedrockTester",
-   "JobTestHelper",
-   "SData",
-   "SQResult"
-  ],
-  "SResolver": [
-   "libstuff"
-  ],
-  "WriteLocalUnreplicatedTest": [
-   "BedrockTester",
-   "SQLite",
-   "libstuff"
-  ],
-  "BlockingQueueRateLimitTest": [
-   "BedrockClusterTester",
-   "SData"
-  ],
-  "SLog": [
-   "libstuff"
-  ],
-  "BoundParametersTest": [
-   "BedrockClusterTester",
-   "RemoteSQLite",
-   "SData",
-   "SQResult"
-  ],
-  "ForkCheckTest": [
-   "BedrockClusterTester",
-   "BedrockTester",
-   "SData",
-   "SQLite",
-   "SQLiteNode",
-   "SQResult"
-  ],
-  "JSONTest": [
-   "Metrics",
-   "Parser",
-   "Value",
-   "tpunit++"
-  ],
-  "STime": [
-   "libstuff"
-  ],
-  "RemoteSQLite": [
-   "BedrockTester",
-   "SData",
-   "SQLite"
-  ],
-  "SFluentdLoggerTest": [
-   "BedrockTester",
-   "SFluentdLogger"
-  ],
-  "SFluentdLogger": [
-   "SRingBuffer",
-   "SThread"
-  ],
-  "QueryTest": [
-   "BedrockTester",
-   "SData",
-   "libstuff"
-  ],
-  "GetJobsTest": [
-   "BedrockTester",
-   "JobTestHelper",
-   "SData",
-   "SQResult"
-  ],
-  "BadCommandTest": [
-   "BedrockClusterTester",
-   "SData"
-  ],
-  "FailJobTest": [
-   "BedrockTester",
-   "JobTestHelper",
-   "SData",
-   "SQResult"
-  ],
-  "HTTPSTest": [
-   "BedrockClusterTester",
-   "SData",
-   "libstuff"
-  ],
-  "AfterCommitCallbackTest": [
-   "BedrockTester",
-   "SQLite",
-   "libstuff"
-  ],
-  "FastStandDownTest": [
-   "BedrockClusterTester",
-   "SData"
-  ],
-  "TimingTest": [
-   "BedrockClusterTester",
-   "SData"
-  ],
-  "SReplaceBench": [
-   "BenchmarkBase",
-   "libstuff"
-  ],
-  "EscalateTest": [
-   "BedrockClusterTester",
-   "SData",
-   "libstuff"
-  ],
-  "PortMap": [
-   "libstuff"
-  ],
-  "FastHTTPParsing": [
-   "BedrockTester",
-   "SData",
-   "SFastBuffer"
-  ],
-  "InifiniteRetryAfterTest": [
-   "BedrockTester",
-   "SData",
-   "SQResult"
-  ],
-  "SReplaceAllBench": [
-   "BenchmarkBase",
-   "libstuff"
-  ],
-  "HTTPSBlockingCommitTest": [
-   "BedrockClusterTester",
-   "SData"
-  ],
-  "JobIDTest": [
-   "BedrockClusterTester",
-   "SData"
-  ],
-  "SSLTest": [
-   "BedrockTester",
-   "SData",
-   "SHTTPSManager",
-   "SHTTPSProxySocket",
-   "SQLiteNode",
-   "STCPManager",
-   "libstuff",
-   "tpunit++"
-  ],
-  "BedrockConflictManager": [
-   "libstuff"
-  ],
-  "PrePeekPostProcessTest": [
-   "BedrockClusterTester",
+  "sqlitecluster/SQLiteClusterMessenger": [
    "BedrockCommand",
-   "SData"
+   "libstuff/SHTTPSManager",
+   "libstuff/SMultiHostSocketPool",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLiteNode",
+   "sqlitecluster/SQLitePeer"
   ],
-  "SDeburrBench": [
-   "BenchmarkBase",
-   "SDeburr"
+  "sqlitecluster/SQLiteCommand": [
+   "libstuff/SData",
+   "libstuff/SRandom",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLiteNode"
   ],
-  "BroadcastTest": [
-   "BedrockClusterTester",
-   "SData",
-   "tpunit++"
+  "sqlitecluster/SQLiteCore": [
+   "libstuff/AutoScopeOnPrepare",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLite",
+   "sqlitecluster/SQLiteNode"
   ],
-  "FutureExecutionTest": [
-   "BedrockClusterTester",
-   "SData"
+  "sqlitecluster/SQLiteNode": [
+   "libstuff/SQResult",
+   "libstuff/SRandom",
+   "libstuff/SSynchronizedQueue",
+   "libstuff/STCPManager",
+   "libstuff/libstuff",
+   "plugins/Compression",
+   "sqlitecluster/SQLite",
+   "sqlitecluster/SQLiteCommand",
+   "sqlitecluster/SQLitePeer",
+   "sqlitecluster/SQLitePool",
+   "sqlitecluster/SQLiteServer"
   ],
-  "SQLiteCore": [
-   "AutoScopeOnPrepare",
-   "SQLite",
-   "SQLiteNode",
-   "libstuff"
+  "sqlitecluster/SQLitePeer": [
+   "BedrockServer",
+   "libstuff/SData",
+   "libstuff/SRandom",
+   "libstuff/STCPManager",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLiteNode"
   ],
-  "SDeburrTest": [
-   "SDeburr",
-   "tpunit++"
+  "sqlitecluster/SQLitePool": [
+   "libstuff/libstuff",
+   "sqlitecluster/SQLite"
   ],
-  "SPerformanceTimer": [
-   "libstuff"
+  "sqlitecluster/SQLiteServer": [
+   "libstuff/STCPManager",
+   "sqlitecluster/SQLiteNode"
   ],
-  "WriteLocalUnreplicatedClusterTest": [
-   "BedrockClusterTester",
-   "SData",
-   "SQResult"
+  "sqlitecluster/SQLiteUtils": [
+   "libstuff/SRandom",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLite"
   ],
-  "SIsValidSQLiteDateModifierTest": [
-   "libstuff",
-   "tpunit++"
+  "test/clustertest/BedrockClusterTester": [
+   "libstuff/SData",
+   "test/lib/BedrockTester"
   ],
-  "VersionMismatchTest": [
-   "BedrockClusterTester",
-   "SData"
+  "test/clustertest/main": [
+   "libstuff/SData",
+   "libstuff/libstuff",
+   "test/lib/BedrockTester"
   ],
-  "Parser": [
-   "Metrics",
-   "SAXHandler",
-   "Value"
+  "test/clustertest/testplugin/TestPlugin": [
+   "BedrockPlugin",
+   "BedrockServer",
+   "libstuff/SQResult",
+   "libstuff/SThread",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLitePool"
   ],
-  "ChainedHTTPTest": [
-   "BedrockTester",
-   "SData",
-   "SQLiteNode",
-   "libstuff"
+  "test/clustertest/tests/AfterCommitCallbackClusterTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "AutoTimer": [
-   "libstuff"
+  "test/clustertest/tests/BadCommandTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "SThread": [
-   "libstuff"
+  "test/clustertest/tests/BlockingQueueRateLimitTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "SynchronousCommandsTest": [
-   "BedrockClusterTester",
-   "SData"
+  "test/clustertest/tests/BoundParametersTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/clustertest/BedrockClusterTester",
+   "test/lib/RemoteSQLite"
   ],
-  "AfterCommitCallbackClusterTest": [
-   "BedrockClusterTester",
-   "SData"
+  "test/clustertest/tests/BroadcastTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "StatusTest": [
-   "BedrockClusterTester",
-   "BedrockTester",
-   "SData"
+  "test/clustertest/tests/ClusterUpgradeTest": [
+   "test/clustertest/BedrockClusterTester"
   ],
-  "UpgradeTest": [
-   "BedrockClusterTester",
-   "SData",
-   "SRandom"
+  "test/clustertest/tests/CompressionTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "QueryJobTest": [
-   "BedrockTester",
-   "SData"
+  "test/clustertest/tests/ConflictSpamTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "StatusHandlingCommandsTest": [
-   "BedrockClusterTester",
-   "SData"
+  "test/clustertest/tests/ControlCommandTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "ControlCommandTest": [
-   "BedrockClusterTester",
-   "SData"
+  "test/clustertest/tests/DoubleDetachTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "MassiveQueryTest": [
-   "BedrockClusterTester",
-   "SData"
+  "test/clustertest/tests/EscalateTest": [
+   "libstuff/SData",
+   "libstuff/libstuff",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "PermafollowerTest": [
-   "BedrockClusterTester",
-   "SData"
+  "test/clustertest/tests/FastStandDownTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "Serializable": [
-   "Value"
+  "test/clustertest/tests/FinishJobTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/clustertest/BedrockClusterTester",
+   "test/tests/jobs/JobTestHelper"
   ],
-  "DoubleDetachTest": [
-   "BedrockClusterTester",
-   "SData"
+  "test/clustertest/tests/ForkCheckTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "sqlitecluster/SQLite",
+   "sqlitecluster/SQLiteNode",
+   "test/clustertest/BedrockClusterTester",
+   "test/lib/BedrockTester"
   ],
-  "ReadTest": [
-   "BedrockTester",
-   "SData"
+  "test/clustertest/tests/FutureExecutionTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "UpgradeDBTest": [
-   "BedrockClusterTester",
-   "SData"
+  "test/clustertest/tests/GracefulFailoverTest": [
+   "libstuff/SData",
+   "libstuff/SRandom",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "SMultiHostSocketPool": [
-   "SSocketPool",
-   "STCPManager"
+  "test/clustertest/tests/HTTPSBlockingCommitTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "TestHTTPS": [
-   "SHTTPSManager",
-   "libstuff"
+  "test/clustertest/tests/HTTPSTest": [
+   "libstuff/SData",
+   "libstuff/libstuff",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "SQLiteUtils": [
-   "SQLite",
-   "SRandom",
-   "libstuff"
+  "test/clustertest/tests/JobIDTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "CommandPortTest": [
-   "BedrockTester",
-   "SData"
+  "test/clustertest/tests/LeadingTest": [
+   "libstuff/SData",
+   "libstuff/SRandom",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "STimeTest": [
-   "BedrockTester",
-   "libstuff"
+  "test/clustertest/tests/MassiveQueryTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "AutoScopeOnPrepare": [
-   "SQLite"
+  "test/clustertest/tests/MultipleLeaderSyncTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "ThreadExceptionTest": [
-   "BedrockClusterTester",
-   "SData"
+  "test/clustertest/tests/PermafollowerTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "SQLiteServer": [
-   "SQLiteNode",
-   "STCPManager"
+  "test/clustertest/tests/PrePeekPostProcessTest": [
+   "BedrockCommand",
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "UniqueConstraintsTest": [
-   "BedrockClusterTester",
-   "SData"
+  "test/clustertest/tests/SetPriorityTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
   ],
-  "JobTestHelper": [
-   "libstuff"
+  "test/clustertest/tests/StatusHandlingCommandsTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
+  ],
+  "test/clustertest/tests/StatusTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
+  ],
+  "test/clustertest/tests/SynchronousCommandsTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
+  ],
+  "test/clustertest/tests/ThreadExceptionTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
+  ],
+  "test/clustertest/tests/TimeoutTest": [
+   "BedrockCommand",
+   "libstuff/SData",
+   "libstuff/SFastBuffer",
+   "libstuff/SQResult",
+   "libstuff/libstuff",
+   "test/clustertest/BedrockClusterTester"
+  ],
+  "test/clustertest/tests/TimingTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
+  ],
+  "test/clustertest/tests/UniqueConstraintsTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
+  ],
+  "test/clustertest/tests/UpgradeDBTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
+  ],
+  "test/clustertest/tests/UpgradeTest": [
+   "libstuff/SData",
+   "libstuff/SRandom",
+   "test/clustertest/BedrockClusterTester"
+  ],
+  "test/clustertest/tests/VersionMismatchTest": [
+   "libstuff/SData",
+   "test/clustertest/BedrockClusterTester"
+  ],
+  "test/clustertest/tests/WriteLocalUnreplicatedClusterTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/clustertest/BedrockClusterTester"
+  ],
+  "test/lib/BedrockTester": [
+   "libstuff/SData",
+   "libstuff/SFastBuffer",
+   "libstuff/SQResult",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLite",
+   "test/lib/PortMap",
+   "test/lib/RemoteSQLite"
+  ],
+  "test/lib/PortMap": [
+   "libstuff/libstuff"
+  ],
+  "test/lib/RemoteSQLite": [
+   "libstuff/SData",
+   "sqlitecluster/SQLite",
+   "test/lib/BedrockTester"
+  ],
+  "test/lib/TestHTTPS": [
+   "libstuff/SHTTPSManager",
+   "libstuff/libstuff"
+  ],
+  "test/main": [
+   "libstuff/SData",
+   "libstuff/SSSLState",
+   "libstuff/libstuff",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/AfterCommitCallbackTest": [
+   "libstuff/libstuff",
+   "sqlitecluster/SQLite",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/AsyncResolveTest": [
+   "libstuff/SResolver",
+   "libstuff/STCPManager",
+   "libstuff/libstuff",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/BlockingCommandQueueTest": [
+   "BedrockBlockingCommandQueue"
+  ],
+  "test/tests/ChainedHTTPTest": [
+   "libstuff/SData",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLiteNode",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/CommandPortTest": [
+   "libstuff/SData",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/FastHTTPParsing": [
+   "libstuff/SData",
+   "libstuff/SFastBuffer",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/JSONParserTest": [
+   "libstuff/JSON/Value"
+  ],
+  "test/tests/JSONTest": [
+   "libstuff/JSON/Metrics",
+   "libstuff/JSON/Parser",
+   "libstuff/JSON/Value"
+  ],
+  "test/tests/JSONUtilsTest": [
+   "libstuff/JSON/Utils",
+   "libstuff/JSON/Value",
+   "libstuff/libstuff"
+  ],
+  "test/tests/JSONValueTest": [
+   "libstuff/JSON/Value",
+   "libstuff/libstuff"
+  ],
+  "test/tests/LibStuffTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "libstuff/SRandom",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLite",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/MySQLTest": [
+   "libstuff/libstuff",
+   "plugins/MySQL"
+  ],
+  "test/tests/MySQLUtilsTest": [
+   "libstuff/libstuff",
+   "plugins/MySQL"
+  ],
+  "test/tests/QueryTest": [
+   "libstuff/SData",
+   "libstuff/libstuff",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/ReadTest": [
+   "libstuff/SData",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/SDeburrTest": [
+   "libstuff/SDeburr"
+  ],
+  "test/tests/SFluentdLoggerTest": [
+   "libstuff/SFluentdLogger",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/SIsValidSQLiteDateModifierTest": [
+   "libstuff/libstuff"
+  ],
+  "test/tests/SQLiteNodeTest": [
+   "libstuff/libstuff",
+   "sqlitecluster/SQLiteCommand",
+   "sqlitecluster/SQLiteNode",
+   "sqlitecluster/SQLitePeer",
+   "sqlitecluster/SQLiteServer",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/SRingBufferTest": [
+   "libstuff/SRingBuffer",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/SSLTest": [
+   "libstuff/SData",
+   "libstuff/SHTTPSManager",
+   "libstuff/SHTTPSProxySocket",
+   "libstuff/STCPManager",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLiteNode",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/STimeTest": [
+   "libstuff/libstuff",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/StatusTest": [
+   "libstuff/SData",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/WriteLocalUnreplicatedTest": [
+   "libstuff/libstuff",
+   "sqlitecluster/SQLite",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/WriteTest": [
+   "libstuff/SData",
+   "libstuff/SRandom",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/jobs/CancelJobTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/jobs/CreateJobTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/lib/BedrockTester",
+   "test/tests/jobs/JobTestHelper"
+  ],
+  "test/tests/jobs/CreateJobsTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/jobs/DeleteJobTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/jobs/FailJobTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/lib/BedrockTester",
+   "test/tests/jobs/JobTestHelper"
+  ],
+  "test/tests/jobs/FailedJobReplyTest": [
+   "libstuff/SData",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/jobs/GetJobTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/jobs/GetJobsTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/lib/BedrockTester",
+   "test/tests/jobs/JobTestHelper"
+  ],
+  "test/tests/jobs/InifiniteRetryAfterTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/jobs/JobTestHelper": [
+   "libstuff/libstuff"
+  ],
+  "test/tests/jobs/QueryJobTest": [
+   "libstuff/SData",
+   "test/lib/BedrockTester"
+  ],
+  "test/tests/jobs/RequeueJobsTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/lib/BedrockTester",
+   "test/tests/jobs/JobTestHelper"
+  ],
+  "test/tests/jobs/RetryJobTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/lib/BedrockTester",
+   "test/tests/jobs/JobTestHelper"
+  ],
+  "test/tests/jobs/UpdateJobTest": [
+   "libstuff/SData",
+   "libstuff/SQResult",
+   "test/lib/BedrockTester",
+   "test/tests/jobs/JobTestHelper"
   ]
  },
  "dependents": {
-  "SQliteParameter": [
-   "DB",
-   "SQLite",
-   "libstuff"
-  ],
-  "SQResult": [
-   "BedrockTester",
-   "BoundParametersTest",
-   "Cache",
-   "CancelJobTest",
-   "Compression",
-   "CompressionTest",
-   "CreateJobTest",
-   "CreateJobsTest",
-   "DB",
-   "DeleteJobTest",
-   "FailJobTest",
-   "FinishJobTest",
-   "ForkCheckTest",
-   "GetJobTest",
-   "GetJobsTest",
-   "InifiniteRetryAfterTest",
-   "Jobs",
-   "LibStuffTest",
-   "MySQL",
-   "RequeueJobsTest",
-   "RetryJobTest",
-   "SQLite",
-   "SQLiteNode",
-   "SQResultFormatter",
-   "TestPlugin",
-   "TimeoutTest",
-   "UpdateJobTest",
-   "WriteLocalUnreplicatedClusterTest",
-   "libstuff"
-  ],
-  "SFluentdLogger": [
-   "SFluentdLoggerTest",
-   "libstuff"
-  ],
-  "SData": [
-   "AfterCommitCallbackClusterTest",
-   "BadCommandTest",
-   "BedrockClusterTester",
-   "BedrockTester",
-   "BlockingQueueRateLimitTest",
-   "BoundParametersTest",
-   "BroadcastTest",
-   "CancelJobTest",
-   "ChainedHTTPTest",
-   "CommandPortTest",
-   "CompressionTest",
-   "ConflictSpamTest",
-   "ControlCommandTest",
-   "CreateJobTest",
-   "CreateJobsTest",
-   "DeleteJobTest",
-   "DoubleDetachTest",
-   "EscalateTest",
-   "FailJobTest",
-   "FailedJobReplyTest",
-   "FastHTTPParsing",
-   "FastStandDownTest",
-   "FinishJobTest",
-   "ForkCheckTest",
-   "FutureExecutionTest",
-   "GetJobTest",
-   "GetJobsTest",
-   "GracefulFailoverTest",
-   "HTTPSBlockingCommitTest",
-   "HTTPSTest",
-   "InifiniteRetryAfterTest",
-   "JobIDTest",
-   "LeadingTest",
-   "LibStuffTest",
-   "MassiveQueryTest",
-   "MultipleLeaderSyncTest",
-   "PermafollowerTest",
-   "PrePeekPostProcessTest",
-   "QueryJobTest",
-   "QueryTest",
-   "ReadTest",
-   "RemoteSQLite",
-   "RequeueJobsTest",
-   "RetryJobTest",
-   "SHTTPSManager",
-   "SHTTPSProxySocket",
-   "SQLiteCommand",
-   "SQLitePeer",
-   "SSLTest",
-   "SetPriorityTest",
-   "StatusHandlingCommandsTest",
-   "StatusTest",
-   "SynchronousCommandsTest",
-   "ThreadExceptionTest",
-   "TimeoutTest",
-   "TimingTest",
-   "UniqueConstraintsTest",
-   "UpdateJobTest",
-   "UpgradeDBTest",
-   "UpgradeTest",
-   "VersionMismatchTest",
-   "WriteLocalUnreplicatedClusterTest",
-   "WriteTest",
-   "libstuff",
-   "main"
-  ],
-  "qrf": [
-   "DB",
-   "libstuff"
-  ],
-  "SFastBuffer": [
-   "BedrockTester",
-   "FastHTTPParsing",
-   "SData",
-   "SHTTPSProxySocket",
-   "SSSLState",
-   "STCPManager",
-   "TimeoutTest",
-   "libstuff"
-  ],
-  "SRandom": [
-   "BedrockServer",
-   "GracefulFailoverTest",
-   "LeadingTest",
-   "LibStuffTest",
-   "SQLiteCommand",
-   "SQLiteNode",
-   "SQLitePeer",
-   "SQLiteUtils",
-   "UpgradeTest",
-   "WriteTest"
-  ],
-  "BedrockConflictManager": [
-   "BedrockServer"
-  ],
-  "SQLiteNode": [
-   "BedrockServer",
-   "ChainedHTTPTest",
-   "ForkCheckTest",
-   "SHTTPSManager",
-   "SQLiteClusterMessenger",
-   "SQLiteCommand",
-   "SQLiteCore",
-   "SQLiteNodeTest",
-   "SQLitePeer",
-   "SQLiteServer",
-   "SSLTest",
-   "SSignal"
-  ],
   "BedrockCommandQueue": [
    "BedrockBlockingCommandQueue",
    "BedrockServer"
   ],
-  "SQLitePeer": [
-   "BedrockServer",
-   "Jobs",
-   "SQLiteClusterMessenger",
-   "SQLiteNode",
-   "SQLiteNodeTest"
-  ],
-  "BedrockCommand": [
-   "BedrockCommandQueue",
+  "BedrockPlugin": [
+   "BedrockCommand",
    "BedrockCore",
-   "BedrockPlugin",
    "BedrockServer",
-   "PrePeekPostProcessTest",
-   "SQLiteClusterMessenger",
-   "TimeoutTest"
+   "libstuff/SHTTPSManager",
+   "main",
+   "plugins/Cache",
+   "plugins/Compression",
+   "plugins/DB",
+   "plugins/Jobs",
+   "plugins/MySQL",
+   "test/clustertest/testplugin/TestPlugin"
   ],
-  "BedrockCore": [
-   "BedrockServer"
+  "libstuff/SHTTPSManager": [
+   "BedrockCommand",
+   "sqlitecluster/SQLiteClusterMessenger",
+   "test/lib/TestHTTPS",
+   "test/tests/SSLTest"
   ],
-  "ConflictLockGuard": [
-   "BedrockServer"
-  ],
-  "libstuff": [
-   "AfterCommitCallbackTest",
-   "AsyncResolveTest",
-   "AutoTimer",
+  "libstuff/libstuff": [
    "BedrockCommand",
    "BedrockCommandQueue",
    "BedrockConflictManager",
    "BedrockCore",
    "BedrockPlugin",
    "BedrockServer",
-   "BedrockTester",
-   "BenchmarkBase",
-   "Cache",
-   "ChainedHTTPTest",
-   "Compression",
-   "DB",
-   "EscalateTest",
-   "HTTPSTest",
-   "JSONUtilsTest",
-   "JSONValueTest",
-   "JobTestHelper",
-   "Jobs",
-   "LibStuffTest",
-   "MySQL",
-   "MySQLTest",
-   "MySQLUtilsTest",
-   "PortMap",
-   "QueryTest",
-   "SData",
-   "SDeburr",
-   "SHTTPSManager",
-   "SHTTPSProxySocket",
-   "SIsValidSQLiteDateModifierTest",
-   "SLog",
-   "SPerformanceTimer",
-   "SQLite",
-   "SQLiteClusterMessenger",
-   "SQLiteCommand",
-   "SQLiteCore",
-   "SQLiteNode",
-   "SQLiteNodeTest",
-   "SQLitePeer",
-   "SQLitePool",
-   "SQLiteUtils",
-   "SQResult",
-   "SQResultFormatter",
-   "SQliteParameter",
-   "SReplaceAllBench",
-   "SReplaceBench",
-   "SResolver",
-   "SSLTest",
-   "SSSLState",
-   "SSignal",
-   "SSynchronizedQueue",
-   "STCPManager",
-   "SThread",
-   "STime",
-   "STimeTest",
-   "TestHTTPS",
-   "TestPlugin",
-   "TimeoutTest",
    "VMTouch",
-   "Value",
-   "WriteLocalUnreplicatedTest",
-   "Writer",
-   "main"
+   "benchmarks/BenchmarkBase",
+   "benchmarks/SReplaceAllBench",
+   "benchmarks/SReplaceBench",
+   "benchmarks/main",
+   "libstuff/AutoTimer",
+   "libstuff/JSON/Value",
+   "libstuff/JSON/Writer",
+   "libstuff/SData",
+   "libstuff/SDeburr",
+   "libstuff/SHTTPSManager",
+   "libstuff/SHTTPSProxySocket",
+   "libstuff/SLog",
+   "libstuff/SPerformanceTimer",
+   "libstuff/SQResult",
+   "libstuff/SQResultFormatter",
+   "libstuff/SQliteParameter",
+   "libstuff/SResolver",
+   "libstuff/SSSLState",
+   "libstuff/SSignal",
+   "libstuff/SSynchronizedQueue",
+   "libstuff/STCPManager",
+   "libstuff/SThread",
+   "libstuff/STime",
+   "main",
+   "plugins/Cache",
+   "plugins/Compression",
+   "plugins/DB",
+   "plugins/Jobs",
+   "plugins/MySQL",
+   "sqlitecluster/SQLite",
+   "sqlitecluster/SQLiteClusterMessenger",
+   "sqlitecluster/SQLiteCommand",
+   "sqlitecluster/SQLiteCore",
+   "sqlitecluster/SQLiteNode",
+   "sqlitecluster/SQLitePeer",
+   "sqlitecluster/SQLitePool",
+   "sqlitecluster/SQLiteUtils",
+   "test/clustertest/main",
+   "test/clustertest/testplugin/TestPlugin",
+   "test/clustertest/tests/EscalateTest",
+   "test/clustertest/tests/HTTPSTest",
+   "test/clustertest/tests/TimeoutTest",
+   "test/lib/BedrockTester",
+   "test/lib/PortMap",
+   "test/lib/TestHTTPS",
+   "test/main",
+   "test/tests/AfterCommitCallbackTest",
+   "test/tests/AsyncResolveTest",
+   "test/tests/ChainedHTTPTest",
+   "test/tests/JSONUtilsTest",
+   "test/tests/JSONValueTest",
+   "test/tests/LibStuffTest",
+   "test/tests/MySQLTest",
+   "test/tests/MySQLUtilsTest",
+   "test/tests/QueryTest",
+   "test/tests/SIsValidSQLiteDateModifierTest",
+   "test/tests/SQLiteNodeTest",
+   "test/tests/SSLTest",
+   "test/tests/STimeTest",
+   "test/tests/WriteLocalUnreplicatedTest",
+   "test/tests/jobs/JobTestHelper"
   ],
-  "bedrockVersion": [
-   "BedrockServer",
-   "MySQL",
-   "main"
-  ],
-  "SQLiteClusterMessenger": [
-   "BedrockServer"
-  ],
-  "SQLiteServer": [
-   "BedrockServer",
-   "SQLiteNode",
-   "SQLiteNodeTest"
-  ],
-  "BedrockBlockingCommandQueue": [
-   "BedrockServer",
-   "BlockingCommandQueueTest"
-  ],
-  "BedrockPlugin": [
+  "sqlitecluster/SQLite": [
    "BedrockCommand",
-   "BedrockCore",
-   "BedrockServer",
-   "Cache",
-   "Compression",
-   "DB",
-   "Jobs",
-   "MySQL",
-   "SHTTPSManager",
-   "TestPlugin",
-   "main"
+   "libstuff/AutoScopeOnPrepare",
+   "main",
+   "sqlitecluster/SQLiteCore",
+   "sqlitecluster/SQLiteNode",
+   "sqlitecluster/SQLitePool",
+   "sqlitecluster/SQLiteUtils",
+   "test/clustertest/tests/ForkCheckTest",
+   "test/lib/BedrockTester",
+   "test/lib/RemoteSQLite",
+   "test/tests/AfterCommitCallbackTest",
+   "test/tests/LibStuffTest",
+   "test/tests/WriteLocalUnreplicatedTest"
   ],
-  "AutoTimer": [
-   "BedrockServer"
-  ],
-  "SQLitePool": [
-   "SQLiteNode",
-   "TestPlugin"
-  ],
-  "SQLiteCommand": [
+  "sqlitecluster/SQLiteCommand": [
    "BedrockCommand",
-   "SQLiteNode",
-   "SQLiteNodeTest"
-  ],
-  "SSynchronizedQueue": [
-   "SQLiteNode",
-   "SSignal"
-  ],
-  "SQLite": [
-   "AfterCommitCallbackTest",
-   "AutoScopeOnPrepare",
-   "BedrockCommand",
-   "BedrockTester",
-   "ForkCheckTest",
-   "LibStuffTest",
-   "RemoteSQLite",
-   "SQLiteCore",
-   "SQLiteNode",
-   "SQLitePool",
-   "SQLiteUtils",
-   "WriteLocalUnreplicatedTest",
-   "main"
-  ],
-  "Compression": [
-   "SQLite",
-   "SQLiteNode",
-   "main"
-  ],
-  "STCPManager": [
-   "AsyncResolveTest",
-   "SHTTPSManager",
-   "SHTTPSProxySocket",
-   "SMultiHostSocketPool",
-   "SQLiteNode",
-   "SQLitePeer",
-   "SQLiteServer",
-   "SSLTest",
-   "SSocketPool"
-  ],
-  "Utils": [
-   "JSONUtilsTest",
-   "Value"
-  ],
-  "Writer": [
-   "Value"
-  ],
-  "Parser": [
-   "JSONTest",
-   "Value"
-  ],
-  "SPerformanceTimer": [
-   "SQLite"
-  ],
-  "SDeburr": [
-   "SDeburrBench",
-   "SDeburrTest",
-   "SQLite"
-  ],
-  "SQLiteUtils": [
-   "Jobs"
+   "sqlitecluster/SQLiteNode",
+   "test/tests/SQLiteNodeTest"
   ],
   "BedrockServer": [
    "BedrockCommand",
    "BedrockCore",
    "BedrockPlugin",
-   "Cache",
-   "Compression",
-   "DB",
-   "Jobs",
-   "MySQL",
-   "SHTTPSManager",
-   "SQLitePeer",
-   "TestPlugin",
-   "main"
+   "libstuff/SHTTPSManager",
+   "main",
+   "plugins/Cache",
+   "plugins/Compression",
+   "plugins/DB",
+   "plugins/Jobs",
+   "plugins/MySQL",
+   "sqlitecluster/SQLitePeer",
+   "test/clustertest/testplugin/TestPlugin"
   ],
-  "BedrockTester": [
-   "AfterCommitCallbackTest",
-   "AsyncResolveTest",
-   "BedrockClusterTester",
-   "CancelJobTest",
-   "ChainedHTTPTest",
-   "CommandPortTest",
-   "CreateJobTest",
-   "CreateJobsTest",
-   "DeleteJobTest",
-   "FailJobTest",
-   "FailedJobReplyTest",
-   "FastHTTPParsing",
-   "ForkCheckTest",
-   "GetJobTest",
-   "GetJobsTest",
-   "InifiniteRetryAfterTest",
-   "LibStuffTest",
-   "QueryJobTest",
-   "QueryTest",
-   "ReadTest",
-   "RemoteSQLite",
-   "RequeueJobsTest",
-   "RetryJobTest",
-   "SFluentdLoggerTest",
-   "SQLiteNodeTest",
-   "SRingBufferTest",
-   "SSLTest",
-   "STimeTest",
-   "StatusTest",
-   "UpdateJobTest",
-   "WriteLocalUnreplicatedTest",
-   "WriteTest",
-   "main"
+  "BedrockCommand": [
+   "BedrockCommandQueue",
+   "BedrockCore",
+   "BedrockPlugin",
+   "BedrockServer",
+   "sqlitecluster/SQLiteClusterMessenger",
+   "test/clustertest/tests/PrePeekPostProcessTest",
+   "test/clustertest/tests/TimeoutTest"
   ],
-  "PrintEquality": [
-   "tpunit++"
-  ],
-  "SThread": [
-   "SFluentdLogger",
-   "TestPlugin"
-  ],
-  "JobTestHelper": [
-   "CreateJobTest",
-   "FailJobTest",
-   "FinishJobTest",
-   "GetJobsTest",
-   "RequeueJobsTest",
-   "RetryJobTest",
-   "UpdateJobTest"
-  ],
-  "SHTTPSManager": [
-   "BedrockCommand",
-   "SQLiteClusterMessenger",
-   "SSLTest",
-   "TestHTTPS"
-  ],
-  "tpunit++": [
-   "BedrockTester",
-   "BenchmarkBase",
-   "BlockingCommandQueueTest",
-   "BroadcastTest",
-   "JSONParserTest",
-   "JSONTest",
-   "JSONUtilsTest",
-   "JSONValueTest",
-   "MySQLTest",
-   "MySQLUtilsTest",
-   "SDeburrTest",
-   "SIsValidSQLiteDateModifierTest",
-   "SSLTest",
-   "TimeoutTest",
-   "main"
-  ],
-  "RemoteSQLite": [
-   "BedrockTester",
-   "BoundParametersTest"
-  ],
-  "PortMap": [
-   "BedrockTester"
-  ],
-  "Value": [
-   "JSONParserTest",
-   "JSONTest",
-   "JSONUtilsTest",
-   "JSONValueTest",
-   "Parser",
-   "SAXHandler",
-   "Serializable",
-   "Utils",
-   "Writer"
-  ],
-  "BedrockClusterTester": [
-   "AfterCommitCallbackClusterTest",
-   "BadCommandTest",
-   "BlockingQueueRateLimitTest",
-   "BoundParametersTest",
-   "BroadcastTest",
-   "ClusterUpgradeTest",
-   "CompressionTest",
-   "ConflictSpamTest",
-   "ControlCommandTest",
-   "DoubleDetachTest",
-   "EscalateTest",
-   "FastStandDownTest",
-   "FinishJobTest",
-   "ForkCheckTest",
-   "FutureExecutionTest",
-   "GracefulFailoverTest",
-   "HTTPSBlockingCommitTest",
-   "HTTPSTest",
-   "JobIDTest",
-   "LeadingTest",
-   "MassiveQueryTest",
-   "MultipleLeaderSyncTest",
-   "PermafollowerTest",
-   "PrePeekPostProcessTest",
-   "SetPriorityTest",
-   "StatusHandlingCommandsTest",
-   "StatusTest",
-   "SynchronousCommandsTest",
-   "ThreadExceptionTest",
-   "TimeoutTest",
-   "TimingTest",
-   "UniqueConstraintsTest",
-   "UpgradeDBTest",
-   "UpgradeTest",
-   "VersionMismatchTest",
-   "WriteLocalUnreplicatedClusterTest"
-  ],
-  "SQLiteCore": [
+  "sqlitecluster/SQLiteCore": [
    "BedrockCore"
   ],
-  "SResolver": [
-   "AsyncResolveTest",
-   "STCPManager"
+  "BedrockCore": [
+   "BedrockServer"
   ],
-  "SSSLState": [
-   "SHTTPSProxySocket",
-   "STCPManager",
+  "sqlitecluster/SQLiteClusterMessenger": [
+   "BedrockServer"
+  ],
+  "bedrockVersion": [
+   "BedrockServer",
+   "main",
+   "plugins/MySQL"
+  ],
+  "BedrockBlockingCommandQueue": [
+   "BedrockServer",
+   "test/tests/BlockingCommandQueueTest"
+  ],
+  "libstuff/SRandom": [
+   "BedrockServer",
+   "sqlitecluster/SQLiteCommand",
+   "sqlitecluster/SQLiteNode",
+   "sqlitecluster/SQLitePeer",
+   "sqlitecluster/SQLiteUtils",
+   "test/clustertest/tests/GracefulFailoverTest",
+   "test/clustertest/tests/LeadingTest",
+   "test/clustertest/tests/UpgradeTest",
+   "test/tests/LibStuffTest",
+   "test/tests/WriteTest"
+  ],
+  "sqlitecluster/SQLiteServer": [
+   "BedrockServer",
+   "sqlitecluster/SQLiteNode",
+   "test/tests/SQLiteNodeTest"
+  ],
+  "ConflictLockGuard": [
+   "BedrockServer"
+  ],
+  "sqlitecluster/SQLitePeer": [
+   "BedrockServer",
+   "plugins/Jobs",
+   "sqlitecluster/SQLiteClusterMessenger",
+   "sqlitecluster/SQLiteNode",
+   "test/tests/SQLiteNodeTest"
+  ],
+  "sqlitecluster/SQLiteNode": [
+   "BedrockServer",
+   "libstuff/SHTTPSManager",
+   "libstuff/SSignal",
+   "sqlitecluster/SQLiteClusterMessenger",
+   "sqlitecluster/SQLiteCommand",
+   "sqlitecluster/SQLiteCore",
+   "sqlitecluster/SQLitePeer",
+   "sqlitecluster/SQLiteServer",
+   "test/clustertest/tests/ForkCheckTest",
+   "test/tests/ChainedHTTPTest",
+   "test/tests/SQLiteNodeTest",
+   "test/tests/SSLTest"
+  ],
+  "libstuff/AutoTimer": [
+   "BedrockServer"
+  ],
+  "BedrockConflictManager": [
+   "BedrockServer"
+  ],
+  "benchmarks/BenchmarkBase": [
+   "benchmarks/SDeburrBench",
+   "benchmarks/SReplaceAllBench",
+   "benchmarks/SReplaceBench",
+   "benchmarks/main"
+  ],
+  "libstuff/SDeburr": [
+   "benchmarks/SDeburrBench",
+   "sqlitecluster/SQLite",
+   "test/tests/SDeburrTest"
+  ],
+  "libstuff/JSON/Metrics": [
+   "libstuff/JSON/Parser",
+   "libstuff/JSON/Writer",
+   "test/tests/JSONTest"
+  ],
+  "libstuff/JSON/SAXHandler": [
+   "libstuff/JSON/Parser"
+  ],
+  "libstuff/JSON/Value": [
+   "libstuff/JSON/Parser",
+   "libstuff/JSON/SAXHandler",
+   "libstuff/JSON/Serializable",
+   "libstuff/JSON/Utils",
+   "libstuff/JSON/Writer",
+   "test/tests/JSONParserTest",
+   "test/tests/JSONTest",
+   "test/tests/JSONUtilsTest",
+   "test/tests/JSONValueTest"
+  ],
+  "libstuff/JSON/Writer": [
+   "libstuff/JSON/Value"
+  ],
+  "libstuff/JSON/Parser": [
+   "libstuff/JSON/Value",
+   "test/tests/JSONTest"
+  ],
+  "libstuff/JSON/Utils": [
+   "libstuff/JSON/Value",
+   "test/tests/JSONUtilsTest"
+  ],
+  "libstuff/SFastBuffer": [
+   "libstuff/SData",
+   "libstuff/SHTTPSProxySocket",
+   "libstuff/SSSLState",
+   "libstuff/STCPManager",
+   "libstuff/libstuff",
+   "test/clustertest/tests/TimeoutTest",
+   "test/lib/BedrockTester",
+   "test/tests/FastHTTPParsing"
+  ],
+  "libstuff/SRingBuffer": [
+   "libstuff/SFluentdLogger",
+   "test/tests/SRingBufferTest"
+  ],
+  "libstuff/SThread": [
+   "libstuff/SFluentdLogger",
+   "test/clustertest/testplugin/TestPlugin"
+  ],
+  "libstuff/SData": [
+   "libstuff/SHTTPSManager",
+   "libstuff/SHTTPSProxySocket",
+   "libstuff/libstuff",
+   "sqlitecluster/SQLiteCommand",
+   "sqlitecluster/SQLitePeer",
+   "test/clustertest/BedrockClusterTester",
+   "test/clustertest/main",
+   "test/clustertest/tests/AfterCommitCallbackClusterTest",
+   "test/clustertest/tests/BadCommandTest",
+   "test/clustertest/tests/BlockingQueueRateLimitTest",
+   "test/clustertest/tests/BoundParametersTest",
+   "test/clustertest/tests/BroadcastTest",
+   "test/clustertest/tests/CompressionTest",
+   "test/clustertest/tests/ConflictSpamTest",
+   "test/clustertest/tests/ControlCommandTest",
+   "test/clustertest/tests/DoubleDetachTest",
+   "test/clustertest/tests/EscalateTest",
+   "test/clustertest/tests/FastStandDownTest",
+   "test/clustertest/tests/FinishJobTest",
+   "test/clustertest/tests/ForkCheckTest",
+   "test/clustertest/tests/FutureExecutionTest",
+   "test/clustertest/tests/GracefulFailoverTest",
+   "test/clustertest/tests/HTTPSBlockingCommitTest",
+   "test/clustertest/tests/HTTPSTest",
+   "test/clustertest/tests/JobIDTest",
+   "test/clustertest/tests/LeadingTest",
+   "test/clustertest/tests/MassiveQueryTest",
+   "test/clustertest/tests/MultipleLeaderSyncTest",
+   "test/clustertest/tests/PermafollowerTest",
+   "test/clustertest/tests/PrePeekPostProcessTest",
+   "test/clustertest/tests/SetPriorityTest",
+   "test/clustertest/tests/StatusHandlingCommandsTest",
+   "test/clustertest/tests/StatusTest",
+   "test/clustertest/tests/SynchronousCommandsTest",
+   "test/clustertest/tests/ThreadExceptionTest",
+   "test/clustertest/tests/TimeoutTest",
+   "test/clustertest/tests/TimingTest",
+   "test/clustertest/tests/UniqueConstraintsTest",
+   "test/clustertest/tests/UpgradeDBTest",
+   "test/clustertest/tests/UpgradeTest",
+   "test/clustertest/tests/VersionMismatchTest",
+   "test/clustertest/tests/WriteLocalUnreplicatedClusterTest",
+   "test/lib/BedrockTester",
+   "test/lib/RemoteSQLite",
+   "test/main",
+   "test/tests/ChainedHTTPTest",
+   "test/tests/CommandPortTest",
+   "test/tests/FastHTTPParsing",
+   "test/tests/LibStuffTest",
+   "test/tests/QueryTest",
+   "test/tests/ReadTest",
+   "test/tests/SSLTest",
+   "test/tests/StatusTest",
+   "test/tests/WriteTest",
+   "test/tests/jobs/CancelJobTest",
+   "test/tests/jobs/CreateJobTest",
+   "test/tests/jobs/CreateJobsTest",
+   "test/tests/jobs/DeleteJobTest",
+   "test/tests/jobs/FailJobTest",
+   "test/tests/jobs/FailedJobReplyTest",
+   "test/tests/jobs/GetJobTest",
+   "test/tests/jobs/GetJobsTest",
+   "test/tests/jobs/InifiniteRetryAfterTest",
+   "test/tests/jobs/QueryJobTest",
+   "test/tests/jobs/RequeueJobsTest",
+   "test/tests/jobs/RetryJobTest",
+   "test/tests/jobs/UpdateJobTest"
+  ],
+  "libstuff/STCPManager": [
+   "libstuff/SHTTPSManager",
+   "libstuff/SHTTPSProxySocket",
+   "libstuff/SMultiHostSocketPool",
+   "libstuff/SSocketPool",
+   "sqlitecluster/SQLiteNode",
+   "sqlitecluster/SQLitePeer",
+   "sqlitecluster/SQLiteServer",
+   "test/tests/AsyncResolveTest",
+   "test/tests/SSLTest"
+  ],
+  "libstuff/SHTTPSProxySocket": [
+   "libstuff/SHTTPSManager",
+   "test/tests/SSLTest"
+  ],
+  "libstuff/SSSLState": [
+   "libstuff/SHTTPSProxySocket",
+   "libstuff/STCPManager",
+   "main",
+   "test/main"
+  ],
+  "libstuff/SSocketPool": [
+   "libstuff/SMultiHostSocketPool"
+  ],
+  "libstuff/SQResultFormatter": [
+   "libstuff/SQResult",
+   "plugins/DB"
+  ],
+  "libstuff/SQValue": [
+   "libstuff/SQResult"
+  ],
+  "libstuff/SQResult": [
+   "libstuff/SQResultFormatter",
+   "libstuff/libstuff",
+   "plugins/Cache",
+   "plugins/Compression",
+   "plugins/DB",
+   "plugins/Jobs",
+   "plugins/MySQL",
+   "sqlitecluster/SQLite",
+   "sqlitecluster/SQLiteNode",
+   "test/clustertest/testplugin/TestPlugin",
+   "test/clustertest/tests/BoundParametersTest",
+   "test/clustertest/tests/CompressionTest",
+   "test/clustertest/tests/FinishJobTest",
+   "test/clustertest/tests/ForkCheckTest",
+   "test/clustertest/tests/TimeoutTest",
+   "test/clustertest/tests/WriteLocalUnreplicatedClusterTest",
+   "test/lib/BedrockTester",
+   "test/tests/LibStuffTest",
+   "test/tests/jobs/CancelJobTest",
+   "test/tests/jobs/CreateJobTest",
+   "test/tests/jobs/CreateJobsTest",
+   "test/tests/jobs/DeleteJobTest",
+   "test/tests/jobs/FailJobTest",
+   "test/tests/jobs/GetJobTest",
+   "test/tests/jobs/GetJobsTest",
+   "test/tests/jobs/InifiniteRetryAfterTest",
+   "test/tests/jobs/RequeueJobsTest",
+   "test/tests/jobs/RetryJobTest",
+   "test/tests/jobs/UpdateJobTest"
+  ],
+  "libstuff/SSynchronizedQueue": [
+   "libstuff/SSignal",
+   "sqlitecluster/SQLiteNode"
+  ],
+  "libstuff/SResolver": [
+   "libstuff/STCPManager",
+   "test/tests/AsyncResolveTest"
+  ],
+  "libstuff/SQliteParameter": [
+   "libstuff/libstuff",
+   "plugins/DB",
+   "sqlitecluster/SQLite"
+  ],
+  "libstuff/SFluentdLogger": [
+   "libstuff/libstuff",
+   "test/tests/SFluentdLoggerTest"
+  ],
+  "plugins/Cache": [
    "main"
   ],
-  "SQResultFormatter": [
-   "DB",
-   "SQResult"
+  "plugins/MySQL": [
+   "main",
+   "test/tests/MySQLTest",
+   "test/tests/MySQLUtilsTest"
+  ],
+  "plugins/Compression": [
+   "main",
+   "sqlitecluster/SQLite",
+   "sqlitecluster/SQLiteNode"
   ],
   "VMTouch": [
    "main"
   ],
-  "BenchmarkBase": [
-   "SDeburrBench",
-   "SReplaceAllBench",
-   "SReplaceBench",
+  "plugins/DB": [
    "main"
   ],
-  "DB": [
+  "plugins/Jobs": [
    "main"
   ],
-  "MySQL": [
-   "MySQLTest",
-   "MySQLUtilsTest",
-   "main"
+  "sqlitecluster/SQLiteUtils": [
+   "plugins/Jobs"
   ],
-  "Jobs": [
-   "main"
+  "libstuff/SPerformanceTimer": [
+   "sqlitecluster/SQLite"
   ],
-  "Cache": [
-   "main"
+  "libstuff/SMultiHostSocketPool": [
+   "sqlitecluster/SQLiteClusterMessenger"
   ],
-  "SMultiHostSocketPool": [
-   "SQLiteClusterMessenger"
+  "libstuff/AutoScopeOnPrepare": [
+   "sqlitecluster/SQLiteCore"
   ],
-  "SQValue": [
-   "SQResult"
+  "sqlitecluster/SQLitePool": [
+   "sqlitecluster/SQLiteNode",
+   "test/clustertest/testplugin/TestPlugin"
   ],
-  "Metrics": [
-   "JSONTest",
-   "Parser",
-   "Writer"
+  "test/lib/BedrockTester": [
+   "test/clustertest/BedrockClusterTester",
+   "test/clustertest/main",
+   "test/clustertest/tests/ForkCheckTest",
+   "test/lib/RemoteSQLite",
+   "test/main",
+   "test/tests/AfterCommitCallbackTest",
+   "test/tests/AsyncResolveTest",
+   "test/tests/ChainedHTTPTest",
+   "test/tests/CommandPortTest",
+   "test/tests/FastHTTPParsing",
+   "test/tests/LibStuffTest",
+   "test/tests/QueryTest",
+   "test/tests/ReadTest",
+   "test/tests/SFluentdLoggerTest",
+   "test/tests/SQLiteNodeTest",
+   "test/tests/SRingBufferTest",
+   "test/tests/SSLTest",
+   "test/tests/STimeTest",
+   "test/tests/StatusTest",
+   "test/tests/WriteLocalUnreplicatedTest",
+   "test/tests/WriteTest",
+   "test/tests/jobs/CancelJobTest",
+   "test/tests/jobs/CreateJobTest",
+   "test/tests/jobs/CreateJobsTest",
+   "test/tests/jobs/DeleteJobTest",
+   "test/tests/jobs/FailJobTest",
+   "test/tests/jobs/FailedJobReplyTest",
+   "test/tests/jobs/GetJobTest",
+   "test/tests/jobs/GetJobsTest",
+   "test/tests/jobs/InifiniteRetryAfterTest",
+   "test/tests/jobs/QueryJobTest",
+   "test/tests/jobs/RequeueJobsTest",
+   "test/tests/jobs/RetryJobTest",
+   "test/tests/jobs/UpdateJobTest"
   ],
-  "SHTTPSProxySocket": [
-   "SHTTPSManager",
-   "SSLTest"
+  "test/clustertest/BedrockClusterTester": [
+   "test/clustertest/tests/AfterCommitCallbackClusterTest",
+   "test/clustertest/tests/BadCommandTest",
+   "test/clustertest/tests/BlockingQueueRateLimitTest",
+   "test/clustertest/tests/BoundParametersTest",
+   "test/clustertest/tests/BroadcastTest",
+   "test/clustertest/tests/ClusterUpgradeTest",
+   "test/clustertest/tests/CompressionTest",
+   "test/clustertest/tests/ConflictSpamTest",
+   "test/clustertest/tests/ControlCommandTest",
+   "test/clustertest/tests/DoubleDetachTest",
+   "test/clustertest/tests/EscalateTest",
+   "test/clustertest/tests/FastStandDownTest",
+   "test/clustertest/tests/FinishJobTest",
+   "test/clustertest/tests/ForkCheckTest",
+   "test/clustertest/tests/FutureExecutionTest",
+   "test/clustertest/tests/GracefulFailoverTest",
+   "test/clustertest/tests/HTTPSBlockingCommitTest",
+   "test/clustertest/tests/HTTPSTest",
+   "test/clustertest/tests/JobIDTest",
+   "test/clustertest/tests/LeadingTest",
+   "test/clustertest/tests/MassiveQueryTest",
+   "test/clustertest/tests/MultipleLeaderSyncTest",
+   "test/clustertest/tests/PermafollowerTest",
+   "test/clustertest/tests/PrePeekPostProcessTest",
+   "test/clustertest/tests/SetPriorityTest",
+   "test/clustertest/tests/StatusHandlingCommandsTest",
+   "test/clustertest/tests/StatusTest",
+   "test/clustertest/tests/SynchronousCommandsTest",
+   "test/clustertest/tests/ThreadExceptionTest",
+   "test/clustertest/tests/TimeoutTest",
+   "test/clustertest/tests/TimingTest",
+   "test/clustertest/tests/UniqueConstraintsTest",
+   "test/clustertest/tests/UpgradeDBTest",
+   "test/clustertest/tests/UpgradeTest",
+   "test/clustertest/tests/VersionMismatchTest",
+   "test/clustertest/tests/WriteLocalUnreplicatedClusterTest"
   ],
-  "SRingBuffer": [
-   "SFluentdLogger",
-   "SRingBufferTest"
+  "test/lib/RemoteSQLite": [
+   "test/clustertest/tests/BoundParametersTest",
+   "test/lib/BedrockTester"
   ],
-  "AutoScopeOnPrepare": [
-   "SQLiteCore"
+  "test/tests/jobs/JobTestHelper": [
+   "test/clustertest/tests/FinishJobTest",
+   "test/tests/jobs/CreateJobTest",
+   "test/tests/jobs/FailJobTest",
+   "test/tests/jobs/GetJobsTest",
+   "test/tests/jobs/RequeueJobsTest",
+   "test/tests/jobs/RetryJobTest",
+   "test/tests/jobs/UpdateJobTest"
   ],
-  "SAXHandler": [
-   "Parser"
-  ],
-  "SSocketPool": [
-   "SMultiHostSocketPool"
+  "test/lib/PortMap": [
+   "test/lib/BedrockTester"
   ]
  },
  "blast_radius": {
-  "libstuff": 65,
-  "BedrockServer": 12,
-  "SQLiteNode": 12,
-  "Value": 9,
-  "SQLite": 13,
-  "Jobs": 1,
-  "LibStuffTest": 0,
-  "MySQL": 3,
-  "tpunit++": 15,
-  "GetJobTest": 0,
-  "TestPlugin": 0,
-  "RetryJobTest": 0,
-  "BedrockCommand": 7,
-  "BedrockTester": 33,
-  "JSONValueTest": 0,
-  "sqlite3ext": 0,
-  "CreateJobTest": 0,
-  "FinishJobTest": 0,
-  "SQResultFormatter": 2,
-  "BedrockCore": 1,
-  "STCPManager": 9,
-  "DB": 1,
-  "main": 0,
-  "JSONUtilsTest": 0,
-  "SQLiteClusterMessenger": 1,
-  "SQLitePeer": 5,
-  "Compression": 3,
-  "Utils": 2,
-  "CancelJobTest": 0,
-  "SQResult": 29,
-  "Cache": 1,
   "BedrockBlockingCommandQueue": 2,
-  "Writer": 1,
-  "SHTTPSManager": 4,
-  "SRingBufferTest": 0,
+  "BedrockCommand": 7,
   "BedrockCommandQueue": 2,
-  "BlockingCommandQueueTest": 0,
-  "SSignal": 0,
-  "ConflictSpamTest": 0,
-  "MySQLUtilsTest": 0,
-  "SData": 65,
-  "RequeueJobsTest": 0,
-  "CompressionTest": 0,
-  "SDeburr": 3,
-  "SAXHandler": 1,
-  "SSSLState": 3,
-  "CreateJobsTest": 0,
-  "BedrockClusterTester": 36,
-  "TimeoutTest": 0,
-  "ClusterUpgradeTest": 0,
-  "VMTouch": 1,
-  "SQValue": 1,
-  "GracefulFailoverTest": 0,
-  "WriteTest": 0,
-  "BedrockPlugin": 11,
-  "SetPriorityTest": 0,
-  "AsyncResolveTest": 0,
-  "qrf": 2,
-  "DeleteJobTest": 0,
-  "LeadingTest": 0,
-  "JSONParserTest": 0,
-  "MultipleLeaderSyncTest": 0,
-  "SFastBuffer": 8,
-  "SQLitePool": 2,
-  "SHTTPSProxySocket": 2,
-  "SSynchronizedQueue": 2,
-  "SQliteParameter": 3,
-  "FailedJobReplyTest": 0,
-  "SQLiteNodeTest": 0,
-  "SSocketPool": 1,
-  "MySQLTest": 0,
-  "BenchmarkBase": 4,
-  "SQLiteCommand": 3,
-  "UpdateJobTest": 0,
-  "SResolver": 2,
-  "WriteLocalUnreplicatedTest": 0,
-  "BlockingQueueRateLimitTest": 0,
-  "SLog": 0,
-  "BoundParametersTest": 0,
-  "ForkCheckTest": 0,
-  "JSONTest": 0,
-  "STime": 0,
-  "RemoteSQLite": 2,
-  "SFluentdLoggerTest": 0,
-  "SFluentdLogger": 2,
-  "QueryTest": 0,
-  "GetJobsTest": 0,
-  "BadCommandTest": 0,
-  "ConflictLockGuard": 1,
-  "FailJobTest": 0,
-  "HTTPSTest": 0,
-  "AfterCommitCallbackTest": 0,
-  "FastStandDownTest": 0,
-  "TimingTest": 0,
-  "SReplaceBench": 0,
-  "EscalateTest": 0,
-  "PortMap": 1,
-  "FastHTTPParsing": 0,
-  "InifiniteRetryAfterTest": 0,
-  "SRingBuffer": 2,
-  "SReplaceAllBench": 0,
-  "HTTPSBlockingCommitTest": 0,
-  "JobIDTest": 0,
-  "SSLTest": 0,
   "BedrockConflictManager": 1,
-  "PrePeekPostProcessTest": 0,
-  "SDeburrBench": 0,
-  "BroadcastTest": 0,
-  "FutureExecutionTest": 0,
-  "SQLiteCore": 1,
-  "SDeburrTest": 0,
-  "SPerformanceTimer": 1,
-  "WriteLocalUnreplicatedClusterTest": 0,
-  "SIsValidSQLiteDateModifierTest": 0,
-  "VersionMismatchTest": 0,
-  "Parser": 2,
-  "ChainedHTTPTest": 0,
-  "AutoTimer": 1,
-  "SThread": 2,
-  "SynchronousCommandsTest": 0,
-  "AfterCommitCallbackClusterTest": 0,
-  "StatusTest": 0,
-  "UpgradeTest": 0,
-  "QueryJobTest": 0,
-  "StatusHandlingCommandsTest": 0,
-  "SRandom": 10,
-  "PrintEquality": 1,
-  "ControlCommandTest": 0,
-  "MassiveQueryTest": 0,
-  "PermafollowerTest": 0,
-  "Serializable": 0,
-  "DoubleDetachTest": 0,
-  "ReadTest": 0,
-  "UpgradeDBTest": 0,
-  "Metrics": 3,
-  "SMultiHostSocketPool": 1,
-  "TestHTTPS": 0,
-  "SQLiteUtils": 1,
-  "CommandPortTest": 0,
-  "STimeTest": 0,
-  "AutoScopeOnPrepare": 1,
-  "ThreadExceptionTest": 0,
-  "SQLiteServer": 3,
-  "UniqueConstraintsTest": 0,
-  "JobTestHelper": 7,
+  "BedrockCore": 1,
+  "BedrockPlugin": 11,
+  "BedrockServer": 12,
+  "ConflictLockGuard": 1,
+  "VMTouch": 1,
   "bedrockVersion": 3,
-  "version": 0,
-  "ExternPointer": 0
+  "benchmarks/BenchmarkBase": 4,
+  "benchmarks/SDeburrBench": 0,
+  "benchmarks/SReplaceAllBench": 0,
+  "benchmarks/SReplaceBench": 0,
+  "benchmarks/main": 0,
+  "libstuff/AutoScopeOnPrepare": 1,
+  "libstuff/AutoTimer": 1,
+  "libstuff/JSON/Metrics": 3,
+  "libstuff/JSON/Parser": 2,
+  "libstuff/JSON/SAXHandler": 1,
+  "libstuff/JSON/Serializable": 0,
+  "libstuff/JSON/Utils": 2,
+  "libstuff/JSON/Value": 9,
+  "libstuff/JSON/Writer": 1,
+  "libstuff/SData": 67,
+  "libstuff/SDeburr": 3,
+  "libstuff/SFastBuffer": 8,
+  "libstuff/SFluentdLogger": 2,
+  "libstuff/SHTTPSManager": 4,
+  "libstuff/SHTTPSProxySocket": 2,
+  "libstuff/SLog": 0,
+  "libstuff/SMultiHostSocketPool": 1,
+  "libstuff/SPerformanceTimer": 1,
+  "libstuff/SQResult": 29,
+  "libstuff/SQResultFormatter": 2,
+  "libstuff/SQValue": 1,
+  "libstuff/SQliteParameter": 3,
+  "libstuff/SRandom": 10,
+  "libstuff/SResolver": 2,
+  "libstuff/SRingBuffer": 2,
+  "libstuff/SSSLState": 4,
+  "libstuff/SSignal": 0,
+  "libstuff/SSocketPool": 1,
+  "libstuff/SSynchronizedQueue": 2,
+  "libstuff/STCPManager": 9,
+  "libstuff/SThread": 2,
+  "libstuff/STime": 0,
+  "libstuff/libstuff": 68,
+  "main": 0,
+  "plugins/Cache": 1,
+  "plugins/Compression": 3,
+  "plugins/DB": 1,
+  "plugins/Jobs": 1,
+  "plugins/MySQL": 3,
+  "sqlitecluster/SQLite": 13,
+  "sqlitecluster/SQLiteClusterMessenger": 1,
+  "sqlitecluster/SQLiteCommand": 3,
+  "sqlitecluster/SQLiteCore": 1,
+  "sqlitecluster/SQLiteNode": 12,
+  "sqlitecluster/SQLitePeer": 5,
+  "sqlitecluster/SQLitePool": 2,
+  "sqlitecluster/SQLiteServer": 3,
+  "sqlitecluster/SQLiteUtils": 1,
+  "test/clustertest/BedrockClusterTester": 36,
+  "test/clustertest/main": 0,
+  "test/clustertest/testplugin/ExternPointer": 0,
+  "test/clustertest/testplugin/TestPlugin": 0,
+  "test/clustertest/tests/AfterCommitCallbackClusterTest": 0,
+  "test/clustertest/tests/BadCommandTest": 0,
+  "test/clustertest/tests/BlockingQueueRateLimitTest": 0,
+  "test/clustertest/tests/BoundParametersTest": 0,
+  "test/clustertest/tests/BroadcastTest": 0,
+  "test/clustertest/tests/ClusterUpgradeTest": 0,
+  "test/clustertest/tests/CompressionTest": 0,
+  "test/clustertest/tests/ConflictSpamTest": 0,
+  "test/clustertest/tests/ControlCommandTest": 0,
+  "test/clustertest/tests/DoubleDetachTest": 0,
+  "test/clustertest/tests/EscalateTest": 0,
+  "test/clustertest/tests/FastStandDownTest": 0,
+  "test/clustertest/tests/FinishJobTest": 0,
+  "test/clustertest/tests/ForkCheckTest": 0,
+  "test/clustertest/tests/FutureExecutionTest": 0,
+  "test/clustertest/tests/GracefulFailoverTest": 0,
+  "test/clustertest/tests/HTTPSBlockingCommitTest": 0,
+  "test/clustertest/tests/HTTPSTest": 0,
+  "test/clustertest/tests/JobIDTest": 0,
+  "test/clustertest/tests/LeadingTest": 0,
+  "test/clustertest/tests/MassiveQueryTest": 0,
+  "test/clustertest/tests/MultipleLeaderSyncTest": 0,
+  "test/clustertest/tests/PermafollowerTest": 0,
+  "test/clustertest/tests/PrePeekPostProcessTest": 0,
+  "test/clustertest/tests/SetPriorityTest": 0,
+  "test/clustertest/tests/StatusHandlingCommandsTest": 0,
+  "test/clustertest/tests/StatusTest": 0,
+  "test/clustertest/tests/SynchronousCommandsTest": 0,
+  "test/clustertest/tests/ThreadExceptionTest": 0,
+  "test/clustertest/tests/TimeoutTest": 0,
+  "test/clustertest/tests/TimingTest": 0,
+  "test/clustertest/tests/UniqueConstraintsTest": 0,
+  "test/clustertest/tests/UpgradeDBTest": 0,
+  "test/clustertest/tests/UpgradeTest": 0,
+  "test/clustertest/tests/VersionMismatchTest": 0,
+  "test/clustertest/tests/WriteLocalUnreplicatedClusterTest": 0,
+  "test/lib/BedrockTester": 34,
+  "test/lib/PortMap": 1,
+  "test/lib/PrintEquality": 0,
+  "test/lib/RemoteSQLite": 2,
+  "test/lib/TestHTTPS": 0,
+  "test/lib/tpunit++": 0,
+  "test/main": 0,
+  "test/tests/AfterCommitCallbackTest": 0,
+  "test/tests/AsyncResolveTest": 0,
+  "test/tests/BlockingCommandQueueTest": 0,
+  "test/tests/ChainedHTTPTest": 0,
+  "test/tests/CommandPortTest": 0,
+  "test/tests/FastHTTPParsing": 0,
+  "test/tests/JSONParserTest": 0,
+  "test/tests/JSONTest": 0,
+  "test/tests/JSONUtilsTest": 0,
+  "test/tests/JSONValueTest": 0,
+  "test/tests/LibStuffTest": 0,
+  "test/tests/MySQLTest": 0,
+  "test/tests/MySQLUtilsTest": 0,
+  "test/tests/QueryTest": 0,
+  "test/tests/ReadTest": 0,
+  "test/tests/SDeburrTest": 0,
+  "test/tests/SFluentdLoggerTest": 0,
+  "test/tests/SIsValidSQLiteDateModifierTest": 0,
+  "test/tests/SQLiteNodeTest": 0,
+  "test/tests/SRingBufferTest": 0,
+  "test/tests/SSLTest": 0,
+  "test/tests/STimeTest": 0,
+  "test/tests/StatusTest": 0,
+  "test/tests/WriteLocalUnreplicatedTest": 0,
+  "test/tests/WriteTest": 0,
+  "test/tests/jobs/CancelJobTest": 0,
+  "test/tests/jobs/CreateJobTest": 0,
+  "test/tests/jobs/CreateJobsTest": 0,
+  "test/tests/jobs/DeleteJobTest": 0,
+  "test/tests/jobs/FailJobTest": 0,
+  "test/tests/jobs/FailedJobReplyTest": 0,
+  "test/tests/jobs/GetJobTest": 0,
+  "test/tests/jobs/GetJobsTest": 0,
+  "test/tests/jobs/InifiniteRetryAfterTest": 0,
+  "test/tests/jobs/JobTestHelper": 7,
+  "test/tests/jobs/QueryJobTest": 0,
+  "test/tests/jobs/RequeueJobsTest": 0,
+  "test/tests/jobs/RetryJobTest": 0,
+  "test/tests/jobs/UpdateJobTest": 0,
+  "version": 0
  }
 }

@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SHTTPSProxySocket.cpp
+ * Path:    libstuff/SHTTPSProxySocket.cpp
+ * Pair:    SHTTPSProxySocket.h
+ *
+ * INTENT
+ *   Implements SHTTPSProxySocket; see the header.
+ *
+ * OBJECTS
+ *   No file-local additions beyond the header's declared API. `recv()`
+ *   constructs the destination `SSSLState` only after the CONNECT tunnel's
+ *   " 200 " response is parsed, deliberately deferring the TLS handshake
+ *   (inherited STCPManager::prePoll starts it once `ssl` is set).
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header (see its NAMING QUALITY note on unprefixed
+ *   private members).
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "SHTTPSProxySocket.h"
 #include "libstuff/SData.h"
 #include "libstuff/STCPManager.h"

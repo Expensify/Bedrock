@@ -1,0 +1,59 @@
+{
+ "unit": "ConflictLockGuard",
+ "dir": "",
+ "files": [
+  "ConflictLockGuard.h",
+  "ConflictLockGuard.cpp"
+ ],
+ "lines": 126,
+ "test": false,
+ "intent": "RAII scoped lock keyed by an opaque uint64_t identifier (a commit-conflict key), backed by a shared, refcounted, LRU-pruned pool of mutexes so concurrent commands only block each other when they collide on the same identifier.",
+ "objects": [
+  {
+   "name": "ConflictLockGuard",
+   "kind": "class",
+   "role": "RAII guard; constructor blocks until the mutex for its identifier is held, destructor releases it; identifier == 0 is a no-op"
+  },
+  {
+   "name": "ConflictLockGuard::controlMutex",
+   "kind": "static member",
+   "role": "Guards all access to the shared mutex-pool bookkeeping"
+  },
+  {
+   "name": "ConflictLockGuard::mutexes",
+   "kind": "static member",
+   "role": "The pool: identifier to mutex map"
+  },
+  {
+   "name": "ConflictLockGuard::mutexCounts",
+   "kind": "static member",
+   "role": "Reference counts per identifier, used to decide what's safe to prune"
+  },
+  {
+   "name": "ConflictLockGuard::mutexOrder/mutexOrderFastLookup",
+   "kind": "static member group",
+   "role": "LRU order over identifiers plus an index into it, used to prune the pool once it exceeds MAX_PAGE_MUTEXES"
+  },
+  {
+   "name": "ConflictLockGuard::_identifier",
+   "kind": "member",
+   "role": "The identifier this instance locked, or 0 for a no-op guard"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 4,
+  "note": "Accurately a lock guard, though it locks on an arbitrary identifier, not specifically a 'conflict' per se"
+ },
+ "location_fit": {
+  "score": 4,
+  "note": "Fits alongside BedrockConflictManager and BedrockServer, which is its only caller"
+ },
+ "naming_quality": {
+  "score": 2,
+  "note": "Private static members (controlMutex, mutexes, mutexCounts, mutexOrder, mutexOrderFastLookup) lack the repo's leading-underscore convention that _identifier follows; the constant MAX_PAGE_MUTEXES and its comments call the keyed value a 'page' though the class and its only caller call it a 'conflict key'"
+ },
+ "depends_on": [],
+ "_src": "b102.json",
+ "hash": "d0cafeb3080d06d3"
+}

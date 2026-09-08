@@ -1,3 +1,25 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockCommandQueue.cpp
+ * Path:    BedrockCommandQueue.cpp
+ * Pair:    BedrockCommandQueue.h
+ *
+ * INTENT
+ *   Implements BedrockCommandQueue as declared in the header.
+ *
+ * OBJECTS
+ *   BedrockCommandQueue:: (all methods) - get()'s wait/retry loop, push()'s
+ *     insertion into both `_queue` and `_lookupByTimeout`, and _dequeue()'s
+ *     timeout-first-then-scheduled-time selection.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; pairs directly with BedrockCommandQueue.h.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <BedrockCommandQueue.h>
 
 void BedrockCommandQueue::startTiming(unique_ptr<BedrockCommand>& command)

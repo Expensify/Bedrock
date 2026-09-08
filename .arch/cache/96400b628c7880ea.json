@@ -1,0 +1,40 @@
+{
+ "unit": "Serializable",
+ "dir": "libstuff/JSON",
+ "files": [
+  "libstuff/JSON/Serializable.h"
+ ],
+ "lines": 52,
+ "test": false,
+ "intent": "A CRTP base that documents and compile-time-enforces a toJSON()/fromJSON() contract on a derived type, without a vtable, so the derived type stays an aggregate.",
+ "objects": [
+  {
+   "name": "Serializable<Derived>",
+   "kind": "struct (CRTP template)",
+   "role": "base toJSON()/fromJSON() are static_assert stubs that fire only if the derived class fails to hide them via name hiding"
+  },
+  {
+   "name": "always_false_v<T>",
+   "kind": "template variable",
+   "role": "delays the static_assert failure to instantiation time"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 4,
+  "note": "a JSON-serialization contract helper, reasonably grouped here even though the CRTP trick itself is generic C++, not JSON-specific; no in-repo consumer currently derives from it"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "always_false_v follows established standard-library-style naming for this trait helper"
+ },
+ "depends_on": [
+  "libstuff/JSON/Value.h"
+ ],
+ "_src": "b107.json",
+ "hash": "96400b628c7880ea"
+}

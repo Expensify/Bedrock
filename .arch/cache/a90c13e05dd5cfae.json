@@ -1,0 +1,35 @@
+{
+ "unit": "SThread",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SThread.h"
+ ],
+ "lines": 66,
+ "test": false,
+ "intent": "Variadic function template that launches a thread like std::thread but captures any exception the callable throws and delivers it back to the caller through a std::future.",
+ "objects": [
+  {
+   "name": "SThread",
+   "kind": "function template",
+   "role": "wraps f(args...) in try/catch on a new thread, routes return value or caught exception through a promise/future, returns {thread, future}"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 3,
+  "note": "PascalCase, S-prefixed free function reads as a type/constructor call rather than a function, given repo convention reserves that style for classes"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "generic threading utility, fits libstuff"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "S-prefix on a lower-case-callable function template is inconsistent with the repo's S-prefix-for-types convention"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b105.json",
+ "hash": "a90c13e05dd5cfae"
+}

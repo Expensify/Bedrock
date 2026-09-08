@@ -1,3 +1,40 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockBlockingCommandQueue.h
+ * Path:    BedrockBlockingCommandQueue.h
+ * Pair:    BedrockBlockingCommandQueue.cpp
+ *
+ * INTENT
+ *   A BedrockCommandQueue subclass, used for the blocking commit thread's
+ *   queue, that adds per-identifier and per-command-name sliding-window
+ *   rate limiting: it rejects (with a 503) commands whose identifier or
+ *   method name has spent too much time recently, tracking finished-command
+ *   timing samples to decide when to start and stop blocking a key.
+ *
+ * OBJECTS
+ *   BedrockBlockingCommandQueue - class (extends BedrockCommandQueue); adds
+ *     rate-limit checks to push()/_dequeue(), plus rate-limit configuration
+ *     and status reporting for the Status command.
+ *   BedrockBlockingCommandQueue::RecentlyFinishedCommand - struct; one timed
+ *     sample (finishTime, elapsedTime) in the sliding window.
+ *   BedrockBlockingCommandQueue::RecentlyFinishedCommandList - typedef;
+ *     deque<RecentlyFinishedCommand>, oldest first.
+ *   BedrockBlockingCommandQueue::IdentifierState - struct; one tracked key's
+ *     (an identifier or a command name) mutex, recent-sample deque, and
+ *     block-until deadline.
+ *   BedrockBlockingCommandQueue::StateMap - struct; a mutex-guarded
+ *     unordered_map<string, shared_ptr<IdentifierState>>; one instance each
+ *     for identifiers and for command names.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; sits beside its base class BedrockCommandQueue at the repo root.
+ *
+ * NAMING QUALITY
+ *   Consistent `_` prefix on private members; the parallel Identifier vs.
+ *   Command dimensions are named distinctly with no confusable aliasing.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <deque>
 #include <memory>

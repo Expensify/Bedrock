@@ -1,0 +1,36 @@
+[
+ {
+  "unit": "LibStuffTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/LibStuffTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 1283,
+  "test": true,
+  "hash": "72a1473d5f29856e"
+ },
+ {
+  "unit": "JSONValueTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/JSONValueTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 862,
+  "test": true,
+  "hash": "2b9504c57a28f501"
+ },
+ {
+  "unit": "JSONUtilsTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/JSONUtilsTest.h",
+   "test/tests/JSONUtilsTest.cpp"
+  ],
+  "kind": "pair",
+  "lines": 453,
+  "test": true,
+  "hash": "eddd77fe96fab635"
+ }
+]

@@ -1,3 +1,31 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    STime.cpp
+ * Path:    libstuff/STime.cpp
+ * Pair:    (declarations in libstuff/libstuff.h)
+ *
+ * INTENT
+ *   Free functions for libstuff's microsecond-precision timestamp type (see
+ *   STIME_US_PER_S in libstuff.h): now(), format/parse to and from human timestamps,
+ *   calendar helpers (days-in-month, start-of-day, first-of-month-with-offset).
+ *
+ * OBJECTS
+ *   STimeNow/STimeThisMorning/SDaysInMonth/SComposeTime/STimestampToEpoch/
+ *   STimestampMSToEpoch/SToTimeval/SFirstOfMonth/STIMESTAMP_MS/SCURRENT_TIMESTAMP_MS
+ *     - all implement declarations from libstuff.h; no file-local helpers.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Name fits the content. [CANDIDATE] Declared in the libstuff.h catch-all rather
+ *   than a dedicated STime.h.
+ *
+ * NAMING QUALITY
+ *   Mostly consistent PascalCase-after-S (STimeNow, SComposeTime), but STIMESTAMP_MS/
+ *   SCURRENT_TIMESTAMP_MS break that pattern with SCREAMING_CASE identifiers that read
+ *   like macros despite being ordinary functions.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "libstuff.h"
 
 #include <cstring>

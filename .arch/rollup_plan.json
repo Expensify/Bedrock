@@ -1,0 +1,104 @@
+{
+ "cluster_max": 16,
+ "group": 6,
+ "wide": {
+  "": 17,
+  "test/tests": 26,
+  "libstuff": 27,
+  "test/clustertest/tests": 36
+ },
+ "passA": [
+  {
+   "level": 3,
+   "calls": [
+    [
+     "test/clustertest/testplugin",
+     "test/clustertest/tests"
+    ],
+    [
+     "test/tests/jobs"
+    ]
+   ]
+  },
+  {
+   "level": 2,
+   "calls": [
+    [
+     "libstuff/JSON"
+    ],
+    [
+     "test/clustertest",
+     "test/lib",
+     "test/tests"
+    ]
+   ]
+  },
+  {
+   "level": 1,
+   "calls": [
+    [
+     "benchmarks",
+     "libstuff",
+     "plugins",
+     "sqlitecluster",
+     "test"
+    ]
+   ]
+  },
+  {
+   "level": 0,
+   "calls": [
+    [
+     ""
+    ]
+   ]
+  }
+ ],
+ "passB": [
+  {
+   "level": 0,
+   "calls": [
+    [
+     ""
+    ]
+   ]
+  },
+  {
+   "level": 1,
+   "calls": [
+    [
+     "benchmarks",
+     "libstuff",
+     "plugins",
+     "sqlitecluster",
+     "test"
+    ]
+   ]
+  },
+  {
+   "level": 2,
+   "calls": [
+    [
+     "libstuff/JSON"
+    ],
+    [
+     "test/clustertest",
+     "test/lib",
+     "test/tests"
+    ]
+   ]
+  },
+  {
+   "level": 3,
+   "calls": [
+    [
+     "test/clustertest/testplugin",
+     "test/clustertest/tests"
+    ],
+    [
+     "test/tests/jobs"
+    ]
+   ]
+  }
+ ]
+}

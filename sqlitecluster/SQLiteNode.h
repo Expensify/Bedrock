@@ -1,3 +1,42 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLiteNode.h
+ * Path:    sqlitecluster/SQLiteNode.h
+ * Pair:    SQLiteNode.cpp
+ *
+ * INTENT
+ *   Declares SQLiteNode, a distributed, leader/follower, failover SQLite
+ *   cluster node: it maintains connections to all peers, drives the
+ *   cluster's leader-election state machine (SEARCHING through LEADING or
+ *   FOLLOWING), and replicates committed transactions to/from peers.
+ *
+ * OBJECTS
+ *   SQLiteNodeState - the states a node cycles through in the cluster
+ *     state machine (SEARCHING, SYNCHRONIZING, WAITING, STANDINGUP,
+ *     LEADING, STANDINGDOWN, SUBSCRIBING, FOLLOWING).
+ *   SQLiteNode - STCPManager subclass; owns the peer list and command
+ *     port, drives the state machine via update()/postPoll(), and hands
+ *     off replication to a dedicated thread.
+ *
+ * OUT OF PLACE
+ *   KILLABLE_SQLITE_NODE / NODE_KILLED [CANDIDATE] - a global static
+ *     pointer and flag letting process-wide signal-handling code reach
+ *     into one specific node instance to kill its sockets; shutdown
+ *     coordination bolted onto the node class rather than living in a
+ *     signal-handling module.
+ *   _priority and _syncPeer [CANDIDATE] - both are inline-commented
+ *     "Remove" with links to open GitHub issues (208449, 208439),
+ *     flagging them as known, unresolved design debt in state tracking.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; sqlitecluster/ is the right home and the name matches the
+ *   content.
+ *
+ * NAMING QUALITY
+ *   Mostly consistent `_`-prefixed private members, but `pluginDB` is a
+ *   private data member with no underscore, unlike every other private
+ *   member in the class.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 #include <libstuff/libstuff.h>
 #include <libstuff/SSynchronizedQueue.h>

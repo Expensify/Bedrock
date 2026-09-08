@@ -1,3 +1,34 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SReplaceAllBench.cpp
+ * Path:    benchmarks/SReplaceAllBench.cpp
+ *
+ * INTENT
+ *   Self-contained tpunit fixture benchmarking libstuff's SReplaceAll()
+ *   -- replacing any character from a set with a single replacement
+ *   character -- across inputs with varying densities and sizes of
+ *   unsafe-character sets.
+ *
+ * OBJECTS
+ *   SReplaceAllBench - tpunit::TestFixture + BenchmarkBase; each bench*
+ *       method times SReplaceAll() over a small fixed set of input
+ *       strings.
+ *       benchNoUnsafeChars/benchFewUnsafeChars/benchManyUnsafeChars -
+ *           vary how many characters in the input need replacing.
+ *       benchLongUnsafeList/benchURLSafe/benchAlphanumeric - vary the
+ *           size and shape of the unsafe-character set being matched
+ *           against.
+ *   __SReplaceAllBench - file-scope instance that self-registers the
+ *       fixture with tpunit at static-init time.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Fits repo convention.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/libstuff.h>
 #include "BenchmarkBase.h"
 

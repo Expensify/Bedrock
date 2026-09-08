@@ -1,0 +1,68 @@
+{
+ "unit": "VMTouch",
+ "dir": "",
+ "files": [
+  "VMTouch.h",
+  "VMTouch.cpp"
+ ],
+ "lines": 232,
+ "test": false,
+ "intent": "Static-only utility that inspects, and optionally force-touches, how much of a file is resident in the OS page cache, used to pre-warm a database file into memory; adapted from Doug Hoyte's third-party VMTouch tool.",
+ "objects": [
+  {
+   "name": "VMTouch",
+   "kind": "class",
+   "role": "Static-only class; check() reports and optionally forces page-cache residency for a file path"
+  },
+  {
+   "name": "VMTouch::check",
+   "kind": "static method",
+   "role": "Open/mmap/mincore/touch/report pipeline for one path, optionally touching pages in parallel across worker threads"
+  },
+  {
+   "name": "VMTouch::bytes2pages",
+   "kind": "static method",
+   "role": "Rounds a byte length up to a page count"
+  },
+  {
+   "name": "VMTouch::isPageAligned",
+   "kind": "static method",
+   "role": "Checks a pointer's alignment against the system page size"
+  },
+  {
+   "name": "VMTouch::is_mincore_page_resident",
+   "kind": "static method",
+   "role": "Tests the residency bit of one mincore() output byte"
+  },
+  {
+   "name": "VMTouch::do_nothing",
+   "kind": "static method",
+   "role": "No-op sink used only to keep a per-thread counter variable read as used"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "VMTouch (whole unit)",
+   "why": "A generic, Bedrock-agnostic OS/filesystem utility living at the repo root rather than under libstuff with the rest of the reusable helpers",
+   "severity": "low",
+   "suggested_home": "libstuff/VMTouch.h or libstuff/VMTouch.cpp"
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "Name matches the upstream tool it's adapted from and its contents"
+ },
+ "location_fit": {
+  "score": 3,
+  "note": "Standalone at repo root instead of libstuff, where similarly generic helpers live"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "Mixes camelCase (isPageAligned, bytes2pages) with snake_case (is_mincore_page_resident, do_nothing)"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b102.json",
+ "hash": "717c4521066fec8c"
+}

@@ -1,3 +1,35 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    InifiniteRetryAfterTest.cpp
+ * Path:    test/tests/jobs/InifiniteRetryAfterTest.cpp
+ *
+ * INTENT
+ *   tpunit fixture verifying the retryAfter retry-limit: a job that keeps
+ *   getting fetched (RUNQUEUED) via retryAfter fails automatically after
+ *   10 tries, while a job that also has `repeat` and finishes within the
+ *   limit gets its retryAfterCount cleared and returns to QUEUED.
+ *
+ * OBJECTS
+ *   InfiniteRetryAfterJobTest      - tpunit::TestFixture; each test creates
+ *                                   a BedrockTester locally (no shared
+ *                                   setupClass/tearDown, unlike most
+ *                                   siblings) and loops GetJob calls
+ *                                   checking retryAfterCount/state.
+ *   __InfiniteRetryAfterJobTest    - static instance that registers the fixture.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   File is misspelled ("Inifinite") while the struct/fixture name inside
+ *   is spelled correctly ("Infinite...") - the filename does not match its
+ *   own contents.
+ *
+ * NAMING QUALITY
+ *   Struct name InfiniteRetryAfterJobTest vs. filename
+ *   InifiniteRetryAfterTest.cpp is a plain typo mismatch, not just a style
+ *   quirk.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <unistd.h>
 
 #include <libstuff/SData.h>

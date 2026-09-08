@@ -1,3 +1,26 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Parser.cpp
+ * Path:    libstuff/JSON/Parser.cpp
+ * Pair:    Parser.h
+ *
+ * INTENT
+ *   Implements Parser; see Parser.h.
+ *
+ * OBJECTS
+ *   Parser (impl) - implements read() and readUnsafe(), both by driving
+ *   a rapidjson::Reader over a SAXHandler. read() additionally times the
+ *   parse and reports it via JSON::reportMetrics; readUnsafe() does not.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "Parser.h"
 
 #include "Metrics.h"

@@ -1,0 +1,75 @@
+{
+ "unit": "DB",
+ "dir": "plugins",
+ "files": [
+  "plugins/DB.h",
+  "plugins/DB.cpp"
+ ],
+ "lines": 490,
+ "test": false,
+ "intent": "The catch-all Bedrock plugin that exposes raw SQL as a command: clients send a Query request and get back the result formatted per sqlite3-CLI-style flags or as JSON, with named bound parameters.",
+ "objects": [
+  {
+   "name": "BedrockPlugin_DB",
+   "kind": "class",
+   "role": "the plugin; recognizes Query requests and hands them to BedrockDBCommand"
+  },
+  {
+   "name": "BedrockPlugin_DB::Sqlite3QRFSpecWrapper",
+   "kind": "class",
+   "role": "move-only RAII wrapper owning the heap strings a sqlite3_qrf_spec's char pointers point into"
+  },
+  {
+   "name": "BedrockPlugin_DB::parseSQLite3Args",
+   "kind": "static method",
+   "role": "parses sqlite3-CLI-style flags (-json, -csv, -separator, etc.) into a Sqlite3QRFSpecWrapper"
+  },
+  {
+   "name": "BedrockPlugin_DB::generateErrorContextMessage",
+   "kind": "static method",
+   "role": "builds a two-line, caret-pointing error snippet mimicking the sqlite3 CLI's error display"
+  },
+  {
+   "name": "BedrockDBCommand",
+   "kind": "class",
+   "role": "BedrockCommand implementing peek()/process() for arbitrary read/write SQL with named bound parameters from sql-param-<name> headers"
+  },
+  {
+   "name": "BedrockDBCommand::SQLiteFormatAppend",
+   "kind": "static private method",
+   "role": "write callback registered with the QRF formatter to accumulate output"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "BedrockPlugin_DB::Sqlite3QRFSpecWrapper / parseSQLite3Args / generateErrorContextMessage",
+   "why": "a generic sqlite3-CLI argument-parsing and error-formatting layer around libstuff/qrf.h's C struct, none of it specific to being a request-command plugin",
+   "severity": "med",
+   "suggested_home": "libstuff/qrf.h or a new libstuff unit alongside it"
+  }
+ ],
+ "name_fit": {
+  "score": 4,
+  "note": "fits by convention as the original catch-all query plugin, though 'DB' alone doesn't convey that scope since every plugin touches the DB"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "plugins/ alongside other BedrockPlugin_* implementations"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "Sqlite3QRFSpecWrapper's mixed casing matches the wrapped C API; depends on libstuff/SQliteParameter whose 'SQlite' capitalization is inconsistent with this codebase's usual 'SQLite'"
+ },
+ "depends_on": [
+  "libstuff/SQliteParameter.h",
+  "libstuff/libstuff.h",
+  "BedrockPlugin.h",
+  "libstuff/qrf.h",
+  "libstuff/sqlite3.h",
+  "libstuff/SQResultFormatter.h",
+  "BedrockServer.h",
+  "libstuff/SQResult.h"
+ ],
+ "_src": "b109.json",
+ "hash": "0780f3bd40ad55b5"
+}

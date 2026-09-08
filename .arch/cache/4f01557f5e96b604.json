@@ -1,0 +1,51 @@
+{
+ "unit": "BedrockConflictManager",
+ "dir": "",
+ "files": [
+  "BedrockConflictManager.h",
+  "BedrockConflictManager.cpp"
+ ],
+ "lines": 91,
+ "test": false,
+ "intent": "Thread-safe collector that tracks how often each command name touches which database tables during commit conflicts, and renders a plaintext profiling report.",
+ "objects": [
+  {
+   "name": "BedrockConflictManagerCommandInfo",
+   "kind": "class",
+   "role": "Per-command tally: a total count plus a table-name to use-count map"
+  },
+  {
+   "name": "BedrockConflictManager",
+   "kind": "class",
+   "role": "Mutex-guarded collector; recordTables() tallies one command's table touches, generateReport() renders a plaintext summary"
+  },
+  {
+   "name": "BedrockConflictManager::recordTables",
+   "kind": "method",
+   "role": "Increments a command's total and per-table use counts, skipping journal* tables and json_each"
+  },
+  {
+   "name": "BedrockConflictManager::generateReport",
+   "kind": "method",
+   "role": "Renders one text block per command with its total and per-table counts"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Exactly what it says: manages conflict statistics"
+ },
+ "location_fit": {
+  "score": 4,
+  "note": "Fits alongside BedrockServer, which is its only expected user, and ConflictLockGuard"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "Private mutex `m` breaks the repo's leading-underscore convention for private members, while `_commandInfo` right below it follows it"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b102.json",
+ "hash": "4f01557f5e96b604"
+}

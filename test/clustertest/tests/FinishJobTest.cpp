@@ -1,3 +1,41 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    FinishJobTest.cpp
+ * Path:    test/clustertest/tests/FinishJobTest.cpp
+ *
+ * INTENT
+ *   Cluster-level tpunit test fixture covering the Jobs plugin's
+ *   FinishJob command: error cases (missing job, wrong state, unpaused
+ *   parent), parent/child pause-and-requeue semantics, repeat/delay/
+ *   nextRun interactions, and cleanup of finished/cancelled children.
+ *
+ * OBJECTS
+ *   FinishJobTest (struct, extends tpunit::TestFixture) - registers each
+ *       test method below with the tpunit framework via its constructor.
+ *   FinishJobTest::setupClass/tearDownClass - stand up/tear down a
+ *       THREE_NODE_CLUSTER BedrockClusterTester for the whole fixture.
+ *   FinishJobTest::tearDown - wipes the jobs table between tests.
+ *   FinishJobTest::nonExistentJob/notInRunningState/parentIsNotPaused/
+ *       removeFinishedAndCancelledChildren/updateData/
+ *       finishingParentUnPausesChildren/deleteFinishedJobWithNoChildren/
+ *       hasRepeat/inRunqueuedState/hasRepeatWithDelay/hasDelay/
+ *       hasRepeatWithNextRun/hasDataDelete/hasNextRun/
+ *       simpleFinishJobWithHttp - individual FinishJob scenarios, each
+ *       creating a job via CreateJob then asserting FinishJob's effect.
+ *   FinishJobTest::negativeDelay/positiveDelay - defined but not wired
+ *       into the TestFixture's TEST(...) list, so they never run.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] negativeDelay and positiveDelay are dead test code: fully
+ *   written methods that are never registered with TEST(...) in the
+ *   constructor, so they silently do not execute.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; a cluster-level command test under test/clustertest/tests.
+ *
+ * NAMING QUALITY
+ *   Method names read as plain English test descriptions, consistent
+ *   with sibling files in this directory.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SQResult.h>
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>

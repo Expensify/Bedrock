@@ -1,3 +1,34 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    ConflictLockGuard.cpp
+ * Path:    ConflictLockGuard.cpp
+ * Pair:    ConflictLockGuard.h
+ *
+ * INTENT
+ *   Implements ConflictLockGuard -- see ConflictLockGuard.h.
+ *
+ * OBJECTS
+ *   Out-of-line definitions of the static pool (controlMutex, mutexes,
+ *       mutexCounts, mutexOrder, mutexOrderFastLookup).
+ *   ConflictLockGuard::ConflictLockGuard - looks up or creates the mutex
+ *       for _identifier, bumps its refcount, moves it to the front of
+ *       the LRU order, prunes unused entries once the pool exceeds
+ *       MAX_PAGE_MUTEXES (500), then blocks on lock() outside the
+ *       control lock.
+ *   ConflictLockGuard::~ConflictLockGuard - unlocks the mutex and
+ *       decrements its refcount.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   MAX_PAGE_MUTEXES and its surrounding comments call the keyed-on
+ *   value a "page", but the class itself (and its caller, which names it
+ *   a "conflict key") never says the identifier is a page id -- a
+ *   holdover name that overstates what this class actually knows.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "ConflictLockGuard.h"
 mutex ConflictLockGuard::controlMutex;
 map<uint64_t, mutex> ConflictLockGuard::mutexes;

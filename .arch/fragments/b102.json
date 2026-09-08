@@ -1,0 +1,247 @@
+[
+ {
+  "unit": "VMTouch",
+  "dir": "",
+  "files": ["VMTouch.h", "VMTouch.cpp"],
+  "lines": 232,
+  "test": false,
+  "intent": "Static-only utility that inspects, and optionally force-touches, how much of a file is resident in the OS page cache, used to pre-warm a database file into memory; adapted from Doug Hoyte's third-party VMTouch tool.",
+  "objects": [
+    {"name": "VMTouch", "kind": "class", "role": "Static-only class; check() reports and optionally forces page-cache residency for a file path"},
+    {"name": "VMTouch::check", "kind": "static method", "role": "Open/mmap/mincore/touch/report pipeline for one path, optionally touching pages in parallel across worker threads"},
+    {"name": "VMTouch::bytes2pages", "kind": "static method", "role": "Rounds a byte length up to a page count"},
+    {"name": "VMTouch::isPageAligned", "kind": "static method", "role": "Checks a pointer's alignment against the system page size"},
+    {"name": "VMTouch::is_mincore_page_resident", "kind": "static method", "role": "Tests the residency bit of one mincore() output byte"},
+    {"name": "VMTouch::do_nothing", "kind": "static method", "role": "No-op sink used only to keep a per-thread counter variable read as used"}
+  ],
+  "misfits": [
+    {
+      "item": "VMTouch (whole unit)",
+      "why": "A generic, Bedrock-agnostic OS/filesystem utility living at the repo root rather than under libstuff with the rest of the reusable helpers",
+      "severity": "low",
+      "suggested_home": "libstuff/VMTouch.h or libstuff/VMTouch.cpp"
+    }
+  ],
+  "name_fit": {"score": 5, "note": "Name matches the upstream tool it's adapted from and its contents"},
+  "location_fit": {"score": 3, "note": "Standalone at repo root instead of libstuff, where similarly generic helpers live"},
+  "naming_quality": {"score": 3, "note": "Mixes camelCase (isPageAligned, bytes2pages) with snake_case (is_mincore_page_resident, do_nothing)"},
+  "depends_on": ["libstuff/libstuff.h"]
+ },
+ {
+  "unit": "BedrockPlugin",
+  "dir": "",
+  "files": ["BedrockPlugin.h", "BedrockPlugin.cpp"],
+  "lines": 212,
+  "test": false,
+  "intent": "Abstract base class defining the plugin interface a BedrockServer uses to add command handling, schema upgrades, timers, and optional dedicated network ports at runtime, plus a global registry of plugin factories.",
+  "objects": [
+    {"name": "BedrockPlugin", "kind": "class", "role": "Abstract plugin base; holds a reference to its owning BedrockServer and declares the full lifecycle/command hook surface"},
+    {"name": "BedrockPlugin::MAX_SIZE_QUERY/MAX_SIZE_BLOB/MAX_SIZE_SMALL", "kind": "static constants", "role": "Size limits enforced so the storage engine cannot silently truncate oversized input"},
+    {"name": "BedrockPlugin::isValidDate", "kind": "static method", "role": "Regex-based date/datetime format validator"},
+    {"name": "BedrockPlugin::verifyAttributeInt64/verifyAttributeSize/verifyAttributeBool/verifyAttributeDate", "kind": "static method group", "role": "Throw a 402 on missing or malformed request attributes"},
+    {"name": "BedrockPlugin::getCommand", "kind": "pure virtual method", "role": "Factory that claims a request into a BedrockCommand or declines it by returning null"},
+    {"name": "BedrockPlugin::getInfo/getName/upgradeDatabase/initializeFromDB/timerFired/getPort/onPortAccept/onPortRecv/onPortRequestComplete/preventAttach/onDetach/onAttach/stateChanged/onNodeLogin/serverStopping/shouldLockCommitPageOnConflict", "kind": "virtual method group", "role": "Overridable lifecycle hooks a plugin implements as needed; most default to no-ops"},
+    {"name": "BedrockPlugin::g_registeredPluginList", "kind": "static member", "role": "Global map of plugin name to factory function, populated by each plugin's registration"},
+    {"name": "BedrockPlugin::timers", "kind": "member", "role": "Public set of SStopwatch pointers the plugin has registered for periodic callbacks"},
+    {"name": "BedrockPlugin::server/afterCommitCallback", "kind": "member group", "role": "Reference to the owning BedrockServer and an optional post-commit callback"}
+  ],
+  "misfits": [
+    {
+      "item": "BedrockPlugin::verifyAttributeInt64/verifyAttributeSize/verifyAttributeBool/verifyAttributeDate/isValidDate",
+      "why": "Purely static helpers that operate only on an SData request with no dependency on BedrockPlugin state or the plugin lifecycle; read like generic request-validation utilities rather than plugin-system code",
+      "severity": "med",
+      "suggested_home": "libstuff/SData.h or a new shared request-validation unit"
+    }
+  ],
+  "name_fit": {"score": 5, "note": "Exactly a plugin base class"},
+  "location_fit": {"score": 5, "note": "Core plugin-system header at repo root alongside BedrockServer, matching class_hierarchy.md's Bedrock-specific layer"},
+  "naming_quality": {"score": 4, "note": "Consistent on-prefixed event callbacks and a single clearly-named global (g_registeredPluginList)"},
+  "depends_on": ["BedrockCommand.h", "BedrockServer.h", "libstuff/libstuff.h"]
+ },
+ {
+  "unit": "ConflictLockGuard",
+  "dir": "",
+  "files": ["ConflictLockGuard.h", "ConflictLockGuard.cpp"],
+  "lines": 126,
+  "test": false,
+  "intent": "RAII scoped lock keyed by an opaque uint64_t identifier (a commit-conflict key), backed by a shared, refcounted, LRU-pruned pool of mutexes so concurrent commands only block each other when they collide on the same identifier.",
+  "objects": [
+    {"name": "ConflictLockGuard", "kind": "class", "role": "RAII guard; constructor blocks until the mutex for its identifier is held, destructor releases it; identifier == 0 is a no-op"},
+    {"name": "ConflictLockGuard::controlMutex", "kind": "static member", "role": "Guards all access to the shared mutex-pool bookkeeping"},
+    {"name": "ConflictLockGuard::mutexes", "kind": "static member", "role": "The pool: identifier to mutex map"},
+    {"name": "ConflictLockGuard::mutexCounts", "kind": "static member", "role": "Reference counts per identifier, used to decide what's safe to prune"},
+    {"name": "ConflictLockGuard::mutexOrder/mutexOrderFastLookup", "kind": "static member group", "role": "LRU order over identifiers plus an index into it, used to prune the pool once it exceeds MAX_PAGE_MUTEXES"},
+    {"name": "ConflictLockGuard::_identifier", "kind": "member", "role": "The identifier this instance locked, or 0 for a no-op guard"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 4, "note": "Accurately a lock guard, though it locks on an arbitrary identifier, not specifically a 'conflict' per se"},
+  "location_fit": {"score": 4, "note": "Fits alongside BedrockConflictManager and BedrockServer, which is its only caller"},
+  "naming_quality": {"score": 2, "note": "Private static members (controlMutex, mutexes, mutexCounts, mutexOrder, mutexOrderFastLookup) lack the repo's leading-underscore convention that _identifier follows; the constant MAX_PAGE_MUTEXES and its comments call the keyed value a 'page' though the class and its only caller call it a 'conflict key'"},
+  "depends_on": []
+ },
+ {
+  "unit": "BedrockConflictManager",
+  "dir": "",
+  "files": ["BedrockConflictManager.h", "BedrockConflictManager.cpp"],
+  "lines": 91,
+  "test": false,
+  "intent": "Thread-safe collector that tracks how often each command name touches which database tables during commit conflicts, and renders a plaintext profiling report.",
+  "objects": [
+    {"name": "BedrockConflictManagerCommandInfo", "kind": "class", "role": "Per-command tally: a total count plus a table-name to use-count map"},
+    {"name": "BedrockConflictManager", "kind": "class", "role": "Mutex-guarded collector; recordTables() tallies one command's table touches, generateReport() renders a plaintext summary"},
+    {"name": "BedrockConflictManager::recordTables", "kind": "method", "role": "Increments a command's total and per-table use counts, skipping journal* tables and json_each"},
+    {"name": "BedrockConflictManager::generateReport", "kind": "method", "role": "Renders one text block per command with its total and per-table counts"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "Exactly what it says: manages conflict statistics"},
+  "location_fit": {"score": 4, "note": "Fits alongside BedrockServer, which is its only expected user, and ConflictLockGuard"},
+  "naming_quality": {"score": 3, "note": "Private mutex `m` breaks the repo's leading-underscore convention for private members, while `_commandInfo` right below it follows it"},
+  "depends_on": ["libstuff/libstuff.h"]
+ },
+ {
+  "unit": "bedrockVersion",
+  "dir": "",
+  "files": ["bedrockVersion.h"],
+  "lines": 12,
+  "test": false,
+  "intent": "Defines the VERSION macro reporting the running build's git revision (from GIT_REVISION, passed in by the Makefile), or a placeholder if none was supplied.",
+  "objects": [
+    {"name": "VERSION", "kind": "macro", "role": "Build-revision string, consumed by main.cpp (--version) and BedrockServer's _version field"},
+    {"name": "STRINGIZE/EXPAND_STRING", "kind": "macro group", "role": "Private stringizing helpers used only to expand GIT_REVISION into VERSION"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "A Bedrock-specific version macro, named accordingly"},
+  "location_fit": {"score": 4, "note": "Small config-style header at repo root alongside its consumers (main.cpp, BedrockServer.cpp)"},
+  "naming_quality": {"score": 3, "note": "Name and purpose closely shadow version.h's SVERSION, inviting confusion between a live macro (VERSION) and an apparently dead one (SVERSION)"},
+  "depends_on": []
+ },
+ {
+  "unit": "version",
+  "dir": "",
+  "files": ["version.h"],
+  "lines": 4,
+  "test": false,
+  "intent": "Defines a fallback SVERSION macro (a placeholder 40-character hash); unlike bedrockVersion.h's VERSION, this macro is not referenced by any other file in the repo.",
+  "objects": [
+    {"name": "SVERSION", "kind": "macro", "role": "Placeholder all-zero revision-string macro"}
+  ],
+  "misfits": [
+    {
+      "item": "version.h (whole file / SVERSION)",
+      "why": "SVERSION is never included or referenced anywhere else in the repo (only bedrockVersion.h's differently-named VERSION is actually used); appears to be dead code superseded by bedrockVersion.h",
+      "severity": "med",
+      "suggested_home": null
+    }
+  ],
+  "name_fit": {"score": 2, "note": "Generic name collides conceptually with bedrockVersion.h's VERSION; having both invites picking the wrong one"},
+  "location_fit": {"score": 2, "note": "Sits at repo root as if in active use, but appears to be an unreferenced leftover"},
+  "naming_quality": {"score": 2, "note": "Carries the repo's `S` shared-utility prefix though it's an unused macro, not a libstuff type"},
+  "depends_on": []
+ },
+ {
+  "unit": "main",
+  "dir": "benchmarks",
+  "files": ["benchmarks/main.cpp"],
+  "lines": 267,
+  "test": true,
+  "intent": "Entry point for the standalone benchmark binary: runs the tpunit-registered benchmark fixtures and, given a --baseline ref, also checks out that ref, rebuilds, reruns the benchmarks, restores the working tree, and prints a colored throughput comparison report.",
+  "objects": [
+    {"name": "runBenchmarks", "kind": "free function", "role": "Clears g_benchmarkResults and invokes tpunit::Tests::run() with the given include/exclude filters"},
+    {"name": "printComparison", "kind": "free function", "role": "Formats a colored baseline-vs-current throughput table (new/improved/regressed/unchanged/removed) to stdout"},
+    {"name": "main", "kind": "free function", "role": "Parses --baseline/-only/-except/-v/--verbose/--help and orchestrates a plain run or the git-based baseline comparison workflow"},
+    {"name": "GREEN/RED/RESET/BOLD", "kind": "free constants", "role": "File-scope ANSI color codes"},
+    {"name": "SIGNIFICANT_CHANGE_THRESHOLD", "kind": "free constant", "role": "Percent-change cutoff used to classify a result as improved/regressed vs. unchanged"}
+  ],
+  "misfits": [
+    {
+      "item": "main (baseline-comparison branch)",
+      "why": "Shells out to git (stash/checkout/rev-parse) and reruns `make bench -j32` from inside the benchmark binary itself; this is build/source-control orchestration that reads more like a CI shell script than a benchmark runner",
+      "severity": "low",
+      "suggested_home": "a wrapper shell script driving the plain benchmark binary twice"
+    }
+  ],
+  "name_fit": {"score": 4, "note": "Conventional entry-point name for the benchmarks binary"},
+  "location_fit": {"score": 5, "note": "Correctly the benchmarks/ driver"},
+  "naming_quality": {"score": 5, "note": "Clear, descriptive names throughout"},
+  "depends_on": ["libstuff/libstuff.h", "test/lib/tpunit++.hpp", "benchmarks/BenchmarkBase.h"]
+ },
+ {
+  "unit": "BenchmarkBase",
+  "dir": "benchmarks",
+  "files": ["benchmarks/BenchmarkBase.h"],
+  "lines": 154,
+  "test": true,
+  "intent": "Small micro-framework for writing throughput benchmarks: subclasses mix this in alongside tpunit::TestFixture and call runBench() to time a function over warm-up and measured passes and record its throughput.",
+  "objects": [
+    {"name": "BenchmarkResult", "kind": "struct", "role": "Throughput/elapsed-time/byte-count record for one named benchmark"},
+    {"name": "g_benchmarkResults", "kind": "extern global", "role": "Name-to-BenchmarkResult map shared across the whole benchmark binary; defined in main.cpp"},
+    {"name": "BenchmarkBase", "kind": "class", "role": "Mixin base class holding the owning fixture's name"},
+    {"name": "BenchmarkBase::setup/teardown", "kind": "method group", "role": "Overridable hooks run around each runBench() call"},
+    {"name": "BenchmarkBase::runBench", "kind": "template method", "role": "Warms up, times N iterations over a vector of inputs, computes MB/s, stores the result, and prints a summary line"},
+    {"name": "BenchmarkBase::getInputSize", "kind": "template method", "role": "Private helper sizing one input (string or integral only; else a static_assert failure)"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "Exactly a base class for benchmarks"},
+  "location_fit": {"score": 5, "note": "Correctly in benchmarks/"},
+  "naming_quality": {"score": 4, "note": "BenchmarkResult/BenchmarkBase don't carry the repo's `S` prefix used for shared libstuff-style utility types, unlike STable/SData, but that's a minor, acceptable inconsistency for test-only scaffolding"},
+  "depends_on": ["libstuff/libstuff.h", "test/lib/tpunit++.hpp"]
+ },
+ {
+  "unit": "SReplaceBench",
+  "dir": "benchmarks",
+  "files": ["benchmarks/SReplaceBench.cpp"],
+  "lines": 110,
+  "test": true,
+  "intent": "Self-contained tpunit fixture benchmarking libstuff's SReplace() across match-count and find/replace length asymmetries.",
+  "objects": [
+    {"name": "SReplaceBench", "kind": "struct", "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SReplace() over a small fixed set of input strings"},
+    {"name": "SReplaceBench::benchNoMatches/benchFewMatches/benchManyMatches", "kind": "method group", "role": "Vary how many substring matches are found"},
+    {"name": "SReplaceBench::benchLongFind/benchLongReplace", "kind": "method group", "role": "Vary whether the find or the replace argument is the long string"},
+    {"name": "SReplaceBench::benchShortToLong/benchLongToShort", "kind": "method group", "role": "Single-character find vs. a long replacement, and the reverse"},
+    {"name": "__SReplaceBench", "kind": "file-scope global", "role": "Self-registers the fixture with tpunit at static-init time"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "Named for exactly the function it benchmarks"},
+  "location_fit": {"score": 5, "note": "Correctly in benchmarks/"},
+  "naming_quality": {"score": 5, "note": "Fits repo/test convention"},
+  "depends_on": ["libstuff/libstuff.h", "benchmarks/BenchmarkBase.h"]
+ },
+ {
+  "unit": "SReplaceAllBench",
+  "dir": "benchmarks",
+  "files": ["benchmarks/SReplaceAllBench.cpp"],
+  "lines": 100,
+  "test": true,
+  "intent": "Self-contained tpunit fixture benchmarking libstuff's SReplaceAll() -- replacing any character from a set with a single replacement character -- across inputs with varying densities and sizes of unsafe-character sets.",
+  "objects": [
+    {"name": "SReplaceAllBench", "kind": "struct", "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SReplaceAll() over a small fixed set of input strings"},
+    {"name": "SReplaceAllBench::benchNoUnsafeChars/benchFewUnsafeChars/benchManyUnsafeChars", "kind": "method group", "role": "Vary how many characters in the input need replacing"},
+    {"name": "SReplaceAllBench::benchLongUnsafeList/benchURLSafe/benchAlphanumeric", "kind": "method group", "role": "Vary the size and shape of the unsafe-character set being matched against"},
+    {"name": "__SReplaceAllBench", "kind": "file-scope global", "role": "Self-registers the fixture with tpunit at static-init time"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "Named for exactly the function it benchmarks"},
+  "location_fit": {"score": 5, "note": "Correctly in benchmarks/"},
+  "naming_quality": {"score": 5, "note": "Fits repo/test convention"},
+  "depends_on": ["libstuff/libstuff.h", "benchmarks/BenchmarkBase.h"]
+ },
+ {
+  "unit": "SDeburrBench",
+  "dir": "benchmarks",
+  "files": ["benchmarks/SDeburrBench.cpp"],
+  "lines": 90,
+  "test": true,
+  "intent": "Self-contained tpunit fixture benchmarking libstuff's SDeburr::deburr() (accent/diacritic stripping) across ASCII, Latin-1, and mixed-script inputs at normal and high iteration counts.",
+  "objects": [
+    {"name": "SDeburrBench", "kind": "struct", "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SDeburr::deburr() over a small fixed set of input strings"},
+    {"name": "SDeburrBench::benchShortASCII/benchLatin1/benchMixedLong", "kind": "method group", "role": "Vary the character set and length of the input"},
+    {"name": "SDeburrBench::benchShortASCIIHigh/benchLatin1High/benchMixedLongHigh", "kind": "method group", "role": "Same inputs, run at a much higher iteration count to stress steady-state throughput"},
+    {"name": "__SDeburrBench", "kind": "file-scope global", "role": "Self-registers the fixture with tpunit at static-init time"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "Named for exactly the function it benchmarks"},
+  "location_fit": {"score": 5, "note": "Correctly in benchmarks/"},
+  "naming_quality": {"score": 5, "note": "Fits repo/test convention"},
+  "depends_on": ["libstuff/SDeburr.h", "benchmarks/BenchmarkBase.h"]
+ }
+]

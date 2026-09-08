@@ -1,3 +1,34 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Writer.h
+ * Path:    libstuff/JSON/Writer.h
+ * Pair:    Writer.cpp
+ *
+ * INTENT
+ *   A JSON serializer: build a document incrementally via an
+ *   object/array cursor over rapidjson::Writer, or convert a whole
+ *   JSON::Value tree to a string in one call (compact or pretty).
+ *
+ * OBJECTS
+ *   Writer  - class; wraps rapidjson::Writer<StringBuffer>. Instance API
+ *             (startX/endX, writeMember, writeElement, getString) drives
+ *             incremental construction; static serialize()/serializePretty()
+ *             instead walk an existing JSON::Value tree directly.
+ *
+ * OUT OF PLACE
+ *   Nothing. The header's direct exposure of rapidjson::Document/Value in
+ *   the private writeValue overloads is called out and accepted in
+ *   JSON/README.md ("public writer and SAX headers expose RapidJSON
+ *   types"), not an accident.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   startX/endX method pairs are consistent and self-documenting; private
+ *   writeValue overloads are appropriately hidden behind the public
+ *   writeMember/writeElement templates.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 
 #include "Value.h"

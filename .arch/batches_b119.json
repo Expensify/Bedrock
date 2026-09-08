@@ -1,5 +1,16 @@
 [
  {
+  "unit": "CreateJobTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/CreateJobTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 620,
+  "test": true,
+  "hash": "2f23b73aab0a3c2d"
+ },
+ {
   "unit": "CancelJobTest",
   "dir": "test/tests/jobs",
   "files": [

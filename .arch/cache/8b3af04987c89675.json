@@ -1,0 +1,37 @@
+{
+ "unit": "SSSLState",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SSSLState.h",
+  "libstuff/SSSLState.cpp"
+ ],
+ "lines": 269,
+ "test": false,
+ "intent": "Thin wrapper around mbedTLS providing per-connection TLS handshake and send/recv over a raw socket fd, plus process-wide mbedTLS setup shared across all connections.",
+ "objects": [
+  {
+   "name": "SSSLState",
+   "kind": "class",
+   "role": "ssl/net_ctx per-connection state; initConfig/freeConfig for shared process-wide mbedTLS state; send/recv/sendConsume/recvAppend"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "natural peer of STCPManager/SHTTPSProxySocket"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent with repo convention"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/SFastBuffer.h"
+ ],
+ "_src": "b005.json",
+ "hash": "8b3af04987c89675"
+}

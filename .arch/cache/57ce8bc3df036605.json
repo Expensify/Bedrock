@@ -1,0 +1,49 @@
+{
+ "unit": "STCPManager",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/STCPManager.h",
+  "libstuff/STCPManager.cpp"
+ ],
+ "lines": 553,
+ "test": false,
+ "intent": "Convenience base providing the poll()-loop state machine (prePoll/postPoll) shared by every TCP-socket-managing class, plus the Socket and Port value types those managers operate on.",
+ "objects": [
+  {
+   "name": "STCPManager",
+   "kind": "struct",
+   "role": "namespace-like holder of static prePoll/postPoll/openPort; no data members of its own by design"
+  },
+  {
+   "name": "STCPManager::Socket",
+   "kind": "class",
+   "role": "per-connection state machine (RESOLVING/CONNECTING/CONNECTED/SHUTTINGDOWN/CLOSED); owns fd, buffers, optional SSL state, async DNS handle"
+  },
+  {
+   "name": "STCPManager::Port",
+   "kind": "class",
+   "role": "RAII wrapper for a listening socket fd and its host string"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "base class for the STCPNode/SQLiteServer hierarchy documented in class_hierarchy.md"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "in Socket's protected section, methods are `_`-prefixed but sibling protected data members (sendBuffer, sendRecvMutex, https, dnsResolution, hostToResolve, socketCount) are not"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/SFastBuffer.h",
+  "libstuff/SResolver.h",
+  "libstuff/SSSLState.h"
+ ],
+ "_src": "b104.json",
+ "hash": "57ce8bc3df036605"
+}

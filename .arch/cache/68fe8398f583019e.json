@@ -1,0 +1,76 @@
+{
+ "unit": "Jobs",
+ "dir": "plugins",
+ "files": [
+  "plugins/Jobs.h",
+  "plugins/Jobs.cpp"
+ ],
+ "lines": 1740,
+ "test": false,
+ "intent": "BedrockPlugin implementing a priority-ordered, SQLite-backed scheduled job queue (create/dequeue/update/finish/retry/fail/cancel/delete, parent-child job chains, calendar-style repeat schedules, and an operational job-name blacklist).",
+ "objects": [
+  {
+   "name": "BedrockPlugin_Jobs",
+   "kind": "class",
+   "role": "Plugin entry point: jobs-table schema/index DDL, supported verb set, and the in-memory crashed-job GLOB blacklist synced to peers on login"
+  },
+  {
+   "name": "BedrockJobsCommand",
+   "kind": "class",
+   "role": "BedrockCommand implementing peek/process for every Jobs verb, plus repeat-schedule and retry-after helpers"
+  },
+  {
+   "name": "scopedDisableNoopMode",
+   "kind": "class",
+   "role": "File-local RAII guard that suspends SQLite's update-noop mode while a Jobs command processes"
+  },
+  {
+   "name": "REPEAT_REANCHOR_THRESHOLD_SECONDS",
+   "kind": "constant",
+   "role": "File-static cutoff below which a missed SCHEDULED repeat re-anchors to now instead of catching up serially"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "BedrockPlugin_Jobs::upgradeDatabase (jobsPriorityNextRunManualSmartScan*, jobsManualSmartscanReceiptID, jobsPriorityNextRunWWWProd/WWWStag indexes)",
+   "why": "Hardcodes Expensify-specific job-name literals (manual/SmartScan*, www-prod/*, www-stag/*) as partial-index WHERE clauses inside an otherwise generic, reusable job-queue plugin",
+   "severity": "high",
+   "suggested_home": null
+  },
+  {
+   "item": "scopedDisableNoopMode",
+   "why": "Generic SQLite-noop RAII guard with no Jobs-specific logic, named outside repo type-naming convention, defined locally instead of in a shared header where other plugins needing it could reuse it",
+   "severity": "low",
+   "suggested_home": "libstuff or SQLite.h"
+  },
+  {
+   "item": "BedrockPlugin_Jobs crashed-job blacklist (getCrashedBedrockJobPatterns, onNodeLogin, _crashedBedrockJobPatterns, CrashBedrockJob/ClearCrashedBedrockJobs verbs)",
+   "why": "An operational kill-switch/ops-safety feature layered onto job scheduling; a distinct concern from job CRUD though tightly coupled to GetJob(s) peek/process",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "Jobs.h/.cpp in plugins/ is exactly where a BedrockPlugin implementation belongs"
+ },
+ "location_fit": {
+  "score": 4,
+  "note": "Fits the plugin directory; the Expensify-specific index literals inside it are the location complaint, not the file itself"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "Mostly _-prefixed private members and S-escaped 'safe*' SQL locals, but mockRequest/canEscalateImmediately skip the _ prefix used elsewhere, and scopedDisableNoopMode breaks the repo's type-naming casing"
+ },
+ "depends_on": [
+  "plugins/Jobs.h",
+  "BedrockPlugin.h",
+  "libstuff/libstuff.h",
+  "BedrockServer.h",
+  "libstuff/SQResult.h",
+  "sqlitecluster/SQLitePeer.h",
+  "sqlitecluster/SQLiteUtils.h"
+ ],
+ "_src": "b108.json",
+ "hash": "68fe8398f583019e"
+}

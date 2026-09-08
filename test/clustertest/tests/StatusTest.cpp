@@ -1,3 +1,26 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    StatusTest.cpp
+ * Path:    test/clustertest/tests/StatusTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying that a `Status` command sent concurrently to
+ *   every node in a 3-node cluster reports the correct leader/follower role
+ *   and a peer list of the expected size from each node's own perspective.
+ *
+ * OBJECTS
+ *   StatusTest              - tpunit fixture; brings up a default cluster.
+ *   StatusTest::status      - the test: fires `Status` at all three nodes in parallel, one thread per node.
+ *   __StatusTest            - static instance that registers the fixture with tpunit.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test files.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

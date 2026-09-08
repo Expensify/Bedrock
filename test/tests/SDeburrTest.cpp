@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SDeburrTest.cpp
+ * Path:    test/tests/SDeburrTest.cpp
+ *
+ * INTENT
+ *   Unit tests for SDeburr::deburr, the Unicode-to-ASCII transliteration
+ *   helper (stripping diacritics, expanding ligatures like Æ/Œ, mapping
+ *   Turkish/Nordic/Slavic letters) while leaving plain ASCII, emoji, and
+ *   CJK text untouched.
+ *
+ * OBJECTS
+ *   SDeburrTest  - tpunit::TestFixture; covers plain ASCII, single
+ *                  diacritics, mixed text, a standalone combining-mark
+ *                  codepoint, a "kitchen sink" sentence, and dedicated
+ *                  Turkish, Polish/Slavic, Nordic, and emoji/CJK cases.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: named for and scoped to exactly the one function it tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling fixtures; test method names (testBasicASCII,
+ *   testTurkish, etc.) clearly describe their case each.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SDeburr.h>
 #include <test/lib/tpunit++.hpp>
 #include <string>

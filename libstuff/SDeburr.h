@@ -1,3 +1,33 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SDeburr.h
+ * Path:    libstuff/SDeburr.h
+ * Pair:    SDeburr.cpp
+ *
+ * INTENT
+ *   Converts accented/diacritic Unicode text to a lowercased, ASCII-only
+ *   approximation (lodash `deburr`-style) for search normalization/matching,
+ *   and exposes the same transform as a SQLite UDF (`DEBURR`).
+ *
+ * OBJECTS
+ *   SDeburr (class, all static)
+ *     deburr(const unsigned char*) / deburr(const string&) - public transform.
+ *     registerSQLite(sqlite3*)     - registers the `DEBURR(text)` UDF.
+ *     unicodeToAscii(uint32_t)     - private per-codepoint lookup.
+ *     UNICODE_TO_ASCII_MAP         - private constexpr Latin-1/Latin
+ *                                    Extended-A codepoint-to-ASCII table.
+ *
+ * OUT OF PLACE
+ *   Nothing. Bundling the pure string transform with its SQLite UDF glue
+ *   in one class is consistent with other libstuff/sqlite3-adjacent types.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent. Minor: the `deburr(const unsigned char*)` parameter is named
+ *   `input` here but `inputBytes` in the .cpp definition.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 
 #include <array>

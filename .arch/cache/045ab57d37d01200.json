@@ -1,0 +1,55 @@
+{
+ "unit": "SRingBuffer",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SRingBuffer.h"
+ ],
+ "lines": 101,
+ "test": false,
+ "intent": "Lock-free, fixed-capacity, multi-producer/single-consumer ring buffer of T, used to hand log records from arbitrary caller threads to SFluentdLogger's sender thread without blocking.",
+ "objects": [
+  {
+   "name": "SRINGBUFFER_DEFAULT_CAPACITY",
+   "kind": "constant",
+   "role": "default slot count (10M)"
+  },
+  {
+   "name": "State",
+   "kind": "enum class",
+   "role": "Empty/Ready/Shutdown slot-occupancy tag"
+  },
+  {
+   "name": "SRingBuffer",
+   "kind": "class template",
+   "role": "push()/pop()/wait()/shutdown() lock-free buffer"
+  },
+  {
+   "name": "SRingBuffer::BufferElement",
+   "kind": "struct",
+   "role": "one slot: a T plus its atomic<State>"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "State",
+   "why": "declared at global scope instead of nested inside SRingBuffer, injecting a generic five-letter name into every translation unit that includes this header",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "fits; a generic buffer, not Fluentd-specific, though it has one caller today"
+ },
+ "location_fit": {
+  "score": 4,
+  "note": "fits, but its only consumer (SFluentdLogger) is the sole reason it lives in libstuff rather than a more general concurrency-utility location"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent aside from the unnested, overly-generic State noted above"
+ },
+ "depends_on": [],
+ "_src": "b104.json",
+ "hash": "045ab57d37d01200"
+}

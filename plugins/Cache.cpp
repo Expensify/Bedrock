@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Cache.cpp
+ * Path:    plugins/Cache.cpp
+ * Pair:    Cache.h
+ *
+ * INTENT
+ *   Implements the cache plugin declared in Cache.h. See that file for the
+ *   object list.
+ *
+ * OBJECTS
+ *   Implements everything declared in Cache.h; no additional file-local
+ *   helpers. LRUMap::Entry objects are manually new'd/delete'd rather than
+ *   held by smart pointer. WriteCache's eviction loop pops from the LRU map
+ *   first and falls back to an arbitrary row from `cache` only if the LRU
+ *   map has nothing recorded (e.g. right after a restart).
+ *
+ * OUT OF PLACE
+ *   Nothing beyond what's already noted in Cache.h.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; pairs with Cache.h.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "Cache.h"
 
 #include <BedrockServer.h>

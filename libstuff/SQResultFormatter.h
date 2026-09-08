@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQResultFormatter.h
+ * Path:    libstuff/SQResultFormatter.h
+ * Pair:    SQResultFormatter.cpp
+ *
+ * INTENT
+ *   Renders an SQResult into one of six sqlite3-shell-style text formats
+ *   (column, CSV, tabs, JSON, quote, list) for CLI-style display or export.
+ *
+ * OBJECTS
+ *   SQResultFormatter::FORMAT          - enum class of the six supported output formats.
+ *   SQResultFormatter::FORMAT_OPTIONS  - nested class bundling header/nullvalue/separator options.
+ *   SQResultFormatter                  - static-only class: format() dispatcher plus one
+ *     formatColumn/CSV/Tabs/Quote/JSON/List() per FORMAT value.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] FORMAT_OPTIONS::nullvalue and FORMAT_OPTIONS::separator are declared but
+ *   never read by any formatXXX() implementation in the .cpp - dead configuration surface.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives beside SQResult, the type it formats.
+ *
+ * NAMING QUALITY
+ *   FORMAT_OPTIONS is written in the SCREAMING_CASE normally reserved for macros/constants
+ *   in this codebase, not the PascalCase used for every other nested class/struct.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 #include "SQResult.h"
 class SQResultFormatter {

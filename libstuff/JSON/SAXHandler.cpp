@@ -1,3 +1,27 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SAXHandler.cpp
+ * Path:    libstuff/JSON/SAXHandler.cpp
+ * Pair:    SAXHandler.h
+ *
+ * INTENT
+ *   Implements SAXHandler; see SAXHandler.h.
+ *
+ * OBJECTS
+ *   SAXHandler (impl) - implements every method declared in the header
+ *   plus the private endContext() helper. Array elements are staged in
+ *   per-array temporary lists (tempArrayContentLists) and moved into the
+ *   parent Value's array storage only once EndArray fires.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "SAXHandler.h"
 
 using namespace JSON;

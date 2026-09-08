@@ -1,3 +1,35 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    STCPManager.h
+ * Path:    libstuff/STCPManager.h
+ * Pair:    STCPManager.cpp
+ *
+ * INTENT
+ *   Convenience base providing the poll()-loop machinery (prePoll/postPoll) shared by
+ *   every class that manages a set of raw or SSL TCP sockets, plus the Socket and Port
+ *   value types those managers operate on. Deliberately holds no data members of its
+ *   own so that all synchronization stays localized to the derived class (see
+ *   class_hierarchy.md) or to Socket itself.
+ *
+ * OBJECTS
+ *   STCPManager               - namespace-like struct: static prePoll/postPoll/openPort only.
+ *   STCPManager::Socket       - per-connection state machine (RESOLVING/CONNECTING/CONNECTED/
+ *     SHUTTINGDOWN/CLOSED); owns the fd, send/recv buffers, optional SSL state, and the
+ *     shared_ptr<SResolution> used for async DNS.
+ *   STCPManager::Port         - RAII wrapper for a listening socket fd + its host string.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; the base class for the STCPNode/SQLiteServer hierarchy described in class_hierarchy.md.
+ *
+ * NAMING QUALITY
+ *   Split within Socket's protected section: methods (_connectAfterDNSResolution,
+ *   _openSocket, _startResolution) are `_`-prefixed but sibling protected data members
+ *   (sendBuffer, sendRecvMutex, https, dnsResolution, hostToResolve, socketCount) are not,
+ *   unlike the repo's usual `_`-on-private-members convention applied uniformly.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 #include <atomic>
 #include <memory>

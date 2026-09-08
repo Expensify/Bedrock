@@ -1,3 +1,37 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Utils.h
+ * Path:    libstuff/JSON/Utils.h
+ * Pair:    Utils.cpp
+ *
+ * INTENT
+ *   Static helpers for reading, merging, stripping, and sanitizing
+ *   JSON::Value trees (key replace/strip/patch, path<->object conversion,
+ *   transport-safe string sanitizing) used across Bedrock and the
+ *   applications that link its JSON archive.
+ *
+ * OBJECTS
+ *   Utils  - static utility class; holds shared singleton JSON::Value
+ *            constants (EMPTY_OBJECT, NULL_VALUE, etc.) plus static
+ *            tree-manipulation helpers. No instance state.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] Utils::recursiveReplaceJSONKeys - its doc comment is written
+ *   entirely in terms of one caller's domain (bankAccounts.additionalData,
+ *   apiResult, errorAttemptsCount, assetReport) and names an external test
+ *   (GetWithdrawalAccountsTest) that does not live in this repo. The
+ *   algorithm itself is generic, but the documentation ties a supposedly
+ *   application-agnostic shared package (see JSON/README.md) to one
+ *   consumer's onyx-merge use case.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; a generic JSON-tree utility grab-bag belongs in libstuff/JSON.
+ *
+ * NAMING QUALITY
+ *   Methods are clear, consistent camelCase. "Utils" is a generic
+ *   catch-all class name, but it is scoped under JSON:: so it does not
+ *   collide with the repo's S-prefixed shared-utility convention.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 
 #include "Value.h"

@@ -1,0 +1,64 @@
+{
+ "unit": "BedrockBlockingCommandQueue",
+ "dir": "",
+ "files": [
+  "BedrockBlockingCommandQueue.h",
+  "BedrockBlockingCommandQueue.cpp"
+ ],
+ "lines": 354,
+ "test": false,
+ "intent": "A BedrockCommandQueue subclass, used for the blocking commit thread's queue, that adds per-identifier and per-command-name sliding-window rate limiting, rejecting commands whose key has spent too much recent time on the queue.",
+ "objects": [
+  {
+   "name": "BedrockBlockingCommandQueue",
+   "kind": "class",
+   "role": "extends BedrockCommandQueue; adds rate-limit checks to push()/_dequeue() plus configuration and status reporting"
+  },
+  {
+   "name": "BedrockBlockingCommandQueue::RecentlyFinishedCommand",
+   "kind": "struct",
+   "role": "one timed sample (finishTime, elapsedTime) in the sliding window"
+  },
+  {
+   "name": "BedrockBlockingCommandQueue::RecentlyFinishedCommandList",
+   "kind": "typedef",
+   "role": "deque<RecentlyFinishedCommand>, oldest first"
+  },
+  {
+   "name": "BedrockBlockingCommandQueue::IdentifierState",
+   "kind": "struct",
+   "role": "one tracked key's mutex, recent-sample deque, and block-until deadline"
+  },
+  {
+   "name": "BedrockBlockingCommandQueue::StateMap",
+   "kind": "struct",
+   "role": "mutex-guarded unordered_map<string, shared_ptr<IdentifierState>>; one instance each for identifiers and command names"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "IdentifierState / StateMap / _recordAndCheck / _isBlocked",
+   "why": "a generic string-keyed sliding-window rate limiter with no dependency on BedrockCommand, implemented as private nested machinery of a command-queue subclass",
+   "severity": "low",
+   "suggested_home": "libstuff, as a general-purpose rate limiter"
+  }
+ ],
+ "name_fit": {
+  "score": 4,
+  "note": "'Blocking' refers to the blocking commit thread's queue, which this class serves; the rate-limiting role isn't in the name"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits; sits beside its base class BedrockCommandQueue"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent `_` prefix on private members; Identifier vs Command dimensions named distinctly with no confusable aliasing"
+ },
+ "depends_on": [
+  "BedrockCommandQueue.h",
+  "BedrockCommand.h"
+ ],
+ "_src": "b101.json",
+ "hash": "bc0815ce37e37479"
+}

@@ -1,3 +1,26 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQValue.cpp
+ * Path:    libstuff/SQValue.cpp
+ * Pair:    SQValue.h
+ *
+ * INTENT
+ *   Implements SQValue; see the header.
+ *
+ * OBJECTS
+ *   No file-local additions beyond the header's declared API. Notable
+ *   implementation detail: SQValue::TYPE::REAL equality uses an absolute-
+ *   plus-relative floating-point tolerance rather than strict `==`.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <cmath>
 #include <libstuff/SQValue.h>
 #include <libstuff/sqlite3.h>

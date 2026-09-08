@@ -1,3 +1,51 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    TestPlugin.cpp
+ * Path:    test/clustertest/testplugin/TestPlugin.cpp
+ * Pair:    TestPlugin.h
+ *
+ * INTENT
+ *   Implements the test-only plugin declared in TestPlugin.h: see that
+ *   file for the overall shape. This file is one long dispatch on
+ *   request.methodLine, each branch a self-contained scenario for a
+ *   specific clustertest test.
+ *
+ * OBJECTS
+ *   BedrockPlugin_TestPlugin::getCommand - the fixed `supportedCommands`
+ *       set gating which method lines this plugin claims.
+ *   fileAppend/fileLockAndLoad (file-local, non-static free functions) -
+ *       flock-guarded append/read of a shared scratch file, used by the
+ *       "testescalate" scenario to record cross-process/cross-node
+ *       ordering of peek/process/destruction.
+ *   BedrockPlugin_TestPlugin - constructor spins up the unreplicated-
+ *       deleter background thread; destructor/serverStopping tear it
+ *       down; upgradeDatabase/onPrepareHandler/stateChanged/
+ *       afterCommitCallback implement the plugin lifecycle hooks.
+ *   TestPluginCommand - prePeek/peek/process/postProcess/reset/
+ *       shouldPrePeek/shouldPostProcess/shouldEnableOnPrepareNotification/
+ *       serializeData/deserializeData all implemented here, each a
+ *       dispatch table keyed on the command name.
+ *   TestHTTPSManager::_onRecv/send/httpsDontSend/~TestHTTPSManager -
+ *       parses a response method line into an HTTP status, or (in
+ *       httpsDontSend) opens a socket and wraps it in a Transaction
+ *       without ever writing to it.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] `extern int* __pointerToFakeIntArray;` (from
+ *   ExternPointer.cpp) is read out-of-bounds in generatesegfaultpeek/
+ *   generatesegfaultprocess to deliberately crash the process; this is
+ *   correct for its purpose but is the one place in this file doing
+ *   something actually unsafe rather than merely simulating a scenario.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; see TestPlugin.h.
+ *
+ * NAMING QUALITY
+ *   Command-name strings and method names line up 1:1, which keeps this
+ *   readable despite its size. A few names are misleading in isolation:
+ *   `storeboradcasttimeouts`/`getbroadcasttimeouts` (typo'd, but must
+ *   match a corresponding test file so left as-is) and `ineffectiveUpdate`
+ *   is camelCase against surrounding all-lowercase command names.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "TestPlugin.h"
 
 #include <dlfcn.h>

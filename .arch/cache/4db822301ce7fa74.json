@@ -1,0 +1,87 @@
+{
+ "unit": "STime",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/STime.cpp"
+ ],
+ "lines": 138,
+ "test": false,
+ "intent": "Free functions for libstuff's microsecond-precision timestamp type: now(), format/parse to and from human timestamps, and calendar helpers.",
+ "objects": [
+  {
+   "name": "STimeNow",
+   "kind": "function",
+   "role": "current time in microseconds"
+  },
+  {
+   "name": "STimeThisMorning",
+   "kind": "function",
+   "role": "timestamp for today at 00:00 GMT"
+  },
+  {
+   "name": "SDaysInMonth",
+   "kind": "function",
+   "role": "days in a given month/year"
+  },
+  {
+   "name": "SComposeTime",
+   "kind": "function",
+   "role": "formats a microsecond timestamp via strftime"
+  },
+  {
+   "name": "STimestampToEpoch",
+   "kind": "function",
+   "role": "parses a formatted timestamp to epoch seconds"
+  },
+  {
+   "name": "STimestampMSToEpoch",
+   "kind": "function",
+   "role": "parses a formatted timestamp (with optional fractional seconds) to epoch milliseconds"
+  },
+  {
+   "name": "SToTimeval",
+   "kind": "function",
+   "role": "splits a microsecond timestamp into a timeval"
+  },
+  {
+   "name": "SFirstOfMonth",
+   "kind": "function",
+   "role": "first-of-month date, offset by a number of months"
+  },
+  {
+   "name": "STIMESTAMP_MS",
+   "kind": "function",
+   "role": "formats a microsecond timestamp with millisecond precision"
+  },
+  {
+   "name": "SCURRENT_TIMESTAMP_MS",
+   "kind": "function",
+   "role": "STIMESTAMP_MS(STimeNow())"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "STime.cpp's public API",
+   "why": "declared in the libstuff.h catch-all rather than a dedicated STime.h, unlike other already-separated libstuff units",
+   "severity": "low",
+   "suggested_home": "libstuff/STime.h"
+  }
+ ],
+ "name_fit": {
+  "score": 4,
+  "note": "name fits the content but the file has no header of its own"
+ },
+ "location_fit": {
+  "score": 4,
+  "note": "declared in libstuff.h's catch-all rather than a dedicated header"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "STIMESTAMP_MS/SCURRENT_TIMESTAMP_MS use SCREAMING_CASE and read like macros, breaking from the PascalCase-after-S used by the rest of the file (STimeNow, SComposeTime)"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b104.json",
+ "hash": "4db822301ce7fa74"
+}

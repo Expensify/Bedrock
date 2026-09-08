@@ -1,3 +1,49 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    main.cpp
+ * Path:    main.cpp
+ *
+ * INTENT
+ *   Process entry point for the Bedrock server binary: parses command-line
+ *   arguments, applies defaults, handles one-shot maintenance flags
+ *   (-version, -help, -clean, -checkDBMemoryMapping), loads plugins,
+ *   initializes SQLite/SSL/signal handling, constructs BedrockServer, and
+ *   runs the main poll loop until shutdown.
+ *
+ * OBJECTS
+ *   main         - function; entry point, startup/shutdown sequencing and
+ *                  the main prePoll/poll/postPoll loop.
+ *   RetrySystem  - function; runs a shell command via system(), retrying up
+ *                  to 3 times with a 5s backoff, SERROR (fatal) if it never
+ *                  succeeds.
+ *   VacuumDB     - function; shells out to `sqlite3 <db> 'VACUUM;'` via
+ *                  RetrySystem.
+ *   BackupDB     - function; copies the db file plus its -wal/-shm sidecars
+ *                  into BACKUP_DIR.
+ *   loadPlugins  - function; registers the built-in plugins by name and
+ *                  dlopen()s/dlsym()s any plugin named in `-plugins` that
+ *                  isn't built in, returning the set of loaded plugin names.
+ *   BACKUP_DIR   - macro; hardcoded backup directory ("/var/tmp/").
+ *   SETDEFAULT   - macro, local to main; fills in an arg default only if
+ *                  it isn't already set.
+ *
+ * OUT OF PLACE
+ *   VacuumDB and BackupDB shell out to the external `sqlite3` binary and
+ *   hardcode `/var/tmp/` as a backup path [CANDIDATE] - ops/maintenance
+ *   concerns living in the process entry point, with BACKUP_DIR the only
+ *   path in this file that isn't configurable via args like everything
+ *   else here.
+ *   loadPlugins() is a self-contained dlopen/dlsym plugin-registration
+ *   subsystem implemented as a free function in main.cpp [CANDIDATE] -
+ *   arguably belongs alongside BedrockPlugin instead.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; conventional name and root location for the process entry point.
+ *
+ * NAMING QUALITY
+ *   RetrySystem/VacuumDB/BackupDB use PascalCase while loadPlugins uses
+ *   camelCase, for free functions at the same file scope - an inconsistent
+ *   capitalization convention within one file.
+ * ─────────────────────────────────────────────────────────────────────*/
 /// bedrock/main.cpp
 /// =================
 /// Process entry point for Bedrock server.

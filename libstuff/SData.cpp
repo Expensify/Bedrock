@@ -1,3 +1,31 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SData.cpp
+ * Path:    libstuff/SData.cpp
+ * Pair:    SData.h
+ *
+ * INTENT
+ *   Implements SData; see the header.
+ *
+ * OBJECTS
+ *   No file-local additions; all methods are the header's declared API.
+ *   Notable implementation detail: `deserialize` pads any header value that
+ *   looks like JSON (starts with '{' or '[') with 32 extra bytes of reserved
+ *   capacity, to satisfy simdjson's requirement for trailing scratch space.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] The simdjson-specific padding logic in `deserialize` - a
+ *     generic HTTP-message container unconditionally shaping its string
+ *     storage to suit one particular downstream JSON parser's memory
+ *     requirements. Arguably belongs closer to wherever the simdjson parsing
+ *     happens, or should at least be conditional on actual JSON use.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "SData.h"
 
 #include <libstuff/SFastBuffer.h>

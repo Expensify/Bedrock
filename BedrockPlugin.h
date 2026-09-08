@@ -1,3 +1,45 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockPlugin.h
+ * Path:    BedrockPlugin.h
+ * Pair:    BedrockPlugin.cpp
+ *
+ * INTENT
+ *   Declares the plugin interface a BedrockServer uses to add command
+ *   handling, schema upgrades, timers, and optional dedicated network
+ *   ports at runtime, plus a global registry of plugin factories.
+ *
+ * OBJECTS
+ *   BedrockPlugin - abstract base class for a Bedrock plugin; holds a
+ *       reference to its owning BedrockServer and declares the full
+ *       lifecycle/command hook surface a subclass overrides.
+ *   BedrockPlugin::MAX_SIZE_QUERY, MAX_SIZE_BLOB, MAX_SIZE_SMALL - size
+ *       limits enforced so the storage engine cannot silently truncate
+ *       oversized input.
+ *   BedrockPlugin::isValidDate - static date-format validator.
+ *   BedrockPlugin::verifyAttributeInt64/verifyAttributeSize/
+ *       verifyAttributeBool/verifyAttributeDate - static helpers that
+ *       throw a 402 on missing or malformed request attributes.
+ *   BedrockPlugin::getCommand - pure virtual factory; claims a request
+ *       or declines it by returning null.
+ *   BedrockPlugin::g_registeredPluginList - static map of plugin name to
+ *       factory function, populated by each plugin's registration.
+ *   BedrockPlugin::timers - public set of SStopwatch pointers the plugin
+ *       has registered for periodic callbacks.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] verifyAttributeInt64/Size/Bool/Date and isValidDate
+ *   operate purely on an SData request with no dependency on BedrockPlugin
+ *   state; they read like generic request-validation helpers parked here
+ *   rather than in a shared validation utility.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; core plugin-system header at the repo root alongside
+ *   BedrockServer.
+ *
+ * NAMING QUALITY
+ *   Consistent: on-prefixed event callbacks (onPortAccept, onAttach,
+ *   onDetach, onNodeLogin), g_ for the one global. Reads clearly.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include "BedrockCommand.h"
 class BedrockServer;

@@ -1,3 +1,35 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockPlugin.cpp
+ * Path:    BedrockPlugin.cpp
+ * Pair:    BedrockPlugin.h
+ *
+ * INTENT
+ *   Implements BedrockPlugin -- see BedrockPlugin.h.
+ *
+ * OBJECTS
+ *   BedrockPlugin::g_registeredPluginList - out-of-line storage for the
+ *       static registry.
+ *   BedrockPlugin::BedrockPlugin/~BedrockPlugin - stores the server
+ *       reference and commit callback.
+ *   BedrockPlugin::isValidDate - regex check via SREMatch against a
+ *       YYYY-MM-DD, optionally with a time-of-day suffix, pattern.
+ *   BedrockPlugin::verifyAttributeInt64/Size/Bool/Date - request-attribute
+ *       validators; see header.
+ *   BedrockPlugin::getInfo/getName/preventAttach/timerFired/
+ *       upgradeDatabase/initializeFromDB/shouldLockCommitPageOnConflict -
+ *       default (mostly no-op or permissive) base-class implementations a
+ *       plugin overrides as needed; getName() has no sensible default and
+ *       instead aborts via SERROR.
+ *
+ * OUT OF PLACE
+ *   Nothing beyond what's noted in BedrockPlugin.h.
+ *
+ * NAME/LOCATION FIT
+ *   Fits BedrockPlugin.h.
+ *
+ * NAMING QUALITY
+ *   Matches the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/libstuff.h>
 #include "BedrockPlugin.h"
 #include "BedrockServer.h"

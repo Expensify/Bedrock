@@ -1,0 +1,85 @@
+{
+ "unit": "BedrockPlugin",
+ "dir": "",
+ "files": [
+  "BedrockPlugin.h",
+  "BedrockPlugin.cpp"
+ ],
+ "lines": 212,
+ "test": false,
+ "intent": "Abstract base class defining the plugin interface a BedrockServer uses to add command handling, schema upgrades, timers, and optional dedicated network ports at runtime, plus a global registry of plugin factories.",
+ "objects": [
+  {
+   "name": "BedrockPlugin",
+   "kind": "class",
+   "role": "Abstract plugin base; holds a reference to its owning BedrockServer and declares the full lifecycle/command hook surface"
+  },
+  {
+   "name": "BedrockPlugin::MAX_SIZE_QUERY/MAX_SIZE_BLOB/MAX_SIZE_SMALL",
+   "kind": "static constants",
+   "role": "Size limits enforced so the storage engine cannot silently truncate oversized input"
+  },
+  {
+   "name": "BedrockPlugin::isValidDate",
+   "kind": "static method",
+   "role": "Regex-based date/datetime format validator"
+  },
+  {
+   "name": "BedrockPlugin::verifyAttributeInt64/verifyAttributeSize/verifyAttributeBool/verifyAttributeDate",
+   "kind": "static method group",
+   "role": "Throw a 402 on missing or malformed request attributes"
+  },
+  {
+   "name": "BedrockPlugin::getCommand",
+   "kind": "pure virtual method",
+   "role": "Factory that claims a request into a BedrockCommand or declines it by returning null"
+  },
+  {
+   "name": "BedrockPlugin::getInfo/getName/upgradeDatabase/initializeFromDB/timerFired/getPort/onPortAccept/onPortRecv/onPortRequestComplete/preventAttach/onDetach/onAttach/stateChanged/onNodeLogin/serverStopping/shouldLockCommitPageOnConflict",
+   "kind": "virtual method group",
+   "role": "Overridable lifecycle hooks a plugin implements as needed; most default to no-ops"
+  },
+  {
+   "name": "BedrockPlugin::g_registeredPluginList",
+   "kind": "static member",
+   "role": "Global map of plugin name to factory function, populated by each plugin's registration"
+  },
+  {
+   "name": "BedrockPlugin::timers",
+   "kind": "member",
+   "role": "Public set of SStopwatch pointers the plugin has registered for periodic callbacks"
+  },
+  {
+   "name": "BedrockPlugin::server/afterCommitCallback",
+   "kind": "member group",
+   "role": "Reference to the owning BedrockServer and an optional post-commit callback"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "BedrockPlugin::verifyAttributeInt64/verifyAttributeSize/verifyAttributeBool/verifyAttributeDate/isValidDate",
+   "why": "Purely static helpers that operate only on an SData request with no dependency on BedrockPlugin state or the plugin lifecycle; read like generic request-validation utilities rather than plugin-system code",
+   "severity": "med",
+   "suggested_home": "libstuff/SData.h or a new shared request-validation unit"
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "Exactly a plugin base class"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Core plugin-system header at repo root alongside BedrockServer, matching class_hierarchy.md's Bedrock-specific layer"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "Consistent on-prefixed event callbacks and a single clearly-named global (g_registeredPluginList)"
+ },
+ "depends_on": [
+  "BedrockCommand.h",
+  "BedrockServer.h",
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b102.json",
+ "hash": "f3da86a31bf66a94"
+}

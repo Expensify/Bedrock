@@ -1,0 +1,80 @@
+{
+ "unit": "BedrockCommand",
+ "dir": "",
+ "files": [
+  "BedrockCommand.h",
+  "BedrockCommand.cpp"
+ ],
+ "lines": 879,
+ "test": false,
+ "intent": "Represents a single client command as it flows through Bedrock's prePeek/peek/process/postProcess pipeline, tracking plugin ownership, HTTPS sub-requests, per-phase timing, timeout policy, and crash-diagnostic state.",
+ "objects": [
+  {
+   "name": "BedrockCommand",
+   "kind": "class",
+   "role": "extends SQLiteCommand; the per-request unit of work with virtual peek/process hooks for plugins to override"
+  },
+  {
+   "name": "BedrockCommand::TIMING_INFO",
+   "kind": "enum",
+   "role": "phase labels for timing samples, including BLOCKING_* variants for the blocking commit thread"
+  },
+  {
+   "name": "BedrockCommand::STAGE",
+   "kind": "enum class",
+   "role": "which pipeline stage reset() is being called for"
+  },
+  {
+   "name": "BedrockCommand::GrowOnlyList<T>",
+   "kind": "nested template class",
+   "role": "append-only wrapper around list<T> (no erase); holds httpsRequests so iterators stay stable"
+  },
+  {
+   "name": "BedrockCommand::CrashMap",
+   "kind": "nested class (public map<string, SString>)",
+   "role": "subset of request name/value pairs used to fingerprint commands that may have caused a crash"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "BedrockCommand::GrowOnlyList<T>",
+   "why": "a generic, command-agnostic container template with no dependency on BedrockCommand, defined inline inside it",
+   "severity": "low",
+   "suggested_home": "libstuff (as a reusable append-only-list utility)"
+  },
+  {
+   "item": "BedrockCommand::getMethodName",
+   "why": "special-cases a 'returnValueList' suffix documented in-code as a hack to support one legacy plugin format (Auth's old Get), inside the generic base command class",
+   "severity": "med",
+   "suggested_home": "the Auth plugin, or null"
+  },
+  {
+   "item": "BedrockCommand.cpp: finalizeTimingInfo",
+   "why": "a sizeable timing-metrics/logging routine (per-phase totals, upstream-value promotion, a long SINFO composition) bundled into the command class itself rather than a separate metrics helper",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 4,
+  "note": "top-level, consistent with other core command-pipeline types (BedrockCore, BedrockServer)"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent `_` on non-public members; TIMING_INFO is a plain unscoped enum sitting beside STAGE, which correctly uses enum class"
+ },
+ "depends_on": [
+  "libstuff/SHTTPSManager.h",
+  "sqlitecluster/SQLiteCommand.h",
+  "BedrockPlugin.h",
+  "libstuff/libstuff.h",
+  "sqlitecluster/SQLite.h",
+  "BedrockServer.h"
+ ],
+ "_src": "b101.json",
+ "hash": "8e2d42713657f002"
+}

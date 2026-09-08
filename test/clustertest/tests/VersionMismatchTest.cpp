@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    VersionMismatchTest.cpp
+ * Path:    test/clustertest/tests/VersionMismatchTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying that a follower running a different version than
+ *   the leader escalates every command it receives, reads included, rather
+ *   than executing reads locally the way a same-version follower would.
+ *
+ * OBJECTS
+ *   VersionMismatchTest                        - tpunit fixture; builds a 5-node cluster, bumps two
+ *                                                 followers to a fake version via -versionOverride.
+ *   VersionMismatchTest::testReadEscalation    - confirms the mismatched followers escalate reads.
+ *   VersionMismatchTest::testWriteEscalation   - confirms writes always land on the leader regardless.
+ *   __VersionMismatchTest                      - static instance that registers the fixture with tpunit.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test files.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

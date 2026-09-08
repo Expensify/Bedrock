@@ -1,3 +1,29 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    ChainedHTTPTest.cpp
+ * Path:    test/tests/ChainedHTTPTest.cpp
+ *
+ * INTENT
+ *   Integration test verifying that a single "chainedrequest" command
+ *   (implemented by the clustertest test plugin) can fan out to multiple
+ *   external HTTP requests and report each site's response status back
+ *   in one reply.
+ *
+ * OBJECTS
+ *   ChainedHTTPTest  - tpunit::TestFixture; loads the clustertest
+ *                      testplugin, sends a chainedrequest naming several
+ *                      well-known sites, and verifies a plausible (200-399)
+ *                      status code came back for each.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: alongside the other command/protocol tests in test/tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling fixtures.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>

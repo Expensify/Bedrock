@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    DB.cpp
+ * Path:    plugins/DB.cpp
+ * Pair:    DB.h
+ *
+ * INTENT
+ *   Implements the "DB" plugin declared in DB.h. See that file for the
+ *   object list.
+ *
+ * OBJECTS
+ *   Implements everything declared in DB.h; no additional file-local
+ *   helpers. peek() also rewrites sqlite3-CLI ".schema" / ".schema <table>"
+ *   meta-commands into equivalent SELECTs against sqlite_schema, and
+ *   proactively rolls back any open transaction before running a read-only
+ *   query so a slow read doesn't block checkpointing.
+ *
+ * OUT OF PLACE
+ *   Nothing beyond what's already noted in DB.h.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; pairs with DB.h.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "DB.h"
 #include "libstuff/libstuff.h"
 #include "libstuff/qrf.h"

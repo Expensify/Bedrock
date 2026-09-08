@@ -1,3 +1,39 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SHTTPSManager.h
+ * Path:    libstuff/SHTTPSManager.h
+ * Pair:    SHTTPSManager.cpp
+ *
+ * INTENT
+ *   Defines the non-blocking base classes used to make outbound HTTPS (or
+ *   plain HTTP) requests driven from a poll() loop, tracking each request
+ *   as a Transaction with its own socket, timing, and response.
+ *
+ * OBJECTS
+ *   SStandaloneHTTPSManager            - owns STCPManager sockets and drives
+ *                                         Transactions through prePoll/postPoll;
+ *                                         usable with no Bedrock plugin context.
+ *   SStandaloneHTTPSManager::Transaction - one outbound request/response: socket,
+ *                                         full request/response SData, timestamps,
+ *                                         response code, optional scheduled start.
+ *   SHTTPSManager                      - SStandaloneHTTPSManager bound to an
+ *                                         owning BedrockPlugin.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] SHTTPSManager - exists only to attach a BedrockPlugin& to the
+ *     manager, so this header forward-declares BedrockPlugin and the pairing
+ *     .cpp depends on BedrockPlugin.h/BedrockServer.h. That makes a libstuff
+ *     unit depend on the Bedrock application layer rather than the reverse.
+ *
+ * NAME/LOCATION FIT
+ *   SStandaloneHTTPSManager fits libstuff (peer of STCPManager). SHTTPSManager,
+ *   being plugin-bound, sits less naturally here than beside BedrockPlugin.
+ *
+ * NAMING QUALITY
+ *   Consistent overall. SStandaloneHTTPSManager's protected members use the
+ *   repo's `_` prefix (_pem, _srvCrt, _caCrt) but SHTTPSManager's protected
+ *   `plugin` member does not - a small local inconsistency.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 
 #include <libstuff/SData.h>

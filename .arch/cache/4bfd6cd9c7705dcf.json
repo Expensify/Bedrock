@@ -1,0 +1,51 @@
+{
+ "unit": "SReplaceAllBench",
+ "dir": "benchmarks",
+ "files": [
+  "benchmarks/SReplaceAllBench.cpp"
+ ],
+ "lines": 100,
+ "test": true,
+ "intent": "Self-contained tpunit fixture benchmarking libstuff's SReplaceAll() -- replacing any character from a set with a single replacement character -- across inputs with varying densities and sizes of unsafe-character sets.",
+ "objects": [
+  {
+   "name": "SReplaceAllBench",
+   "kind": "struct",
+   "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SReplaceAll() over a small fixed set of input strings"
+  },
+  {
+   "name": "SReplaceAllBench::benchNoUnsafeChars/benchFewUnsafeChars/benchManyUnsafeChars",
+   "kind": "method group",
+   "role": "Vary how many characters in the input need replacing"
+  },
+  {
+   "name": "SReplaceAllBench::benchLongUnsafeList/benchURLSafe/benchAlphanumeric",
+   "kind": "method group",
+   "role": "Vary the size and shape of the unsafe-character set being matched against"
+  },
+  {
+   "name": "__SReplaceAllBench",
+   "kind": "file-scope global",
+   "role": "Self-registers the fixture with tpunit at static-init time"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "Named for exactly the function it benchmarks"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Correctly in benchmarks/"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Fits repo/test convention"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "benchmarks/BenchmarkBase.h"
+ ],
+ "_src": "b102.json",
+ "hash": "4bfd6cd9c7705dcf"
+}

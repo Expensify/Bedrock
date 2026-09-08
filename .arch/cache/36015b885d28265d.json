@@ -1,0 +1,35 @@
+{
+ "unit": "SSynchronizedQueue",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SSynchronizedQueue.h"
+ ],
+ "lines": 175,
+ "test": false,
+ "intent": "A thread-safe FIFO queue that can be waited on inside a poll() loop alongside real sockets, by writing a byte to an internal pipe on every push so the queue's readiness multiplexes like a socket.",
+ "objects": [
+  {
+   "name": "SSynchronizedQueue<T>",
+   "kind": "class template",
+   "role": "_queue/_queueMutex/_pipeFD; prePoll/postPoll register/drain the wake pipe; clear/empty/front/pop/push/size/each"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits perfectly"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent, correctly _-prefixed protected members"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b005.json",
+ "hash": "36015b885d28265d"
+}

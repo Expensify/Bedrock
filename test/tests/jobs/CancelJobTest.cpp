@@ -1,3 +1,29 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    CancelJobTest.cpp
+ * Path:    test/tests/jobs/CancelJobTest.cpp
+ *
+ * INTENT
+ *   tpunit fixture exercising the Jobs plugin's `CancelJob` command: it
+ *   must reject nonexistent jobs and jobs with children, ignore
+ *   RUNNING/FINISHED/PAUSED jobs, and correctly cancel a QUEUED child
+ *   while leaving siblings and parent state (QUEUED vs PAUSED) correct.
+ *
+ * OBJECTS
+ *   CancelJobTest          - tpunit::TestFixture; one BedrockTester per class,
+ *                            each test drives CreateJob/GetJob/FinishJob/
+ *                            CancelJob sequences and asserts resulting state.
+ *   __CancelJobTest        - static instance that registers the fixture.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives with the other per-command Jobs plugin tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling job tests.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SQResult.h>
 #include <libstuff/SData.h>
 #include <test/lib/BedrockTester.h>

@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    FailJobTest.cpp
+ * Path:    test/tests/jobs/FailJobTest.cpp
+ *
+ * INTENT
+ *   tpunit fixture exercising the Jobs plugin's `FailJob` command: it must
+ *   reject nonexistent jobs and jobs not in RUNNING/RUNQUEUED state, and
+ *   correctly mark RUNNING or RUNQUEUED jobs as FAILED.
+ *
+ * OBJECTS
+ *   FailJobTest            - tpunit::TestFixture; one BedrockTester per class,
+ *                            each test drives Create/Get/FailJob sequences
+ *                            and asserts the resulting state or error.
+ *   __FailJobTest          - static instance that registers the fixture.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives with the other per-command Jobs plugin tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling job tests.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>

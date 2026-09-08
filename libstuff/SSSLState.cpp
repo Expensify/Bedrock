@@ -1,3 +1,27 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SSSLState.cpp
+ * Path:    libstuff/SSSLState.cpp
+ * Pair:    SSSLState.h
+ *
+ * INTENT
+ *   Implements SSSLState; see the header.
+ *
+ * OBJECTS
+ *   No file-local additions beyond the header's declared API. Notable
+ *   implementation detail: initConfig() loads CA certs from $CERT_PATH (or
+ *   /etc/ssl/certs/) with a directory-then-bundle-file fallback, and falls
+ *   back to MBEDTLS_SSL_VERIFY_OPTIONAL (warn-only) if no CA certs loaded.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "SSSLState.h"
 #include "mbedtls/ssl.h"
 #include <mbedtls/error.h>

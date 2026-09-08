@@ -1,3 +1,27 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SSynchronizedQueue.h
+ * Path:    libstuff/SSynchronizedQueue.h
+ *
+ * INTENT
+ *   A thread-safe FIFO queue that can be waited on inside a poll() loop
+ *   alongside real sockets: pushes write a byte to an internal pipe so the
+ *   queue's readiness can be multiplexed via prePoll/postPoll like a socket.
+ *
+ * OBJECTS
+ *   SSynchronizedQueue<T> (class template) - _queue (list<T>), _queueMutex
+ *     (recursive_mutex), _pipeFD[2] (wake pipe); prePoll/postPoll (register/
+ *     drain the pipe); clear/empty/front/pop/push/size/each, all mutex-guarded.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits perfectly - does exactly what the name says.
+ *
+ * NAMING QUALITY
+ *   Consistent; protected members correctly use the repo's `_` prefix.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 
 #include <cstring>

@@ -1,0 +1,103 @@
+[
+ {
+  "unit": "SPerformanceTimer",
+  "dir": "libstuff",
+  "files": ["libstuff/SPerformanceTimer.h", "libstuff/SPerformanceTimer.cpp"],
+  "lines": 77,
+  "test": false,
+  "intent": "Accumulates wall-clock time spent in named sub-phases of a repeating operation and periodically logs a percentage breakdown of where the time went.",
+  "objects": [
+    {"name": "SPerformanceTimer", "kind": "class", "role": "tracks start/stop intervals per named type, sums durations into totals, logs a breakdown every 10s"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "does exactly what it says"},
+  "location_fit": {"score": 5, "note": "generic timing utility, fits libstuff"},
+  "naming_quality": {"score": 4, "note": "consistent S-prefix and _-member convention"},
+  "depends_on": ["libstuff/libstuff.h"]
+ },
+ {
+  "unit": "AutoTimer",
+  "dir": "libstuff",
+  "files": ["libstuff/AutoTimer.h", "libstuff/AutoTimer.cpp"],
+  "lines": 66,
+  "test": false,
+  "intent": "RAII-scoped timer (AutoTimerTime) built on AutoTimer, which accumulates time spent in bracketed sections and logs the percentage of wall-clock time spent inside them every 10 seconds.",
+  "objects": [
+    {"name": "AutoTimer", "kind": "class", "role": "owns running total and 10s logging interval; start()/stop() bracket a timed section"},
+    {"name": "AutoTimerTime", "kind": "class", "role": "RAII guard calling AutoTimer::start on construction and AutoTimer::stop on destruction"}
+  ],
+  "misfits": [
+    {"item": "class AutoTimer", "why": "the header's own comment notes a second, unrelated class also named AutoTimer exists in BedrockCore.h (a per-command timing guard) - same name, different purpose, genuinely confusable", "severity": "med", "suggested_home": null}
+  ],
+  "name_fit": {"score": 3, "note": "describes its function, but collides with BedrockCore::AutoTimer, an unrelated class of the same name"},
+  "location_fit": {"score": 5, "note": "generic timing utility, fits libstuff"},
+  "naming_quality": {"score": 3, "note": "the name clash with BedrockCore::AutoTimer is the main issue; otherwise consistent convention"},
+  "depends_on": ["libstuff/libstuff.h"]
+ },
+ {
+  "unit": "SThread",
+  "dir": "libstuff",
+  "files": ["libstuff/SThread.h"],
+  "lines": 66,
+  "test": false,
+  "intent": "Variadic function template that launches a thread like std::thread but captures any exception the callable throws and delivers it back to the caller through a std::future.",
+  "objects": [
+    {"name": "SThread", "kind": "function template", "role": "wraps f(args...) in try/catch on a new thread, routes return value or caught exception through a promise/future, returns {thread, future}"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 3, "note": "PascalCase, S-prefixed free function reads as a type/constructor call rather than a function, given repo convention reserves that style for classes"},
+  "location_fit": {"score": 5, "note": "generic threading utility, fits libstuff"},
+  "naming_quality": {"score": 3, "note": "S-prefix on a lower-case-callable function template is inconsistent with the repo's S-prefix-for-types convention"},
+  "depends_on": ["libstuff/libstuff.h"]
+ },
+ {
+  "unit": "SRandom",
+  "dir": "libstuff",
+  "files": ["libstuff/SRandom.h", "libstuff/SRandom.cpp"],
+  "lines": 57,
+  "test": false,
+  "intent": "Static-only wrapper around a shared mt19937_64 generator providing the repo's common random-number needs: raw 64-bit values, bounded ranges, random alphanumeric strings, and weighted booleans.",
+  "objects": [
+    {"name": "SRandom", "kind": "class", "role": "all-static utility; rand64/limitedRand64 draw integers, randStr builds an alphanumeric string, randBool does a Bernoulli trial"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "does exactly what it says"},
+  "location_fit": {"score": 5, "note": "generic utility, fits libstuff"},
+  "naming_quality": {"score": 4, "note": "consistent S-prefix and _-member convention"},
+  "depends_on": []
+ },
+ {
+  "unit": "SMultiHostSocketPool",
+  "dir": "libstuff",
+  "files": ["libstuff/SMultiHostSocketPool.h", "libstuff/SMultiHostSocketPool.cpp"],
+  "lines": 48,
+  "test": false,
+  "intent": "Keys a separate SSocketPool per hostname so callers can get/return sockets to any number of hosts through one object instead of managing one SSocketPool per host themselves.",
+  "objects": [
+    {"name": "SMultiHostSocketPool", "kind": "class", "role": "mutex-guarded map<host, SSocketPool>; getSocket/returnSocket find-or-create the per-host pool and delegate to it"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "does exactly what it says"},
+  "location_fit": {"score": 5, "note": "sits naturally next to SSocketPool, which it wraps"},
+  "naming_quality": {"score": 4, "note": "consistent S-prefix and _-member convention"},
+  "depends_on": ["libstuff/STCPManager.h", "libstuff/SSocketPool.h"]
+ },
+ {
+  "unit": "AutoScopeOnPrepare",
+  "dir": "libstuff",
+  "files": ["libstuff/AutoScopeOnPrepare.h", "libstuff/AutoScopeOnPrepare.cpp"],
+  "lines": 33,
+  "test": false,
+  "intent": "RAII guard that installs an on-prepare callback on a SQLite object for the guard's lifetime and removes it on scope exit.",
+  "objects": [
+    {"name": "AutoScopeOnPrepare", "kind": "class", "role": "holds a reference to the SQLite db and handler pointer; constructor installs/enables the handler, destructor clears it"}
+  ],
+  "misfits": [
+    {"item": "AutoScopeOnPrepare (whole unit)", "why": "a libstuff file whose sole purpose is scoping a sqlitecluster/SQLite feature (setOnPrepareHandler/enablePrepareNotifications), and it #includes sqlitecluster/SQLite.h directly - libstuff is meant to be generic and dependency-light, this is SQLite-specific", "severity": "med", "suggested_home": "sqlitecluster, alongside SQLite"}
+  ],
+  "name_fit": {"score": 4, "note": "name describes the contents well"},
+  "location_fit": {"score": 2, "note": "depends directly on sqlitecluster/SQLite.h; belongs closer to SQLite than in generic libstuff"},
+  "naming_quality": {"score": 3, "note": "handler parameter and member both shadow the name _db distinct from the constructor's db/member _db"},
+  "depends_on": ["sqlitecluster/SQLite.h"]
+ }
+]

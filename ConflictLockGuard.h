@@ -1,3 +1,35 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    ConflictLockGuard.h
+ * Path:    ConflictLockGuard.h
+ * Pair:    ConflictLockGuard.cpp
+ *
+ * INTENT
+ *   RAII scoped lock keyed by an opaque uint64_t identifier (e.g. a
+ *   commit-conflict key), backed by a shared, refcounted, LRU-pruned pool
+ *   of mutexes so concurrent commands only block each other when they
+ *   collide on the same identifier.
+ *
+ * OBJECTS
+ *   ConflictLockGuard - RAII guard; the constructor blocks until the
+ *       mutex for `identifier` is held and the destructor releases it.
+ *       identifier == 0 is treated as a no-op (no locking).
+ *   ConflictLockGuard::controlMutex/mutexes/mutexCounts/mutexOrder/
+ *       mutexOrderFastLookup (static) - shared pool of per-identifier
+ *       mutexes, their reference counts, and an LRU order used to prune
+ *       the pool once it grows past a cap.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   The private static members (controlMutex, mutexes, mutexCounts,
+ *   mutexOrder, mutexOrderFastLookup) lack the repo's leading-underscore
+ *   convention for private members; only the instance member _identifier
+ *   follows it.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <list>
 #include <mutex>

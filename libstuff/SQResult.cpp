@@ -1,3 +1,27 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQResult.cpp
+ * Path:    libstuff/SQResult.cpp
+ * Pair:    SQResult.h
+ *
+ * INTENT
+ *   Implementation of SQResultRow/SQResult declared in SQResult.h.
+ *
+ * OBJECTS
+ *   No file-local helpers. deserialize() implements two wire formats: an
+ *   object-style `{"headers":[...], "rows":["[...]", ...]}` (old Bedrock style, kept
+ *   for compatibility) and an array-style `[{...}, {...}]` (current SQLite-shell style,
+ *   which derives headers from the first row's key order).
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/libstuff.h>
 #include "SQResult.h"
 #include "libstuff/SQResultFormatter.h"

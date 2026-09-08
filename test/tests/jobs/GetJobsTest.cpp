@@ -1,3 +1,39 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    GetJobsTest.cpp
+ * Path:    test/tests/jobs/GetJobsTest.cpp
+ *
+ * INTENT
+ *   tpunit fixture exercising the Jobs plugin's bulk `GetJobs` command:
+ *   fetching multiple jobs at once moves them to RUNQUEUED with a
+ *   retryAfter-based nextRun, and after FinishJob each repeat modifier
+ *   (SCHEDULED/STARTED/FINISHED) reschedules nextRun from the correct
+ *   reference timestamp.
+ *
+ * OBJECTS
+ *   absoluteDiff           - free function; unsigned seconds between two
+ *                            time_t values regardless of order.
+ *   getAllJobData          - free function; runs a raw `Query` command with
+ *                            -json ReadDBFlags to pull jobID/state/lastRun/
+ *                            nextRun for every row in the jobs table.
+ *   GetJobsTest            - tpunit::TestFixture; single test that creates
+ *                            three jobs with different repeat modifiers,
+ *                            fetches them via GetJobs, then finishes them
+ *                            and checks each one's rescheduled nextRun.
+ *   __GetJobsTest          - static instance that registers the fixture.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives with the other per-command Jobs plugin tests.
+ *
+ * NAMING QUALITY
+ *   `absoluteDiff` and `getAllJobData` are free functions at file scope
+ *   rather than static/anonymous-namespace [CANDIDATE] - harmless here since
+ *   this is a single translation unit, but inconsistent with most sibling
+ *   test files which keep all logic inside the fixture struct.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <time.h>
 #include <unistd.h>
 

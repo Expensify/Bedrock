@@ -1,0 +1,48 @@
+{
+ "unit": "AutoTimer",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/AutoTimer.h",
+  "libstuff/AutoTimer.cpp"
+ ],
+ "lines": 66,
+ "test": false,
+ "intent": "RAII-scoped timer (AutoTimerTime) built on AutoTimer, which accumulates time spent in bracketed sections and logs the percentage of wall-clock time spent inside them every 10 seconds.",
+ "objects": [
+  {
+   "name": "AutoTimer",
+   "kind": "class",
+   "role": "owns running total and 10s logging interval; start()/stop() bracket a timed section"
+  },
+  {
+   "name": "AutoTimerTime",
+   "kind": "class",
+   "role": "RAII guard calling AutoTimer::start on construction and AutoTimer::stop on destruction"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "class AutoTimer",
+   "why": "the header's own comment notes a second, unrelated class also named AutoTimer exists in BedrockCore.h (a per-command timing guard) - same name, different purpose, genuinely confusable",
+   "severity": "med",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 3,
+  "note": "describes its function, but collides with BedrockCore::AutoTimer, an unrelated class of the same name"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "generic timing utility, fits libstuff"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "the name clash with BedrockCore::AutoTimer is the main issue; otherwise consistent convention"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b105.json",
+ "hash": "9db0b7d7bcbda010"
+}

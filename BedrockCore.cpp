@@ -1,3 +1,31 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockCore.cpp
+ * Path:    BedrockCore.cpp
+ * Pair:    BedrockCore.h
+ *
+ * INTENT
+ *   Implements BedrockCore as declared in BedrockCore.h.
+ *
+ * OBJECTS
+ *   BedrockCore:: (all methods) - the four lifecycle methods, timeout/abort
+ *     checks, and _handleCommandException's mapping of SException fields
+ *     onto the command's response.
+ *   AutoScopeRewrite - file-local RAII class (not in the header, not in an
+ *     anonymous namespace); enables/disables SQLite's query-rewrite hook for
+ *     the duration of one process() call.
+ *
+ * OUT OF PLACE
+ *   AutoScopeRewrite is defined at file scope without `static` or an
+ *   anonymous namespace [CANDIDATE] - a private implementation helper that
+ *   should be scoped to this translation unit explicitly rather than by
+ *   convention only.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; pairs directly with BedrockCore.h.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "BedrockCore.h"
 #include "BedrockPlugin.h"
 #include "BedrockServer.h"

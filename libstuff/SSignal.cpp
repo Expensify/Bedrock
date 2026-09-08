@@ -1,3 +1,54 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SSignal.cpp
+ * Path:    libstuff/SSignal.cpp
+ *
+ * INTENT
+ *   Installs process-wide POSIX signal handling: crash signals (SEGV, ABORT,
+ *   FPE, ILL, BUS) get a best-effort stack trace logged and written to disk
+ *   before re-raising abort(); all other signals are recorded in a bitmask
+ *   and can optionally wake a poll loop via an SSynchronizedQueue<bool>.
+ *
+ * OBJECTS
+ *   Public API (declared in libstuff.h, defined here):
+ *     SSetSignalHandlerDieFunc  - installs the callback run just before a
+ *                                 crash-signal abort, to produce a final log line.
+ *     STerminationSignalCount  - count of SIGTERM/SIGINT seen so far.
+ *     SCheckSignal / SGetSignal - peek / peek-and-clear one bit of the pending
+ *                                 signal bitmask.
+ *     SGetSignals / SClearSignals - read / reset the whole bitmask.
+ *     SGetSignalDescription    - human-readable list of pending signal names.
+ *     SInitializeSignals       - installs sigaction handlers and starts the
+ *                                 background signal-handling thread.
+ *     SStopSignalThread        - stops and joins that thread.
+ *     SSIGNAL_NOTIFY_INTERRUPT (extern void*) - optional pointer to an
+ *                                 SSynchronizedQueue<bool>, pushed to on any signal.
+ *   File-local:
+ *     SSignalHandlerDieFunc (thread_local function<string()>) - the die-func.
+ *     __SIGSTACK / sigStackSize - 64kb emergency altstack.
+ *     _SSignal_signalHandlerThreadFunc - background thread body (sigtimedwait loop).
+ *     _SSignal_StackTrace - crash-signal handler: builds/demangles/logs a
+ *                           backtrace, writes /tmp/bedrock_crash_<time>.log,
+ *                           calls the die-func, then aborts.
+ *     _SSignal_threadInitialized/_threadStopFlag/_pendingSignalBitMask/
+ *     _signalThread/_threadCaughtSignalNumber/_terminationCount - internal state.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] _SSignal_StackTrace calling SQLiteNode::KILLABLE_SQLITE_NODE->kill()
+ *     - a generic crash handler in libstuff directly reaching into the
+ *     sqlitecluster layer to kill peer connections on crash.
+ *   [CANDIDATE] the hardcoded "/tmp/bedrock_crash_{}.log" path bakes a
+ *     product-specific filename into an otherwise general-purpose signal handler.
+ *
+ * NAME/LOCATION FIT
+ *   File fits (does exactly what SSignal.cpp implies), but it has no SSignal.h -
+ *   its whole public API lives in libstuff.h instead, unlike most libstuff pairs.
+ *
+ * NAMING QUALITY
+ *   Internal helpers are consistently `_SSignal_`-prefixed. SSIGNAL_NOTIFY_INTERRUPT
+ *   is an untyped `void*` even though its only use immediately casts it to
+ *   `SSynchronizedQueue<bool>*` - it could just be declared with that type.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "libstuff.h"
 #include "SSynchronizedQueue.h"
 #include <sqlitecluster/SQLiteNode.h>

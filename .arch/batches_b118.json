@@ -1,0 +1,123 @@
+[
+ {
+  "unit": "FastHTTPParsing",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/FastHTTPParsing.cpp"
+  ],
+  "kind": "single",
+  "lines": 107,
+  "test": true,
+  "hash": "6252746ea2733b71"
+ },
+ {
+  "unit": "SSLTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/SSLTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 97,
+  "test": true,
+  "hash": "00752d4719cc394d"
+ },
+ {
+  "unit": "SDeburrTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/SDeburrTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 86,
+  "test": true,
+  "hash": "186258673379cbd4"
+ },
+ {
+  "unit": "SIsValidSQLiteDateModifierTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/SIsValidSQLiteDateModifierTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 75,
+  "test": true,
+  "hash": "e2e0c43f27d43bbe"
+ },
+ {
+  "unit": "ChainedHTTPTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/ChainedHTTPTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 69,
+  "test": true,
+  "hash": "cb54bb3e85db10d5"
+ },
+ {
+  "unit": "ReadTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/ReadTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 52,
+  "test": true,
+  "hash": "9a45ab053ae2bf3f"
+ },
+ {
+  "unit": "CommandPortTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/CommandPortTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 42,
+  "test": true,
+  "hash": "b26038700ab7c156"
+ },
+ {
+  "unit": "STimeTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/STimeTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 42,
+  "test": true,
+  "hash": "b2133a317458d05f"
+ },
+ {
+  "unit": "StatusTest",
+  "dir": "test/tests",
+  "files": [
+   "test/tests/StatusTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 21,
+  "test": true,
+  "hash": "b4413a98bd2a9f3c"
+ },
+ {
+  "unit": "GetJobTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/GetJobTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 971,
+  "test": true,
+  "hash": "3a7c1f105d322921"
+ },
+ {
+  "unit": "RetryJobTest",
+  "dir": "test/tests/jobs",
+  "files": [
+   "test/tests/jobs/RetryJobTest.cpp"
+  ],
+  "kind": "single",
+  "lines": 903,
+  "test": true,
+  "hash": "508a146c916f6422"
+ }
+]

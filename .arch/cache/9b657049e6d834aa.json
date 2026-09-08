@@ -1,0 +1,53 @@
+{
+ "unit": "Utils",
+ "dir": "libstuff/JSON",
+ "files": [
+  "libstuff/JSON/Utils.h",
+  "libstuff/JSON/Utils.cpp"
+ ],
+ "lines": 402,
+ "test": false,
+ "intent": "Static helpers for reading, merging, stripping, and sanitizing JSON::Value trees (key replace/strip/patch, path<->object conversion, transport-safe string sanitizing) used across Bedrock and consuming applications.",
+ "objects": [
+  {
+   "name": "Utils",
+   "kind": "class",
+   "role": "static utility class holding shared singleton JSON::Value constants and tree-manipulation helpers; no instance state"
+  },
+  {
+   "name": "Utils::EMPTY_OBJECT/EMPTY_ARRAY/NULL_VALUE/FALSE_VALUE/TRUE_VALUE/EMPTY_STRING/ZERO_INT_VALUE/MAX_INT_VALUE/ZERO_FLOAT_VALUE",
+   "kind": "static const data members",
+   "role": "shared singleton JSON::Value constants reused to avoid repeated construction"
+  },
+  {
+   "name": "Utils::sanitizeJSONStringForTransport",
+   "kind": "static method",
+   "role": "hand-rolled UTF-8 validator/control-byte stripper for outbound JSON strings"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "Utils::recursiveReplaceJSONKeys",
+   "why": "doc comment is written entirely in terms of one caller's domain (bankAccounts.additionalData, apiResult, errorAttemptsCount, assetReport) and names an external test (GetWithdrawalAccountsTest) not present in this repo; the algorithm is generic but the documentation ties a package the README describes as application-agnostic to one consumer's onyx-merge use case",
+   "severity": "med",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "generic JSON-tree utility grab-bag fits its name"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "belongs in libstuff/JSON alongside Value/Writer/Parser"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "clear camelCase methods; class name Utils is a generic catch-all but scoped under JSON:: so it doesn't collide with the repo's S-prefixed shared-utility convention"
+ },
+ "depends_on": [
+  "libstuff/JSON/Value.h"
+ ],
+ "_src": "b107.json",
+ "hash": "9b657049e6d834aa"
+}

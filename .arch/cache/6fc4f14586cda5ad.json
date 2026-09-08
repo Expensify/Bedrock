@@ -1,0 +1,40 @@
+{
+ "unit": "version",
+ "dir": "",
+ "files": [
+  "version.h"
+ ],
+ "lines": 4,
+ "test": false,
+ "intent": "Defines a fallback SVERSION macro (a placeholder 40-character hash); unlike bedrockVersion.h's VERSION, this macro is not referenced by any other file in the repo.",
+ "objects": [
+  {
+   "name": "SVERSION",
+   "kind": "macro",
+   "role": "Placeholder all-zero revision-string macro"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "version.h (whole file / SVERSION)",
+   "why": "SVERSION is never included or referenced anywhere else in the repo (only bedrockVersion.h's differently-named VERSION is actually used); appears to be dead code superseded by bedrockVersion.h",
+   "severity": "med",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 2,
+  "note": "Generic name collides conceptually with bedrockVersion.h's VERSION; having both invites picking the wrong one"
+ },
+ "location_fit": {
+  "score": 2,
+  "note": "Sits at repo root as if in active use, but appears to be an unreferenced leftover"
+ },
+ "naming_quality": {
+  "score": 2,
+  "note": "Carries the repo's `S` shared-utility prefix though it's an unused macro, not a libstuff type"
+ },
+ "depends_on": [],
+ "_src": "b102.json",
+ "hash": "6fc4f14586cda5ad"
+}

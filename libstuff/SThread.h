@@ -1,3 +1,32 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SThread.h
+ * Path:    libstuff/SThread.h
+ *
+ * INTENT
+ *   Free-function template that launches a thread the same way
+ *   std::thread does, but captures any exception the callable throws and
+ *   delivers it back to the caller through a std::future instead of
+ *   letting it call terminate.
+ *
+ * OBJECTS
+ *   SThread  - variadic function template; wraps `f(args...)` in a
+ *              try/catch inside the new thread, routes the return value
+ *              (or the caught exception) through a promise/future pair,
+ *              and returns {thread, future} as a pair for the caller to
+ *              join/wait on.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   [CANDIDATE] `SThread` is a lower-case-callable free function template
+ *   named like a type (PascalCase, S-prefix normally reserved for classes
+ *   in this repo) — it reads as "construct an SThread object" rather than
+ *   "call a function", which is a bit misleading given repo convention.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 
 #include <thread>

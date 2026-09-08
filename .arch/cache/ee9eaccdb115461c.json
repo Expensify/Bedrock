@@ -1,0 +1,67 @@
+{
+ "unit": "MySQL",
+ "dir": "plugins",
+ "files": [
+  "plugins/MySQL.h",
+  "plugins/MySQL.cpp"
+ ],
+ "lines": 1148,
+ "test": false,
+ "intent": "A Bedrock plugin that speaks the MySQL wire protocol on its own TCP port, translating recognized client queries into internal Query commands (or answering them directly) so unmodified MySQL clients can talk to a Bedrock/SQLite node.",
+ "objects": [
+  {
+   "name": "MySQLUtils",
+   "kind": "namespace/free-functions",
+   "role": "recognizes and picks apart specific client query shapes (VERSION(), CONNECTION_ID(), information_schema.*, SHOW KEYS FROM, foreign-key introspection) for rewriting into SQLite equivalents"
+  },
+  {
+   "name": "MySQLPacket",
+   "kind": "class",
+   "role": "encodes/decodes MySQL wire-protocol packet framing; builds handshake, OK, ERR, and query-response packets"
+  },
+  {
+   "name": "BedrockPlugin_MySQL",
+   "kind": "class",
+   "role": "the plugin; owns the MySQL-protocol port and translates between MySQL wire format and internal Query commands"
+  },
+  {
+   "name": "MYSQL_NUM_VARIABLES",
+   "kind": "macro",
+   "role": "element count of g_MySQLVariables"
+  },
+  {
+   "name": "g_MySQLVariables",
+   "kind": "global (extern array)",
+   "role": "table of fake MySQL server variables returned for SHOW VARIABLES / @@var"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "g_MySQLVariables",
+   "why": "~300-row hardcoded table of fake AWS-RDS MySQL server variables/values; pure static data embedded in the plugin's header/cpp rather than an external data file, dominating the file's line count",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "clearly the MySQL protocol plugin"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "plugins/ alongside other BedrockPlugin_* implementations"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent BedrockPlugin_<Name>/g_ conventions; mysqlVersion/MYSQL_NUM_VARIABLES/g_MySQLVariables mix three naming registers but each is correct for its category"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "BedrockPlugin.h",
+  "bedrockVersion.h",
+  "libstuff/SQResult.h",
+  "BedrockServer.h"
+ ],
+ "_src": "b109.json",
+ "hash": "ee9eaccdb115461c"
+}

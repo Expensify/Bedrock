@@ -1,3 +1,31 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Compression.cpp
+ * Path:    plugins/Compression.cpp
+ * Pair:    Compression.h
+ *
+ * INTENT
+ *   Implements the compression plugin declared in Compression.h. See that
+ *   file for the object list.
+ *
+ * OBJECTS
+ *   Implements everything declared in Compression.h, plus two file-local
+ *   (static, file-scope) functions not in the header:
+ *   sqliteCompress  - the actual "compress(data, dictionaryID)" SQLite UDF
+ *                      callback, registered via registerSQLite().
+ *   sqliteDecompress - the actual "decompress(data)" SQLite UDF callback.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; pairs with Compression.h.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header; the two UDF callbacks use plain lowerCamel
+ *   names (no plugin-name prefix) since they're file-local, which reads
+ *   fine paired with the SQL function names they implement ("compress",
+ *   "decompress").
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "Compression.h"
 
 #include <BedrockServer.h>

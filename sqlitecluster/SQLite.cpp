@@ -1,3 +1,37 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQLite.cpp
+ * Path:    sqlitecluster/SQLite.cpp
+ * Pair:    SQLite.h
+ *
+ * INTENT
+ *   Implements the SQLite class declared in SQLite.h; see that file for the full picture.
+ *
+ * OBJECTS
+ *   DBINFO                  - file-local logging macro: SINFO prefixed with "{filename}".
+ *   SharedDataLookupMapType - struct local to initializeSharedData(); a static, process-lifetime
+ *                             filename -> SharedData* registry (with a destructor that frees the
+ *                             SharedData objects at exit) used so every SQLite handle opened on
+ *                             the same file finds the same SharedData instance.
+ *   Everything else here implements methods already declared on SQLite / SQLite::SharedData
+ *   in the header.
+ *
+ * OUT OF PLACE
+ *   BedrockPlugin_Compression::compress/decompress/registerSQLite calls [CANDIDATE]: the core
+ *     sqlitecluster engine reaches up into plugins/Compression (a Bedrock command plugin) to
+ *     compress journal entries and register SQLite UDFs - an inverted dependency for a library
+ *     that otherwise only depends on libstuff.
+ *   Commented-out HC-Tree slow-commit diagnostic block inside commit() [CANDIDATE]: ~15 lines of
+ *     disabled logging code left in place rather than removed or put behind a flag.
+ *   SharedData::writeLock [CANDIDATE]: per its own comment this exists specifically "to support
+ *     the BlockWrites command" - a single command's requirement baked into the generic
+ *     cross-handle SharedData structure.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; matches SQLite.h.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header. See SQLite.h for the getLastConflictIdentifier/_lastConflictPage note.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "SQLite.h"
 
 #include <chrono>

@@ -1,0 +1,109 @@
+[
+ {
+  "unit": "Utils",
+  "dir": "libstuff/JSON",
+  "files": ["libstuff/JSON/Utils.h", "libstuff/JSON/Utils.cpp"],
+  "lines": 402,
+  "test": false,
+  "intent": "Static helpers for reading, merging, stripping, and sanitizing JSON::Value trees (key replace/strip/patch, path<->object conversion, transport-safe string sanitizing) used across Bedrock and consuming applications.",
+  "objects": [
+    {"name": "Utils", "kind": "class", "role": "static utility class holding shared singleton JSON::Value constants and tree-manipulation helpers; no instance state"},
+    {"name": "Utils::EMPTY_OBJECT/EMPTY_ARRAY/NULL_VALUE/FALSE_VALUE/TRUE_VALUE/EMPTY_STRING/ZERO_INT_VALUE/MAX_INT_VALUE/ZERO_FLOAT_VALUE", "kind": "static const data members", "role": "shared singleton JSON::Value constants reused to avoid repeated construction"},
+    {"name": "Utils::sanitizeJSONStringForTransport", "kind": "static method", "role": "hand-rolled UTF-8 validator/control-byte stripper for outbound JSON strings"}
+  ],
+  "misfits": [
+    {"item": "Utils::recursiveReplaceJSONKeys", "why": "doc comment is written entirely in terms of one caller's domain (bankAccounts.additionalData, apiResult, errorAttemptsCount, assetReport) and names an external test (GetWithdrawalAccountsTest) not present in this repo; the algorithm is generic but the documentation ties a package the README describes as application-agnostic to one consumer's onyx-merge use case", "severity": "med", "suggested_home": null}
+  ],
+  "name_fit": {"score": 5, "note": "generic JSON-tree utility grab-bag fits its name"},
+  "location_fit": {"score": 5, "note": "belongs in libstuff/JSON alongside Value/Writer/Parser"},
+  "naming_quality": {"score": 4, "note": "clear camelCase methods; class name Utils is a generic catch-all but scoped under JSON:: so it doesn't collide with the repo's S-prefixed shared-utility convention"},
+  "depends_on": ["libstuff/JSON/Value.h"]
+ },
+ {
+  "unit": "Writer",
+  "dir": "libstuff/JSON",
+  "files": ["libstuff/JSON/Writer.h", "libstuff/JSON/Writer.cpp"],
+  "lines": 350,
+  "test": false,
+  "intent": "A JSON serializer: build a document incrementally via an object/array cursor over rapidjson::Writer, or convert a whole JSON::Value tree to a string in one call (compact or pretty).",
+  "objects": [
+    {"name": "Writer", "kind": "class", "role": "wraps rapidjson::Writer<StringBuffer>; instance API drives incremental construction, static serialize()/serializePretty() walk an existing JSON::Value tree directly"},
+    {"name": "Writer::serialize(value, writer)", "kind": "private template method", "role": "recursively walks a JSON::Value and feeds it to any rapidjson writer type; shared by serialize() and serializePretty()"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 5, "note": "consistent startX/endX pairs; private writeValue overloads appropriately hidden behind public templates"},
+  "depends_on": ["libstuff/JSON/Value.h", "libstuff/JSON/Metrics.h", "libstuff/libstuff.h"]
+ },
+ {
+  "unit": "SAXHandler",
+  "dir": "libstuff/JSON",
+  "files": ["libstuff/JSON/SAXHandler.h", "libstuff/JSON/SAXHandler.cpp"],
+  "lines": 269,
+  "test": false,
+  "intent": "Implements rapidjson's SAX handler interface to build a JSON::Value tree (with nested objects/arrays) from the callback stream a rapidjson::Reader emits while parsing.",
+  "objects": [
+    {"name": "SAXHandler", "kind": "class", "role": "implements the full rapidjson handler surface (Null/Bool/Int/Uint/Int64/Uint64/Double/String/StartObject/Key/EndObject/StartArray/EndArray/RawNumber), tracks a stack of in-progress Value contexts, hands off the finished root via getValue()"},
+    {"name": "SAXHandler::endContext", "kind": "private method", "role": "pops the current context and, inside an array, stages the next placeholder element"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "matches the rapidjson SAX handler convention it implements"},
+  "location_fit": {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 4, "note": "interface names are fixed by rapidjson's contract; root is a manually new/deleted raw pointer later wrapped in a unique_ptr on hand-off, an ownership pattern worth a second look though not a naming issue"},
+  "depends_on": ["libstuff/JSON/Value.h"]
+ },
+ {
+  "unit": "Parser",
+  "dir": "libstuff/JSON",
+  "files": ["libstuff/JSON/Parser.h", "libstuff/JSON/Parser.cpp"],
+  "lines": 69,
+  "test": false,
+  "intent": "Parse a JSON string into a JSON::Value tree, in a strict mode that throws on malformed input and a permissive mode that does not.",
+  "objects": [
+    {"name": "Parser", "kind": "class", "role": "two static entry points, read() (throws JSON::InvalidArgument) and readUnsafe() (swallows parse errors), both driving a rapidjson::Reader over a SAXHandler"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 5, "note": "readUnsafe clearly signals the risk relative to read"},
+  "depends_on": ["libstuff/JSON/Value.h", "libstuff/JSON/Metrics.h", "libstuff/JSON/SAXHandler.h"]
+ },
+ {
+  "unit": "Serializable",
+  "dir": "libstuff/JSON",
+  "files": ["libstuff/JSON/Serializable.h"],
+  "lines": 52,
+  "test": false,
+  "intent": "A CRTP base that documents and compile-time-enforces a toJSON()/fromJSON() contract on a derived type, without a vtable, so the derived type stays an aggregate.",
+  "objects": [
+    {"name": "Serializable<Derived>", "kind": "struct (CRTP template)", "role": "base toJSON()/fromJSON() are static_assert stubs that fire only if the derived class fails to hide them via name hiding"},
+    {"name": "always_false_v<T>", "kind": "template variable", "role": "delays the static_assert failure to instantiation time"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 4, "note": "a JSON-serialization contract helper, reasonably grouped here even though the CRTP trick itself is generic C++, not JSON-specific; no in-repo consumer currently derives from it"},
+  "naming_quality": {"score": 5, "note": "always_false_v follows established standard-library-style naming for this trait helper"},
+  "depends_on": ["libstuff/JSON/Value.h"]
+ },
+ {
+  "unit": "Metrics",
+  "dir": "libstuff/JSON",
+  "files": ["libstuff/JSON/Metrics.h", "libstuff/JSON/Metrics.cpp"],
+  "lines": 48,
+  "test": false,
+  "intent": "A narrow, process-wide hook so an embedding application can observe JSON parse/serialize timing and document size, without the JSON package depending on that application.",
+  "objects": [
+    {"name": "MetricsOperation", "kind": "enum class", "role": "PARSE or SERIALIZE"},
+    {"name": "MetricsObserver", "kind": "type alias (function pointer)", "role": "callback signature"},
+    {"name": "setMetricsObserver", "kind": "free function", "role": "installs/replaces the callback; nullptr disables reporting"},
+    {"name": "reportMetrics", "kind": "free function", "role": "invoked by Parser/Writer after each operation to notify the observer, if set"},
+    {"name": "(anonymous namespace) metricsObserver", "kind": "file-local static", "role": "atomic<MetricsObserver> backing storage; not declared in the header"}
+  ],
+  "misfits": [],
+  "name_fit": {"score": 5, "note": "fits"},
+  "location_fit": {"score": 5, "note": "fits"},
+  "naming_quality": {"score": 5, "note": "clear and consistent"},
+  "depends_on": []
+ }
+]

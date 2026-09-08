@@ -1,3 +1,31 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SRingBuffer.h
+ * Path:    libstuff/SRingBuffer.h
+ * Pair:    (none - header-only template, no .cpp; sole consumer is SFluentdLogger)
+ *
+ * INTENT
+ *   Lock-free, fixed-capacity, single-producer-notify/multi-producer/single-consumer
+ *   ring buffer of T, used to hand log records from arbitrary caller threads to
+ *   SFluentdLogger's one sender thread without blocking the caller.
+ *
+ * OBJECTS
+ *   SRINGBUFFER_DEFAULT_CAPACITY - default slot count constant (10M).
+ *   State                         - Empty/Ready/Shutdown, tags each slot's occupancy.
+ *   SRingBuffer<T, C>             - templated buffer; push()/pop()/wait()/shutdown();
+ *     SRingBuffer::BufferElement  - one slot: a T plus its atomic<State>.
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] `State` is declared at global scope rather than nested inside
+ *   SRingBuffer, so a generic five-letter name (`State`) is injected into every
+ *   translation unit that includes this header.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; it's a generic buffer, not Fluentd-specific, though today it has one caller.
+ *
+ * NAMING QUALITY
+ *   Consistent aside from the unnested, overly-generic `State` noted above.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 
 #include <array>

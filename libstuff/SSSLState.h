@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SSSLState.h
+ * Path:    libstuff/SSSLState.h
+ * Pair:    SSSLState.cpp
+ *
+ * INTENT
+ *   Thin wrapper around mbedTLS providing per-connection TLS handshake,
+ *   send/recv over a raw socket fd, and process-wide mbedTLS setup
+ *   (entropy/DRBG/CA-cert store) shared across all connections.
+ *
+ * OBJECTS
+ *   SSSLState (class) - ssl (mbedtls_ssl_context), net_ctx (mbedtls_net_context);
+ *     initConfig/freeConfig (static, process-wide setup/teardown);
+ *     send/recv (raw and SFastBuffer-based); sendConsume/recvAppend
+ *     (buffer-integrated variants); static _ec/_ctr_drbg/_conf/_cacert
+ *     (shared mbedTLS state, initConfig'd once for the whole process).
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; a natural peer of STCPManager/SHTTPSProxySocket in libstuff.
+ *
+ * NAMING QUALITY
+ *   Consistent with repo convention.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 
 #include <mbedtls/ctr_drbg.h>

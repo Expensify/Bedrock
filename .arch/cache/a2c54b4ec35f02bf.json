@@ -1,0 +1,36 @@
+{
+ "unit": "SSocketPool",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SSocketPool.h",
+  "libstuff/SSocketPool.cpp"
+ ],
+ "lines": 168,
+ "test": false,
+ "intent": "Keep-alive connection pool for one host: hands out an existing idle STCPManager::Socket or opens a new one, and closes sockets idle past a timeout via a background thread.",
+ "objects": [
+  {
+   "name": "SSocketPool",
+   "kind": "class",
+   "role": "getSocket()/returnSocket() public API; _timeoutThreadFunc() (prunes expired sockets) and _getAddress() (caches/re-resolves the host address) private helpers"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "a thin pooling layer over STCPManager::Socket, belongs beside it"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "consistent `_`-prefixed private members, bare public/const members"
+ },
+ "depends_on": [
+  "libstuff/STCPManager.h"
+ ],
+ "_src": "b104.json",
+ "hash": "a2c54b4ec35f02bf"
+}

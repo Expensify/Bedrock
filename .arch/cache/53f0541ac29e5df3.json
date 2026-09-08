@@ -1,0 +1,62 @@
+{
+ "unit": "BedrockCore",
+ "dir": "",
+ "files": [
+  "BedrockCore.h",
+  "BedrockCore.cpp"
+ ],
+ "lines": 575,
+ "test": false,
+ "intent": "Runs a BedrockCommand's prePeek/peek/process/postProcess lifecycle against a specific SQLite db and transaction, translating thrown exceptions into HTTP-style response codes.",
+ "objects": [
+  {
+   "name": "BedrockCore",
+   "kind": "class",
+   "role": "extends SQLiteCore; executes a command's lifecycle methods against _db, handling timeouts/aborts/exceptions"
+  },
+  {
+   "name": "BedrockCore::RESULT",
+   "kind": "enum class",
+   "role": "outcome codes from peekCommand/processCommand (COMPLETE, SHOULD_PROCESS, NEEDS_COMMIT, NO_COMMIT_REQUIRED, SERVER_NOT_LEADING)"
+  },
+  {
+   "name": "BedrockCore::AutoTimer",
+   "kind": "nested RAII class",
+   "role": "records one timing entry into command->timingInfo spanning its own lifetime"
+  },
+  {
+   "name": "AutoScopeRewrite",
+   "kind": "file-local class (BedrockCore.cpp)",
+   "role": "RAII enable/disable of SQLite's query-rewrite hook for one process() call"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "AutoScopeRewrite",
+   "why": "defined at file scope in BedrockCore.cpp without `static` or an anonymous namespace, so its file-local intent relies on convention rather than being enforced",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits; sits at the repo root as the execution engine beside BedrockCommand and BedrockServer"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent; `_server` follows the `_` convention for private members"
+ },
+ "depends_on": [
+  "BedrockCommand.h",
+  "sqlitecluster/SQLiteCore.h",
+  "BedrockServer.h",
+  "BedrockPlugin.h",
+  "libstuff/libstuff.h"
+ ],
+ "_src": "b101.json",
+ "hash": "53f0541ac29e5df3"
+}

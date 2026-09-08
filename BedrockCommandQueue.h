@@ -1,3 +1,38 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BedrockCommandQueue.h
+ * Path:    BedrockCommandQueue.h
+ * Pair:    BedrockCommandQueue.cpp
+ *
+ * INTENT
+ *   A thread-safe, time-ordered queue of BedrockCommands keyed by both
+ *   scheduled time and timeout, from which worker threads block-and-wait
+ *   (get()) for the next command that is either already timed out or due
+ *   to run.
+ *
+ * OBJECTS
+ *   BedrockCommandQueue                  - class; push/get/_dequeue, the
+ *     timed-out-vs-scheduled ordering rule, and empty/size/clear/getAll
+ *     queries over the queue.
+ *   BedrockCommandQueue::timeout_error   - nested exception class; thrown
+ *     by get() when its wait window elapses with nothing available.
+ *   BedrockCommandQueue::ItemTimeoutPair - protected nested struct; pairs a
+ *     queued command with its timeout for the parallel `_lookupByTimeout`
+ *     index.
+ *   BedrockCommandQueue::Timeout / Scheduled - typedefs for uint64_t
+ *     epoch-microsecond timestamps, distinguishing the two orderings.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Timeout and Scheduled are both bare typedefs for uint64_t, with nothing
+ *   at the type level to stop one being passed where the other is expected
+ *   (e.g. to push(command, time)) - the exact "two distinct concepts both
+ *   typedef'd to the same primitive" confusion this section watches for.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <condition_variable>
 #include <libstuff/libstuff.h>

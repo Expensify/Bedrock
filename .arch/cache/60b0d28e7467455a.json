@@ -1,0 +1,52 @@
+{
+ "unit": "SFastBuffer",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SFastBuffer.h",
+  "libstuff/SFastBuffer.cpp"
+ ],
+ "lines": 180,
+ "test": false,
+ "intent": "An append-friendly byte buffer that avoids repeated reallocation/erase on the front by tracking a front offset, used as socket send/recv buffers polled incrementally.",
+ "objects": [
+  {
+   "name": "SFastBuffer",
+   "kind": "class",
+   "role": "front/data storage; empty/size/c_str/clear/consumeFront/append/operator+=/=; startsWithHTTPRequest incremental HTTP-terminator scan"
+  },
+  {
+   "name": "operator<<(ostream&, const SFastBuffer&)",
+   "kind": "free function",
+   "role": "stream helper"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "SFastBuffer::startsWithHTTPRequest and its nextToCheck/headerLength state",
+   "why": "bakes HTTP-specific framing (\\r\\n\\r\\n / \\n\\n terminator) knowledge into an otherwise protocol-agnostic buffer type",
+   "severity": "low",
+   "suggested_home": "a small HTTP-framing helper layered on top of SFastBuffer, rather than inside it"
+  },
+  {
+   "item": "SFastBuffer::contentLength (private member)",
+   "why": "reset to 0 in four places but never read or set to any other value anywhere in the file - dead/vestigial field",
+   "severity": "low",
+   "suggested_home": null
+  }
+ ],
+ "name_fit": {
+  "score": 4,
+  "note": "fits, slightly undercut by the HTTP-specific method"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent aside from the dead contentLength field"
+ },
+ "depends_on": [],
+ "_src": "b005.json",
+ "hash": "60b0d28e7467455a"
+}

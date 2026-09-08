@@ -1,0 +1,38 @@
+{
+ "unit": "bedrockVersion",
+ "dir": "",
+ "files": [
+  "bedrockVersion.h"
+ ],
+ "lines": 12,
+ "test": false,
+ "intent": "Defines the VERSION macro reporting the running build's git revision (from GIT_REVISION, passed in by the Makefile), or a placeholder if none was supplied.",
+ "objects": [
+  {
+   "name": "VERSION",
+   "kind": "macro",
+   "role": "Build-revision string, consumed by main.cpp (--version) and BedrockServer's _version field"
+  },
+  {
+   "name": "STRINGIZE/EXPAND_STRING",
+   "kind": "macro group",
+   "role": "Private stringizing helpers used only to expand GIT_REVISION into VERSION"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "A Bedrock-specific version macro, named accordingly"
+ },
+ "location_fit": {
+  "score": 4,
+  "note": "Small config-style header at repo root alongside its consumers (main.cpp, BedrockServer.cpp)"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "Name and purpose closely shadow version.h's SVERSION, inviting confusion between a live macro (VERSION) and an apparently dead one (SVERSION)"
+ },
+ "depends_on": [],
+ "_src": "b102.json",
+ "hash": "e7bd86b4a93189e8"
+}

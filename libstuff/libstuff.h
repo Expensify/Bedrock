@@ -1,3 +1,118 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    libstuff.h
+ * Path:    libstuff/libstuff.h
+ * Pair:    libstuff.cpp
+ *
+ * INTENT
+ *   Bedrock's project-wide low-level utility header: declares the core
+ *   types (SString, STable, SException, SStopwatch, SRECompiledRegex),
+ *   the logging/assertion/exception macros nearly every file in the repo
+ *   uses, and free-function declarations for string, HTTP, JSON, network,
+ *   file, crypto, and SQLite-execution helpers.
+ *
+ * OBJECTS
+ *   STableComp                     - case-insensitive less-than comparator; STable's key comparator
+ *   STableComp::nocase_compare      - per-character case-insensitive comparator used by STableComp
+ *   SString                         - string subclass adding implicit assign/construct from bool, char,
+ *                                     arithmetic types, and anything assignable to string
+ *   STable (typedef)                - case-insensitive string-to-SString map; the project's canonical
+ *                                     name/value table
+ *   SException                      - exception carrying an HTTP-like method/headers/body triple plus
+ *                                     an optional captured callstack
+ *   SStopwatch                      - elapsed-time/alarm timer built on atomic<uint64_t>
+ *   SRECompiledRegex                - RAII owner of a compiled PCRE2 regex, move-only
+ *   SAutoThreadPrefix                - scope guard that sets/restores the thread-local log prefix, log
+ *                                     param, and command name
+ *   std::atomic<string> (specialization) - mutex-backed atomic<string>, filling a gap the standard
+ *                                     library leaves for non-trivially-copyable types
+ *   fd_map (typedef)                - map<int, pollfd> keyed by socket, used by the S_poll family
+ *   Assertion/exception macros       - SASSERT, SASSERTEQUALS, SASSERTWARN, SASSERTWARNEQUALS, STHROW,
+ *                                     STHROW_STACK
+ *   Logging macros/globals           - SSYSLOG, SDEBUG/SINFO/SHMMM/SWARN/SALERT/SERROR, SWHEREAMI,
+ *                                     SLOGPREFIX, _g_SLogMask, SSyslogFunc, SThreadLog{Prefix,Param,
+ *                                     Name,Command}, isSyncThread, isBlockingCommitThread
+ *   Time functions/macros            - declared only; implemented in STime.cpp: STIME_US_PER_*,
+ *                                     STIME_HZ, STimeNow, STimeThisMorning, SDaysInMonth, SComposeTime,
+ *                                     STimestampToEpoch, STimestampMSToEpoch, SToTimeval, SFirstOfMonth
+ *   Signal functions                 - declared only; implemented in SSignal.cpp: SInitializeSignals,
+ *                                     SGetSignal, SCheckSignal, SGetSignals, SGetSignalDescription,
+ *                                     SClearSignals, SStopSignalThread
+ *   Log-support functions            - declared only; implemented in SLog.cpp: SLogStackTrace,
+ *                                     SWhitelistLogParams, SIsLogParamWhitelisted, addLogParams
+ *   Fluentd logging                  - SFluentdInitialize, SFluentdLog
+ *   Process/thread bring-up          - SInitialize, SSetSignalHandlerDieFunc, STerminationSignalCount
+ *   Math/hex functions               - SToHex (3 overloads), SFromHex, SStrFromHex,
+ *                                     SBase32HexStringFromBase32, SHexStringFromBase32; SWITHIN macro
+ *   String functions                 - SToStr (template), SToFloat/SToInt/SToInt64/SToUInt64,
+ *                                     SContains (overload set), SIEquals/SIContains/SStartsWith/
+ *                                     SEndsWith, SConstantTimeEquals/SConstantTimeIEquals, SToLower/
+ *                                     SToUpper, SCollapse/STrim/SStrip (2 overloads)/SStripAllBut/
+ *                                     SStripNonNum/SStripTrim, SEscape/SUnescape (2 overloads each),
+ *                                     SBefore/SAfter/SAfterLastOf/SAfterUpTo, SReplace/SReplaceAllBut/
+ *                                     SReplaceAll, SStateNameToInt, SAppend (2 overloads),
+ *                                     SIsValidSQLiteDateModifier
+ *   Regex functions                  - SRECompile, SREMatch (2 overloads), SREMatchAll (2 overloads),
+ *                                     SREReplace (2 overloads), SRedactSensitiveValues
+ *   HTTP wire-format functions        - SParseHTTP (2 overloads), SParseRequestMethodLine,
+ *                                     SParseResponseMethodLine, SParseURI (2), SParseURIPath (2),
+ *                                     SComposeHTTP (2), SComposePOST, SComposeHost, SParseHost,
+ *                                     SHostIsValid, SGetDomain, SDecodeURIComponent (2),
+ *                                     SEncodeURIComponent
+ *   List functions                   - SParseIntegerList/Set/Vector, SParseList (2 + char-pointer
+ *                                     overload), SParseSet, SComposeList (template)
+ *   JSON functions                    - SToJSON (2), SComposeJSONArray (template), SComposeJSONObject,
+ *                                     SParseJSONObject, SParseJSONArray, SGetJSONArrayFront
+ *   Network/socket functions          - SToStr(sockaddr_in)/operator<<, SFDset, SFDAnySet,
+ *                                     SResolveHost, SIPToAddr, S_socket (2), S_close, S_accept,
+ *                                     S_recvfrom, S_recvappend, S_sendconsume, S_poll, SGetHostName,
+ *                                     SGetPeerName, SCheckNetworkErrorType; SREADEVTS/SWRITEEVTS macros
+ *   File functions                   - SFileExists, SFileLoad (2), SFileSave, SFileDelete, SFileCopy,
+ *                                     SFileSize
+ *   Crypto functions                 - SHashSHA1/SHashSHA256, SEncodeBase64 (2), SDecodeBase64 (2),
+ *                                     SHMACSHA1/SHMACSHA256, SAESEncrypt, SAESDecrypt (2),
+ *                                     SAESDecryptNoStrip (2); SAES_KEY_SIZE/SAES_IV_SIZE/
+ *                                     SAES_BLOCK_SIZE macros
+ *   SQLite functions                 - SQ (7 overloads), SQList (2, one a template), SQueryLogOpen/
+ *                                     SQueryLogClose, SQuery (4 overloads), SQVerifyTable,
+ *                                     SQVerifyTableExists
+ *   Timestamp functions              - SUNQUOTED_TIMESTAMP, STIMESTAMP, SUNQUOTED_CURRENT_TIMESTAMP,
+ *                                     SCURRENT_TIMESTAMP, SCURRENT_TIMESTAMP_MS, STIMESTAMP_MS
+ *   Misc functions                   - SGZip/SGUnzip, SParseCommandLine, SExecShell, SGetCPUUserTime
+ *   Scope-guard macros                - SAUTOPREFIX, SAUTOLOCK
+ *
+ * OUT OF PLACE
+ *   [CANDIDATE] SQuery, SQVerifyTable, SQVerifyTableExists, SQ, SQList: a full SQLite execution engine (busy-retry loop,
+ *     named-parameter binding, corruption detection, slow-query logging) declared in a generic
+ *     string-utility header, while SQResult, SQValue, and SQliteParameter already live in this
+ *     directory as their own dedicated units.
+ *   [CANDIDATE] SAESEncrypt/SAESDecrypt/SHashSHA1/SHashSHA256/SEncodeBase64/SDecodeBase64/SHMACSHA1/
+ *     SHMACSHA256: self-contained mbedtls wrappers with no dependency on anything else declared here;
+ *     could be their own crypto unit.
+ *   [CANDIDATE] SParseHTTP, SComposeHTTP, SParseURI, SParseURIPath, SComposePOST, SParseHost family: a
+ *     complete HTTP wire-format grammar (headers, chunked transfer-encoding, cookie folding, URI
+ *     parsing), even though this directory already has a dedicated SHTTPSManager for HTTP
+ *     transactions.
+ *   [CANDIDATE] S_socket/S_close/S_accept/S_recvfrom/S_recvappend/S_sendconsume/S_poll/SFDset/
+ *     SFDAnySet: raw socket/poll primitives whose only real caller is STCPManager, the dedicated
+ *     socket-management class that already lives in this same directory.
+ *   [CANDIDATE] SGZip/SGUnzip: gzip compression, unrelated to the string/HTTP/SQL utilities around
+ *     it; small enough that it reads as parked here rather than placed here.
+ *
+ * NAME/LOCATION FIT
+ *   "libstuff" openly advertises itself as a catch-all, and libstuff/ is the project's shared-utility
+ *   directory, so the file fits its own name. But several already-separated siblings in this same
+ *   directory (SQResult, SQValue, SData, STCPManager, SHTTPSManager, SSignal, SLog, STime) show that
+ *   carving cohesive slices out of libstuff.h into their own units is this codebase's established
+ *   pattern, and this header still holds several slices (SQL execution, crypto, HTTP wire format)
+ *   that fit that same pattern.
+ *
+ * NAMING QUALITY
+ *   Consistent 'S' prefix on public free functions, types, and macros per repo convention.
+ *   fd_map is the one lowercase, unprefixed typedef in the file - a deliberate STL-style exception,
+ *   but worth noting since everything else follows the 'S' rule. GLOBAL_IS_LIVE and
+ *   SSIGNAL_NOTIFY_INTERRUPT are declared here as generic globals but are meaningful only in the
+ *   context of code implemented elsewhere (main/SSignal.cpp), which this header gives no hint of.
+ * ─────────────────────────────────────────────────────────────────────*/
 #ifndef LIBSTUFF_H
 #define LIBSTUFF_H
 #include "libstuff/qrf.h"

@@ -1,3 +1,31 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    VMTouch.cpp
+ * Path:    VMTouch.cpp
+ * Pair:    VMTouch.h
+ *
+ * INTENT
+ *   Implements VMTouch::check() -- see VMTouch.h. Opens and mmaps a file,
+ *   uses mincore() to report which pages are resident, and optionally
+ *   force-touches every page in parallel across hardware_concurrency()
+ *   worker threads.
+ *
+ * OBJECTS
+ *   VMTouch::bytes2pages              - rounds a byte length up to a page count.
+ *   VMTouch::isPageAligned            - checks a pointer against the system page size.
+ *   VMTouch::is_mincore_page_resident - tests the residency bit of one mincore() byte.
+ *   VMTouch::do_nothing               - no-op sink so a thread-local counter reads as used.
+ *   VMTouch::check                    - open/mmap/mincore/touch/report pipeline for one path.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits VMTouch.h.
+ *
+ * NAMING QUALITY
+ *   is_mincore_page_resident and do_nothing use snake_case; the rest of
+ *   the file (bytes2pages, isPageAligned, check) uses camelCase.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>

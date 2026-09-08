@@ -1,0 +1,37 @@
+{
+ "unit": "SMultiHostSocketPool",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SMultiHostSocketPool.h",
+  "libstuff/SMultiHostSocketPool.cpp"
+ ],
+ "lines": 48,
+ "test": false,
+ "intent": "Keys a separate SSocketPool per hostname so callers can get/return sockets to any number of hosts through one object instead of managing one SSocketPool per host themselves.",
+ "objects": [
+  {
+   "name": "SMultiHostSocketPool",
+   "kind": "class",
+   "role": "mutex-guarded map<host, SSocketPool>; getSocket/returnSocket find-or-create the per-host pool and delegate to it"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "does exactly what it says"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "sits naturally next to SSocketPool, which it wraps"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent S-prefix and _-member convention"
+ },
+ "depends_on": [
+  "libstuff/STCPManager.h",
+  "libstuff/SSocketPool.h"
+ ],
+ "_src": "b105.json",
+ "hash": "92b5adc96213def9"
+}

@@ -1,3 +1,39 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    BenchmarkBase.h
+ * Path:    benchmarks/BenchmarkBase.h
+ *
+ * INTENT
+ *   Small micro-framework for writing throughput benchmarks: subclasses
+ *   mix this in alongside tpunit::TestFixture and call runBench() to
+ *   time a function over warm-up and measured passes and record its
+ *   throughput.
+ *
+ * OBJECTS
+ *   BenchmarkResult - throughput/elapsed-time/byte-count record for one
+ *       named benchmark.
+ *   g_benchmarkResults (extern) - name-to-BenchmarkResult map shared
+ *       across the whole benchmark binary; defined in main.cpp.
+ *   BenchmarkBase - mixin base class; holds the owning fixture's name.
+ *   BenchmarkBase::setup/teardown - overridable hooks run around each
+ *       runBench() call.
+ *   BenchmarkBase::runBench<InputType, Func> - warms up, times N
+ *       iterations over a vector of inputs, computes MB/s, stores the
+ *       result in g_benchmarkResults, and prints a summary line.
+ *   BenchmarkBase::getInputSize<T> - private helper sizing one input
+ *       (string or integral only; anything else fails to compile via
+ *       static_assert).
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   BenchmarkResult/BenchmarkBase don't carry the repo's `S` prefix used
+ *   for shared libstuff-style utility types, unlike STable/SData; a
+ *   minor, acceptable inconsistency given these are test-only scaffolding.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 
 #include <string>

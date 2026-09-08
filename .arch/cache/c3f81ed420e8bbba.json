@@ -1,0 +1,78 @@
+{
+ "unit": "main",
+ "dir": "",
+ "files": [
+  "main.cpp"
+ ],
+ "lines": 457,
+ "test": false,
+ "intent": "Process entry point for the Bedrock server binary: parses arguments, applies defaults, handles one-shot maintenance flags, loads plugins, initializes SQLite/SSL/signal handling, and runs the main poll loop.",
+ "objects": [
+  {
+   "name": "main",
+   "kind": "function",
+   "role": "entry point; startup/shutdown sequencing and the main prePoll/poll/postPoll loop"
+  },
+  {
+   "name": "RetrySystem",
+   "kind": "function",
+   "role": "runs a shell command via system(), retrying up to 3 times with a 5s backoff, fatal SERROR if it never succeeds"
+  },
+  {
+   "name": "VacuumDB",
+   "kind": "function",
+   "role": "shells out to `sqlite3 <db> 'VACUUM;'` via RetrySystem"
+  },
+  {
+   "name": "BackupDB",
+   "kind": "function",
+   "role": "copies the db file plus its -wal/-shm sidecars into BACKUP_DIR"
+  },
+  {
+   "name": "loadPlugins",
+   "kind": "function",
+   "role": "registers built-in plugins by name and dlopen/dlsym's any plugin named in -plugins that isn't built in"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "VacuumDB / BackupDB / BACKUP_DIR",
+   "why": "shell out to the external `sqlite3` binary and hardcode a `/var/tmp/` backup path inside the process entry point; BACKUP_DIR is the only path in this file not configurable via args like everything else here",
+   "severity": "low",
+   "suggested_home": null
+  },
+  {
+   "item": "loadPlugins",
+   "why": "a self-contained dlopen/dlsym plugin-registration subsystem implemented as a free function in main.cpp",
+   "severity": "med",
+   "suggested_home": "BedrockPlugin.h/.cpp"
+  }
+ ],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "RetrySystem/VacuumDB/BackupDB use PascalCase while loadPlugins uses camelCase, for free functions at the same file scope"
+ },
+ "depends_on": [
+  "BedrockServer.h",
+  "BedrockPlugin.h",
+  "plugins/Cache.h",
+  "plugins/DB.h",
+  "plugins/Jobs.h",
+  "plugins/MySQL.h",
+  "plugins/Compression.h",
+  "libstuff/libstuff.h",
+  "libstuff/SSSLState.h",
+  "sqlitecluster/SQLite.h",
+  "VMTouch.h"
+ ],
+ "_src": "b101.json",
+ "hash": "c3f81ed420e8bbba"
+}

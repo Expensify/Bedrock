@@ -1,3 +1,29 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Writer.cpp
+ * Path:    libstuff/JSON/Writer.cpp
+ * Pair:    Writer.h
+ *
+ * INTENT
+ *   Implements JSON::Writer; see Writer.h.
+ *
+ * OBJECTS
+ *   Writer (impl) - implements every method declared in Writer.h,
+ *   including the private template Writer::serialize(value, writer) that
+ *   recursively walks a JSON::Value and feeds it to any rapidjson writer
+ *   type (used by both serialize() and serializePretty()). No other
+ *   file-local helpers. Only the compact serialize() path reports timing
+ *   via JSON::reportMetrics; serializePretty() does not.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "Writer.h"
 
 #include "Metrics.h"

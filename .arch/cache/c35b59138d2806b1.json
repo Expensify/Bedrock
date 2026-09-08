@@ -1,0 +1,43 @@
+{
+ "unit": "SQResult",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SQResult.h",
+  "libstuff/SQResult.cpp"
+ ],
+ "lines": 389,
+ "test": false,
+ "intent": "In-memory SQLite result set: rows of typed SQValue cells plus a shared header/column-name list, with by-name row access and JSON serialize/deserialize.",
+ "objects": [
+  {
+   "name": "SQResultRow",
+   "kind": "class",
+   "role": "one row; cells addressable by index or by column name via a back-pointer to its owning SQResult"
+  },
+  {
+   "name": "SQResult",
+   "kind": "class",
+   "role": "the result set: headers + rows, iteration, JSON serialize/deserialize, legacy text/JSON serialize wrappers around SQResultFormatter"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "SQResultRow::result (owning-SQResult back-pointer) is a somewhat generic member name, though comments and the friendship make the relationship clear"
+ },
+ "depends_on": [
+  "libstuff/SQValue.h",
+  "libstuff/libstuff.h",
+  "libstuff/SQResultFormatter.h"
+ ],
+ "_src": "b104.json",
+ "hash": "c35b59138d2806b1"
+}

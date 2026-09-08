@@ -1,0 +1,62 @@
+{
+ "unit": "SDeburr",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/SDeburr.h",
+  "libstuff/SDeburr.cpp"
+ ],
+ "lines": 277,
+ "test": false,
+ "intent": "Converts accented Unicode text to a lowercased ASCII-only approximation (lodash-style deburr) for search normalization, and exposes the same transform as a SQLite UDF.",
+ "objects": [
+  {
+   "name": "SDeburr::deburr(const unsigned char*)",
+   "kind": "static method",
+   "role": "public transform, hand-rolled UTF-8 decode"
+  },
+  {
+   "name": "SDeburr::deburr(const string&)",
+   "kind": "static method",
+   "role": "string overload"
+  },
+  {
+   "name": "SDeburr::registerSQLite",
+   "kind": "static method",
+   "role": "registers the DEBURR(text) SQLite UDF"
+  },
+  {
+   "name": "SDeburr::unicodeToAscii",
+   "kind": "private static method",
+   "role": "per-codepoint lookup into UNICODE_TO_ASCII_MAP"
+  },
+  {
+   "name": "SDeburr::UNICODE_TO_ASCII_MAP",
+   "kind": "private constexpr array",
+   "role": "Latin-1/Latin Extended-A codepoint-to-ASCII table"
+  },
+  {
+   "name": "sqliteDeburr",
+   "kind": "file-local lambda (in registerSQLite)",
+   "role": "the actual sqlite3_create_function_v2 callback"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 4,
+  "note": "consistent; minor param-name mismatch (input vs inputBytes) between header and .cpp"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "libstuff/sqlite3.h"
+ ],
+ "_src": "b005.json",
+ "hash": "4adff63dbaa0469a"
+}

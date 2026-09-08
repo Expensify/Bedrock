@@ -1,0 +1,3465 @@
+{
+ "units": [
+  {
+   "unit": "BedrockBlockingCommandQueue",
+   "dir": "",
+   "files": [
+    "BedrockBlockingCommandQueue.h",
+    "BedrockBlockingCommandQueue.cpp"
+   ],
+   "lines": 354,
+   "test": false,
+   "intent": "A BedrockCommandQueue subclass, used for the blocking commit thread's queue, that adds per-identifier and per-command-name sliding-window rate limiting, rejecting commands whose key has spent too much recent time on the queue.",
+   "objects": [
+    {
+     "name": "BedrockBlockingCommandQueue",
+     "kind": "class",
+     "role": "extends BedrockCommandQueue; adds rate-limit checks to push()/_dequeue() plus configuration and status reporting"
+    },
+    {
+     "name": "BedrockBlockingCommandQueue::RecentlyFinishedCommand",
+     "kind": "struct",
+     "role": "one timed sample (finishTime, elapsedTime) in the sliding window"
+    },
+    {
+     "name": "BedrockBlockingCommandQueue::RecentlyFinishedCommandList",
+     "kind": "typedef",
+     "role": "deque<RecentlyFinishedCommand>, oldest first"
+    },
+    {
+     "name": "BedrockBlockingCommandQueue::IdentifierState",
+     "kind": "struct",
+     "role": "one tracked key's mutex, recent-sample deque, and block-until deadline"
+    },
+    {
+     "name": "BedrockBlockingCommandQueue::StateMap",
+     "kind": "struct",
+     "role": "mutex-guarded unordered_map<string, shared_ptr<IdentifierState>>; one instance each for identifiers and command names"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "IdentifierState / StateMap / _recordAndCheck / _isBlocked",
+     "why": "a generic string-keyed sliding-window rate limiter with no dependency on BedrockCommand, implemented as private nested machinery of a command-queue subclass",
+     "severity": "low",
+     "suggested_home": "libstuff, as a general-purpose rate limiter"
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "'Blocking' refers to the blocking commit thread's queue, which this class serves; the rate-limiting role isn't in the name"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits; sits beside its base class BedrockCommandQueue"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent `_` prefix on private members; Identifier vs Command dimensions named distinctly with no confusable aliasing"
+   },
+   "depends_on": [
+    "BedrockCommandQueue.h",
+    "BedrockCommand.h"
+   ],
+   "_src": "b101.json",
+   "hash": "bc0815ce37e37479"
+  },
+  {
+   "unit": "BedrockCommand",
+   "dir": "",
+   "files": [
+    "BedrockCommand.h",
+    "BedrockCommand.cpp"
+   ],
+   "lines": 879,
+   "test": false,
+   "intent": "Represents a single client command as it flows through Bedrock's prePeek/peek/process/postProcess pipeline, tracking plugin ownership, HTTPS sub-requests, per-phase timing, timeout policy, and crash-diagnostic state.",
+   "objects": [
+    {
+     "name": "BedrockCommand",
+     "kind": "class",
+     "role": "extends SQLiteCommand; the per-request unit of work with virtual peek/process hooks for plugins to override"
+    },
+    {
+     "name": "BedrockCommand::TIMING_INFO",
+     "kind": "enum",
+     "role": "phase labels for timing samples, including BLOCKING_* variants for the blocking commit thread"
+    },
+    {
+     "name": "BedrockCommand::STAGE",
+     "kind": "enum class",
+     "role": "which pipeline stage reset() is being called for"
+    },
+    {
+     "name": "BedrockCommand::GrowOnlyList<T>",
+     "kind": "nested template class",
+     "role": "append-only wrapper around list<T> (no erase); holds httpsRequests so iterators stay stable"
+    },
+    {
+     "name": "BedrockCommand::CrashMap",
+     "kind": "nested class (public map<string, SString>)",
+     "role": "subset of request name/value pairs used to fingerprint commands that may have caused a crash"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BedrockCommand::GrowOnlyList<T>",
+     "why": "a generic, command-agnostic container template with no dependency on BedrockCommand, defined inline inside it",
+     "severity": "low",
+     "suggested_home": "libstuff (as a reusable append-only-list utility)"
+    },
+    {
+     "item": "BedrockCommand::getMethodName",
+     "why": "special-cases a 'returnValueList' suffix documented in-code as a hack to support one legacy plugin format (Auth's old Get), inside the generic base command class",
+     "severity": "med",
+     "suggested_home": "the Auth plugin, or null"
+    },
+    {
+     "item": "BedrockCommand.cpp: finalizeTimingInfo",
+     "why": "a sizeable timing-metrics/logging routine (per-phase totals, upstream-value promotion, a long SINFO composition) bundled into the command class itself rather than a separate metrics helper",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "top-level, consistent with other core command-pipeline types (BedrockCore, BedrockServer)"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent `_` on non-public members; TIMING_INFO is a plain unscoped enum sitting beside STAGE, which correctly uses enum class"
+   },
+   "depends_on": [
+    "libstuff/SHTTPSManager.h",
+    "sqlitecluster/SQLiteCommand.h",
+    "BedrockPlugin.h",
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLite.h",
+    "BedrockServer.h"
+   ],
+   "_src": "b101.json",
+   "hash": "8e2d42713657f002"
+  },
+  {
+   "unit": "BedrockCommandQueue",
+   "dir": "",
+   "files": [
+    "BedrockCommandQueue.h",
+    "BedrockCommandQueue.cpp"
+   ],
+   "lines": 315,
+   "test": false,
+   "intent": "A thread-safe, time-ordered queue of BedrockCommands keyed by scheduled time and timeout, from which worker threads block-and-wait for the next command that is either already timed out or due to run.",
+   "objects": [
+    {
+     "name": "BedrockCommandQueue",
+     "kind": "class",
+     "role": "push/get/_dequeue, the timed-out-vs-scheduled ordering rule, and empty/size/clear/getAll queries"
+    },
+    {
+     "name": "BedrockCommandQueue::timeout_error",
+     "kind": "nested exception class",
+     "role": "thrown by get() when its wait window elapses with nothing available"
+    },
+    {
+     "name": "BedrockCommandQueue::ItemTimeoutPair",
+     "kind": "protected nested struct",
+     "role": "pairs a queued command with its timeout for the parallel _lookupByTimeout index"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Timeout and Scheduled are both bare uint64_t typedefs, mutually assignable with nothing at the type level stopping one being passed where the other is expected"
+   },
+   "depends_on": [
+    "BedrockCommand.h",
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b101.json",
+   "hash": "9aad786cd636a08a"
+  },
+  {
+   "unit": "BedrockConflictManager",
+   "dir": "",
+   "files": [
+    "BedrockConflictManager.h",
+    "BedrockConflictManager.cpp"
+   ],
+   "lines": 91,
+   "test": false,
+   "intent": "Thread-safe collector that tracks how often each command name touches which database tables during commit conflicts, and renders a plaintext profiling report.",
+   "objects": [
+    {
+     "name": "BedrockConflictManagerCommandInfo",
+     "kind": "class",
+     "role": "Per-command tally: a total count plus a table-name to use-count map"
+    },
+    {
+     "name": "BedrockConflictManager",
+     "kind": "class",
+     "role": "Mutex-guarded collector; recordTables() tallies one command's table touches, generateReport() renders a plaintext summary"
+    },
+    {
+     "name": "BedrockConflictManager::recordTables",
+     "kind": "method",
+     "role": "Increments a command's total and per-table use counts, skipping journal* tables and json_each"
+    },
+    {
+     "name": "BedrockConflictManager::generateReport",
+     "kind": "method",
+     "role": "Renders one text block per command with its total and per-table counts"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Exactly what it says: manages conflict statistics"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "Fits alongside BedrockServer, which is its only expected user, and ConflictLockGuard"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Private mutex `m` breaks the repo's leading-underscore convention for private members, while `_commandInfo` right below it follows it"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b102.json",
+   "hash": "4f01557f5e96b604"
+  },
+  {
+   "unit": "BedrockCore",
+   "dir": "",
+   "files": [
+    "BedrockCore.h",
+    "BedrockCore.cpp"
+   ],
+   "lines": 575,
+   "test": false,
+   "intent": "Runs a BedrockCommand's prePeek/peek/process/postProcess lifecycle against a specific SQLite db and transaction, translating thrown exceptions into HTTP-style response codes.",
+   "objects": [
+    {
+     "name": "BedrockCore",
+     "kind": "class",
+     "role": "extends SQLiteCore; executes a command's lifecycle methods against _db, handling timeouts/aborts/exceptions"
+    },
+    {
+     "name": "BedrockCore::RESULT",
+     "kind": "enum class",
+     "role": "outcome codes from peekCommand/processCommand (COMPLETE, SHOULD_PROCESS, NEEDS_COMMIT, NO_COMMIT_REQUIRED, SERVER_NOT_LEADING)"
+    },
+    {
+     "name": "BedrockCore::AutoTimer",
+     "kind": "nested RAII class",
+     "role": "records one timing entry into command->timingInfo spanning its own lifetime"
+    },
+    {
+     "name": "AutoScopeRewrite",
+     "kind": "file-local class (BedrockCore.cpp)",
+     "role": "RAII enable/disable of SQLite's query-rewrite hook for one process() call"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "AutoScopeRewrite",
+     "why": "defined at file scope in BedrockCore.cpp without `static` or an anonymous namespace, so its file-local intent relies on convention rather than being enforced",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits; sits at the repo root as the execution engine beside BedrockCommand and BedrockServer"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent; `_server` follows the `_` convention for private members"
+   },
+   "depends_on": [
+    "BedrockCommand.h",
+    "sqlitecluster/SQLiteCore.h",
+    "BedrockServer.h",
+    "BedrockPlugin.h",
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b101.json",
+   "hash": "53f0541ac29e5df3"
+  },
+  {
+   "unit": "BedrockPlugin",
+   "dir": "",
+   "files": [
+    "BedrockPlugin.h",
+    "BedrockPlugin.cpp"
+   ],
+   "lines": 212,
+   "test": false,
+   "intent": "Abstract base class defining the plugin interface a BedrockServer uses to add command handling, schema upgrades, timers, and optional dedicated network ports at runtime, plus a global registry of plugin factories.",
+   "objects": [
+    {
+     "name": "BedrockPlugin",
+     "kind": "class",
+     "role": "Abstract plugin base; holds a reference to its owning BedrockServer and declares the full lifecycle/command hook surface"
+    },
+    {
+     "name": "BedrockPlugin::MAX_SIZE_QUERY/MAX_SIZE_BLOB/MAX_SIZE_SMALL",
+     "kind": "static constants",
+     "role": "Size limits enforced so the storage engine cannot silently truncate oversized input"
+    },
+    {
+     "name": "BedrockPlugin::isValidDate",
+     "kind": "static method",
+     "role": "Regex-based date/datetime format validator"
+    },
+    {
+     "name": "BedrockPlugin::verifyAttributeInt64/verifyAttributeSize/verifyAttributeBool/verifyAttributeDate",
+     "kind": "static method group",
+     "role": "Throw a 402 on missing or malformed request attributes"
+    },
+    {
+     "name": "BedrockPlugin::getCommand",
+     "kind": "pure virtual method",
+     "role": "Factory that claims a request into a BedrockCommand or declines it by returning null"
+    },
+    {
+     "name": "BedrockPlugin::getInfo/getName/upgradeDatabase/initializeFromDB/timerFired/getPort/onPortAccept/onPortRecv/onPortRequestComplete/preventAttach/onDetach/onAttach/stateChanged/onNodeLogin/serverStopping/shouldLockCommitPageOnConflict",
+     "kind": "virtual method group",
+     "role": "Overridable lifecycle hooks a plugin implements as needed; most default to no-ops"
+    },
+    {
+     "name": "BedrockPlugin::g_registeredPluginList",
+     "kind": "static member",
+     "role": "Global map of plugin name to factory function, populated by each plugin's registration"
+    },
+    {
+     "name": "BedrockPlugin::timers",
+     "kind": "member",
+     "role": "Public set of SStopwatch pointers the plugin has registered for periodic callbacks"
+    },
+    {
+     "name": "BedrockPlugin::server/afterCommitCallback",
+     "kind": "member group",
+     "role": "Reference to the owning BedrockServer and an optional post-commit callback"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BedrockPlugin::verifyAttributeInt64/verifyAttributeSize/verifyAttributeBool/verifyAttributeDate/isValidDate",
+     "why": "Purely static helpers that operate only on an SData request with no dependency on BedrockPlugin state or the plugin lifecycle; read like generic request-validation utilities rather than plugin-system code",
+     "severity": "med",
+     "suggested_home": "libstuff/SData.h or a new shared request-validation unit"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Exactly a plugin base class"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Core plugin-system header at repo root alongside BedrockServer, matching class_hierarchy.md's Bedrock-specific layer"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent on-prefixed event callbacks and a single clearly-named global (g_registeredPluginList)"
+   },
+   "depends_on": [
+    "BedrockCommand.h",
+    "BedrockServer.h",
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b102.json",
+   "hash": "f3da86a31bf66a94"
+  },
+  {
+   "unit": "BedrockServer",
+   "dir": "",
+   "files": [
+    "BedrockServer.h",
+    "BedrockServer.cpp"
+   ],
+   "lines": 2972,
+   "test": false,
+   "intent": "The top-level per-node server object: owns the sync thread and worker thread pool, the command queues, the listening ports, the loaded plugins and DB pool, and the shutdown/detach state machine, implementing the SQLiteServer interface SQLiteNode uses to call back into it.",
+   "objects": [
+    {
+     "name": "BedrockServer",
+     "kind": "class",
+     "role": "The server: owns threads, queues, ports, plugins, and DB pool; implements SQLiteServer"
+    },
+    {
+     "name": "BedrockServer::SHUTDOWN_STATE",
+     "kind": "enum",
+     "role": "The four states of the shutdown state machine (RUNNING/START_SHUTDOWN/COMMANDS_FINISHED/DONE)"
+    },
+    {
+     "name": "BedrockServer::BedrockServerUpgradeCommand",
+     "kind": "class",
+     "role": "Nested BedrockCommand that runs every plugin's DB schema upgrade once, the first time this node stands up as leader"
+    },
+    {
+     "name": "BedrockServer::syncWrapper/sync",
+     "kind": "function group",
+     "role": "Sync thread body: brings up SQLiteNode/DB pool, starts workers, drives the poll/update loop, runs the upgrade command, drains shutdown"
+    },
+    {
+     "name": "BedrockServer::worker",
+     "kind": "function",
+     "role": "Worker thread body: dequeues from the main or blocking queue and calls runCommand in a loop"
+    },
+    {
+     "name": "BedrockServer::runCommand",
+     "kind": "function",
+     "role": "Core peek/process/commit/retry state machine for one command, including escalation and conflict-retry backoff"
+    },
+    {
+     "name": "BedrockServer::handleSocket",
+     "kind": "function",
+     "role": "Per-connection thread: polls a client socket, deserializes requests, runs each command on its own thread to watch for disconnect/abort"
+    },
+    {
+     "name": "BedrockServer::buildCommandFromRequest",
+     "kind": "function",
+     "role": "Builds a command from a raw request via the plugins, handling fire-and-forget and attached HTTPS sub-requests"
+    },
+    {
+     "name": "BedrockServer::_reply",
+     "kind": "function",
+     "role": "Sends a completed command's response back over its socket or via its owning plugin"
+    },
+    {
+     "name": "BedrockServer::_status/_isStatusCommand",
+     "kind": "function group",
+     "role": "Implements the Status/isFollower/handlingCommands/Ping status commands"
+    },
+    {
+     "name": "BedrockServer::_control/_isControlCommand/_isNonSecureControlCommand",
+     "kind": "function group",
+     "role": "Implements the localhost-only control command surface (BeginBackup, SuppressCommandPort, ClearCrashCommands, ConflictReport, Detach/Attach, EnableSQLTracing, CRASH_COMMAND, ClearBlockingQueue, SetConflictParams/SetConflictPageLocks, SetBlockingQueueTimeRateLimit, BlockWrites/UnblockWrites, SetMaxSocketThreads, SetPriority, GetCommitHash)"
+    },
+    {
+     "name": "BedrockServer::_wouldCrash/_generateCrashMessage/onNodeLogin",
+     "kind": "function group",
+     "role": "Tracks commands known to have crashed a node, refuses to rerun them, broadcasts the block list to peers"
+    },
+    {
+     "name": "BedrockServer::_beginShutdown/shutdownComplete/isShuttingDown",
+     "kind": "function group",
+     "role": "Drives the shutdown/standdown state machine documented at length in the header"
+    },
+    {
+     "name": "BedrockServer::_acceptSockets",
+     "kind": "function",
+     "role": "Accepts pending connections on all open ports and spawns a handleSocket thread per connection"
+    },
+    {
+     "name": "shutdownTimer",
+     "kind": "struct (file-local, unnamed)",
+     "role": "Four steady_clock timestamps logged once in the destructor to report shutdown-phase durations"
+    },
+    {
+     "name": "__quiesceLock/__quiesceShouldUnlock/__quiesceThread",
+     "kind": "global state (file-local)",
+     "role": "Hold the single outstanding exclusive-DB-lock thread used to implement BlockWrites/UnblockWrites"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "__quiesceLock/__quiesceShouldUnlock/__quiesceThread",
+     "why": "Plain (non-static) file-scope globals with external linkage rather than BedrockServer members, holding exactly the kind of per-server state (which thread owns the DB quiesce lock) this file otherwise keeps private; their double-leading-underscore names are also identifiers reserved to the implementation by the C++ standard",
+     "severity": "high",
+     "suggested_home": null
+    },
+    {
+     "item": "BedrockServer::commandPortSuppressionReasons",
+     "why": "Public list<string> whose doc comment references an 'instance of commandPortSuppressionCount', a type that does not exist anywhere in the repo; the member itself is never read or written anywhere, a dead vestige of an earlier refactor of suppressCommandPort",
+     "severity": "med",
+     "suggested_home": null
+    },
+    {
+     "item": "BedrockServer::_control",
+     "why": "One ~250-line function directly owns the tuning knobs of several otherwise-separate subsystems (conflict retry counts and page-lock policy, the blocking queue's rate-limit windows, DB quiesce, socket-thread caps, sync-node priority, journal hash lookup) instead of delegating each to its own subsystem",
+     "severity": "med",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "BedrockServer.h/.cpp is exactly the server class it names"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Root-level orchestrator alongside its peers (BedrockCommand, BedrockPlugin), matching class_hierarchy.md's placement of BedrockServer as SQLiteServer's concrete subclass"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Consistent `_` prefix on private members and honestly-labeled legacy aliases (isUpgradeComplete, suppressCommandPort), but the reserved double-underscore quiesce globals are a real violation"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "sqlitecluster/SQLiteNode.h",
+    "sqlitecluster/SQLiteServer.h",
+    "sqlitecluster/SQLiteClusterMessenger.h",
+    "BedrockPlugin.h",
+    "BedrockCommandQueue.h",
+    "BedrockConflictManager.h",
+    "BedrockBlockingCommandQueue.h",
+    "BedrockCommand.h",
+    "bedrockVersion.h",
+    "BedrockCore.h",
+    "libstuff/SRandom.h",
+    "libstuff/AutoTimer.h",
+    "ConflictLockGuard.h",
+    "sqlitecluster/SQLitePeer.h"
+   ],
+   "_src": "b100.json",
+   "hash": "97f2ea0ac2f2e51c"
+  },
+  {
+   "unit": "ConflictLockGuard",
+   "dir": "",
+   "files": [
+    "ConflictLockGuard.h",
+    "ConflictLockGuard.cpp"
+   ],
+   "lines": 126,
+   "test": false,
+   "intent": "RAII scoped lock keyed by an opaque uint64_t identifier (a commit-conflict key), backed by a shared, refcounted, LRU-pruned pool of mutexes so concurrent commands only block each other when they collide on the same identifier.",
+   "objects": [
+    {
+     "name": "ConflictLockGuard",
+     "kind": "class",
+     "role": "RAII guard; constructor blocks until the mutex for its identifier is held, destructor releases it; identifier == 0 is a no-op"
+    },
+    {
+     "name": "ConflictLockGuard::controlMutex",
+     "kind": "static member",
+     "role": "Guards all access to the shared mutex-pool bookkeeping"
+    },
+    {
+     "name": "ConflictLockGuard::mutexes",
+     "kind": "static member",
+     "role": "The pool: identifier to mutex map"
+    },
+    {
+     "name": "ConflictLockGuard::mutexCounts",
+     "kind": "static member",
+     "role": "Reference counts per identifier, used to decide what's safe to prune"
+    },
+    {
+     "name": "ConflictLockGuard::mutexOrder/mutexOrderFastLookup",
+     "kind": "static member group",
+     "role": "LRU order over identifiers plus an index into it, used to prune the pool once it exceeds MAX_PAGE_MUTEXES"
+    },
+    {
+     "name": "ConflictLockGuard::_identifier",
+     "kind": "member",
+     "role": "The identifier this instance locked, or 0 for a no-op guard"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 4,
+    "note": "Accurately a lock guard, though it locks on an arbitrary identifier, not specifically a 'conflict' per se"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "Fits alongside BedrockConflictManager and BedrockServer, which is its only caller"
+   },
+   "naming_quality": {
+    "score": 2,
+    "note": "Private static members (controlMutex, mutexes, mutexCounts, mutexOrder, mutexOrderFastLookup) lack the repo's leading-underscore convention that _identifier follows; the constant MAX_PAGE_MUTEXES and its comments call the keyed value a 'page' though the class and its only caller call it a 'conflict key'"
+   },
+   "depends_on": [],
+   "_src": "b102.json",
+   "hash": "d0cafeb3080d06d3"
+  },
+  {
+   "unit": "VMTouch",
+   "dir": "",
+   "files": [
+    "VMTouch.h",
+    "VMTouch.cpp"
+   ],
+   "lines": 232,
+   "test": false,
+   "intent": "Static-only utility that inspects, and optionally force-touches, how much of a file is resident in the OS page cache, used to pre-warm a database file into memory; adapted from Doug Hoyte's third-party VMTouch tool.",
+   "objects": [
+    {
+     "name": "VMTouch",
+     "kind": "class",
+     "role": "Static-only class; check() reports and optionally forces page-cache residency for a file path"
+    },
+    {
+     "name": "VMTouch::check",
+     "kind": "static method",
+     "role": "Open/mmap/mincore/touch/report pipeline for one path, optionally touching pages in parallel across worker threads"
+    },
+    {
+     "name": "VMTouch::bytes2pages",
+     "kind": "static method",
+     "role": "Rounds a byte length up to a page count"
+    },
+    {
+     "name": "VMTouch::isPageAligned",
+     "kind": "static method",
+     "role": "Checks a pointer's alignment against the system page size"
+    },
+    {
+     "name": "VMTouch::is_mincore_page_resident",
+     "kind": "static method",
+     "role": "Tests the residency bit of one mincore() output byte"
+    },
+    {
+     "name": "VMTouch::do_nothing",
+     "kind": "static method",
+     "role": "No-op sink used only to keep a per-thread counter variable read as used"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "VMTouch (whole unit)",
+     "why": "A generic, Bedrock-agnostic OS/filesystem utility living at the repo root rather than under libstuff with the rest of the reusable helpers",
+     "severity": "low",
+     "suggested_home": "libstuff/VMTouch.h or libstuff/VMTouch.cpp"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Name matches the upstream tool it's adapted from and its contents"
+   },
+   "location_fit": {
+    "score": 3,
+    "note": "Standalone at repo root instead of libstuff, where similarly generic helpers live"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Mixes camelCase (isPageAligned, bytes2pages) with snake_case (is_mincore_page_resident, do_nothing)"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b102.json",
+   "hash": "717c4521066fec8c"
+  },
+  {
+   "unit": "bedrockVersion",
+   "dir": "",
+   "files": [
+    "bedrockVersion.h"
+   ],
+   "lines": 12,
+   "test": false,
+   "intent": "Defines the VERSION macro reporting the running build's git revision (from GIT_REVISION, passed in by the Makefile), or a placeholder if none was supplied.",
+   "objects": [
+    {
+     "name": "VERSION",
+     "kind": "macro",
+     "role": "Build-revision string, consumed by main.cpp (--version) and BedrockServer's _version field"
+    },
+    {
+     "name": "STRINGIZE/EXPAND_STRING",
+     "kind": "macro group",
+     "role": "Private stringizing helpers used only to expand GIT_REVISION into VERSION"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "A Bedrock-specific version macro, named accordingly"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "Small config-style header at repo root alongside its consumers (main.cpp, BedrockServer.cpp)"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Name and purpose closely shadow version.h's SVERSION, inviting confusion between a live macro (VERSION) and an apparently dead one (SVERSION)"
+   },
+   "depends_on": [],
+   "_src": "b102.json",
+   "hash": "e7bd86b4a93189e8"
+  },
+  {
+   "unit": "BenchmarkBase",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "lines": 154,
+   "test": true,
+   "intent": "Small micro-framework for writing throughput benchmarks: subclasses mix this in alongside tpunit::TestFixture and call runBench() to time a function over warm-up and measured passes and record its throughput.",
+   "objects": [
+    {
+     "name": "BenchmarkResult",
+     "kind": "struct",
+     "role": "Throughput/elapsed-time/byte-count record for one named benchmark"
+    },
+    {
+     "name": "g_benchmarkResults",
+     "kind": "extern global",
+     "role": "Name-to-BenchmarkResult map shared across the whole benchmark binary; defined in main.cpp"
+    },
+    {
+     "name": "BenchmarkBase",
+     "kind": "class",
+     "role": "Mixin base class holding the owning fixture's name"
+    },
+    {
+     "name": "BenchmarkBase::setup/teardown",
+     "kind": "method group",
+     "role": "Overridable hooks run around each runBench() call"
+    },
+    {
+     "name": "BenchmarkBase::runBench",
+     "kind": "template method",
+     "role": "Warms up, times N iterations over a vector of inputs, computes MB/s, stores the result, and prints a summary line"
+    },
+    {
+     "name": "BenchmarkBase::getInputSize",
+     "kind": "template method",
+     "role": "Private helper sizing one input (string or integral only; else a static_assert failure)"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Exactly a base class for benchmarks"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly in benchmarks/"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "BenchmarkResult/BenchmarkBase don't carry the repo's `S` prefix used for shared libstuff-style utility types, unlike STable/SData, but that's a minor, acceptable inconsistency for test-only scaffolding"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b102.json",
+   "hash": "e3abd57adfd63ef6"
+  },
+  {
+   "unit": "SDeburrBench",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/SDeburrBench.cpp"
+   ],
+   "lines": 90,
+   "test": true,
+   "intent": "Self-contained tpunit fixture benchmarking libstuff's SDeburr::deburr() (accent/diacritic stripping) across ASCII, Latin-1, and mixed-script inputs at normal and high iteration counts.",
+   "objects": [
+    {
+     "name": "SDeburrBench",
+     "kind": "struct",
+     "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SDeburr::deburr() over a small fixed set of input strings"
+    },
+    {
+     "name": "SDeburrBench::benchShortASCII/benchLatin1/benchMixedLong",
+     "kind": "method group",
+     "role": "Vary the character set and length of the input"
+    },
+    {
+     "name": "SDeburrBench::benchShortASCIIHigh/benchLatin1High/benchMixedLongHigh",
+     "kind": "method group",
+     "role": "Same inputs, run at a much higher iteration count to stress steady-state throughput"
+    },
+    {
+     "name": "__SDeburrBench",
+     "kind": "file-scope global",
+     "role": "Self-registers the fixture with tpunit at static-init time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Named for exactly the function it benchmarks"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly in benchmarks/"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Fits repo/test convention"
+   },
+   "depends_on": [
+    "libstuff/SDeburr.h",
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "_src": "b102.json",
+   "hash": "00894e8922e0f82d"
+  },
+  {
+   "unit": "SReplaceAllBench",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/SReplaceAllBench.cpp"
+   ],
+   "lines": 100,
+   "test": true,
+   "intent": "Self-contained tpunit fixture benchmarking libstuff's SReplaceAll() -- replacing any character from a set with a single replacement character -- across inputs with varying densities and sizes of unsafe-character sets.",
+   "objects": [
+    {
+     "name": "SReplaceAllBench",
+     "kind": "struct",
+     "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SReplaceAll() over a small fixed set of input strings"
+    },
+    {
+     "name": "SReplaceAllBench::benchNoUnsafeChars/benchFewUnsafeChars/benchManyUnsafeChars",
+     "kind": "method group",
+     "role": "Vary how many characters in the input need replacing"
+    },
+    {
+     "name": "SReplaceAllBench::benchLongUnsafeList/benchURLSafe/benchAlphanumeric",
+     "kind": "method group",
+     "role": "Vary the size and shape of the unsafe-character set being matched against"
+    },
+    {
+     "name": "__SReplaceAllBench",
+     "kind": "file-scope global",
+     "role": "Self-registers the fixture with tpunit at static-init time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Named for exactly the function it benchmarks"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly in benchmarks/"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Fits repo/test convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "_src": "b102.json",
+   "hash": "4bfd6cd9c7705dcf"
+  },
+  {
+   "unit": "SReplaceBench",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/SReplaceBench.cpp"
+   ],
+   "lines": 110,
+   "test": true,
+   "intent": "Self-contained tpunit fixture benchmarking libstuff's SReplace() across match-count and find/replace length asymmetries.",
+   "objects": [
+    {
+     "name": "SReplaceBench",
+     "kind": "struct",
+     "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SReplace() over a small fixed set of input strings"
+    },
+    {
+     "name": "SReplaceBench::benchNoMatches/benchFewMatches/benchManyMatches",
+     "kind": "method group",
+     "role": "Vary how many substring matches are found"
+    },
+    {
+     "name": "SReplaceBench::benchLongFind/benchLongReplace",
+     "kind": "method group",
+     "role": "Vary whether the find or the replace argument is the long string"
+    },
+    {
+     "name": "SReplaceBench::benchShortToLong/benchLongToShort",
+     "kind": "method group",
+     "role": "Single-character find vs. a long replacement, and the reverse"
+    },
+    {
+     "name": "__SReplaceBench",
+     "kind": "file-scope global",
+     "role": "Self-registers the fixture with tpunit at static-init time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Named for exactly the function it benchmarks"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly in benchmarks/"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Fits repo/test convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "_src": "b102.json",
+   "hash": "633c06d2f9bfb352"
+  },
+  {
+   "unit": "main",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/main.cpp"
+   ],
+   "lines": 267,
+   "test": true,
+   "intent": "Entry point for the standalone benchmark binary: runs the tpunit-registered benchmark fixtures and, given a --baseline ref, also checks out that ref, rebuilds, reruns the benchmarks, restores the working tree, and prints a colored throughput comparison report.",
+   "objects": [
+    {
+     "name": "runBenchmarks",
+     "kind": "free function",
+     "role": "Clears g_benchmarkResults and invokes tpunit::Tests::run() with the given include/exclude filters"
+    },
+    {
+     "name": "printComparison",
+     "kind": "free function",
+     "role": "Formats a colored baseline-vs-current throughput table (new/improved/regressed/unchanged/removed) to stdout"
+    },
+    {
+     "name": "main",
+     "kind": "free function",
+     "role": "Parses --baseline/-only/-except/-v/--verbose/--help and orchestrates a plain run or the git-based baseline comparison workflow"
+    },
+    {
+     "name": "GREEN/RED/RESET/BOLD",
+     "kind": "free constants",
+     "role": "File-scope ANSI color codes"
+    },
+    {
+     "name": "SIGNIFICANT_CHANGE_THRESHOLD",
+     "kind": "free constant",
+     "role": "Percent-change cutoff used to classify a result as improved/regressed vs. unchanged"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "main (baseline-comparison branch)",
+     "why": "Shells out to git (stash/checkout/rev-parse) and reruns `make bench -j32` from inside the benchmark binary itself; this is build/source-control orchestration that reads more like a CI shell script than a benchmark runner",
+     "severity": "low",
+     "suggested_home": "a wrapper shell script driving the plain benchmark binary twice"
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "Conventional entry-point name for the benchmarks binary"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly the benchmarks/ driver"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Clear, descriptive names throughout"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "test/lib/tpunit++.hpp",
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "_src": "b102.json",
+   "hash": "f0b37d1e390857fb"
+  },
+  {
+   "unit": "AutoScopeOnPrepare",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/AutoScopeOnPrepare.h",
+    "libstuff/AutoScopeOnPrepare.cpp"
+   ],
+   "lines": 33,
+   "test": false,
+   "intent": "RAII guard that installs an on-prepare callback on a SQLite object for the guard's lifetime and removes it on scope exit.",
+   "objects": [
+    {
+     "name": "AutoScopeOnPrepare",
+     "kind": "class",
+     "role": "holds a reference to the SQLite db and handler pointer; constructor installs/enables the handler, destructor clears it"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "AutoScopeOnPrepare (whole unit)",
+     "why": "a libstuff file whose sole purpose is scoping a sqlitecluster/SQLite feature (setOnPrepareHandler/enablePrepareNotifications), and it #includes sqlitecluster/SQLite.h directly - libstuff is meant to be generic and dependency-light, this is SQLite-specific",
+     "severity": "med",
+     "suggested_home": "sqlitecluster, alongside SQLite"
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "name describes the contents well"
+   },
+   "location_fit": {
+    "score": 2,
+    "note": "depends directly on sqlitecluster/SQLite.h; belongs closer to SQLite than in generic libstuff"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "handler parameter and member both shadow the name _db distinct from the constructor's db/member _db"
+   },
+   "depends_on": [
+    "sqlitecluster/SQLite.h"
+   ],
+   "_src": "b105.json",
+   "hash": "10183823cd6c81c1"
+  },
+  {
+   "unit": "AutoTimer",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/AutoTimer.h",
+    "libstuff/AutoTimer.cpp"
+   ],
+   "lines": 66,
+   "test": false,
+   "intent": "RAII-scoped timer (AutoTimerTime) built on AutoTimer, which accumulates time spent in bracketed sections and logs the percentage of wall-clock time spent inside them every 10 seconds.",
+   "objects": [
+    {
+     "name": "AutoTimer",
+     "kind": "class",
+     "role": "owns running total and 10s logging interval; start()/stop() bracket a timed section"
+    },
+    {
+     "name": "AutoTimerTime",
+     "kind": "class",
+     "role": "RAII guard calling AutoTimer::start on construction and AutoTimer::stop on destruction"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "class AutoTimer",
+     "why": "the header's own comment notes a second, unrelated class also named AutoTimer exists in BedrockCore.h (a per-command timing guard) - same name, different purpose, genuinely confusable",
+     "severity": "med",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 3,
+    "note": "describes its function, but collides with BedrockCore::AutoTimer, an unrelated class of the same name"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "generic timing utility, fits libstuff"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "the name clash with BedrockCore::AutoTimer is the main issue; otherwise consistent convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b105.json",
+   "hash": "9db0b7d7bcbda010"
+  },
+  {
+   "unit": "Metrics",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Metrics.h",
+    "libstuff/JSON/Metrics.cpp"
+   ],
+   "lines": 48,
+   "test": false,
+   "intent": "A narrow, process-wide hook so an embedding application can observe JSON parse/serialize timing and document size, without the JSON package depending on that application.",
+   "objects": [
+    {
+     "name": "MetricsOperation",
+     "kind": "enum class",
+     "role": "PARSE or SERIALIZE"
+    },
+    {
+     "name": "MetricsObserver",
+     "kind": "type alias (function pointer)",
+     "role": "callback signature"
+    },
+    {
+     "name": "setMetricsObserver",
+     "kind": "free function",
+     "role": "installs/replaces the callback; nullptr disables reporting"
+    },
+    {
+     "name": "reportMetrics",
+     "kind": "free function",
+     "role": "invoked by Parser/Writer after each operation to notify the observer, if set"
+    },
+    {
+     "name": "(anonymous namespace) metricsObserver",
+     "kind": "file-local static",
+     "role": "atomic<MetricsObserver> backing storage; not declared in the header"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "clear and consistent"
+   },
+   "depends_on": [],
+   "_src": "b107.json",
+   "hash": "17a98b39e917093a"
+  },
+  {
+   "unit": "Parser",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Parser.h",
+    "libstuff/JSON/Parser.cpp"
+   ],
+   "lines": 69,
+   "test": false,
+   "intent": "Parse a JSON string into a JSON::Value tree, in a strict mode that throws on malformed input and a permissive mode that does not.",
+   "objects": [
+    {
+     "name": "Parser",
+     "kind": "class",
+     "role": "two static entry points, read() (throws JSON::InvalidArgument) and readUnsafe() (swallows parse errors), both driving a rapidjson::Reader over a SAXHandler"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "readUnsafe clearly signals the risk relative to read"
+   },
+   "depends_on": [
+    "libstuff/JSON/Value.h",
+    "libstuff/JSON/Metrics.h",
+    "libstuff/JSON/SAXHandler.h"
+   ],
+   "_src": "b107.json",
+   "hash": "9f30b8c7b56df2b5"
+  },
+  {
+   "unit": "SAXHandler",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/SAXHandler.h",
+    "libstuff/JSON/SAXHandler.cpp"
+   ],
+   "lines": 269,
+   "test": false,
+   "intent": "Implements rapidjson's SAX handler interface to build a JSON::Value tree (with nested objects/arrays) from the callback stream a rapidjson::Reader emits while parsing.",
+   "objects": [
+    {
+     "name": "SAXHandler",
+     "kind": "class",
+     "role": "implements the full rapidjson handler surface (Null/Bool/Int/Uint/Int64/Uint64/Double/String/StartObject/Key/EndObject/StartArray/EndArray/RawNumber), tracks a stack of in-progress Value contexts, hands off the finished root via getValue()"
+    },
+    {
+     "name": "SAXHandler::endContext",
+     "kind": "private method",
+     "role": "pops the current context and, inside an array, stages the next placeholder element"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "matches the rapidjson SAX handler convention it implements"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "interface names are fixed by rapidjson's contract; root is a manually new/deleted raw pointer later wrapped in a unique_ptr on hand-off, an ownership pattern worth a second look though not a naming issue"
+   },
+   "depends_on": [
+    "libstuff/JSON/Value.h"
+   ],
+   "_src": "b107.json",
+   "hash": "8c93f8fec8aa01fa"
+  },
+  {
+   "unit": "Serializable",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Serializable.h"
+   ],
+   "lines": 52,
+   "test": false,
+   "intent": "A CRTP base that documents and compile-time-enforces a toJSON()/fromJSON() contract on a derived type, without a vtable, so the derived type stays an aggregate.",
+   "objects": [
+    {
+     "name": "Serializable<Derived>",
+     "kind": "struct (CRTP template)",
+     "role": "base toJSON()/fromJSON() are static_assert stubs that fire only if the derived class fails to hide them via name hiding"
+    },
+    {
+     "name": "always_false_v<T>",
+     "kind": "template variable",
+     "role": "delays the static_assert failure to instantiation time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "a JSON-serialization contract helper, reasonably grouped here even though the CRTP trick itself is generic C++, not JSON-specific; no in-repo consumer currently derives from it"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "always_false_v follows established standard-library-style naming for this trait helper"
+   },
+   "depends_on": [
+    "libstuff/JSON/Value.h"
+   ],
+   "_src": "b107.json",
+   "hash": "96400b628c7880ea"
+  },
+  {
+   "unit": "Utils",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Utils.h",
+    "libstuff/JSON/Utils.cpp"
+   ],
+   "lines": 402,
+   "test": false,
+   "intent": "Static helpers for reading, merging, stripping, and sanitizing JSON::Value trees (key replace/strip/patch, path<->object conversion, transport-safe string sanitizing) used across Bedrock and consuming applications.",
+   "objects": [
+    {
+     "name": "Utils",
+     "kind": "class",
+     "role": "static utility class holding shared singleton JSON::Value constants and tree-manipulation helpers; no instance state"
+    },
+    {
+     "name": "Utils::EMPTY_OBJECT/EMPTY_ARRAY/NULL_VALUE/FALSE_VALUE/TRUE_VALUE/EMPTY_STRING/ZERO_INT_VALUE/MAX_INT_VALUE/ZERO_FLOAT_VALUE",
+     "kind": "static const data members",
+     "role": "shared singleton JSON::Value constants reused to avoid repeated construction"
+    },
+    {
+     "name": "Utils::sanitizeJSONStringForTransport",
+     "kind": "static method",
+     "role": "hand-rolled UTF-8 validator/control-byte stripper for outbound JSON strings"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "Utils::recursiveReplaceJSONKeys",
+     "why": "doc comment is written entirely in terms of one caller's domain (bankAccounts.additionalData, apiResult, errorAttemptsCount, assetReport) and names an external test (GetWithdrawalAccountsTest) not present in this repo; the algorithm is generic but the documentation ties a package the README describes as application-agnostic to one consumer's onyx-merge use case",
+     "severity": "med",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "generic JSON-tree utility grab-bag fits its name"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "belongs in libstuff/JSON alongside Value/Writer/Parser"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "clear camelCase methods; class name Utils is a generic catch-all but scoped under JSON:: so it doesn't collide with the repo's S-prefixed shared-utility convention"
+   },
+   "depends_on": [
+    "libstuff/JSON/Value.h"
+   ],
+   "_src": "b107.json",
+   "hash": "9b657049e6d834aa"
+  },
+  {
+   "unit": "Value",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Value.h",
+    "libstuff/JSON/Value.cpp"
+   ],
+   "lines": 2630,
+   "test": false,
+   "intent": "Declares and implements JSON::Value, Bedrock's in-memory JSON document node (scalar, array, or object), including its exception hierarchy and small helper types for building and iterating it.",
+   "objects": [
+    {
+     "name": "JSON::Error",
+     "kind": "class",
+     "role": "base exception for JSON errors; captures a stack trace via SException"
+    },
+    {
+     "name": "JSON::TypeError",
+     "kind": "class",
+     "role": "thrown when a Value is accessed/cast as the wrong ValueType"
+    },
+    {
+     "name": "JSON::NotFound",
+     "kind": "class",
+     "role": "thrown when a keyed or indexed member does not exist"
+    },
+    {
+     "name": "JSON::InvalidArgument",
+     "kind": "class",
+     "role": "thrown for malformed caller input, e.g. a non-numeric path key"
+    },
+    {
+     "name": "JSON::ValueType",
+     "kind": "enum",
+     "role": "discriminates which kind of JSON node a Value currently holds"
+    },
+    {
+     "name": "JSON::Value",
+     "kind": "class",
+     "role": "tagged-union JSON node: scalar storage plus shared_ptr-backed object/array storage and all accessors/mutators"
+    },
+    {
+     "name": "JSON::KeyValue",
+     "kind": "class",
+     "role": "move-only key/value pair used to build a Value object from an initializer_list"
+    },
+    {
+     "name": "JSON::_ArrayValue<T>",
+     "kind": "class template",
+     "role": "adapter giving a Value's array begin()/end() for range-based for loops"
+    },
+    {
+     "name": "JSON::_ObjectValue<T>",
+     "kind": "class template",
+     "role": "adapter giving a Value's object begin()/end() for range-based for loops"
+    },
+    {
+     "name": "JSON::ArrayValue / ConstArrayValue",
+     "kind": "typedef",
+     "role": "_ArrayValue<Value> / _ArrayValue<const Value>"
+    },
+    {
+     "name": "JSON::ObjectValue / ConstObjectValue",
+     "kind": "typedef",
+     "role": "_ObjectValue<Value> / _ObjectValue<const Value>"
+    },
+    {
+     "name": "JSON::logStackTraceOnEnsureTypeFailure",
+     "kind": "global",
+     "role": "thread_local debug flag toggling stack-trace logging on ensureType() failure"
+    },
+    {
+     "name": "operator<<(ostream&, const Value&)",
+     "kind": "function",
+     "role": "serializes a Value to a stream"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "JSON::logStackTraceOnEnsureTypeFailure",
+     "why": "mutable global-ish thread_local debug/diagnostics toggle declared inline in the core value-type header; reads like a logging switch, not part of the JSON data model",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "Value::mergeDeep(useSQLiteMergeBehavior)",
+     "why": "a generic JSON value type's merge API names a specific downstream consumer (SQLite) in its parameter; the behavior it selects is really just RFC 7386 JSON Merge Patch semantics",
+     "severity": "med",
+     "suggested_home": null
+    },
+    {
+     "item": "Value::startTime / Value::logSlowConstructor",
+     "why": "constructor-timing instrumentation adds a chrono::time_point member to every Value instance, even scalars that never touch it, purely to detect occasional slow map/vector-based construction",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "friend class SAXHandler",
+     "why": "grants SAXHandler direct access to Value's private storage for fast construction; the source comment itself calls this out as 'Coupling++'",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 3,
+    "note": "core type is JSON::Value, but the file also carries the exception hierarchy, KeyValue, and the array/object range adapters, none named after Value"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "sits correctly alongside Parser, Writer, SAXHandler, and Utils in libstuff/JSON"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "public API is descriptive and consistent; private members lack the repo's `_` prefix convention, and intValue/uintValue are two easily-confused fields disambiguated only by usingUnsigned"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/JSON/Writer.h",
+    "libstuff/JSON/Parser.h",
+    "libstuff/JSON/Utils.h"
+   ],
+   "_src": "b106.json",
+   "hash": "7bd782b20de92166"
+  },
+  {
+   "unit": "Writer",
+   "dir": "libstuff/JSON",
+   "files": [
+    "libstuff/JSON/Writer.h",
+    "libstuff/JSON/Writer.cpp"
+   ],
+   "lines": 350,
+   "test": false,
+   "intent": "A JSON serializer: build a document incrementally via an object/array cursor over rapidjson::Writer, or convert a whole JSON::Value tree to a string in one call (compact or pretty).",
+   "objects": [
+    {
+     "name": "Writer",
+     "kind": "class",
+     "role": "wraps rapidjson::Writer<StringBuffer>; instance API drives incremental construction, static serialize()/serializePretty() walk an existing JSON::Value tree directly"
+    },
+    {
+     "name": "Writer::serialize(value, writer)",
+     "kind": "private template method",
+     "role": "recursively walks a JSON::Value and feeds it to any rapidjson writer type; shared by serialize() and serializePretty()"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent startX/endX pairs; private writeValue overloads appropriately hidden behind public templates"
+   },
+   "depends_on": [
+    "libstuff/JSON/Value.h",
+    "libstuff/JSON/Metrics.h",
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b107.json",
+   "hash": "667f08cf52c8c9ee"
+  },
+  {
+   "unit": "SData",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SData.h",
+    "libstuff/SData.cpp"
+   ],
+   "lines": 283,
+   "test": false,
+   "intent": "A generic HTTP-like message (method line, name/value header table, content body) used both for real HTTP and as Bedrock's internal command/message wire format.",
+   "objects": [
+    {
+     "name": "SData",
+     "kind": "struct",
+     "role": "methodLine/nameValueMap/content; map-like accessors; calc/test helpers; getVerb; serialize/deserialize to HTTP wire format"
+    },
+    {
+     "name": "operator<<(ostream&, const SData&)",
+     "kind": "free function",
+     "role": "stream helper, serializes"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SData::deserialize simdjson padding logic",
+     "why": "unconditionally reserves 32 extra bytes on any JSON-looking header value to satisfy simdjson's trailing-scratch-space requirement; a generic HTTP message container shaping its storage to one downstream JSON parser's needs",
+     "severity": "low",
+     "suggested_home": "wherever the simdjson parsing of these values actually happens"
+    },
+    {
+     "item": "SData::create",
+     "why": "marked **DEPRECATED** in favor of the constructor but still present as public API",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits; sits naturally beside SFastBuffer/STable"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent with repo convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SFastBuffer.h"
+   ],
+   "_src": "b005.json",
+   "hash": "406d084cae3f36c9"
+  },
+  {
+   "unit": "SDeburr",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SDeburr.h",
+    "libstuff/SDeburr.cpp"
+   ],
+   "lines": 277,
+   "test": false,
+   "intent": "Converts accented Unicode text to a lowercased ASCII-only approximation (lodash-style deburr) for search normalization, and exposes the same transform as a SQLite UDF.",
+   "objects": [
+    {
+     "name": "SDeburr::deburr(const unsigned char*)",
+     "kind": "static method",
+     "role": "public transform, hand-rolled UTF-8 decode"
+    },
+    {
+     "name": "SDeburr::deburr(const string&)",
+     "kind": "static method",
+     "role": "string overload"
+    },
+    {
+     "name": "SDeburr::registerSQLite",
+     "kind": "static method",
+     "role": "registers the DEBURR(text) SQLite UDF"
+    },
+    {
+     "name": "SDeburr::unicodeToAscii",
+     "kind": "private static method",
+     "role": "per-codepoint lookup into UNICODE_TO_ASCII_MAP"
+    },
+    {
+     "name": "SDeburr::UNICODE_TO_ASCII_MAP",
+     "kind": "private constexpr array",
+     "role": "Latin-1/Latin Extended-A codepoint-to-ASCII table"
+    },
+    {
+     "name": "sqliteDeburr",
+     "kind": "file-local lambda (in registerSQLite)",
+     "role": "the actual sqlite3_create_function_v2 callback"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent; minor param-name mismatch (input vs inputBytes) between header and .cpp"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/sqlite3.h"
+   ],
+   "_src": "b005.json",
+   "hash": "4adff63dbaa0469a"
+  },
+  {
+   "unit": "SFastBuffer",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SFastBuffer.h",
+    "libstuff/SFastBuffer.cpp"
+   ],
+   "lines": 180,
+   "test": false,
+   "intent": "An append-friendly byte buffer that avoids repeated reallocation/erase on the front by tracking a front offset, used as socket send/recv buffers polled incrementally.",
+   "objects": [
+    {
+     "name": "SFastBuffer",
+     "kind": "class",
+     "role": "front/data storage; empty/size/c_str/clear/consumeFront/append/operator+=/=; startsWithHTTPRequest incremental HTTP-terminator scan"
+    },
+    {
+     "name": "operator<<(ostream&, const SFastBuffer&)",
+     "kind": "free function",
+     "role": "stream helper"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SFastBuffer::startsWithHTTPRequest and its nextToCheck/headerLength state",
+     "why": "bakes HTTP-specific framing (\\r\\n\\r\\n / \\n\\n terminator) knowledge into an otherwise protocol-agnostic buffer type",
+     "severity": "low",
+     "suggested_home": "a small HTTP-framing helper layered on top of SFastBuffer, rather than inside it"
+    },
+    {
+     "item": "SFastBuffer::contentLength (private member)",
+     "why": "reset to 0 in four places but never read or set to any other value anywhere in the file - dead/vestigial field",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "fits, slightly undercut by the HTTP-specific method"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent aside from the dead contentLength field"
+   },
+   "depends_on": [],
+   "_src": "b005.json",
+   "hash": "60b0d28e7467455a"
+  },
+  {
+   "unit": "SFluentdLogger",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SFluentdLogger.h",
+    "libstuff/SFluentdLogger.cpp"
+   ],
+   "lines": 132,
+   "test": false,
+   "intent": "Async, non-blocking log shipper to a Fluentd TCP endpoint: callers push JSON records onto a lock-free ring buffer, a single background thread drains it and forwards to Fluentd, falling back to syslog() on failure.",
+   "objects": [
+    {
+     "name": "FluentdLogRecord",
+     "kind": "struct",
+     "role": "one queued record: syslog priority + JSON payload string"
+    },
+    {
+     "name": "SFluentdLogger",
+     "kind": "class",
+     "role": "log() public API; openSocket/sendAll/senderLoop implementation; inline static instance/tag act as a process-wide singleton handle"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "instance/tag are bare public statics implementing a global singleton, a different pattern from this class's own private instance members (host/port/buffer/senderThread)"
+   },
+   "depends_on": [
+    "libstuff/SRingBuffer.h",
+    "libstuff/SThread.h"
+   ],
+   "_src": "b104.json",
+   "hash": "4565b7db28aaf188"
+  },
+  {
+   "unit": "SHTTPSManager",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SHTTPSManager.h",
+    "libstuff/SHTTPSManager.cpp"
+   ],
+   "lines": 341,
+   "test": false,
+   "intent": "Non-blocking base classes for making outbound HTTPS/HTTP requests driven from a poll() loop, tracking each as a Transaction with its own socket, timing, and response.",
+   "objects": [
+    {
+     "name": "SStandaloneHTTPSManager",
+     "kind": "class",
+     "role": "owns STCPManager sockets and drives Transactions through prePoll/postPoll; usable with no Bedrock plugin"
+    },
+    {
+     "name": "SStandaloneHTTPSManager::Transaction",
+     "kind": "struct",
+     "role": "one outbound request/response: socket, full request/response SData, timestamps, response code, scheduled start"
+    },
+    {
+     "name": "SHTTPSManager",
+     "kind": "class",
+     "role": "SStandaloneHTTPSManager bound to an owning BedrockPlugin"
+    },
+    {
+     "name": "SStandaloneHTTPSManager::initProxyAddressHTTPS",
+     "kind": "static method",
+     "role": "reads HTTPS_PROXY env var once to initialize proxyAddressHTTPS"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SHTTPSManager.cpp: #include <BedrockServer.h>, #include <sqlitecluster/SQLiteNode.h>",
+     "why": "neither BedrockServer:: nor SQLiteNode:: is referenced anywhere in the file; unused includes coupling libstuff to the application/clustering layers",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "SHTTPSManager (class)",
+     "why": "exists only to attach a BedrockPlugin& to the manager, so libstuff depends on BedrockPlugin.h - inverts the expected dependency direction",
+     "severity": "med",
+     "suggested_home": "near BedrockPlugin, or keep in libstuff but move the BedrockPlugin coupling into a thinner adapter"
+    },
+    {
+     "item": "SStandaloneHTTPSManager::Transaction::Transaction throwing on isBlockingCommitThread",
+     "why": "encodes a Bedrock-specific execution-model rule inside an otherwise generic transaction constructor",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "SStandaloneHTTPSManager fits well; SHTTPSManager less so given its BedrockPlugin dependency"
+   },
+   "location_fit": {
+    "score": 3,
+    "note": "SStandaloneHTTPSManager is a natural libstuff networking type; SHTTPSManager pulls in Bedrock application headers"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent; SHTTPSManager's protected `plugin` lacks the `_` prefix used by SStandaloneHTTPSManager's protected members"
+   },
+   "depends_on": [
+    "libstuff/SData.h",
+    "libstuff/STCPManager.h",
+    "libstuff/SHTTPSProxySocket.h",
+    "libstuff/libstuff.h",
+    "BedrockPlugin.h",
+    "BedrockServer.h",
+    "sqlitecluster/SQLiteNode.h"
+   ],
+   "_src": "b005.json",
+   "hash": "02ee1ff926fbe4a8"
+  },
+  {
+   "unit": "SHTTPSProxySocket",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SHTTPSProxySocket.h",
+    "libstuff/SHTTPSProxySocket.cpp"
+   ],
+   "lines": 176,
+   "test": false,
+   "intent": "An STCPManager::Socket that negotiates an HTTP CONNECT tunnel through an HTTPS forward proxy, then switches to a normal TLS connection to the real destination once the tunnel is established.",
+   "objects": [
+    {
+     "name": "SHTTPSProxySocket",
+     "kind": "class (extends STCPManager::Socket)",
+     "role": "proxyAddress/hostname/requestID; proxyNegotiationComplete/filledPreSendBuffer flags; preSendBuffer (CONNECT request); overrides send/recv"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "private members proxyAddress, hostname, requestID, proxyNegotiationComplete, filledPreSendBuffer, preSendBuffer",
+     "why": "lack the repo's `_` prefix convention for private members, used elsewhere in this same batch (e.g. SStandaloneHTTPSManager's _pem, SSynchronizedQueue's _queue)",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "natural peer of STCPManager/SSSLState"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "unprefixed private members inconsistent with local convention"
+   },
+   "depends_on": [
+    "libstuff/SFastBuffer.h",
+    "libstuff/STCPManager.h",
+    "libstuff/SData.h",
+    "libstuff/libstuff.h",
+    "libstuff/SSSLState.h"
+   ],
+   "_src": "b005.json",
+   "hash": "ca34eddf5d9751c3"
+  },
+  {
+   "unit": "SLog",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SLog.cpp"
+   ],
+   "lines": 141,
+   "test": false,
+   "intent": "Global logging support: the process-wide log-level mask, stack-trace dumping for the SLOG macros, and a copy-on-write parameter whitelist that redacts unlisted structured log params.",
+   "objects": [
+    {
+     "name": "_g_SLogMask",
+     "kind": "global var",
+     "role": "atomic log-level bitmask read by the SLOG macros (declared extern in libstuff.h)"
+    },
+    {
+     "name": "GLOBAL_IS_LIVE",
+     "kind": "global var",
+     "role": "when false, an unwhitelisted log param throws instead of being silently redacted"
+    },
+    {
+     "name": "SLogStackTrace",
+     "kind": "function",
+     "role": "dumps the current call stack at a given log level"
+    },
+    {
+     "name": "PARAMS_WHITELIST",
+     "kind": "file-local static",
+     "role": "atomic<shared_ptr<const set<string>>> of allowed structured-log-param names, swapped via CAS"
+    },
+    {
+     "name": "addLogParams",
+     "kind": "function",
+     "role": "appends whitelisted/command-tagged params to a log message, redacting or throwing on the rest"
+    },
+    {
+     "name": "SWhitelistLogParams",
+     "kind": "function",
+     "role": "adds names to PARAMS_WHITELIST"
+    },
+    {
+     "name": "SIsLogParamWhitelisted",
+     "kind": "function",
+     "role": "queries PARAMS_WHITELIST"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SLog.cpp's public API (SLogStackTrace, SWhitelistLogParams, SIsLogParamWhitelisted, addLogParams)",
+     "why": "declared in the libstuff.h catch-all rather than a dedicated SLog.h, unlike other already-separated libstuff units",
+     "severity": "low",
+     "suggested_home": "libstuff/SLog.h"
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "name fits the content but the file has no header of its own"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "declared in libstuff.h's catch-all rather than a dedicated header"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "_g_SLogMask (S-prefixed global marker) and GLOBAL_IS_LIVE (spelled-out global) use two different conventions for the same idea in one file"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b104.json",
+   "hash": "f1538779bc49a1e0"
+  },
+  {
+   "unit": "SMultiHostSocketPool",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SMultiHostSocketPool.h",
+    "libstuff/SMultiHostSocketPool.cpp"
+   ],
+   "lines": 48,
+   "test": false,
+   "intent": "Keys a separate SSocketPool per hostname so callers can get/return sockets to any number of hosts through one object instead of managing one SSocketPool per host themselves.",
+   "objects": [
+    {
+     "name": "SMultiHostSocketPool",
+     "kind": "class",
+     "role": "mutex-guarded map<host, SSocketPool>; getSocket/returnSocket find-or-create the per-host pool and delegate to it"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "does exactly what it says"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "sits naturally next to SSocketPool, which it wraps"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent S-prefix and _-member convention"
+   },
+   "depends_on": [
+    "libstuff/STCPManager.h",
+    "libstuff/SSocketPool.h"
+   ],
+   "_src": "b105.json",
+   "hash": "92b5adc96213def9"
+  },
+  {
+   "unit": "SPerformanceTimer",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SPerformanceTimer.h",
+    "libstuff/SPerformanceTimer.cpp"
+   ],
+   "lines": 77,
+   "test": false,
+   "intent": "Accumulates wall-clock time spent in named sub-phases of a repeating operation and periodically logs a percentage breakdown of where the time went.",
+   "objects": [
+    {
+     "name": "SPerformanceTimer",
+     "kind": "class",
+     "role": "tracks start/stop intervals per named type, sums durations into totals, logs a breakdown every 10s"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "does exactly what it says"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "generic timing utility, fits libstuff"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent S-prefix and _-member convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b105.json",
+   "hash": "38a2f8eac563d048"
+  },
+  {
+   "unit": "SQResult",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SQResult.h",
+    "libstuff/SQResult.cpp"
+   ],
+   "lines": 389,
+   "test": false,
+   "intent": "In-memory SQLite result set: rows of typed SQValue cells plus a shared header/column-name list, with by-name row access and JSON serialize/deserialize.",
+   "objects": [
+    {
+     "name": "SQResultRow",
+     "kind": "class",
+     "role": "one row; cells addressable by index or by column name via a back-pointer to its owning SQResult"
+    },
+    {
+     "name": "SQResult",
+     "kind": "class",
+     "role": "the result set: headers + rows, iteration, JSON serialize/deserialize, legacy text/JSON serialize wrappers around SQResultFormatter"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "SQResultRow::result (owning-SQResult back-pointer) is a somewhat generic member name, though comments and the friendship make the relationship clear"
+   },
+   "depends_on": [
+    "libstuff/SQValue.h",
+    "libstuff/libstuff.h",
+    "libstuff/SQResultFormatter.h"
+   ],
+   "_src": "b104.json",
+   "hash": "c35b59138d2806b1"
+  },
+  {
+   "unit": "SQResultFormatter",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SQResultFormatter.h",
+    "libstuff/SQResultFormatter.cpp"
+   ],
+   "lines": 588,
+   "test": false,
+   "intent": "Renders an SQResult into one of six sqlite3-shell-style text formats (column, CSV, tabs, JSON, quote, list) for CLI-style display or export.",
+   "objects": [
+    {
+     "name": "SQResultFormatter::FORMAT",
+     "kind": "enum class",
+     "role": "the six supported output formats"
+    },
+    {
+     "name": "SQResultFormatter::FORMAT_OPTIONS",
+     "kind": "class",
+     "role": "header/nullvalue/separator formatting options bundle"
+    },
+    {
+     "name": "SQResultFormatter",
+     "kind": "class",
+     "role": "static-only dispatcher (format()) plus one formatXXX() renderer per FORMAT value"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SQResultFormatter::FORMAT_OPTIONS::nullvalue / ::separator",
+     "why": "declared but never read by any formatXXX() implementation - dead configuration surface",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "utf8Next/isCombining/isWide/displayWidth (local lambdas in formatColumn)",
+     "why": "a generic UTF-8 display-width utility with no dependency on SQResult, trapped as local lambdas instead of being a reusable libstuff string-width helper",
+     "severity": "med",
+     "suggested_home": "libstuff/SString or a new text-width utility unit"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "lives beside SQResult, the type it formats"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "FORMAT_OPTIONS uses SCREAMING_CASE, unlike every other nested class/struct in the repo"
+   },
+   "depends_on": [
+    "libstuff/SQResult.h",
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b104.json",
+   "hash": "4a8f3c63c61a6b47"
+  },
+  {
+   "unit": "SQValue",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SQValue.h",
+    "libstuff/SQValue.cpp"
+   ],
+   "lines": 230,
+   "test": false,
+   "intent": "A tagged-value type mirroring SQLite's dynamic column typing (NONE/INTEGER/REAL/TEXT/BLOB), implicitly convertible to/from string for drop-in use wherever legacy code expects a string-typed value.",
+   "objects": [
+    {
+     "name": "SQValue",
+     "kind": "class",
+     "role": "TYPE enum + typed storage; constructors from int64_t/double/const char*/string; operator string(); friend operator+/==/!=; empty()/size(); operator<<"
+    },
+    {
+     "name": "SQValue::TYPE",
+     "kind": "enum class",
+     "role": "NONE/INTEGER/REAL/TEXT/BLOB"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Q naming matches other SQLite-adjacent types (SQResult, SQuery)"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent; integer/real/text all coexist rather than a union, a deliberate simplicity tradeoff"
+   },
+   "depends_on": [
+    "libstuff/sqlite3.h"
+   ],
+   "_src": "b005.json",
+   "hash": "1533ec5eb7a46985"
+  },
+  {
+   "unit": "SQliteParameter",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SQliteParameter.h",
+    "libstuff/SQliteParameter.cpp"
+   ],
+   "lines": 174,
+   "test": false,
+   "intent": "A single typed value bindable to a named sqlite3 prepared-statement parameter, with wire-safe serialize/deserialize so bound parameters can travel inside an SData header value.",
+   "objects": [
+    {
+     "name": "SQliteParameter",
+     "kind": "class",
+     "role": "Type enum class (Null/Int64/Double/Text/Blob), public value fields, static factories, serialize/deserialize, and param-name URI encode/decode"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "sits with the other SQLite-adjacent S-types (SQResult, SQValue) in libstuff"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b104.json",
+   "hash": "7a8131a8beeee7c9"
+  },
+  {
+   "unit": "SRandom",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SRandom.h",
+    "libstuff/SRandom.cpp"
+   ],
+   "lines": 57,
+   "test": false,
+   "intent": "Static-only wrapper around a shared mt19937_64 generator providing the repo's common random-number needs: raw 64-bit values, bounded ranges, random alphanumeric strings, and weighted booleans.",
+   "objects": [
+    {
+     "name": "SRandom",
+     "kind": "class",
+     "role": "all-static utility; rand64/limitedRand64 draw integers, randStr builds an alphanumeric string, randBool does a Bernoulli trial"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "does exactly what it says"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "generic utility, fits libstuff"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent S-prefix and _-member convention"
+   },
+   "depends_on": [],
+   "_src": "b105.json",
+   "hash": "d9c1ddc55a28bb9f"
+  },
+  {
+   "unit": "SResolver",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SResolver.h",
+    "libstuff/SResolver.cpp"
+   ],
+   "lines": 146,
+   "test": false,
+   "intent": "Asynchronous, poll()-able DNS resolution: SResolve() starts a lookup on a detached thread (or resolves a literal IP inline) and hands back a shared SResolution both sides can safely outlive each other on.",
+   "objects": [
+    {
+     "name": "SResolution",
+     "kind": "class",
+     "role": "PENDING/RESOLVED/FAILED state machine with a self-pipe fd for poll()-based completion notification"
+    },
+    {
+     "name": "SResolve",
+     "kind": "free function",
+     "role": "starts the lookup and returns the shared SResolution"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent `_`-prefixed private members, bare public members/methods"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b104.json",
+   "hash": "45fd3518f2c147d3"
+  },
+  {
+   "unit": "SRingBuffer",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SRingBuffer.h"
+   ],
+   "lines": 101,
+   "test": false,
+   "intent": "Lock-free, fixed-capacity, multi-producer/single-consumer ring buffer of T, used to hand log records from arbitrary caller threads to SFluentdLogger's sender thread without blocking.",
+   "objects": [
+    {
+     "name": "SRINGBUFFER_DEFAULT_CAPACITY",
+     "kind": "constant",
+     "role": "default slot count (10M)"
+    },
+    {
+     "name": "State",
+     "kind": "enum class",
+     "role": "Empty/Ready/Shutdown slot-occupancy tag"
+    },
+    {
+     "name": "SRingBuffer",
+     "kind": "class template",
+     "role": "push()/pop()/wait()/shutdown() lock-free buffer"
+    },
+    {
+     "name": "SRingBuffer::BufferElement",
+     "kind": "struct",
+     "role": "one slot: a T plus its atomic<State>"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "State",
+     "why": "declared at global scope instead of nested inside SRingBuffer, injecting a generic five-letter name into every translation unit that includes this header",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits; a generic buffer, not Fluentd-specific, though it has one caller today"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "fits, but its only consumer (SFluentdLogger) is the sole reason it lives in libstuff rather than a more general concurrency-utility location"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent aside from the unnested, overly-generic State noted above"
+   },
+   "depends_on": [],
+   "_src": "b104.json",
+   "hash": "045ab57d37d01200"
+  },
+  {
+   "unit": "SSSLState",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SSSLState.h",
+    "libstuff/SSSLState.cpp"
+   ],
+   "lines": 269,
+   "test": false,
+   "intent": "Thin wrapper around mbedTLS providing per-connection TLS handshake and send/recv over a raw socket fd, plus process-wide mbedTLS setup shared across all connections.",
+   "objects": [
+    {
+     "name": "SSSLState",
+     "kind": "class",
+     "role": "ssl/net_ctx per-connection state; initConfig/freeConfig for shared process-wide mbedTLS state; send/recv/sendConsume/recvAppend"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "natural peer of STCPManager/SHTTPSProxySocket"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent with repo convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SFastBuffer.h"
+   ],
+   "_src": "b005.json",
+   "hash": "8b3af04987c89675"
+  },
+  {
+   "unit": "SSignal",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SSignal.cpp"
+   ],
+   "lines": 307,
+   "test": false,
+   "intent": "Installs process-wide POSIX signal handling: crash signals get a best-effort stack trace logged/written to disk before abort(), and other signals are recorded in a bitmask that can optionally wake a poll loop.",
+   "objects": [
+    {
+     "name": "SSetSignalHandlerDieFunc",
+     "kind": "function",
+     "role": "installs the callback run just before a crash-signal abort to produce a final log line"
+    },
+    {
+     "name": "STerminationSignalCount",
+     "kind": "function",
+     "role": "count of SIGTERM/SIGINT seen so far"
+    },
+    {
+     "name": "SCheckSignal",
+     "kind": "function",
+     "role": "peek one bit of the pending signal bitmask"
+    },
+    {
+     "name": "SGetSignal",
+     "kind": "function",
+     "role": "peek-and-clear one bit of the pending signal bitmask"
+    },
+    {
+     "name": "SGetSignals",
+     "kind": "function",
+     "role": "read the whole pending signal bitmask"
+    },
+    {
+     "name": "SGetSignalDescription",
+     "kind": "function",
+     "role": "human-readable list of pending signal names"
+    },
+    {
+     "name": "SClearSignals",
+     "kind": "function",
+     "role": "reset the pending signal bitmask"
+    },
+    {
+     "name": "SInitializeSignals",
+     "kind": "function",
+     "role": "installs sigaction handlers and starts the background signal-handling thread"
+    },
+    {
+     "name": "SStopSignalThread",
+     "kind": "function",
+     "role": "stops and joins the signal-handling thread"
+    },
+    {
+     "name": "SSIGNAL_NOTIFY_INTERRUPT",
+     "kind": "extern void*",
+     "role": "optional pointer to an SSynchronizedQueue<bool>, pushed to on any signal"
+    },
+    {
+     "name": "SSignalHandlerDieFunc",
+     "kind": "thread_local function<string()>",
+     "role": "the die-func called on crash"
+    },
+    {
+     "name": "_SSignal_signalHandlerThreadFunc",
+     "kind": "file-local function",
+     "role": "background thread body: sigtimedwait loop dispatching signals"
+    },
+    {
+     "name": "_SSignal_StackTrace",
+     "kind": "file-local function",
+     "role": "crash-signal handler: builds/demangles/logs backtrace, writes crash file, calls die-func, aborts"
+    },
+    {
+     "name": "__SIGSTACK / sigStackSize",
+     "kind": "file-local statics",
+     "role": "64kb emergency altstack for signal delivery"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "_SSignal_StackTrace: SQLiteNode::KILLABLE_SQLITE_NODE->kill()",
+     "why": "a generic libstuff crash handler directly reaching into the sqlitecluster layer to kill peer connections on crash",
+     "severity": "med",
+     "suggested_home": null
+    },
+    {
+     "item": "hardcoded \"/tmp/bedrock_crash_{}.log\" path",
+     "why": "bakes a product-specific filename into an otherwise general-purpose signal handler",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "no SSignal.h",
+     "why": "the whole public API is declared in libstuff.h instead of a dedicated header, unlike most libstuff pairs",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "does exactly what the name implies"
+   },
+   "location_fit": {
+    "score": 3,
+    "note": "declarations live in libstuff.h rather than an SSignal.h; also entangled with sqlitecluster via KILLABLE_SQLITE_NODE"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "internal helpers consistently _SSignal_-prefixed; SSIGNAL_NOTIFY_INTERRUPT is an untyped void* though always cast to SSynchronizedQueue<bool>*"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SSynchronizedQueue.h",
+    "sqlitecluster/SQLiteNode.h"
+   ],
+   "_src": "b005.json",
+   "hash": "b5eb48f24b0fd4de"
+  },
+  {
+   "unit": "SSocketPool",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SSocketPool.h",
+    "libstuff/SSocketPool.cpp"
+   ],
+   "lines": 168,
+   "test": false,
+   "intent": "Keep-alive connection pool for one host: hands out an existing idle STCPManager::Socket or opens a new one, and closes sockets idle past a timeout via a background thread.",
+   "objects": [
+    {
+     "name": "SSocketPool",
+     "kind": "class",
+     "role": "getSocket()/returnSocket() public API; _timeoutThreadFunc() (prunes expired sockets) and _getAddress() (caches/re-resolves the host address) private helpers"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "a thin pooling layer over STCPManager::Socket, belongs beside it"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent `_`-prefixed private members, bare public/const members"
+   },
+   "depends_on": [
+    "libstuff/STCPManager.h"
+   ],
+   "_src": "b104.json",
+   "hash": "a2c54b4ec35f02bf"
+  },
+  {
+   "unit": "SSynchronizedQueue",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SSynchronizedQueue.h"
+   ],
+   "lines": 175,
+   "test": false,
+   "intent": "A thread-safe FIFO queue that can be waited on inside a poll() loop alongside real sockets, by writing a byte to an internal pipe on every push so the queue's readiness multiplexes like a socket.",
+   "objects": [
+    {
+     "name": "SSynchronizedQueue<T>",
+     "kind": "class template",
+     "role": "_queue/_queueMutex/_pipeFD; prePoll/postPoll register/drain the wake pipe; clear/empty/front/pop/push/size/each"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits perfectly"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "consistent, correctly _-prefixed protected members"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b005.json",
+   "hash": "36015b885d28265d"
+  },
+  {
+   "unit": "STCPManager",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/STCPManager.h",
+    "libstuff/STCPManager.cpp"
+   ],
+   "lines": 553,
+   "test": false,
+   "intent": "Convenience base providing the poll()-loop state machine (prePoll/postPoll) shared by every TCP-socket-managing class, plus the Socket and Port value types those managers operate on.",
+   "objects": [
+    {
+     "name": "STCPManager",
+     "kind": "struct",
+     "role": "namespace-like holder of static prePoll/postPoll/openPort; no data members of its own by design"
+    },
+    {
+     "name": "STCPManager::Socket",
+     "kind": "class",
+     "role": "per-connection state machine (RESOLVING/CONNECTING/CONNECTED/SHUTTINGDOWN/CLOSED); owns fd, buffers, optional SSL state, async DNS handle"
+    },
+    {
+     "name": "STCPManager::Port",
+     "kind": "class",
+     "role": "RAII wrapper for a listening socket fd and its host string"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "base class for the STCPNode/SQLiteServer hierarchy documented in class_hierarchy.md"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "in Socket's protected section, methods are `_`-prefixed but sibling protected data members (sendBuffer, sendRecvMutex, https, dnsResolution, hostToResolve, socketCount) are not"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "libstuff/SFastBuffer.h",
+    "libstuff/SResolver.h",
+    "libstuff/SSSLState.h"
+   ],
+   "_src": "b104.json",
+   "hash": "57ce8bc3df036605"
+  },
+  {
+   "unit": "SThread",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/SThread.h"
+   ],
+   "lines": 66,
+   "test": false,
+   "intent": "Variadic function template that launches a thread like std::thread but captures any exception the callable throws and delivers it back to the caller through a std::future.",
+   "objects": [
+    {
+     "name": "SThread",
+     "kind": "function template",
+     "role": "wraps f(args...) in try/catch on a new thread, routes return value or caught exception through a promise/future, returns {thread, future}"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 3,
+    "note": "PascalCase, S-prefixed free function reads as a type/constructor call rather than a function, given repo convention reserves that style for classes"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "generic threading utility, fits libstuff"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "S-prefix on a lower-case-callable function template is inconsistent with the repo's S-prefix-for-types convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b105.json",
+   "hash": "a90c13e05dd5cfae"
+  },
+  {
+   "unit": "STime",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/STime.cpp"
+   ],
+   "lines": 138,
+   "test": false,
+   "intent": "Free functions for libstuff's microsecond-precision timestamp type: now(), format/parse to and from human timestamps, and calendar helpers.",
+   "objects": [
+    {
+     "name": "STimeNow",
+     "kind": "function",
+     "role": "current time in microseconds"
+    },
+    {
+     "name": "STimeThisMorning",
+     "kind": "function",
+     "role": "timestamp for today at 00:00 GMT"
+    },
+    {
+     "name": "SDaysInMonth",
+     "kind": "function",
+     "role": "days in a given month/year"
+    },
+    {
+     "name": "SComposeTime",
+     "kind": "function",
+     "role": "formats a microsecond timestamp via strftime"
+    },
+    {
+     "name": "STimestampToEpoch",
+     "kind": "function",
+     "role": "parses a formatted timestamp to epoch seconds"
+    },
+    {
+     "name": "STimestampMSToEpoch",
+     "kind": "function",
+     "role": "parses a formatted timestamp (with optional fractional seconds) to epoch milliseconds"
+    },
+    {
+     "name": "SToTimeval",
+     "kind": "function",
+     "role": "splits a microsecond timestamp into a timeval"
+    },
+    {
+     "name": "SFirstOfMonth",
+     "kind": "function",
+     "role": "first-of-month date, offset by a number of months"
+    },
+    {
+     "name": "STIMESTAMP_MS",
+     "kind": "function",
+     "role": "formats a microsecond timestamp with millisecond precision"
+    },
+    {
+     "name": "SCURRENT_TIMESTAMP_MS",
+     "kind": "function",
+     "role": "STIMESTAMP_MS(STimeNow())"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "STime.cpp's public API",
+     "why": "declared in the libstuff.h catch-all rather than a dedicated STime.h, unlike other already-separated libstuff units",
+     "severity": "low",
+     "suggested_home": "libstuff/STime.h"
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "name fits the content but the file has no header of its own"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "declared in libstuff.h's catch-all rather than a dedicated header"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "STIMESTAMP_MS/SCURRENT_TIMESTAMP_MS use SCREAMING_CASE and read like macros, breaking from the PascalCase-after-S used by the rest of the file (STimeNow, SComposeTime)"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h"
+   ],
+   "_src": "b104.json",
+   "hash": "4db822301ce7fa74"
+  },
+  {
+   "unit": "libstuff",
+   "dir": "libstuff",
+   "files": [
+    "libstuff/libstuff.h",
+    "libstuff/libstuff.cpp"
+   ],
+   "lines": 4612,
+   "test": false,
+   "intent": "Bedrock's project-wide low-level utility header/implementation: the core types (SString, STable, SException, SStopwatch, SRECompiledRegex), the logging/assertion macros nearly every file uses, and free functions for strings, HTTP wire format, JSON, sockets, files, crypto, and SQLite query execution.",
+   "objects": [
+    {
+     "name": "STableComp",
+     "kind": "class",
+     "role": "Case-insensitive less-than comparator; STable's key comparator"
+    },
+    {
+     "name": "STableComp::nocase_compare",
+     "kind": "struct",
+     "role": "Per-character case-insensitive comparator used by STableComp"
+    },
+    {
+     "name": "SString",
+     "kind": "class",
+     "role": "String subclass adding implicit assign/construct from bool, char, arithmetic types, and string-convertible types"
+    },
+    {
+     "name": "STable",
+     "kind": "typedef",
+     "role": "Case-insensitive string-to-SString map; the project's canonical name/value table"
+    },
+    {
+     "name": "SException",
+     "kind": "class",
+     "role": "Exception carrying an HTTP-like method/headers/body triple plus an optional captured callstack"
+    },
+    {
+     "name": "SStopwatch",
+     "kind": "struct",
+     "role": "Elapsed-time/alarm timer built on atomic<uint64_t>"
+    },
+    {
+     "name": "SRECompiledRegex",
+     "kind": "class",
+     "role": "RAII owner of a compiled PCRE2 regex, move-only"
+    },
+    {
+     "name": "SAutoThreadPrefix",
+     "kind": "struct",
+     "role": "Scope guard that sets/restores the thread-local log prefix, log param, and command name"
+    },
+    {
+     "name": "std::atomic<string>",
+     "kind": "template specialization",
+     "role": "Mutex-backed atomic<string>, filling a standard-library gap"
+    },
+    {
+     "name": "fd_map",
+     "kind": "typedef",
+     "role": "map<int, pollfd> keyed by socket, used by the S_poll family"
+    },
+    {
+     "name": "Assertion/exception macros",
+     "kind": "macro group",
+     "role": "SASSERT, SASSERTEQUALS, SASSERTWARN, SASSERTWARNEQUALS, STHROW, STHROW_STACK"
+    },
+    {
+     "name": "Logging macros/globals",
+     "kind": "macro/global group",
+     "role": "SSYSLOG, SDEBUG/SINFO/SHMMM/SWARN/SALERT/SERROR, SWHEREAMI, _g_SLogMask, SSyslogFunc, SThreadLog{Prefix,Param,Name,Command}, isSyncThread, isBlockingCommitThread; SSyslogSocketDirect/SSyslogNoop backends and their socket pool are implemented in this .cpp"
+    },
+    {
+     "name": "Time functions/macros",
+     "kind": "function group (declared only)",
+     "role": "STIME_US_PER_*, STIME_HZ, STimeNow, STimeThisMorning, SDaysInMonth, SComposeTime, STimestampToEpoch, STimestampMSToEpoch, SToTimeval, SFirstOfMonth - implemented in STime.cpp"
+    },
+    {
+     "name": "Signal functions",
+     "kind": "function group (declared only)",
+     "role": "SInitializeSignals, SGetSignal, SCheckSignal, SGetSignals, SGetSignalDescription, SClearSignals, SStopSignalThread - implemented in SSignal.cpp"
+    },
+    {
+     "name": "Log-support functions",
+     "kind": "function group (declared only)",
+     "role": "SLogStackTrace, SWhitelistLogParams, SIsLogParamWhitelisted, addLogParams - implemented in SLog.cpp"
+    },
+    {
+     "name": "SInitialize/SSetSignalHandlerDieFunc/STerminationSignalCount",
+     "kind": "function group",
+     "role": "Process/thread bring-up and shutdown-signal bookkeeping"
+    },
+    {
+     "name": "SFluentdInitialize/SFluentdLog",
+     "kind": "function group",
+     "role": "Fluentd forward-protocol logging, with per-key redaction and syslog fallback"
+    },
+    {
+     "name": "Math/hex functions",
+     "kind": "function group",
+     "role": "SToHex (3 overloads), SFromHex, SStrFromHex, SBase32HexStringFromBase32, SHexStringFromBase32"
+    },
+    {
+     "name": "String utility functions",
+     "kind": "function group",
+     "role": "SToStr, SToFloat/SToInt/SToInt64/SToUInt64, SContains overloads, SIEquals/SIContains/SStartsWith/SEndsWith, SConstantTimeEquals/IEquals, SToLower/SToUpper, SCollapse/STrim/SStrip/SStripAllBut/SStripNonNum/SStripTrim, SEscape/SUnescape, SBefore/SAfter/SAfterLastOf/SAfterUpTo, SReplace/SReplaceAllBut/SReplaceAll, SStateNameToInt, SAppend, SIsValidSQLiteDateModifier"
+    },
+    {
+     "name": "Regex functions",
+     "kind": "function group",
+     "role": "SRECompile, SREMatch, SREMatchAll, SREReplace, SRedactSensitiveValues"
+    },
+    {
+     "name": "HTTP wire-format functions",
+     "kind": "function group",
+     "role": "SParseHTTP, SParseRequestMethodLine, SParseResponseMethodLine, SParseURI, SParseURIPath, SComposeHTTP, SComposePOST, SComposeHost, SParseHost, SHostIsValid, SGetDomain, SDecodeURIComponent, SEncodeURIComponent, plus file-local helpers _SParseHTTP_GetUpToNext/_SParseHTTP_GetUpToEnd/_SDecodeURIChar in the .cpp"
+    },
+    {
+     "name": "List functions",
+     "kind": "function group",
+     "role": "SParseIntegerList/Set/Vector, SParseList, SParseSet, SComposeList"
+    },
+    {
+     "name": "JSON functions",
+     "kind": "function group",
+     "role": "SToJSON, SComposeJSONArray, SComposeJSONObject, SParseJSONObject, SParseJSONArray, SGetJSONArrayFront, plus the file-local recursive-descent parser (_SParseJSONString/_SParseJSONArray/_SParseJSONObject/_SParseJSONValue) in the .cpp"
+    },
+    {
+     "name": "Network/socket functions",
+     "kind": "function group",
+     "role": "SToStr(sockaddr_in)/operator<<, SFDset, SFDAnySet, SResolveHost, SIPToAddr, S_socket, S_close, S_accept, S_recvfrom, S_recvappend, S_sendconsume, S_poll, SGetHostName, SGetPeerName, SCheckNetworkErrorType"
+    },
+    {
+     "name": "File functions",
+     "kind": "function group",
+     "role": "SFileExists, SFileLoad, SFileSave, SFileDelete, SFileCopy, SFileSize"
+    },
+    {
+     "name": "Crypto functions",
+     "kind": "function group",
+     "role": "SHashSHA1/SHA256, SEncodeBase64/SDecodeBase64, SHMACSHA1/SHA256, SAESEncrypt, SAESDecrypt, SAESDecryptNoStrip"
+    },
+    {
+     "name": "SQLite functions",
+     "kind": "function group",
+     "role": "SQ (7 overloads), SQList, SQueryLogOpen/Close, SQuery (4 overloads, including a busy-retry loop with named-parameter binding, corruption detection and slow-query logging), SQVerifyTable, SQVerifyTableExists; _g_sQueryLogFP is a file-local global in the .cpp"
+    },
+    {
+     "name": "Timestamp functions",
+     "kind": "function group",
+     "role": "SUNQUOTED_TIMESTAMP, STIMESTAMP, SUNQUOTED_CURRENT_TIMESTAMP, SCURRENT_TIMESTAMP implemented here; SCURRENT_TIMESTAMP_MS/STIMESTAMP_MS declared here but implemented in STime.cpp"
+    },
+    {
+     "name": "Misc functions",
+     "kind": "function group",
+     "role": "SGZip/SGUnzip, SParseCommandLine, SExecShell, SGetCPUUserTime, SGetCurrentExceptionName, STerminateHandler"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "SQuery/SQVerifyTable/SQVerifyTableExists/SQ/SQList",
+     "why": "A full SQLite execution engine (busy-retry-on-SQLITE_BUSY loop, named-parameter binding, corruption detection, slow-query logging) declared and implemented in a generic string-utility header/source, while SQResult, SQValue, and SQliteParameter already live in this same directory as their own dedicated units",
+     "severity": "high",
+     "suggested_home": "A dedicated SQLite-execution unit alongside SQResult/SQValue/SQliteParameter"
+    },
+    {
+     "item": "SParseHTTP/SComposeHTTP/SParseURI/SParseURIPath/SComposePOST/SParseHost family",
+     "why": "A complete HTTP wire-format grammar (headers, chunked transfer-encoding, cookie folding, URI parsing) sitting in the generic utility file even though this directory already has a dedicated SHTTPSManager for HTTP transactions",
+     "severity": "med",
+     "suggested_home": "SHTTPSManager or a new SHTTPMessage unit"
+    },
+    {
+     "item": "SAESEncrypt/SAESDecrypt/SHashSHA1/SHashSHA256/SEncodeBase64/SDecodeBase64/SHMACSHA1/SHMACSHA256",
+     "why": "Self-contained mbedtls wrappers with no dependency on anything else in this file",
+     "severity": "med",
+     "suggested_home": "A new SCrypto unit"
+    },
+    {
+     "item": "S_socket/S_close/S_accept/S_recvfrom/S_recvappend/S_sendconsume/S_poll/SFDset/SFDAnySet",
+     "why": "Raw socket/poll primitives whose only real caller is STCPManager, the dedicated socket-management class that already lives in this same directory",
+     "severity": "low",
+     "suggested_home": "STCPManager"
+    },
+    {
+     "item": "SGZip/SGUnzip",
+     "why": "Gzip compression, unrelated to the string/HTTP/SQL utilities around it; small and self-contained",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "The direct-syslog-socket pool (SLogSocketFD/SLogSocketMutex/SLogSocketAddr/SSyslogSocketDirect/SSyslogNoop) in the .cpp",
+     "why": "A complete alternate logging transport with its own per-socket locking, sitting beside unrelated HTTP/JSON/SQL/crypto code, even though SLog.cpp already exists in this directory as the dedicated logging-support unit",
+     "severity": "med",
+     "suggested_home": "SLog.cpp"
+    },
+    {
+     "item": "_SParseHTTP_GetUpToNext/_SParseHTTP_GetUpToEnd/_SDecodeURIChar/_SParseJSONString/_SParseJSONArray/_SParseJSONObject/_SParseJSONValue",
+     "why": "Leading-underscore naming signals 'file-private' but none are declared static or placed in an anonymous namespace, so they have external linkage and could collide with an identically-named symbol in another translation unit",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "libstuff openly advertises itself as a catch-all, and libstuff/ is the shared-utility directory, so it fits its own name"
+   },
+   "location_fit": {
+    "score": 3,
+    "note": "Established repo pattern is to carve cohesive slices out of libstuff into their own units (SQResult, SData, STCPManager, SHTTPSManager, SSignal, SLog, STime already did); several slices that fit that pattern (SQL execution, crypto, HTTP wire format) still remain"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "Consistent 'S' prefix on public symbols; fd_map is the one lowercase unprefixed typedef; file-local helper functions use a leading underscore for 'private' but lack real internal linkage"
+   },
+   "depends_on": [
+    "libstuff/qrf.h",
+    "libstuff/SQliteParameter.h",
+    "libstuff/SQResult.h",
+    "libstuff/SData.h",
+    "libstuff/SFastBuffer.h",
+    "libstuff/SFluentdLogger.h",
+    "libstuff/sqlite3.h"
+   ],
+   "_src": "b103.json",
+   "hash": "d0447793a7008542"
+  },
+  {
+   "unit": "main",
+   "dir": "",
+   "files": [
+    "main.cpp"
+   ],
+   "lines": 457,
+   "test": false,
+   "intent": "Process entry point for the Bedrock server binary: parses arguments, applies defaults, handles one-shot maintenance flags, loads plugins, initializes SQLite/SSL/signal handling, and runs the main poll loop.",
+   "objects": [
+    {
+     "name": "main",
+     "kind": "function",
+     "role": "entry point; startup/shutdown sequencing and the main prePoll/poll/postPoll loop"
+    },
+    {
+     "name": "RetrySystem",
+     "kind": "function",
+     "role": "runs a shell command via system(), retrying up to 3 times with a 5s backoff, fatal SERROR if it never succeeds"
+    },
+    {
+     "name": "VacuumDB",
+     "kind": "function",
+     "role": "shells out to `sqlite3 <db> 'VACUUM;'` via RetrySystem"
+    },
+    {
+     "name": "BackupDB",
+     "kind": "function",
+     "role": "copies the db file plus its -wal/-shm sidecars into BACKUP_DIR"
+    },
+    {
+     "name": "loadPlugins",
+     "kind": "function",
+     "role": "registers built-in plugins by name and dlopen/dlsym's any plugin named in -plugins that isn't built in"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "VacuumDB / BackupDB / BACKUP_DIR",
+     "why": "shell out to the external `sqlite3` binary and hardcode a `/var/tmp/` backup path inside the process entry point; BACKUP_DIR is the only path in this file not configurable via args like everything else here",
+     "severity": "low",
+     "suggested_home": null
+    },
+    {
+     "item": "loadPlugins",
+     "why": "a self-contained dlopen/dlsym plugin-registration subsystem implemented as a free function in main.cpp",
+     "severity": "med",
+     "suggested_home": "BedrockPlugin.h/.cpp"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "fits"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "RetrySystem/VacuumDB/BackupDB use PascalCase while loadPlugins uses camelCase, for free functions at the same file scope"
+   },
+   "depends_on": [
+    "BedrockServer.h",
+    "BedrockPlugin.h",
+    "plugins/Cache.h",
+    "plugins/DB.h",
+    "plugins/Jobs.h",
+    "plugins/MySQL.h",
+    "plugins/Compression.h",
+    "libstuff/libstuff.h",
+    "libstuff/SSSLState.h",
+    "sqlitecluster/SQLite.h",
+    "VMTouch.h"
+   ],
+   "_src": "b101.json",
+   "hash": "c3f81ed420e8bbba"
+  },
+  {
+   "unit": "Cache",
+   "dir": "plugins",
+   "files": [
+    "plugins/Cache.h",
+    "plugins/Cache.cpp"
+   ],
+   "lines": 374,
+   "test": false,
+   "intent": "A Bedrock plugin implementing a simple named-blob cache backed by a `cache` SQLite table with a trigger-maintained running size, paired with an in-memory LRU tracker used to decide what to evict, exposed via ReadCache/WriteCache.",
+   "objects": [
+    {
+     "name": "BedrockPlugin_Cache",
+     "kind": "class",
+     "role": "the plugin; owns the configured max cache size and LRU tracker, creates the cache/cacheSize tables and triggers"
+    },
+    {
+     "name": "BedrockPlugin_Cache::LRUMap",
+     "kind": "nested class",
+     "role": "mutex-protected least-recently-used tracker keyed by name, backed by a list plus a map"
+    },
+    {
+     "name": "BedrockPlugin_Cache::LRUMap::Entry",
+     "kind": "private nested struct",
+     "role": "one tracked key, holding iterators into both the list and map for O(1) removal"
+    },
+    {
+     "name": "BedrockPlugin_Cache::initCacheSize",
+     "kind": "static method",
+     "role": "parses a size string like '16GB' into a byte count, defaulting to 16GB"
+    },
+    {
+     "name": "BedrockPlugin_Cache::supportedRequestVerbs",
+     "kind": "static member",
+     "role": "the verb set this plugin answers to (ReadCache, WriteCache)"
+    },
+    {
+     "name": "BedrockCacheCommand",
+     "kind": "class",
+     "role": "BedrockCommand implementing peek() (ReadCache) and process() (WriteCache)"
+    },
+    {
+     "name": "BedrockCacheCommand::plugin",
+     "kind": "private inline method",
+     "role": "casts the base command's plugin pointer back to BedrockPlugin_Cache&"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BedrockPlugin_Cache::LRUMap",
+     "why": "a fully generic string-keyed LRU tracker with no cache-plugin-specific logic, nested privately inside one plugin instead of being a reusable libstuff container",
+     "severity": "low",
+     "suggested_home": "libstuff (e.g. a generic SLRUMap/SLRUCache container)"
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "clearly the cache plugin"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "plugins/ alongside other BedrockPlugin_* implementations"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "_maxCacheSize and _lruMap use the underscore-prefix convention for private members but are declared in the class's public: section with no private: reset, so they are actually public despite the naming"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "BedrockPlugin.h",
+    "BedrockServer.h",
+    "libstuff/SQResult.h"
+   ],
+   "_src": "b109.json",
+   "hash": "c5e3f4f412fed421"
+  },
+  {
+   "unit": "Compression",
+   "dir": "plugins",
+   "files": [
+    "plugins/Compression.h",
+    "plugins/Compression.cpp"
+   ],
+   "lines": 414,
+   "test": false,
+   "intent": "A Bedrock plugin that registers zstd-dictionary-based compress()/decompress() SQLite user-defined functions, using dictionaries loaded once at startup from a dedicated DB table, plus equivalent static helpers for non-SQL callers.",
+   "objects": [
+    {
+     "name": "BedrockPlugin_Compression",
+     "kind": "class",
+     "role": "loads dictionaries at startup, creates the zstdDictionaries table, registers the SQLite UDFs, and exposes compress()/decompress(); has no BedrockCommand of its own"
+    },
+    {
+     "name": "BedrockPlugin_Compression::ZDictionaries",
+     "kind": "private struct",
+     "role": "pairs one dictionary ID's compiled ZSTD_CDict* and ZSTD_DDict*"
+    },
+    {
+     "name": "BedrockPlugin_Compression::_dictionaries",
+     "kind": "private static member",
+     "role": "map of dictionary ID to ZDictionaries, populated once at startup"
+    },
+    {
+     "name": "BedrockPlugin_Compression::COMPRESSION_LEVEL",
+     "kind": "static constexpr",
+     "role": "zstd level used for all dictionary-based compression"
+    },
+    {
+     "name": "sqliteCompress",
+     "kind": "file-local static function (.cpp)",
+     "role": "the compress(data, dictionaryID) SQLite UDF callback"
+    },
+    {
+     "name": "sqliteDecompress",
+     "kind": "file-local static function (.cpp)",
+     "role": "the decompress(data) SQLite UDF callback"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "clearly the compression plugin"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "plugins/ alongside other BedrockPlugin_* implementations"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent BedrockPlugin_<Name>/_ prefix conventions"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "BedrockPlugin.h",
+    "BedrockServer.h",
+    "libstuff/SQResult.h",
+    "libstuff/sqlite3.h"
+   ],
+   "_src": "b109.json",
+   "hash": "ae5530d534aa1b78"
+  },
+  {
+   "unit": "DB",
+   "dir": "plugins",
+   "files": [
+    "plugins/DB.h",
+    "plugins/DB.cpp"
+   ],
+   "lines": 490,
+   "test": false,
+   "intent": "The catch-all Bedrock plugin that exposes raw SQL as a command: clients send a Query request and get back the result formatted per sqlite3-CLI-style flags or as JSON, with named bound parameters.",
+   "objects": [
+    {
+     "name": "BedrockPlugin_DB",
+     "kind": "class",
+     "role": "the plugin; recognizes Query requests and hands them to BedrockDBCommand"
+    },
+    {
+     "name": "BedrockPlugin_DB::Sqlite3QRFSpecWrapper",
+     "kind": "class",
+     "role": "move-only RAII wrapper owning the heap strings a sqlite3_qrf_spec's char pointers point into"
+    },
+    {
+     "name": "BedrockPlugin_DB::parseSQLite3Args",
+     "kind": "static method",
+     "role": "parses sqlite3-CLI-style flags (-json, -csv, -separator, etc.) into a Sqlite3QRFSpecWrapper"
+    },
+    {
+     "name": "BedrockPlugin_DB::generateErrorContextMessage",
+     "kind": "static method",
+     "role": "builds a two-line, caret-pointing error snippet mimicking the sqlite3 CLI's error display"
+    },
+    {
+     "name": "BedrockDBCommand",
+     "kind": "class",
+     "role": "BedrockCommand implementing peek()/process() for arbitrary read/write SQL with named bound parameters from sql-param-<name> headers"
+    },
+    {
+     "name": "BedrockDBCommand::SQLiteFormatAppend",
+     "kind": "static private method",
+     "role": "write callback registered with the QRF formatter to accumulate output"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BedrockPlugin_DB::Sqlite3QRFSpecWrapper / parseSQLite3Args / generateErrorContextMessage",
+     "why": "a generic sqlite3-CLI argument-parsing and error-formatting layer around libstuff/qrf.h's C struct, none of it specific to being a request-command plugin",
+     "severity": "med",
+     "suggested_home": "libstuff/qrf.h or a new libstuff unit alongside it"
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "fits by convention as the original catch-all query plugin, though 'DB' alone doesn't convey that scope since every plugin touches the DB"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "plugins/ alongside other BedrockPlugin_* implementations"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Sqlite3QRFSpecWrapper's mixed casing matches the wrapped C API; depends on libstuff/SQliteParameter whose 'SQlite' capitalization is inconsistent with this codebase's usual 'SQLite'"
+   },
+   "depends_on": [
+    "libstuff/SQliteParameter.h",
+    "libstuff/libstuff.h",
+    "BedrockPlugin.h",
+    "libstuff/qrf.h",
+    "libstuff/sqlite3.h",
+    "libstuff/SQResultFormatter.h",
+    "BedrockServer.h",
+    "libstuff/SQResult.h"
+   ],
+   "_src": "b109.json",
+   "hash": "0780f3bd40ad55b5"
+  },
+  {
+   "unit": "Jobs",
+   "dir": "plugins",
+   "files": [
+    "plugins/Jobs.h",
+    "plugins/Jobs.cpp"
+   ],
+   "lines": 1740,
+   "test": false,
+   "intent": "BedrockPlugin implementing a priority-ordered, SQLite-backed scheduled job queue (create/dequeue/update/finish/retry/fail/cancel/delete, parent-child job chains, calendar-style repeat schedules, and an operational job-name blacklist).",
+   "objects": [
+    {
+     "name": "BedrockPlugin_Jobs",
+     "kind": "class",
+     "role": "Plugin entry point: jobs-table schema/index DDL, supported verb set, and the in-memory crashed-job GLOB blacklist synced to peers on login"
+    },
+    {
+     "name": "BedrockJobsCommand",
+     "kind": "class",
+     "role": "BedrockCommand implementing peek/process for every Jobs verb, plus repeat-schedule and retry-after helpers"
+    },
+    {
+     "name": "scopedDisableNoopMode",
+     "kind": "class",
+     "role": "File-local RAII guard that suspends SQLite's update-noop mode while a Jobs command processes"
+    },
+    {
+     "name": "REPEAT_REANCHOR_THRESHOLD_SECONDS",
+     "kind": "constant",
+     "role": "File-static cutoff below which a missed SCHEDULED repeat re-anchors to now instead of catching up serially"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "BedrockPlugin_Jobs::upgradeDatabase (jobsPriorityNextRunManualSmartScan*, jobsManualSmartscanReceiptID, jobsPriorityNextRunWWWProd/WWWStag indexes)",
+     "why": "Hardcodes Expensify-specific job-name literals (manual/SmartScan*, www-prod/*, www-stag/*) as partial-index WHERE clauses inside an otherwise generic, reusable job-queue plugin",
+     "severity": "high",
+     "suggested_home": null
+    },
+    {
+     "item": "scopedDisableNoopMode",
+     "why": "Generic SQLite-noop RAII guard with no Jobs-specific logic, named outside repo type-naming convention, defined locally instead of in a shared header where other plugins needing it could reuse it",
+     "severity": "low",
+     "suggested_home": "libstuff or SQLite.h"
+    },
+    {
+     "item": "BedrockPlugin_Jobs crashed-job blacklist (getCrashedBedrockJobPatterns, onNodeLogin, _crashedBedrockJobPatterns, CrashBedrockJob/ClearCrashedBedrockJobs verbs)",
+     "why": "An operational kill-switch/ops-safety feature layered onto job scheduling; a distinct concern from job CRUD though tightly coupled to GetJob(s) peek/process",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "Jobs.h/.cpp in plugins/ is exactly where a BedrockPlugin implementation belongs"
+   },
+   "location_fit": {
+    "score": 4,
+    "note": "Fits the plugin directory; the Expensify-specific index literals inside it are the location complaint, not the file itself"
+   },
+   "naming_quality": {
+    "score": 3,
+    "note": "Mostly _-prefixed private members and S-escaped 'safe*' SQL locals, but mockRequest/canEscalateImmediately skip the _ prefix used elsewhere, and scopedDisableNoopMode breaks the repo's type-naming casing"
+   },
+   "depends_on": [
+    "plugins/Jobs.h",
+    "BedrockPlugin.h",
+    "libstuff/libstuff.h",
+    "BedrockServer.h",
+    "libstuff/SQResult.h",
+    "sqlitecluster/SQLitePeer.h",
+    "sqlitecluster/SQLiteUtils.h"
+   ],
+   "_src": "b108.json",
+   "hash": "68fe8398f583019e"
+  },
+  {
+   "unit": "MySQL",
+   "dir": "plugins",
+   "files": [
+    "plugins/MySQL.h",
+    "plugins/MySQL.cpp"
+   ],
+   "lines": 1148,
+   "test": false,
+   "intent": "A Bedrock plugin that speaks the MySQL wire protocol on its own TCP port, translating recognized client queries into internal Query commands (or answering them directly) so unmodified MySQL clients can talk to a Bedrock/SQLite node.",
+   "objects": [
+    {
+     "name": "MySQLUtils",
+     "kind": "namespace/free-functions",
+     "role": "recognizes and picks apart specific client query shapes (VERSION(), CONNECTION_ID(), information_schema.*, SHOW KEYS FROM, foreign-key introspection) for rewriting into SQLite equivalents"
+    },
+    {
+     "name": "MySQLPacket",
+     "kind": "class",
+     "role": "encodes/decodes MySQL wire-protocol packet framing; builds handshake, OK, ERR, and query-response packets"
+    },
+    {
+     "name": "BedrockPlugin_MySQL",
+     "kind": "class",
+     "role": "the plugin; owns the MySQL-protocol port and translates between MySQL wire format and internal Query commands"
+    },
+    {
+     "name": "MYSQL_NUM_VARIABLES",
+     "kind": "macro",
+     "role": "element count of g_MySQLVariables"
+    },
+    {
+     "name": "g_MySQLVariables",
+     "kind": "global (extern array)",
+     "role": "table of fake MySQL server variables returned for SHOW VARIABLES / @@var"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "g_MySQLVariables",
+     "why": "~300-row hardcoded table of fake AWS-RDS MySQL server variables/values; pure static data embedded in the plugin's header/cpp rather than an external data file, dominating the file's line count",
+     "severity": "low",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 5,
+    "note": "clearly the MySQL protocol plugin"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "plugins/ alongside other BedrockPlugin_* implementations"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "consistent BedrockPlugin_<Name>/g_ conventions; mysqlVersion/MYSQL_NUM_VARIABLES/g_MySQLVariables mix three naming registers but each is correct for its category"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "BedrockPlugin.h",
+    "bedrockVersion.h",
+    "libstuff/SQResult.h",
+    "BedrockServer.h"
+   ],
+   "_src": "b109.json",
+   "hash": "ee9eaccdb115461c"
+  },
+  {
+   "unit": "version",
+   "dir": "",
+   "files": [
+    "version.h"
+   ],
+   "lines": 4,
+   "test": false,
+   "intent": "Defines a fallback SVERSION macro (a placeholder 40-character hash); unlike bedrockVersion.h's VERSION, this macro is not referenced by any other file in the repo.",
+   "objects": [
+    {
+     "name": "SVERSION",
+     "kind": "macro",
+     "role": "Placeholder all-zero revision-string macro"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "version.h (whole file / SVERSION)",
+     "why": "SVERSION is never included or referenced anywhere else in the repo (only bedrockVersion.h's differently-named VERSION is actually used); appears to be dead code superseded by bedrockVersion.h",
+     "severity": "med",
+     "suggested_home": null
+    }
+   ],
+   "name_fit": {
+    "score": 2,
+    "note": "Generic name collides conceptually with bedrockVersion.h's VERSION; having both invites picking the wrong one"
+   },
+   "location_fit": {
+    "score": 2,
+    "note": "Sits at repo root as if in active use, but appears to be an unreferenced leftover"
+   },
+   "naming_quality": {
+    "score": 2,
+    "note": "Carries the repo's `S` shared-utility prefix though it's an unused macro, not a libstuff type"
+   },
+   "depends_on": [],
+   "_src": "b102.json",
+   "hash": "6fc4f14586cda5ad"
+  }
+ ],
+ "rollups": {},
+ "coverage": {
+  "total": 150,
+  "annotated": 55,
+  "missing": [
+   "sqlitecluster/SQLite",
+   "sqlitecluster/SQLiteClusterMessenger",
+   "sqlitecluster/SQLiteCommand",
+   "sqlitecluster/SQLiteCore",
+   "sqlitecluster/SQLiteNode",
+   "sqlitecluster/SQLitePeer",
+   "sqlitecluster/SQLitePool",
+   "sqlitecluster/SQLiteServer",
+   "sqlitecluster/SQLiteUtils",
+   "test/clustertest/BedrockClusterTester",
+   "test/clustertest/main",
+   "test/clustertest/testplugin/ExternPointer",
+   "test/clustertest/testplugin/TestPlugin",
+   "test/clustertest/tests/AfterCommitCallbackClusterTest",
+   "test/clustertest/tests/BadCommandTest",
+   "test/clustertest/tests/BlockingQueueRateLimitTest",
+   "test/clustertest/tests/BoundParametersTest",
+   "test/clustertest/tests/BroadcastTest",
+   "test/clustertest/tests/ClusterUpgradeTest",
+   "test/clustertest/tests/CompressionTest",
+   "test/clustertest/tests/ConflictSpamTest",
+   "test/clustertest/tests/ControlCommandTest",
+   "test/clustertest/tests/DoubleDetachTest",
+   "test/clustertest/tests/EscalateTest",
+   "test/clustertest/tests/FastStandDownTest",
+   "test/clustertest/tests/FinishJobTest",
+   "test/clustertest/tests/ForkCheckTest",
+   "test/clustertest/tests/FutureExecutionTest",
+   "test/clustertest/tests/GracefulFailoverTest",
+   "test/clustertest/tests/HTTPSBlockingCommitTest",
+   "test/clustertest/tests/HTTPSTest",
+   "test/clustertest/tests/JobIDTest",
+   "test/clustertest/tests/LeadingTest",
+   "test/clustertest/tests/MassiveQueryTest",
+   "test/clustertest/tests/MultipleLeaderSyncTest",
+   "test/clustertest/tests/PermafollowerTest",
+   "test/clustertest/tests/PrePeekPostProcessTest",
+   "test/clustertest/tests/SetPriorityTest",
+   "test/clustertest/tests/StatusHandlingCommandsTest",
+   "test/clustertest/tests/StatusTest",
+   "test/clustertest/tests/SynchronousCommandsTest",
+   "test/clustertest/tests/ThreadExceptionTest",
+   "test/clustertest/tests/TimeoutTest",
+   "test/clustertest/tests/TimingTest",
+   "test/clustertest/tests/UniqueConstraintsTest",
+   "test/clustertest/tests/UpgradeDBTest",
+   "test/clustertest/tests/UpgradeTest",
+   "test/clustertest/tests/VersionMismatchTest",
+   "test/clustertest/tests/WriteLocalUnreplicatedClusterTest",
+   "test/lib/BedrockTester",
+   "test/lib/PortMap",
+   "test/lib/PrintEquality",
+   "test/lib/RemoteSQLite",
+   "test/lib/TestHTTPS",
+   "test/lib/tpunit++",
+   "test/main",
+   "test/tests/AfterCommitCallbackTest",
+   "test/tests/AsyncResolveTest",
+   "test/tests/BlockingCommandQueueTest",
+   "test/tests/ChainedHTTPTest",
+   "test/tests/CommandPortTest",
+   "test/tests/FastHTTPParsing",
+   "test/tests/JSONParserTest",
+   "test/tests/JSONTest",
+   "test/tests/JSONUtilsTest",
+   "test/tests/JSONValueTest",
+   "test/tests/LibStuffTest",
+   "test/tests/MySQLTest",
+   "test/tests/MySQLUtilsTest",
+   "test/tests/QueryTest",
+   "test/tests/ReadTest",
+   "test/tests/SDeburrTest",
+   "test/tests/SFluentdLoggerTest",
+   "test/tests/SIsValidSQLiteDateModifierTest",
+   "test/tests/SQLiteNodeTest",
+   "test/tests/SRingBufferTest",
+   "test/tests/SSLTest",
+   "test/tests/STimeTest",
+   "test/tests/StatusTest",
+   "test/tests/WriteLocalUnreplicatedTest",
+   "test/tests/WriteTest",
+   "test/tests/jobs/CancelJobTest",
+   "test/tests/jobs/CreateJobTest",
+   "test/tests/jobs/CreateJobsTest",
+   "test/tests/jobs/DeleteJobTest",
+   "test/tests/jobs/FailJobTest",
+   "test/tests/jobs/FailedJobReplyTest",
+   "test/tests/jobs/GetJobTest",
+   "test/tests/jobs/GetJobsTest",
+   "test/tests/jobs/InifiniteRetryAfterTest",
+   "test/tests/jobs/JobTestHelper",
+   "test/tests/jobs/QueryJobTest",
+   "test/tests/jobs/RequeueJobsTest",
+   "test/tests/jobs/RetryJobTest",
+   "test/tests/jobs/UpdateJobTest"
+  ],
+  "orphan": [
+   "libstuff/qrf"
+  ]
+ }
+}

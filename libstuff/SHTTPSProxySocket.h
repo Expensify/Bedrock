@@ -1,3 +1,33 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SHTTPSProxySocket.h
+ * Path:    libstuff/SHTTPSProxySocket.h
+ * Pair:    SHTTPSProxySocket.cpp
+ *
+ * INTENT
+ *   An STCPManager::Socket that first speaks plain-HTTP CONNECT to
+ *   negotiate a tunnel through an HTTPS forward proxy, then switches to a
+ *   normal TLS connection to the real destination once the tunnel is up.
+ *
+ * OBJECTS
+ *   SHTTPSProxySocket (class, : STCPManager::Socket) - proxyAddress/hostname/
+ *     requestID; proxyNegotiationComplete/filledPreSendBuffer flags;
+ *     preSendBuffer (SFastBuffer, holds the CONNECT request); overrides of
+ *     send(size_t*)/send(string,size_t*)/recv().
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; a natural peer of STCPManager/SSSLState in libstuff.
+ *
+ * NAMING QUALITY
+ *   [CANDIDATE] Private members (proxyAddress, hostname, requestID,
+ *     proxyNegotiationComplete, filledPreSendBuffer, preSendBuffer) lack the
+ *     `_` prefix the repo otherwise uses for private/protected members (e.g.
+ *     SStandaloneHTTPSManager's _pem/_srvCrt/_caCrt, SSynchronizedQueue's
+ *     _queue/_queueMutex).
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 
 #include "libstuff/SFastBuffer.h"

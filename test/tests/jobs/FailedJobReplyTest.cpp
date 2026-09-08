@@ -1,3 +1,36 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    FailedJobReplyTest.cpp
+ * Path:    test/tests/jobs/FailedJobReplyTest.cpp
+ *
+ * INTENT
+ *   tpunit fixture verifying that when a `GetJob`/`GetJobs` response can't
+ *   be delivered (command scheduled in the future via commandExecuteTime,
+ *   so the connection is gone by the time it runs), the job(s) get
+ *   requeued rather than lost, and can be re-fetched afterward.
+ *
+ * OBJECTS
+ *   FailedJobReplyTest             - tpunit::TestFixture; single test that
+ *                                    loops over {GetJob, GetJobs} x
+ *                                    {with/without retryAfter}.
+ *   FailedJobReplyTest::failSendingResponse
+ *                                  - the sole test body; creates job(s),
+ *                                    forces a delayed/undeliverable fetch,
+ *                                    then confirms the job(s) are re-fetchable
+ *                                    and match the created IDs.
+ *   __FailedJobReplyTest           - static instance that registers the fixture.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives with the other per-command Jobs plugin tests.
+ *
+ * NAMING QUALITY
+ *   The leftover comment "// Cannot cancel a job with children" above
+ *   `failSendingResponse` [CANDIDATE] is copy-pasted from CancelJobTest and
+ *   describes the wrong behavior; otherwise consistent with sibling tests.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <iostream>
 #include <unistd.h>
 

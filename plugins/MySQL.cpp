@@ -1,3 +1,36 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    MySQL.cpp
+ * Path:    plugins/MySQL.cpp
+ * Pair:    MySQL.h
+ *
+ * INTENT
+ *   Implements the MySQL-protocol plugin declared in MySQL.h. See that file
+ *   for the object list.
+ *
+ * OBJECTS
+ *   Implements everything declared in MySQL.h. No additional file-local
+ *   helpers (statics or anonymous-namespace symbols) beyond that.
+ *   onPortRecv() is the core of the file: it drives a big if/else chain
+ *   over query text, either answering directly (fake variables, fake
+ *   database/table lists, OK-for-everything-else in the default socket
+ *   case) or rewriting the query into an internal "Query" command for
+ *   BedrockPlugin_DB to execute against sqlite_master / pragma_table_info.
+ *   g_MySQLVariables is defined at file scope here as the giant static
+ *   initializer list backing the MYSQL_NUM_VARIABLES-sized array declared
+ *   in the header.
+ *
+ * OUT OF PLACE
+ *   g_MySQLVariables's initializer [CANDIDATE] - see MySQL.h; this is where
+ *   the ~300-row literal data actually lives, taking up roughly a third of
+ *   the file.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; pairs with MySQL.h.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header. Local variable names (query, matches,
+ *   tableName, varName) are clear and match repo lowerCamel convention.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "MySQL.h"
 
 #include <bedrockVersion.h>

@@ -1,3 +1,48 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    Compression.h
+ * Path:    plugins/Compression.h
+ * Pair:    Compression.cpp
+ *
+ * INTENT
+ *   Declares a Bedrock plugin that registers zstd-dictionary-based
+ *   compress()/decompress() SQLite user-defined functions, so other tables
+ *   can store compressed column data using dictionaries loaded from a
+ *   dedicated DB table. Also exposes static compress/decompress helpers for
+ *   callers outside of SQL.
+ *
+ * OBJECTS
+ *   BedrockPlugin_Compression        - the plugin; loads dictionaries at
+ *                                       startup (initializeFromDB), creates
+ *                                       the zstdDictionaries table
+ *                                       (upgradeDatabase), registers the
+ *                                       SQLite UDFs (registerSQLite), and
+ *                                       exposes compress()/decompress().
+ *                                       getCommand() always returns null —
+ *                                       this plugin has no BedrockCommand of
+ *                                       its own; it is used only via SQL UDF
+ *                                       or direct C++ calls from other code.
+ *   BedrockPlugin_Compression::ZDictionaries (private struct) - pairs one
+ *                                       dictionary ID's compiled ZSTD_CDict*
+ *                                       and ZSTD_DDict*.
+ *   BedrockPlugin_Compression::_dictionaries (private static) - map of
+ *                                       dictionary ID to ZDictionaries,
+ *                                       populated once at startup.
+ *   COMPRESSION_LEVEL (static constexpr) - zstd level used for all
+ *                                       dictionary-based compression.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; it is the compression plugin, filed alongside the other
+ *   BedrockPlugin_* implementations in plugins/.
+ *
+ * NAMING QUALITY
+ *   Consistent with repo convention: BedrockPlugin_<Name> for the class,
+ *   underscore prefix on the private static _dictionaries. The header
+ *   itself carries clear, load-bearing warnings (dictionary immutability)
+ *   right next to the declarations they apply to — worth preserving as-is.
+ * ─────────────────────────────────────────────────────────────────────*/
 #pragma once
 #include <libstuff/libstuff.h>
 #define ZSTD_STATIC_LINKING_ONLY

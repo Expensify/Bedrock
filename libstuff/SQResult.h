@@ -1,3 +1,32 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SQResult.h
+ * Path:    libstuff/SQResult.h
+ * Pair:    SQResult.cpp
+ *
+ * INTENT
+ *   In-memory representation of a SQLite query result set: a vector of rows (each a
+ *   vector of typed SQValue cells) plus a shared header/column-name list, with
+ *   string-map-like row access by column name and JSON serialize/deserialize.
+ *
+ * OBJECTS
+ *   SQResultRow - one row: cells addressable by index or by header name (via the
+ *     back-pointer to its owning SQResult); implicitly convertible to vector<string>.
+ *   SQResult    - the result set: headers plus rows; iteration, size/empty, JSON
+ *     serialize/deserialize, and legacy serializeToJSON/serializeToText wrappers
+ *     around SQResultFormatter.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent. `SQResultRow::result` (the owning-SQResult back-pointer) reads a bit
+ *   generically next to `SQResult` itself but the friendship and comments make the
+ *   relationship clear.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #pragma once
 #include <string>
 #include <vector>

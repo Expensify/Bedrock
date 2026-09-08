@@ -1,0 +1,14 @@
+{
+ "globs": [
+  "externalLib/*",
+  "mbedtls/*",
+  "*/sqlite3.c",
+  "*/sqlite3.h"
+ ],
+ "sniffed": {
+  "libstuff/qrf.c": "sqlite public-domain",
+  "libstuff/qrf.h": "sqlite public-domain",
+  "libstuff/sqlite3ext.h": "sqlite public-domain",
+  "test/lib/tpunit++.hpp": "MIT-vendored (verify)"
+ }
+}

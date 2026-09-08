@@ -1,0 +1,54 @@
+{
+ "unit": "Metrics",
+ "dir": "libstuff/JSON",
+ "files": [
+  "libstuff/JSON/Metrics.h",
+  "libstuff/JSON/Metrics.cpp"
+ ],
+ "lines": 48,
+ "test": false,
+ "intent": "A narrow, process-wide hook so an embedding application can observe JSON parse/serialize timing and document size, without the JSON package depending on that application.",
+ "objects": [
+  {
+   "name": "MetricsOperation",
+   "kind": "enum class",
+   "role": "PARSE or SERIALIZE"
+  },
+  {
+   "name": "MetricsObserver",
+   "kind": "type alias (function pointer)",
+   "role": "callback signature"
+  },
+  {
+   "name": "setMetricsObserver",
+   "kind": "free function",
+   "role": "installs/replaces the callback; nullptr disables reporting"
+  },
+  {
+   "name": "reportMetrics",
+   "kind": "free function",
+   "role": "invoked by Parser/Writer after each operation to notify the observer, if set"
+  },
+  {
+   "name": "(anonymous namespace) metricsObserver",
+   "kind": "file-local static",
+   "role": "atomic<MetricsObserver> backing storage; not declared in the header"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "clear and consistent"
+ },
+ "depends_on": [],
+ "_src": "b107.json",
+ "hash": "17a98b39e917093a"
+}

@@ -1,3 +1,29 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    DeleteJobTest.cpp
+ * Path:    test/tests/jobs/DeleteJobTest.cpp
+ *
+ * INTENT
+ *   tpunit fixture exercising the Jobs plugin's `DeleteJob` command: it
+ *   must reject nonexistent jobs, jobs with children, and RUNNING jobs,
+ *   while allowing FINISHED jobs (parent and child) to be deleted.
+ *
+ * OBJECTS
+ *   DeleteJobTest          - tpunit::TestFixture; one BedrockTester per class,
+ *                            each test drives Create/Get/Finish/DeleteJob
+ *                            sequences and asserts the resulting DB state
+ *                            or error response.
+ *   __DeleteJobTest        - static instance that registers the fixture.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits; lives with the other per-command Jobs plugin tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling job tests.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>

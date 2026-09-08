@@ -1,3 +1,28 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SRandom.cpp
+ * Path:    libstuff/SRandom.cpp
+ * Pair:    SRandom.h
+ *
+ * INTENT
+ *   Implements SRandom; see the header for the public contract.
+ *
+ * OBJECTS
+ *   SRandom::_generator     - static mt19937_64, seeded from random_device
+ *                             (or deterministically under VALGRIND, since
+ *                             random_device breaks valgrind).
+ *   SRandom::_distribution64 - static full-range uint64_t distribution.
+ *   SRandom::rand64/limitedRand64/randStr/randBool - implement the
+ *                             header's declared static methods.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Fits repo convention.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "SRandom.h"
 
 #ifdef VALGRIND

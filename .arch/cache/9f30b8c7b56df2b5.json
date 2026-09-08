@@ -1,0 +1,38 @@
+{
+ "unit": "Parser",
+ "dir": "libstuff/JSON",
+ "files": [
+  "libstuff/JSON/Parser.h",
+  "libstuff/JSON/Parser.cpp"
+ ],
+ "lines": 69,
+ "test": false,
+ "intent": "Parse a JSON string into a JSON::Value tree, in a strict mode that throws on malformed input and a permissive mode that does not.",
+ "objects": [
+  {
+   "name": "Parser",
+   "kind": "class",
+   "role": "two static entry points, read() (throws JSON::InvalidArgument) and readUnsafe() (swallows parse errors), both driving a rapidjson::Reader over a SAXHandler"
+  }
+ ],
+ "misfits": [],
+ "name_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "fits"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "readUnsafe clearly signals the risk relative to read"
+ },
+ "depends_on": [
+  "libstuff/JSON/Value.h",
+  "libstuff/JSON/Metrics.h",
+  "libstuff/JSON/SAXHandler.h"
+ ],
+ "_src": "b107.json",
+ "hash": "9f30b8c7b56df2b5"
+}

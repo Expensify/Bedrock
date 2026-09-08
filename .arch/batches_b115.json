@@ -154,15 +154,73 @@
   "hash": "0512cab1c7c260f1"
  },
  {
+  "unit": "BedrockTester",
+  "dir": "test/lib",
+  "files": [
+   "test/lib/BedrockTester.h",
+   "test/lib/BedrockTester.cpp"
+  ],
+  "kind": "pair",
+  "lines": 876,
+  "test": true,
+  "hash": "f00c46658dbd7c08"
+ },
+ {
   "unit": "tpunit++",
   "dir": "test/lib",
   "files": [
-   "test/lib/tpunit++.cpp",
-   "test/lib/tpunit++.hpp"
+   "test/lib/tpunit++.cpp"
+  ],
+  "kind": "single",
+  "lines": 606,
+  "test": true,
+  "hash": "b3895badc1f24cc1"
+ },
+ {
+  "unit": "RemoteSQLite",
+  "dir": "test/lib",
+  "files": [
+   "test/lib/RemoteSQLite.h",
+   "test/lib/RemoteSQLite.cpp"
   ],
   "kind": "pair",
-  "lines": 1078,
+  "lines": 138,
   "test": true,
-  "hash": "95c596a24c9c486a"
+  "hash": "415165cd02497f92"
+ },
+ {
+  "unit": "PortMap",
+  "dir": "test/lib",
+  "files": [
+   "test/lib/PortMap.h",
+   "test/lib/PortMap.cpp"
+  ],
+  "kind": "pair",
+  "lines": 107,
+  "test": true,
+  "hash": "faf700137f857288"
+ },
+ {
+  "unit": "PrintEquality",
+  "dir": "test/lib",
+  "files": [
+   "test/lib/PrintEquality.h"
+  ],
+  "kind": "single",
+  "lines": 54,
+  "test": true,
+  "hash": "f29d77201f001cff"
+ },
+ {
+  "unit": "TestHTTPS",
+  "dir": "test/lib",
+  "files": [
+   "test/lib/TestHTTPS.h",
+   "test/lib/TestHTTPS.cpp"
+  ],
+  "kind": "pair",
+  "lines": 47,
+  "test": true,
+  "hash": "c6c48f73f4795ab9"
  }
 ]

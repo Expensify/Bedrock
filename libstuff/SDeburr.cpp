@@ -1,3 +1,27 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SDeburr.cpp
+ * Path:    libstuff/SDeburr.cpp
+ * Pair:    SDeburr.h
+ *
+ * INTENT
+ *   Implements SDeburr; see the header.
+ *
+ * OBJECTS
+ *   sqliteDeburr (file-local lambda, in registerSQLite) - the actual
+ *     sqlite3_create_function_v2 callback: NULL-safe, calls SDeburr::deburr.
+ *   Implementation detail: deburr() hand-rolls UTF-8 decoding (via
+ *     countl_one bit-counting) rather than using a library decoder.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with the header.
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include "SDeburr.h"
 
 #include <bit>

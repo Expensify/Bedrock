@@ -1,3 +1,50 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    GetJobTest.cpp
+ * Path:    test/tests/jobs/GetJobTest.cpp
+ *
+ * INTENT
+ *   Integration tests for the Jobs plugin's GetJob/GetJobs commands:
+ *   dequeuing behavior, priority and nextRun ordering (including
+ *   RUNQUEUED-vs-QUEUED interleaving), multi-name lookups, parent/child
+ *   job relationships (finished/cancelled children, retryable parents),
+ *   error responses for bad parameters, handling of a corrupted nextRun
+ *   value, and the CrashBedrockJob GLOB-pattern blacklist that fails
+ *   matching jobs at GetJob(s) time instead of running them.
+ *
+ * OBJECTS
+ *   isBetweenSecondsInclusive  - free helper (file scope, external
+ *                                linkage); walks second-by-second from a
+ *                                start to an end timestamp checking
+ *                                whether a formatted timestamp string
+ *                                falls in that (inclusive) range.
+ *   GetJobTest                 - tpunit::TestFixture; setupClass/tearDown
+ *                                /tearDownClass manage a shared
+ *                                BedrockTester with the Jobs+DB plugins
+ *                                and reset the jobs table (and any
+ *                                CrashBedrockJob blacklist) between
+ *                                tests; the TEST-registered methods cover
+ *                                the scenarios in INTENT above.
+ *
+ * OUT OF PLACE
+ *   isBetweenSecondsInclusive [CANDIDATE] - a plain (non-static,
+ *     non-anonymous-namespace) global function in a .cpp that is one of
+ *     many linked into the same test binary; nothing here makes it
+ *     Jobs-specific, and its generic name risks an ODR clash with an
+ *     identically-named helper in another test file. Low severity today
+ *     (no current collision found), but it would be better as a `static`
+ *     function, moved into an anonymous namespace, or lifted into a
+ *     shared test-helper header (e.g. alongside JobTestHelper) if other
+ *     job tests need it too.
+ *
+ * NAME/LOCATION FIT
+ *   Fits: named for and scoped to the GetJob/GetJobs commands, located
+ *   under test/tests/jobs with the other job-command tests.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling fixtures. Test method names are long but
+ *   descriptive (testCrashBedrockJobBlacklistDrainsAcrossCalls, etc.).
+ * ─────────────────────────────────────────────────────────────────────*/
+
 #include <iostream>
 #include <unistd.h>
 

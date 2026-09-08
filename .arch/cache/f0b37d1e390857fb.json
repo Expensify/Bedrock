@@ -1,0 +1,64 @@
+{
+ "unit": "main",
+ "dir": "benchmarks",
+ "files": [
+  "benchmarks/main.cpp"
+ ],
+ "lines": 267,
+ "test": true,
+ "intent": "Entry point for the standalone benchmark binary: runs the tpunit-registered benchmark fixtures and, given a --baseline ref, also checks out that ref, rebuilds, reruns the benchmarks, restores the working tree, and prints a colored throughput comparison report.",
+ "objects": [
+  {
+   "name": "runBenchmarks",
+   "kind": "free function",
+   "role": "Clears g_benchmarkResults and invokes tpunit::Tests::run() with the given include/exclude filters"
+  },
+  {
+   "name": "printComparison",
+   "kind": "free function",
+   "role": "Formats a colored baseline-vs-current throughput table (new/improved/regressed/unchanged/removed) to stdout"
+  },
+  {
+   "name": "main",
+   "kind": "free function",
+   "role": "Parses --baseline/-only/-except/-v/--verbose/--help and orchestrates a plain run or the git-based baseline comparison workflow"
+  },
+  {
+   "name": "GREEN/RED/RESET/BOLD",
+   "kind": "free constants",
+   "role": "File-scope ANSI color codes"
+  },
+  {
+   "name": "SIGNIFICANT_CHANGE_THRESHOLD",
+   "kind": "free constant",
+   "role": "Percent-change cutoff used to classify a result as improved/regressed vs. unchanged"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "main (baseline-comparison branch)",
+   "why": "Shells out to git (stash/checkout/rev-parse) and reruns `make bench -j32` from inside the benchmark binary itself; this is build/source-control orchestration that reads more like a CI shell script than a benchmark runner",
+   "severity": "low",
+   "suggested_home": "a wrapper shell script driving the plain benchmark binary twice"
+  }
+ ],
+ "name_fit": {
+  "score": 4,
+  "note": "Conventional entry-point name for the benchmarks binary"
+ },
+ "location_fit": {
+  "score": 5,
+  "note": "Correctly the benchmarks/ driver"
+ },
+ "naming_quality": {
+  "score": 5,
+  "note": "Clear, descriptive names throughout"
+ },
+ "depends_on": [
+  "libstuff/libstuff.h",
+  "test/lib/tpunit++.hpp",
+  "benchmarks/BenchmarkBase.h"
+ ],
+ "_src": "b102.json",
+ "hash": "f0b37d1e390857fb"
+}

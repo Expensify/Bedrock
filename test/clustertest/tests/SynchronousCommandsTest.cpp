@@ -1,3 +1,30 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SynchronousCommandsTest.cpp
+ * Path:    test/clustertest/tests/SynchronousCommandsTest.cpp
+ *
+ * INTENT
+ *   Cluster test verifying that `-synchronousCommands` routes the named
+ *   command to the blocking commit thread whether it's sent directly to the
+ *   leader or escalated from a follower, while an unlisted command sharing
+ *   the same handler still commits on a regular worker thread.
+ *
+ * OBJECTS
+ *   SynchronousCommandsTest                            - tpunit fixture, see the header comment below
+ *                                                         for the scenario it's guarding.
+ *   SynchronousCommandsTest::onLeader                  - direct-to-leader case.
+ *   SynchronousCommandsTest::escalatedFromFollower      - escalated-from-follower case.
+ *   SynchronousCommandsTest::unlistedCommandIsUnaffected - negative control.
+ *   __SynchronousCommandsTest                          - static instance that registers the fixture with tpunit.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Consistent with sibling test files.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include <libstuff/SData.h>
 #include <test/clustertest/BedrockClusterTester.h>
 

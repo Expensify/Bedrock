@@ -1,3 +1,31 @@
+/* SUMMARY ─────────────────────────────────────────────────────────────
+ * File:    SMultiHostSocketPool.cpp
+ * Path:    libstuff/SMultiHostSocketPool.cpp
+ * Pair:    SMultiHostSocketPool.h
+ *
+ * INTENT
+ *   Implements SMultiHostSocketPool; see the header for the public
+ *   contract.
+ *
+ * OBJECTS
+ *   SMultiHostSocketPool::SMultiHostSocketPool/~SMultiHostSocketPool - empty;
+ *                            no owned resources need explicit setup/teardown
+ *                            (the map's SSocketPool entries clean up themselves).
+ *   SMultiHostSocketPool::getSocket    - under `_poolMutex`, finds or
+ *                            emplaces the per-host SSocketPool and returns
+ *                            a socket from it.
+ *   SMultiHostSocketPool::returnSocket - under `_poolMutex`, returns the
+ *                            socket to its host's pool if one still exists.
+ *
+ * OUT OF PLACE
+ *   Nothing.
+ *
+ * NAME/LOCATION FIT
+ *   Fits.
+ *
+ * NAMING QUALITY
+ *   Fits repo convention.
+ * ─────────────────────────────────────────────────────────────────────*/
 #include "SMultiHostSocketPool.h"
 
 SMultiHostSocketPool::SMultiHostSocketPool()

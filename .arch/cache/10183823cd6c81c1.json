@@ -1,0 +1,43 @@
+{
+ "unit": "AutoScopeOnPrepare",
+ "dir": "libstuff",
+ "files": [
+  "libstuff/AutoScopeOnPrepare.h",
+  "libstuff/AutoScopeOnPrepare.cpp"
+ ],
+ "lines": 33,
+ "test": false,
+ "intent": "RAII guard that installs an on-prepare callback on a SQLite object for the guard's lifetime and removes it on scope exit.",
+ "objects": [
+  {
+   "name": "AutoScopeOnPrepare",
+   "kind": "class",
+   "role": "holds a reference to the SQLite db and handler pointer; constructor installs/enables the handler, destructor clears it"
+  }
+ ],
+ "misfits": [
+  {
+   "item": "AutoScopeOnPrepare (whole unit)",
+   "why": "a libstuff file whose sole purpose is scoping a sqlitecluster/SQLite feature (setOnPrepareHandler/enablePrepareNotifications), and it #includes sqlitecluster/SQLite.h directly - libstuff is meant to be generic and dependency-light, this is SQLite-specific",
+   "severity": "med",
+   "suggested_home": "sqlitecluster, alongside SQLite"
+  }
+ ],
+ "name_fit": {
+  "score": 4,
+  "note": "name describes the contents well"
+ },
+ "location_fit": {
+  "score": 2,
+  "note": "depends directly on sqlitecluster/SQLite.h; belongs closer to SQLite than in generic libstuff"
+ },
+ "naming_quality": {
+  "score": 3,
+  "note": "handler parameter and member both shadow the name _db distinct from the constructor's db/member _db"
+ },
+ "depends_on": [
+  "sqlitecluster/SQLite.h"
+ ],
+ "_src": "b105.json",
+ "hash": "10183823cd6c81c1"
+}
