@@ -1,0 +1,155 @@
+{
+ "libstuff": [
+  {
+   "label": "raii-auto-clock",
+   "units": [
+    "AutoScopeOnPrepare",
+    "AutoTimer",
+    "SPerformanceTimer"
+   ]
+  },
+  {
+   "label": "sqlite-header-wire",
+   "units": [
+    "SData",
+    "SDeburr",
+    "SQResult",
+    "SQResultFormatter",
+    "SQValue",
+    "SQliteParameter",
+    "STime",
+    "libstuff"
+   ]
+  },
+  {
+   "label": "socket-shared-providing",
+   "units": [
+    "SFastBuffer",
+    "SHTTPSManager",
+    "SHTTPSProxySocket",
+    "SMultiHostSocketPool",
+    "SRandom",
+    "SSSLState",
+    "SSocketPool",
+    "SSynchronizedQueue",
+    "STCPManager"
+   ]
+  },
+  {
+   "label": "thread-back-logger",
+   "units": [
+    "SFluentdLogger",
+    "SResolver",
+    "SRingBuffer",
+    "SThread"
+   ]
+  },
+  {
+   "label": "trace-wide-stack",
+   "units": [
+    "SLog",
+    "SSignal"
+   ]
+  }
+ ],
+ "test/clustertest/tests": [
+  {
+   "label": "leader-cluster-follower",
+   "units": [
+    "AfterCommitCallbackClusterTest",
+    "BadCommandTest",
+    "BroadcastTest",
+    "ClusterUpgradeTest",
+    "EscalateTest",
+    "GracefulFailoverTest",
+    "LeadingTest",
+    "MassiveQueryTest",
+    "StatusHandlingCommandsTest",
+    "StatusTest",
+    "SynchronousCommandsTest",
+    "UpgradeDBTest",
+    "UpgradeTest",
+    "VersionMismatchTest",
+    "WriteLocalUnreplicatedClusterTest"
+   ]
+  },
+  {
+   "label": "cluster-verifies-through",
+   "units": [
+    "BlockingQueueRateLimitTest",
+    "BoundParametersTest",
+    "ConflictSpamTest",
+    "ForkCheckTest",
+    "MultipleLeaderSyncTest"
+   ]
+  },
+  {
+   "label": "cluster-verifying-command",
+   "units": [
+    "CompressionTest",
+    "ControlCommandTest",
+    "DoubleDetachTest",
+    "FastStandDownTest",
+    "FinishJobTest",
+    "FutureExecutionTest",
+    "HTTPSBlockingCommitTest",
+    "HTTPSTest",
+    "JobIDTest",
+    "PermafollowerTest",
+    "PrePeekPostProcessTest",
+    "SetPriorityTest",
+    "ThreadExceptionTest",
+    "TimeoutTest",
+    "TimingTest",
+    "UniqueConstraintsTest"
+   ]
+  }
+ ],
+ "test/tests": [
+  {
+   "label": "sqlite-unit-commit",
+   "units": [
+    "AfterCommitCallbackTest",
+    "SDeburrTest",
+    "SIsValidSQLiteDateModifierTest",
+    "SQLiteNodeTest",
+    "WriteLocalUnreplicatedTest"
+   ]
+  },
+  {
+   "label": "fast-wake-buffer",
+   "units": [
+    "AsyncResolveTest",
+    "FastHTTPParsing",
+    "SRingBufferTest"
+   ]
+  },
+  {
+   "label": "command-bedrock-integration",
+   "units": [
+    "BlockingCommandQueueTest",
+    "ChainedHTTPTest",
+    "CommandPortTest",
+    "QueryTest",
+    "ReadTest",
+    "SSLTest",
+    "StatusTest",
+    "WriteTest"
+   ]
+  },
+  {
+   "label": "json-unit-value",
+   "units": [
+    "JSONParserTest",
+    "JSONTest",
+    "JSONUtilsTest",
+    "JSONValueTest",
+    "LibStuffTest",
+    "MySQLTest",
+    "MySQLUtilsTest",
+    "SFluentdLoggerTest",
+    "STimeTest"
+   ]
+  }
+ ]
+}
