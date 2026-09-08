@@ -249,6 +249,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
             failedResponse.content = commit.serialize();
             node._onMESSAGE(peer, failedResponse);
 
+            EXPECT_TRUE(db.getLastTransactionType() == SQLite::TRANSACTION_TYPE::EXCLUSIVE);
             EXPECT_TRUE(node.getState() == SQLiteNodeState::SEARCHING);
             EXPECT_EQUAL(node._syncPeer, nullptr);
             EXPECT_EQUAL(node._leadPeer.load(), nullptr);

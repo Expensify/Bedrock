@@ -1828,7 +1828,8 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
         if (commit.calcU64("CommitIndex") != _db.getCommitCount() + 1) {
             STHROW("commit index mismatch");
         }
-        if (!_db.beginTransaction()) {
+        // Local unreplicated writes must not invalidate the snapshot while we replay this commit.
+        if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE)) {
             STHROW("failed to begin transaction");
         }
         if (!_db.writeUnmodified(BedrockPlugin_Compression::decompress(commit.content))) {
