@@ -328,6 +328,57 @@ a `bedrock/` subdirectory for the ten cohesive units (mirroring
 `plugins/` and `sqlitecluster/`) would be a reasonable, low-risk,
 purely-cosmetic move — but nothing in this pass makes it urgent.
 
+## 7. Pass B (top-down): verified verdicts
+
+Root's Pass B was deferred until Phase 4 verification, because the only context
+root lacks is whether its own conclusions survive contact with the source. Four
+agents were told to falsify them. Results below; full record in
+`.arch/verified/corrections.md`, prioritized plan in `REFACTORING.md`.
+
+### What survived
+
+- **libstuff is a junk drawer.** Confirmed and quantified: 1,928 of 3,816 real
+  lines (50.5%) across six separable subsystems. Blast radius 68 of 150 units.
+- **The layering pattern named in Pass A is real.** All upward includes from
+  libstuff were enumerated — exactly five, all accounted for. Nothing missed.
+- **Journal compression is the serious one.** A three-layer include cycle
+  (`sqlitecluster` -> root -> `sqlitecluster`) that is load-bearing at runtime:
+  `_dictionaries` populates only through the plugin lifecycle.
+- **Dead code confirmed**: `version.h`/`SVERSION` (no includer at all),
+  `commandPortSuppressionReasons`, `SGUnzip` (test-only), four unregistered
+  tests, and `MySQLTest.cpp` as a strict duplicate of `MySQLUtilsTest.cpp`.
+
+### What did not
+
+- **"Dedicated units already exist" — wrong for five of six families.**
+  `SQResult`/`SQValue` are data types `SQuery` consumes, with no `sqlite3_`
+  calls; `SHTTPSManager` touches the HTTP grammar at two sites; the socket
+  primitives have 14 callers outside `STCPManager`. The work is carving out new
+  units, not completing a stalled migration.
+- **`SHTTPSManager.h` does not include `BedrockPlugin.h`** — it forward-declares
+  the class. The real finding is the 9-line subclass whose only member is never
+  read in-repo.
+- **`libstuff/JSON` is not a vestigial duplicate.** Its isolation is enforced by
+  `Makefile:121-135`, which fails the build if it leaks symbols. Zero in-repo
+  callers is intended.
+
+### New, found only by verification
+
+- `libstuff.h:118` -> `qrf.h:21` -> `sqlite3.h` leaks the SQLite C API into all
+  **78** translation units that include `libstuff.h`, at +3,272 preprocessed
+  lines each — while `libstuff.h:142` still carries a dead `struct sqlite3;`
+  forward declaration written to prevent exactly that.
+- The socket family has a **legitimate** blocker: `fd_map` (`libstuff.h:763`) is
+  what the whole application's poll loop is written against and cannot follow
+  `S_poll` into `STCPManager.h`.
+
+### Standing caveat
+
+`Makefile:25` links `-Wl,--start-group ... --end-group`, which exists to resolve
+circular archive dependencies. The build already accommodates the mutual
+dependency between `libstuff.a` and `libbedrock.a`. **Nothing in this report is
+broken today** — it is design debt with a measurable cost, not a defect list.
+
 <!-- ROLLUP
 theme: Bedrock's application layer — the per-node server, the command pipeline it drives, the plugin contract plugins/ implements against, and the process entry point — plus final resolution point for every misfit escalated from the whole subtree.
 exports: [BedrockServer, BedrockCommand, BedrockCore, BedrockCommandQueue/BedrockBlockingCommandQueue, BedrockPlugin, BedrockConflictManager/ConflictLockGuard, main() entry point]
