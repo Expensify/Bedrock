@@ -102,14 +102,153 @@ outward to a better home in another directory. All five are resolved here.
   named and deliberate in the source — nothing to escalate. Worth
   revisiting only if `Value`'s internal storage layout changes.
 
+## 5. Role in the system
+
+**What this directory owns that `libstuff` proper does not.** `libstuff`'s own
+summary describes itself as a foundation layer undercut by a 4612-line
+catch-all (`libstuff.cpp`/`.h`) that duplicates functionality dedicated
+sibling units already own. `libstuff/JSON` is the type-safe, tree-shaped JSON
+model: a real `JSON::Value` node you can hold, walk, and mutate in memory,
+built by a real parser (`Parser`/`SAXHandler`) and serialized by a real
+writer (`Writer`), with `Utils` operating on that tree and `Serializable`
+documenting a contract against it. Nothing in the parent's catch-all offers
+that — the catch-all's JSON support (`SToJSON`, `SComposeJSONObject`,
+`SComposeJSONArray`, `SParseJSONObject`, `SParseJSONArray`, and their private
+`_SParseJSONValue`/`_SParseJSONObject`/`_SParseJSONArray`/`_SParseJSONString`
+helpers) is a second, independent JSON implementation: string-in/string-out,
+built around `STable` (a flat, single-level string-to-string map) rather
+than a real tree, with no typed scalars, no nested-array-of-objects support
+beyond what a `list<string>` of pre-serialized fragments can fake, and no
+shared exception hierarchy.
+
+**The boundary does leak, and it leaks toward the parent, not from it.**
+Confirmed by grep across the repo: `libstuff`'s catch-all `_SParseJSONString`
+(named in this task's brief) is real, and it is not a lone helper — it's one
+private function in a five-function parse engine
+(`_SParseJSONValue`/`_SParseJSONObject`/`_SParseJSONArray`/`_SParseJSONString`
+feeding the public `SParseJSONObject`/`SParseJSONArray`) that duplicates
+exactly what `Parser`/`SAXHandler` in this directory already do, plus a
+parallel compose side (`SToJSON`, `SComposeJSONObject`, `SComposeJSONArray`)
+duplicating `Writer`. Worse: this is not dead legacy code sitting next to the
+new package unused — it is the JSON implementation actually driving Bedrock's
+own production JSON traffic today. `BedrockServer.cpp`, `BedrockCore.cpp`,
+`BedrockCommand.cpp`, `plugins/Jobs.cpp`, and `sqlitecluster/SQLiteNode.cpp`
+all call `SParseJSONObject`/`SComposeJSONObject`/`SParseJSONArray` from the
+catch-all; not one of them includes anything under `libstuff/JSON/` or
+references `JSON::Value`. Meanwhile `JSON::Value`, `JSON::Parser`, and
+`JSON::Writer` are referenced *only* by this package's own tests
+(`test/tests/JSON*Test.cpp`) — grep finds zero production call sites for
+`JSON::Value` anywhere else in the tree. So today there are two live JSON
+engines in this codebase, and the older, less capable one — living entirely
+in the parent's catch-all — is the one Bedrock itself actually runs on.
+
+This is not simply an oversight to fix by relocating code, though: `JSON/README.md`
+describes a deliberate staged-migration design. This package is built as a
+separate archive, `libjson.a`, whose strong symbols are excluded from
+Bedrock's own dynamic symbol table (`-Wl,--exclude-libs,libjson.a`) precisely
+so that an *embedding application* which already links its own private JSON
+implementation can adopt Bedrock without a symbol collision, then later link
+`libjson.a` directly and retire its private copy. Only two symbols are meant
+to stay exported from Bedrock itself: `JSON::setMetricsObserver` and
+`JSON::reportMetrics` (enforced by the `checkjsonsymbols` build target) —
+which is also why `Metrics.cpp` is described as linked into `libstuff.a`
+directly rather than folded invisibly into `libjson.a`. So the package's
+primary intended consumer is outward, past this repo's boundary, not
+`BedrockServer`/`BedrockCore`/`plugins`. That reframes the duplication: it
+isn't obviously a bug in this package, but it does mean the parent's
+catch-all is not merely dead weight worth deleting in place — decommissioning
+it requires migrating live internal call sites (`BedrockServer.cpp`,
+`BedrockCore.cpp`, `BedrockCommand.cpp`, `plugins/Jobs.cpp`,
+`sqlitecluster/SQLiteNode.cpp`) onto `JSON::Value`, which is real,
+cross-cutting migration work, not a location fix this directory can resolve
+alone. See the escalate entry below.
+
+**Is `libstuff/JSON` the model for the rest of `libstuff`?** The reading
+mostly holds, with one caveat. As a *shape*, yes: one coherent package built
+around a single owned type (`JSON::Value`), its own directory, a README that
+states its boundary and build contract explicitly (most other `libstuff`
+units don't have one) — exactly the decomposition target the parent's own
+summary gestures at when it flags the catch-all for breakup. The caveat is
+adoption, not shape: a model subdirectory that no internal code actually
+uses is a model for *structure*, not yet for *behavior*. If `libstuff` is
+decomposed along lines like this directory, the JSON slice of that
+decomposition is already done structurally — what remains is the migration
+described above, and until that happens this directory is proof-of-concept
+for the target shape rather than evidence the target shape is fully load-bearing.
+
+## 6. Inbound expectations
+
+Per the parent's rollup, `libstuff` exports `JSON::Value` "via JSON/" as one
+of its named exports — but the parent rollup and the (empty) siblings list
+handed to this pass name no sibling directory that actually consumes it, and
+the repo-wide check above confirms why: nothing in `sqlitecluster`,
+`plugins`, `BedrockServer.cpp`, `BedrockCore.cpp`, `BedrockCommand.cpp`, or
+any other in-repo production code includes `libstuff/JSON/*.h` or references
+`JSON::Value`/`JSON::Parser`/`JSON::Writer`/`JSON::Utils`. The only in-repo
+consumers are this package's own tests (`test/tests/JSONParserTest.cpp`,
+`JSONTest.cpp`, `JSONUtilsTest.cpp`, `JSONValueTest.cpp`).
+
+The real inbound dependent, per `README.md`, is external: applications that
+link `libjson.a` directly, plus the process-wide metrics hook consumed by
+whatever embeds Bedrock. What must stay stable outward, in order of how
+publicly it is committed:
+
+- **`JSON::setMetricsObserver` / `JSON::reportMetrics`** — the only two
+  symbols the build (`checkjsonsymbols`) actually enforces stay exported from
+  the Bedrock binary itself. This is the one surface with a machine-checked
+  stability guarantee; changing its signature breaks the build, not just a
+  caller.
+- **`JSON::Value`'s full public surface** (construction, accessors, the
+  exception hierarchy, `ArrayValue`/`ObjectValue` iteration adapters) and
+  **`JSON::Parser`/`JSON::Writer`'s entry points** — owed to applications
+  that link `libjson.a` per the staged-deployment path the README describes.
+  There is no in-repo caller to regression-test this against, which is
+  exactly the risk a purely internal view can't see: a change here that
+  breaks no test in this repo could still break an external embedder that
+  has already linked `libjson.a`. This is the inadequate-visibility case the
+  spec anticipates — Pass B here cannot confirm what an external embedder
+  actually calls, only what the README promises it can call.
+- **The RapidJSON header dependency** (`externalLib/rapidjson/include`) is
+  itself an outward contract per the README: consumers linking the archive
+  must add it to their include path. That's a build-integration expectation
+  this directory owes, not just a header include.
+
+Nothing currently relies on this package that this package fails to provide;
+the gap runs the other way — the package provides a stable typed-JSON surface
+that the codebase which hosts it does not yet use.
+
+## 7. Misfits revisited
+
+The four Pass A misfits resolved locally (`recursiveReplaceJSONKeys` doc
+comment, `mergeDeep`'s `useSQLiteMergeBehavior` naming,
+`logStackTraceOnEnsureTypeFailure`, `startTime`/`logSlowConstructor`,
+`friend class SAXHandler`) still hold as resolved-locally under the wider
+view — none of them turn out to be sibling-boundary questions, and nothing
+about the parent's catch-all changes their internal disposition.
+
+One new escalate item follows directly from the parent context this pass
+adds: the catch-all's JSON engine. It was not visible as a misfit in Pass A
+because Pass A cannot see the parent's files; it is visible now only because
+the parent's rollup named the catch-all and this pass could check where its
+JSON support actually lives. It is marked `escalate`, not
+`resolved-locally`, because resolving it means migrating call sites in
+`BedrockServer.cpp`, `BedrockCore.cpp`, `BedrockCommand.cpp`,
+`plugins/Jobs.cpp`, and `sqlitecluster/SQLiteNode.cpp` — files this
+directory cannot see or move, and a decision `libstuff`'s own decomposition
+pass is better placed to sequence.
+
 ## ROLLUP block
 
 <!-- ROLLUP
 theme: Bedrock's in-house JSON document model (Value) plus the parse, serialize, utility, contract, and metrics machinery built around it on rapidjson.
 exports: [JSON::Value, JSON::Parser (read/readUnsafe), JSON::Writer (serialize/serializePretty), JSON::Utils (tree merge/strip/sanitize helpers), JSON::Serializable<Derived> (toJSON/fromJSON contract), JSON metrics observer hook (setMetricsObserver/reportMetrics)]
 depends_on_dirs: [libstuff]
-depended_on_by: []
+depended_on_by: [test/tests (JSONParserTest/JSONTest/JSONUtilsTest/JSONValueTest - the only in-repo consumers found), external applications linking libjson.a (per JSON/README.md's staged-deployment build boundary; not visible from inside this repo) - no other in-repo directory (libstuff's own catch-all, sqlitecluster, plugins, BedrockServer/BedrockCore/BedrockCommand) references JSON::Value/Parser/Writer/Utils]
 misfit_count: {high: 0, med: 2, low: 3}
 resolved_locally: 5
-escalate: []
+escalate:
+  - item: "libstuff's catch-all JSON engine (SToJSON, SComposeJSONObject/Array, SParseJSONObject/Array, and private _SParseJSONValue/_SParseJSONObject/_SParseJSONArray/_SParseJSONString) duplicates this package's Parser/Writer and is the engine Bedrock's own production code (BedrockServer.cpp, BedrockCore.cpp, BedrockCommand.cpp, plugins/Jobs.cpp, sqlitecluster/SQLiteNode.cpp) actually calls; JSON::Value has no in-repo production callers"
+    from: libstuff/libstuff.cpp,libstuff.h (parent's catch-all, not this directory)
+    why: retiring the duplicate means migrating call sites this directory cannot see or move; sequencing that migration is a decision for whoever decomposes libstuff, not resolvable from libstuff/JSON alone
+    suggested_home: libstuff (as part of its own catch-all decomposition) - target is routing those call sites through JSON::Parser/JSON::Writer and retiring SParseJSON*/SComposeJSON*/SToJSON
 -->
