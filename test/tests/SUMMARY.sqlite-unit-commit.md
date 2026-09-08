@@ -72,6 +72,6 @@ exports: [after-commit-callback semantics, writeLocalUnreplicated commit/rollbac
 depends_on_dirs: [libstuff, sqlitecluster, test/lib]
 depended_on_by: []
 misfit_count: {high: 0, med: 0, low: 3}
-resolved_locally: 0
+resolved_locally: 3
 escalate: []
 -->

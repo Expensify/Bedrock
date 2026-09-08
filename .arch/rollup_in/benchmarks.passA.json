@@ -1,0 +1,291 @@
+{
+ "dir": "benchmarks",
+ "pass": "passA",
+ "subdirectories": [],
+ "units": [
+  {
+   "unit": "BenchmarkBase",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "lines": 154,
+   "test": true,
+   "intent": "Small micro-framework for writing throughput benchmarks: subclasses mix this in alongside tpunit::TestFixture and call runBench() to time a function over warm-up and measured passes and record its throughput.",
+   "objects": [
+    {
+     "name": "BenchmarkResult",
+     "kind": "struct",
+     "role": "Throughput/elapsed-time/byte-count record for one named benchmark"
+    },
+    {
+     "name": "g_benchmarkResults",
+     "kind": "extern global",
+     "role": "Name-to-BenchmarkResult map shared across the whole benchmark binary; defined in main.cpp"
+    },
+    {
+     "name": "BenchmarkBase",
+     "kind": "class",
+     "role": "Mixin base class holding the owning fixture's name"
+    },
+    {
+     "name": "BenchmarkBase::setup/teardown",
+     "kind": "method group",
+     "role": "Overridable hooks run around each runBench() call"
+    },
+    {
+     "name": "BenchmarkBase::runBench",
+     "kind": "template method",
+     "role": "Warms up, times N iterations over a vector of inputs, computes MB/s, stores the result, and prints a summary line"
+    },
+    {
+     "name": "BenchmarkBase::getInputSize",
+     "kind": "template method",
+     "role": "Private helper sizing one input (string or integral only; else a static_assert failure)"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Exactly a base class for benchmarks"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly in benchmarks/"
+   },
+   "naming_quality": {
+    "score": 4,
+    "note": "BenchmarkResult/BenchmarkBase don't carry the repo's `S` prefix used for shared libstuff-style utility types, unlike STable/SData, but that's a minor, acceptable inconsistency for test-only scaffolding"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "test/lib/tpunit++.hpp"
+   ],
+   "_src": "b102.json",
+   "hash": "e3abd57adfd63ef6"
+  },
+  {
+   "unit": "SDeburrBench",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/SDeburrBench.cpp"
+   ],
+   "lines": 90,
+   "test": true,
+   "intent": "Self-contained tpunit fixture benchmarking libstuff's SDeburr::deburr() (accent/diacritic stripping) across ASCII, Latin-1, and mixed-script inputs at normal and high iteration counts.",
+   "objects": [
+    {
+     "name": "SDeburrBench",
+     "kind": "struct",
+     "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SDeburr::deburr() over a small fixed set of input strings"
+    },
+    {
+     "name": "SDeburrBench::benchShortASCII/benchLatin1/benchMixedLong",
+     "kind": "method group",
+     "role": "Vary the character set and length of the input"
+    },
+    {
+     "name": "SDeburrBench::benchShortASCIIHigh/benchLatin1High/benchMixedLongHigh",
+     "kind": "method group",
+     "role": "Same inputs, run at a much higher iteration count to stress steady-state throughput"
+    },
+    {
+     "name": "__SDeburrBench",
+     "kind": "file-scope global",
+     "role": "Self-registers the fixture with tpunit at static-init time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Named for exactly the function it benchmarks"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly in benchmarks/"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Fits repo/test convention"
+   },
+   "depends_on": [
+    "libstuff/SDeburr.h",
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "_src": "b102.json",
+   "hash": "00894e8922e0f82d"
+  },
+  {
+   "unit": "SReplaceAllBench",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/SReplaceAllBench.cpp"
+   ],
+   "lines": 100,
+   "test": true,
+   "intent": "Self-contained tpunit fixture benchmarking libstuff's SReplaceAll() -- replacing any character from a set with a single replacement character -- across inputs with varying densities and sizes of unsafe-character sets.",
+   "objects": [
+    {
+     "name": "SReplaceAllBench",
+     "kind": "struct",
+     "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SReplaceAll() over a small fixed set of input strings"
+    },
+    {
+     "name": "SReplaceAllBench::benchNoUnsafeChars/benchFewUnsafeChars/benchManyUnsafeChars",
+     "kind": "method group",
+     "role": "Vary how many characters in the input need replacing"
+    },
+    {
+     "name": "SReplaceAllBench::benchLongUnsafeList/benchURLSafe/benchAlphanumeric",
+     "kind": "method group",
+     "role": "Vary the size and shape of the unsafe-character set being matched against"
+    },
+    {
+     "name": "__SReplaceAllBench",
+     "kind": "file-scope global",
+     "role": "Self-registers the fixture with tpunit at static-init time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Named for exactly the function it benchmarks"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly in benchmarks/"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Fits repo/test convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "_src": "b102.json",
+   "hash": "4bfd6cd9c7705dcf"
+  },
+  {
+   "unit": "SReplaceBench",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/SReplaceBench.cpp"
+   ],
+   "lines": 110,
+   "test": true,
+   "intent": "Self-contained tpunit fixture benchmarking libstuff's SReplace() across match-count and find/replace length asymmetries.",
+   "objects": [
+    {
+     "name": "SReplaceBench",
+     "kind": "struct",
+     "role": "tpunit::TestFixture + BenchmarkBase; each bench* method times SReplace() over a small fixed set of input strings"
+    },
+    {
+     "name": "SReplaceBench::benchNoMatches/benchFewMatches/benchManyMatches",
+     "kind": "method group",
+     "role": "Vary how many substring matches are found"
+    },
+    {
+     "name": "SReplaceBench::benchLongFind/benchLongReplace",
+     "kind": "method group",
+     "role": "Vary whether the find or the replace argument is the long string"
+    },
+    {
+     "name": "SReplaceBench::benchShortToLong/benchLongToShort",
+     "kind": "method group",
+     "role": "Single-character find vs. a long replacement, and the reverse"
+    },
+    {
+     "name": "__SReplaceBench",
+     "kind": "file-scope global",
+     "role": "Self-registers the fixture with tpunit at static-init time"
+    }
+   ],
+   "misfits": [],
+   "name_fit": {
+    "score": 5,
+    "note": "Named for exactly the function it benchmarks"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly in benchmarks/"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Fits repo/test convention"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "_src": "b102.json",
+   "hash": "633c06d2f9bfb352"
+  },
+  {
+   "unit": "main",
+   "dir": "benchmarks",
+   "files": [
+    "benchmarks/main.cpp"
+   ],
+   "lines": 267,
+   "test": true,
+   "intent": "Entry point for the standalone benchmark binary: runs the tpunit-registered benchmark fixtures and, given a --baseline ref, also checks out that ref, rebuilds, reruns the benchmarks, restores the working tree, and prints a colored throughput comparison report.",
+   "objects": [
+    {
+     "name": "runBenchmarks",
+     "kind": "free function",
+     "role": "Clears g_benchmarkResults and invokes tpunit::Tests::run() with the given include/exclude filters"
+    },
+    {
+     "name": "printComparison",
+     "kind": "free function",
+     "role": "Formats a colored baseline-vs-current throughput table (new/improved/regressed/unchanged/removed) to stdout"
+    },
+    {
+     "name": "main",
+     "kind": "free function",
+     "role": "Parses --baseline/-only/-except/-v/--verbose/--help and orchestrates a plain run or the git-based baseline comparison workflow"
+    },
+    {
+     "name": "GREEN/RED/RESET/BOLD",
+     "kind": "free constants",
+     "role": "File-scope ANSI color codes"
+    },
+    {
+     "name": "SIGNIFICANT_CHANGE_THRESHOLD",
+     "kind": "free constant",
+     "role": "Percent-change cutoff used to classify a result as improved/regressed vs. unchanged"
+    }
+   ],
+   "misfits": [
+    {
+     "item": "main (baseline-comparison branch)",
+     "why": "Shells out to git (stash/checkout/rev-parse) and reruns `make bench -j32` from inside the benchmark binary itself; this is build/source-control orchestration that reads more like a CI shell script than a benchmark runner",
+     "severity": "low",
+     "suggested_home": "a wrapper shell script driving the plain benchmark binary twice"
+    }
+   ],
+   "name_fit": {
+    "score": 4,
+    "note": "Conventional entry-point name for the benchmarks binary"
+   },
+   "location_fit": {
+    "score": 5,
+    "note": "Correctly the benchmarks/ driver"
+   },
+   "naming_quality": {
+    "score": 5,
+    "note": "Clear, descriptive names throughout"
+   },
+   "depends_on": [
+    "libstuff/libstuff.h",
+    "test/lib/tpunit++.hpp",
+    "benchmarks/BenchmarkBase.h"
+   ],
+   "_src": "b102.json",
+   "hash": "f0b37d1e390857fb"
+  }
+ ],
+ "clusters": []
+}

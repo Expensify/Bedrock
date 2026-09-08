@@ -61,7 +61,7 @@ exports: [SLOG-macro log-level mask (_g_SLogMask), SLogStackTrace, structured-lo
 depends_on_dirs: [libstuff, sqlitecluster]
 depended_on_by: []
 misfit_count: {high: 0, med: 1, low: 3}
-resolved_locally: 0
+resolved_locally: 2
 escalate:
   - item: "_SSignal_StackTrace's direct call to SQLiteNode::KILLABLE_SQLITE_NODE->kill()"
     from: libstuff/SSignal.cpp
