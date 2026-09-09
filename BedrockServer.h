@@ -7,6 +7,7 @@
 #include "BedrockPlugin.h"
 #include "BedrockCommandQueue.h"
 #include "BedrockConflictManager.h"
+#include "BedrockJournalDeleter.h"
 #include "BedrockBlockingCommandQueue.h"
 
 class SQLitePeer;
@@ -285,6 +286,9 @@ private:
     BedrockCommandQueue _commandQueue;
 
     BedrockConflictManager _conflictManager;
+
+    // Trims the journal tables in the background, so commands don't have to do it inside their own transactions.
+    BedrockJournalDeleter _journalDeleter;
 
     // These are commands that will be processed in a blacking fashion.
     BedrockBlockingCommandQueue _blockingCommandQueue;

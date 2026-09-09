@@ -105,15 +105,27 @@ void BedrockServer::sync()
     // We use fewer FDs on test machines that have other resource restrictions in place.
 
     SQLite::journalZstdDictionaryID = args.calc("-journalZstdDictionaryID");
+    if (args.isSet("-journalDeleterBatchSize")) {
+        const int64_t journalDeleterBatchSize = args.calc64("-journalDeleterBatchSize");
+        if (journalDeleterBatchSize >= 0) {
+            BedrockJournalDeleter::deleterBatchSize = journalDeleterBatchSize;
+        } else {
+            SWARN("Ignoring -journalDeleterBatchSize '" << args["-journalDeleterBatchSize"] << "', it can't be negative.");
+        }
+    }
     vector<function<void()>> callbacks;
     for (const auto& plugin : plugins) {
         if (plugin.second->afterCommitCallback) {
             callbacks.emplace_back(plugin.second->afterCommitCallback);
         }
     }
+    callbacks.emplace_back([this]() {
+        _journalDeleter.wake();
+    });
     SINFO("Setting dbPool size to: " << _dbPoolSize);
     _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"], callbacks);
     SQLite& db = _dbPool->getBase();
+    _journalDeleter.start();
 
     // Allow plugins to read from the DB at startup.
     for (auto plugin : plugins) {
@@ -390,6 +402,8 @@ void BedrockServer::sync()
     for (auto plugin : plugins) {
         plugin.second->serverStopping();
     }
+
+    _journalDeleter.stop();
 
     // We clear this before the _syncNode that it references.
     _clusterMessenger.reset();
@@ -1020,12 +1034,12 @@ void BedrockServer::_resetServer()
 }
 
 BedrockServer::BedrockServer(SQLiteNodeState state, const SData& args_)
-    : SQLiteServer(), args(args_), _syncNode(nullptr), _configuredPriority(args.calc("-priority")), _clusterMessenger(nullptr)
+    : SQLiteServer(), args(args_), _journalDeleter(*this), _syncNode(nullptr), _configuredPriority(args.calc("-priority")), _clusterMessenger(nullptr)
 {
 }
 
 BedrockServer::BedrockServer(const SData& args_)
-    : SQLiteServer(), shutdownWhileDetached(false), args(args_), _requestCount(0),
+    : SQLiteServer(), shutdownWhileDetached(false), args(args_), _journalDeleter(*this), _requestCount(0),
     _isCommandPortLikelyBlocked(false),
     _syncLoopShouldBeRunning(true), _syncNode(nullptr), _configuredPriority(args.calc("-priority")), _clusterMessenger(nullptr), _shutdownState(RUNNING),
     _enableConflictPageLocks(args.test("-enableConflictPageLocks")), _shouldBackup(false), _detach(args.isSet("-bootstrap")),
@@ -1648,6 +1662,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "SetConflictParams") ||
         SIEquals(command->request.methodLine, "SetConflictPageLocks") ||
         SIEquals(command->request.methodLine, "EnableSQLTracing") ||
+        SIEquals(command->request.methodLine, "SetJournalDeleter") ||
         SIEquals(command->request.methodLine, "BlockWrites") ||
         SIEquals(command->request.methodLine, "UnblockWrites") ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads") ||
@@ -1727,6 +1742,32 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             _syncLoopShouldBeRunning = true;
             _detach = false;
         }
+    } else if (SIEquals(command->request.methodLine, "SetJournalDeleter")) {
+        // Zero pauses trimming, but SQLite reads a negative limit as no limit at all, which would delete a whole
+        // journal table in one transaction.
+        const int64_t batchSize = command->request.calc64("batchSize");
+        if (command->request.isSet("batchSize") && batchSize < 0) {
+            response.methodLine = "400 batchSize can't be negative";
+            return;
+        }
+
+        response["oldEnabled"] = BedrockJournalDeleter::enableDeleterThread ? "true" : "false";
+        response["oldBatchSize"] = to_string(BedrockJournalDeleter::deleterBatchSize.load());
+        if (command->request.isSet("batchSize")) {
+            BedrockJournalDeleter::deleterBatchSize.store(batchSize);
+        }
+        if (command->request.isSet("enable")) {
+            BedrockJournalDeleter::enableDeleterThread.store(command->request.test("enable"));
+
+            // The thread otherwise only starts with the sync loop, and only stops on shutdown.
+            if (BedrockJournalDeleter::enableDeleterThread) {
+                _journalDeleter.start();
+            } else {
+                _journalDeleter.stop();
+            }
+        }
+        response["newEnabled"] = BedrockJournalDeleter::enableDeleterThread ? "true" : "false";
+        response["newBatchSize"] = to_string(BedrockJournalDeleter::deleterBatchSize.load());
     } else if (SIEquals(command->request.methodLine, "EnableSQLTracing")) {
         response["oldValue"] = SQLite::enableTrace ? "true" : "false";
         if (command->request.isSet("enable")) {
