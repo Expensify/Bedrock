@@ -1,4 +1,5 @@
 #include <libstuff/AutoScopeOnPrepare.h>
+#include <libstuff/SRandom.h>
 #include <libstuff/libstuff.h>
 #include "SQLiteCore.h"
 #include "SQLite.h"
@@ -20,9 +21,7 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
         static constexpr bool generateGUIDHashes = false;
         string guid;
         if (generateGUIDHashes) {
-            string randomBytes(16, '\0');
-            sqlite3_randomness(static_cast<int>(randomBytes.size()), randomBytes.data());
-            guid = SToHex(randomBytes);
+            guid = SToHex(SRandom::rand64(), 16) + SToHex(SRandom::rand64(), 16);
         }
 
         // This will fail only if we can't acquire the commit lock respecting the command timeout, or the command is aborted while waiting for it.
