@@ -23,7 +23,7 @@ struct SRandomTest : tpunit::TestFixture
 
     void testBounds()
     {
-        constexpr uint64_t maximum = std::numeric_limits<uint64_t>::max();
+        constexpr uint64_t maximum = numeric_limits<uint64_t>::max();
         for (uint64_t endpoint : {uint64_t{0}, uint64_t{42}, maximum}) {
             ASSERT_EQUAL(SRandom::limitedRand64(endpoint, endpoint), endpoint);
         }
@@ -41,7 +41,7 @@ struct SRandomTest : tpunit::TestFixture
         for (unsigned length : {0U, 1U, 16U, 256U}) {
             const auto value = SRandom::randStr(length);
             ASSERT_EQUAL(value.size(), length);
-            ASSERT_EQUAL(value.find_first_not_of(alphabet), std::string::npos);
+            ASSERT_EQUAL(value.find_first_not_of(alphabet), string::npos);
         }
         for (int i = 0; i < 500; ++i) {
             ASSERT_EQUAL(SRandom::randBool(0.0), false);
@@ -51,17 +51,18 @@ struct SRandomTest : tpunit::TestFixture
 
     void testConcurrentThreadWaves()
     {
-        struct Result {
-            std::array<uint64_t, 4> first{};
+        struct Result
+        {
+            array<uint64_t, 4> first{};
             bool valid = true;
         };
-        std::set<std::array<uint64_t, 4>> prefixes;
+        set<array<uint64_t, 4>> prefixes;
         for (int wave = 0; wave < 2; ++wave) {
-            std::array<Result, 16> results{};
-            std::array<std::thread, 16> threads;
-            std::latch start(threads.size());
+            array<Result, 16> results{};
+            array<thread, 16> threads;
+            latch start(threads.size());
             for (size_t t = 0; t < threads.size(); ++t) {
-                threads[t] = std::thread([&, t] {
+                threads[t] = thread([&, t] {
                     start.arrive_and_wait();
                     auto& result = results[t];
                     try {
@@ -73,7 +74,7 @@ struct SRandomTest : tpunit::TestFixture
                             const auto bounded = SRandom::limitedRand64(7, 19);
                             const auto text = SRandom::randStr(i % 33);
                             result.valid &= bounded >= 7 && bounded <= 19;
-                            result.valid &= text.size() == i % 33 && text.find_first_not_of(alphabet) == std::string::npos;
+                            result.valid &= text.size() == i % 33 && text.find_first_not_of(alphabet) == string::npos;
                             result.valid &= !SRandom::randBool(0.0);
                             result.valid &= SRandom::randBool(1.0);
                         }
