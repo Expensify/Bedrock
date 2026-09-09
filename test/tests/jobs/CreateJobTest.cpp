@@ -2,7 +2,6 @@
 #include <unistd.h>
 
 #include <libstuff/SData.h>
-#include <libstuff/JSON/Value.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
@@ -20,7 +19,6 @@ struct CreateJobTest : tpunit::TestFixture
                               TEST(CreateJobTest::uniqueJob),
                               TEST(CreateJobTest::uniqueJobMergeData),
                               TEST(CreateJobTest::uniqueAsRetryLifecycle),
-                              TEST(CreateJobTest::uniqueAsRetryDataAndSnapshot),
                               TEST(CreateJobTest::uniqueAsRetryCannotOwnChildren),
                               TEST(CreateJobTest::createWithBadData),
                               TEST(CreateJobTest::createWithBadRepeat),
@@ -451,7 +449,7 @@ struct CreateJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = progressOnlyJobID;
-        command["expectedData"] = SDecodeBase64(runningJob.at("expectedDataBase64"));
+        command["expectedData"] = runningJob["data"];
         tester->executeWaitVerifyContent(command);
 
         // Then Bedrock requeues the job because its current data no longer matches the immutable snapshot
@@ -474,7 +472,7 @@ struct CreateJobTest : tpunit::TestFixture
         command.methodLine = "GetJob";
         command["name"] = "finishComparedData";
         runningJob = tester->executeWaitVerifyContentTable(command);
-        const string expectedFinishData = SDecodeBase64(runningJob.at("expectedDataBase64"));
+        const string expectedFinishData = runningJob["data"];
 
         // When the worker sends malformed expected data
         command.clear();
@@ -484,10 +482,6 @@ struct CreateJobTest : tpunit::TestFixture
 
         // Then Bedrock rejects the terminal request because freshness comparison requires a JSON object
         tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
-
-        command["expectedData"] = expectedFinishData;
-        command["data"] = "[]";
-        tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
 
         // Given a duplicate enqueue that replaces the activity while the original worker remains active
         command.clear();
@@ -525,7 +519,7 @@ struct CreateJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = finishJobID;
-        command["expectedData"] = SDecodeBase64(runningJob.at("expectedDataBase64"));
+        command["expectedData"] = runningJob["data"];
         tester->executeWaitVerifyContent(command);
 
         // Then Bedrock completes the row because no newer activity exists
@@ -545,7 +539,7 @@ struct CreateJobTest : tpunit::TestFixture
         command.methodLine = "GetJob";
         command["name"] = "retryComparedData";
         runningJob = tester->executeWaitVerifyContentTable(command);
-        const string expectedRetryData = SDecodeBase64(runningJob.at("expectedDataBase64"));
+        const string expectedRetryData = runningJob["data"];
 
         command.clear();
         command.methodLine = "CreateJob";
@@ -646,52 +640,6 @@ struct CreateJobTest : tpunit::TestFixture
         // Then Bedrock uses legacy completion because rolling deployments require backward compatibility
         tester->readDB("SELECT COUNT(1) FROM jobs WHERE jobID=" + legacyCompletionJobID + ";", result);
         ASSERT_EQUAL(result[0][0], "0");
-    }
-
-    void uniqueAsRetryDataAndSnapshot()
-    {
-        SData command("CreateJob");
-        command["name"] = "invalidData";
-        command["data"] = "{\"value\":}";
-        command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
-        tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
-
-        command["name"] = "invalidNestedData";
-        command["data"] = "{\"nested\":{\"value\":}}";
-        tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
-
-        command["name"] = "arrayData";
-        command["data"] = "[]";
-        tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
-
-        command["name"] = "whitespaceObject";
-        command["data"] = " { } ";
-        const string whitespaceJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
-        ASSERT_GREATER_THAN(SToInt64(whitespaceJobID), 0);
-
-        const string snapshotData =
-            "{\"emptyObject\":{},\"uint64\":18446744073709551615,"
-            "\"amount\":11.5,"
-            "\"nul\\u0000key\":true}";
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "exactSnapshot";
-        command["data"] = snapshotData;
-        command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
-        tester->executeWaitVerifyContent(command);
-
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "exactSnapshot";
-        const STable runningJob = tester->executeWaitVerifyContentTable(command);
-        ASSERT_TRUE(SContains(runningJob, "expectedDataBase64"));
-        const string exactSnapshot = SDecodeBase64(runningJob.at("expectedDataBase64"));
-        ASSERT_TRUE(JSON::Value::parse(snapshotData) == JSON::Value::parse(exactSnapshot));
-        ASSERT_TRUE(exactSnapshot.find("18446744073709551615") != string::npos);
-        ASSERT_TRUE(exactSnapshot.find("11.5") != string::npos);
-        ASSERT_TRUE(exactSnapshot.find("nul\\u0000key") != string::npos);
     }
 
     void uniqueAsRetryCannotOwnChildren()

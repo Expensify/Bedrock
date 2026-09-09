@@ -11,7 +11,6 @@ struct UpdateJobTest : tpunit::TestFixture
                               TEST(UpdateJobTest::updateJob),
                               TEST(UpdateJobTest::updateStringValueLookingLikeNumber),
                               TEST(UpdateJobTest::updateMockedJob),
-                              TEST(UpdateJobTest::uniqueAsRetryRequiresObjectData),
                               TEST(UpdateJobTest::clearRepeatWithShouldClearRepeat),
                               AFTER_CLASS(UpdateJobTest::tearDownClass))
     {
@@ -121,30 +120,6 @@ struct UpdateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(currentJob[0][2], "1000");
         ASSERT_NOT_EQUAL(currentJob[0][2], oldPriority);
         ASSERT_EQUAL(currentJob[0][3], "2020-01-01 00:00:00");
-    }
-
-    void uniqueAsRetryRequiresObjectData()
-    {
-        SData command("CreateJob");
-        command["name"] = "object-update";
-        command["data"] = "{\"value\":1}";
-        command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
-        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
-
-        for (const string& invalidData : {string("[]"), string("{\"value\":}")}) {
-            command.clear();
-            command.methodLine = "UpdateJob";
-            command["jobID"] = jobID;
-            command["data"] = invalidData;
-            tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
-        }
-
-        SQResult result;
-        tester->readDB("SELECT JSON_TYPE(data, '$._bedrockRerunIfDataChanged'), JSON_EXTRACT(data, '$.value') "
-                       "FROM jobs WHERE jobID = " + jobID + ";", result);
-        ASSERT_EQUAL(result[0][0], "true");
-        ASSERT_EQUAL(result[0][1], "1");
     }
 
     void clearRepeatWithShouldClearRepeat()

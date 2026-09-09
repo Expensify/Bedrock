@@ -139,7 +139,7 @@ struct FailJobTest : tpunit::TestFixture
         command.methodLine = "GetJob";
         command["name"] = "failComparedData";
         STable runningJob = tester->executeWaitVerifyContentTable(command);
-        const string expectedData = SDecodeBase64(runningJob.at("expectedDataBase64"));
+        const string expectedData = runningJob["data"];
 
         // When the worker submits malformed expected data that Bedrock cannot compare semantically
         command.clear();
@@ -149,10 +149,6 @@ struct FailJobTest : tpunit::TestFixture
 
         // Then Bedrock rejects the failure because it cannot make an atomic freshness decision
         tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
-
-        command["expectedData"] = expectedData;
-        command["data"] = "[]";
-        tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
 
         // Given a duplicate enqueue that installs newer activity while the worker remains active
         command.clear();
@@ -190,7 +186,7 @@ struct FailJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "FailJob";
         command["jobID"] = jobID;
-        command["expectedData"] = SDecodeBase64(runningJob.at("expectedDataBase64"));
+        command["expectedData"] = runningJob["data"];
 
         // When that worker reports a fatal result
         tester->executeWaitVerifyContent(command);
@@ -223,7 +219,7 @@ struct FailJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "FailJob";
         command["jobID"] = progressOnlyJobID;
-        command["expectedData"] = SDecodeBase64(runningJob.at("expectedDataBase64"));
+        command["expectedData"] = runningJob["data"];
         tester->executeWaitVerifyContent(command);
 
         // Then Bedrock requeues the job because its current data no longer matches the immutable snapshot

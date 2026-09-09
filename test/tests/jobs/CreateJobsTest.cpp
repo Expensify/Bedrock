@@ -1,5 +1,4 @@
 #include <libstuff/SData.h>
-#include <libstuff/JSON/Value.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 
@@ -334,9 +333,6 @@ struct CreateJobsTest : tpunit::TestFixture
         ASSERT_EQUAL(dequeuedJobs.size(), 1);
         const STable dequeuedJob = SParseJSONObject(dequeuedJobs.front());
         ASSERT_TRUE(dequeuedJob.at("data").find("_bedrockRerunIfDataChanged") == string::npos);
-        ASSERT_TRUE(SContains(dequeuedJob, "expectedDataBase64"));
-        ASSERT_TRUE(JSON::Value::parse(dequeuedJob.at("data")) == JSON::Value::parse(SDecodeBase64(dequeuedJob.at("expectedDataBase64"))));
-
         // A process-time check must see marker and child changes made by earlier entries in the same transaction.
         command.clear();
         command.methodLine = "CreateJob";

@@ -250,7 +250,7 @@ struct RetryJobTest : tpunit::TestFixture
         command.methodLine = "GetJob";
         command["name"] = "retry-merge";
         const STable runningJob = tester->executeWaitVerifyContentTable(command);
-        const string expectedData = SDecodeBase64(runningJob.at("expectedDataBase64"));
+        const string expectedData = runningJob.at("data");
         ASSERT_TRUE(JSON::Value::parse(initialData) == JSON::Value::parse(expectedData));
 
         command.clear();
@@ -264,15 +264,9 @@ struct RetryJobTest : tpunit::TestFixture
         command["uniqueAsRetry"] = "true";
         tester->executeWaitVerifyContent(command);
 
-        // This baseline is the normalized data that PHP gives to the worker. The raw expectedData remains exact.
-        const string expectedWorkerData =
-            "{\"conflict\":10.5,\"emptyObject\":[],"
-            "\"uint64\":1.8446744073709552e+19,\"workerChange\":\"old\",\"workerDelete\":true,"
-            "\"workerNull\":1,\"enqueueDelete\":true,\"enqueueChange\":\"old\","
-            "\"nested\":{\"b\":2,\"a\":1}}";
         const string workerData =
-            "{\"conflict\":10.5,\"emptyObject\":[],"
-            "\"uint64\":1.8446744073709552e+19,\"workerChange\":\"new\",\"workerNull\":null,"
+            "{\"conflict\":10.5,\"emptyObject\":{},"
+            "\"uint64\":18446744073709551615,\"workerChange\":\"new\",\"workerNull\":null,"
             "\"enqueueDelete\":true,\"enqueueChange\":\"old\",\"workerAdd\":true,"
             "\"nested\":{\"a\":1,\"b\":2}}";
 
@@ -280,18 +274,10 @@ struct RetryJobTest : tpunit::TestFixture
         command.methodLine = "RetryJob";
         command["jobID"] = jobID;
         command["expectedData"] = "{\"value\":}";
-        command["expectedWorkerData"] = expectedWorkerData;
         command["data"] = workerData;
         tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
 
         command["expectedData"] = expectedData;
-        command["expectedWorkerData"] = "{\"value\":}";
-        tester->executeWaitVerifyContent(command, "402 expectedWorkerData is not a valid JSON Object");
-
-        command["expectedWorkerData"] = expectedWorkerData;
-        command["data"] = "[]";
-        tester->executeWaitVerifyContent(command, "402 Data is not a valid JSON Object");
-
         command["data"] = workerData;
         command["nextRun"] = "2042-04-02 00:42:42";
         command["ignoreRepeat"] = "true";
