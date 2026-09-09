@@ -125,6 +125,7 @@ void BedrockServer::sync()
     SINFO("Setting dbPool size to: " << _dbPoolSize);
     _dbPool = make_shared<SQLitePool>(_dbPoolSize, args["-db"], args.calc("-cacheSize"), args.calc("-maxJournalSize"), journalTables, mmapSizeGB, args.isSet("-newDBsUseHctree"), args["-checkpointMode"], callbacks);
     SQLite& db = _dbPool->getBase();
+    _journalDeleter.start();
 
     // Allow plugins to read from the DB at startup.
     for (auto plugin : plugins) {
@@ -1753,9 +1754,9 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         if (command->request.isSet("enable")) {
             BedrockJournalDeleter::enableDeleterThread.store(command->request.test("enable"));
 
-            // The thread otherwise only starts on a state change, and only stops on shutdown.
+            // The thread otherwise only starts with the sync loop, and only stops on shutdown.
             if (BedrockJournalDeleter::enableDeleterThread) {
-                _journalDeleter.start(getState());
+                _journalDeleter.start();
             } else {
                 _journalDeleter.stop();
             }
@@ -2501,7 +2502,6 @@ void BedrockServer::handleSocket(Socket&& socket, bool fromControlPort, bool fro
 
 void BedrockServer::notifyStateChangeToPlugins(SQLite& db, SQLiteNodeState newState)
 {
-    _journalDeleter.start(newState);
     for (auto plugin : plugins) {
         plugin.second->stateChanged(db, newState);
     }

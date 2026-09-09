@@ -254,7 +254,7 @@ int main(int argc, char* argv[])
         << endl;
         cout << "-maxJournalSize <#commits>  Number of commits to retain in the historical journal (default 1000000)"
         << endl;
-        cout << "-journalDeleterBatchSize <#rows>  Number of journal rows the background deleter removes per pass, 0 to pause trimming (default 1000)"
+        cout << "-journalDeleterBatchSize <#rows>  Number of journal rows the background deleter removes per pass, 0 to pause trimming (default 10)"
         << endl;
         cout << "-checkpointMode <mode>      Accepts PASSIVE|FULL|RESTART|TRUNCATE, which is the value passed to https://www.sqlite.org/c3ref/wal_checkpoint_v2.html" << endl;
         cout << endl;
@@ -332,7 +332,7 @@ int main(int argc, char* argv[])
     SETDEFAULT("-plugins", "db,jobs,cache,mysql,compression");
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");
-    SETDEFAULT("-journalDeleterBatchSize", "1000");
+    SETDEFAULT("-journalDeleterBatchSize", "10");
     SETDEFAULT("-queryLog", "queryLog.csv");
     SETDEFAULT("-journalZstdDictionaryID", "0");
 

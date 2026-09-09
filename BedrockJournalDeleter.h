@@ -17,14 +17,13 @@ public:
     ~BedrockJournalDeleter();
 
     static inline atomic<bool> enableDeleterThread{true};
-    static inline atomic<int64_t> deleterBatchSize{1000};
+    static inline atomic<int64_t> deleterBatchSize{10};
 
     // Runs on the committing thread: must not block or touch the database.
     void wake();
 
-    // Does nothing unless the flag is on and the state is trimmable. Never stops the thread: this runs on the sync
-    // thread, where a join could stall a failover, so the shutdown path is what actually stops it.
-    void start(SQLiteNodeState state);
+    // Does nothing unless the flag is on. The thread checks the node's state itself, on every wake.
+    void start();
 
     void stop();
 

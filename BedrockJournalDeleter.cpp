@@ -27,15 +27,14 @@ bool BedrockJournalDeleter::isTrimmableState(SQLiteNodeState state)
            state == SQLiteNodeState::STANDINGDOWN || state == SQLiteNodeState::SYNCHRONIZING;
 }
 
-void BedrockJournalDeleter::start(SQLiteNodeState state)
+void BedrockJournalDeleter::start()
 {
-    if (!enableDeleterThread || !isTrimmableState(state)) {
+    if (!enableDeleterThread) {
         return;
     }
 
     lock_guard<decltype(_lifecycleMutex)> lifecycleLock(_lifecycleMutex);
     if (_thread) {
-        wake();
         return;
     }
 
