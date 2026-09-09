@@ -372,6 +372,10 @@ struct SQLiteNodeTest : tpunit::TestFixture
         node._leadPeer = node.getPeerByName("peer1");
         SQLitePeer* otherPeer = node.getPeerByName("peer2");
         otherPeer->loggedIn = true;
+        // Keep outgoing messages buffered without a transport, so an unexpected RECONNECT is observable.
+        auto socket = make_unique<STCPManager::Socket>(-1, STCPManager::Socket::CONNECTED);
+        ASSERT_TRUE(otherPeer->setSocket(socket.get()));
+        auto* peerSocket = socket.release(); // The peer owns the socket.
 
         SData transaction("TRANSACTION");
         transaction["CommitCount"] = to_string(commitCount + 1);
@@ -383,6 +387,8 @@ struct SQLiteNodeTest : tpunit::TestFixture
         transaction["Hash"] = transaction["NewHash"];
         node._onMESSAGE(otherPeer, transaction);
 
+        EXPECT_TRUE(otherPeer->connected());
+        EXPECT_TRUE(peerSocket->sendBufferEmpty());
         EXPECT_EQUAL(node._replicateThread, nullptr);
         EXPECT_TRUE(node._replicateQueue.empty());
         EXPECT_FALSE(db.insideTransaction());
