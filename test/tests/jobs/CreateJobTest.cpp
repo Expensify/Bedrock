@@ -18,8 +18,8 @@ struct CreateJobTest : tpunit::TestFixture
                               TEST(CreateJobTest::createWithRepeat),
                               TEST(CreateJobTest::uniqueJob),
                               TEST(CreateJobTest::uniqueJobMergeData),
-                              TEST(CreateJobTest::uniqueAsRetryLifecycle),
-                              TEST(CreateJobTest::uniqueAsRetryCannotOwnChildren),
+                              TEST(CreateJobTest::rerunIfDataChangedLifecycle),
+                              TEST(CreateJobTest::rerunIfDataChangedCannotOwnChildren),
                               TEST(CreateJobTest::createWithBadData),
                               TEST(CreateJobTest::createWithBadRepeat),
                               TEST(CreateJobTest::createChildWithQueuedParent),
@@ -291,38 +291,38 @@ struct CreateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(nonoverwritenJob[0][9], updatedJob[0][9]);
     }
 
-    void uniqueAsRetryLifecycle()
+    void rerunIfDataChangedLifecycle()
     {
         // Given a non-Boolean opt-in value that cannot define a stable retry policy
         SData command("CreateJob");
         command["name"] = "invalidRerunIfDataChanged";
-        command["uniqueAsRetry"] = "sometimes";
+        command["rerunIfDataChanged"] = "sometimes";
 
         // When the caller requests rerun-if-data-changed behavior
         // Then Bedrock rejects the request because the policy must be unambiguous
-        tester->executeWaitVerifyContent(command, "402 Malformed uniqueAsRetry");
+        tester->executeWaitVerifyContent(command, "402 Malformed rerunIfDataChanged");
 
         // Given a unique job that prevents updates to its existing row
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "disabledOverwrite";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         command["overwrite"] = "false";
 
         // When the caller requests rerun-if-data-changed behavior
         // Then Bedrock rejects the request because duplicate activity must update the existing row
-        tester->executeWaitVerifyContent(command, "402 uniqueAsRetry requires unique=true and overwrite enabled");
+        tester->executeWaitVerifyContent(command, "402 rerunIfDataChanged requires unique=true and overwrite enabled");
 
         // Given a non-unique job that cannot provide a single execution lane
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "missingUnique";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
 
         // When the caller requests rerun-if-data-changed behavior
         // Then Bedrock rejects the request because concurrent rows violate the retry contract
-        tester->executeWaitVerifyContent(command, "402 uniqueAsRetry requires unique=true and overwrite enabled");
+        tester->executeWaitVerifyContent(command, "402 rerunIfDataChanged requires unique=true and overwrite enabled");
 
         // Given caller data that tries to set Bedrock's private opt-in marker
         command.clear();
@@ -356,7 +356,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "markerOnlyOptIn";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         ASSERT_EQUAL(tester->executeWaitVerifyContentTable(command)["jobID"], markerOnlyJobID);
 
         // Then Bedrock adds the marker without changing the schedule
@@ -375,7 +375,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["data"] = "{\"activity\":1,\"nested\":{\"a\":1,\"b\":2}}";
         command["repeat"] = "FINISHED, +1 DAY";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         const string sameDataJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         // When public APIs inspect and dequeue the job
@@ -400,7 +400,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["data"] = "{\"activity\":2}";
         command["repeat"] = "FINISHED, +1 DAY";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         tester->executeWaitVerifyContent(command);
 
         command["data"] = "{\"activity\":1}";
@@ -431,7 +431,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "progressOnlyUpdate";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         const string progressOnlyJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         command.clear();
@@ -465,7 +465,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "finishComparedData";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         const string finishJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         command.clear();
@@ -489,7 +489,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "finishComparedData";
         command["data"] = "{\"activity\":2}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         tester->executeWaitVerifyContent(command);
 
         // When the original worker finishes with output from its stale activity
@@ -532,7 +532,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "retryComparedData";
         command["data"] = "{\"activity\":1,\"timeoutRetries\":0}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         const string retryJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         command.clear();
@@ -546,7 +546,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "retryComparedData";
         command["data"] = "{\"activity\":2}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         command["jobPriority"] = "750";
         tester->executeWaitVerifyContent(command);
 
@@ -592,7 +592,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "legacyWorker";
         command["data"] = "{\"activity\":2}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         tester->executeWaitVerifyContent(command);
 
         // When the legacy worker finishes with the snapshot from its original dequeue
@@ -615,7 +615,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "legacyCompletion";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         const string legacyCompletionJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         command.clear();
@@ -628,7 +628,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "legacyCompletion";
         command["data"] = "{\"activity\":2}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         tester->executeWaitVerifyContent(command);
 
         // When an old worker manager finishes without expectedData
@@ -642,13 +642,13 @@ struct CreateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0][0], "0");
     }
 
-    void uniqueAsRetryCannotOwnChildren()
+    void rerunIfDataChangedCannotOwnChildren()
     {
         // Given an opted-in job whose retry lifecycle can requeue its row
         SData command("CreateJob");
         command["name"] = "optedParent";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         const string optedParentID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         command.clear();
@@ -663,7 +663,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["parentJobID"] = optedParentID;
 
         // Then Bedrock rejects the child because requeue semantics cannot preserve parent completion behavior
-        tester->executeWaitVerifyContent(command, "405 uniqueAsRetry jobs cannot own child jobs");
+        tester->executeWaitVerifyContent(command, "405 rerunIfDataChanged jobs cannot own child jobs");
 
         // Given a unique job that already owns a child
         command.clear();
@@ -690,10 +690,10 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "existingParent";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
 
         // Then Bedrock rejects the opt-in because existing child state requires normal parent completion
-        tester->executeWaitVerifyContent(command, "405 uniqueAsRetry jobs cannot own child jobs");
+        tester->executeWaitVerifyContent(command, "405 rerunIfDataChanged jobs cannot own child jobs");
 
         // Given a normal parent whose completion behavior supports child jobs
         command.clear();
@@ -712,7 +712,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "allowedOptedChild";
         command["parentJobID"] = allowedParentID;
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
 
         // Then Bedrock accepts the child because the opted-in job does not own the relationship
         ASSERT_GREATER_THAN(SToInt64(tester->executeWaitVerifyContentTable(command)["jobID"]), 0);

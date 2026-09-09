@@ -14,7 +14,7 @@ struct RetryJobTest : tpunit::TestFixture
                               TEST(RetryJobTest::parentIsNotPaused),
                               TEST(RetryJobTest::removeFinishedAndCancelledChildren),
                               TEST(RetryJobTest::updateData),
-                              TEST(RetryJobTest::uniqueAsRetryThreeWayMerge),
+                              TEST(RetryJobTest::rerunIfDataChangedThreeWayMerge),
                               TEST(RetryJobTest::negativeDelay),
                               TEST(RetryJobTest::positiveDelay),
                               TEST(RetryJobTest::delayError),
@@ -231,7 +231,7 @@ struct RetryJobTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0][0], SComposeJSONObject(data));
     }
 
-    void uniqueAsRetryThreeWayMerge()
+    void rerunIfDataChangedThreeWayMerge()
     {
         const string initialData =
             "{\"conflict\":10.5,\"emptyObject\":{},"
@@ -243,7 +243,7 @@ struct RetryJobTest : tpunit::TestFixture
         command["data"] = initialData;
         command["repeat"] = "FINISHED, +1 DAY";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         command.clear();
@@ -261,7 +261,7 @@ struct RetryJobTest : tpunit::TestFixture
         command["repeat"] = "FINISHED, +1 DAY";
         command["jobPriority"] = "750";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         tester->executeWaitVerifyContent(command);
 
         const string workerData =

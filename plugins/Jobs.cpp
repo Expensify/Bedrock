@@ -453,16 +453,16 @@ bool BedrockJobsCommand::peek(SQLite& db)
                     STHROW("402 Malformed retryAfter");
                 }
 
-                // uniqueAsRetry runs the job again if its data changes while it is running.
+                // rerunIfDataChanged runs the job again if its data changes while it is running.
                 // It requires unique=true and overwrite=true.
-                if (SContains(job, "uniqueAsRetry") && !job["uniqueAsRetry"].empty() &&
-                    !SIEquals(job["uniqueAsRetry"], "true") && !SIEquals(job["uniqueAsRetry"], "false")) {
-                    STHROW("402 Malformed uniqueAsRetry");
+                if (SContains(job, "rerunIfDataChanged") && !job["rerunIfDataChanged"].empty() &&
+                    !SIEquals(job["rerunIfDataChanged"], "true") && !SIEquals(job["rerunIfDataChanged"], "false")) {
+                    STHROW("402 Malformed rerunIfDataChanged");
                 }
-                if (SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true") &&
+                if (SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true") &&
                     (!SContains(job, "unique") || job["unique"] != "true" ||
                      (SContains(job, "overwrite") && job["overwrite"] != "true" && job["overwrite"] != ""))) {
-                    STHROW("402 uniqueAsRetry requires unique=true and overwrite enabled");
+                    STHROW("402 rerunIfDataChanged requires unique=true and overwrite enabled");
                 }
 
                 // Validate that the parentJobID exists and is in the right state if one was passed.
@@ -483,7 +483,7 @@ bool BedrockJobsCommand::peek(SQLite& db)
                         STHROW("405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
                     }
                     if (result[0][2] == "1") {
-                        STHROW("405 uniqueAsRetry jobs cannot own child jobs");
+                        STHROW("405 rerunIfDataChanged jobs cannot own child jobs");
                     }
 
                     // Verify that the parent and child job have the same `mockRequest` setting, update them to match if
@@ -528,7 +528,7 @@ bool BedrockJobsCommand::peek(SQLite& db)
                         }
                         const bool alreadyRerunIfDataChanged = result[0][3] == "1";
                         const bool optsIntoRerunIfDataChanged =
-                            SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true");
+                            SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true");
                         const string incomingData = job["data"].empty() ? "{}" : job["data"];
                         const bool matchingData =
                             callerDataEquals(result[0][1], incomingData);
@@ -616,7 +616,7 @@ void BedrockJobsCommand::process(SQLite& db)
     const string& requestVerb = request.getVerb();
 
     if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
-        // - CreateJob( name, [data], [firstRun], [repeat], [jobPriority], [unique], [overwrite], [uniqueAsRetry], [parentJobID], [retryAfter] )
+        // - CreateJob( name, [data], [firstRun], [repeat], [jobPriority], [unique], [overwrite], [rerunIfDataChanged], [parentJobID], [retryAfter] )
         //
         //     Creates a "job" for future processing by a worker.
         //
@@ -630,7 +630,7 @@ void BedrockJobsCommand::process(SQLite& db)
         //                return that jobID
         //     - overwrite - Only applicable when unique is true. When set to true it will overwrite the existing job
         //                   with the new job data
-        //     - uniqueAsRetry - With unique and overwrite enabled, data changed by an enqueue while the job runs
+        //     - rerunIfDataChanged - With unique and overwrite enabled, data changed by an enqueue while the job runs
         //                       schedules a subsequent run with the latest payload. This is separate from retryAfter
         //                       failure recovery. An opted-in job cannot own child jobs.
         //     - parentJobID - The ID of the parent job (optional)
@@ -654,7 +654,7 @@ void BedrockJobsCommand::process(SQLite& db)
         //                     return that jobID
         //          - overwrite - Only applicable when unique is true. When set to true it will overwrite the existing job
         //                        with the new job data
-        //          - uniqueAsRetry - Enables the same subsequent-run behavior as CreateJob
+        //          - rerunIfDataChanged - Enables the same subsequent-run behavior as CreateJob
         //          - parentJobID - The ID of the parent job (optional)
         //          - retryAfter - Amount of auto-retries before marking job as failed (optional)
         //
@@ -726,14 +726,14 @@ void BedrockJobsCommand::process(SQLite& db)
                 if (!result.empty()) {
                     existingRerunIfDataChanged = result[0][2] == "1";
                     const bool optsIntoRerunIfDataChanged =
-                        SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true");
+                        SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true");
                     const string incomingData = job["data"].empty() ? "{}" : job["data"];
                     const bool matchingData =
                         callerDataEquals(result[0][1], incomingData);
                     enablesRerunIfDataChangedWithoutDataChange =
                         optsIntoRerunIfDataChanged && !existingRerunIfDataChanged && matchingData;
 
-                    // If the data matches, update the job only when enabling uniqueAsRetry for the first time.
+                    // If the data matches, update the job only when enabling rerunIfDataChanged for the first time.
                     if (matchingData && (existingRerunIfDataChanged || !optsIntoRerunIfDataChanged)) {
                         SINFO("Job already existed and unique flag was passed, reusing existing job "
                               << result[0][0] << ", mocked? " << (mockRequest ? "true" : "false"));
@@ -782,8 +782,7 @@ void BedrockJobsCommand::process(SQLite& db)
             int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
             if (parentJobID) {
                 SQResult result;
-                if (!db.read("SELECT state, parentJobID, data, "
-                             "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true' "
+                if (!db.read("SELECT state, parentJobID, data "
                              "FROM jobs WHERE jobID = " + SQ(parentJobID) + ";", result)) {
                     STHROW("502 Select failed");
                 }
@@ -793,9 +792,6 @@ void BedrockJobsCommand::process(SQLite& db)
                 if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "RUNQUEUED") && !SIEquals(result[0][0], "PAUSED")) {
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING, RUNQUEUED or PAUSED (" << result[0][0] << ")");
                     STHROW("405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
-                }
-                if (result[0][3] == "1") {
-                    STHROW("405 uniqueAsRetry jobs cannot own child jobs");
                 }
                 // Verify that the parent and child job have the same `mockRequest` setting.
                 STable parentData = SParseJSONObject(result[0][2]);
@@ -813,7 +809,7 @@ void BedrockJobsCommand::process(SQLite& db)
             // Are we creating a new job, or updating an existing job?
             if (updateJobID) {
                 const bool rerunIfDataChanged = existingRerunIfDataChanged ||
-                    (SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true"));
+                    (SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true"));
                 if (rerunIfDataChanged && !existingRerunIfDataChanged) {
                     SQResult children;
                     if (!db.read("SELECT jobID FROM jobs WHERE parentJobID != 0 AND parentJobID=" +
@@ -821,11 +817,11 @@ void BedrockJobsCommand::process(SQLite& db)
                         STHROW("502 Failed to select child jobs");
                     }
                     if (!children.empty()) {
-                        STHROW("405 uniqueAsRetry jobs cannot own child jobs");
+                        STHROW("405 rerunIfDataChanged jobs cannot own child jobs");
                     }
                 }
                 if (enablesRerunIfDataChangedWithoutDataChange) {
-                    // Only enable uniqueAsRetry. Keep the existing repeat and priority if they were not provided.
+                    // Only enable rerunIfDataChanged. Keep the existing repeat and priority if they were not provided.
                     list<string> updateList = {
                         "data = JSON_SET(data, '$._bedrockRerunIfDataChanged', JSON('true'))"};
                     if (SContains(job, "repeat")) {
@@ -839,7 +835,7 @@ void BedrockJobsCommand::process(SQLite& db)
                         STHROW("502 update query failed");
                     }
                 } else if (!SContains(job, "overwrite") || job["overwrite"] == "true" || job["overwrite"] == "") {
-                    // Update the job data and keep uniqueAsRetry enabled.
+                    // Update the job data and keep rerunIfDataChanged enabled.
                     const string updatedData = rerunIfDataChanged ?
                         "JSON_SET(JSON_PATCH(data, " + safeData +
                         "), '$._bedrockRerunIfDataChanged', JSON('true'))" :
@@ -879,7 +875,7 @@ void BedrockJobsCommand::process(SQLite& db)
 
                 // If no data was provided, use an empty object
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
-                const bool rerunIfDataChanged = SContains(job, "uniqueAsRetry") && SIEquals(job["uniqueAsRetry"], "true");
+                const bool rerunIfDataChanged = SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true");
                 const string dataToInsert = rerunIfDataChanged ?
                     "JSON_SET(" + safeData + ", '$._bedrockRerunIfDataChanged', JSON('true'))" :
                     safeData;

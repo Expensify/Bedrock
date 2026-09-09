@@ -12,7 +12,7 @@ struct FailJobTest : tpunit::TestFixture
                               TEST(FailJobTest::notInRunningRunqueuedState),
                               TEST(FailJobTest::failJobInRunningState),
                               TEST(FailJobTest::failJobInRunqueuedState),
-                              TEST(FailJobTest::uniqueAsRetry),
+                              TEST(FailJobTest::rerunIfDataChanged),
                               AFTER(FailJobTest::tearDown),
                               AFTER_CLASS(FailJobTest::tearDownClass))
     {
@@ -125,14 +125,14 @@ struct FailJobTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0][0], "FAILED");
     }
 
-    void uniqueAsRetry()
+    void rerunIfDataChanged()
     {
         // Given an opted-in unique job that is ready for its first worker
         SData command("CreateJob");
         command["name"] = "failComparedData";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         command.clear();
@@ -156,7 +156,7 @@ struct FailJobTest : tpunit::TestFixture
         command["name"] = "failComparedData";
         command["data"] = "{\"activity\":2}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         tester->executeWaitVerifyContent(command);
 
         // When the stale worker reports a fatal result with output from the original activity
@@ -201,7 +201,7 @@ struct FailJobTest : tpunit::TestFixture
         command["name"] = "progressOnlyFailure";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         const string progressOnlyJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         command.clear();
@@ -234,7 +234,7 @@ struct FailJobTest : tpunit::TestFixture
         command["name"] = "legacyFailure";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         const string legacyJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
         command.clear();
@@ -247,7 +247,7 @@ struct FailJobTest : tpunit::TestFixture
         command["name"] = "legacyFailure";
         command["data"] = "{\"activity\":2}";
         command["unique"] = "true";
-        command["uniqueAsRetry"] = "true";
+        command["rerunIfDataChanged"] = "true";
         tester->executeWaitVerifyContent(command);
 
         // When an old worker manager reports failure without expectedData
