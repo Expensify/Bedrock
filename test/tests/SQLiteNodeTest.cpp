@@ -58,6 +58,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            AFTER(SQLiteNodeTest::rollback),
                                            TEST(SQLiteNodeTest::testFindSyncPeer),
                                            TEST(SQLiteNodeTest::testGetPeerByName),
+                                           TEST(SQLiteNodeTest::testPrepareGUID),
                                            TEST(SQLiteNodeTest::testMixedHashHistory),
                                            TEST(SQLiteNodeTest::testGUIDHashFailures),
                                            TEST(SQLiteNodeTest::testReplicationRequiresLeader),
@@ -208,6 +209,35 @@ struct SQLiteNodeTest : tpunit::TestFixture
         testReplicationFailure("constraint");
     }
 
+    void testPrepareGUID()
+    {
+        SQLite& db = dbPool->getBase();
+        const uint64_t commitCount = db.getCommitCount();
+        const string committedHash = db.getCommittedHash();
+        const string query = "CREATE TABLE prepareGUIDTest (id INTEGER);";
+        for (const string guid : {"00000000000000000000000000aBcDeF", "", "00000000000000000000000000abcde0"}) {
+            ASSERT_TRUE(db.beginTransaction());
+            ASSERT_TRUE(db.writeUnmodified(query));
+            string hash;
+            ASSERT_TRUE(db.prepare(nullptr, &hash, chrono::hours(24), nullptr, guid));
+            const string expectedHash = guid.empty() ? SToHex(SHashSHA1(committedHash + query)) :
+                guid + ":" + SToHex(SHashSHA1(guid + query));
+            EXPECT_EQUAL(hash, expectedHash);
+            EXPECT_EQUAL(db.getUncommittedHash(), expectedHash);
+            EXPECT_EQUAL(db.getCommittedHash(), committedHash);
+            EXPECT_EQUAL(db.getCommitCount(), commitCount);
+            db.rollback();
+            EXPECT_TRUE(db.getUncommittedHash().empty());
+        }
+        for (const string& guid : {string(31, '0'), string(33, '0'), string(31, '0') + "g", string(32, '0') + ":" + string(40, '0')}) {
+            ASSERT_TRUE(db.beginTransaction());
+            ASSERT_TRUE(db.writeUnmodified(query));
+            EXPECT_FALSE(db.prepare(nullptr, nullptr, chrono::hours(24), nullptr, guid));
+            EXPECT_TRUE(db.getUncommittedHash().empty());
+            db.rollback();
+        }
+    }
+
     void testMixedHashHistory()
     {
         const vector<string> queries = {
@@ -327,7 +357,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
     void testGUIDHashFailures()
     {
-        for (const string failure : {"guid-value", "guid-digest", "guid-query", "guid-short", "guid-long", "guid-nonhex"}) {
+        for (const string failure : {"guid-value", "guid-digest", "guid-query", "guid-short", "guid-long", "guid-nonhex", "guid-separator", "guid-no-separator"}) {
             testReplicationFailure(failure);
         }
     }
@@ -423,6 +453,11 @@ struct SQLiteNodeTest : tpunit::TestFixture
                 commit["Hash"].back() = hash.back() == '0' ? '1' : '0';
             } else if (failure == "guid-query") {
                 commit.content = "INSERT INTO syncTest VALUES (2);";
+            } else if (failure == "guid-separator") {
+                commit["Hash"][31] = ':';
+                commit["Hash"][32] = '0';
+            } else if (failure == "guid-no-separator") {
+                commit["Hash"].erase(32, 1);
             } else if (failure == "guid-short" || failure == "guid-long" || failure == "guid-nonhex") {
                 const string invalidGUID = failure == "guid-short" ? guid.substr(1) :
                     failure == "guid-long" ? guid + "0" : guid.substr(0, 31) + "g";
