@@ -952,26 +952,13 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     return true;
 }
 
-bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr, const string& replicationHash)
+bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr, const string& guid)
 {
     SASSERT(_insideTransaction);
 
-    string guid;
-    if (replicationHash.find(':') != string::npos) {
-        if (replicationHash.size() != 73 || replicationHash[32] != ':' ||
-            replicationHash.substr(0, 32).find_first_not_of("0123456789ABCDEFabcdef") != string::npos) {
-            SWARN("Invalid GUID transaction hash format");
-            return false;
-        }
-        guid = replicationHash.substr(0, 32);
-    }
-
-    // Keep local generation disabled until every node can receive GUID hashes, including rollback versions.
-    static constexpr bool generateGUIDHashes = false;
-    if (replicationHash.empty() && generateGUIDHashes) {
-        string randomBytes(16, '\0');
-        sqlite3_randomness(static_cast<int>(randomBytes.size()), randomBytes.data());
-        guid = SToHex(randomBytes);
+    if (!guid.empty() && (guid.size() != 32 || guid.find_first_not_of("0123456789ABCDEFabcdef") != string::npos)) {
+        SWARN("Invalid transaction GUID");
+        return false;
     }
 
     // Pick a journal for this transaction.

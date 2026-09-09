@@ -35,7 +35,7 @@ This format checks only the current transaction's integrity. The GUID distinguis
 
 Both formats can appear in the same journal. A chained hash following a GUID hash uses the entire previous `GUID:SHA1` string, followed by the current SQL, as its input. Neither storage nor transmission strips the GUID.
 
-Local GUID generation is implemented but hard-disabled in `SQLite::prepare()`. Deploy mixed-format readers everywhere before enabling generation. An older binary can continue writing chained hashes on a database that already contains GUID entries, but cannot replay GUID entries it has not received. Once generation is enabled, rollback versions that may need to synchronize must retain mixed-format reading.
+Local GUID generation is implemented but hard-disabled in `SQLiteCore::commit()`. Deploy mixed-format readers everywhere before enabling generation. An older binary can continue writing chained hashes on a database that already contains GUID entries, but cannot replay GUID entries it has not received. Once generation is enabled, rollback versions that may need to synchronize must retain mixed-format reading.
 
 ## Technical Notes
 The above skips over a couple important details:

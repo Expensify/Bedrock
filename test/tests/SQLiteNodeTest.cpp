@@ -381,15 +381,14 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
             // Prepare a valid wire payload without advancing the receiver's committed state.
             const string query = "INSERT INTO syncTest VALUES (1);";
-            const string guid = "00000000000000000000000000aBcDeF";
-            const string expectedHash = failure.find("guid-") == 0 ? guid + ":" + SToHex(SHashSHA1(guid + query)) : "";
+            const string guid = failure.find("guid-") == 0 ? "00000000000000000000000000aBcDeF" : "";
+            const string expectedHash = guid.empty() ? SToHex(SHashSHA1(committedHash + query)) :
+                guid + ":" + SToHex(SHashSHA1(guid + query));
             ASSERT_TRUE(db.beginTransaction());
             ASSERT_TRUE(db.writeUnmodified(query));
             string hash;
-            ASSERT_TRUE(db.prepare(nullptr, &hash, chrono::hours(24), nullptr, expectedHash));
-            if (!expectedHash.empty()) {
-                EXPECT_EQUAL(hash, expectedHash);
-            }
+            ASSERT_TRUE(db.prepare(nullptr, &hash, chrono::hours(24), nullptr, guid));
+            EXPECT_EQUAL(hash, expectedHash);
             SData commit("COMMIT");
             commit["CommitIndex"] = to_string(commitCount + 1);
             commit["Hash"] = hash;
