@@ -27,6 +27,7 @@ sqlite3* SQLite::getDBHandle()
 thread_local string SQLite::_mostRecentSQLiteErrorLog;
 thread_local int64_t SQLite::_conflictIdentifier;
 thread_local string SQLite::_conflictLocation;
+thread_local uint64_t SQLite::_commitLockWait;
 
 const string SQLite::getMostRecentSQLiteErrorLog() const
 {
@@ -514,11 +515,22 @@ SQLite::TRANSACTION_TYPE SQLite::getLastTransactionType()
     return _lastTransactionType;
 }
 
+uint64_t SQLite::getCommitLockWait()
+{
+    return _commitLockWait;
+}
+
+void SQLite::resetCommitLockWait()
+{
+    _commitLockWait = 0;
+}
+
 bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
 {
     _lastTransactionType = type;
     _transactionTimer.start("BEGIN_TRANSACTION");
     if (type == TRANSACTION_TYPE::EXCLUSIVE) {
+        auto commitLockWaitStart = chrono::steady_clock::now();
         if (isSyncThread) {
             // Blocking the sync thread has catastrophic results (forking) and so we either get this quickly, or we fail the transaction.
             if (!_sharedData.commitLock.try_lock_for(5s)) {
@@ -528,6 +540,7 @@ bool SQLite::beginTransaction(SQLite::TRANSACTION_TYPE type, bool beginOnly)
         } else {
             _sharedData.commitLock.lock();
         }
+        _commitLockWait += chrono::duration_cast<chrono::microseconds>(chrono::steady_clock::now() - commitLockWaitStart).count();
         _sharedData._commitLockTimer.start("EXCLUSIVE");
         _mutexLocked = true;
     }
@@ -1003,6 +1016,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
             }
         }
         auto elapsed = chrono::steady_clock::now() - start;
+        _commitLockWait += chrono::duration_cast<chrono::microseconds>(elapsed).count();
 
         bool abortPtrWasSet = _shouldAbortPtr && *_shouldAbortPtr;
         if (abortPtr) {
