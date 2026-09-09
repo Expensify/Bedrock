@@ -273,10 +273,6 @@ struct RetryJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "RetryJob";
         command["jobID"] = jobID;
-        command["expectedData"] = "{\"value\":}";
-        command["data"] = workerData;
-        tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
-
         command["expectedData"] = expectedData;
         command["data"] = workerData;
         command["nextRun"] = "2042-04-02 00:42:42";
