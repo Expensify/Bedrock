@@ -5,7 +5,7 @@
 
 using namespace std;
 
-// Random number generator class.
+// Non-cryptographic random number generator, allocated and seeded on first use in each thread.
 class SRandom {
 public:
     static uint64_t rand64();
@@ -14,6 +14,5 @@ public:
     static bool randBool(const double probability);
 
 private:
-    static mt19937_64 _generator;
-    static uniform_int_distribution<uint64_t> _distribution64;
+    static mt19937_64& _getGenerator();
 };

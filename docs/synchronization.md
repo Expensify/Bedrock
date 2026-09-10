@@ -10,7 +10,7 @@ Bedrock's primary feature is its ability to seamlessly synchronize data between 
 
 2. All nodes attempt to connect to all other nodes.
 
-3. During this process all nodes `SYNCHRONIZE` from their peers, which means they broadcast "My most recent transaction has commitCount X, and the hash of every transaction up to that point is Y".  Anybody who has newer data will respond with the missing transactions, which are all committed in the same order on every node via a [private blockchain](https://bedrockdb.com/blockchain.html).
+3. During this process all nodes `SYNCHRONIZE` from their peers, which means they broadcast "My most recent transaction has commitCount X and stored hash Y".  Anybody who has newer data will respond with the missing transactions, which are all committed in the same order on every node. The journal accepts both [chained hashes and GUID transaction hashes](https://bedrockdb.com/blockchain.html).
 
 4. Any two nodes that disagree on what the hash of a given transaction should be will immediately disconnect from each other.  This means that any node that has "forked" away from the cluster will be excluded from participation.
 
