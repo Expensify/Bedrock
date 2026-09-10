@@ -1,5 +1,4 @@
 #include <libstuff/AutoScopeOnPrepare.h>
-#include <libstuff/SRandom.h>
 #include <libstuff/libstuff.h>
 #include "SQLiteCore.h"
 #include "SQLite.h"
@@ -17,16 +16,9 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
     {
         AutoScopeOnPrepare onPrepare(needsPluginNotification, _db, notificationHandler);
 
-        // Keep local generation disabled until every node can receive GUID hashes, including rollback versions.
-        static constexpr bool generateGUIDHashes = false;
-        string guid;
-        if (generateGUIDHashes) {
-            guid = SToHex(SRandom::rand64(), 16) + SToHex(SRandom::rand64(), 16);
-        }
-
         // This will fail only if we can't acquire the commit lock respecting the command timeout, or the command is aborted while waiting for it.
         // In this case, we want to roll back and return false, which will make the caller return the appropriate exception.
-        if (!_db.prepare(&commitID, &transactionHash, commitLockTimeout, abortPtr, guid)) {
+        if (!_db.prepare(&commitID, &transactionHash, commitLockTimeout, abortPtr)) {
             _db.rollback(commandName);
             return false;
         }
