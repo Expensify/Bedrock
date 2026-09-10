@@ -22,6 +22,7 @@ struct CreateJobTest : tpunit::TestFixture
                               TEST(CreateJobTest::rerunIfDataChangedCannotOwnChildren),
                               TEST(CreateJobTest::createWithBadData),
                               TEST(CreateJobTest::createWithBadRepeat),
+                              TEST(CreateJobTest::createWithMalformedFirstRun),
                               TEST(CreateJobTest::createChildWithQueuedParent),
                               TEST(CreateJobTest::createChildWithRunningGrandparent),
                               TEST(CreateJobTest::retryRecurringJobs),
@@ -732,6 +733,14 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "blabla";
         command["repeat"] = "blabla";
         tester->executeWaitVerifyContent(command, "402 Malformed repeat");
+    }
+
+    void createWithMalformedFirstRun()
+    {
+        SData command("CreateJob");
+        command["name"] = "blabla";
+        command["firstRun"] = "2026-01-01 00:10:00(change this to current monday)";
+        tester->executeWaitVerifyContent(command, "402 Malformed firstRun");
     }
 
     // Cannot create a child job when parent is QUEUED

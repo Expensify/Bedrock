@@ -465,6 +465,10 @@ bool BedrockJobsCommand::peek(SQLite& db)
                     STHROW("402 rerunIfDataChanged requires unique=true and overwrite enabled");
                 }
 
+                if (SContains(job, "firstRun") && job["firstRun"] != "" && !BedrockPlugin::isValidDate(job["firstRun"])) {
+                    STHROW("402 Malformed firstRun");
+                }
+
                 // Validate that the parentJobID exists and is in the right state if one was passed.
                 // Also verify that the parent job doesn't have a retryAfter set.
                 int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
@@ -754,6 +758,10 @@ void BedrockJobsCommand::process(SQLite& db)
             }
 
             const string& currentTime = SCURRENT_TIMESTAMP();
+
+            if (SContains(job, "firstRun") && job["firstRun"] != "" && !BedrockPlugin::isValidDate(job["firstRun"])) {
+                STHROW("402 Malformed firstRun");
+            }
 
             // If no "firstRun" was provided, use right now
             const string& safeFirstRun = !SContains(job, "firstRun") || job["firstRun"].empty() ? SQ(SCURRENT_TIMESTAMP_MS()) : SQ(job["firstRun"]);
