@@ -1,13 +1,17 @@
 #include "SRandom.h"
 
+#include <thread>
+
 #ifdef VALGRIND
 // random_device breaks valgrind.
-mt19937_64 SRandom::_generator = mt19937_64();
+thread_local mt19937_64 SRandom::_generator = mt19937_64();
 #else
-mt19937_64 SRandom::_generator = mt19937_64(random_device()());
+// The thread id is mixed into the seed because random_device can hand the same 32-bit value to two threads that seed
+// at the same moment, which would leave them generating identical sequences.
+thread_local mt19937_64 SRandom::_generator = mt19937_64(random_device()() ^ hash<thread::id>()(this_thread::get_id()));
 #endif
 
-uniform_int_distribution<uint64_t> SRandom::_distribution64 = uniform_int_distribution<uint64_t>();
+thread_local uniform_int_distribution<uint64_t> SRandom::_distribution64 = uniform_int_distribution<uint64_t>();
 
 uint64_t SRandom::limitedRand64(uint64_t minNum, uint64_t maxNum)
 {

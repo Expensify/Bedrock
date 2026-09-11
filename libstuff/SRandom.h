@@ -14,6 +14,8 @@ public:
     static bool randBool(const double probability);
 
 private:
-    static mt19937_64 _generator;
-    static uniform_int_distribution<uint64_t> _distribution64;
+    // Both of these carry mutable state that every draw advances, so each thread gets its own copy. Sharing one
+    // generator across threads is a data race that hands the same value to more than one caller.
+    static thread_local mt19937_64 _generator;
+    static thread_local uniform_int_distribution<uint64_t> _distribution64;
 };
