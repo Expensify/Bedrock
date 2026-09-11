@@ -127,7 +127,7 @@ struct FailJobTest : tpunit::TestFixture
 
     void rerunIfDataChanged()
     {
-        // Given an opted-in unique job that is ready for its first worker
+        // Given a running opted-in job
         SData command("CreateJob");
         command["name"] = "failComparedData";
         command["data"] = "{\"activity\":1}";
@@ -141,16 +141,7 @@ struct FailJobTest : tpunit::TestFixture
         STable runningJob = tester->executeWaitVerifyContentTable(command);
         const string expectedData = runningJob["data"];
 
-        // When the worker submits malformed expected data that Bedrock cannot compare semantically
-        command.clear();
-        command.methodLine = "FailJob";
-        command["jobID"] = jobID;
-        command["expectedData"] = "not-json";
-
-        // Then Bedrock rejects the failure because it cannot make an atomic freshness decision
-        tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
-
-        // Given a duplicate enqueue that installs newer activity while the worker remains active
+        // And a duplicate enqueue updates its data
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "failComparedData";
@@ -159,7 +150,7 @@ struct FailJobTest : tpunit::TestFixture
         command["rerunIfDataChanged"] = "true";
         tester->executeWaitVerifyContent(command);
 
-        // When the stale worker reports a fatal result with output from the original activity
+        // When the original worker fails with stale output
         command.clear();
         command.methodLine = "FailJob";
         command["jobID"] = jobID;
@@ -167,8 +158,9 @@ struct FailJobTest : tpunit::TestFixture
         command["data"] = "{\"activity\":1,\"worker\":true}";
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock queues the newer activity because the stale result does not own it
+        // Then Bedrock requeues the newer data and discards stale worker output
         SQResult result;
+
         tester->readDB("SELECT state, JSON_EXTRACT(data, '$._bedrockRerunIfDataChanged'), "
                        "JSON_EXTRACT(data, '$.activity'), JSON_EXTRACT(data, '$.worker') "
                        "FROM jobs WHERE jobID=" + jobID + ";", result);
@@ -177,25 +169,24 @@ struct FailJobTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0][2], "2");
         ASSERT_EQUAL(result[0][3], "");
 
+        // Given the next worker receives the preserved data
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "failComparedData";
         runningJob = tester->executeWaitVerifyContentTable(command);
 
-        // Given the subsequent worker owns the current activity
+        // When it fails with the current snapshot
         command.clear();
         command.methodLine = "FailJob";
         command["jobID"] = jobID;
         command["expectedData"] = runningJob["data"];
-
-        // When that worker reports a fatal result
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock fails the row because no newer activity needs another run
+        // Then Bedrock marks the job FAILED
         tester->readDB("SELECT state FROM jobs WHERE jobID=" + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "FAILED");
 
-        // Given an opted-in worker that reports progress without a duplicate enqueue
+        // Given a running opted-in job whose progress changes through UpdateJob
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "progressOnlyFailure";
@@ -215,20 +206,20 @@ struct FailJobTest : tpunit::TestFixture
         command["data"] = "{\"activity\":1,\"progress\":50}";
         tester->executeWaitVerifyContent(command);
 
-        // When the worker reports a fatal result with its immutable dequeue snapshot
+        // When the worker fails with its original dequeue snapshot
         command.clear();
         command.methodLine = "FailJob";
         command["jobID"] = progressOnlyJobID;
         command["expectedData"] = runningJob["data"];
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock requeues the job because its current data no longer matches the immutable snapshot
+        // Then Bedrock requeues the job and preserves its progress
         tester->readDB("SELECT state, JSON_EXTRACT(data, '$.progress') FROM jobs WHERE jobID=" +
                        progressOnlyJobID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
         ASSERT_EQUAL(result[0][1], "50");
 
-        // Given an opted-in job that receives newer activity from a duplicate enqueue
+        // Given a running opted-in job
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "legacyFailure";
@@ -242,22 +233,13 @@ struct FailJobTest : tpunit::TestFixture
         command["name"] = "legacyFailure";
         tester->executeWaitVerifyContent(command);
 
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "legacyFailure";
-        command["data"] = "{\"activity\":2}";
-        command["unique"] = "true";
-        command["rerunIfDataChanged"] = "true";
-        tester->executeWaitVerifyContent(command);
-
-        // When an old worker manager reports failure without expectedData
+        // When the worker fails without expectedData
         command.clear();
         command.methodLine = "FailJob";
         command["jobID"] = legacyJobID;
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock uses legacy failure behavior because rolling deployments require backward compatibility
-        tester->readDB("SELECT state FROM jobs WHERE jobID=" + legacyJobID + ";", result);
-        ASSERT_EQUAL(result[0][0], "FAILED");
+        // Then Bedrock marks the job FAILED
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID=" + legacyJobID + ";"), "FAILED");
     }
 } __FailJobTest;

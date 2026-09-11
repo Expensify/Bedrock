@@ -76,9 +76,7 @@ static string mergeRetryJobData(const string& currentData, const string& expecte
 
     JSON::Value merged = JSON::Value::object({});
     for (const string& key : keys) {
-        const bool currentMatchesExpected = membersEqual(current, expected, key);
-        const bool workerMatchesExpected = membersEqual(worker, expected, key);
-        const JSON::Value& selected = currentMatchesExpected && !workerMatchesExpected ? worker : current;
+        const JSON::Value& selected = membersEqual(current, expected, key) ? worker : current;
         if (selected.hasMember(key)) {
             merged[key] = selected[key];
         }
@@ -431,8 +429,6 @@ bool BedrockJobsCommand::peek(SQLite& db)
                 // Throw if data is not a valid JSON object, otherwise UPDATE query will fail.
                 if (SContains(job, "data")) {
                     validateJobData(job["data"]);
-                }
-                if (!job["data"].empty()) {
                     job["data"] = stripRerunIfDataChanged(job["data"]);
                 }
 
@@ -447,7 +443,9 @@ bool BedrockJobsCommand::peek(SQLite& db)
                     !SIEquals(job["rerunIfDataChanged"], "true") && !SIEquals(job["rerunIfDataChanged"], "false")) {
                     STHROW("402 Malformed rerunIfDataChanged");
                 }
-                if (SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true") &&
+                const bool optsIntoRerunIfDataChanged =
+                    SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true");
+                if (optsIntoRerunIfDataChanged &&
                     (!SContains(job, "unique") || job["unique"] != "true" ||
                      (SContains(job, "overwrite") && job["overwrite"] != "true"))) {
                     STHROW("402 rerunIfDataChanged requires unique=true and overwrite enabled");
@@ -519,8 +517,6 @@ bool BedrockJobsCommand::peek(SQLite& db)
                             STHROW("404 Trying to create a child that already exists, but it is tied to a different parent");
                         }
                         const bool alreadyRerunIfDataChanged = result[0][3] == "1";
-                        const bool optsIntoRerunIfDataChanged =
-                            SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true");
                         const string incomingData = job["data"].empty() ? "{}" : job["data"];
                         const bool matchingData =
                             callerDataEquals(result[0][1], incomingData);
@@ -698,6 +694,8 @@ void BedrockJobsCommand::process(SQLite& db)
                 }
             }
 
+            const bool optsIntoRerunIfDataChanged =
+                SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true");
             int64_t updateJobID = 0;
             bool existingRerunIfDataChanged = false;
             bool enablesRerunIfDataChangedWithoutDataChange = false;
@@ -717,8 +715,6 @@ void BedrockJobsCommand::process(SQLite& db)
 
                 if (!result.empty()) {
                     existingRerunIfDataChanged = result[0][2] == "1";
-                    const bool optsIntoRerunIfDataChanged =
-                        SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true");
                     const string incomingData = job["data"].empty() ? "{}" : job["data"];
                     const bool matchingData =
                         callerDataEquals(result[0][1], incomingData);
@@ -804,8 +800,7 @@ void BedrockJobsCommand::process(SQLite& db)
 
             // Are we creating a new job, or updating an existing job?
             if (updateJobID) {
-                const bool rerunIfDataChanged = existingRerunIfDataChanged ||
-                    (SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true"));
+                const bool rerunIfDataChanged = existingRerunIfDataChanged || optsIntoRerunIfDataChanged;
                 if (rerunIfDataChanged && !existingRerunIfDataChanged) {
                     SQResult children;
                     if (!db.read("SELECT jobID FROM jobs WHERE parentJobID != 0 AND parentJobID=" +
@@ -871,8 +866,7 @@ void BedrockJobsCommand::process(SQLite& db)
 
                 // If no data was provided, use an empty object
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
-                const bool rerunIfDataChanged = SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true");
-                const string dataToInsert = rerunIfDataChanged ?
+                const string dataToInsert = optsIntoRerunIfDataChanged ?
                     "JSON_SET(" + safeData + ", '$._bedrockRerunIfDataChanged', JSON('true'))" :
                     safeData;
 

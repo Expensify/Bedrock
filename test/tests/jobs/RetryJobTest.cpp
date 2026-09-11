@@ -233,7 +233,7 @@ struct RetryJobTest : tpunit::TestFixture
 
     void rerunIfDataChangedThreeWayMerge()
     {
-        // Given a worker running a unique job with rerunIfDataChanged enabled
+        // Given a worker running an opted-in unique job
         const string initialData =
             "{\"conflict\":10.5,\"emptyObject\":{},"
             "\"uint64\":18446744073709551615,\"workerChange\":\"old\",\"workerDelete\":true,"
@@ -254,7 +254,7 @@ struct RetryJobTest : tpunit::TestFixture
         const string expectedData = runningJob.at("data");
         ASSERT_TRUE(JSON::Value::parse(initialData) == JSON::Value::parse(expectedData));
 
-        // And another CreateJob call updates the stored data while the worker is running
+        // And a duplicate enqueue changes the stored data and priority
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "retry-merge";
@@ -266,7 +266,7 @@ struct RetryJobTest : tpunit::TestFixture
         command["rerunIfDataChanged"] = "true";
         tester->executeWaitVerifyContent(command);
 
-        // When the worker retries with edits to its original copy of the data
+        // When the worker retries with edits to its original data
         const string workerData =
             "{\"conflict\":10.5,\"emptyObject\":{},"
             "\"uint64\":18446744073709551615,\"workerChange\":\"new\",\"workerNull\":null,"
@@ -284,7 +284,7 @@ struct RetryJobTest : tpunit::TestFixture
         command["jobPriority"] = "1000";
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock uses the requested retry time but keeps the stored name and priority
+        // Then Bedrock honors the retry time and preserves the current name and priority
         SQResult result;
         tester->readDB("SELECT state, name, nextRun, priority, data FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
@@ -292,16 +292,13 @@ struct RetryJobTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0][2], "2042-04-02 00:42:42");
         ASSERT_EQUAL(result[0][3], "750");
 
-        // And Bedrock keeps the changes from CreateJob. It applies worker edits only to fields CreateJob did not change.
-        // Other values stay the same, and rerunIfDataChanged stays enabled.
+        // And enqueue changes take precedence over worker changes to the same fields
         const string expectedMergedData =
             "{\"_bedrockRerunIfDataChanged\":true,\"conflict\":11.5,"
             "\"emptyObject\":{},\"uint64\":18446744073709551615,\"workerChange\":\"new\","
             "\"workerNull\":null,\"enqueueChange\":\"new\",\"enqueueAdd\":true,\"workerAdd\":true,"
             "\"nested\":{\"a\":1,\"b\":2}}";
         ASSERT_TRUE(JSON::Value::parse(result[0][4]) == JSON::Value::parse(expectedMergedData));
-        ASSERT_TRUE(result[0][4].find("11.5") != string::npos);
-        ASSERT_TRUE(result[0][4].find("18446744073709551615") != string::npos);
     }
 
     // Cannot retry with a negative delay

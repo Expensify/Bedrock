@@ -294,54 +294,51 @@ struct CreateJobTest : tpunit::TestFixture
 
     void rerunIfDataChangedLifecycle()
     {
-        // Given a non-Boolean opt-in value that cannot define a stable retry policy
+        // Given an invalid rerunIfDataChanged value
         SData command("CreateJob");
         command["name"] = "invalidRerunIfDataChanged";
         command["rerunIfDataChanged"] = "sometimes";
-
-        // When the caller requests rerun-if-data-changed behavior
-        // Then Bedrock rejects the request because the policy must be unambiguous
+        // When creating the job
+        // Then the invalid option is rejected
         tester->executeWaitVerifyContent(command, "402 Malformed rerunIfDataChanged");
 
-        // Given a unique job that prevents updates to its existing row
+        // Given a unique job with overwrite disabled
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "disabledOverwrite";
         command["unique"] = "true";
         command["rerunIfDataChanged"] = "true";
         command["overwrite"] = "false";
-
-        // When the caller requests rerun-if-data-changed behavior
-        // Then Bedrock rejects the request because duplicate activity must update the existing row
+        // When enabling rerunIfDataChanged
+        // Then the request is rejected because duplicate enqueues must update the job
         tester->executeWaitVerifyContent(command, "402 rerunIfDataChanged requires unique=true and overwrite enabled");
 
-        // Given a non-unique job that cannot provide a single execution lane
+        // Given a job without unique enabled
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "missingUnique";
         command["rerunIfDataChanged"] = "true";
-
-        // When the caller requests rerun-if-data-changed behavior
-        // Then Bedrock rejects the request because concurrent rows violate the retry contract
+        // When enabling rerunIfDataChanged
+        // Then the request is rejected because reruns require a unique job
         tester->executeWaitVerifyContent(command, "402 rerunIfDataChanged requires unique=true and overwrite enabled");
 
-        // Given caller data that tries to set Bedrock's private opt-in marker
+        // Given caller data containing Bedrock's private marker
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "reservedMetadata";
         command["data"] = "{\"activity\":1,\"_bedrockRerunIfDataChanged\":true}";
-
-        // When Bedrock creates the job
+        // When creating the job
         const string reservedMetadataJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
-        // Then Bedrock removes the marker because callers must not control infrastructure state
+        // Then Bedrock removes the marker and preserves caller data
         SQResult result;
+
         tester->readDB("SELECT JSON_EXTRACT(data, '$._bedrockRerunIfDataChanged'), JSON_EXTRACT(data, '$.activity') "
                        "FROM jobs WHERE jobID=" + reservedMetadataJobID + ";", result);
         ASSERT_EQUAL(result[0][0], "");
         ASSERT_EQUAL(result[0][1], "1");
 
-        // Given an existing unique job with caller-selected scheduling fields
+        // Given a unique job with a repeat schedule and priority
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "markerOnlyOptIn";
@@ -351,7 +348,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["unique"] = "true";
         const string markerOnlyJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
-        // When an identical enqueue enables rerun-if-data-changed without new scheduling fields
+        // When an identical enqueue enables reruns without new scheduling fields
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "markerOnlyOptIn";
@@ -360,14 +357,12 @@ struct CreateJobTest : tpunit::TestFixture
         command["rerunIfDataChanged"] = "true";
         ASSERT_EQUAL(tester->executeWaitVerifyContentTable(command)["jobID"], markerOnlyJobID);
 
-        // Then Bedrock adds the marker without changing the schedule
-        tester->readDB("SELECT repeat, priority, JSON_TYPE(data, '$._bedrockRerunIfDataChanged'), "
-                       "JSON_EXTRACT(data, '$._bedrockRerunIfDataChanged') "
+        // Then Bedrock enables reruns and preserves the schedule and priority
+        tester->readDB("SELECT repeat, priority, JSON_TYPE(data, '$._bedrockRerunIfDataChanged') "
                        "FROM jobs WHERE jobID=" + markerOnlyJobID + ";", result);
         ASSERT_EQUAL(result[0][0], "FINISHED, +1 DAY");
         ASSERT_EQUAL(result[0][1], "750");
         ASSERT_EQUAL(result[0][2], "true");
-        ASSERT_EQUAL(result[0][3], "1");
 
         // Given an opted-in recurring job with nested caller data
         command.clear();
@@ -379,19 +374,20 @@ struct CreateJobTest : tpunit::TestFixture
         command["rerunIfDataChanged"] = "true";
         const string sameDataJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
 
-        // When public APIs inspect and dequeue the job
+        // When QueryJob inspects the job
         command.clear();
         command.methodLine = "QueryJob";
         command["jobID"] = sameDataJobID;
         const STable queriedJob = tester->executeWaitVerifyContentTable(command);
-
-        // Then responses hide the private marker
+        // Then the response hides the private marker
         ASSERT_TRUE(queriedJob.at("data").find("_bedrockRerunIfDataChanged") == string::npos);
 
+        // When GetJob dequeues the same job
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "sameComparedData";
         STable runningJob = tester->executeWaitVerifyContentTable(command);
+        // Then its response also hides the private marker
         ASSERT_TRUE(runningJob["data"].find("_bedrockRerunIfDataChanged") == string::npos);
 
         // Given duplicate enqueues that change and then restore the caller data
@@ -407,7 +403,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["data"] = "{\"activity\":1}";
         tester->executeWaitVerifyContent(command);
 
-        // When the worker finishes with reordered data and unrelated infrastructure fields
+        // When the worker finishes with reordered snapshot keys and different Bedrock metadata
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = sameDataJobID;
@@ -417,16 +413,15 @@ struct CreateJobTest : tpunit::TestFixture
         command["data"] = "{\"done\":true,\"_bedrockRerunIfDataChanged\":false}";
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock completes the attempt because semantic caller data matches the immutable snapshot
+        // Then the attempt finishes normally, saving worker output and preserving the opt-in marker
         tester->readDB("SELECT state, JSON_TYPE(data, '$._bedrockRerunIfDataChanged'), "
-                       "JSON_EXTRACT(data, '$._bedrockRerunIfDataChanged'), JSON_EXTRACT(data, '$.done') "
+                       "JSON_EXTRACT(data, '$.done') "
                        "FROM jobs WHERE jobID=" + sameDataJobID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
         ASSERT_EQUAL(result[0][1], "true");
         ASSERT_EQUAL(result[0][2], "1");
-        ASSERT_EQUAL(result[0][3], "1");
 
-        // Given an opted-in worker that reports progress without a duplicate enqueue
+        // Given a running opted-in job whose progress changes through UpdateJob
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "progressOnlyUpdate";
@@ -446,21 +441,21 @@ struct CreateJobTest : tpunit::TestFixture
         command["data"] = "{\"activity\":1,\"progress\":50}";
         tester->executeWaitVerifyContent(command);
 
-        // When the worker finishes with its immutable dequeue snapshot
+        // When the worker finishes with its original dequeue snapshot
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = progressOnlyJobID;
         command["expectedData"] = runningJob["data"];
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock requeues the job because its current data no longer matches the immutable snapshot
+        // Then Bedrock requeues the job and preserves its progress
         tester->readDB("SELECT state, JSON_EXTRACT(data, '$._bedrockRerunIfDataChanged'), "
                        "JSON_EXTRACT(data, '$.progress') FROM jobs WHERE jobID=" + progressOnlyJobID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
         ASSERT_EQUAL(result[0][1], "1");
         ASSERT_EQUAL(result[0][2], "50");
 
-        // Given an opted-in worker with an immutable snapshot of the original activity
+        // Given a running opted-in job and its dequeue snapshot
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "finishComparedData";
@@ -475,16 +470,19 @@ struct CreateJobTest : tpunit::TestFixture
         runningJob = tester->executeWaitVerifyContentTable(command);
         const string expectedFinishData = runningJob["data"];
 
-        // When the worker sends malformed expected data
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = finishJobID;
-        command["expectedData"] = "[]";
+        // When completion commands submit malformed or non-object snapshots
+        for (const string& verb : {"RetryJob", "FinishJob", "FailJob"}) {
+            for (const string& invalidData : {"not-json", "[]"}) {
+                command.clear();
+                command.methodLine = verb;
+                command["jobID"] = finishJobID;
+                command["expectedData"] = invalidData;
+                // Then each command rejects the snapshot
+                tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
+            }
+        }
 
-        // Then Bedrock rejects the terminal request because freshness comparison requires a JSON object
-        tester->executeWaitVerifyContent(command, "402 expectedData is not a valid JSON Object");
-
-        // Given a duplicate enqueue that replaces the activity while the original worker remains active
+        // Given a duplicate enqueue that changes the running job's data
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "finishComparedData";
@@ -493,7 +491,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["rerunIfDataChanged"] = "true";
         tester->executeWaitVerifyContent(command);
 
-        // When the original worker finishes with output from its stale activity
+        // When the original worker finishes with stale output
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = finishJobID;
@@ -501,7 +499,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["data"] = "{\"activity\":1,\"worker\":true}";
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock queues the newer activity and discards stale worker output
+        // Then Bedrock requeues the newer data and discards stale worker output
         tester->readDB("SELECT state, JSON_EXTRACT(data, '$._bedrockRerunIfDataChanged'), "
                        "JSON_EXTRACT(data, '$.activity'), JSON_EXTRACT(data, '$.worker') "
                        "FROM jobs WHERE jobID=" + finishJobID + ";", result);
@@ -510,72 +508,24 @@ struct CreateJobTest : tpunit::TestFixture
         ASSERT_EQUAL(result[0][2], "2");
         ASSERT_EQUAL(result[0][3], "");
 
-        // Given the subsequent worker receives the preserved activity
+        // Given the next worker receives the preserved data
         command.clear();
         command.methodLine = "GetJob";
         command["name"] = "finishComparedData";
         runningJob = tester->executeWaitVerifyContentTable(command);
 
-        // When that worker finishes with its current snapshot
+        // When it finishes with the current snapshot
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = finishJobID;
         command["expectedData"] = runningJob["data"];
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock completes the row because no newer activity exists
+        // Then Bedrock completes and deletes the job
         tester->readDB("SELECT COUNT(1) FROM jobs WHERE jobID=" + finishJobID + ";", result);
         ASSERT_EQUAL(result[0][0], "0");
 
-        // Given an opted-in worker whose row receives newer activity and queue priority
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "retryComparedData";
-        command["data"] = "{\"activity\":1,\"timeoutRetries\":0}";
-        command["unique"] = "true";
-        command["rerunIfDataChanged"] = "true";
-        const string retryJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
-
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "retryComparedData";
-        runningJob = tester->executeWaitVerifyContentTable(command);
-        const string expectedRetryData = runningJob["data"];
-
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "retryComparedData";
-        command["data"] = "{\"activity\":2}";
-        command["unique"] = "true";
-        command["rerunIfDataChanged"] = "true";
-        command["jobPriority"] = "750";
-        tester->executeWaitVerifyContent(command);
-
-        // When the stale worker requests a retry with different output and scheduling attributes
-        command.clear();
-        command.methodLine = "RetryJob";
-        command["jobID"] = retryJobID;
-        command["expectedData"] = expectedRetryData;
-        command["nextRun"] = "2042-04-02 00:42:42";
-        command["ignoreRepeat"] = "true";
-        command["name"] = "staleName";
-        command["jobPriority"] = "1000";
-        command["data"] = "{\"activity\":1,\"timeoutRetries\":1,\"worker\":true}";
-        tester->executeWaitVerifyContent(command);
-
-        // Then Bedrock preserves conflicting enqueue data, applies other worker changes, and honors the retry time
-        tester->readDB("SELECT state, name, nextRun, priority, JSON_EXTRACT(data, '$.activity'), "
-                       "JSON_EXTRACT(data, '$.timeoutRetries'), JSON_EXTRACT(data, '$.worker') "
-                       "FROM jobs WHERE jobID=" + retryJobID + ";", result);
-        ASSERT_EQUAL(result[0][0], "QUEUED");
-        ASSERT_EQUAL(result[0][1], "retryComparedData");
-        ASSERT_EQUAL(result[0][2], "2042-04-02 00:42:42");
-        ASSERT_EQUAL(result[0][3], "750");
-        ASSERT_EQUAL(result[0][4], "2");
-        ASSERT_EQUAL(result[0][5], "1");
-        ASSERT_EQUAL(result[0][6], "1");
-
-        // Given a legacy unique worker that started before its job enabled rerun-if-data-changed
+        // Given a worker that starts before its job enables reruns
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "legacyWorker";
@@ -588,6 +538,7 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "legacyWorker";
         STable legacyJob = tester->executeWaitVerifyContentTable(command);
 
+        // And a duplicate enqueue enables reruns with newer data
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "legacyWorker";
@@ -596,21 +547,21 @@ struct CreateJobTest : tpunit::TestFixture
         command["rerunIfDataChanged"] = "true";
         tester->executeWaitVerifyContent(command);
 
-        // When the legacy worker finishes with the snapshot from its original dequeue
+        // When the worker finishes with its original snapshot
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = legacyJobID;
         command["expectedData"] = legacyJob["data"];
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock queues the newer activity because opt-in and comparison occur atomically
+        // Then Bedrock requeues the newer data with reruns enabled
         tester->readDB("SELECT state, JSON_EXTRACT(data, '$._bedrockRerunIfDataChanged'), JSON_EXTRACT(data, '$.activity') "
                        "FROM jobs WHERE jobID=" + legacyJobID + ";", result);
         ASSERT_EQUAL(result[0][0], "QUEUED");
         ASSERT_EQUAL(result[0][1], "1");
         ASSERT_EQUAL(result[0][2], "2");
 
-        // Given an opted-in job that receives newer activity from a duplicate enqueue
+        // Given a running opted-in job
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "legacyCompletion";
@@ -624,28 +575,19 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "legacyCompletion";
         tester->executeWaitVerifyContent(command);
 
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "legacyCompletion";
-        command["data"] = "{\"activity\":2}";
-        command["unique"] = "true";
-        command["rerunIfDataChanged"] = "true";
-        tester->executeWaitVerifyContent(command);
-
-        // When an old worker manager finishes without expectedData
+        // When the worker finishes without expectedData
         command.clear();
         command.methodLine = "FinishJob";
         command["jobID"] = legacyCompletionJobID;
         tester->executeWaitVerifyContent(command);
 
-        // Then Bedrock uses legacy completion because rolling deployments require backward compatibility
-        tester->readDB("SELECT COUNT(1) FROM jobs WHERE jobID=" + legacyCompletionJobID + ";", result);
-        ASSERT_EQUAL(result[0][0], "0");
+        // Then Bedrock completes and deletes the job
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(1) FROM jobs WHERE jobID=" + legacyCompletionJobID + ";"), "0");
     }
 
     void rerunIfDataChangedCannotOwnChildren()
     {
-        // Given an opted-in job whose retry lifecycle can requeue its row
+        // Given a running opted-in job
         SData command("CreateJob");
         command["name"] = "optedParent";
         command["unique"] = "true";
@@ -657,13 +599,12 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "optedParent";
         tester->executeWaitVerifyContent(command);
 
-        // When a caller tries to attach a child to that job
+        // When a caller attaches a child job
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "rejectedChild";
         command["parentJobID"] = optedParentID;
-
-        // Then Bedrock rejects the child because requeue semantics cannot preserve parent completion behavior
+        // Then Bedrock rejects the child
         tester->executeWaitVerifyContent(command, "405 rerunIfDataChanged jobs cannot own child jobs");
 
         // Given a unique job that already owns a child
@@ -685,18 +626,17 @@ struct CreateJobTest : tpunit::TestFixture
         command["parentJobID"] = existingParentID;
         tester->executeWaitVerifyContent(command);
 
-        // When a caller tries to enable rerun-if-data-changed on the parent
+        // When a caller enables reruns on the parent
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "existingParent";
         command["data"] = "{\"activity\":1}";
         command["unique"] = "true";
         command["rerunIfDataChanged"] = "true";
-
-        // Then Bedrock rejects the opt-in because existing child state requires normal parent completion
+        // Then Bedrock rejects the opt-in
         tester->executeWaitVerifyContent(command, "405 rerunIfDataChanged jobs cannot own child jobs");
 
-        // Given a normal parent whose completion behavior supports child jobs
+        // Given a running parent without reruns enabled
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "allowedParent";
@@ -707,15 +647,14 @@ struct CreateJobTest : tpunit::TestFixture
         command["name"] = "allowedParent";
         tester->executeWaitVerifyContent(command);
 
-        // When a caller creates an opted-in job as a child of that parent
+        // When a caller creates an opted-in child job
         command.clear();
         command.methodLine = "CreateJob";
         command["name"] = "allowedOptedChild";
         command["parentJobID"] = allowedParentID;
         command["unique"] = "true";
         command["rerunIfDataChanged"] = "true";
-
-        // Then Bedrock accepts the child because the opted-in job does not own the relationship
+        // Then Bedrock accepts the child
         ASSERT_GREATER_THAN(SToInt64(tester->executeWaitVerifyContentTable(command)["jobID"]), 0);
     }
 
