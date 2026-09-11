@@ -21,29 +21,21 @@ static const set<string> IGNORED_BEDROCK_JOB_DATA_KEYS = {
     "_commitCounts",
 };
 
-static bool parseJobData(const string& data, JSON::Value* object = nullptr)
+static void validateJobData(const string& data, const string& name = "Data")
 {
     try {
-        JSON::Value parsed = JSON::Value::parse(data);
-        if (!parsed.isObject()) {
-            return false;
+        if (JSON::Value::parse(data).isObject()) {
+            return;
         }
-        if (object) {
-            *object = move(parsed);
-        }
-        return true;
     } catch (const JSON::Error&) {
-        return false;
     }
+    STHROW("402 " + name + " is not a valid JSON Object");
 }
 
 static bool callerDataEquals(const string& leftData, const string& rightData)
 {
-    JSON::Value left;
-    JSON::Value right;
-    if (!parseJobData(leftData, &left) || !parseJobData(rightData, &right)) {
-        return false;
-    }
+    JSON::Value left = JSON::Value::parse(leftData);
+    JSON::Value right = JSON::Value::parse(rightData);
     for (const string& key : IGNORED_BEDROCK_JOB_DATA_KEYS) {
         left.erase(key);
         right.erase(key);
@@ -63,13 +55,9 @@ static bool membersEqual(const JSON::Value& left, const JSON::Value& right, cons
 static string mergeRetryJobData(const string& currentData, const string& expectedData,
                                 const string& workerData)
 {
-    JSON::Value current;
-    JSON::Value expected;
-    JSON::Value worker;
-    if (!parseJobData(currentData, &current) || !parseJobData(expectedData, &expected) ||
-        !parseJobData(workerData, &worker)) {
-        STHROW("500 Cannot merge invalid retry job data");
-    }
+    JSON::Value current = JSON::Value::parse(currentData);
+    JSON::Value expected = JSON::Value::parse(expectedData);
+    JSON::Value worker = JSON::Value::parse(workerData);
 
     current.erase("_bedrockRerunIfDataChanged");
     expected.erase("_bedrockRerunIfDataChanged");
@@ -441,8 +429,8 @@ bool BedrockJobsCommand::peek(SQLite& db)
                 _validatePriority(priority);
 
                 // Throw if data is not a valid JSON object, otherwise UPDATE query will fail.
-                if (SContains(job, "data") && SParseJSONObject(job["data"]).empty() && job["data"] != "{}") {
-                    STHROW("402 Data is not a valid JSON Object");
+                if (SContains(job, "data")) {
+                    validateJobData(job["data"]);
                 }
                 if (!job["data"].empty()) {
                     job["data"] = stripRerunIfDataChanged(job["data"]);
@@ -455,13 +443,13 @@ bool BedrockJobsCommand::peek(SQLite& db)
 
                 // rerunIfDataChanged runs the job again if its data changes while it is running.
                 // It requires unique=true and overwrite=true.
-                if (SContains(job, "rerunIfDataChanged") && !job["rerunIfDataChanged"].empty() &&
+                if (SContains(job, "rerunIfDataChanged") &&
                     !SIEquals(job["rerunIfDataChanged"], "true") && !SIEquals(job["rerunIfDataChanged"], "false")) {
                     STHROW("402 Malformed rerunIfDataChanged");
                 }
                 if (SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true") &&
                     (!SContains(job, "unique") || job["unique"] != "true" ||
-                     (SContains(job, "overwrite") && job["overwrite"] != "true" && job["overwrite"] != ""))) {
+                     (SContains(job, "overwrite") && job["overwrite"] != "true"))) {
                     STHROW("402 rerunIfDataChanged requires unique=true and overwrite enabled");
                 }
 
@@ -1234,6 +1222,7 @@ void BedrockJobsCommand::process(SQLite& db)
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
         BedrockPlugin::verifyAttributeSize(request, "data", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
+        validateJobData(request["data"]);
 
         // If a repeat is provided, validate it
         if (request.isSet("repeat")) {
@@ -1271,10 +1260,8 @@ void BedrockJobsCommand::process(SQLite& db)
         // Keep the stored mockRequest value too.
         const string sanitizedRequestData = stripRerunIfDataChanged(request["data"]);
         const string newData = mockRequest
-            ? db.read("SELECT IIF(JSON_VALID(" + SQ(request["data"]) + "), JSON_SET(" + SQ(sanitizedRequestData) +
-                      ", '$.mockRequest', JSON('true')), '{}');")
-            : db.read("SELECT IIF(JSON_VALID(" + SQ(request["data"]) + "), JSON_REMOVE(" + SQ(sanitizedRequestData) +
-                      ", '$.mockRequest'), '{}');");
+            ? db.read("SELECT JSON_SET(" + SQ(sanitizedRequestData) + ", '$.mockRequest', JSON('true'));")
+            : db.read("SELECT JSON_REMOVE(" + SQ(sanitizedRequestData) + ", '$.mockRequest');");
 
         // Passed next run takes priority over the one computed via the repeat feature
         string newNextRun;
@@ -1369,6 +1356,9 @@ void BedrockJobsCommand::process(SQLite& db)
             SINFO("Trying to finish job#" << jobID << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
             STHROW("405 Can only retry/finish RUNNING and RUNQUEUED jobs");
         }
+        if (request.isSet("data")) {
+            validateJobData(request["data"]);
+        }
 
         const auto calculateNextRun = [&]() {
             const bool ignoreRepeat = request.test("ignoreRepeat");
@@ -1403,9 +1393,7 @@ void BedrockJobsCommand::process(SQLite& db)
 
         if (rerunIfDataChanged && request.isSet("expectedData")) {
             BedrockPlugin::verifyAttributeSize(request, "expectedData", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
-            if (SParseJSONObject(request["expectedData"]).empty() && request["expectedData"] != "{}") {
-                STHROW("402 expectedData is not a valid JSON Object");
-            }
+            validateJobData(request["expectedData"], "expectedData");
             if (!callerDataEquals(currentData, request["expectedData"])) {
                 // The caller-owned payload changed after this worker dequeued the job. Preserve the current payload,
                 // name, priority, and terminal state. RetryJob can still apply non-conflicting worker data changes.
@@ -1659,12 +1647,13 @@ void BedrockJobsCommand::process(SQLite& db)
             SINFO("Trying to fail job#" << request["jobID"] << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
             STHROW("405 Can only fail RUNNING or RUNQUEUED jobs");
         }
+        if (request.isSet("data")) {
+            validateJobData(request["data"]);
+        }
 
         if (rerunIfDataChanged && request.isSet("expectedData")) {
             BedrockPlugin::verifyAttributeSize(request, "expectedData", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
-            if (SParseJSONObject(request["expectedData"]).empty() && request["expectedData"] != "{}") {
-                STHROW("402 expectedData is not a valid JSON Object");
-            }
+            validateJobData(request["expectedData"], "expectedData");
             if (!callerDataEquals(currentData, request["expectedData"])) {
                 // The caller-owned payload changed after this worker dequeued the job. Preserve it and run it rather
                 // than allowing the older worker's fatal outcome or data to strand the job in FAILED.
@@ -1683,9 +1672,7 @@ void BedrockJobsCommand::process(SQLite& db)
         list<string> updateList;
         if (request.isSet("data")) {
             // Update public data while preserving Bedrock's private opt-in marker.
-            const string sanitizedRequestData = stripRerunIfDataChanged(request["data"]);
-            const string newData = db.read("SELECT IIF(JSON_VALID(" + SQ(request["data"]) + "), "
-                                           + SQ(sanitizedRequestData) + ", '{}');");
+            const string newData = stripRerunIfDataChanged(request["data"]);
             updateList.push_back("data = " + preserveRerunIfDataChangedSQL(SQ(newData)));
         }
 
