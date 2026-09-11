@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <cstring>
+#include <thread>
 #include <unistd.h>
 
 #include <libstuff/libstuff.h>
@@ -46,6 +47,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testFileIO),
                                      TEST(LibStuff::testSQList),
                                      TEST(LibStuff::testRandom),
+                                     TEST(LibStuff::testRandomIsThreadSafe),
                                      TEST(LibStuff::testHexConversion),
                                      TEST(LibStuff::testBase32Conversion),
                                      TEST(LibStuff::testContains),
@@ -718,6 +720,36 @@ struct LibStuff : tpunit::TestFixture
             ASSERT_TRUE(randomNumber | 1); // Shuts up the "unused variable" warning.
             // cout << "Randomly generated uint64_t: " << randomNumber << endl;
         }
+    }
+
+    void testRandomIsThreadSafe()
+    {
+        // Every SRandom draw advances one shared generator, so concurrent draws must never hand the same value to two
+        // threads. 2^64 is wide enough that 160,000 draws colliding by chance is a ~1 in 10^9 event, so any duplicate
+        // here means the draws raced rather than that we got unlucky.
+        const size_t threadCount = 16;
+        const size_t drawsPerThread = 10'000;
+
+        // Each thread fills its own vector so that the test itself adds no shared state.
+        vector<vector<uint64_t>> drawsByThread(threadCount);
+        vector<thread> threads;
+        for (size_t i = 0; i < threadCount; i++) {
+            drawsByThread[i].reserve(drawsPerThread);
+            threads.emplace_back([&drawsByThread, i]() {
+                for (size_t j = 0; j < drawsPerThread; j++) {
+                    drawsByThread[i].push_back(SRandom::rand64());
+                }
+            });
+        }
+        for (auto& t : threads) {
+            t.join();
+        }
+
+        set<uint64_t> uniqueDraws;
+        for (const auto& draws : drawsByThread) {
+            uniqueDraws.insert(draws.begin(), draws.end());
+        }
+        ASSERT_EQUAL(uniqueDraws.size(), threadCount * drawsPerThread);
     }
 
     void testHexConversion()
