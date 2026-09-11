@@ -1389,6 +1389,13 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                 return;
             }
 
+            // Transactions from a previous leader may still arrive after we switch leaders.
+            // Only our selected leader may extend our transaction history.
+            if (peer != _leadPeer) {
+                PINFO("Ignoring transaction from non-leader");
+                return;
+            }
+
             bool isReplicationRunning = false;
             {
                 lock_guard<mutex> lock(_replicateMutex);
@@ -1790,6 +1797,17 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
     }
 }
 
+string SQLiteNode::_getTransactionGUID(const string& hash)
+{
+    if (hash.find(':') == string::npos) {
+        return "";
+    }
+    if (hash.size() != 73 || hash[32] != ':') {
+        STHROW("Invalid GUID transaction hash format");
+    }
+    return hash.substr(0, 32);
+}
+
 void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
 {
     if (message.isSet("ShuttingDown")) {
@@ -1836,7 +1854,7 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
             STHROW("failed to write transaction");
         }
         string newHash;
-        if (!_db.prepare(nullptr, &newHash)) {
+        if (!_db.prepare(nullptr, &newHash, chrono::hours(24), nullptr, _getTransactionGUID(commit["Hash"]))) {
             STHROW("failed to prepare transaction");
         }
         if (newHash != commit["Hash"]) {
@@ -2037,7 +2055,7 @@ bool SQLiteNode::_handlePrepareTransaction(SQLite& db, SQLitePeer* peer, const S
     }
 
     bool success = true;
-    if (!db.prepare()) {
+    if (!db.prepare(nullptr, nullptr, chrono::hours(24), nullptr, _getTransactionGUID(message["NewHash"]))) {
         SALERT("failed to prepare transaction");
         success = false;
         db.rollback();
