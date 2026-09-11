@@ -724,9 +724,15 @@ struct LibStuff : tpunit::TestFixture
 
     void testRandomIsThreadSafe()
     {
-        // Every SRandom draw advances one shared generator, so concurrent draws must never hand the same value to two
+        // Every SRandom draw advances generator state, so concurrent draws must never hand the same value to two
         // threads. 2^64 is wide enough that 160,000 draws colliding by chance is a ~1 in 10^9 event, so any duplicate
         // here means the draws raced rather than that we got unlucky.
+        //
+        // This catches the race only where the threads genuinely run in parallel. The window between reading and
+        // advancing the generator's state is a couple of instructions, so on a single effective CPU the threads
+        // interleave too coarsely to tear it and every draw comes out unique. Pinning this test to one core with
+        // `taskset -c 0` passes even against a shared generator, and it passes in CI for the same reason, so treat a
+        // green run here as no evidence either way and reproduce on a multi-core machine instead.
         const size_t threadCount = 16;
         const size_t drawsPerThread = 10'000;
 
