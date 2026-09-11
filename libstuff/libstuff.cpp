@@ -30,6 +30,7 @@
 #include <libstuff/SData.h>
 #include <libstuff/SFastBuffer.h>
 #include <libstuff/SFluentdLogger.h>
+#include <libstuff/qrf.h>
 #include <libstuff/sqlite3.h>
 
 // Additional headers
