@@ -187,7 +187,9 @@ public:
     // The commitLockTimeout, if passed, will limit the time we wait for the lock. If not, we'll use 24 hours, which
     // is effectively no timeout.
     // Note that if this transaction fails to commit, these will not ultimately be accurate.
-    bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr);
+    // A nonempty guid must be 32 hex characters and selects GUID:SHA1 hashing; an empty guid selects chained SHA1.
+    // Replication callers must compare the prepared hash with the received hash before committing.
+    bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr, const string& guid = "");
 
     // This enables or disables automatic re-writing. This feature is to support mocked requests and load testing. This
     // overloads set_authorizer to allow a plugin to deny certain queries from running (currently based only on the
@@ -262,7 +264,7 @@ public:
     // Returns the number of WAL frames that are currently waiting to be checkpointed.
     uint64_t getOutstandingFramesToCheckpoint() const;
 
-    // Returns the current state of the database, as a SHA1 hash of all queries committed.
+    // Returns the latest commit's hash: a chained SHA1 or GUID:SHA1 identifying and checking that transaction only.
     string getCommittedHash();
 
     // Returns what the new state will be of the database if the current transaction is committed.

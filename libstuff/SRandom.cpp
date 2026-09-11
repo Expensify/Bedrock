@@ -1,23 +1,33 @@
 #include "SRandom.h"
 
-#ifdef VALGRIND
-// random_device breaks valgrind.
-mt19937_64 SRandom::_generator = mt19937_64();
-#else
-mt19937_64 SRandom::_generator = mt19937_64(random_device()());
-#endif
+#include <atomic>
+#include <memory>
 
-uniform_int_distribution<uint64_t> SRandom::_distribution64 = uniform_int_distribution<uint64_t>();
+mt19937_64& SRandom::_getGenerator()
+{
+    static thread_local auto generator = [] {
+#ifdef VALGRIND
+        // random_device breaks valgrind; use distinct seeds so fresh threads do not repeat the same stream.
+        static atomic<uint64_t> nextSeed{mt19937_64::default_seed};
+        return make_unique<mt19937_64>(nextSeed.fetch_add(1, memory_order_relaxed));
+#else
+        random_device rd;
+        seed_seq seed{rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd()};
+        return make_unique<mt19937_64>(seed);
+#endif
+    }();
+    return *generator;
+}
 
 uint64_t SRandom::limitedRand64(uint64_t minNum, uint64_t maxNum)
 {
     uniform_int_distribution<uint64_t> limitedRandom(minNum, maxNum);
-    return limitedRandom(_generator);
+    return limitedRandom(_getGenerator());
 }
 
 uint64_t SRandom::rand64()
 {
-    return _distribution64(_generator);
+    return _getGenerator()();
 }
 
 string SRandom::randStr(unsigned length)
@@ -34,5 +44,5 @@ string SRandom::randStr(unsigned length)
 
 bool SRandom::randBool(const double probability)
 {
-    return bernoulli_distribution(probability)(_generator);
+    return bernoulli_distribution(probability)(_getGenerator());
 }

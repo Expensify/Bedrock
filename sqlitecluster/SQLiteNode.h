@@ -192,6 +192,10 @@ private:
 
     string _getLostQuorumLogMessage() const;
 
+    // Extracts the GUID from a message's transaction hash, or returns empty for a legacy hash.
+    // Throws if a hash containing a colon does not have the GUID:SHA1 lengths and separator position.
+    static string _getTransactionGUID(const string& hash);
+
     // Handlers for transaction messages.
     void _handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SData& message);
 
