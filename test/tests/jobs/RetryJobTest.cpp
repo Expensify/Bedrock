@@ -1,4 +1,5 @@
 #include <libstuff/SData.h>
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
 #include <test/tests/jobs/JobTestHelper.h>
@@ -13,6 +14,7 @@ struct RetryJobTest : tpunit::TestFixture
                               TEST(RetryJobTest::parentIsNotPaused),
                               TEST(RetryJobTest::removeFinishedAndCancelledChildren),
                               TEST(RetryJobTest::updateData),
+                              TEST(RetryJobTest::rerunIfDataChangedThreeWayMerge),
                               TEST(RetryJobTest::negativeDelay),
                               TEST(RetryJobTest::positiveDelay),
                               TEST(RetryJobTest::delayError),
@@ -227,6 +229,76 @@ struct RetryJobTest : tpunit::TestFixture
         SQResult result;
         tester->readDB("SELECT data FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], SComposeJSONObject(data));
+    }
+
+    void rerunIfDataChangedThreeWayMerge()
+    {
+        // Given a worker running an opted-in unique job
+        const string initialData =
+            "{\"conflict\":10.5,\"emptyObject\":{},"
+            "\"uint64\":18446744073709551615,\"workerChange\":\"old\",\"workerDelete\":true,"
+            "\"workerNull\":1,\"enqueueDelete\":true,\"enqueueChange\":\"old\","
+            "\"nested\":{\"a\":1,\"b\":2}}";
+        SData command("CreateJob");
+        command["name"] = "retry-merge";
+        command["data"] = initialData;
+        command["repeat"] = "FINISHED, +1 DAY";
+        command["unique"] = "true";
+        command["rerunIfDataChanged"] = "true";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "retry-merge";
+        const STable runningJob = tester->executeWaitVerifyContentTable(command);
+        const string expectedData = runningJob.at("data");
+        ASSERT_TRUE(JSON::Value::parse(initialData) == JSON::Value::parse(expectedData));
+
+        // And a duplicate enqueue changes the stored data and priority
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "retry-merge";
+        command["data"] = "{\"conflict\":11.5,\"enqueueDelete\":null,"
+            "\"enqueueChange\":\"new\",\"enqueueAdd\":true}";
+        command["repeat"] = "FINISHED, +1 DAY";
+        command["jobPriority"] = "750";
+        command["unique"] = "true";
+        command["rerunIfDataChanged"] = "true";
+        tester->executeWaitVerifyContent(command);
+
+        // When the worker retries with edits to its original data
+        const string workerData =
+            "{\"conflict\":10.5,\"emptyObject\":{},"
+            "\"uint64\":18446744073709551615,\"workerChange\":\"new\",\"workerNull\":null,"
+            "\"enqueueDelete\":true,\"enqueueChange\":\"old\",\"workerAdd\":true,"
+            "\"nested\":{\"a\":1,\"b\":2}}";
+
+        command.clear();
+        command.methodLine = "RetryJob";
+        command["jobID"] = jobID;
+        command["expectedData"] = expectedData;
+        command["data"] = workerData;
+        command["nextRun"] = "2042-04-02 00:42:42";
+        command["ignoreRepeat"] = "true";
+        command["name"] = "stale-name";
+        command["jobPriority"] = "1000";
+        tester->executeWaitVerifyContent(command);
+
+        // Then Bedrock honors the retry time and preserves the current name and priority
+        SQResult result;
+        tester->readDB("SELECT state, name, nextRun, priority, data FROM jobs WHERE jobID = " + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "retry-merge");
+        ASSERT_EQUAL(result[0][2], "2042-04-02 00:42:42");
+        ASSERT_EQUAL(result[0][3], "750");
+
+        // And enqueue changes take precedence over worker changes to the same fields
+        const string expectedMergedData =
+            "{\"_bedrockRerunIfDataChanged\":true,\"conflict\":11.5,"
+            "\"emptyObject\":{},\"uint64\":18446744073709551615,\"workerChange\":\"new\","
+            "\"workerNull\":null,\"enqueueChange\":\"new\",\"enqueueAdd\":true,\"workerAdd\":true,"
+            "\"nested\":{\"a\":1,\"b\":2}}";
+        ASSERT_TRUE(JSON::Value::parse(result[0][4]) == JSON::Value::parse(expectedMergedData));
     }
 
     // Cannot retry with a negative delay

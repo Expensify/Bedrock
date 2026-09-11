@@ -1,6 +1,7 @@
 #include "Jobs.h"
 
 #include <BedrockServer.h>
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SQResult.h>
 #include <sqlitecluster/SQLitePeer.h>
 #include <sqlitecluster/SQLiteUtils.h>
@@ -11,6 +12,97 @@
 // Only SCHEDULED repeats shorter than this re-anchor to now after a missed window; longer intervals
 // keep their scheduled time since they may need to run on a specific calendar date.
 static constexpr int64_t REPEAT_REANCHOR_THRESHOLD_SECONDS = 4 * 60 * 60;
+
+// These top-level keys are Bedrock metadata, not caller-owned job data.
+static const set<string> IGNORED_BEDROCK_JOB_DATA_KEYS = {
+    "_bedrockRerunIfDataChanged",
+    "retryAfterCount",
+    "originalNextRun",
+    "_commitCounts",
+};
+
+static void validateJobData(const string& data, const string& name = "Data")
+{
+    try {
+        if (JSON::Value::parse(data).isObject()) {
+            return;
+        }
+    } catch (const JSON::Error&) {
+    }
+    STHROW("402 " + name + " is not a valid JSON Object");
+}
+
+static bool callerDataEquals(const string& leftData, const string& rightData)
+{
+    JSON::Value left = JSON::Value::parse(leftData);
+    JSON::Value right = JSON::Value::parse(rightData);
+    for (const string& key : IGNORED_BEDROCK_JOB_DATA_KEYS) {
+        left.erase(key);
+        right.erase(key);
+    }
+    return left == right;
+}
+
+static bool membersEqual(const JSON::Value& left, const JSON::Value& right, const string& key)
+{
+    if (!left.hasMember(key) || !right.hasMember(key)) {
+        return left.hasMember(key) == right.hasMember(key);
+    }
+    return left[key] == right[key];
+}
+
+// Apply worker changes only when a newer enqueue did not change the same top-level field.
+static string mergeRetryJobData(const string& currentData, const string& expectedData,
+                                const string& workerData)
+{
+    JSON::Value current = JSON::Value::parse(currentData);
+    JSON::Value expected = JSON::Value::parse(expectedData);
+    JSON::Value worker = JSON::Value::parse(workerData);
+
+    current.erase("_bedrockRerunIfDataChanged");
+    expected.erase("_bedrockRerunIfDataChanged");
+    worker.erase("_bedrockRerunIfDataChanged");
+
+    set<string> keys;
+    for (const auto& member : JSON::ObjectValue(current)) {
+        keys.insert(member.first);
+    }
+    for (const auto& member : JSON::ObjectValue(expected)) {
+        keys.insert(member.first);
+    }
+    for (const auto& member : JSON::ObjectValue(worker)) {
+        keys.insert(member.first);
+    }
+
+    JSON::Value merged = JSON::Value::object({});
+    for (const string& key : keys) {
+        const JSON::Value& selected = membersEqual(current, expected, key) ? worker : current;
+        if (selected.hasMember(key)) {
+            merged[key] = selected[key];
+        }
+    }
+
+    merged.erase("retryAfterCount");
+    merged["_bedrockRerunIfDataChanged"] = true;
+    return merged.serialize();
+}
+
+static string preserveRerunIfDataChangedSQL(const string& newDataExpression)
+{
+    return "IIF(JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true', "
+           "JSON_SET(" + newDataExpression + ", '$._bedrockRerunIfDataChanged', JSON('true')), " +
+           newDataExpression + ")";
+}
+
+static string stripRerunIfDataChanged(const string& data)
+{
+    STable publicData = SParseJSONObject(data);
+    if (!SContains(publicData, "_bedrockRerunIfDataChanged")) {
+        return data;
+    }
+    publicData.erase("_bedrockRerunIfDataChanged");
+    return SComposeJSONObject(publicData);
+}
 
 const int64_t BedrockPlugin_Jobs::JOBS_DEFAULT_PRIORITY = 500;
 const string BedrockPlugin_Jobs::name("Jobs");
@@ -271,7 +363,8 @@ bool BedrockJobsCommand::peek(SQLite& db)
 
         // Verify there is a job like this
         SQResult result;
-        if (!db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, data, retryAfter, priority "
+        if (!db.read("SELECT created, jobID, state, name, nextRun, lastRun, repeat, "
+                     "JSON_REMOVE(data, '$._bedrockRerunIfDataChanged'), retryAfter, priority "
                      "FROM jobs "
                      "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
                      result)) {
@@ -334,13 +427,28 @@ bool BedrockJobsCommand::peek(SQLite& db)
                 _validatePriority(priority);
 
                 // Throw if data is not a valid JSON object, otherwise UPDATE query will fail.
-                if (SContains(job, "data") && SParseJSONObject(job["data"]).empty() && job["data"] != "{}") {
-                    STHROW("402 Data is not a valid JSON Object");
+                if (SContains(job, "data")) {
+                    validateJobData(job["data"]);
+                    job["data"] = stripRerunIfDataChanged(job["data"]);
                 }
 
                 // Validate retryAfter
                 if (SContains(job, "retryAfter") && job["retryAfter"] != "" && !SIsValidSQLiteDateModifier(job["retryAfter"])) {
                     STHROW("402 Malformed retryAfter");
+                }
+
+                // rerunIfDataChanged runs the job again if its data changes while it is running.
+                // It requires unique=true and overwrite=true.
+                if (SContains(job, "rerunIfDataChanged") &&
+                    !SIEquals(job["rerunIfDataChanged"], "true") && !SIEquals(job["rerunIfDataChanged"], "false")) {
+                    STHROW("402 Malformed rerunIfDataChanged");
+                }
+                const bool optsIntoRerunIfDataChanged =
+                    SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true");
+                if (optsIntoRerunIfDataChanged &&
+                    (!SContains(job, "unique") || job["unique"] != "true" ||
+                     (SContains(job, "overwrite") && job["overwrite"] != "true"))) {
+                    STHROW("402 rerunIfDataChanged requires unique=true and overwrite enabled");
                 }
 
                 if (SContains(job, "firstRun") && job["firstRun"] != "" && !BedrockPlugin::isValidDate(job["firstRun"])) {
@@ -353,7 +461,8 @@ bool BedrockJobsCommand::peek(SQLite& db)
                 if (parentJobID) {
                     SINFO("parentJobID passed, checking existing job with ID " << parentJobID);
                     SQResult result;
-                    if (!db.read("SELECT state, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                    if (!db.read("SELECT state, data, JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true' "
+                                 "FROM jobs WHERE jobID = " + SQ(parentJobID) + ";", result)) {
                         STHROW("502 Select failed");
                     }
                     if (result.empty()) {
@@ -362,6 +471,9 @@ bool BedrockJobsCommand::peek(SQLite& db)
                     if (!SIEquals(result[0][0], "RUNNING") && !SIEquals(result[0][0], "RUNQUEUED") && !SIEquals(result[0][0], "PAUSED")) {
                         SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING or PAUSED (" << result[0][0] << ")");
                         STHROW("405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
+                    }
+                    if (result[0][2] == "1") {
+                        STHROW("405 rerunIfDataChanged jobs cannot own child jobs");
                     }
 
                     // Verify that the parent and child job have the same `mockRequest` setting, update them to match if
@@ -387,11 +499,12 @@ bool BedrockJobsCommand::peek(SQLite& db)
                     SINFO("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
                           << (mockRequest ? "true" : "false"));
                     string operation = mockRequest ? "IS NOT" : "IS";
-                    if (!db.read("SELECT jobID, data, parentJobID "
-                                "FROM jobs "
-                                "WHERE name=" + SQ(job["name"]) +
-                                "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
-                                result)) {
+                    if (!db.read("SELECT jobID, JSON_REMOVE(data, '$._bedrockRerunIfDataChanged'), parentJobID, "
+                                 "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true' "
+                                 "FROM jobs "
+                                 "WHERE name = " + SQ(job["name"]) +
+                                 "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
+                                 result)) {
                         STHROW("502 Select failed");
                     }
 
@@ -403,7 +516,12 @@ bool BedrockJobsCommand::peek(SQLite& db)
                         if (result[0][2] != "0" && result[0][2] != job["parentJobID"]) {
                             STHROW("404 Trying to create a child that already exists, but it is tied to a different parent");
                         }
-                        if (SIEquals(requestVerb, "CreateJob") && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
+                        const bool alreadyRerunIfDataChanged = result[0][3] == "1";
+                        const string incomingData = job["data"].empty() ? "{}" : job["data"];
+                        const bool matchingData =
+                            callerDataEquals(result[0][1], incomingData);
+                        if (SIEquals(requestVerb, "CreateJob") && matchingData &&
+                            (alreadyRerunIfDataChanged || !optsIntoRerunIfDataChanged)) {
                             // Return early, no need to pass to leader, there are no more jobs to create.
                             SINFO("Job already existed and unique flag was passed, reusing existing job " << result[0][0] << ", mocked? " << (mockRequest ? "true" : "false"));
                             jsonContent["jobID"] = result[0][0];
@@ -486,7 +604,7 @@ void BedrockJobsCommand::process(SQLite& db)
     const string& requestVerb = request.getVerb();
 
     if (SIEquals(requestVerb, "CreateJob") || SIEquals(requestVerb, "CreateJobs")) {
-        // - CreateJob( name, [data], [firstRun], [repeat], [jobPriority], [unique], [parentJobID], [retryAfter] )
+        // - CreateJob( name, [data], [firstRun], [repeat], [jobPriority], [unique], [overwrite], [rerunIfDataChanged], [parentJobID], [retryAfter] )
         //
         //     Creates a "job" for future processing by a worker.
         //
@@ -498,8 +616,11 @@ void BedrockJobsCommand::process(SQLite& db)
         //     - jobPriority - High priorities go first (optional, default 500)
         //     - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                return that jobID
-        //     - overwrite - Only applicable when unique is is true. When set to true it will overwrite the existing job
-        //                   with the new jobs data
+        //     - overwrite - Only applicable when unique is true. When set to true it will overwrite the existing job
+        //                   with the new job data
+        //     - rerunIfDataChanged - With unique and overwrite enabled, data changed by an enqueue while the job runs
+        //                       schedules a subsequent run with the latest payload. This is separate from retryAfter
+        //                       failure recovery. An opted-in job cannot own child jobs.
         //     - parentJobID - The ID of the parent job (optional)
         //     - retryAfter - Amount of auto-retries before marking job as failed (optional)
         //
@@ -519,8 +640,9 @@ void BedrockJobsCommand::process(SQLite& db)
         //          - jobPriority - High priorities go first (optional, default 500)
         //          - unique - if true, it will check that no other job with this name already exists, if it does it will
         //                     return that jobID
-        //          - overwrite - Only applicable when unique is is true. When set to true it will overwrite the existing job
-        //                        with the new jobs data
+        //          - overwrite - Only applicable when unique is true. When set to true it will overwrite the existing job
+        //                        with the new job data
+        //          - rerunIfDataChanged - Enables the same subsequent-run behavior as CreateJob
         //          - parentJobID - The ID of the parent job (optional)
         //          - retryAfter - Amount of auto-retries before marking job as failed (optional)
         //
@@ -553,8 +675,12 @@ void BedrockJobsCommand::process(SQLite& db)
             // If unique flag was passed and the job exist in the DB, then we can finish the command without escalating to
             // leader.
 
+            // This marker is owned exclusively by Bedrock. Callers cannot create or overwrite it.
+            if (!job["data"].empty()) {
+                job["data"] = stripRerunIfDataChanged(job["data"]);
+            }
+
             // If this is a mock request, we insert that into the data.
-            string originalData = job["data"];
             if (mockRequest) {
                 // Mocked jobs should never repeat.
                 job.erase("repeat");
@@ -568,38 +694,49 @@ void BedrockJobsCommand::process(SQLite& db)
                 }
             }
 
+            const bool optsIntoRerunIfDataChanged =
+                SContains(job, "rerunIfDataChanged") && SIEquals(job["rerunIfDataChanged"], "true");
             int64_t updateJobID = 0;
+            bool existingRerunIfDataChanged = false;
+            bool enablesRerunIfDataChangedWithoutDataChange = false;
             if (SContains(job, "unique") && job["unique"] == "true") {
                 SQResult result;
                 SDEBUG("Unique flag was passed, checking existing job with name " << job["name"] << ", mocked? "
                        << (mockRequest ? "true" : "false"));
                 string operation = mockRequest ? "IS NOT" : "IS";
-                if (!db.read("SELECT jobID, data "
+                if (!db.read("SELECT jobID, JSON_REMOVE(data, '$._bedrockRerunIfDataChanged'), "
+                             "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true' "
                              "FROM jobs "
-                             "WHERE name=" + SQ(job["name"]) +
+                             "WHERE name = " + SQ(job["name"]) +
                              "  AND JSON_EXTRACT(data, '$.mockRequest') " + operation + " NULL;",
                              result)) {
                     STHROW("502 Select failed");
                 }
 
-                // If we got a result, and it's data is the same as passed, we won't change anything.
-                if (!result.empty() && ((job["data"].empty() && result[0][1] == "{}") || (!job["data"].empty() && result[0][1] == job["data"]))) {
-                    SINFO("Job already existed with matching data, and unique flag was passed, reusing existing job "
-                          << result[0][0] << ", mocked? " << (mockRequest ? "true" : "false"));
+                if (!result.empty()) {
+                    existingRerunIfDataChanged = result[0][2] == "1";
+                    const string incomingData = job["data"].empty() ? "{}" : job["data"];
+                    const bool matchingData =
+                        callerDataEquals(result[0][1], incomingData);
+                    enablesRerunIfDataChangedWithoutDataChange =
+                        optsIntoRerunIfDataChanged && !existingRerunIfDataChanged && matchingData;
 
-                    // If we are calling CreateJob, return early, there are no more jobs to create.
-                    if (SIEquals(requestVerb, "CreateJob")) {
-                        jsonContent["jobID"] = result[0][0];
-                        return;
+                    // If the data matches, update the job only when enabling rerunIfDataChanged for the first time.
+                    if (matchingData && (existingRerunIfDataChanged || !optsIntoRerunIfDataChanged)) {
+                        SINFO("Job already existed and unique flag was passed, reusing existing job "
+                              << result[0][0] << ", mocked? " << (mockRequest ? "true" : "false"));
+
+                        // If we are calling CreateJob, return early, there are no more jobs to create.
+                        if (SIEquals(requestVerb, "CreateJob")) {
+                            jsonContent["jobID"] = result[0][0];
+                            return;
+                        }
+
+                        // Append new jobID to list of created jobs.
+                        jobIDs.push_back(result[0][0]);
+                        continue;
                     }
 
-                    // Append new jobID to list of created jobs.
-                    jobIDs.push_back(result[0][0]);
-                    continue;
-                }
-
-                // If we found a job, but the data was different, we'll need to update it.
-                if (!result.empty()) {
                     updateJobID = SToInt64(result[0][0]);
                 }
             }
@@ -615,7 +752,6 @@ void BedrockJobsCommand::process(SQLite& db)
 
             // If no data was provided, use an empty object
             const string& safeData = !SContains(job, "data") || job["data"].empty() ? SQ("{}") : SQ(job["data"]);
-            const string& safeOriginalData = originalData.empty() ? SQ("{}") : SQ(originalData);
 
             // If a repeat is provided, validate it
             if (SContains(job, "repeat")) {
@@ -638,7 +774,8 @@ void BedrockJobsCommand::process(SQLite& db)
             int64_t parentJobID = SContains(job, "parentJobID") ? SToInt64(job["parentJobID"]) : 0;
             if (parentJobID) {
                 SQResult result;
-                if (!db.read("SELECT state, parentJobID, data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";", result)) {
+                if (!db.read("SELECT state, parentJobID, data "
+                             "FROM jobs WHERE jobID = " + SQ(parentJobID) + ";", result)) {
                     STHROW("502 Select failed");
                 }
                 if (result.empty()) {
@@ -648,7 +785,6 @@ void BedrockJobsCommand::process(SQLite& db)
                     SWARN("Trying to create child job with parent jobID#" << parentJobID << ", but parent isn't RUNNING, RUNQUEUED or PAUSED (" << result[0][0] << ")");
                     STHROW("405 Can only create child job when parent is RUNNING, RUNQUEUED or PAUSED");
                 }
-
                 // Verify that the parent and child job have the same `mockRequest` setting.
                 STable parentData = SParseJSONObject(result[0][2]);
                 if (mockRequest != (parentData.find("mockRequest") != parentData.end())) {
@@ -664,11 +800,42 @@ void BedrockJobsCommand::process(SQLite& db)
 
             // Are we creating a new job, or updating an existing job?
             if (updateJobID) {
-                if (!SContains(job, "overwrite") || job["overwrite"] == "true" || job["overwrite"] == "") {
+                const bool rerunIfDataChanged = existingRerunIfDataChanged || optsIntoRerunIfDataChanged;
+                if (rerunIfDataChanged && !existingRerunIfDataChanged) {
+                    SQResult children;
+                    if (!db.read("SELECT jobID FROM jobs WHERE parentJobID != 0 AND parentJobID=" +
+                                 SQ(updateJobID) + " LIMIT 1;", children)) {
+                        STHROW("502 Failed to select child jobs");
+                    }
+                    if (!children.empty()) {
+                        STHROW("405 rerunIfDataChanged jobs cannot own child jobs");
+                    }
+                }
+                if (enablesRerunIfDataChangedWithoutDataChange) {
+                    // Only enable rerunIfDataChanged. Keep the existing repeat and priority if they were not provided.
+                    list<string> updateList = {
+                        "data = JSON_SET(data, '$._bedrockRerunIfDataChanged', JSON('true'))"};
+                    if (SContains(job, "repeat")) {
+                        updateList.push_back("repeat = " + SQ(SToUpper(job["repeat"])));
+                    }
+                    if (SContains(job, "jobPriority") || SContains(job, "priority")) {
+                        updateList.push_back("priority = " + SQ(priority));
+                    }
+                    if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) +
+                                            " WHERE jobID = " + SQ(updateJobID) + ";")) {
+                        STHROW("502 update query failed");
+                    }
+                } else if (!SContains(job, "overwrite") || job["overwrite"] == "true" || job["overwrite"] == "") {
+                    // Update the job data and keep rerunIfDataChanged enabled.
+                    const string updatedData = rerunIfDataChanged ?
+                        "JSON_SET(JSON_PATCH(data, " + safeData +
+                        "), '$._bedrockRerunIfDataChanged', JSON('true'))" :
+                        "JSON_PATCH(data, " + safeData + ")";
+
                     // Update the existing job.
                     if (!db.writeIdempotent("UPDATE jobs SET "
                                              "repeat   = " + SQ(SToUpper(job["repeat"])) + ", " +
-                                             "data     = JSON_PATCH(data, " + safeData + "), " +
+                                             "data     = " + updatedData + ", " +
                                              "priority = " + SQ(priority) + " " +
                                            "WHERE jobID = " + SQ(updateJobID) + ";")) {
                         STHROW("502 update query failed");
@@ -699,6 +866,9 @@ void BedrockJobsCommand::process(SQLite& db)
 
                 // If no data was provided, use an empty object
                 const string& safeRetryAfter = SContains(job, "retryAfter") && !job["retryAfter"].empty() ? SQ(job["retryAfter"]) : SQ("");
+                const string dataToInsert = optsIntoRerunIfDataChanged ?
+                    "JSON_SET(" + safeData + ", '$._bedrockRerunIfDataChanged', JSON('true'))" :
+                    safeData;
 
                 // Create this new job with a new generated ID
                 const int64_t jobIDToUse = SQLiteUtils::getRandomID(db, "jobs", "jobID");
@@ -711,7 +881,7 @@ void BedrockJobsCommand::process(SQLite& db)
                             SQ(job["name"]) + ", " +
                             safeFirstRun + ", " +
                             SQ(SToUpper(job["repeat"])) + ", " +
-                            safeData + ", " +
+                            dataToInsert + ", " +
                             SQ(priority) + ", " +
                             SQ(parentJobID) + ", " +
                             safeRetryAfter + " " +
@@ -896,7 +1066,8 @@ void BedrockJobsCommand::process(SQLite& db)
             STable job;
             job["jobID"] = result[c][0];
             job["name"] = result[c][1];
-            job["data"] = result[c][2];
+            job["data"] = db.read("SELECT JSON_REMOVE(" + SQ(result[c][2]) +
+                                  ", '$._bedrockRerunIfDataChanged');");
             job["retryAfter"] = result[c][4];
             job["created"] = result[c][5];
             job["repeat"] = result[c][6];
@@ -908,7 +1079,8 @@ void BedrockJobsCommand::process(SQLite& db)
             if (parentJobID) {
                 // Has a parent job, add the parent data
                 job["parentJobID"] = SToStr(parentJobID);;
-                job["parentData"] = db.read("SELECT data FROM jobs WHERE jobID=" + SQ(parentJobID) + ";");
+                job["parentData"] = db.read("SELECT JSON_REMOVE(data, '$._bedrockRerunIfDataChanged') "
+                                            "FROM jobs WHERE jobID = " + SQ(parentJobID) + ";");
             }
 
             // Add jobID to the respective list depending on if retryAfter is set
@@ -920,7 +1092,12 @@ void BedrockJobsCommand::process(SQLite& db)
 
             // See if this job has any FINISHED/CANCELLED child jobs, indicating it is being resumed
             SQResult childJobs;
-            if (!db.read("SELECT jobID, data, state FROM jobs WHERE parentJobID != 0 AND parentJobID=" + result[c][0] + " AND state IN ('FINISHED', 'CANCELLED');", childJobs)) {
+            if (!db.read("SELECT jobID, JSON_REMOVE(data, '$._bedrockRerunIfDataChanged'), state "
+                         "FROM jobs "
+                         "WHERE parentJobID != 0 "
+                         "  AND parentJobID = " + SQ(result[c][0]) + " "
+                         "  AND state IN ('FINISHED', 'CANCELLED');",
+                         childJobs)) {
                 STHROW("502 Failed to select finished child jobs");
             }
 
@@ -1039,6 +1216,7 @@ void BedrockJobsCommand::process(SQLite& db)
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
         BedrockPlugin::verifyAttributeSize(request, "data", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
+        validateJobData(request["data"]);
 
         // If a repeat is provided, validate it
         if (request.isSet("repeat")) {
@@ -1072,10 +1250,12 @@ void BedrockJobsCommand::process(SQLite& db)
         const string& lastRun = result[0][2];
         mockRequest = result[0][3] == "1";
 
-        // Preserve the jobs mockRequest attribute so it is not overwritten by data updates.
+        // Remove the internal marker from the request data. Restore it only if it is set on the stored job.
+        // Keep the stored mockRequest value too.
+        const string sanitizedRequestData = stripRerunIfDataChanged(request["data"]);
         const string newData = mockRequest
-            ? db.read("SELECT IIF(JSON_VALID(" + SQ(request["data"]) + "), JSON_SET(" + SQ(request["data"]) + ", '$.mockRequest', JSON('true')), '{}');")
-            : db.read("SELECT IIF(JSON_VALID(" + SQ(request["data"]) + "), JSON_REMOVE(" + SQ(request["data"]) + ", '$.mockRequest'), '{}');");
+            ? db.read("SELECT JSON_SET(" + SQ(sanitizedRequestData) + ", '$.mockRequest', JSON('true'));")
+            : db.read("SELECT JSON_REMOVE(" + SQ(sanitizedRequestData) + ", '$.mockRequest');");
 
         // Passed next run takes priority over the one computed via the repeat feature
         string newNextRun;
@@ -1087,13 +1267,12 @@ void BedrockJobsCommand::process(SQLite& db)
 
         // Update the data
         if (!db.writeIdempotent("UPDATE jobs "
-                                "SET data=" +
-                                SQ(newData) +
+                                "SET data = " + preserveRerunIfDataChangedSQL(SQ(newData)) +
                                 (SToInt(request["shouldClearRepeat"]) ? ", repeat=''" :
                                  request["repeat"].size() ? ", repeat=" + SQ(SToUpper(request["repeat"])) : "") +
                                 (!newNextRun.empty() ? ", nextRun=" + newNextRun : "") +
                                 (request.isSet("jobPriority") ? ", priority=" + SQ(request.calc64("jobPriority")) + " " : "") +
-                                "WHERE jobID=" +
+                                " WHERE jobID = " +
                                 SQ(request.calc64("jobID")) + ";")) {
             STHROW("502 Update failed");
         }
@@ -1101,7 +1280,7 @@ void BedrockJobsCommand::process(SQLite& db)
     }
     // ----------------------------------------------------------------------
     else if (SIEquals(requestVerb, "RetryJob") || SIEquals(requestVerb, "FinishJob")) {
-        // - RetryJob( jobID, [delay], [nextRun], [name], [data], [ignoreRepeat] )
+        // - RetryJob( jobID, [delay], [nextRun], [name], [data], [ignoreRepeat], [expectedData] )
         //
         //     Re-queues a RUNNING job.
         //     The nextRun logic for the job is decided in the following way
@@ -1124,24 +1303,30 @@ void BedrockJobsCommand::process(SQLite& db)
         //     - data         - Data to associate with this job
         //     - jobPriority  - The new priority to set for this job
         //     - ignoreRepeat - Ignore the job's repeat param when figuring out when to retry the job
+        //     - expectedData - Immutable data returned by GetJob/GetJobs. For an opted-in job, Bedrock preserves
+        //                      newer data and requeues the job when this snapshot no longer matches.
         //
-        // - FinishJob( jobID, [data] )
+        // - FinishJob( jobID, [data], [expectedData] )
         //
         //     Finishes a job.  If it's set to recur, reschedules it. If
         //     not recurring, deletes it.
         //
         //     Parameters:
         //     - jobID  - ID of the job to finish
-        //     - data   - Data to associate with this finsihed job
+        //     - data   - Data to associate with this finished job
+        //     - expectedData - Immutable data returned by GetJob/GetJobs. For an opted-in job, Bedrock preserves
+        //                      newer data and immediately requeues the job when this snapshot no longer matches.
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
         int64_t jobID = request.calc64("jobID");
 
         // Verify there is a job like this and it's running
         SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest'), retryAfter, json_extract(data, '$.originalNextRun') "
+        if (!db.read("SELECT state, nextRun, lastRun, repeat, parentJobID, json_extract(data, '$.mockRequest'), "
+                     "retryAfter, json_extract(data, '$.originalNextRun'), data, "
+                     "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true' "
                      "FROM jobs "
-                     "WHERE jobID=" + SQ(jobID) + ";",
+                     "WHERE jobID = " + SQ(jobID) + ";",
                      result)) {
             STHROW("502 Select failed");
         }
@@ -1157,11 +1342,87 @@ void BedrockJobsCommand::process(SQLite& db)
         mockRequest = result[0][5] == "1";
         const string retryAfter = result[0][6];
         const string originalDataNextRun = result[0][7];
+        const string& currentData = result[0][8];
+        const bool rerunIfDataChanged = result[0][9] == "1";
 
-        // Make sure we're finishing a job that's actually running
+        // Make sure we're finishing a job that's actually running.
         if (state != "RUNNING" && state != "RUNQUEUED" && !mockRequest) {
             SINFO("Trying to finish job#" << jobID << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
             STHROW("405 Can only retry/finish RUNNING and RUNQUEUED jobs");
+        }
+        if (request.isSet("data")) {
+            validateJobData(request["data"]);
+        }
+
+        const auto calculateNextRun = [&]() {
+            const bool ignoreRepeat = request.test("ignoreRepeat");
+            if (!repeat.empty() && !ignoreRepeat) {
+                string lastScheduled = nextRun;
+                if (!retryAfter.empty() && SToUpper(repeat).find("SCHEDULED") != string::npos) {
+                    lastScheduled = originalDataNextRun;
+                }
+                return _constructNextRunDATETIME(db, lastScheduled, lastRun, repeat);
+            }
+            if (!SIEquals(requestVerb, "RetryJob")) {
+                return string();
+            }
+
+            const string& requestedNextRun = request["nextRun"];
+            if (!requestedNextRun.empty()) {
+                return SQ(requestedNextRun);
+            }
+
+            SINFO("nextRun isn't set, using delay");
+            const int64_t delay = request.calc64("delay");
+            if (delay < 0) {
+                STHROW("402 Must specify a non-negative delay when retrying");
+            }
+            const string retryRepeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
+            const string safeNextRun = _constructNextRunDATETIME(db, nextRun, lastRun, retryRepeat);
+            if (safeNextRun.empty()) {
+                STHROW("402 Malformed delay");
+            }
+            return safeNextRun;
+        };
+
+        if (rerunIfDataChanged && request.isSet("expectedData")) {
+            BedrockPlugin::verifyAttributeSize(request, "expectedData", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
+            validateJobData(request["expectedData"], "expectedData");
+            if (!callerDataEquals(currentData, request["expectedData"])) {
+                // The caller-owned payload changed after this worker dequeued the job. Preserve the current payload,
+                // name, priority, and terminal state. RetryJob can still apply non-conflicting worker data changes.
+                SINFO("Requeueing rerun-if-data-changed job#" << jobID << " after " << requestVerb
+                      << " because its data changed while the worker was running");
+                if (SIEquals(requestVerb, "FinishJob")) {
+                    if (!db.writeIdempotent("UPDATE jobs SET state = 'QUEUED', nextRun = " + SQ(SCURRENT_TIMESTAMP_MS()) +
+                                            ", data = JSON_REMOVE(data, '$.retryAfterCount')" +
+                                            " WHERE jobID = " + SQ(jobID) + ";")) {
+                        STHROW("502 Failed to requeue rerun-if-data-changed job");
+                    }
+                    return;
+                }
+
+                string dataExpression = "JSON_REMOVE(data, '$.retryAfterCount')";
+                if (!request["data"].empty()) {
+                    const string workerData = stripRerunIfDataChanged(request["data"]);
+                    const STable parsedWorkerData = SParseJSONObject(workerData);
+                    const bool workerIsMocked = SContains(parsedWorkerData, "mockRequest");
+                    if (mockRequest != workerIsMocked) {
+                        SWARN("Not updating mockRequest field of job data.");
+                        STHROW("500 Mock Mismatch");
+                    }
+                    const string mergedData = mergeRetryJobData(currentData, request["expectedData"], workerData);
+                    dataExpression = SQ(mergedData);
+                }
+
+                const string safeNewNextRun = calculateNextRun();
+                if (!db.writeIdempotent("UPDATE jobs SET state = 'QUEUED', nextRun = " + safeNewNextRun +
+                                        ", data = " + dataExpression +
+                                        " WHERE jobID = " + SQ(jobID) + ";")) {
+                    STHROW("502 Failed to retry rerun-if-data-changed job");
+                }
+                return;
+            }
         }
 
         // If we have a parent, make sure it is PAUSED.  This is to just
@@ -1184,6 +1445,8 @@ void BedrockJobsCommand::process(SQLite& db)
         // If we've been asked to update the data, let's do that
         auto data = request["data"];
         if (!data.empty()) {
+            // Remove the internal marker from the worker data. Restore it only if it is set on the stored job.
+            data = stripRerunIfDataChanged(data);
             // See if the new data says it's mocked.
             STable newData = SParseJSONObject(data);
             bool newMocked = newData.find("mockRequest") != newData.end();
@@ -1203,7 +1466,8 @@ void BedrockJobsCommand::process(SQLite& db)
             }
 
             // Update the data to the new value.
-            if (!db.writeIdempotent("UPDATE jobs SET data=" + SQ(data) + " WHERE jobID=" + SQ(jobID) + ";")) {
+            if (!db.writeIdempotent("UPDATE jobs SET data = " + preserveRerunIfDataChangedSQL(SQ(data)) +
+                                    " WHERE jobID = " + SQ(jobID) + ";")) {
                 STHROW("502 Failed to update job data");
             }
         }
@@ -1252,41 +1516,7 @@ void BedrockJobsCommand::process(SQLite& db)
             }
         }
 
-        // If this is set to repeat, get the nextRun value
-        string safeNewNextRun = "";
-
-        // If passed ignoreRepeat, we want to fall back to the logic of using nextRun or delay instead of the jobs
-        // repeat param
-        bool ignoreRepeat = request.test("ignoreRepeat");
-        if (!repeat.empty() && !ignoreRepeat) {
-            // For all jobs, the last time at which they were scheduled is the currently stored 'nextRun' time
-            string lastScheduled = nextRun;
-
-            // Except for jobs with 'retryAfter' + 'repeat' based on `SCHEDULED`. With 'retryAfter', in GetJob we updated 'nextRun'
-            // to a failure check interval, eg 5 minutes. To account for this here when finishing the job, we use
-            // 'originalNextRun' from the 'data' to get back the originally scheduled time which was 'nextRun' when the job ran.
-            if (!retryAfter.empty() && SToUpper(repeat).find("SCHEDULED") != string::npos) {
-                lastScheduled = originalDataNextRun;
-            }
-            safeNewNextRun = _constructNextRunDATETIME(db, lastScheduled, lastRun, repeat);
-        } else if (SIEquals(requestVerb, "RetryJob")) {
-            const string& newNextRun = request["nextRun"];
-
-            if (newNextRun.empty()) {
-                SINFO("nextRun isn't set, using delay");
-                int64_t delay = request.calc64("delay");
-                if (delay < 0) {
-                    STHROW("402 Must specify a non-negative delay when retrying");
-                }
-                repeat = "FINISHED, +" + SToStr(delay) + " SECONDS";
-                safeNewNextRun = _constructNextRunDATETIME(db, nextRun, lastRun, repeat);
-                if (safeNewNextRun.empty()) {
-                    STHROW("402 Malformed delay");
-                }
-            } else {
-                safeNewNextRun = SQ(newNextRun);
-            }
-        }
+        const string safeNewNextRun = calculateNextRun();
 
         // The job is set to be rescheduled.
         if (!safeNewNextRun.empty()) {
@@ -1377,21 +1607,25 @@ void BedrockJobsCommand::process(SQLite& db)
     }
     // ----------------------------------------------------------------------
     else if (SIEquals(requestVerb, "FailJob")) {
-        // - FailJob( jobID, [data] )
+        // - FailJob( jobID, [data], [expectedData] )
         //
         //     Fails a job.
         //
         //     Parameters:
         //     - jobID - ID of the job to fail
         //     - data  - Data to associate with this failed job
+        //     - expectedData - Immutable data returned by GetJob/GetJobs. For an opted-in job, Bedrock preserves
+        //                      newer data and immediately requeues the job when this snapshot no longer matches.
         //
         BedrockPlugin::verifyAttributeInt64(request, "jobID", 1);
+        const int64_t jobID = request.calc64("jobID");
 
         // Verify there is a job like this and it's running
         SQResult result;
-        if (!db.read("SELECT state, nextRun, lastRun, repeat "
+        if (!db.read("SELECT state, data, "
+                     "JSON_TYPE(data, '$._bedrockRerunIfDataChanged') = 'true' "
                      "FROM jobs "
-                     "WHERE jobID=" + SQ(request.calc64("jobID")) + ";",
+                     "WHERE jobID = " + SQ(jobID) + ";",
                      result)) {
             STHROW("502 Select failed");
         }
@@ -1399,25 +1633,48 @@ void BedrockJobsCommand::process(SQLite& db)
             STHROW("404 No job with this jobID");
         }
         const string& state = result[0][0];
+        const string& currentData = result[0][1];
+        const bool rerunIfDataChanged = result[0][2] == "1";
 
         // Make sure we're failing a job that's actually running or running with a retryAfter
         if (state != "RUNNING" && state != "RUNQUEUED") {
             SINFO("Trying to fail job#" << request["jobID"] << ", but isn't RUNNING or RUNQUEUED (" << state << ")");
             STHROW("405 Can only fail RUNNING or RUNQUEUED jobs");
         }
+        if (request.isSet("data")) {
+            validateJobData(request["data"]);
+        }
+
+        if (rerunIfDataChanged && request.isSet("expectedData")) {
+            BedrockPlugin::verifyAttributeSize(request, "expectedData", 1, BedrockPlugin_Jobs::MAX_SIZE_BLOB);
+            validateJobData(request["expectedData"], "expectedData");
+            if (!callerDataEquals(currentData, request["expectedData"])) {
+                // The caller-owned payload changed after this worker dequeued the job. Preserve it and run it rather
+                // than allowing the older worker's fatal outcome or data to strand the job in FAILED.
+                SINFO("Requeueing rerun-if-data-changed job#" << jobID
+                      << " after FailJob because its data changed while the worker was running");
+                if (!db.writeIdempotent("UPDATE jobs SET state = 'QUEUED', nextRun = " + SQ(SCURRENT_TIMESTAMP_MS()) +
+                                        ", data = JSON_REMOVE(data, '$.retryAfterCount')" +
+                                        " WHERE jobID = " + SQ(jobID) + ";")) {
+                    STHROW("502 Failed to requeue rerun-if-data-changed job");
+                }
+                return;
+            }
+        }
 
         // Are we updating the data too?
         list<string> updateList;
         if (request.isSet("data")) {
-            // Update the data too
-            updateList.push_back("data=" + SQ(request["data"]));
+            // Update public data while preserving Bedrock's private opt-in marker.
+            const string newData = stripRerunIfDataChanged(request["data"]);
+            updateList.push_back("data = " + preserveRerunIfDataChangedSQL(SQ(newData)));
         }
 
         // Not repeating; just finish
         updateList.push_back("state='FAILED'");
 
         // Update this job
-        if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) + "WHERE jobID=" + SQ(request.calc64("jobID")) + ";")) {
+        if (!db.writeIdempotent("UPDATE jobs SET " + SComposeList(updateList) + " WHERE jobID = " + SQ(jobID) + ";")) {
             STHROW("502 Fail failed");
         }
 

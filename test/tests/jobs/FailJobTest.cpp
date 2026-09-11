@@ -12,6 +12,7 @@ struct FailJobTest : tpunit::TestFixture
                               TEST(FailJobTest::notInRunningRunqueuedState),
                               TEST(FailJobTest::failJobInRunningState),
                               TEST(FailJobTest::failJobInRunqueuedState),
+                              TEST(FailJobTest::rerunIfDataChanged),
                               AFTER(FailJobTest::tearDown),
                               AFTER_CLASS(FailJobTest::tearDownClass))
     {
@@ -122,5 +123,123 @@ struct FailJobTest : tpunit::TestFixture
         // Failing the job should succeed and set it as FAILED
         tester->readDB("SELECT state FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], "FAILED");
+    }
+
+    void rerunIfDataChanged()
+    {
+        // Given a running opted-in job
+        SData command("CreateJob");
+        command["name"] = "failComparedData";
+        command["data"] = "{\"activity\":1}";
+        command["unique"] = "true";
+        command["rerunIfDataChanged"] = "true";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "failComparedData";
+        STable runningJob = tester->executeWaitVerifyContentTable(command);
+        const string expectedData = runningJob["data"];
+
+        // And a duplicate enqueue updates its data
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "failComparedData";
+        command["data"] = "{\"activity\":2}";
+        command["unique"] = "true";
+        command["rerunIfDataChanged"] = "true";
+        tester->executeWaitVerifyContent(command);
+
+        // When the original worker fails with stale output
+        command.clear();
+        command.methodLine = "FailJob";
+        command["jobID"] = jobID;
+        command["expectedData"] = expectedData;
+        command["data"] = "{\"activity\":1,\"worker\":true}";
+        tester->executeWaitVerifyContent(command);
+
+        // Then Bedrock requeues the newer data and discards stale worker output
+        SQResult result;
+
+        tester->readDB("SELECT state, JSON_EXTRACT(data, '$._bedrockRerunIfDataChanged'), "
+                       "JSON_EXTRACT(data, '$.activity'), JSON_EXTRACT(data, '$.worker') "
+                       "FROM jobs WHERE jobID=" + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "1");
+        ASSERT_EQUAL(result[0][2], "2");
+        ASSERT_EQUAL(result[0][3], "");
+
+        // Given the next worker receives the preserved data
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "failComparedData";
+        runningJob = tester->executeWaitVerifyContentTable(command);
+
+        // When it fails with the current snapshot
+        command.clear();
+        command.methodLine = "FailJob";
+        command["jobID"] = jobID;
+        command["expectedData"] = runningJob["data"];
+        tester->executeWaitVerifyContent(command);
+
+        // Then Bedrock marks the job FAILED
+        tester->readDB("SELECT state FROM jobs WHERE jobID=" + jobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "FAILED");
+
+        // Given a running opted-in job whose progress changes through UpdateJob
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "progressOnlyFailure";
+        command["data"] = "{\"activity\":1}";
+        command["unique"] = "true";
+        command["rerunIfDataChanged"] = "true";
+        const string progressOnlyJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "progressOnlyFailure";
+        runningJob = tester->executeWaitVerifyContentTable(command);
+
+        command.clear();
+        command.methodLine = "UpdateJob";
+        command["jobID"] = progressOnlyJobID;
+        command["data"] = "{\"activity\":1,\"progress\":50}";
+        tester->executeWaitVerifyContent(command);
+
+        // When the worker fails with its original dequeue snapshot
+        command.clear();
+        command.methodLine = "FailJob";
+        command["jobID"] = progressOnlyJobID;
+        command["expectedData"] = runningJob["data"];
+        tester->executeWaitVerifyContent(command);
+
+        // Then Bedrock requeues the job and preserves its progress
+        tester->readDB("SELECT state, JSON_EXTRACT(data, '$.progress') FROM jobs WHERE jobID=" +
+                       progressOnlyJobID + ";", result);
+        ASSERT_EQUAL(result[0][0], "QUEUED");
+        ASSERT_EQUAL(result[0][1], "50");
+
+        // Given a running opted-in job
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "legacyFailure";
+        command["data"] = "{\"activity\":1}";
+        command["unique"] = "true";
+        command["rerunIfDataChanged"] = "true";
+        const string legacyJobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "legacyFailure";
+        tester->executeWaitVerifyContent(command);
+
+        // When the worker fails without expectedData
+        command.clear();
+        command.methodLine = "FailJob";
+        command["jobID"] = legacyJobID;
+        tester->executeWaitVerifyContent(command);
+
+        // Then Bedrock marks the job FAILED
+        ASSERT_EQUAL(tester->readDB("SELECT state FROM jobs WHERE jobID=" + legacyJobID + ";"), "FAILED");
     }
 } __FailJobTest;
