@@ -72,7 +72,7 @@ JSONOBJ = $(JSONCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 JSONDEP = $(JSONCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
 # The same for libbedrock.
-LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -path 'test*' -not -path 'libstuff*')
+LIBBEDROCKCPP = $(shell find * -name '*.cpp' -not -name main.cpp -not -path 'test*' -not -path 'libstuff*' -not -path 'benchmarks*')
 LIBBEDROCKOBJ = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.o)
 LIBBEDROCKDEP = $(LIBBEDROCKCPP:%.cpp=$(INTERMEDIATEDIR)/%.d)
 
@@ -159,7 +159,7 @@ $(INTERMEDIATEDIR)/plugins/MySQL.d $(INTERMEDIATEDIR)/plugins/MySQL.o: plugins/M
 # This builds both the dependencies and the object file from the cpp.
 # We include one of the mbedtls files as a dependency because building it will cause our header files to get created,
 # which many of our cpp files will reference.
-$(INTERMEDIATEDIR)/%.d $(INTERMEDIATEDIR)/%.o: %.cpp mbedtls/library/libmbedcrypto.a
+$(INTERMEDIATEDIR)/%.d $(INTERMEDIATEDIR)/%.o: %.cpp | mbedtls/library/libmbedcrypto.a
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -MMD -MF $(INTERMEDIATEDIR)/$*.d -MT $(INTERMEDIATEDIR)/$*.o -o $(INTERMEDIATEDIR)/$*.o -c $<
 
@@ -169,14 +169,25 @@ $(INTERMEDIATEDIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) -g $(BEDROCK_OPTIM_COMPILE_FLAG) -fPIC $(AMALGAMATION_FLAGS) -std=gnu23 -o $@ -c $<
 
-# Bring in the dependency files. This will cause them to be created if necessary. This is skipped if we're cleaning, as
-# they'll just get deleted anyway.
-ifneq ($(MAKECMDGOALS),clean)
--include $(LIBBEDROCKDEP)
--include $(STUFFDEP)
--include $(JSONDEP)
--include $(TESTDEP)
--include $(CLUSTERTESTDEP)
--include $(BEDROCKDEP)
--include $(TESTPLUGINTDEP)
+# Bring in dependency files for the requested targets. Missing included dependency files are rebuilt along with their
+# object files, so including test dependencies in a production-only build unnecessarily compiles the tests.
+REQUESTED_GOALS := $(if $(strip $(MAKECMDGOALS)),$(MAKECMDGOALS),all)
+DEPS_TO_INCLUDE := $(LIBBEDROCKDEP) $(STUFFDEP) $(JSONDEP) $(BEDROCKDEP)
+DEPS_TO_INCLUDE += $(patsubst %.o,%.d,$(filter $(INTERMEDIATEDIR)/%.o,$(REQUESTED_GOALS)))
+
+ifneq ($(filter all test test/test,$(REQUESTED_GOALS)),)
+DEPS_TO_INCLUDE += $(TESTDEP)
+endif
+ifneq ($(filter all clustertest test/clustertest/clustertest,$(REQUESTED_GOALS)),)
+DEPS_TO_INCLUDE += $(CLUSTERTESTDEP)
+endif
+ifneq ($(filter all clustertest testplugin test/clustertest/testplugin/testplugin.so,$(REQUESTED_GOALS)),)
+DEPS_TO_INCLUDE += $(TESTPLUGINTDEP)
+endif
+ifneq ($(filter bench,$(REQUESTED_GOALS)),)
+DEPS_TO_INCLUDE += $(BENCHDEP)
+endif
+
+ifeq ($(filter clean,$(REQUESTED_GOALS)),)
+-include $(sort $(DEPS_TO_INCLUDE))
 endif

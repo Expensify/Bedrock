@@ -1,11 +1,11 @@
 #ifndef LIBSTUFF_H
 #define LIBSTUFF_H
-#include "libstuff/qrf.h"
 #include "libstuff/SQliteParameter.h"
 
 #include <netinet/in.h>
 #include <poll.h>
 #include <libgen.h>
+#include <stdlib.h>
 #include <syslog.h>
 
 #include <algorithm>
@@ -25,6 +25,7 @@
 struct sockaddr_in;
 struct pollfd;
 struct sqlite3;
+struct sqlite3_qrf_spec;
 class SQResult;
 class SFastBuffer;
 struct SData;
