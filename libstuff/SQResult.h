@@ -43,7 +43,7 @@ public:
      * @param key Non-null, null-terminated key whose storage and contents remain unchanged until
      * the result is cleared, assigned, destroyed, or its headers are replaced using setHeaders().
      * String literals satisfy this contract. Rewriting or reusing key storage can return an
-     * incorrect column; use the std::string overload for dynamically changing keys.
+     * incorrect column; use the string overload for dynamically changing keys.
      * @return A string representation of the column value.
      * @throws SException if the key is null, the row has no result, or the column is absent from the row.
      */
