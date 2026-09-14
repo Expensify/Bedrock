@@ -62,7 +62,7 @@ Value::Value(initializer_list<KeyValue> initializerList) : startTime(chrono::hig
     objectValue = make_shared<map<string, Value>>();
     for (auto& item : initializerList) {
         // The KeyValue has full ownership of its underlying items and it was designed for the specific purpose of being safe to move here
-        objectValue->emplace(move(item.key), move(item.value));
+        objectValue->emplace_hint(objectValue->end(), move(item.key), move(item.value));
     }
     logSlowConstructor();
 }
@@ -660,6 +660,21 @@ void Value::extractTo(map<string, JSON::Value>::iterator it, JSON::Value& v)
     v.objectValue->insert(objectValue->extract(it));
 }
 
+void Value::extractTo(map<string, Value>::iterator it, Value& target, string key, map<string, Value>::const_iterator hint)
+{
+    ensureType(OBJECT);
+    target.ensureType(OBJECT);
+    if (objectValue == target.objectValue) {
+        throw InvalidArgument("Cannot transfer a renamed node within the same object");
+    }
+    auto node = objectValue->extract(it);
+    node.key() = move(key);
+    auto inserted = target.objectValue->insert(hint, move(node));
+    if (!node.empty()) {
+        inserted->second = move(node.mapped());
+    }
+}
+
 vector<JSON::Value>::iterator Value::erase(vector<JSON::Value>::iterator it)
 {
     try {
@@ -1099,28 +1114,59 @@ const JSON::Value& Value::getMemberWithDefault(const string& key, const JSON::Va
 
 const Value& Value::getValueAtPath(const list<string>& path, const Value& defaultValue) const&
 {
-    try {
-        const Value* current = this;
-        for (const string& step : path) {
-            if (!current->isObject()) {
-                // Trying to use the [] operator will result in a thrown exception, so just return the default here.
-                return defaultValue;
-            }
-            current = &(current->operator[](step));
-        }
-
-        // If the value at the end of the path is null and the caller wants a non-null default, return the default.
-        if (current->isNull() && !defaultValue.isNull()) {
+    const Value* current = this;
+    for (const string& step : path) {
+        if (!current->isObject()) {
             return defaultValue;
-        } else {
-            // If we got all the way to the end with no errors, return the current value.
-            return *current;
         }
-    } catch (const Error& e) {
+        const auto found = current->objectValue->find(step);
+        if (found == current->objectValue->end()) {
+            return defaultValue;
+        }
+        current = &found->second;
     }
+    return current->isNull() && !defaultValue.isNull() ? defaultValue : *current;
+}
 
-    // This will happen in either error case above.
-    return defaultValue;
+const Value* Value::findValueAtPath(initializer_list<string> path) const
+{
+    const Value* current = this;
+    for (const string& step : path) {
+        if (!current->isObject()) {
+            return nullptr;
+        }
+        const auto found = current->objectValue->find(step);
+        if (found == current->objectValue->end()) {
+            return nullptr;
+        }
+        current = &found->second;
+    }
+    return current;
+}
+
+const Value& Value::getValueAtPath(initializer_list<string> path, const Value& defaultValue) const&
+{
+    const Value* current = findValueAtPath(path);
+    return !current || (current->isNull() && !defaultValue.isNull()) ? defaultValue : *current;
+}
+
+Value Value::getValueAtPath(initializer_list<string> path, const Value& defaultValue) &&
+{
+    const Value* current = findValueAtPath(path);
+    if (!current || (current->isNull() && !defaultValue.isNull())) {
+        return defaultValue;
+    }
+    return move(*const_cast<Value*>(current));
+}
+
+const Value& Value::getValueAtPath(initializer_list<string> path) const&
+{
+    return getValueAtPath(path, JSON::Utils::NULL_VALUE);
+}
+
+Value Value::getValueAtPath(initializer_list<string> path) &&
+{
+    return move(*this).getValueAtPath(path, JSON::Utils::NULL_VALUE);
 }
 
 Value Value::getValueAtPath(const list<string>& path, const Value& defaultValue) &&
