@@ -239,6 +239,9 @@ private:
     // commitCount that we do, this will return null.
     void _updateSyncPeer();
 
+    // If the outstanding wal frames to checkpoint goes over outstandingFramesToCheckpoint, we will close the command port
+    // since otherwise commands processed will be slow. Once the frames drop below the level, the command port is reopened.
+    // 0 disables this behavior.
     void _updateCommandPortForWALSize(uint64_t outstandingFramesToCheckpoint);
 
     void _dieIfForkedFromCluster();
