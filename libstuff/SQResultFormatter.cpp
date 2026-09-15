@@ -32,7 +32,7 @@ string SQResultFormatter::formatJSON(const SQResult& result, const FORMAT_OPTION
     // This probably isn't super fast, but could be easily optimized if it ever became necessary.
     STable output;
     if (options.header) {
-        output["headers"] = SComposeJSONArray(result.headers);
+        output["headers"] = SComposeJSONArray(result.getHeaders());
     }
     vector<string> jsonRows;
     for (size_t rowIndex = 0; rowIndex < result.size(); ++rowIndex) {
@@ -44,6 +44,7 @@ string SQResultFormatter::formatJSON(const SQResult& result, const FORMAT_OPTION
 
 string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTIONS& options)
 {
+    const auto& headers = result.getHeaders();
     // Match the native format of sqlite3 and handle embedded newlines by
     // splitting cells into physical lines and aligning continuation lines
     // under their respective columns.
@@ -197,9 +198,9 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
     };
 
     // Determine column widths: maximum subline length across header and all rows
-    vector<size_t> maxColumnDisplayWidths(result.headers.size());
-    for (size_t i = 0; i < result.headers.size(); i++) {
-        maxColumnDisplayWidths[i] = displayWidth(expandTabs(result.headers[i]));
+    vector<size_t> maxColumnDisplayWidths(headers.size());
+    for (size_t i = 0; i < headers.size(); i++) {
+        maxColumnDisplayWidths[i] = displayWidth(expandTabs(headers[i]));
     }
     for (size_t i = 0; i < result.size(); i++) {
         for (size_t j = 0; j < result[i].size(); j++) {
@@ -220,9 +221,9 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
     if (options.header) {
         // Build header line in a buffer so we can trim trailing spaces
         string headerLine;
-        for (size_t i = 0; i < result.headers.size(); i++) {
-            string headerCell = expandTabs(result.headers[i]);
-            if (i + 1 < result.headers.size()) {
+        for (size_t i = 0; i < headers.size(); i++) {
+            string headerCell = expandTabs(headers[i]);
+            if (i + 1 < headers.size()) {
                 padToWidth(headerCell, maxColumnDisplayWidths[i]);
             }
             if (i != 0) {
@@ -290,6 +291,7 @@ string SQResultFormatter::formatColumn(const SQResult& result, const FORMAT_OPTI
 
 string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIONS& options)
 {
+    const auto& headers = result.getHeaders();
     auto isNumeric = [](const string& input) -> bool {
         if (input.empty()) {
             return false;
@@ -358,17 +360,17 @@ string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIO
     string output;
 
     if (options.header) {
-        for (size_t i = 0; i < result.headers.size(); i++) {
+        for (size_t i = 0; i < headers.size(); i++) {
             if (i) {
                 output.push_back(delimiter);
             }
-            output += quoteSQL(result.headers[i]);
+            output += quoteSQL(headers[i]);
         }
         output.push_back('\n');
     }
 
     for (const auto& row : result) {
-        size_t columnCount = result.headers.empty() ? row.size() : result.headers.size();
+        size_t columnCount = headers.empty() ? row.size() : headers.size();
         for (size_t j = 0; j < columnCount; j++) {
             if (j) {
                 output.push_back(delimiter);
@@ -392,6 +394,7 @@ string SQResultFormatter::formatQuote(const SQResult& result, const FORMAT_OPTIO
 
 string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS& options)
 {
+    const auto& headers = result.getHeaders();
     // Standard CSV + sqlite3 shell defaults:
     //  - Separator: comma
     //  - Quote a field if it contains comma, double-quote, CR, LF, any ASCII whitespace/control, or any non-ASCII byte
@@ -443,11 +446,11 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
     string output;
 
     if (options.header) {
-        for (size_t i = 0; i < result.headers.size(); i++) {
+        for (size_t i = 0; i < headers.size(); i++) {
             if (i) {
                 output.push_back(delimiter);
             }
-            output += quoteCSV(result.headers[i]);
+            output += quoteCSV(headers[i]);
         }
         output.push_back('\n');
     }
@@ -456,7 +459,7 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
     for (const auto& row : result) {
         // If headers are present, cap at header count (sqlite shell does this implicitly
         // as it prints per-column of the statement); otherwise, print all row fields.
-        size_t columnCount = result.headers.empty() ? row.size() : result.headers.size();
+        size_t columnCount = headers.empty() ? row.size() : headers.size();
         for (size_t j = 0; j < columnCount; j++) {
             if (j) {
                 output.push_back(delimiter);
@@ -472,6 +475,7 @@ string SQResultFormatter::formatCSV(const SQResult& result, const FORMAT_OPTIONS
 
 string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTIONS& options)
 {
+    const auto& headers = result.getHeaders();
     // Mimic sqlite3 shell `.mode tabs`:
     //  - Separator is a single TAB character
     //  - No field quoting/escaping; fields are written verbatim
@@ -481,11 +485,11 @@ string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTION
     string output;
 
     if (options.header) {
-        for (size_t i = 0; i < result.headers.size(); i++) {
+        for (size_t i = 0; i < headers.size(); i++) {
             if (i) {
                 output.push_back(delimiter);
             }
-            output += result.headers[i];
+            output += headers[i];
         }
         output.push_back('\n');
     }
@@ -493,7 +497,7 @@ string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTION
     // Data rows
     for (const auto& row : result) {
         // If headers are present, output up to header count; otherwise, all fields.
-        size_t columnCount = result.headers.empty() ? row.size() : result.headers.size();
+        size_t columnCount = headers.empty() ? row.size() : headers.size();
         // Trim trailing empty fields so we don't print a trailing tab.
         size_t lastNonEmpty = columnCount;
         while (lastNonEmpty > 0) {
@@ -518,6 +522,7 @@ string SQResultFormatter::formatTabs(const SQResult& result, const FORMAT_OPTION
 
 string SQResultFormatter::formatList(const SQResult& result, const FORMAT_OPTIONS& options)
 {
+    const auto& headers = result.getHeaders();
     // Mimic sqlite3 shell `.mode list`:
     //  - Columns separated by a pipe ("|")
     //  - Each row on a single line
@@ -528,11 +533,11 @@ string SQResultFormatter::formatList(const SQResult& result, const FORMAT_OPTION
     string output;
 
     if (options.header) {
-        for (size_t i = 0; i < result.headers.size(); i++) {
+        for (size_t i = 0; i < headers.size(); i++) {
             if (i) {
                 output.push_back(delimiter);
             }
-            output += result.headers[i];
+            output += headers[i];
         }
         output.push_back('\n');
     }

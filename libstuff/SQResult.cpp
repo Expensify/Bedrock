@@ -2,6 +2,7 @@
 #include "SQResult.h"
 #include "libstuff/SQResultFormatter.h"
 #include <stdexcept>
+#include <string_view>
 
 SQResultRow::SQResultRow(SQResult& result, size_t count) : result(&result)
 {
@@ -87,13 +88,14 @@ SQResultRow& SQResultRow::operator=(const SQResultRow& other)
 string SQResultRow::operator[](const string& key)
 {
     if (result) {
-        for (size_t i = 0; i < result->headers.size(); i++) {
+        const auto& headers = result->getHeaders();
+        for (size_t i = 0; i < headers.size(); i++) {
             // If the headers have more entries than the row (they really shouldn't), break early instead of segfaulting.
             if (i >= data.size()) {
                 break;
             }
 
-            if (result->headers[i] == key) {
+            if (headers[i] == key) {
                 return (*this)[i];
             }
         }
@@ -104,18 +106,83 @@ string SQResultRow::operator[](const string& key)
 const string SQResultRow::operator[](const string& key) const
 {
     if (result) {
-        for (size_t i = 0; i < result->headers.size(); i++) {
+        const auto& headers = result->getHeaders();
+        for (size_t i = 0; i < headers.size(); i++) {
             // If the headers have more entries than the row (they really shouldn't), break early instead of segfaulting.
             if (i >= data.size()) {
                 break;
             }
 
-            if (result->headers[i] == key) {
+            if (headers[i] == key) {
                 return (*this)[i];
             }
         }
     }
     STHROW_STACK("No column named " + key);
+}
+
+string SQResultRow::operator[](const char* key)
+{
+    return static_cast<const SQResultRow&>(*this)[key];
+}
+
+const string SQResultRow::operator[](const char* key) const
+{
+    if (result && key) {
+        const optional<size_t> index = result->findHeaderIndex(key);
+        if (index.has_value() && index.value() < data.size()) {
+            return (*this)[index.value()];
+        }
+    }
+    STHROW_STACK("No column named " + string(key ? key : "(null)"));
+}
+
+SQResult::SQResult(const SQResult& other) : headers(other.headers), rows(other.rows)
+{
+    rebindRows();
+}
+
+SQResult::SQResult(vector<SQResultRow>&& rows, vector<string>&& headers)
+    : headers(move(headers)), rows(move(rows))
+{
+    rebindRows();
+}
+
+void SQResult::rebindRows()
+{
+    for (auto& row : rows) {
+        row.result = this;
+    }
+}
+
+const vector<string>& SQResult::getHeaders() const
+{
+    return headers;
+}
+
+void SQResult::setHeaders(vector<string> newHeaders)
+{
+    lock_guard<mutex> lock(headerIndexMutex);
+    headerIndexesByAddress.clear();
+    headers = move(newHeaders);
+}
+
+optional<size_t> SQResult::findHeaderIndex(const char* key) const
+{
+    lock_guard<mutex> lock(headerIndexMutex);
+    const auto cached = headerIndexesByAddress.find(key);
+    if (cached != headerIndexesByAddress.end()) {
+        return cached->second;
+    }
+
+    const string_view name(key);
+    for (size_t index = 0; index < headers.size(); ++index) {
+        if (headers[index] == name) {
+            headerIndexesByAddress.emplace(key, index);
+            return index;
+        }
+    }
+    return nullopt;
 }
 
 SQResultRow::operator vector<string>() const {
@@ -175,7 +242,7 @@ bool SQResult::deserialize(const string& json)
 
             // Add the headers
             list<string> jsonHeaders = SParseJSONArray(content["headers"]);
-            headers.insert(headers.end(), jsonHeaders.begin(), jsonHeaders.end());
+            setHeaders(vector<string>(jsonHeaders.begin(), jsonHeaders.end()));
 
             // Add the rows
             list<string> jsonRows = SParseJSONArray(content["rows"]);
@@ -208,9 +275,11 @@ bool SQResult::deserialize(const string& json)
 
             // We need to preserve the *order* of the headers of the first row, which is not actually in the JSON spec but
             // is important here.
+            vector<string> parsedHeaders;
             SParseJSONObject(array.front(), "", [&](const string& key, const string& value){
-                headers.push_back(key);
-                                                                                                                   });
+                parsedHeaders.push_back(key);
+            });
+            setHeaders(move(parsedHeaders));
 
             // Now we need to parse each row.
             for (auto& jsonRow : array) {
@@ -254,6 +323,8 @@ size_t SQResult::size() const
 
 void SQResult::clear()
 {
+    lock_guard<mutex> lock(headerIndexMutex);
+    headerIndexesByAddress.clear();
     headers.clear();
     rows.clear();
 }
@@ -270,11 +341,12 @@ const SQResultRow& SQResult::operator[](size_t rowNum) const
 
 SQResult& SQResult::operator=(const SQResult& other)
 {
-    headers = other.headers;
-    rows = other.rows;
-    for (auto& row : rows) {
-        row.result = this;
+    if (this == &other) {
+        return *this;
     }
+    setHeaders(other.headers);
+    rows = other.rows;
+    rebindRows();
     return *this;
 }
 
@@ -301,9 +373,14 @@ vector<SQResultRow>::const_iterator SQResult::cend() const
 void SQResult::emplace_back(SQResultRow&& row)
 {
     rows.emplace_back(move(row));
+    rows.back().result = this;
 }
 
 void SQResult::resize(const size_t newSize)
 {
+    const size_t oldSize = rows.size();
     rows.resize(newSize);
+    for (size_t index = oldSize; index < newSize; ++index) {
+        rows[index].result = this;
+    }
 }
