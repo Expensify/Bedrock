@@ -1,6 +1,7 @@
 #include <libstuff/libstuff.h>
 #include <plugins/Compression.h>
 #include <sqlitecluster/SQLiteCommand.h>
+#include <sqlitecluster/SQLiteCore.h>
 #include <sqlitecluster/SQLiteNode.h>
 #include <sqlitecluster/SQLitePeer.h>
 #include <sqlitecluster/SQLiteServer.h>
@@ -59,6 +60,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            TEST(SQLiteNodeTest::testFindSyncPeer),
                                            TEST(SQLiteNodeTest::testGetPeerByName),
                                            TEST(SQLiteNodeTest::testPrepareGUID),
+                                           TEST(SQLiteNodeTest::testGenerateGUID),
                                            TEST(SQLiteNodeTest::testMixedHashHistory),
                                            TEST(SQLiteNodeTest::testGUIDHashFailures),
                                            TEST(SQLiteNodeTest::testReplicationRequiresLeader),
@@ -238,6 +240,51 @@ struct SQLiteNodeTest : tpunit::TestFixture
         }
     }
 
+    void testGenerateGUID()
+    {
+        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, 1000000000, "1.0");
+        node._changeState(SQLiteNodeState::LEADING);
+        SQLite& db = dbPool->getBase();
+        SQLiteCore core(db);
+        set<string> guids;
+        for (const string query : {"CREATE TABLE IF NOT EXISTS generatedGUIDTest (id INTEGER);", ""}) {
+            // Retry identical SQL after rollback, then commit it through the local leader path.
+            for (int attempt = 0; attempt < 3; ++attempt) {
+                const uint64_t commitCount = db.getCommitCount();
+                const string committedHash = db.getCommittedHash();
+                ASSERT_TRUE(db.beginTransaction());
+                ASSERT_TRUE(db.writeUnmodified(query));
+                uint64_t commitID;
+                string hash;
+                if (attempt == 2) {
+                    ASSERT_TRUE(core.commit(node, commitID, hash, "testGenerateGUID", false));
+                } else {
+                    ASSERT_TRUE(db.prepare(&commitID, &hash));
+                }
+                ASSERT_EQUAL(hash.size(), (size_t) 73);
+                EXPECT_EQUAL(hash[32], ':');
+                const string guid = hash.substr(0, 32);
+                EXPECT_EQUAL(guid.find_first_not_of("0123456789ABCDEFabcdef"), string::npos);
+                EXPECT_TRUE(guids.insert(guid).second);
+                EXPECT_EQUAL(hash, guid + ":" + SToHex(SHashSHA1(guid + query)));
+                EXPECT_EQUAL(commitID, commitCount + 1);
+                if (attempt == 2) {
+                    EXPECT_EQUAL(db.getCommittedHash(), hash);
+                    string storedQuery, storedHash;
+                    ASSERT_TRUE(db.getCommit(commitID, &storedQuery, &storedHash));
+                    EXPECT_EQUAL(storedQuery, query);
+                    EXPECT_EQUAL(storedHash, hash);
+                } else {
+                    EXPECT_EQUAL(db.getUncommittedHash(), hash);
+                    EXPECT_EQUAL(db.getCommittedHash(), committedHash);
+                    EXPECT_EQUAL(db.getCommitCount(), commitCount);
+                    db.rollback();
+                }
+                EXPECT_TRUE(db.getUncommittedHash().empty());
+            }
+        }
+    }
+
     void testMixedHashHistory()
     {
         const vector<string> queries = {
@@ -345,13 +392,14 @@ struct SQLiteNodeTest : tpunit::TestFixture
         ASSERT_TRUE(db.beginTransaction());
         ASSERT_TRUE(db.writeUnmodified(query));
         ASSERT_TRUE(db.prepare());
-        const string legacyHash = SToHex(SHashSHA1(committedHash + query));
-        EXPECT_EQUAL(db.getUncommittedHash().size(), (size_t) 40);
-        EXPECT_EQUAL(db.getUncommittedHash(), legacyHash);
+        const string hash = db.getUncommittedHash();
+        ASSERT_EQUAL(hash.size(), (size_t) 73);
+        const string guid = hash.substr(0, 32);
+        EXPECT_EQUAL(hash, guid + ":" + SToHex(SHashSHA1(guid + query)));
         ASSERT_EQUAL(db.commit(), SQLITE_OK);
         string storedHash;
         ASSERT_TRUE(db.getCommit(commitCount + 1, nullptr, &storedHash));
-        EXPECT_EQUAL(storedHash, legacyHash);
+        EXPECT_EQUAL(storedHash, hash);
         EXPECT_EQUAL(db.read("SELECT COUNT(*) FROM hashTest;"), "4");
     }
 
