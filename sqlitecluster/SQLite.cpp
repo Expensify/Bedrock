@@ -7,6 +7,7 @@
 
 #include <libstuff/libstuff.h>
 #include <libstuff/SDeburr.h>
+#include <libstuff/SRandom.h>
 #include <plugins/Compression.h>
 #include <libstuff/SQResult.h>
 #include <string>
@@ -990,10 +991,12 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
     return true;
 }
 
-bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr, const string& guid)
+bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr, const optional<string>& replicationGUID)
 {
     SASSERT(_insideTransaction);
 
+    const string guid = replicationGUID.has_value() ? replicationGUID.value() :
+        SToHex(SRandom::rand64(), 16) + SToHex(SRandom::rand64(), 16);
     if (!guid.empty() && (guid.size() != 32 || guid.find_first_not_of("0123456789ABCDEFabcdef") != string::npos)) {
         SWARN("Invalid transaction GUID");
         return false;
@@ -1081,7 +1084,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
 
     // Queue up the journal entry
     if (guid.empty()) {
-        // Legacy commits chain from the entire previous hash, including GUID:SHA1 when present.
+        // Replaying legacy commits requires the entire previous hash, including GUID:SHA1 when present.
         _uncommittedHash = SToHex(SHashSHA1(getCommittedHash() + _uncommittedQuery));
     } else {
         _uncommittedHash = guid + ":" + SToHex(SHashSHA1(guid + _uncommittedQuery));

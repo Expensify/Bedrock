@@ -3005,11 +3005,12 @@ int SQuery(sqlite3* db, const string& sql, SQResult& result, int64_t warnThresho
             }
 
             int numColumns = sqlite3_column_count(preparedStatement);
-            result.headers.resize(numColumns);
+            vector<string> headers(numColumns);
 
             for (int i = 0; i < numColumns; i++) {
-                result.headers[i] = sqlite3_column_name(preparedStatement, i);
+                headers[i] = sqlite3_column_name(preparedStatement, i);
             }
+            result.setHeaders(move(headers));
 
             while (true) {
                 size_t beforeStep = 0;
