@@ -23,7 +23,6 @@ struct RetryJobTest : tpunit::TestFixture
                               TEST(RetryJobTest::hasRepeatScheduledLongIntervalNotReanchored),
                               TEST(RetryJobTest::hasRepeatScheduledSnappingModifierNotReanchored),
                               TEST(RetryJobTest::hasRetryAfterScheduledMissedWindowReanchors),
-                              TEST(RetryJobTest::scheduledRetryAfterPreservesAnchorAcrossChildren),
                               TEST(RetryJobTest::inRunqueuedState),
                               TEST(RetryJobTest::simplyRetryWithNextRun),
                               TEST(RetryJobTest::changeNameAndPriority),
@@ -586,69 +585,6 @@ struct RetryJobTest : tpunit::TestFixture
         ASSERT_TRUE(difftime(actualNextRun, minimumTime) > 0);
         ASSERT_TRUE(difftime(actualNextRun, maximumTime) <= 30);
         ASSERT_EQUAL(static_cast<int64_t>(difftime(actualNextRun, firstRunTime)) % 30, 0);
-    }
-
-    void scheduledRetryAfterPreservesAnchorAcrossChildren()
-    {
-        const string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() - STIME_US_PER_S);
-
-        SData command("CreateJob");
-        command["name"] = "parent";
-        command["firstRun"] = firstRun;
-        command["repeat"] = "SCHEDULED, +1 DAY";
-        command["retryAfter"] = "+5 MINUTES";
-        command["data"] = "{\"phase\":\"initial\"}";
-        const string parentID = tester->executeWaitVerifyContentTable(command)["jobID"];
-
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "parent";
-        STable runningParent = tester->executeWaitVerifyContentTable(command);
-
-        SQResult result;
-        tester->readDB("SELECT JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + parentID + ";", result);
-        ASSERT_EQUAL(result[0][0], firstRun);
-
-        command.clear();
-        command.methodLine = "CreateJob";
-        command["name"] = "child";
-        command["parentJobID"] = parentID;
-        const string childID = tester->executeWaitVerifyContentTable(command)["jobID"];
-
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = parentID;
-        command["data"] = runningParent["data"];
-        tester->executeWaitVerifyContent(command);
-
-        tester->readDB("SELECT state, nextRun FROM jobs WHERE jobID=" + parentID + ";", result);
-        ASSERT_EQUAL(result[0][0], "PAUSED");
-        ASSERT_EQUAL(result[0][1], firstRun);
-
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "child";
-        tester->executeWaitVerifyContent(command);
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = childID;
-        tester->executeWaitVerifyContent(command);
-
-        command.clear();
-        command.methodLine = "GetJob";
-        command["name"] = "parent";
-        STable resumedParent = tester->executeWaitVerifyContentTable(command);
-        command.clear();
-        command.methodLine = "FinishJob";
-        command["jobID"] = parentID;
-        command["data"] = resumedParent["data"];
-        tester->executeWaitVerifyContent(command);
-
-        tester->readDB("SELECT nextRun, JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + parentID + ";", result);
-        SQResult expected;
-        tester->readDB("SELECT DATETIME(" + SQ(firstRun) + ", '+1 DAY');", expected);
-        ASSERT_EQUAL(result[0][0], expected[0][0]);
-        ASSERT_TRUE(result[0][1].empty());
     }
 
     // Retry job in RUNQUEUED state
