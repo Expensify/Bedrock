@@ -45,7 +45,9 @@ struct CommandPortTest : tpunit::TestFixture
         response = SParseJSONObject(tester.executeWaitMultipleData({status}, 10, true)[0].content);
         ASSERT_EQUAL(response["maxOutstandingWALFrames"], "300000");
 
-        setMaxOutstandingWALFrames["maxOutstandingWALFrames"] = "200000";
+        setMaxOutstandingWALFrames["maxOutstandingWALFrames"] = "0";
         tester.executeWaitMultipleData({setMaxOutstandingWALFrames}, 10, true);
+        response = SParseJSONObject(tester.executeWaitMultipleData({status}, 10, true)[0].content);
+        ASSERT_EQUAL(response["maxOutstandingWALFrames"], "0");
     }
 } __CommandPortTest;

@@ -256,7 +256,7 @@ int main(int argc, char* argv[])
         << endl;
         cout << "-journalDeleterBatchSize <#rows>  Number of journal rows the background deleter removes per pass, 0 to pause trimming (default 10)"
         << endl;
-        cout << "-maxOutstandingWALFrames <#frames>  Close the public command port above this many outstanding WAL frames (default 200000)"
+        cout << "-maxOutstandingWALFrames <#frames>  Close the public command port above this many outstanding WAL frames, 0 to disable (default 0)"
         << endl;
         cout << "-checkpointMode <mode>      Accepts PASSIVE|FULL|RESTART|TRUNCATE, which is the value passed to https://www.sqlite.org/c3ref/wal_checkpoint_v2.html" << endl;
         cout << endl;
@@ -335,7 +335,7 @@ int main(int argc, char* argv[])
     SETDEFAULT("-priority", "100");
     SETDEFAULT("-maxJournalSize", "1000000");
     SETDEFAULT("-journalDeleterBatchSize", "10");
-    SETDEFAULT("-maxOutstandingWALFrames", "200000");
+    SETDEFAULT("-maxOutstandingWALFrames", "0");
     SETDEFAULT("-queryLog", "queryLog.csv");
     SETDEFAULT("-journalZstdDictionaryID", "0");
 

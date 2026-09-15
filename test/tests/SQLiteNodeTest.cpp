@@ -85,7 +85,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
     TestServer server;
     atomic<int> configuredPriority{1};
-    atomic<uint64_t> maxOutstandingWALFrames{200'000};
+    atomic<uint64_t> maxOutstandingWALFrames{0};
     string peerList = "host1.fake:15555?nodeName=peer1,host2.fake:16666?nodeName=peer2,host3.fake:17777?nodeName=peer3,host4.fake:18888?nodeName=peer4";
     shared_ptr<SQLitePool> dbPool;
 
@@ -110,7 +110,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
         // Keep a failed assertion from leaving the fixture's shared handle locked for the next test.
         dbPool->getBase().rollback();
         dbPool->getBase().setCommitEnabled(true);
-        maxOutstandingWALFrames = 200'000;
+        maxOutstandingWALFrames = 0;
     }
 
     void testFindSyncPeer()
@@ -190,7 +190,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
         TestServer testServer;
         SQLiteNode testNode(testServer, dbPool, "test", "localhost:19998", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
 
-        SQLiteNodeTester::updateCommandPortForWALSize(testNode, 200'000);
+        SQLiteNodeTester::updateCommandPortForWALSize(testNode, 300'000);
         ASSERT_TRUE(testServer.commandPortBlockReasons.empty());
 
         maxOutstandingWALFrames = 100'000;
@@ -201,7 +201,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
         SQLiteNodeTester::updateCommandPortForWALSize(testNode, 100'000);
         ASSERT_TRUE(testServer.commandPortUnblockReasons.empty());
 
-        maxOutstandingWALFrames = 200'000;
+        maxOutstandingWALFrames = 0;
         SQLiteNodeTester::updateCommandPortForWALSize(testNode, 150'000);
         SQLiteNodeTester::updateCommandPortForWALSize(testNode, 100'000);
         ASSERT_EQUAL(testServer.commandPortUnblockReasons, list<string>{"WAL_TOO_LARGE"});

@@ -979,12 +979,12 @@ void SQLiteNode::_updateCommandPortForWALSize(uint64_t outstandingFramesToCheckp
 {
     const uint64_t maxOutstandingWALFrames = _maxOutstandingWALFrames.load();
     const string blockReason = "WAL_TOO_LARGE";
-    if (outstandingFramesToCheckpoint > maxOutstandingWALFrames && !_blockedCommandPortForWALSize) {
+    if (maxOutstandingWALFrames && outstandingFramesToCheckpoint > maxOutstandingWALFrames && !_blockedCommandPortForWALSize) {
         SINFO("WAL has " << outstandingFramesToCheckpoint << " outstanding frames, closing command port until it is checkpointed below " << maxOutstandingWALFrames << " frames.");
         _server.blockCommandPort(blockReason);
         _blockedCommandPortForWALSize = true;
-    } else if (outstandingFramesToCheckpoint < maxOutstandingWALFrames && _blockedCommandPortForWALSize) {
-        SINFO("WAL has been checkpointed to " << outstandingFramesToCheckpoint << " outstanding frames, re-opening command port.");
+    } else if ((!maxOutstandingWALFrames || outstandingFramesToCheckpoint < maxOutstandingWALFrames) && _blockedCommandPortForWALSize) {
+        SINFO("WAL command port block cleared with " << outstandingFramesToCheckpoint << " outstanding frames and a limit of " << maxOutstandingWALFrames << " frames, re-opening command port.");
         _server.unblockCommandPort(blockReason);
         _blockedCommandPortForWALSize = false;
     }

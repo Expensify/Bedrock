@@ -1135,10 +1135,10 @@ BedrockServer::BedrockServer(const SData& args_)
 
     if (args.isSet("-maxOutstandingWALFrames")) {
         const int64_t maxOutstandingWALFrames = args.calc64("-maxOutstandingWALFrames");
-        if (maxOutstandingWALFrames > 0) {
+        if (maxOutstandingWALFrames >= 0) {
             _maxOutstandingWALFrames = static_cast<uint64_t>(maxOutstandingWALFrames);
         } else {
-            SWARN("Ignoring -maxOutstandingWALFrames '" << args["-maxOutstandingWALFrames"] << "', it must be greater than zero.");
+            SWARN("Ignoring -maxOutstandingWALFrames '" << args["-maxOutstandingWALFrames"] << "', it can't be negative.");
         }
     }
 
@@ -1952,8 +1952,8 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
         const int64_t newMax = command->request.calc64("maxOutstandingWALFrames");
         if (!command->request.isSet("maxOutstandingWALFrames")) {
             response.methodLine = "400 Missing maxOutstandingWALFrames";
-        } else if (newMax <= 0) {
-            response.methodLine = "400 maxOutstandingWALFrames must be greater than zero";
+        } else if (newMax < 0) {
+            response.methodLine = "400 maxOutstandingWALFrames can't be negative";
         } else {
             const uint64_t oldMax = _maxOutstandingWALFrames.exchange(static_cast<uint64_t>(newMax));
             SINFO("Setting _maxOutstandingWALFrames to " << newMax << " from " << oldMax);
