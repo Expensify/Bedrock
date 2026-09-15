@@ -1959,7 +1959,6 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             SINFO("Setting _maxOutstandingWALFrames to " << newMax << " from " << oldMax);
             response["oldMaxOutstandingWALFrames"] = to_string(oldMax);
             response["newMaxOutstandingWALFrames"] = to_string(newMax);
-            _notifyDoneSync.push(true);
         }
     } else if (SIEquals(command->request.methodLine, "SetPriority")) {
         if (!command->request.isSet("priority")) {
