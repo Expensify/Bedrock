@@ -277,7 +277,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
     void testGenerateGUID()
     {
-        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, 1000000000, "1.0");
+        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
         node._changeState(SQLiteNodeState::LEADING);
         SQLite& db = dbPool->getBase();
         SQLiteCore core(db);
