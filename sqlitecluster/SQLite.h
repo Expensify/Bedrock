@@ -4,6 +4,7 @@
 #include <libstuff/SQResult.h>
 #include <libstuff/SPerformanceTimer.h>
 
+#include <optional>
 #include <shared_mutex>
 
 class SQLite {
@@ -187,9 +188,10 @@ public:
     // The commitLockTimeout, if passed, will limit the time we wait for the lock. If not, we'll use 24 hours, which
     // is effectively no timeout.
     // Note that if this transaction fails to commit, these will not ultimately be accurate.
-    // A nonempty guid must be 32 hex characters and selects GUID:SHA1 hashing; an empty guid selects chained SHA1.
+    // Local transactions generate a new GUID. Replication supplies the received GUID (32 hex characters), or an
+    // explicit empty string to recompute a legacy chained SHA1.
     // Replication callers must compare the prepared hash with the received hash before committing.
-    bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr, const string& guid = "");
+    bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr, const optional<string>& replicationGUID = nullopt);
 
     // This enables or disables automatic re-writing. This feature is to support mocked requests and load testing. This
     // overloads set_authorizer to allow a plugin to deny certain queries from running (currently based only on the
