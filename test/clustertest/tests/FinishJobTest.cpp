@@ -16,6 +16,7 @@ struct FinishJobTest : tpunit::TestFixture
                               TEST(FinishJobTest::finishingParentUnPausesChildren),
                               TEST(FinishJobTest::deleteFinishedJobWithNoChildren),
                               TEST(FinishJobTest::hasRepeat),
+                              TEST(FinishJobTest::scheduledRetryAfterPreservesAnchorAcrossChildren),
                               TEST(FinishJobTest::inRunqueuedState),
                               TEST(FinishJobTest::hasRepeatWithDelay),
                               TEST(FinishJobTest::hasDelay),
@@ -224,6 +225,69 @@ struct FinishJobTest : tpunit::TestFixture
         SQResult result;
         clusterTester->getTester(0).readDB("SELECT data FROM jobs WHERE jobID = " + jobID + ";", result);
         ASSERT_EQUAL(result[0][0], SComposeJSONObject(data));
+    }
+
+    void scheduledRetryAfterPreservesAnchorAcrossChildren()
+    {
+        const string firstRun = SComposeTime("%Y-%m-%d %H:%M:%S", STimeNow() - STIME_US_PER_S);
+
+        SData command("CreateJob");
+        command["name"] = "parent";
+        command["firstRun"] = firstRun;
+        command["repeat"] = "SCHEDULED, +1 DAY";
+        command["retryAfter"] = "+5 MINUTES";
+        command["data"] = "{\"phase\":\"initial\"}";
+        const string parentID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "parent";
+        STable runningParent = tester->executeWaitVerifyContentTable(command);
+
+        SQResult result;
+        clusterTester->getTester(0).readDB("SELECT JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + parentID + ";", result);
+        ASSERT_EQUAL(result[0][0], firstRun);
+
+        command.clear();
+        command.methodLine = "CreateJob";
+        command["name"] = "child";
+        command["parentJobID"] = parentID;
+        const string childID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = parentID;
+        command["data"] = runningParent["data"];
+        tester->executeWaitVerifyContent(command);
+
+        clusterTester->getTester(0).readDB("SELECT state, nextRun FROM jobs WHERE jobID=" + parentID + ";", result);
+        ASSERT_EQUAL(result[0][0], "PAUSED");
+        ASSERT_EQUAL(result[0][1], firstRun);
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "child";
+        tester->executeWaitVerifyContent(command);
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = childID;
+        tester->executeWaitVerifyContent(command);
+
+        command.clear();
+        command.methodLine = "GetJob";
+        command["name"] = "parent";
+        STable resumedParent = tester->executeWaitVerifyContentTable(command);
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = parentID;
+        command["data"] = resumedParent["data"];
+        tester->executeWaitVerifyContent(command);
+
+        clusterTester->getTester(0).readDB("SELECT nextRun, JSON_EXTRACT(data, '$.originalNextRun') FROM jobs WHERE jobID=" + parentID + ";", result);
+        SQResult expected;
+        clusterTester->getTester(0).readDB("SELECT DATETIME(" + SQ(firstRun) + ", '+1 DAY');", expected);
+        ASSERT_EQUAL(result[0][0], expected[0][0]);
+        ASSERT_TRUE(result[0][1].empty());
     }
 
     void finishingParentUnPausesChildren()
