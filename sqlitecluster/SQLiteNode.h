@@ -151,8 +151,8 @@ public:
 
     // Constructor/Destructor
     SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPool, const string& name, const string& host,
-               const string& peerList, atomic<int>& configuredPriority, uint64_t firstTimeout, const string& version,
-               const string& commandPort = "localhost:8890");
+               const string& peerList, atomic<int>& configuredPriority, atomic<uint64_t>& maxOutstandingWALFrames,
+               uint64_t firstTimeout, const string& version, const string& commandPort = "localhost:8890");
     ~SQLiteNode();
 
     // Updates the internal state machine. Returns true if it wants immediate re-updating. Returns false to indicate it
@@ -239,6 +239,11 @@ private:
     // commitCount that we do, this will return null.
     void _updateSyncPeer();
 
+    // If the outstanding wal frames to checkpoint goes over outstandingFramesToCheckpoint, we will close the command port
+    // since otherwise commands processed will be slow. Once the frames drop below the level, the command port is reopened.
+    // 0 disables this behavior.
+    void _updateCommandPortForWALSize(uint64_t outstandingFramesToCheckpoint);
+
     void _dieIfForkedFromCluster();
 
     void _processPeerMessages(uint64_t& nextActivity, SQLitePeer* peer, bool unlimited = false);
@@ -251,6 +256,9 @@ private:
     // When the node starts, it is not ready to serve requests without first connecting to the other nodes and checking
     // that it is up-to-date. The server owns the configured priority so it survives detach/attach cycles.
     atomic<int>& _configuredPriority;
+
+    // The server owns this limit so it can be changed at runtime and survives detach/attach cycles.
+    atomic<uint64_t>& _maxOutstandingWALFrames;
 
     // Tracks whether this node has seen at least one peer running the same version as itself.
     // We use this along with _haveBeenWAITING to determine when to restore the node's original priority after startup.
@@ -320,6 +328,9 @@ private:
 
     // Keeps track if we have closed the command port for commits fallen behind.
     bool _blockedCommandPortForBeingBehind{false};
+
+    // Keeps track if we have closed the command port because the WAL needs checkpointing.
+    bool _blockedCommandPortForWALSize{false};
 
     // This is an integer that increments every time we change states. This is useful for responses to state changes
     // (i.e., approving standup) to verify that the messages we're receiving are relevant to the current state change,

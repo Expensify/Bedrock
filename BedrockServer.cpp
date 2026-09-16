@@ -137,8 +137,8 @@ void BedrockServer::sync()
 
     // Initialize the shared pointer to our sync node object.
     atomic_store(&_syncNode, make_shared<SQLiteNode>(*this, _dbPool, args["-nodeName"], args["-nodeHost"],
-                                                            args["-peerList"], _configuredPriority, firstTimeout,
-                                                            _version, args["-commandPortPrivate"]));
+                                                            args["-peerList"], _configuredPriority, _maxOutstandingWALFrames,
+                                                            firstTimeout, _version, args["-commandPortPrivate"]));
 
     _clusterMessenger = make_shared<SQLiteClusterMessenger>(_syncNode);
 
@@ -1133,6 +1133,15 @@ BedrockServer::BedrockServer(const SData& args_)
         _maxSocketThreads = args.calcU64("-maxSocketThreads");
     }
 
+    if (args.isSet("-maxOutstandingWALFrames")) {
+        const int64_t maxOutstandingWALFrames = args.calc64("-maxOutstandingWALFrames");
+        if (maxOutstandingWALFrames >= 0) {
+            _maxOutstandingWALFrames = static_cast<uint64_t>(maxOutstandingWALFrames);
+        } else {
+            SWARN("Ignoring -maxOutstandingWALFrames '" << args["-maxOutstandingWALFrames"] << "', it can't be negative.");
+        }
+    }
+
     // Start the sync thread, which will start the worker threads.
     SINFO("Launching sync thread '" << _syncThreadName << "'");
     _syncThread = thread(&BedrockServer::syncWrapper, this);
@@ -1613,6 +1622,7 @@ void BedrockServer::_status(unique_ptr<BedrockCommand>& command)
             lock_guard<mutex> lock(_portMutex);
             content["commandPortBlockReasons"] = SComposeJSONArray(_commandPortBlockReasons);
         }
+        content["maxOutstandingWALFrames"] = to_string(_maxOutstandingWALFrames.load());
 
         content["peerList"] = SComposeJSONArray(peerList);
         content["queuedCommandList"] = SComposeJSONArray(_commandQueue.getRequestMethodLines());
@@ -1666,6 +1676,7 @@ bool BedrockServer::_isControlCommand(const unique_ptr<BedrockCommand>& command)
         SIEquals(command->request.methodLine, "BlockWrites") ||
         SIEquals(command->request.methodLine, "UnblockWrites") ||
         SIEquals(command->request.methodLine, "SetMaxSocketThreads") ||
+        SIEquals(command->request.methodLine, "SetMaxOutstandingWALFrames") ||
         SIEquals(command->request.methodLine, "SetBlockingQueueTimeRateLimit") ||
         SIEquals(command->request.methodLine, "ClearBlockingQueue") ||
         SIEquals(command->request.methodLine, "SetPriority") ||
@@ -1936,6 +1947,18 @@ void BedrockServer::_control(unique_ptr<BedrockCommand>& command)
             _maxSocketThreads = newMax;
         } else {
             response.methodLine = "401 Don't Use Zero";
+        }
+    } else if (SIEquals(command->request.methodLine, "SetMaxOutstandingWALFrames")) {
+        const int64_t newMax = command->request.calc64("maxOutstandingWALFrames");
+        if (!command->request.isSet("maxOutstandingWALFrames")) {
+            response.methodLine = "400 Missing maxOutstandingWALFrames";
+        } else if (newMax < 0) {
+            response.methodLine = "400 maxOutstandingWALFrames can't be negative";
+        } else {
+            const uint64_t oldMax = _maxOutstandingWALFrames.exchange(static_cast<uint64_t>(newMax));
+            SINFO("Setting _maxOutstandingWALFrames to " << newMax << " from " << oldMax);
+            response["oldMaxOutstandingWALFrames"] = to_string(oldMax);
+            response["newMaxOutstandingWALFrames"] = to_string(newMax);
         }
     } else if (SIEquals(command->request.methodLine, "SetPriority")) {
         if (!command->request.isSet("priority")) {

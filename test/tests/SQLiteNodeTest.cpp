@@ -22,10 +22,18 @@ public:
     {
         node._updateSyncPeer();
     }
+
+    static void updateCommandPortForWALSize(SQLiteNode& node, uint64_t outstandingFramesToCheckpoint)
+    {
+        node._updateCommandPortForWALSize(outstandingFramesToCheckpoint);
+    }
 };
 
 class TestServer : public SQLiteServer {
 public:
+    list<string> commandPortBlockReasons;
+    list<string> commandPortUnblockReasons;
+
     TestServer() : SQLiteServer()
     {
     }
@@ -45,9 +53,11 @@ public:
 
     virtual void blockCommandPort(const string& reason)
     {
+        commandPortBlockReasons.push_back(reason);
     };
     virtual void unblockCommandPort(const string& reason)
     {
+        commandPortUnblockReasons.push_back(reason);
     };
 };
 
@@ -58,6 +68,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
                                            AFTER_CLASS(SQLiteNodeTest::teardown),
                                            AFTER(SQLiteNodeTest::rollback),
                                            TEST(SQLiteNodeTest::testFindSyncPeer),
+                                           TEST(SQLiteNodeTest::testCommandPortBlockedForWALSize),
                                            TEST(SQLiteNodeTest::testGetPeerByName),
                                            TEST(SQLiteNodeTest::testPrepareGUID),
                                            TEST(SQLiteNodeTest::testGenerateGUID),
@@ -76,6 +87,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
     TestServer server;
     atomic<int> configuredPriority{1};
+    atomic<uint64_t> maxOutstandingWALFrames{0};
     string peerList = "host1.fake:15555?nodeName=peer1,host2.fake:16666?nodeName=peer2,host3.fake:17777?nodeName=peer3,host4.fake:18888?nodeName=peer4";
     shared_ptr<SQLitePool> dbPool;
 
@@ -100,11 +112,12 @@ struct SQLiteNodeTest : tpunit::TestFixture
         // Keep a failed assertion from leaving the fixture's shared handle locked for the next test.
         dbPool->getBase().rollback();
         dbPool->getBase().setCommitEnabled(true);
+        maxOutstandingWALFrames = 0;
     }
 
     void testFindSyncPeer()
     {
-        SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, configuredPriority, 1000000000, "1.0");
+        SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
 
         // Do a base test, with one peer with no latency.
         SQLitePeer* fastest = nullptr;
@@ -174,17 +187,39 @@ struct SQLiteNodeTest : tpunit::TestFixture
         ASSERT_EQUAL(SQLiteNodeTester::getSyncPeer(testNode), fastest);
     }
 
+    void testCommandPortBlockedForWALSize()
+    {
+        TestServer testServer;
+        SQLiteNode testNode(testServer, dbPool, "test", "localhost:19998", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
+
+        SQLiteNodeTester::updateCommandPortForWALSize(testNode, 300'000);
+        ASSERT_TRUE(testServer.commandPortBlockReasons.empty());
+
+        maxOutstandingWALFrames = 100'000;
+        SQLiteNodeTester::updateCommandPortForWALSize(testNode, 150'000);
+        SQLiteNodeTester::updateCommandPortForWALSize(testNode, 120'000);
+        ASSERT_EQUAL(testServer.commandPortBlockReasons, list<string>{"WAL_TOO_LARGE"});
+
+        SQLiteNodeTester::updateCommandPortForWALSize(testNode, 100'000);
+        ASSERT_TRUE(testServer.commandPortUnblockReasons.empty());
+
+        maxOutstandingWALFrames = 0;
+        SQLiteNodeTester::updateCommandPortForWALSize(testNode, 150'000);
+        SQLiteNodeTester::updateCommandPortForWALSize(testNode, 100'000);
+        ASSERT_EQUAL(testServer.commandPortUnblockReasons, list<string>{"WAL_TOO_LARGE"});
+    }
+
     void testGetPeerByName()
     {
         {
-            SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, configuredPriority, 1000000000, "1.0");
+            SQLiteNode testNode(server, dbPool, "test", "localhost:19998", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
             ASSERT_EQUAL(testNode.getPeerByName("peer3")->name, "peer3");
             ASSERT_EQUAL(testNode.getPeerByName("peer9"), nullptr);
         }
         {
             // It also works when the peer list isn't pre-sorted
             string unsortedPeerList = "host1.fake:15555?nodeName=peerZ,host2.fake:16666?nodeName=peer1,host3.fake:17777?nodeName=peer0,host4.fake:18888?nodeName=peerBanana";
-            SQLiteNode testNode(server, dbPool, "test", "localhost:19998", unsortedPeerList, configuredPriority, 1000000000, "1.0");
+            SQLiteNode testNode(server, dbPool, "test", "localhost:19998", unsortedPeerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
             ASSERT_EQUAL(testNode.getPeerByName("peer1")->name, "peer1");
             ASSERT_EQUAL(testNode.getPeerByName("peerBanana")->name, "peerBanana");
             ASSERT_EQUAL(testNode.getPeerByName("peer9"), nullptr);
@@ -242,7 +277,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
     void testGenerateGUID()
     {
-        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, 1000000000, "1.0");
+        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
         node._changeState(SQLiteNodeState::LEADING);
         SQLite& db = dbPool->getBase();
         SQLiteCore core(db);
@@ -299,7 +334,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
             "00000000000000000000000000000001",
         };
         for (const string mode : {"live", "sync", "subscription"}) {
-            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, 1000000000, "1.0");
+            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
             SQLite& db = dbPool->getBase();
             SQLitePeer* peer = node.getPeerByName("peer1");
             const uint64_t commitCount = db.getCommitCount();
@@ -412,7 +447,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
 
     void testReplicationRequiresLeader()
     {
-        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, 1000000000, "1.0");
+        SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
         SQLite& db = dbPool->getBase();
         const uint64_t commitCount = db.getCommitCount();
         const string committedHash = db.getCommittedHash();
@@ -450,7 +485,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
         for (const string mode : {"sync", "subscription", "live"}) {
             const bool live = mode == "live";
             const bool subscribing = mode == "subscription";
-            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, 1000000000, "1.0");
+            SQLiteNode node(server, dbPool, "test", "", peerList, configuredPriority, maxOutstandingWALFrames, 1000000000, "1.0");
             SQLite& db = dbPool->getBase();
             SQLite other(db);
             SQLitePeer* peer = node.getPeerByName("peer1");
