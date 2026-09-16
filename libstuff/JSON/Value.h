@@ -142,6 +142,7 @@ public:
     /*
      * Constructs an object using an initializer_list of key/value pairs. This was added to be able to time the initialization of the `map`,
      * and then find slow cases we can improve.
+     * Ascending keys use hinted insertion; other orders are supported and duplicate keys keep the first value.
      */
     Value(initializer_list<KeyValue> initializerList);
 
@@ -542,6 +543,13 @@ public:
     void extractTo(map<string, JSON::Value>::iterator it, JSON::Value& v);
 
     /**
+     * Transfers and renames a member without allocating a replacement map node. An existing target key is overwritten.
+     * Source and target must have distinct backing objects. The source iterator must be dereferenceable;
+     * hint must belong to target. Only the extracted source iterator is invalidated.
+     */
+    void extractTo(map<string, Value>::iterator it, Value& target, string key, map<string, Value>::const_iterator hint);
+
+    /**
      * Inserts an element in the array.
      *
      * @param n (a pointer to) the value to add
@@ -835,6 +843,17 @@ public:
     const Value& getValueAtPath(const list<string>& path, Value&& defaultValue) const = delete;
 
     /**
+     * Looks up a literal path without allocating a linked list or throwing on missing members.
+     * A missing path, non-object ancestor, or null result with a non-null default returns defaultValue.
+     * Lvalue overloads borrow the result/default; rvalue overloads return an owned value.
+     */
+    const Value& getValueAtPath(initializer_list<string> path, const Value& defaultValue) const&;
+    Value getValueAtPath(initializer_list<string> path, const Value& defaultValue) &&;
+    const Value& getValueAtPath(initializer_list<string> path) const&;
+    Value getValueAtPath(initializer_list<string> path) &&;
+    const Value& getValueAtPath(initializer_list<string> path, Value&& defaultValue) const = delete;
+
+    /**
      * Returns the set<string> at a certain path or returns a defaultValue/null if it can't find it
      */
     set<string> getValueAsSet(const list<string>& path, const Value& defaultValue) const;
@@ -1057,6 +1076,9 @@ protected:
     bool usingUnsigned;
 
 private:
+    // Returns a borrowed node or nullptr, without inserting missing members.
+    const Value* findValueAtPath(initializer_list<string> path) const;
+
     // Converts a JSON::ValueType into a string version of its type's name
     string typeToName(const ValueType item) const;
 

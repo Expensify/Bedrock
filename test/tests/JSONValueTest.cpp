@@ -42,7 +42,10 @@ struct JSONValueTest : tpunit::TestFixture
                                           TEST(JSONValueTest::shallowCopyValue),
                                           TEST(JSONValueTest::shallowCopyToKey),
                                           TEST(JSONValueTest::preventTypeChangeInShallowCopy),
-                                          TEST(JSONValueTest::getBoolFromBinaryIntOrBool))
+                                          TEST(JSONValueTest::getBoolFromBinaryIntOrBool),
+                                          TEST(JSONValueTest::literalPaths),
+                                          TEST(JSONValueTest::hintedConstruction),
+                                          TEST(JSONValueTest::renamedNodeTransfer))
     {
     }
 
@@ -52,6 +55,76 @@ struct JSONValueTest : tpunit::TestFixture
         value = true;
         EXPECT_EQUAL(value.type(), JSON::BOOL);
         EXPECT_EQUAL(value.serialize(), "true");
+    }
+
+    void literalPaths()
+    {
+        JSON::Value value({{"nested", JSON::Value({{"number", 7}, {"null", JSON::NIL}, {"text", "value"}})}});
+        const JSON::Value fallback({{"fallback", true}});
+        const auto before = value.serialize();
+        for (const list<string>& path : {list<string>{"nested", "number"}, {"nested", "null"},
+                                         {"nested", "missing"}, {"missing", "child"}, {"nested", "number", "child"}, {}}) {
+            const auto& found = value.getValueAtPath(path, fallback);
+            if (path == list<string>{"nested", "number"}) {
+                ASSERT_EQUAL(found.getInt(), 7);
+            } else if (path.empty()) {
+                ASSERT_TRUE(&found == &value);
+            } else {
+                ASSERT_TRUE(&found == &fallback);
+            }
+        }
+        ASSERT_TRUE(&value.getValueAtPath({"nested", "number"}) == &value["nested"]["number"]);
+        ASSERT_TRUE(&value.getValueAtPath({"nested", "null"}, fallback) == &fallback);
+        ASSERT_TRUE(&value.getValueAtPath({"nested", "missing"}, fallback) == &fallback);
+        ASSERT_TRUE(&value.getValueAtPath({"nested", "number", "child"}, fallback) == &fallback);
+        ASSERT_TRUE(value.getValueAtPath({"nested", "null"}).isNull());
+        ASSERT_TRUE(&value.getValueAtPath({}) == &value);
+        ASSERT_EQUAL(value.serialize(), before);
+
+        auto owned = JSON::Value(value).getValueAtPath({"nested"});
+        ASSERT_EQUAL(owned["number"].getInt(), 7);
+        auto ownedFallback = JSON::Value(value).getValueAtPath({"missing"}, fallback);
+        ASSERT_EQUAL(ownedFallback, fallback);
+        ownedFallback["fallback"] = false;
+        ASSERT_TRUE(fallback["fallback"].getBool());
+        ASSERT_EQUAL(value.serialize(), before);
+    }
+
+    void hintedConstruction()
+    {
+        const JSON::Value sorted({{"a", 1}, {"b", 2}, {"c", JSON::Value({{"deep", "value"}})}});
+        const JSON::Value reversed({{"c", JSON::Value({{"deep", "value"}})}, {"b", 2}, {"a", 1}});
+        const JSON::Value duplicates({{"b", 2}, {"a", 1}, {"b", 99}, {"c", JSON::Value({{"deep", "value"}})}});
+        ASSERT_EQUAL(sorted, reversed);
+        ASSERT_EQUAL(sorted, duplicates);
+        ASSERT_EQUAL(sorted.serialize(), "{\"a\":1,\"b\":2,\"c\":{\"deep\":\"value\"}}");
+    }
+
+    void renamedNodeTransfer()
+    {
+        JSON::Value source({{"1", JSON::Value({{"nested", JSON::Value({{"value", 1}})}})}, {"2", 2}});
+        JSON::Value target(JSON::OBJECT);
+        const auto* address = &source["1"];
+        const auto* nestedAddress = &source["1"]["nested"]["value"];
+        auto survivingIterator = source.objectBegin();
+        ++survivingIterator;
+        source.extractTo(source.objectBegin(), target, "transactions_1", target.objectEnd());
+        ASSERT_TRUE(&target["transactions_1"] == address);
+        ASSERT_TRUE(&target["transactions_1"]["nested"]["value"] == nestedAddress);
+        ASSERT_EQUAL(survivingIterator->first, "2");
+        ASSERT_EQUAL(source.size(), 1);
+        source.extractTo(source.objectBegin(), target, "transactions_2", target.objectEnd());
+        ASSERT_EQUAL(source.size(), 0);
+        ASSERT_EQUAL(target["transactions_2"].getInt(), 2);
+
+        source = JSON::Value({{"replacement", 3}});
+        source.extractTo(source.objectBegin(), target, "transactions_2", target.objectBegin());
+        ASSERT_EQUAL(target["transactions_2"].getInt(), 3);
+        ASSERT_EQUAL(source.size(), 0);
+        JSON::Value alias;
+        alias.shallowCopy(target);
+        ASSERT_THROW(target.extractTo(target.objectBegin(), alias, "renamed", alias.objectEnd()), JSON::InvalidArgument);
+        ASSERT_EQUAL(target.size(), 2);
     }
 
     void setBool2()
