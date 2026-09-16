@@ -247,17 +247,19 @@ string MySQLPacket::serializeHandshake()
 
 string MySQLPacket::serializeQueryResponse(int sequenceID, const SQResult& result)
 {
+    const auto& headers = result.getHeaders();
+
     // Add the response
     string sendBuffer;
 
     // First the column count
     MySQLPacket columnCount;
     columnCount.sequenceID = ++sequenceID;
-    columnCount.payload = lenEncInt(result.headers.size());
+    columnCount.payload = lenEncInt(headers.size());
     sendBuffer += columnCount.serialize();
 
     // Add all the columns
-    for (const auto& header : result.headers) {
+    for (const auto& header : headers) {
         // Now a column description
         MySQLPacket column;
         column.sequenceID = ++sequenceID;

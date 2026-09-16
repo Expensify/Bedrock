@@ -1341,7 +1341,7 @@ void BedrockJobsCommand::process(SQLite& db)
         int64_t parentJobID = SToInt64(result[0][4]);
         mockRequest = result[0][5] == "1";
         const string retryAfter = result[0][6];
-        const string originalDataNextRun = result[0][7];
+        string originalNextRun = result[0][7];
         const string& currentData = result[0][8];
         const bool rerunIfDataChanged = result[0][9] == "1";
 
@@ -1359,7 +1359,7 @@ void BedrockJobsCommand::process(SQLite& db)
             if (!repeat.empty() && !ignoreRepeat) {
                 string lastScheduled = nextRun;
                 if (!retryAfter.empty() && SToUpper(repeat).find("SCHEDULED") != string::npos) {
-                    lastScheduled = originalDataNextRun;
+                    lastScheduled = originalNextRun;
                 }
                 return _constructNextRunDATETIME(db, lastScheduled, lastRun, repeat);
             }
@@ -1449,6 +1449,9 @@ void BedrockJobsCommand::process(SQLite& db)
             data = stripRerunIfDataChanged(data);
             // See if the new data says it's mocked.
             STable newData = SParseJSONObject(data);
+            if (originalNextRun.empty()) {
+                originalNextRun = newData["originalNextRun"];
+            }
             bool newMocked = newData.find("mockRequest") != newData.end();
 
             // If both sets of data don't match each other, this is an error, we don't know who to trust.
@@ -1482,7 +1485,9 @@ void BedrockJobsCommand::process(SQLite& db)
             // Update the parent job to PAUSED. Also update its nextRun: in case it has a retryAfter, GetJobs set the nextRun too far in the future (to account for retryAfter), so set it to what it should
             // be now that it is waiting on its children to complete.
             SINFO("Job has child jobs, PAUSING parent, QUEUING children");
-            if (!db.writeIdempotent("UPDATE jobs SET state='PAUSED', nextRun=" + SQ(lastRun) + " WHERE jobID=" + SQ(jobID) + ";")) {
+            const bool isScheduled = SToUpper(repeat).find("SCHEDULED") != string::npos;
+            const string pausedNextRun = !originalNextRun.empty() ? SQ(originalNextRun) : (isScheduled ? "nextRun" : SQ(lastRun));
+            if (!db.writeIdempotent("UPDATE jobs SET state='PAUSED', nextRun=" + pausedNextRun + " WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Parent update failed");
             }
 
@@ -1526,7 +1531,10 @@ void BedrockJobsCommand::process(SQLite& db)
             SINFO("Rescheduling job#" << jobID << ": " << safeNewNextRun);
 
             // Update this job
-            if (!db.writeIdempotent("UPDATE jobs SET nextRun=" + safeNewNextRun + ", state='QUEUED' WHERE jobID=" + SQ(jobID) + ";")) {
+            const string clearOriginalNextRun = SIEquals(requestVerb, "FinishJob") && !originalNextRun.empty()
+                ? ", data=JSON_REMOVE(data, '$.originalNextRun')"
+                : "";
+            if (!db.writeIdempotent("UPDATE jobs SET nextRun=" + safeNewNextRun + ", state='QUEUED'" + clearOriginalNextRun + " WHERE jobID=" + SQ(jobID) + ";")) {
                 STHROW("502 Update failed");
             }
         } else {
