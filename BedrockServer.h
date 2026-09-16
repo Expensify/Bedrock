@@ -358,6 +358,9 @@ private:
     // The configured node priority persists across SQLiteNode instances created by detach/attach cycles.
     atomic<int> _configuredPriority;
 
+    // The maximum number of outstanding WAL frames allowed before the public command port is blocked. Zero disables it.
+    atomic<uint64_t> _maxOutstandingWALFrames{0};
+
     // SStandaloneHTTPSManager for communication between SQLiteNodes for anything other than cluster state and
     // synchronization.
     shared_ptr<SQLiteClusterMessenger> _clusterMessenger;
@@ -491,7 +494,7 @@ private:
     SSynchronizedQueue<bool> _notifyDone;
     SSynchronizedQueue<bool> _notifyDoneSync;
 
-    static const size_t DEFAULT_POOL_SIZE = 5'000;
+    static const size_t DEFAULT_POOL_SIZE = 1'000;
     atomic<size_t> _maxSocketThreads{DEFAULT_POOL_SIZE};
     atomic<size_t> _dbPoolSize{DEFAULT_POOL_SIZE};
 };

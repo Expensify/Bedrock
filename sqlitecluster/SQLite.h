@@ -7,6 +7,8 @@
 #include <optional>
 #include <shared_mutex>
 
+struct sqlite3_qrf_spec;
+
 class SQLite {
 public:
     // Re-export SQliteParameter as SQLite::Parameter so callers can write SQLite::Parameter::text("foo") etc.

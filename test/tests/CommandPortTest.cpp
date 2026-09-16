@@ -38,5 +38,16 @@ struct CommandPortTest : tpunit::TestFixture
         // Then the command port should open and the reason should be removed from commandPortBlockReasons
         response = SParseJSONObject(tester.executeWaitMultipleData({status})[0].content);
         ASSERT_EQUAL(SParseJSONArray(response["commandPortBlockReasons"]), list<string>{});
+
+        SData setMaxOutstandingWALFrames("SetMaxOutstandingWALFrames");
+        setMaxOutstandingWALFrames["maxOutstandingWALFrames"] = "300000";
+        tester.executeWaitMultipleData({setMaxOutstandingWALFrames}, 10, true);
+        response = SParseJSONObject(tester.executeWaitMultipleData({status}, 10, true)[0].content);
+        ASSERT_EQUAL(response["maxOutstandingWALFrames"], "300000");
+
+        setMaxOutstandingWALFrames["maxOutstandingWALFrames"] = "0";
+        tester.executeWaitMultipleData({setMaxOutstandingWALFrames}, 10, true);
+        response = SParseJSONObject(tester.executeWaitMultipleData({status}, 10, true)[0].content);
+        ASSERT_EQUAL(response["maxOutstandingWALFrames"], "0");
     }
 } __CommandPortTest;

@@ -112,14 +112,16 @@ const vector<SQLitePeer*> SQLiteNode::_initPeers(const string& peerListString)
 }
 
 SQLiteNode::SQLiteNode(SQLiteServer& server, const shared_ptr<SQLitePool>& dbPool, const string& name,
-                       const string& host, const string& peerList, atomic<int>& configuredPriority, uint64_t firstTimeout,
-                       const string& version, const string& commandPort)
+                       const string& host, const string& peerList, atomic<int>& configuredPriority,
+                       atomic<uint64_t>& maxOutstandingWALFrames, uint64_t firstTimeout, const string& version,
+                       const string& commandPort)
     : STCPManager(),
     _commandAddress(commandPort),
     _name(name),
     _host(host),
     _peerList(_initPeers(peerList)),
     _configuredPriority(configuredPriority),
+    _maxOutstandingWALFrames(maxOutstandingWALFrames),
     _port(_host.empty() ? nullptr : openPort(_host)),
     _version(version),
     _db(dbPool->getBase()),
@@ -479,6 +481,8 @@ bool SQLiteNode::update()
         SWARN("Killed, skipping update");
         return false;
     }
+
+    _updateCommandPortForWALSize(getOutstandingFramesToCheckpoint());
     unique_lock<decltype(_stateMutex)> uniqueLock(_stateMutex);
 
     // If we failed to open the port at creation time, try again on each upate.
@@ -969,6 +973,21 @@ bool SQLiteNode::update()
 
     // Don't update immediately
     return false;
+}
+
+void SQLiteNode::_updateCommandPortForWALSize(uint64_t outstandingFramesToCheckpoint)
+{
+    const uint64_t maxOutstandingWALFrames = _maxOutstandingWALFrames.load();
+    const string blockReason = "WAL_TOO_LARGE";
+    if (maxOutstandingWALFrames && outstandingFramesToCheckpoint > maxOutstandingWALFrames && !_blockedCommandPortForWALSize) {
+        SINFO("WAL has " << outstandingFramesToCheckpoint << " outstanding frames, closing command port until it is checkpointed below " << maxOutstandingWALFrames << " frames.");
+        _server.blockCommandPort(blockReason);
+        _blockedCommandPortForWALSize = true;
+    } else if ((!maxOutstandingWALFrames || outstandingFramesToCheckpoint < maxOutstandingWALFrames) && _blockedCommandPortForWALSize) {
+        SINFO("WAL command port block cleared with " << outstandingFramesToCheckpoint << " outstanding frames and a limit of " << maxOutstandingWALFrames << " frames, re-opening command port.");
+        _server.unblockCommandPort(blockReason);
+        _blockedCommandPortForWALSize = false;
+    }
 }
 
 // Messages
