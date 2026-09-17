@@ -13,6 +13,7 @@ struct CreateJobsTest : tpunit::TestFixture
                               TEST(CreateJobsTest::createWithParentIDNotRunning),
                               TEST(CreateJobsTest::createWithParentMocked),
                               TEST(CreateJobsTest::createUniqueChildWithWrongParent),
+                              TEST(CreateJobsTest::rerunIfDataChangedBatch),
                               AFTER(CreateJobsTest::tearDown),
                               AFTER_CLASS(CreateJobsTest::tearDownClass))
     {
@@ -262,5 +263,66 @@ struct CreateJobsTest : tpunit::TestFixture
         jobs.push_back(SComposeJSONObject(job1Content));
         command["jobs"] = SComposeJSONArray(jobs);
         tester->executeWaitVerifyContent(command, "404 Trying to create a child that already exists, but it is tied to a different parent");
+    }
+
+    void rerunIfDataChangedBatch()
+    {
+        // Given an opted-in unique job
+        SData command("CreateJob");
+        command["name"] = "batchComparedData";
+        command["data"] = "{\"initial\":0}";
+        command["unique"] = "true";
+        command["rerunIfDataChanged"] = "true";
+        const string jobID = tester->executeWaitVerifyContentTable(command)["jobID"];
+
+        // When one batch contains two updates to that job
+        command.clear();
+        command.methodLine = "CreateJobs";
+        STable firstJob;
+        firstJob["name"] = "batchComparedData";
+        firstJob["data"] = "{\"first\":1}";
+        firstJob["unique"] = "true";
+        firstJob["rerunIfDataChanged"] = "true";
+        STable secondJob = firstJob;
+        secondJob["data"] = "{\"second\":2}";
+        secondJob["jobPriority"] = "750";
+        vector<string> jobs = {SComposeJSONObject(firstJob), SComposeJSONObject(secondJob)};
+        command["jobs"] = SComposeJSONArray(jobs);
+        STable response = tester->executeWaitVerifyContentTable(command);
+        // Then both entries reuse the same row
+        list<string> jobIDs = SParseJSONArray(response["jobIDs"]);
+        ASSERT_EQUAL(jobIDs.size(), 2);
+        ASSERT_EQUAL(jobIDs.front(), jobID);
+        ASSERT_EQUAL(jobIDs.back(), jobID);
+
+        // When the caller replays the batch
+        response = tester->executeWaitVerifyContentTable(command);
+        jobIDs = SParseJSONArray(response["jobIDs"]);
+        // Then both entries still reuse the same row
+        ASSERT_EQUAL(jobIDs.size(), 2);
+        ASSERT_EQUAL(jobIDs.front(), jobID);
+        ASSERT_EQUAL(jobIDs.back(), jobID);
+
+        // And the row retains all updates and its opt-in marker
+        SQResult result;
+        tester->readDB("SELECT JSON_TYPE(data, '$._bedrockRerunIfDataChanged'), "
+                       "JSON_REMOVE(data, '$._bedrockRerunIfDataChanged'), priority "
+                       "FROM jobs WHERE jobID=" + jobID + ";", result);
+        ASSERT_EQUAL(result.size(), 1);
+        ASSERT_EQUAL(result[0][0], "true");
+        ASSERT_EQUAL(result[0][1], "{\"initial\":0,\"first\":1,\"second\":2}");
+        ASSERT_EQUAL(result[0][2], "750");
+
+        // When GetJobs dequeues the merged job
+        command.clear();
+        command.methodLine = "GetJobs";
+        command["name"] = "batchComparedData";
+        command["numResults"] = "1";
+        response = tester->executeWaitVerifyContentTable(command);
+        const list<string> dequeuedJobs = SParseJSONArray(response["jobs"]);
+        // Then the response hides the private marker
+        ASSERT_EQUAL(dequeuedJobs.size(), 1);
+        const STable dequeuedJob = SParseJSONObject(dequeuedJobs.front());
+        ASSERT_TRUE(dequeuedJob.at("data").find("_bedrockRerunIfDataChanged") == string::npos);
     }
 } __CreateJobsTest;
