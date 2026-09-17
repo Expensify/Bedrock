@@ -359,7 +359,7 @@ private:
     atomic<int> _configuredPriority;
 
     // The maximum number of outstanding WAL frames allowed before the public command port is blocked. Zero disables it.
-    atomic<uint64_t> _maxOutstandingWALFrames{0};
+    atomic<uint64_t> _maxOutstandingWALFrames{200'000};
 
     // SStandaloneHTTPSManager for communication between SQLiteNodes for anything other than cluster state and
     // synchronization.
