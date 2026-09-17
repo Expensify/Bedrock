@@ -72,7 +72,7 @@ Bedrock stores the opt-in as a private boolean named `_bedrockRerunIfDataChanged
 
 Once set, the marker remains true across dequeues, requeues, `UpdateJob` calls, and recurring runs. Bedrock does not return it to callers because it is internal state, not part of the worker's data. Callers also cannot set or overwrite the marker through the public *data* field.
 
-When the worker calls `FinishJob`, `RetryJob`, or `FailJob`, Bedrock compares the current data with *expectedData* in the same transaction. The comparison ignores JSON object member order, whitespace, `retryAfterCount`, `originalNextRun`, and `_commitCounts`.
+When the worker calls `FinishJob`, `RetryJob`, or `FailJob`, Bedrock compares the current data with *expectedData* in the same transaction. The comparison ignores JSON object member order, whitespace, `retryAfterCount`, `originalNextRun`, `_bedrockRerunIfDataChanged` and `_commitCounts`.
 
 If the data matches, Bedrock completes the command normally. If the data differs, Bedrock does not apply the worker's stale output or terminal state. `FinishJob` and `FailJob` queue an immediate subsequent run. `RetryJob` queues the subsequent run at the requested retry time.
 
