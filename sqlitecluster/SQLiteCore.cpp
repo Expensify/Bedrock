@@ -31,12 +31,6 @@ bool SQLiteCore::commit(const SQLiteNode& node, uint64_t& commitID, string& tran
         return false;
     }
 
-    // If there's nothing to commit, we won't bother, but warn, as we should have noticed this already.
-    if (_db.getUncommittedHash().empty()) {
-        SWARN("Commit called with nothing to commit.");
-        return true;
-    }
-
     // Perform the actual commit, rollback if it fails.
     int errorCode = _db.commit(SQLiteNode::stateName(node.getState()), commandName);
     if (errorCode) {
