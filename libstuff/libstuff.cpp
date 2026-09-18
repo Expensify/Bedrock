@@ -3686,7 +3686,7 @@ ostream& operator<<(ostream& os, const sockaddr_in& addr)
 
 string SQ(const char* val)
 {
-    return "'" + SEscape(val, "'", '\'') + "'";
+    return SQ(string_view(val));
 }
 
 string SQ(const string& val)
