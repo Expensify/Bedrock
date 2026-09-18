@@ -19,6 +19,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // Forward declarations of types only used by reference.
@@ -731,6 +732,7 @@ string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, const 
 // --------------------------------------------------------------------------
 string SQ(const char* val);
 string SQ(const string& val);
+string SQ(string_view val);
 string SQ(int val);
 string SQ(unsigned val);
 string SQ(uint64_t val);

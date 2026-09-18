@@ -44,6 +44,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testSData),
                                      TEST(LibStuff::testSTable),
                                      TEST(LibStuff::testFileIO),
+                                     TEST(LibStuff::testSQ),
                                      TEST(LibStuff::testSQList),
                                      TEST(LibStuff::testRandom),
                                      TEST(LibStuff::testHexConversion),
@@ -585,6 +586,13 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(SFileSize(path), 0);
     }
 
+    void testSQ()
+    {
+        const string value = "prefixO'Malleysuffix";
+        const string_view substring(value.data() + 6, 8);
+        ASSERT_EQUAL(SQ(substring), "'O''Malley'");
+    }
+
     void testSQList()
     {
         list<int> intList;
@@ -604,6 +612,11 @@ struct LibStuff : tpunit::TestFixture
         set<int64_t> int64Set;
         set<uint64_t> uint64Set;
         set<string> stringSet;
+        const string stringViewValues = "firstsecond";
+        vector<string_view> stringViewVector = {
+            string_view(stringViewValues.data(), 5),
+            string_view(stringViewValues.data() + 5, 6),
+        };
 
         ASSERT_EQUAL(SQList(intList), "");
         ASSERT_EQUAL(SQList(uintList), "");
@@ -694,6 +707,7 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(SQList(int64Vector), "-10000000000, 10000000000");
         ASSERT_EQUAL(SQList(uint64Vector), "10000000000, 2");
         ASSERT_EQUAL(SQList(stringVector), "'1', 'potato'");
+        ASSERT_EQUAL(SQList(stringViewVector), "'first', 'second'");
 
         ASSERT_EQUAL(SQList(intVector), SQList(SComposeList(intList)));
         ASSERT_EQUAL(SQList(stringList), SQList(SComposeList(stringList), false));

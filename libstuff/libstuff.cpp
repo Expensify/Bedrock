@@ -3691,7 +3691,22 @@ string SQ(const char* val)
 
 string SQ(const string& val)
 {
-    return SQ(val.c_str());
+    return SQ(string_view(val));
+}
+
+string SQ(string_view val)
+{
+    string safeValue;
+    safeValue.reserve(val.size() + 2);
+    safeValue += '\'';
+    for (const char c : val) {
+        if (c == '\'') {
+            safeValue += '\'';
+        }
+        safeValue += c;
+    }
+    safeValue += '\'';
+    return safeValue;
 }
 
 string SQ(int val)
