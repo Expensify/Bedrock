@@ -268,7 +268,8 @@ public:
     // Returns the number of WAL frames that are currently waiting to be checkpointed.
     uint64_t getOutstandingFramesToCheckpoint() const;
 
-    struct CommitState {
+    struct CommitState
+    {
         uint64_t commitCount;
         uint64_t hashCommitID;
         string hash;

@@ -1002,7 +1002,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
 
         const uint64_t hashCommitID = message.isSet("HashCommitID") ? message.calcU64("HashCommitID") : message.calcU64("CommitCount");
         if (message.isSet("HashCommitID") && (hashCommitID > message.calcU64("CommitCount") ||
-            (hashCommitID == 0) != message["Hash"].empty())) {
+                                              (hashCommitID == 0) != message["Hash"].empty())) {
             STHROW("invalid HashCommitID");
         }
 

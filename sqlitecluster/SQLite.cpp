@@ -1408,7 +1408,7 @@ void SQLite::getLastNonBlankCommit(uint64_t index, uint64_t& commitID, string& h
     // SQLite returns the hash from the row selected by MAX(id). Read both in one snapshot so pruning cannot
     // remove the selected row between locating it and reading its hash.
     const string query = "SELECT id, hash FROM (" + _getJournalQuery({"SELECT MAX(id) AS id, hash FROM",
-        "WHERE id <= " + SQ(index) + " AND (length(hash) > 0 OR length(query) > 0)"}) + ") ORDER BY id DESC LIMIT 1";
+                                                                      "WHERE id <= " + SQ(index) + " AND (length(hash) > 0 OR length(query) > 0)"}) + ") ORDER BY id DESC LIMIT 1";
     SQResult result;
     SASSERT(!SQuery(_db, query, result));
     commitID = result.empty() ? 0 : SToUInt64(result[0][0]);
