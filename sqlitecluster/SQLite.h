@@ -270,8 +270,13 @@ public:
 
     struct CommitState
     {
+        // Highest committed journal ID, including blank entries; zero if there are no commits.
         uint64_t commitCount;
+
+        // ID of the latest nonblank journal entry; zero if there are no nonblank commits.
         uint64_t hashCommitID;
+
+        // Hash of the entry at hashCommitID; empty when hashCommitID is zero.
         string hash;
     };
 
