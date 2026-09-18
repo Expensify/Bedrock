@@ -890,7 +890,8 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
     const auto state = getCommitState();
     const uint64_t commitCount = state.commitCount;
 
-    // Keep the agreement anchor and its entire suffix, including blanks, available for synchronization and restart.
+    // We wont delete the newest commit with a hash, even if it's older than the cutoff. This is not a
+    // practical concern for real databases, but can come up in test situations.
     const uint64_t oldestCommitToKeep = min(state.hashCommitID, commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize);
     if (!oldestCommitToKeep) {
         return true;
@@ -1084,9 +1085,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     const uint64_t commitCount = _sharedData.commitCount;
 
     // Queue up the journal entry
-    if (guid.empty()) {
-        _uncommittedHash.clear();
-    } else {
+    if (!guid.empty()) {
         _uncommittedHash = guid + ":" + SToHex(SHashSHA1(guid + _uncommittedQuery));
     }
     uint64_t before = STimeNow();
