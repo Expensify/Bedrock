@@ -11,7 +11,7 @@ using namespace std;
 
 const char* SDeburr::unicodeToAscii(uint32_t codepoint)
 {
-    // Check if the codepoint is in the range of unicode characters we can map to ascii.
+    // Check the lookup-table range; code points without a mapping still return nullptr.
     // 0x00C0 is the first character we map in the latin1 unicode block: https://en.wikipedia.org/wiki/Latin-1_Supplement
     // 0x017F is the last character we map in the latin-extended-a unicode block: https://en.wikipedia.org/wiki/Latin_Extended-A
     if (codepoint >= 0x00C0 && codepoint <= 0x017F) {
@@ -91,21 +91,21 @@ string SDeburr::deburr(const unsigned char* inputBytes)
             i++;
         }
 
-        // Accent marks by themselves (like ´ ` ^) → skip them
+        // Remove combining marks U+0300–U+036F; spacing accents such as ´, `, and ^ are preserved.
         if (codepoint >= 0x0300 && codepoint <= 0x036F) {
             continue;
         }
 
-        // Map the unicode codepoint to ascii
+        // Look up an ASCII replacement for a supported Latin code point.
         const char* mapped = unicodeToAscii(codepoint);
         if (mapped == nullptr) {
-            // No conversion needed, keep the original character
+            // No mapping: preserve the original bytes, including non-ASCII characters.
             result.append(reinterpret_cast<const char*>(inputBytes + start), i - start);
         } else if (*mapped) {
             // Replace with ASCII equivalent (é→e, ß→ss, etc.)
             result.append(mapped);
         } else {
-            // Delete this character (accent marks)
+            // An empty mapping would delete the character; the current table has no empty mappings.
         }
     }
     return result;
@@ -118,8 +118,8 @@ string SDeburr::deburr(const string& input)
 
 void SDeburr::registerSQLite(sqlite3* db)
 {
-    // SQLite UDF: DEBURR(text) → deburred ASCII string.
-    // Behavior: NULL input → NULL, Non-NULL input → deburred ASCII text
+    // SQLite UDF: DEBURR(text) → deburred UTF-8 text, which may still contain non-ASCII characters.
+    // SQL NULL input → NULL; other inputs are converted to UTF-8 and deburred up to the first NUL byte.
     // Declared deterministic to enable SQLite optimizations
     auto sqliteDeburr = [](sqlite3_context* ctx, int argc, sqlite3_value** argv) {
         if (argc != 1) {
