@@ -97,7 +97,7 @@ SQLite::SharedData& SQLite::initializeSharedData()
         SASSERT(!SQuery(_db, query, result));
         CommitState state{result.empty() ? 0 : SToUInt64(result[0][0]), 0, ""};
 
-        // Blank rows advance physical progress but do not change the agreement identity.
+        // Blank rows advance the highest (including blanks) commit ID but do not change the agreement identity.
         getLastNonBlankCommit(state.commitCount, state.hashCommitID, state.hash);
         sharedData->initializeCommitState(state);
 
