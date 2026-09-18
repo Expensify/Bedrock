@@ -246,14 +246,12 @@ void SQLitePeer::setCommit(uint64_t count, const string& hashString, uint64_t ha
     hashCommitID = hashID;
 }
 
-void SQLitePeer::getCommit(uint64_t& count, string& hashString, uint64_t* hashID) const
+void SQLitePeer::getCommit(uint64_t& count, string& hashString, uint64_t& hashID) const
 {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     count = commitCount.load();
     hashString = hash.load();
-    if (hashID) {
-        *hashID = hashCommitID;
-    }
+    hashID = hashCommitID;
 }
 
 STable SQLitePeer::getData() const

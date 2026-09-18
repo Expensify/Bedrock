@@ -339,7 +339,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
             EXPECT_FALSE(peer->forked);
             uint64_t count, hashID;
             string hash;
-            peer->getCommit(count, hash, &hashID);
+            peer->getCommit(count, hash, hashID);
             EXPECT_EQUAL(count, anchor.commitCount + blanks);
             EXPECT_EQUAL(hashID, anchor.hashCommitID);
             EXPECT_EQUAL(hash, anchor.hash);
@@ -407,7 +407,7 @@ struct SQLiteNodeTest : tpunit::TestFixture
         node._onMESSAGE(peer, ping);
         uint64_t count, hashID;
         string hash;
-        peer->getCommit(count, hash, &hashID);
+        peer->getCommit(count, hash, hashID);
         EXPECT_EQUAL(count, anchor.commitCount + 3);
         EXPECT_EQUAL(hashID, anchor.hashCommitID);
         EXPECT_EQUAL(hash, anchor.hash);

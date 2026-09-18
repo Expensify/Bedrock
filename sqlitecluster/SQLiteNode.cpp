@@ -1114,7 +1114,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             uint64_t peerHashCommitID;
             string peerCommitHash;
             bool hashesMatch = true;
-            peer->getCommit(peerCommitCount, peerCommitHash, &peerHashCommitID);
+            peer->getCommit(peerCommitCount, peerCommitHash, peerHashCommitID);
             if (peerCommitCount && peerCommitCount <= getCommitCount()) {
                 uint64_t myHashCommitID;
                 string hash;
@@ -1753,7 +1753,7 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
     uint64_t peerCommitCount = 0;
     uint64_t peerHashCommitID = 0;
     string peerHash;
-    peer->getCommit(peerCommitCount, peerHash, &peerHashCommitID);
+    peer->getCommit(peerCommitCount, peerHash, peerHashCommitID);
     if (peerCommitCount > db.getCommitCount()) {
         STHROW("you have more data than me");
     }

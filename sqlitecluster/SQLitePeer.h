@@ -24,7 +24,7 @@ public:
     static string responseName(Response response);
 
     // Atomically get the highest (including blanks) commit ID and the nonblank agreement identity.
-    void getCommit(uint64_t& count, string& hashString, uint64_t* hashID = nullptr) const;
+    void getCommit(uint64_t& count, string& hashString, uint64_t& hashID) const;
 
     // Gets an STable representation of this peer's current state in order to display status info.
     STable getData() const;
