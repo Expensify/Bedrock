@@ -270,17 +270,17 @@ public:
 
     struct CommitState
     {
-        // Highest committed journal ID, including blank entries; zero if there are no commits.
+        // Highest committed journal ID, including blank entries. Zero if there are no commits.
         uint64_t commitCount;
 
-        // ID of the latest nonblank journal entry; zero if there are no nonblank commits.
+        // ID of the latest nonblank journal entry. Zero if there are no nonblank commits.
         uint64_t hashCommitID;
 
-        // Hash of the entry at hashCommitID; empty when hashCommitID is zero.
+        // Hash of the entry at hashCommitID. Empty when hashCommitID is zero.
         string hash;
     };
 
-    // Atomically reads physical progress and the latest nonblank commit's identity.
+    // Atomically returns the current CommitState.
     CommitState getCommitState() const;
 
     // Returns the latest nonblank commit's GUID:SHA1.
