@@ -267,6 +267,7 @@ struct LibStuff : tpunit::TestFixture
     void testEscapeUnescape()
     {
         ASSERT_EQUAL(SEscape("a,b,c", ","), "a\\,b\\,c");
+        ASSERT_EQUAL(SEscape("a,b,c", ",", '\\', 3), "a\\,b");
         ASSERT_EQUAL(SUnescape(SEscape("\r\n\\\"\\zqy", "q")), "\r\n\\\"\\zqy");
         ASSERT_EQUAL(SEscape("\x1a", "\x1a"), "\\u001a");
         ASSERT_EQUAL(SUnescape("\\u0041"), "A");            // 1 Byte
@@ -591,6 +592,7 @@ struct LibStuff : tpunit::TestFixture
         const string value = "prefixO'Malleysuffix";
         const string_view substring(value.data() + 6, 8);
         ASSERT_EQUAL(SQ(substring), "'O''Malley'");
+        ASSERT_EQUAL(SQ(string_view(value.data() + 6, 0)), "''");
     }
 
     void testSQList()

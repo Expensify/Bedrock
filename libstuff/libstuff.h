@@ -545,7 +545,8 @@ string SStrip(const string& lhs);
 string SStrip(const string& lhs, const string& chars, bool charsAreSafe);
 string SStripAllBut(const string& lhs, const string& chars);
 string SStripNonNum(const string& lhs);
-string SEscape(const char* lhs, const string& unsafe, char escaper);
+// A length of 0 uses legacy strlen-like behavior; otherwise, at most length characters are escaped.
+string SEscape(const char* lhs, const string& unsafe, char escaper, size_t length = 0);
 string SEscape(const string& lhs, const string& unsafe, char escaper = '\\');
 string SUnescape(const char* lhs, char escaper);
 string SUnescape(const string& lhs, char escaper = '\\');

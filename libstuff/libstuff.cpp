@@ -538,11 +538,12 @@ string SStrip(const string& lhs, const string& chars, bool charsAreSafe)
 }
 
 // --------------------------------------------------------------------------
-string SEscape(const char* lhs, const string& unsafe, char escaper)
+string SEscape(const char* lhs, const string& unsafe, char escaper, size_t length)
 {
     // Escape all unsafe characters
     string working;
-    while (*lhs) {
+    size_t position = 0;
+    while (length ? position < length : *lhs) {
         // Insert an escape if an unsafe characater
         if (unsafe.find(*lhs) != string::npos || *lhs == escaper) {
             // Insert the escape
@@ -570,6 +571,7 @@ string SEscape(const char* lhs, const string& unsafe, char escaper)
             working += *lhs;
         }
         ++lhs;
+        ++position;
     }
     return working;
 }
@@ -3686,7 +3688,7 @@ ostream& operator<<(ostream& os, const sockaddr_in& addr)
 
 string SQ(const char* val)
 {
-    return SQ(string_view(val));
+    return "'" + SEscape(val, "'", '\'') + "'";
 }
 
 string SQ(const string& val)
@@ -3696,17 +3698,7 @@ string SQ(const string& val)
 
 string SQ(string_view val)
 {
-    string safeValue;
-    safeValue.reserve(val.size() + 2);
-    safeValue += '\'';
-    for (const char c : val) {
-        if (c == '\'') {
-            safeValue += '\'';
-        }
-        safeValue += c;
-    }
-    safeValue += '\'';
-    return safeValue;
+    return val.empty() ? "''" : "'" + SEscape(val.data(), "'", '\'', val.size()) + "'";
 }
 
 string SQ(int val)
