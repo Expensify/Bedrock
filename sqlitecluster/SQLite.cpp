@@ -889,6 +889,7 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
     // unsigned int.
     const auto state = getCommitState();
     const uint64_t commitCount = state.commitCount;
+
     // Keep the agreement anchor and its entire suffix, including blanks, available for synchronization and restart.
     const uint64_t oldestCommitToKeep = min(state.hashCommitID, commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize);
     if (!oldestCommitToKeep) {
@@ -1407,11 +1408,14 @@ void SQLite::getLastNonBlankCommit(uint64_t index, uint64_t& commitID, string& h
     // SQLite returns the hash from the row selected by MAX(id). Read both in one snapshot so pruning cannot
     // remove the selected row between locating it and reading its hash.
     const string query = "SELECT id, hash FROM (" + _getJournalQuery({"SELECT MAX(id) AS id, hash FROM",
-        "WHERE id <= " + SQ(index) + " AND length(hash) > 0"}) + ") ORDER BY id DESC LIMIT 1";
+        "WHERE id <= " + SQ(index) + " AND (length(hash) > 0 OR length(query) > 0)"}) + ") ORDER BY id DESC LIMIT 1";
     SQResult result;
     SASSERT(!SQuery(_db, query, result));
     commitID = result.empty() ? 0 : SToUInt64(result[0][0]);
     hash = commitID ? result[0][1] : "";
+    if (commitID && hash.empty()) {
+        SERROR("Journal commit " << commitID << " has a nonblank query with an empty hash.");
+    }
 }
 
 SQLite::CommitState SQLite::getCommitState() const

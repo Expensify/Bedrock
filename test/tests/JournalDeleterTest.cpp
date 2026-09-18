@@ -16,6 +16,8 @@ struct JournalDeleterTempDBFile
     ~JournalDeleterTempDBFile()
     {
         unlink(filename);
+        unlink((string(filename) + "-pagemap").c_str());
+        unlink((string(filename) + "-log-0").c_str());
     }
 };
 
