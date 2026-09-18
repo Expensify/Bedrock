@@ -92,14 +92,14 @@ SQLite::SharedData& SQLite::initializeSharedData()
             SASSERT(!SQuery(_db, "PRAGMA journal_mode = WAL2;", result));
         }
 
-        // Read the highest commit count from the database, and store it in commitCount.
+        // Read the highest commit count from the database.
         string query = "SELECT MAX(maxIDs) FROM (" + _getJournalQuery(_journalNames, {"SELECT MAX(id) as maxIDs FROM"}, true) + ")";
         SASSERT(!SQuery(_db, query, result));
-        uint64_t commitCount = result.empty() ? 0 : SToUInt64(result[0][0]);
-        sharedData->commitCount = commitCount;
+        CommitState state{result.empty() ? 0 : SToUInt64(result[0][0]), 0, ""};
 
         // Blank rows advance physical progress but do not change the agreement identity.
-        getLastNonBlankCommit(commitCount, sharedData->hashCommitID, sharedData->lastCommittedHash);
+        getLastNonBlankCommit(state.commitCount, state.hashCommitID, state.hash);
+        sharedData->initializeCommitState(state);
 
         // Insert our SharedData object into the global map.
         sharedDataLookupMap.m.emplace(_filename, sharedData);
@@ -1752,6 +1752,14 @@ void SQLite::SharedData::setCommitEnabled(bool enable)
 
     lock_guard<decltype(commitLock)> lock(commitLock);
     _commitEnabled = enable;
+}
+
+void SQLite::SharedData::initializeCommitState(const CommitState& state)
+{
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    commitCount = state.commitCount;
+    hashCommitID = state.hashCommitID;
+    lastCommittedHash = state.hash;
 }
 
 void SQLite::SharedData::incrementCommit(const string& commitHash)

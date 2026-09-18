@@ -410,6 +410,9 @@ public:
         // Enable or disable commits for the DB.
         void setCommitEnabled(bool enable);
 
+        // Initialize all commit metadata from the journal under _internalStateMutex.
+        void initializeCommitState(const CommitState& state);
+
         // Update the shared state of the DB to include the newest commit with the newest hash. This needs to be done
         // after completing a commit and before releasing the commit lock.
         void incrementCommit(const string& commitHash);
@@ -419,7 +422,7 @@ public:
         // This removes and returns all committed transactions.
         map<uint64_t, pair<string, string>> popCommittedTransactions();
 
-        // Identity of the latest nonblank commit, protected by _internalStateMutex after initialization.
+        // Identity of the latest nonblank commit, protected by _internalStateMutex.
         string lastCommittedHash;
         uint64_t hashCommitID = 0;
 
