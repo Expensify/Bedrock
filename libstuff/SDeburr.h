@@ -17,15 +17,16 @@ class SDeburr {
 public:
 
     /**
-     * Returns a lowercased, ASCII-only approximation of `input`.
+     * Returns UTF-8 text with supported Latin characters mapped to ASCII.
      *
-     * - Removes diacritics (e.g., é → e, Å → a, ñ → n)
-     * - Applies specific multi-letter folds (e.g., ß → ss, Æ → ae, Œ → oe)
-     * - Drops combining marks U+0300–U+036F and non-ASCII code points without mappings
-     * - Preserves ASCII punctuation and digits; ASCII letters are lowercased
+     * - Uses the Latin-1 Supplement and Latin Extended-A lookup table (e.g., é → e, Å → A, ñ → n)
+     * - Applies specific multi-letter folds (e.g., ß → ss, Æ → AE, Œ → OE)
+     * - Removes combining marks U+0300–U+036F
+     * - Preserves unmapped valid Unicode characters, including emoji and CJK; output is not necessarily ASCII-only
+     * - Leaves ASCII unchanged; mapped characters use the table's case (including the existing Đ → d mapping)
      *
-     * Mirrors lodash's deburr behavior for search normalization and comparisons
-     * where diacritics should not affect matching.
+     * The pointer overload requires a non-null, NUL-terminated UTF-8 string and stops at the first NUL byte.
+     * The string overload delegates via c_str(), so it also ignores any content after an embedded NUL.
      */
     static string deburr(const unsigned char* input);
     static string deburr(const string& input);
@@ -33,7 +34,8 @@ public:
     /**
      * Register the SQLite UDF `DEBURR(text)` on the provided database handle.
      *
-     * - Returns the same value as `deburr(text)`
+     * - Converts non-NULL input to UTF-8 text and applies `deburr`, including its first-NUL truncation
+     * - Preserves unmapped valid Unicode and does not lowercase the result or guarantee ASCII-only output
      * - Marked deterministic to allow SQLite optimizations and query planning
      * - NULL input yields NULL
      */
@@ -42,18 +44,18 @@ public:
 private:
 
     /**
-     * Converts special characters to ASCII equivalents.
+     * Looks up ASCII replacements for mapped Latin-1 Supplement and Latin Extended-A code points.
      *
      * Examples:
      * - é → "e", Å → "A", ñ → "n" (removes accents)
-     * - ß → "ss" (special case b/c the unicode codepoint is much higher than the others, so isn't included in the table)
-     * - Unknown characters → returns nullptr (keep as-is)
+     * - ß → "ss", Æ → "AE", Œ → "OE" (multi-letter table entries)
+     * - Unmapped code points → returns nullptr (the caller preserves their original bytes)
      */
     static const char* unicodeToAscii(uint32_t codepoint);
 
     /**
-     * Fast lookup table for converting accented characters.
-     * The array indices are simply the unicode code points that map to the given character.
+     * Lookup table for ASCII replacements of selected Latin-1 Supplement and Latin Extended-A characters.
+     * Each array index is a Unicode code point; unmapped entries are nullptr.
      */
     static constexpr array<const char*, 0x0180> UNICODE_TO_ASCII_MAP = [] () constexpr {
         array<const char*, 0x0180> map = {};
@@ -89,7 +91,7 @@ private:
         mapCodePoints("TH", {0x00DE});
         mapCodePoints("th", {0x00FE});
 
-        // Latin Extended-B mappings (0x0180..0x01FF)
+        // Latin Extended-A mappings (0x0100..0x017F)
         mapCodePoints("A", {0x0100, 0x0102, 0x0104});
         mapCodePoints("a", {0x0101, 0x0103, 0x0105});
         mapCodePoints("C", {0x0106, 0x0108, 0x010A, 0x010C});
