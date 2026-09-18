@@ -18,7 +18,7 @@
 ** separate file. This file contains only code for the core SQLite library.
 **
 ** The content in this amalgamation comes from Fossil check-in
-** bf8437339f31209af779566b1bf6744015a2 with changes in files:
+** eedd80c1a974930025bf713a44457f51e1f1 with changes in files:
 **
 **    
 */
@@ -476,10 +476,10 @@ extern "C" {
 */
 #define SQLITE_VERSION        "3.54.0"
 #define SQLITE_VERSION_NUMBER 3054000
-#define SQLITE_SOURCE_ID      "2026-08-28 11:51:14 bf8437339f31209af779566b1bf6744015a278a9133a260a5c9584ef4a467ad5"
+#define SQLITE_SOURCE_ID      "2026-09-07 15:24:37 eedd80c1a974930025bf713a44457f51e1f18998d371f6920f97220e20b561fb"
 #define SQLITE_SCM_BRANCH     "hctree-bedrock-lcd-ex"
 #define SQLITE_SCM_TAGS       ""
-#define SQLITE_SCM_DATETIME   "2026-08-28T11:51:14.711Z"
+#define SQLITE_SCM_DATETIME   "2026-09-07T15:24:37.507Z"
 
 /*
 ** CAPI3REF: Run-Time Library Version Numbers
@@ -17840,7 +17840,7 @@ SQLITE_PRIVATE int sqlite3BtreeSchemaLoaded(Btree *pBt);
 #endif
 
 SQLITE_PRIVATE int sqlite3BtreePragma(Btree *pBtree, char **aFnctl);
-SQLITE_PRIVATE int sqlite3BtreeIdxDelete(BtCursor*, UnpackedRecord*);
+SQLITE_PRIVATE int sqlite3BtreeIdxDelete(BtCursor*, UnpackedRecord*, const void*, int, int*);
 
 #endif /* SQLITE_BTREE_H */
 
@@ -18604,7 +18604,7 @@ SQLITE_PRIVATE i64 sqlite3HctBtreeRowCountEst(BtCursor*);
 SQLITE_PRIVATE int sqlite3HctBtreePrevious(BtCursor*, int);
 SQLITE_PRIVATE int sqlite3HctBtreeInsert(BtCursor*, const BtreePayload*, int, int);
 SQLITE_PRIVATE int sqlite3HctBtreeDelete(BtCursor*, u8);
-SQLITE_PRIVATE int sqlite3HctBtreeIdxDelete(BtCursor*, UnpackedRecord*);
+SQLITE_PRIVATE int sqlite3HctBtreeIdxDelete(BtCursor*, UnpackedRecord*, const void*, int, int*);
 SQLITE_PRIVATE int sqlite3HctBtreePutData(BtCursor*, u32, u32, void*);
 SQLITE_PRIVATE void sqlite3HctBtreeIncrblobCursor(BtCursor*);
 SQLITE_PRIVATE int sqlite3HctBtreeCursorHasHint(BtCursor*, unsigned int);
@@ -18684,7 +18684,7 @@ SQLITE_PRIVATE i64 sqlite3StockBtreeRowCountEst(BtCursor*);
 SQLITE_PRIVATE int sqlite3StockBtreePrevious(BtCursor*, int);
 SQLITE_PRIVATE int sqlite3StockBtreeInsert(BtCursor*, const BtreePayload*, int, int);
 SQLITE_PRIVATE int sqlite3StockBtreeDelete(BtCursor*, u8);
-SQLITE_PRIVATE int sqlite3StockBtreeIdxDelete(BtCursor*, UnpackedRecord*);
+SQLITE_PRIVATE int sqlite3StockBtreeIdxDelete(BtCursor*, UnpackedRecord*, const void*, int, int*);
 SQLITE_PRIVATE int sqlite3StockBtreePutData(BtCursor*, u32, u32, void*);
 SQLITE_PRIVATE void sqlite3StockBtreeIncrblobCursor(BtCursor*);
 SQLITE_PRIVATE int sqlite3StockBtreeCursorHasHint(BtCursor*, unsigned int);
@@ -90043,9 +90043,19 @@ SQLITE_PRIVATE void sqlite3StockBtreeCursorDir(BtCursor *p, int a){
 }
 
 
-SQLITE_PRIVATE int sqlite3StockBtreeIdxDelete(BtCursor *p, UnpackedRecord *pRec){
+SQLITE_PRIVATE int sqlite3StockBtreeIdxDelete(
+  BtCursor *p,
+  UnpackedRecord *pRec,
+  const void *pIfnot,
+  int nIfnot,
+  int *pbNot
+){
   int rc = SQLITE_OK;
   int res = 0;
+
+  UNUSED_PARAMETER2(pIfnot, nIfnot);
+  UNUSED_PARAMETER(pbNot);
+  assert( 0 );
 
   rc = sqlite3BtreeIndexMoveto(p, pRec, &res);
   if( rc==SQLITE_OK && res==0 ){
@@ -90108,7 +90118,7 @@ struct BtCursorMethods {
   int(*xBtreePrevious)(BtCursor*, int);
   int(*xBtreeInsert)(BtCursor*, const BtreePayload*, int, int);
   int(*xBtreeDelete)(BtCursor*, u8);
-  int(*xBtreeIdxDelete)(BtCursor*, UnpackedRecord*);
+  int(*xBtreeIdxDelete)(BtCursor*, UnpackedRecord*, const void*, int, int*);
   int(*xBtreePutData)(BtCursor*, u32, u32, void*);
   void(*xBtreeIncrblobCursor)(BtCursor*);
   int(*xBtreeCursorHasHint)(BtCursor*, unsigned int);
@@ -90238,8 +90248,8 @@ SQLITE_PRIVATE int sqlite3BtreeInsert(BtCursor *p, const BtreePayload *a, int b,
 SQLITE_PRIVATE int sqlite3BtreeDelete(BtCursor *p, u8 a){
   return p->pMethods->xBtreeDelete(p, a);
 }
-SQLITE_PRIVATE int sqlite3BtreeIdxDelete(BtCursor *p, UnpackedRecord *a){
-  return p->pMethods->xBtreeIdxDelete(p, a);
+SQLITE_PRIVATE int sqlite3BtreeIdxDelete(BtCursor *p, UnpackedRecord *a, const void *b, int c, int *d){
+  return p->pMethods->xBtreeIdxDelete(p, a, b, c, d);
 }
 SQLITE_PRIVATE int sqlite3BtreePutData(BtCursor *p, u32 a, u32 b, void *c){
   return p->pMethods->xBtreePutData(p, a, b, c);
@@ -95182,7 +95192,22 @@ SQLITE_PRIVATE int sqlite3HctBtreeDelete(BtCursor *pCursor, u8 flags){
   return rc;
 }
 
-SQLITE_PRIVATE int sqlite3HctBtreeIdxDelete(BtCursor *pCursor, UnpackedRecord *pKey){
+/*
+** Delete key pKey from the index opened by cursor pCursor. Return SQLITE_OK
+** if successful, or an SQLite error code if an error occurs.
+**
+** Except, if pIfnot is not NULL and the nIfnot byte buffer it points to
+** is identical to the serialized version of pKey, then instead set output
+** parameter (*pbNot) to true and do not delete any record. SQLITE_OK is
+** always returned in this case.
+*/
+SQLITE_PRIVATE int sqlite3HctBtreeIdxDelete(
+  BtCursor *pCursor,
+  UnpackedRecord *pKey,
+  const void *pIfnot,
+  int nIfnot,
+  int *pbNot
+){
   HBtCursor *const pCur = (HBtCursor*)pCursor;
   int rc = SQLITE_OK;
 
@@ -95196,7 +95221,11 @@ SQLITE_PRIVATE int sqlite3HctBtreeIdxDelete(BtCursor *pCursor, UnpackedRecord *p
     int nRec = 0;
     rc = sqlite3HctSerializeRecord(pKey, &aRec, &nRec);
     if( rc==SQLITE_OK ){
-      rc = sqlite3HctTreeDeleteKey(pCur->pHctTreeCsr, pKey, 0, nRec, aRec);
+      if( pIfnot!=0 && nIfnot==nRec && 0==memcmp(pIfnot, aRec, nIfnot) ){
+        *pbNot = 1;
+      }else{
+        rc = sqlite3HctTreeDeleteKey(pCur->pHctTreeCsr, pKey, 0, nRec, aRec);
+      }
       sqlite3_free(aRec);
     }
   }else{
@@ -113697,8 +113726,17 @@ case OP_IdxDelete: {
   r.default_rc = 0;
   r.aMem = &aMem[pOp->p2];
   if( sqlite3IsHctCsr(pCrsr) ){
-    rc = sqlite3BtreeIdxDelete(pCrsr, &r);
+    res = 0;
+    rc = sqlite3BtreeIdxDelete(pCrsr, &r,
+        (pOp->p3 ? aMem[pOp->p3].z : 0),
+        (pOp->p3 ? aMem[pOp->p3].n : 0),
+        &res
+    );
     if( rc ) goto abort_due_to_error;
+    if( res ){
+      sqlite3VdbeMemSetNull(&aMem[pOp->p3]);
+      break;
+    }
   }else{
     rc = sqlite3BtreeIndexMoveto(pCrsr, &r, &res);
     if( rc ) goto abort_due_to_error;
@@ -275623,7 +275661,7 @@ static void fts5SourceIdFunc(
 ){
   assert( nArg==0 );
   UNUSED_PARAM2(nArg, apUnused);
-  sqlite3_result_text(pCtx, "fts5: 2026-08-28 11:51:14 bf8437339f31209af779566b1bf6744015a278a9133a260a5c9584ef4a467ad5", -1, SQLITE_TRANSIENT);
+  sqlite3_result_text(pCtx, "fts5: 2026-09-07 15:24:37 eedd80c1a974930025bf713a44457f51e1f18998d371f6920f97220e20b561fb", -1, SQLITE_TRANSIENT);
 }
 
 /*
