@@ -102,7 +102,7 @@ private:
 
     // The latest nonblank commit's identity, protected by peerMutex.
     uint64_t hashCommitID = 0;
-    atomic<string> hash;
+    string hash;
 
     // Mutex for locking around non-atomic member access (for set/getCommit, accessing socket, etc).
     mutable recursive_mutex peerMutex;
