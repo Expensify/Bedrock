@@ -1762,7 +1762,7 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
         uint64_t myHashCommitID;
         string myHash;
         db.getLastNonBlankCommit(peerCommitCount, myHashCommitID, myHash);
-        if (peerHashCommitID && !myHashCommitID) {
+        if (peerHashCommitID && !myHashCommitID && !db.getCommit(peerHashCommitID)) {
             PWARN("Error getting nonblank commit for peer's commit: " << peerCommitCount << ", my commit count is: " << db.getCommitCount());
             STHROW("error getting hash");
         } else if (myHashCommitID != peerHashCommitID || myHash != peerHash) {
