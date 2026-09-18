@@ -84,7 +84,7 @@ void SQLitePeer::reset()
     subscribed = false;
     version = "";
     lastPingTime = 0,
-    setCommit(0, "");
+    setCommit(0, "", 0);
     forked = false;
 }
 
@@ -238,12 +238,12 @@ string SQLitePeer::responseName(Response response)
     }
 }
 
-void SQLitePeer::setCommit(uint64_t count, const string& hashString, optional<uint64_t> hashID)
+void SQLitePeer::setCommit(uint64_t count, const string& hashString, uint64_t hashID)
 {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     const_cast<atomic<uint64_t>&>(commitCount) = count;
     hash = hashString;
-    hashCommitID = hashID.value_or(count);
+    hashCommitID = hashID;
 }
 
 void SQLitePeer::getCommit(uint64_t& count, string& hashString, uint64_t* hashID) const

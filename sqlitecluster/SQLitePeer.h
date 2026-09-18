@@ -54,8 +54,8 @@ public:
     // Send a message to this peer. Thread-safe.
     void sendMessage(const SData& message);
 
-    // Without a separate hash ID, the highest commit is also the latest nonblank commit.
-    void setCommit(uint64_t count, const string& hashString, optional<uint64_t> hashID = nullopt);
+    // Pass count as hashID when no separate hash ID is available.
+    void setCommit(uint64_t count, const string& hashString, uint64_t hashID);
 
     // Sets the socket to the new socket, but will fail if the socket is already set unless onlyIfNull is false.
     // returns whether or not the socket was actually set.
