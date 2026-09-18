@@ -238,18 +238,22 @@ string SQLitePeer::responseName(Response response)
     }
 }
 
-void SQLitePeer::setCommit(uint64_t count, const string& hashString)
+void SQLitePeer::setCommit(uint64_t count, const string& hashString, optional<uint64_t> hashID)
 {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     const_cast<atomic<uint64_t>&>(commitCount) = count;
     hash = hashString;
+    hashCommitID = hashID.value_or(count);
 }
 
-void SQLitePeer::getCommit(uint64_t& count, string& hashString) const
+void SQLitePeer::getCommit(uint64_t& count, string& hashString, uint64_t* hashID) const
 {
     lock_guard<decltype(peerMutex)> lock(peerMutex);
     count = commitCount.load();
     hashString = hash.load();
+    if (hashID) {
+        *hashID = hashCommitID;
+    }
 }
 
 STable SQLitePeer::getData() const
@@ -268,6 +272,7 @@ STable SQLitePeer::getData() const
         {"version", version},
         {"hash", hash},
         {"commitCount", to_string(commitCount)},
+        {"hashCommitID", to_string(hashCommitID)},
         {"standupResponse", responseName(standupResponse)},
         {"subscribed", (subscribed ? "true" : "false")},
     });

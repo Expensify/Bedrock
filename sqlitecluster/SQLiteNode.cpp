@@ -42,7 +42,8 @@
 // CommitCount:      The highest committed transaction ID in the DB currently. This can be higher than any transaction
 //                   currently being handled. This exists to answer the question "how much data does this peer have?"
 //                   and not to communicate any information about a specific transaction in progress.
-// Hash:             The hash corresponding to the value in CommitCount.
+// HashCommitID:     The highest nonblank committed transaction ID (0 if none). Defaults to CommitCount when absent.
+// Hash:             The hash corresponding to HashCommitID. Blank rows advance CommitCount only.
 // ID:               The ID of the transaction currently being operated on. It is the same type of information as
 //                   "CommitCount", but not necessarily for the most recent transaction in the DB. Now that nothing
 //                   prefixes it, this duplicates "NewCount" exactly. It's still sent because a follower running older
@@ -506,7 +507,7 @@ bool SQLiteNode::update()
         case SQLiteNodeState::SEARCHING: {
             SASSERTWARN(!_syncPeer);
             SASSERTWARN(!_leadPeer);
-            SASSERTWARN(_db.getUncommittedHash().empty());
+            SASSERTWARN(!_db.isPrepared());
 
             // If we're trying to shut down, just do nothing, especially don't jump directly to leading and get stuck in an endless loop.
             if (_isShuttingDown) {
@@ -612,7 +613,7 @@ bool SQLiteNode::update()
 
             SASSERTWARN(_syncPeer);
             SASSERTWARN(!_leadPeer);
-            SASSERTWARN(_db.getUncommittedHash().empty());
+            SASSERTWARN(!_db.isPrepared());
             // Nothing to do but wait
             if (STimeNow() > _stateTimeout) {
                 // Give up on synchronization; reconnect that peer and go searching
@@ -645,7 +646,7 @@ bool SQLiteNode::update()
         case SQLiteNodeState::WAITING: {
             SASSERTWARN(!_syncPeer);
             SASSERTWARN(!_leadPeer);
-            SASSERTWARN(_db.getUncommittedHash().empty());
+            SASSERTWARN(!_db.isPrepared());
 
             if (_isShuttingDown) {
                 // This can happen because of fast stand down.
@@ -772,7 +773,7 @@ bool SQLiteNode::update()
         case SQLiteNodeState::STANDINGUP: {
             SASSERTWARN(!_syncPeer);
             SASSERTWARN(!_leadPeer);
-            SASSERTWARN(_db.getUncommittedHash().empty());
+            SASSERTWARN(!_db.isPrepared());
             size_t numFullPeers = 0;
             size_t numLoggedInFullPeers = 0;
             size_t approveCount = 0;
@@ -923,7 +924,7 @@ bool SQLiteNode::update()
             }
             SASSERTWARN(!_syncPeer);
             SASSERTWARN(_leadPeer);
-            SASSERTWARN(_db.getUncommittedHash().empty());
+            SASSERTWARN(!_db.isPrepared());
             // Nothing to do but wait
             if (STimeNow() > _stateTimeout) {
                 // Give up
@@ -999,6 +1000,12 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
         SASSERTWARN(!message.empty());
         SDEBUG("Received sqlitenode message from peer " << peer->name << ": " << message.serialize());
 
+        const uint64_t hashCommitID = message.isSet("HashCommitID") ? message.calcU64("HashCommitID") : message.calcU64("CommitCount");
+        if (message.isSet("HashCommitID") && (hashCommitID > message.calcU64("CommitCount") ||
+            (hashCommitID == 0) != message["Hash"].empty())) {
+            STHROW("invalid HashCommitID");
+        }
+
         // Once PING and PONG including `_addPeerHeaders` is universally deployed, we can move the checks that are currently
         // under the "Every other message" comment below above here.
         if (SIEquals(message.methodLine, "PING") || SIEquals(message.methodLine, "PONG")) {
@@ -1018,7 +1025,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             // The check for the presence of commit count can be removed once PING and PONG broadcasting this is universally deployed.
             uint64_t newCommitCount = message.calcU64("CommitCount");
             if (!peer->forked && newCommitCount && newCommitCount > peer->commitCount) {
-                peer->setCommit(newCommitCount, message["Hash"]);
+                peer->setCommit(newCommitCount, message["Hash"], hashCommitID);
             }
 
             return;
@@ -1040,7 +1047,7 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
         if (message.isSet("commandAddress")) {
             peer->commandAddress = message["commandAddress"];
         }
-        peer->setCommit(message.calcU64("CommitCount"), message["Hash"]);
+        peer->setCommit(message.calcU64("CommitCount"), message["Hash"], hashCommitID);
 
         // We check the commit difference with 12,500 commits behind because that
         // represents ~30s of commits. If we're behind, let's close the command port
@@ -1104,13 +1111,15 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
             }
 
             uint64_t peerCommitCount;
+            uint64_t peerHashCommitID;
             string peerCommitHash;
             bool hashesMatch = true;
-            peer->getCommit(peerCommitCount, peerCommitHash);
-            if (!peerCommitHash.empty() && peerCommitCount <= getCommitCount()) {
+            peer->getCommit(peerCommitCount, peerCommitHash, &peerHashCommitID);
+            if (peerCommitCount && peerCommitCount <= getCommitCount()) {
+                uint64_t myHashCommitID;
                 string hash;
-                _db.getCommit(peerCommitCount, nullptr, &hash);
-                hashesMatch = (peerCommitHash == hash);
+                _db.getLastNonBlankCommit(peerCommitCount, myHashCommitID, hash);
+                hashesMatch = (peerHashCommitID == myHashCommitID && peerCommitHash == hash);
             }
 
             if (hashesMatch) {
@@ -1264,9 +1273,6 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                     try {
                         _queueSynchronize(this, peer, db, response, false);
 
-                        // The following two lines are copied from `_sendToPeer`.
-                        response["CommitCount"] = to_string(db.getCommitCount());
-                        response["Hash"] = db.getCommittedHash();
                         _sendToPeer(peer, response);
                     } catch (const SException& e) {
                         // This is the same handling as at the bottom of _onMESSAGE.
@@ -1291,13 +1297,13 @@ void SQLiteNode::_onMESSAGE(SQLitePeer* peer, const SData& message)
                 STHROW("not synchronizing");
             }
             if (message.isSet("hashMismatchValue") || message.isSet("hashMismatchNumber")) {
-                SQResult result;
                 uint64_t commitNum = SToUInt64(message["hashMismatchNumber"]);
-                _db.getCompressedCommits(commitNum, commitNum, result);
+                string hash;
+                _db.getCommit(commitNum, nullptr, &hash);
                 peer->forked = true;
 
                 SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << message["hashMismatchNumber"]
-                       << ". I am " << stateName(_state) << " and have hash " << result[0][0] << " for that commit. Peer has hash "
+                       << ". I am " << stateName(_state) << " and have hash " << hash << " for that commit. Peer has hash "
                        << message["hashMismatchValue"] << "." << _getLostQuorumLogMessage());
 
                 _dieIfForkedFromCluster();
@@ -1567,11 +1573,15 @@ void SQLiteNode::_onDisconnect(SQLitePeer* peer)
 
 SData SQLiteNode::_addPeerHeaders(SData message)
 {
+    const auto commit = _db.getCommitState();
     if (!message.isSet("CommitCount")) {
-        message["CommitCount"] = SToStr(_db.getCommitCount());
+        message["CommitCount"] = SToStr(commit.commitCount);
+    }
+    if (!message.isSet("HashCommitID")) {
+        message["HashCommitID"] = SToStr(commit.hashCommitID);
     }
     if (!message.isSet("Hash")) {
-        message["Hash"] = _db.getCommittedHash();
+        message["Hash"] = commit.hash;
     }
     message["commandAddress"] = _commandAddress;
     return message;
@@ -1741,24 +1751,27 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
     auto _name = node->_name;
 
     uint64_t peerCommitCount = 0;
+    uint64_t peerHashCommitID = 0;
     string peerHash;
-    peer->getCommit(peerCommitCount, peerHash);
+    peer->getCommit(peerCommitCount, peerHash, &peerHashCommitID);
     if (peerCommitCount > db.getCommitCount()) {
         STHROW("you have more data than me");
     }
     if (peerCommitCount) {
         // It has some data -- do we agree on what we share?
+        uint64_t myHashCommitID;
         string myHash;
-        if (!db.getCommit(peerCommitCount, nullptr, &myHash)) {
-            PWARN("Error getting commit for peer's commit: " << peerCommitCount << ", my commit count is: " << db.getCommitCount());
+        db.getLastNonBlankCommit(peerCommitCount, myHashCommitID, myHash);
+        if (peerHashCommitID && !myHashCommitID) {
+            PWARN("Error getting nonblank commit for peer's commit: " << peerCommitCount << ", my commit count is: " << db.getCommitCount());
             STHROW("error getting hash");
-        } else if (myHash != peerHash) {
+        } else if (myHashCommitID != peerHashCommitID || myHash != peerHash) {
             SALERT("Hash mismatch. Peer " << peer->name << " and I have forked at commit " << peerCommitCount << ". I am " << stateName(_state)
                    << " and have hash " << myHash << " for that commit. Peer has hash " << peerHash << ".");
 
             // Instead of reconnecting, we tell the peer that we don't match. It's up to the peer to reconnect.
             response["hashMismatchValue"] = myHash;
-            response["hashMismatchNumber"] = to_string(peerCommitCount);
+            response["hashMismatchNumber"] = to_string(myHashCommitID ? myHashCommitID : peerHashCommitID);
 
             return;
         }
@@ -1818,7 +1831,7 @@ void SQLiteNode::_queueSynchronize(const SQLiteNode* const node, SQLitePeer* pee
 
 string SQLiteNode::_getTransactionGUID(const string& hash)
 {
-    if (hash.find(':') == string::npos) {
+    if (hash.empty()) {
         return "";
     }
     if (hash.size() != 73 || hash[32] != ':') {
@@ -1859,8 +1872,8 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
         if (!commit.isSet("Hash")) {
             STHROW("missing Hash");
         }
-        if (commit.content.empty()) {
-            SALERT("Synchronized blank query");
+        if (commit["Hash"].empty() && !commit.content.empty()) {
+            STHROW("blank journal entry has a nonblank query");
         }
         if (commit.calcU64("CommitIndex") != _db.getCommitCount() + 1) {
             STHROW("commit index mismatch");
@@ -1869,7 +1882,7 @@ void SQLiteNode::_recvSynchronize(SQLitePeer* peer, const SData& message)
         if (!_db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE)) {
             STHROW("failed to begin transaction");
         }
-        if (!_db.writeUnmodified(BedrockPlugin_Compression::decompress(commit.content))) {
+        if (!commit["Hash"].empty() && !_db.writeUnmodified(BedrockPlugin_Compression::decompress(commit.content))) {
             STHROW("failed to write transaction");
         }
         string newHash;
@@ -2038,8 +2051,14 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
     if (_state != SQLiteNodeState::FOLLOWING) {
         STHROW("not following");
     }
-    if (!db.getUncommittedHash().empty()) {
+    if (db.insideTransaction()) {
         STHROW("already in a transaction");
+    }
+    if (!message.isSet("NewHash")) {
+        STHROW("missing NewHash");
+    }
+    if (message["NewHash"].empty() && !message.content.empty()) {
+        STHROW("blank journal entry has a nonblank query");
     }
 
     if (!db.beginTransaction(SQLite::TRANSACTION_TYPE::EXCLUSIVE, true)) {
@@ -2048,7 +2067,7 @@ void SQLiteNode::_handleBeginTransaction(SQLite& db, SQLitePeer* peer, const SDa
 
     // Inside transaction; get ready to back out on error
     //  decompress() is a no-op for non-zstd-framed input, so this works whether or not the leader is compressing.
-    if (!db.writeUnmodified(BedrockPlugin_Compression::decompress(message.content))) {
+    if (!message["NewHash"].empty() && !db.writeUnmodified(BedrockPlugin_Compression::decompress(message.content))) {
         STHROW("failed to write transaction");
     }
 }
@@ -2112,7 +2131,7 @@ int SQLiteNode::_handleCommitTransaction(SQLite& db, SQLitePeer* peer, const uin
     if (_state != SQLiteNodeState::FOLLOWING) {
         STHROW("not following");
     }
-    if (db.getUncommittedHash().empty()) {
+    if (!db.isPrepared()) {
         STHROW("no outstanding transaction");
     }
     if (commandCommitCount != db.getCommitCount() + 1) {

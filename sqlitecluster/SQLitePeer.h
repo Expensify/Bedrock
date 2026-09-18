@@ -23,8 +23,8 @@ public:
     // Get a string name for a Response object.
     static string responseName(Response response);
 
-    // Atomically get commit and hash.
-    void getCommit(uint64_t& count, string& hashString) const;
+    // Atomically get physical progress and the nonblank agreement identity.
+    void getCommit(uint64_t& count, string& hashString, uint64_t* hashID = nullptr) const;
 
     // Gets an STable representation of this peer's current state in order to display status info.
     STable getData() const;
@@ -54,8 +54,8 @@ public:
     // Send a message to this peer. Thread-safe.
     void sendMessage(const SData& message);
 
-    // Atomically set commit and hash.
-    void setCommit(uint64_t count, const string& hashString);
+    // Without a separate hash ID, the highest commit is also the latest nonblank commit.
+    void setCommit(uint64_t count, const string& hashString, optional<uint64_t> hashID = nullopt);
 
     // Sets the socket to the new socket, but will fail if the socket is already set unless onlyIfNull is false.
     // returns whether or not the socket was actually set.
@@ -100,7 +100,8 @@ private:
     // For initializing the permafollower value from the params list.
     static bool isPermafollower(const STable& params);
 
-    // The hash corresponding to commitCount.
+    // The latest nonblank commit's identity, protected by peerMutex.
+    uint64_t hashCommitID = 0;
     atomic<string> hash;
 
     // Mutex for locking around non-atomic member access (for set/getCommit, accessing socket, etc).
