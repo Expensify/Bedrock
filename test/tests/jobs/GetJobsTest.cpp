@@ -1,6 +1,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
@@ -79,6 +80,12 @@ struct GetJobsTest : tpunit::TestFixture
         auto jsonResponse = SParseJSONObject(runResult[0].content);
         auto jsonJobs = SParseJSONArray(jsonResponse["jobs"]);
         ASSERT_EQUAL(jsonJobs.size(), 3);
+        for (const auto& jsonJob : jsonJobs) {
+            const JSON::Value job = JSON::Value::parse(jsonJob);
+            ASSERT_TRUE(job["data"].isObject());
+            ASSERT_TRUE(job["expectedData"].isString());
+            ASSERT_EQUAL(job["expectedData"].getString(), "{}");
+        }
 
         // Now we should have three jobs that are "running".
         // Right now, they should all be scheduled to run again 5 minutes from when they started, because of

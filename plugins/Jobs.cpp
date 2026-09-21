@@ -317,6 +317,7 @@ bool BedrockJobsCommand::peek(SQLite& db)
         //           o jobID - unique ID of the job
         //           o name  - name of the actual job matched
         //           o data  - JSON data associated with this job
+        //           o expectedData - JSON string snapshot to pass unchanged to FinishJob, RetryJob, or FailJob
         //         . GetJobs
         //           o jobs - Array of JSON objects, each matching the result of GetJob
         //     - 303 - Timeout
@@ -1125,7 +1126,10 @@ void BedrockJobsCommand::process(SQLite& db)
                 // We will fail this job, don't return it.
                 continue;
             }
-            jobList.push_back(SComposeJSONObject(job));
+            string jobResponse = SComposeJSONObject(job);
+            // Force the snapshot to a JSON string without re-encoding the existing data object.
+            jobResponse.insert(1, "\"expectedData\":" + SToJSON(job["data"], true) + ",");
+            jobList.push_back(jobResponse);
         }
 
         if (!nonRetriableJobs.empty()) {

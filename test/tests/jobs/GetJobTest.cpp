@@ -1,6 +1,7 @@
 #include <iostream>
 #include <unistd.h>
 
+#include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <libstuff/SQResult.h>
 #include <test/lib/BedrockTester.h>
@@ -96,10 +97,11 @@ struct GetJobTest : tpunit::TestFixture
         response = tester->executeWaitVerifyContentTable(command);
         uint64_t end = STimeNow();
 
-        ASSERT_EQUAL(response.size(), 9);
+        ASSERT_EQUAL(response.size(), 10);
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
         ASSERT_EQUAL(response["data"], "{}");
+        ASSERT_EQUAL(response["expectedData"], "{}");
         ASSERT_EQUAL(response["priority"], originalJob[0][8]);
         ASSERT_EQUAL(response["repeat"], originalJob[0][6]);
         ASSERT_EQUAL(response["nextRun"], originalJob[0][4]);
@@ -132,6 +134,10 @@ struct GetJobTest : tpunit::TestFixture
         SData command("CreateJob");
         string jobName = "job";
         command["name"] = jobName;
+        const string data = R"({"object":{},"array":[],"nested":{"items":[{},[],null]},"bigint":18446744073709551615,"float":1.0,"text":"日本語 \u00e9 \" \\ \/ \n"})";
+        command["data"] = data;
+        command["unique"] = "true";
+        command["rerunIfDataChanged"] = "true";
         STable response = tester->executeWaitVerifyContentTable(command);
         string jobID = response["jobID"];
         ASSERT_GREATER_THAN(stol(jobID), 0);
@@ -142,14 +148,19 @@ struct GetJobTest : tpunit::TestFixture
         command.clear();
         command.methodLine = "GetJob / HTTP/1.1";
         command["name"] = jobName;
-        response = tester->executeWaitVerifyContentTable(command);
+        const string content = tester->executeWaitVerifyContent(command);
+        response = SParseJSONObject(content);
+        const JSON::Value job = JSON::Value::parse(content);
 
         uint64_t end = STimeNow();
 
-        ASSERT_EQUAL(response.size(), 9);
+        ASSERT_EQUAL(response.size(), 10);
         ASSERT_EQUAL(response["jobID"], jobID);
         ASSERT_EQUAL(response["name"], jobName);
-        ASSERT_EQUAL(response["data"], "{}");
+        ASSERT_TRUE(job["data"].isObject());
+        ASSERT_EQUAL(response["data"], data);
+        ASSERT_TRUE(job["expectedData"].isString());
+        ASSERT_EQUAL(job["expectedData"].getString(), data);
         SASSERT(!response["created"].empty());
 
         // Check that nothing changed after we created the job except for the state and lastRun value
@@ -168,6 +179,14 @@ struct GetJobTest : tpunit::TestFixture
         ASSERT_EQUAL(currentJob[0][7], originalJob[0][7]);
         ASSERT_EQUAL(currentJob[0][8], originalJob[0][8]);
         ASSERT_EQUAL(currentJob[0][9], originalJob[0][9]);
+
+        // Passing the snapshot back unchanged finishes the job without a spurious rerun.
+        command.clear();
+        command.methodLine = "FinishJob";
+        command["jobID"] = jobID;
+        command["expectedData"] = job["expectedData"].getString();
+        tester->executeWaitVerifyContent(command);
+        ASSERT_EQUAL(tester->readDB("SELECT COUNT(*) FROM jobs WHERE jobID = " + jobID + ";"), "0");
     }
 
     // Cannot use numResults
@@ -434,7 +453,7 @@ struct GetJobTest : tpunit::TestFixture
         tester->executeWaitVerifyContent(command);
 
         // Confirm the child has data about the parent in the response
-        ASSERT_EQUAL(response.size(), 11);
+        ASSERT_EQUAL(response.size(), 12);
         ASSERT_EQUAL(response["jobID"], finishedChildID);
         ASSERT_EQUAL(response["name"], "child_finished");
         ASSERT_EQUAL(response["data"], finishedChildData);
@@ -465,7 +484,7 @@ struct GetJobTest : tpunit::TestFixture
         response = tester->executeWaitVerifyContentTable(command);
 
         // Confirm data on the children are in the response
-        ASSERT_EQUAL(response.size(), 11);
+        ASSERT_EQUAL(response.size(), 12);
         ASSERT_EQUAL(response["jobID"], parentID);
         ASSERT_EQUAL(response["name"], "parent");
         ASSERT_EQUAL(response["data"], parentData);
