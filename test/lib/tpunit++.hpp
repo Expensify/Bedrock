@@ -275,7 +275,8 @@ namespace tpunit {
                             method* m50 = 0, method* m51 = 0, method* m52 = 0, method* m53 = 0, method* m54 = 0,
                             method* m55 = 0, method* m56 = 0, method* m57 = 0, method* m58 = 0, method* m59 = 0,
                             method* m60 = 0, method* m61 = 0, method* m62 = 0, method* m63 = 0, method* m64 = 0,
-                            method* m65 = 0, method* m66 = 0, method* m67 = 0, method* m68 = 0, method* m69 = 0);
+                            method* m65 = 0, method* m66 = 0, method* m67 = 0, method* m68 = 0, method* m69 = 0,
+                            method* m70 = 0, method* m71 = 0, method* m72 = 0, method* m73 = 0, method* m74 = 0);
 
          ~_TestFixture();
 
@@ -365,8 +366,8 @@ namespace tpunit {
 public:
          // Use constructor delegation to add an optional default 'name' parameter that works as a first argument.
          // This lets us keep backwards compatibility with existing tests, and add a name to new tests without having
-         // to add 70 '0's for a bunch of unused methods.
-         // DO NOT ADD MORE THAN 70 METHODS TO A TEST FIXTURE. If you need more, split the test file into multiple files
+         // to add 75 '0's for a bunch of unused methods.
+         // DO NOT ADD MORE THAN 75 METHODS TO A TEST FIXTURE. If you need more, split the test file into multiple files
          // so that you can run these tests more efficiently in parallel.
          TestFixture(const char* name,
                      method* m0,      method* m1  = 0, method* m2  = 0, method* m3  = 0, method* m4  = 0,
@@ -382,10 +383,11 @@ public:
                      method* m50 = 0, method* m51 = 0, method* m52 = 0, method* m53 = 0, method* m54 = 0,
                      method* m55 = 0, method* m56 = 0, method* m57 = 0, method* m58 = 0, method* m59 = 0,
                      method* m60 = 0, method* m61 = 0, method* m62 = 0, method* m63 = 0, method* m64 = 0,
-                     method* m65 = 0, method* m66 = 0, method* m67 = 0, method* m68 = 0, method* m69 = 0)
+                     method* m65 = 0, method* m66 = 0, method* m67 = 0, method* m68 = 0, method* m69 = 0,
+                     method* m70 = 0, method* m71 = 0, method* m72 = 0, method* m73 = 0, method* m74 = 0)
                 : _TestFixture(name, false)
          {
-                    registerTests(m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16, m17, m18, m19, m20, m21, m22, m23, m24, m25, m26, m27, m28, m29, m30, m31, m32, m33, m34, m35, m36, m37, m38, m39, m40, m41, m42, m43, m44, m45, m46, m47, m48, m49, m50, m51, m52, m53, m54, m55, m56, m57, m58, m59, m60, m61, m62, m63, m64, m65, m66, m67, m68, m69);
+                    registerTests(m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16, m17, m18, m19, m20, m21, m22, m23, m24, m25, m26, m27, m28, m29, m30, m31, m32, m33, m34, m35, m36, m37, m38, m39, m40, m41, m42, m43, m44, m45, m46, m47, m48, m49, m50, m51, m52, m53, m54, m55, m56, m57, m58, m59, m60, m61, m62, m63, m64, m65, m66, m67, m68, m69, m70, m71, m72, m73, m74);
          }
 
          TestFixture(bool parallel, const char* name,
@@ -402,19 +404,20 @@ public:
                      method* m50 = 0, method* m51 = 0, method* m52 = 0, method* m53 = 0, method* m54 = 0,
                      method* m55 = 0, method* m56 = 0, method* m57 = 0, method* m58 = 0, method* m59 = 0,
                      method* m60 = 0, method* m61 = 0, method* m62 = 0, method* m63 = 0, method* m64 = 0,
-                     method* m65 = 0, method* m66 = 0, method* m67 = 0, method* m68 = 0, method* m69 = 0)
+                     method* m65 = 0, method* m66 = 0, method* m67 = 0, method* m68 = 0, method* m69 = 0,
+                     method* m70 = 0, method* m71 = 0, method* m72 = 0, method* m73 = 0, method* m74 = 0)
                 : _TestFixture(name, parallel)
          {
-            registerTests(m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16, m17, m18, m19, m20, m21, m22, m23, m24, m25, m26, m27, m28, m29, m30, m31, m32, m33, m34, m35, m36, m37, m38, m39, m40, m41, m42, m43, m44, m45, m46, m47, m48, m49, m50, m51, m52, m53, m54, m55, m56, m57, m58, m59, m60, m61, m62, m63, m64, m65, m66, m67, m68, m69);
+            registerTests(m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16, m17, m18, m19, m20, m21, m22, m23, m24, m25, m26, m27, m28, m29, m30, m31, m32, m33, m34, m35, m36, m37, m38, m39, m40, m41, m42, m43, m44, m45, m46, m47, m48, m49, m50, m51, m52, m53, m54, m55, m56, m57, m58, m59, m60, m61, m62, m63, m64, m65, m66, m67, m68, m69, m70, m71, m72, m73, m74);
          }
 
          /**
           * Base constructor to register methods with the test fixture. A test
-          * fixture can register up to 70 methods. DO NOT expand this beyond 70 tests.
-          * Split your tests into more files/suites if you need more than 70 tests
+          * fixture can register up to 75 methods. DO NOT expand this beyond 75 methods.
+          * Split your tests into more files/suites if you need more than 75 methods
           * so that you can run these tests more efficiently in parallel.
           *
-          * @param[in] m0..m49 The methods to register with the test fixture.
+          * @param[in] m0..m74 The methods to register with the test fixture.
           */
          TestFixture(method* m0,      method* m1  = 0, method* m2  = 0, method* m3  = 0, method* m4  = 0,
                      method* m5  = 0, method* m6  = 0, method* m7  = 0, method* m8  = 0, method* m9  = 0,
@@ -430,10 +433,11 @@ public:
                      method* m55 = 0, method* m56 = 0, method* m57 = 0, method* m58 = 0, method* m59 = 0,
                      method* m60 = 0, method* m61 = 0, method* m62 = 0, method* m63 = 0, method* m64 = 0,
                      method* m65 = 0, method* m66 = 0, method* m67 = 0, method* m68 = 0, method* m69 = 0,
+                     method* m70 = 0, method* m71 = 0, method* m72 = 0, method* m73 = 0, method* m74 = 0,
                      const char* name = 0, bool parallel = false)
                 : _TestFixture(name, parallel)
          {
-            registerTests(m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16, m17, m18, m19, m20, m21, m22, m23, m24, m25, m26, m27, m28, m29, m30, m31, m32, m33, m34, m35, m36, m37, m38, m39, m40, m41, m42, m43, m44, m45, m46, m47, m48, m49, m50, m51, m52, m53, m54, m55, m56, m57, m58, m59, m60, m61, m62, m63, m64, m65, m66, m67, m68, m69);
+            registerTests(m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16, m17, m18, m19, m20, m21, m22, m23, m24, m25, m26, m27, m28, m29, m30, m31, m32, m33, m34, m35, m36, m37, m38, m39, m40, m41, m42, m43, m44, m45, m46, m47, m48, m49, m50, m51, m52, m53, m54, m55, m56, m57, m58, m59, m60, m61, m62, m63, m64, m65, m66, m67, m68, m69, m70, m71, m72, m73, m74);
          }
 
          ~TestFixture();
