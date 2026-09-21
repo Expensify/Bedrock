@@ -105,6 +105,8 @@ class Value
     // Allows SAXHandler to build us quickly, from a low level. Coupling++
     friend class SAXHandler;
 public:
+    using ObjectMap = map<string, Value, less<>>;
+
     ///// Constructors
 
     /**
@@ -176,7 +178,7 @@ public:
 
     // And a constructor for maps of strings to anything else.
     template<typename T>
-    explicit Value(const map<string, T>& values) : startTime(chrono::high_resolution_clock::now()), valueType(OBJECT), objectValue(make_shared<map<string, Value>>())
+    explicit Value(const map<string, T>& values) : startTime(chrono::high_resolution_clock::now()), valueType(OBJECT), objectValue(make_shared<ObjectMap>())
     {
         for (typename map<string, T>::const_iterator valueIt = values.begin(); valueIt != values.end(); ++valueIt) {
             objectValue->emplace(make_pair(valueIt->first, Value(valueIt->second)));
@@ -188,7 +190,7 @@ public:
      *  Construct an object from a map of int64_t to anything else. Note that the keys are converted to strings since JSON values must be keyed by strings.
      */
     template<typename T>
-    explicit Value(const map<int64_t, T>& values) : startTime(chrono::high_resolution_clock::now()), valueType(OBJECT), objectValue(make_shared<map<string, Value>>())
+    explicit Value(const map<int64_t, T>& values) : startTime(chrono::high_resolution_clock::now()), valueType(OBJECT), objectValue(make_shared<ObjectMap>())
     {
         for (typename map<int64_t, T>::const_iterator valueIt = values.begin(); valueIt != values.end(); ++valueIt) {
             objectValue->emplace(make_pair(to_string(valueIt->first), Value(valueIt->second)));
@@ -511,7 +513,7 @@ public:
     /**
      * Implement `emplace` for Object values.
      */
-    pair<map<string, Value>::iterator, bool> emplace(string_view key, Value&& v);
+    pair<ObjectMap::iterator, bool> emplace(string_view key, Value&& v);
 
     /**
      * Assignment operator.
@@ -547,7 +549,7 @@ public:
 
     vector<JSON::Value>::iterator erase(vector<JSON::Value>::iterator it);
     void erase(string_view key);
-    map<string, JSON::Value>::iterator erase(map<string, JSON::Value>::iterator it);
+    ObjectMap::iterator erase(ObjectMap::iterator it);
 
     /**
      * Returns a string, or a default if no member is found for the given key, or the member at the given key is not
@@ -559,22 +561,22 @@ public:
      * Extracts and moves a node to target object.
      * Note: Extracting a node invalidates its iterator.
      */
-    void extractTo(map<string, JSON::Value>::iterator it, JSON::Value& v);
+    void extractTo(ObjectMap::iterator it, JSON::Value& v);
 
     /**
      * Transfers and renames a member without allocating a replacement map node. An existing target key is overwritten.
      * Source and target must have distinct backing objects. The source iterator must be dereferenceable;
      * hint must belong to target. Only the extracted source iterator is invalidated.
      */
-    void extractTo(map<string, Value>::iterator it, Value& target, string key, map<string, Value>::const_iterator hint);
+    void extractTo(ObjectMap::iterator it, Value& target, string key, ObjectMap::const_iterator hint);
 
-    void extractTo(map<string, Value>::iterator it, Value& target, string_view key, map<string, Value>::const_iterator hint)
+    void extractTo(ObjectMap::iterator it, Value& target, string_view key, ObjectMap::const_iterator hint)
     {
         extractTo(it, target, string(key), hint);
     }
 
     // Resolve C-string calls between the borrowed and owned key overloads.
-    void extractTo(map<string, Value>::iterator it, Value& target, const char* key, map<string, Value>::const_iterator hint)
+    void extractTo(ObjectMap::iterator it, Value& target, const char* key, ObjectMap::const_iterator hint)
     {
         extractTo(it, target, string_view(key), hint);
     }
@@ -632,7 +634,7 @@ public:
      * @param v pair <key, value> to insert
      * @return an iterator to the inserted object
      */
-    pair<map<string, Value>::iterator, bool> insert(const pair<string, Value>& v);
+    pair<ObjectMap::iterator, bool> insert(const pair<string, Value>& v);
 
     /**
      * Performs a shallow merge. only works with objects. Updates this* inline.
@@ -954,28 +956,28 @@ public:
      *
      * @return a map iterator
      */
-    map<string, Value>::iterator objectBegin();
+    ObjectMap::iterator objectBegin();
 
     /**
      * Gets an iterator to the end member position in the object (one past the last member)
      *
      * @return a map iterator
      */
-    map<string, Value>::iterator objectEnd();
+    ObjectMap::iterator objectEnd();
 
     /**
      * Gets a const iterator to the first member in the object
      *
      * @return a map iterator
      */
-    map<string, Value>::const_iterator objectBegin() const;
+    ObjectMap::const_iterator objectBegin() const;
 
     /**
      * Gets a const iterator to the end member position in the object (one past the last member)
      *
      * @return a map iterator
      */
-    map<string, Value>::const_iterator objectEnd() const;
+    ObjectMap::const_iterator objectEnd() const;
 
     /**
      * Returns the keys of the object
@@ -1097,7 +1099,7 @@ protected:
     bool boolValue;
     string stringValue;
 
-    shared_ptr<map<string, Value>> objectValue;
+    shared_ptr<ObjectMap> objectValue;
     shared_ptr<vector<Value>> arrayValue;
 
     /**
@@ -1106,6 +1108,9 @@ protected:
     bool usingUnsigned;
 
 private:
+    // Requires an object; copies the key only when inserting a missing member.
+    Value& getOrInsertMember(string_view key);
+
     // Returns a borrowed node or nullptr, without inserting missing members.
     const Value* findValueAtPath(initializer_list<string> path) const;
 
