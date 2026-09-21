@@ -11,6 +11,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -162,6 +163,12 @@ public:
     // Similar, but for when you want an object with a single entry.
     static Value singleEntryObject(string&& key, Value&& value);
 
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    static Value singleEntryObject(T&& key, Value&& value)
+    {
+        return singleEntryObject(string(key), move(value));
+    }
+
     // And a constructor for maps of strings to anything else.
     template<typename T>
     explicit Value(const map<string, T>& values) : startTime(chrono::high_resolution_clock::now()), valueType(OBJECT), objectValue(make_shared<map<string, Value>>())
@@ -229,6 +236,13 @@ public:
      * @param s The string value to *COPY*
      */
     Value(const string& s);
+
+    /**
+     * Constructor from string_view
+     *
+     * @param s The string value to *COPY*
+     */
+    Value(string_view s);
 
     /**
      * Constructor from string
@@ -458,6 +472,12 @@ public:
      */
     Value& operator[](const string& key) &;
 
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    Value& operator[](T&& key) &
+    {
+        return (*this)[string(key)];
+    }
+
     /**
      * Subscript operator, access an element from a r-value by key.
      *
@@ -465,11 +485,23 @@ public:
      */
     Value operator[](const string& key) &&;
 
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    Value operator[](T&& key) &&
+    {
+        return move(*this)[string(key)];
+    }
+
     /** Subscript operator, access an element by key.
      *
      * @param key key of the object to access
      */
     const Value& operator[](const string& key) const&;
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    const Value& operator[](T&& key) const&
+    {
+        return (*this)[string(key)];
+    }
 
     /** Subscript operator, access an element from a r-value by index.
      *
@@ -493,6 +525,12 @@ public:
      * Implement `emplace` for Object values.
      */
     pair<map<string, Value>::iterator, bool> emplace(const string& key, Value&& v);
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    pair<map<string, Value>::iterator, bool> emplace(T&& key, Value&& v)
+    {
+        return emplace(string(key), move(v));
+    }
 
     /**
      * Assignment operator.
@@ -528,6 +566,13 @@ public:
 
     vector<JSON::Value>::iterator erase(vector<JSON::Value>::iterator it);
     void erase(const string& key);
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    void erase(T&& key)
+    {
+        erase(string(key));
+    }
+
     map<string, JSON::Value>::iterator erase(map<string, JSON::Value>::iterator it);
 
     /**
@@ -535,6 +580,12 @@ public:
      * string, and then deletes the original object member.
      */
     string extractStringWithDefault(const string& key, const string& defaultValue = "");
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    string extractStringWithDefault(T&& key, const string& defaultValue = "")
+    {
+        return extractStringWithDefault(string(key), defaultValue);
+    }
 
     /**
      * Extracts and moves a node to target object.
@@ -548,6 +599,12 @@ public:
      * hint must belong to target. Only the extracted source iterator is invalidated.
      */
     void extractTo(map<string, Value>::iterator it, Value& target, string key, map<string, Value>::const_iterator hint);
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    void extractTo(map<string, Value>::iterator it, Value& target, T&& key, map<string, Value>::const_iterator hint)
+    {
+        extractTo(it, target, string(key), hint);
+    }
 
     /**
      * Inserts an element in the array.
@@ -648,6 +705,12 @@ public:
      */
     void shallowCopy(const string& key, const Value& v);
 
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    void shallowCopy(T&& key, const Value& v)
+    {
+        shallowCopy(string(key), v);
+    }
+
     ///// metadata
 
     /**
@@ -741,6 +804,12 @@ public:
      */
     bool hasMember(const string& key) const;
 
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    bool hasMember(T&& key) const
+    {
+        return hasMember(string(key));
+    }
+
     /**
      * Checks if the array has a value at the index
      *
@@ -754,6 +823,12 @@ public:
      */
     bool getBoolMemberWithDefault(const string& key, const bool defaultValue = false) const;
 
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    bool getBoolMemberWithDefault(T&& key, const bool defaultValue = false) const
+    {
+        return getBoolMemberWithDefault(string(key), defaultValue);
+    }
+
     /**
      * Returns the string member for a given key, if none is found then a default value is returned.
      *
@@ -764,10 +839,28 @@ public:
     const string& getStringMemberWithDefault(const string& key, const string& defaultValue) const&;
     const string& getStringMemberWithDefault(const string& key) const&;
 
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    const string& getStringMemberWithDefault(T&& key, const string& defaultValue) const&
+    {
+        return getStringMemberWithDefault(string(key), defaultValue);
+    }
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    const string& getStringMemberWithDefault(T&& key) const&
+    {
+        return getStringMemberWithDefault(string(key));
+    }
+
     /**
      * This overload has to return by value even if the lvalue is const to avoid returning a reference to a temporary (the moved defaultValue).
      */
     string getStringMemberWithDefault(const string& key, string&& defaultValue) const&;
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    string getStringMemberWithDefault(T&& key, string&& defaultValue) const&
+    {
+        return getStringMemberWithDefault(string(key), move(defaultValue));
+    }
 
     /**
      * Non-const (mutable) lvalue overloads return by value to avoid exposing an
@@ -778,6 +871,24 @@ public:
     string getStringMemberWithDefault(const string& key, string&& defaultValue) &;
     string getStringMemberWithDefault(const string& key) &;
 
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    string getStringMemberWithDefault(T&& key, const string& defaultValue) &
+    {
+        return getStringMemberWithDefault(string(key), defaultValue);
+    }
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    string getStringMemberWithDefault(T&& key, string&& defaultValue) &
+    {
+        return getStringMemberWithDefault(string(key), move(defaultValue));
+    }
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    string getStringMemberWithDefault(T&& key) &
+    {
+        return getStringMemberWithDefault(string(key));
+    }
+
     /**
      * rvalue overloads return by value to avoid returning reference that would dangle.
      */
@@ -785,15 +896,45 @@ public:
     string getStringMemberWithDefault(const string& key, string&& defaultValue) &&;
     string getStringMemberWithDefault(const string& key) &&;
 
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    string getStringMemberWithDefault(T&& key, const string& defaultValue) &&
+    {
+        return move(*this).getStringMemberWithDefault(string(key), defaultValue);
+    }
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    string getStringMemberWithDefault(T&& key, string&& defaultValue) &&
+    {
+        return move(*this).getStringMemberWithDefault(string(key), move(defaultValue));
+    }
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    string getStringMemberWithDefault(T&& key) &&
+    {
+        return move(*this).getStringMemberWithDefault(string(key));
+    }
+
     /**
      * Returns the integer member for a given key, if none is found then a default value is returned.
      */
     const int64_t getIntMemberWithDefault(const string& key, const int64_t defaultValue = 0) const;
 
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    const int64_t getIntMemberWithDefault(T&& key, const int64_t defaultValue = 0) const
+    {
+        return getIntMemberWithDefault(string(key), defaultValue);
+    }
+
     /**
      * Returns the float member for a given key, if none is found then a default value is returned.
      */
     const double getFloatMemberWithDefault(const string& key, const double defaultValue = 0.0) const;
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    const double getFloatMemberWithDefault(T&& key, const double defaultValue = 0.0) const
+    {
+        return getFloatMemberWithDefault(string(key), defaultValue);
+    }
 
     /**
      * Returns the member as a double, coercing from FLOAT, INT, or STRING types.
@@ -801,11 +942,29 @@ public:
      */
     const double getNumericMemberWithDefault(const string& key, const double defaultValue = 0.0) const;
 
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    const double getNumericMemberWithDefault(T&& key, const double defaultValue = 0.0) const
+    {
+        return getNumericMemberWithDefault(string(key), defaultValue);
+    }
+
     /**
      * Returns the Value member for a given key, if none is found then defaultValue is returned.
      */
     const JSON::Value& getMemberWithDefault(const string& key, const JSON::Value& defaultValue) const&;
     JSON::Value getMemberWithDefault(const string& key, const JSON::Value& defaultValue) &&;
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    const JSON::Value& getMemberWithDefault(T&& key, const JSON::Value& defaultValue) const&
+    {
+        return getMemberWithDefault(string(key), defaultValue);
+    }
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    JSON::Value getMemberWithDefault(T&& key, const JSON::Value& defaultValue) &&
+    {
+        return move(*this).getMemberWithDefault(string(key), defaultValue);
+    }
 
     /**
      * Returns the Value member for a given key, if none is found then NULL is returned.
@@ -813,10 +972,25 @@ public:
     const JSON::Value& getMemberWithDefault(const string& key) const&;
     JSON::Value getMemberWithDefault(const string& key) &&;
 
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    const JSON::Value& getMemberWithDefault(T&& key) const&
+    {
+        return getMemberWithDefault(string(key));
+    }
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    JSON::Value getMemberWithDefault(T&& key) &&
+    {
+        return move(*this).getMemberWithDefault(string(key));
+    }
+
     /**
      * Delete r-value version of getMemberWithDefault to prevent accidental use which would result in a dangling reference.
      */
     const JSON::Value& getMemberWithDefault(const string& key, JSON::Value&& defaultValue) const = delete;
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    const JSON::Value& getMemberWithDefault(T&& key, JSON::Value&& defaultValue) const = delete;
 
     /**
      * Checks if the array has a member
@@ -1216,6 +1390,17 @@ public:
 
     // This version moves both the key and value
     KeyValue(string&& a, Value&& b) : key(move(a)), value(move(b))
+    {
+    }
+
+    // These only participate for an actual string_view, keeping string literals on the existing unambiguous overloads.
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    KeyValue(T&& a, const Value& b) : key(a), value(b)
+    {
+    }
+
+    template<typename T, enable_if_t<is_same_v<remove_cvref_t<T>, string_view>, int> = 0>
+    KeyValue(T&& a, Value&& b) : key(a), value(move(b))
     {
     }
 

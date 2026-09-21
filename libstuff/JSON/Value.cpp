@@ -42,6 +42,10 @@ Value::Value(const string& s) : valueType(STRING), stringValue(s)
 {
 }
 
+Value::Value(string_view s) : valueType(STRING), stringValue(s)
+{
+}
+
 Value::Value(string&& s) : valueType(STRING), stringValue(move(s))
 {
 }
