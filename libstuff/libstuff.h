@@ -19,6 +19,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // Forward declarations of types only used by reference.
@@ -544,7 +545,9 @@ string SStrip(const string& lhs);
 string SStrip(const string& lhs, const string& chars, bool charsAreSafe);
 string SStripAllBut(const string& lhs, const string& chars);
 string SStripNonNum(const string& lhs);
-string SEscape(const char* lhs, const string& unsafe, char escaper);
+
+// A length of 0 uses legacy strlen-like behavior; otherwise, at most length characters are escaped.
+string SEscape(const char* lhs, const string& unsafe, char escaper, size_t length = 0);
 string SEscape(const string& lhs, const string& unsafe, char escaper = '\\');
 string SUnescape(const char* lhs, char escaper);
 string SUnescape(const string& lhs, char escaper = '\\');
@@ -731,6 +734,7 @@ string SAESDecryptNoStrip(const string& buffer, const size_t& bufferSize, const 
 // --------------------------------------------------------------------------
 string SQ(const char* val);
 string SQ(const string& val);
+string SQ(string_view val);
 string SQ(int val);
 string SQ(unsigned val);
 string SQ(uint64_t val);
