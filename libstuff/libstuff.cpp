@@ -538,12 +538,11 @@ string SStrip(const string& lhs, const string& chars, bool charsAreSafe)
 }
 
 // --------------------------------------------------------------------------
-string SEscape(const char* lhs, const string& unsafe, char escaper, size_t length)
+string SEscape(const char* lhs, const string& unsafe, char escaper)
 {
     // Escape all unsafe characters
     string working;
-    size_t position = 0;
-    while (length ? position < length : *lhs) {
+    while (*lhs) {
         // Insert an escape if an unsafe characater
         if (unsafe.find(*lhs) != string::npos || *lhs == escaper) {
             // Insert the escape
@@ -571,7 +570,6 @@ string SEscape(const char* lhs, const string& unsafe, char escaper, size_t lengt
             working += *lhs;
         }
         ++lhs;
-        ++position;
     }
     return working;
 }
@@ -3693,12 +3691,7 @@ string SQ(const char* val)
 
 string SQ(const string& val)
 {
-    return SQ(string_view(val));
-}
-
-string SQ(string_view val)
-{
-    return val.empty() ? "''" : "'" + SEscape(val.data(), "'", '\'', val.size()) + "'";
+    return SQ(val.c_str());
 }
 
 string SQ(int val)
