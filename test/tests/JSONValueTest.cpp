@@ -388,6 +388,21 @@ struct JSONValueTest : tpunit::TestFixture
         EXPECT_EQUAL(doc.serialize(), "{\"a\":3,\"b\":null,\"c\":-3,\"d\":true}");
         doc["e"] = JSON::Value("test");
         EXPECT_EQUAL(doc.serialize(), "{\"a\":3,\"b\":null,\"c\":-3,\"d\":true,\"e\":\"test\"}");
+
+        const string longKey(100, 'k');
+        map<string, JSON::Value> source = {{longKey, JSON::Value({{"nested", 1}})}};
+        const JSON::Value copied(source);
+        source.at(longKey)["nested"] = 2;
+        EXPECT_EQUAL(copied[longKey]["nested"].getInt(), 1);
+
+        const auto* node = &source.begin()->second;
+        const auto* nested = &source.begin()->second["nested"];
+        const char* keyData = source.begin()->first.data();
+        const JSON::Value moved = JSON::Value::object(move(source));
+        EXPECT_EQUAL(moved[longKey]["nested"].getInt(), 2);
+        EXPECT_TRUE(&moved[longKey] == node);
+        EXPECT_TRUE(&moved[longKey]["nested"] == nested);
+        EXPECT_TRUE(moved.objectBegin()->first.data() == keyData);
     }
 
     void stringViewObjectKeys()
@@ -413,6 +428,11 @@ struct JSONValueTest : tpunit::TestFixture
         ASSERT_TRUE(object.hasMember(readKey));
         ASSERT_EQUAL(object.getIntMemberWithDefault(readKey), 1);
         ASSERT_EQUAL(object.getMemberWithDefault(readKey).getInt(), 1);
+        EXPECT_THROW(constObject[string_view(readSource.data() + 2, 4)], JSON::NotFound);
+        const auto [existing, duplicateInserted] = object.emplace(readKey, 99);
+        EXPECT_FALSE(duplicateInserted);
+        EXPECT_TRUE(&existing->second == &constObject[readKey]);
+        EXPECT_EQUAL(existing->second.getInt(), 1);
 
         object["bool"] = true;
         string boolSource = "__bool__";
@@ -472,6 +492,7 @@ struct JSONValueTest : tpunit::TestFixture
         const string_view eraseKey(eraseSource.data() + 2, 8);
         object.erase(eraseKey);
         ASSERT_FALSE(object.hasMember(eraseKey));
+        EXPECT_NO_THROW(object.erase(eraseKey));
 
         JSON::Value transferSource({{"source", 4}});
         JSON::Value transferTarget(JSON::OBJECT);
