@@ -275,6 +275,33 @@ struct JSONValueTest : tpunit::TestFixture
         string movedSingleKey = "moved-single";
         ASSERT_EQUAL(JSON::Value::singleEntryObject(move(movedSingleKey), 1)["moved-single"].getInt(), 1);
         ASSERT_EQUAL(JSON::Value::singleEntryObject("literal-single", 2)["literal-single"].getInt(), 2);
+
+        const string copiedKey = "copied-key";
+        const string copiedString = "copied-value";
+        const JSON::Value copiedValue = copiedString;
+        const char* pointerKey = "pointer-key";
+        const JSON::Value copied({
+            {copiedKey, copiedValue},
+            {"literal-key", copiedValue},
+            {pointerKey, copiedValue},
+            {string_view("view-key"), copiedValue},
+        });
+        EXPECT_EQUAL(copied[copiedKey].getString(), copiedString);
+        EXPECT_EQUAL(copied["literal-key"].getString(), copiedString);
+        EXPECT_EQUAL(copied[pointerKey].getString(), copiedString);
+        EXPECT_EQUAL(copied["view-key"].getString(), copiedString);
+        EXPECT_EQUAL(JSON::Value::singleEntryObject(copiedKey, 3)[copiedKey].getInt(), 3);
+        EXPECT_EQUAL(JSON::Value::singleEntryObject(pointerKey, 4)[pointerKey].getInt(), 4);
+
+        // Heap-backed strings keep their storage when the key is moved into an object.
+        string ownedKey(100, 'k');
+        const char* ownedKeyData = ownedKey.data();
+        const JSON::Value movedObject({{move(ownedKey), 5}});
+        EXPECT_TRUE(movedObject.objectBegin()->first.data() == ownedKeyData);
+        string ownedSingleKey(100, 's');
+        const char* ownedSingleKeyData = ownedSingleKey.data();
+        const JSON::Value movedSingle = JSON::Value::singleEntryObject(move(ownedSingleKey), 6);
+        EXPECT_TRUE(movedSingle.objectBegin()->first.data() == ownedSingleKeyData);
     }
 
     void simpleArray()
@@ -453,6 +480,17 @@ struct JSONValueTest : tpunit::TestFixture
         transferSource.extractTo(transferSource.objectBegin(), transferTarget, renamedKey, transferTarget.objectEnd());
         renamedKeySource.replace(2, 7, 7, 'x');
         ASSERT_EQUAL(transferTarget["renamed"].getInt(), 4);
+
+        const string_view binaryKey("a\0b", 3);
+        object[binaryKey] = 5;
+        EXPECT_EQUAL(constObject[binaryKey].getInt(), 5);
+        EXPECT_FALSE(object.hasMember("a"));
+        object.erase(binaryKey);
+        EXPECT_FALSE(object.hasMember(binaryKey));
+        object[string_view()] = "empty-key";
+        EXPECT_EQUAL(object.extractStringWithDefault(string_view()), "empty-key");
+        EXPECT_EQUAL(object.extractStringWithDefault(string_view(), string_view()), "");
+        EXPECT_EQUAL(object.extractStringWithDefault("missing", string_view("default-suffix", 7)), "default");
     }
 
     void nestedObject()
