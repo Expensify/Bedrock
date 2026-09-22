@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <concepts>
 #include <functional>
 #include <iomanip>
 #include <list>
@@ -441,6 +442,29 @@ string SHexStringFromBase32(const string& buffer);
 // --------------------------------------------------------------------------
 // String stuff
 // --------------------------------------------------------------------------
+// Concatenate views into an owning string without changing overload resolution for existing string-only expressions.
+template<class L, class R>
+requires((same_as<remove_cvref_t<L>, string_view> || same_as<remove_cvref_t<R>, string_view>) &&
+              convertible_to<L, string_view> && convertible_to<R, string_view>)
+string operator+(L&& lhs, R&& rhs)
+{
+    const string_view left(lhs);
+    const string_view right(rhs);
+    if constexpr (same_as<L, string> ) {
+        lhs.append(right);
+        return move(lhs);
+    } else if constexpr (same_as<R, string> ) {
+        rhs.insert(0, left);
+        return move(rhs);
+    }
+
+    string result;
+    result.reserve(left.size() + right.size());
+    result.append(left);
+    result.append(right);
+    return result;
+}
+
 // General utility to convert non-string input to string output
 // **NOTE: Use 'ostringstream' because 'stringstream' leaks on VS2005
 template<class T> inline string SToStr(const T& t)
@@ -462,7 +486,8 @@ template<class A, class B, class C> inline bool SContains(const map<A, B, C>& na
     return nameValueMap.find(name) != nameValueMap.end();
 }
 
-template<class A> inline bool SContains(const list<A>& valueList, const A& value)
+// Compare directly with the search value, which need not have the list's element type.
+template<class A, class B> inline bool SContains(const list<A>& valueList, const B& value)
 {
     return ::find(valueList.begin(), valueList.end(), value) != valueList.end();
 }
@@ -473,16 +498,21 @@ template<class A> inline bool SContains(const set<A>& valueList, const A& value)
 }
 
 bool SContains(const list<string>& valueList, const char* value);
-bool SContains(const string& haystack, const string& needle);
-bool SContains(const string& haystack, char needle);
+
+// Substring searches respect the view bounds, including embedded NULs.
+bool SContains(string_view haystack, string_view needle);
+bool SContains(string_view haystack, char needle);
 bool SContains(const STable& nameValueMap, const string& name);
 
 bool SIsValidSQLiteDateModifier(const string& modifier);
 
 // General testing functions
-bool SIEquals(const string& lhs, const string& rhs);
+// Case-insensitive comparison, bounded by the views and stopping at the first NUL as strcasecmp does.
+bool SIEquals(string_view lhs, string_view rhs);
 bool SIContains(const string& haystack, const string& needle);
-bool SStartsWith(const string& haystack, const string& needle);
+
+// Prefix comparison retains the length check and strncmp semantics of the buffer overload.
+bool SStartsWith(string_view haystack, string_view needle);
 bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize);
 bool SEndsWith(const string& haystack, const string& needle);
 bool SConstantTimeEquals(const string& secret, const string& userInput);
@@ -590,10 +620,13 @@ string SEncodeURIComponent(const string& value, bool keepSpaces = false);
 list<int64_t> SParseIntegerList(const string& value, char separator = ',');
 set<int64_t> SParseIntegerSet(const string& value, char separator = ',');
 vector<int64_t> SParseIntegerVector(const string& value, char separator = ',');
+
+// Parse into owning strings, skipping leading spaces and empty components and stopping at the first NUL.
+// The bool overloads clear valueList and return whether the final component is nonempty, even if earlier ones exist.
 bool SParseList(const char* value, list<string>& valueList, char separator = ',');
-bool SParseList(const string& value, list<string>& valueList, char separator = ',');
+bool SParseList(string_view value, list<string>& valueList, char separator = ',');
 set<string> SParseSet(const string& value, char separator = ',');
-list<string> SParseList(const string& value, char separator = ',');
+list<string> SParseList(string_view value, char separator = ',');
 
 // Concatenates things into a string. "Things" can mean essentially any
 // standard STL container of any type of object that "stringstream" can handle.

@@ -20,10 +20,12 @@ struct JSONValueTest : tpunit::TestFixture
                                           TEST(JSONValueTest::ctorBigInt),
                                           TEST(JSONValueTest::ctorDouble),
                                           TEST(JSONValueTest::ctorString),
+                                          TEST(JSONValueTest::stringViewConstruction),
                                           TEST(JSONValueTest::simpleArray),
                                           TEST(JSONValueTest::emptyArrayAccess),
                                           TEST(JSONValueTest::nestedArray),
                                           TEST(JSONValueTest::simpleObject),
+                                          TEST(JSONValueTest::stringViewObjectKeys),
                                           TEST(JSONValueTest::nestedObject),
                                           TEST(JSONValueTest::invalidIndex),
                                           TEST(JSONValueTest::invalidKey),
@@ -240,6 +242,68 @@ struct JSONValueTest : tpunit::TestFixture
         EXPECT_EQUAL(value.serialize(), "\"test\"");
     }
 
+    void stringViewConstruction()
+    {
+        string source = "__substring__";
+        const string_view view(source.data() + 2, 9);
+        const JSON::Value value = view;
+        source.replace(2, 9, 9, 'x');
+        ASSERT_EQUAL(value.getString(), "substring");
+
+        const JSON::Value initialized = [] {
+            string keySource = "__view-key__";
+            string valueSource = "__view-value__";
+            string movedKey = "moved-key";
+            const string_view key(keySource.data() + 2, 8);
+            const string_view initializerValue(valueSource.data() + 2, 10);
+            return JSON::Value({
+                {key, initializerValue},
+                {move(movedKey), "moved-value"},
+                {"literal-key", "literal-value"},
+            });
+        }();
+        ASSERT_EQUAL(initialized["view-key"].getString(), "view-value");
+        ASSERT_EQUAL(initialized["moved-key"].getString(), "moved-value");
+        ASSERT_EQUAL(initialized["literal-key"].getString(), "literal-value");
+
+        string singleKeySource = "__single__";
+        const string_view singleKey(singleKeySource.data() + 2, 6);
+        const JSON::Value single = JSON::Value::singleEntryObject(singleKey, "view-value");
+        singleKeySource.replace(2, 6, 6, 'x');
+        ASSERT_EQUAL(single["single"].getString(), "view-value");
+
+        string movedSingleKey = "moved-single";
+        ASSERT_EQUAL(JSON::Value::singleEntryObject(move(movedSingleKey), 1)["moved-single"].getInt(), 1);
+        ASSERT_EQUAL(JSON::Value::singleEntryObject("literal-single", 2)["literal-single"].getInt(), 2);
+
+        const string copiedKey = "copied-key";
+        const string copiedString = "copied-value";
+        const JSON::Value copiedValue = copiedString;
+        const char* pointerKey = "pointer-key";
+        const JSON::Value copied({
+            {copiedKey, copiedValue},
+            {"literal-key", copiedValue},
+            {pointerKey, copiedValue},
+            {string_view("view-key"), copiedValue},
+        });
+        EXPECT_EQUAL(copied[copiedKey].getString(), copiedString);
+        EXPECT_EQUAL(copied["literal-key"].getString(), copiedString);
+        EXPECT_EQUAL(copied[pointerKey].getString(), copiedString);
+        EXPECT_EQUAL(copied["view-key"].getString(), copiedString);
+        EXPECT_EQUAL(JSON::Value::singleEntryObject(copiedKey, 3)[copiedKey].getInt(), 3);
+        EXPECT_EQUAL(JSON::Value::singleEntryObject(pointerKey, 4)[pointerKey].getInt(), 4);
+
+        // Heap-backed strings keep their storage when the key is moved into an object.
+        string ownedKey(100, 'k');
+        const char* ownedKeyData = ownedKey.data();
+        const JSON::Value movedObject({{move(ownedKey), 5}});
+        EXPECT_TRUE(movedObject.objectBegin()->first.data() == ownedKeyData);
+        string ownedSingleKey(100, 's');
+        const char* ownedSingleKeyData = ownedSingleKey.data();
+        const JSON::Value movedSingle = JSON::Value::singleEntryObject(move(ownedSingleKey), 6);
+        EXPECT_TRUE(movedSingle.objectBegin()->first.data() == ownedSingleKeyData);
+    }
+
     void simpleArray()
     {
         JSON::Value array(JSON::ARRAY);
@@ -324,6 +388,130 @@ struct JSONValueTest : tpunit::TestFixture
         EXPECT_EQUAL(doc.serialize(), "{\"a\":3,\"b\":null,\"c\":-3,\"d\":true}");
         doc["e"] = JSON::Value("test");
         EXPECT_EQUAL(doc.serialize(), "{\"a\":3,\"b\":null,\"c\":-3,\"d\":true,\"e\":\"test\"}");
+
+        const string longKey(100, 'k');
+        map<string, JSON::Value> source = {{longKey, JSON::Value({{"nested", 1}})}};
+        const JSON::Value copied(source);
+        source.at(longKey)["nested"] = 2;
+        EXPECT_EQUAL(copied[longKey]["nested"].getInt(), 1);
+
+        const auto* node = &source.begin()->second;
+        const auto* nested = &source.begin()->second["nested"];
+        const char* keyData = source.begin()->first.data();
+        const JSON::Value moved = JSON::Value::object(move(source));
+        EXPECT_EQUAL(moved[longKey]["nested"].getInt(), 2);
+        EXPECT_TRUE(&moved[longKey] == node);
+        EXPECT_TRUE(&moved[longKey]["nested"] == nested);
+        EXPECT_TRUE(moved.objectBegin()->first.data() == keyData);
+    }
+
+    void stringViewObjectKeys()
+    {
+        JSON::Value object(JSON::OBJECT);
+        const string stringKey = "string-key";
+        object[stringKey] = 2;
+        object["literal-key"] = 3;
+        ASSERT_TRUE(object.hasMember(stringKey));
+        ASSERT_TRUE(object.hasMember("literal-key"));
+
+        string writeSource = "__write__";
+        const string_view writeKey(writeSource.data() + 2, 5);
+        object[writeKey] = 1;
+        writeSource.replace(2, 5, 5, 'x');
+        ASSERT_EQUAL(object["write"].getInt(), 1);
+
+        string readSource = "__write__";
+        const string_view readKey(readSource.data() + 2, 5);
+        const JSON::Value& constObject = object;
+        ASSERT_EQUAL(constObject[readKey].getInt(), 1);
+        ASSERT_EQUAL(JSON::Value(object)[readKey].getInt(), 1);
+        ASSERT_TRUE(object.hasMember(readKey));
+        ASSERT_EQUAL(object.getIntMemberWithDefault(readKey), 1);
+        ASSERT_EQUAL(object.getMemberWithDefault(readKey).getInt(), 1);
+        EXPECT_THROW(constObject[string_view(readSource.data() + 2, 4)], JSON::NotFound);
+        const auto [existing, duplicateInserted] = object.emplace(readKey, 99);
+        EXPECT_FALSE(duplicateInserted);
+        EXPECT_TRUE(&existing->second == &constObject[readKey]);
+        EXPECT_EQUAL(existing->second.getInt(), 1);
+
+        object["bool"] = true;
+        string boolSource = "__bool__";
+        const string_view boolKey(boolSource.data() + 2, 4);
+        ASSERT_TRUE(object.getBoolMemberWithDefault(boolKey));
+
+        object["text"] = "value";
+        string textSource = "__text__";
+        const string_view textKey(textSource.data() + 2, 4);
+        const string defaultString = "default";
+        ASSERT_EQUAL(object.getStringMemberWithDefault(textKey), "value");
+        ASSERT_EQUAL(object.getStringMemberWithDefault(textKey, defaultString), "value");
+        ASSERT_EQUAL(object.getStringMemberWithDefault(textKey, string("default")), "value");
+        ASSERT_EQUAL(constObject.getStringMemberWithDefault(textKey), "value");
+        ASSERT_EQUAL(constObject.getStringMemberWithDefault(textKey, defaultString), "value");
+        ASSERT_EQUAL(constObject.getStringMemberWithDefault(textKey, string("default")), "value");
+        ASSERT_EQUAL(JSON::Value(object).getStringMemberWithDefault(textKey), "value");
+        ASSERT_EQUAL(JSON::Value(object).getStringMemberWithDefault(textKey, defaultString), "value");
+        ASSERT_EQUAL(JSON::Value(object).getStringMemberWithDefault(textKey, string("default")), "value");
+
+        object["float"] = 1.5;
+        string floatSource = "__float__";
+        const string_view floatKey(floatSource.data() + 2, 5);
+        ASSERT_FLOAT_EQUAL(object.getFloatMemberWithDefault(floatKey), 1.5);
+
+        object["numeric"] = "2.5";
+        string numericSource = "__numeric__";
+        const string_view numericKey(numericSource.data() + 2, 7);
+        ASSERT_FLOAT_EQUAL(object.getNumericMemberWithDefault(numericKey), 2.5);
+
+        const JSON::Value defaultValue(0);
+        ASSERT_EQUAL(constObject.getMemberWithDefault(readKey, defaultValue).getInt(), 1);
+        ASSERT_EQUAL(JSON::Value(object).getMemberWithDefault(readKey).getInt(), 1);
+        ASSERT_EQUAL(JSON::Value(object).getMemberWithDefault(readKey, defaultValue).getInt(), 1);
+
+        string emplaceSource = "__emplaced__";
+        const string_view emplaceKey(emplaceSource.data() + 2, 8);
+        const auto [it, inserted] = object.emplace(emplaceKey, 2);
+        ASSERT_TRUE(inserted);
+        ASSERT_EQUAL(it->second.getInt(), 2);
+        emplaceSource.replace(2, 8, 8, 'x');
+        ASSERT_EQUAL(object["emplaced"].getInt(), 2);
+
+        JSON::Value shallowSource({{"count", 1}});
+        string shallowKeySource = "__shallow__";
+        const string_view shallowKey(shallowKeySource.data() + 2, 7);
+        object.shallowCopy(shallowKey, shallowSource);
+        shallowSource["count"] = 2;
+        ASSERT_EQUAL(object["shallow"]["count"].getInt(), 2);
+
+        object["extract"] = "value";
+        string extractSource = "__extract__";
+        const string_view extractKey(extractSource.data() + 2, 7);
+        ASSERT_EQUAL(object.extractStringWithDefault(extractKey), "value");
+
+        string eraseSource = "__emplaced__";
+        const string_view eraseKey(eraseSource.data() + 2, 8);
+        object.erase(eraseKey);
+        ASSERT_FALSE(object.hasMember(eraseKey));
+        EXPECT_NO_THROW(object.erase(eraseKey));
+
+        JSON::Value transferSource({{"source", 4}});
+        JSON::Value transferTarget(JSON::OBJECT);
+        string renamedKeySource = "__renamed__";
+        const string_view renamedKey(renamedKeySource.data() + 2, 7);
+        transferSource.extractTo(transferSource.objectBegin(), transferTarget, renamedKey, transferTarget.objectEnd());
+        renamedKeySource.replace(2, 7, 7, 'x');
+        ASSERT_EQUAL(transferTarget["renamed"].getInt(), 4);
+
+        const string_view binaryKey("a\0b", 3);
+        object[binaryKey] = 5;
+        EXPECT_EQUAL(constObject[binaryKey].getInt(), 5);
+        EXPECT_FALSE(object.hasMember("a"));
+        object.erase(binaryKey);
+        EXPECT_FALSE(object.hasMember(binaryKey));
+        object[string_view()] = "empty-key";
+        EXPECT_EQUAL(object.extractStringWithDefault(string_view()), "empty-key");
+        EXPECT_EQUAL(object.extractStringWithDefault(string_view(), string_view()), "");
+        EXPECT_EQUAL(object.extractStringWithDefault("missing", string_view("default-suffix", 7)), "default");
     }
 
     void nestedObject()
