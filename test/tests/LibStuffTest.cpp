@@ -51,6 +51,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testBase32Conversion),
                                      TEST(LibStuff::testContains),
                                      TEST(LibStuff::testStringViewConcatenation),
+                                     TEST(LibStuff::testSIEquals),
                                      TEST(LibStuff::testFirstOfMonth),
                                      TEST(LibStuff::SREMatchTest),
                                      TEST(LibStuff::SREReplaceTest),
@@ -798,6 +799,31 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_EQUAL(text + "literal", "textliteral");
         ASSERT_EQUAL("literal" + text, "literaltext");
         ASSERT_EQUAL(text + text, "texttext");
+    }
+
+    void testSIEquals()
+    {
+        const char buffer[] = {'x', 'H', 'e', 'L', 'L', 'o', 'y'};
+        const string_view view(buffer + 1, 5);
+        ASSERT_TRUE(SIEquals(view, "hello"));
+        ASSERT_TRUE(SIEquals("HELLO"s, view));
+        ASSERT_TRUE(SIEquals(view, "hello"sv));
+        ASSERT_TRUE(SIEquals("Hello", "hELLo"));
+        ASSERT_FALSE(SIEquals(view, "hell"));
+        ASSERT_FALSE(SIEquals("hell", view));
+        ASSERT_FALSE(SIEquals(view, "helloy"));
+        ASSERT_FALSE(SIEquals(view, "world"));
+        ASSERT_TRUE(SIEquals(string_view{}, ""));
+        ASSERT_TRUE(SIEquals(string_view{}, string_view{}));
+        ASSERT_FALSE(SIEquals(string_view{}, view));
+        ASSERT_FALSE(SIEquals(view, string_view{}));
+
+        // Preserve the previous strcasecmp behavior for strings containing NULs.
+        ASSERT_TRUE(SIEquals("a\0suffix"sv, "A"));
+        ASSERT_TRUE(SIEquals("A"s, "a\0suffix"s));
+        ASSERT_TRUE(SIEquals("a\0left"sv, "A\0right"sv));
+        ASSERT_TRUE(SIEquals(string_view{}, "\0suffix"sv));
+        ASSERT_FALSE(SIEquals("a\0suffix"sv, "b\0suffix"sv));
     }
 
     void testFirstOfMonth()

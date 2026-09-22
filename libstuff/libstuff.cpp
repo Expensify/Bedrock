@@ -3532,9 +3532,11 @@ bool SContains(const STable& nameValueMap, const string& name)
     return nameValueMap.find(name) != nameValueMap.end();
 }
 
-bool SIEquals(const string& lhs, const string& rhs)
+bool SIEquals(string_view lhs, string_view rhs)
 {
-    return !strcasecmp(lhs.c_str(), rhs.c_str());
+    lhs = lhs.substr(0, lhs.find('\0'));
+    rhs = rhs.substr(0, rhs.find('\0'));
+    return lhs.size() == rhs.size() && (lhs.empty() || strncasecmp(lhs.data(), rhs.data(), lhs.size()) == 0);
 }
 
 bool SEndsWith(const string& haystack, const string& needle)

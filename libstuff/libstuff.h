@@ -504,7 +504,8 @@ bool SContains(const STable& nameValueMap, const string& name);
 bool SIsValidSQLiteDateModifier(const string& modifier);
 
 // General testing functions
-bool SIEquals(const string& lhs, const string& rhs);
+// Case-insensitive comparison, bounded by the views and stopping at the first NUL as strcasecmp does.
+bool SIEquals(string_view lhs, string_view rhs);
 bool SIContains(const string& haystack, const string& needle);
 bool SStartsWith(const string& haystack, const string& needle);
 bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize);
