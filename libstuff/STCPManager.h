@@ -18,6 +18,12 @@ using namespace std;
 // buffers, completing connections, performing graceful shutdowns, etc.
 struct STCPManager
 {
+    struct MTLSConnection {
+        const string hostname;
+        const string certificate;
+        const string privateKey;
+    };
+
     // Captures all the state for a single socket
     class Socket {
 public:
