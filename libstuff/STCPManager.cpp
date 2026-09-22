@@ -271,9 +271,9 @@ bool STCPManager::Socket::_openSocket()
     }
 
     if (https) {
-        // SSSLState only closes the fd in its destructor, so if its constructor throws, the fd is still ours to close.
+        // A supplied fd remains ours to close if SSSLState construction fails.
         try {
-            ssl = new SSSLState(hostToResolve, s);
+            ssl = new SSSLState(hostToResolve, s, _mtlsConnection);
         } catch (const SException& e) {
             SWARN("Couldn't set up SSL for '" << hostToResolve << "' (" << addr << "): " << e.what());
             S_close(&s);
