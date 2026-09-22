@@ -1255,7 +1255,6 @@ int SQLite::commit(const string& description, const string& commandName, functio
                 if (framesCheckpointed >= 0 && walFrameSize >= 0 && framesCheckpointed <= walFrameSize) {
                     _sharedData.outstandingFramesToCheckpoint = walFrameSize - framesCheckpointed;
                 }
-
             }
             _sharedData.checkpointInProgress.clear();
         }
