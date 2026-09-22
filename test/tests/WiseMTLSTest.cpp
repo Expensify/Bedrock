@@ -5,11 +5,13 @@
 #include <libstuff/JSON/Value.h>
 #include <libstuff/SData.h>
 #include <libstuff/SHTTPSManager.h>
+#include <libstuff/SHTTPSProxySocket.h>
 #include <libstuff/STCPManager.h>
 #include <test/lib/tpunit++.hpp>
 
 // From test/: WISE_SANDBOX_CREDENTIALS_FILE=../credentials.txt ./test -only WiseMTLS
 // WISE_SANDBOX_ACCESS_TOKEN optionally supplies OAuth authentication for the playground request.
+// WISE_SANDBOX_PROXY optionally specifies a CONNECT proxy as host:port, for example 127.0.0.1:3128.
 struct WiseMTLSTest : tpunit::TestFixture
 {
     WiseMTLSTest() : tpunit::TestFixture("WiseMTLS", TEST(WiseMTLSTest::request))
@@ -64,7 +66,13 @@ struct WiseMTLSTest : tpunit::TestFixture
         cout << "Wise sandbox request:\n" << printableRequest.serialize() << endl;
 
         auto transaction = make_unique<SStandaloneHTTPSManager::Transaction>(manager, "WiseMTLS");
-        transaction->s = new STCPManager::Socket(connection);
+        const char* proxy = getenv("WISE_SANDBOX_PROXY");
+        if (proxy && *proxy) {
+            cout << "Wise sandbox proxy: " << proxy << endl;
+            transaction->s = new SHTTPSProxySocket(proxy, connection, transaction->requestID);
+        } else {
+            transaction->s = new STCPManager::Socket(connection);
+        }
         transaction->fullRequest = request;
         transaction->timeoutAt = STimeNow() + 30'000'000;
         transaction->s->send(request.serialize());
