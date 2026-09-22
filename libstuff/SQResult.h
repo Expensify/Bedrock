@@ -70,10 +70,6 @@ class SQResult {
     friend class SQResultRow;
 
 public:
-    // Use setHeaders() for writes so cached column indexes are invalidated.
-    // TODO: Make private once Auth uses getHeaders() instead of reading headers directly.
-    vector<string> headers;
-
     SQResult() = default;
     SQResult(const SQResult& other);
     SQResult(vector<SQResultRow>&& rows, vector<string>&& headers);
@@ -109,6 +105,8 @@ public:
     vector<SQResultRow>::const_iterator cend() const;
 
 private:
+    // Only setHeaders() may replace this after construction, so headerIndexesByAddress stays in sync.
+    vector<string> headers;
     vector<SQResultRow> rows;
     mutable mutex headerIndexMutex;
     mutable unordered_map<const char*, size_t> headerIndexesByAddress;

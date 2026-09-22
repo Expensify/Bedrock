@@ -1178,7 +1178,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
      *      SQResult slowCommitResult;
      *      SQuery(_db, "SELECT * FROM hctvalid", slowCommitResult);
      *      SINFO("SLOW HCTREE COMMIT " << (slowCommitResult.size() + 1) << " lines to follow");
-     *      string headers = SComposeList(slowCommitResult.headers);
+     *      string headers = SComposeList(slowCommitResult.getHeaders());
      *      SINFO("SLOW HCTREE COMMIT HEADERS: " << headers);
      *      for (size_t i = 0; i < slowCommitResult.size(); i++) {
      *          SINFO("SLOW HCTREE COMMIT ROW: " << i << ": " << SComposeList(slowCommitResult[i]));
