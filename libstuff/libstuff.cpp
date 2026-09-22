@@ -452,9 +452,9 @@ bool SIContains(const string& lhs, const string& rhs)
     return SContains(SToLower(lhs), SToLower(rhs));
 }
 
-bool SStartsWith(const string& haystack, const string& needle)
+bool SStartsWith(string_view haystack, string_view needle)
 {
-    return SStartsWith(haystack.c_str(), haystack.size(), needle.c_str(), needle.size());
+    return needle.empty() || SStartsWith(haystack.data(), haystack.size(), needle.data(), needle.size());
 }
 
 bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize)
@@ -809,19 +809,23 @@ vector<int64_t> SParseIntegerVector(const string& value, char separator)
 }
 
 // --------------------------------------------------------------------------
-bool SParseList(const char* ptr, list<string>& valueList, char separator)
+bool SParseList(string_view value, list<string>& valueList, char separator)
 {
     // Clear the input
     valueList.clear();
 
     // Walk across the string and break into comma/whitespace delimited substrings
     string component;
-    while (*ptr) {
+    for (const char character : value) {
+        if (character == '\0') {
+            break;
+        }
+
         // Is this the start of a new string?  If so, ignore to trim leading whitespace.
-        if (component.empty() && *ptr == ' ') {
+        if (component.empty() && character == ' ') {
         }
         // Is this a delimiter?  If so, let's add our current component to the list and start a new one
-        else if (*ptr == separator) {
+        else if (character == separator) {
             // Only add if the component is non-empty
             if (!component.empty()) {
                 valueList.push_back(component);
@@ -830,11 +834,8 @@ bool SParseList(const char* ptr, list<string>& valueList, char separator)
         }
         // Otherwise, add to the working component
         else {
-            component += *ptr;
+            component += character;
         }
-
-        // Finally, go to the next character
-        ++ptr;
     }
 
     // Reached the end of the string; if we are working on a component, add it
@@ -3514,17 +3515,17 @@ uint64_t SToUInt64(const string& val)
 
 bool SContains(const list<string>& valueList, const char* value)
 {
-    return ::find(valueList.begin(), valueList.end(), string(value)) != valueList.end();
+    return SContains(valueList, string_view(value));
 }
 
-bool SContains(const string& haystack, const string& needle)
+bool SContains(string_view haystack, string_view needle)
 {
-    return haystack.find(needle) != string::npos;
+    return haystack.find(needle) != string_view::npos;
 }
 
-bool SContains(const string& haystack, char needle)
+bool SContains(string_view haystack, char needle)
 {
-    return haystack.find(needle) != string::npos;
+    return haystack.find(needle) != string_view::npos;
 }
 
 bool SContains(const STable& nameValueMap, const string& name)
@@ -3532,9 +3533,11 @@ bool SContains(const STable& nameValueMap, const string& name)
     return nameValueMap.find(name) != nameValueMap.end();
 }
 
-bool SIEquals(const string& lhs, const string& rhs)
+bool SIEquals(string_view lhs, string_view rhs)
 {
-    return !strcasecmp(lhs.c_str(), rhs.c_str());
+    lhs = lhs.substr(0, lhs.find('\0'));
+    rhs = rhs.substr(0, rhs.find('\0'));
+    return lhs.size() == rhs.size() && (lhs.empty() || strncasecmp(lhs.data(), rhs.data(), lhs.size()) == 0);
 }
 
 bool SEndsWith(const string& haystack, const string& needle)
@@ -3658,12 +3661,12 @@ string SDecodeURIComponent(const string& value)
     return SDecodeURIComponent(value.c_str(), (int) value.size());
 }
 
-bool SParseList(const string& value, list<string>& valueList, char separator)
+bool SParseList(const char* value, list<string>& valueList, char separator)
 {
-    return SParseList(value.c_str(), valueList, separator);
+    return SParseList(string_view(value), valueList, separator);
 }
 
-list<string> SParseList(const string& value, char separator)
+list<string> SParseList(string_view value, char separator)
 {
     list<string> valueList;
     SParseList(value, valueList, separator);

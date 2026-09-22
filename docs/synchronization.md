@@ -10,9 +10,9 @@ Bedrock's primary feature is its ability to seamlessly synchronize data between 
 
 2. All nodes attempt to connect to all other nodes.
 
-3. During this process all nodes `SYNCHRONIZE` from their peers, which means they broadcast "My most recent transaction has commitCount X and stored hash Y".  Anybody who has newer data will respond with the missing transactions, which are all committed in the same order on every node. The journal accepts both [chained hashes and GUID transaction hashes](https://bedrockdb.com/blockchain.html).
+3. During this process all nodes `SYNCHRONIZE` from their peers, advertising their highest journal ID as `CommitCount` and their latest nonblank entry as `HashCommitID` and `Hash`. Anybody who has newer data will respond with the missing transactions, which are all committed in the same order on every node. The journal accepts [GUID transaction hashes and blank entries](https://bedrockdb.com/blockchain.html).
 
-4. Any two nodes that disagree on what the hash of a given transaction should be will immediately disconnect from each other.  This means that any node that has "forked" away from the cluster will be excluded from participation.
+4. Nodes compare the ID and hash of the latest nonblank entry in their shared journal prefix. Trailing blank entries do not affect agreement, but are included when determining which node is ahead. Nodes that disagree disconnect from each other, excluding forked nodes from participation.
 
 5. The Paxos distributed consensus algorithm is used to identify which of the connected nodes has the highest priority.  If enough of the *configured* nodes are online and agree, the highest node will stand up as `LEADER`.  All other nodes begin `FOLLOWING` to that leader.  (On the other hand, if too few of the configured nodes are able to connect so as to achieve quorum, then nobody will stand up, thereby avoiding the "split brain" problem.)
 

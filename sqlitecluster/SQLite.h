@@ -191,7 +191,7 @@ public:
     // is effectively no timeout.
     // Note that if this transaction fails to commit, these will not ultimately be accurate.
     // Local transactions generate a new GUID. Replication supplies the received GUID (32 hex characters), or an
-    // explicit empty string to recompute a legacy chained SHA1.
+    // explicit empty string for a blank journal entry (which must also have an empty query).
     // Replication callers must compare the prepared hash with the received hash before committing.
     bool prepare(uint64_t* transactionID = nullptr, string* transactionHash = nullptr, chrono::microseconds commitLockTimeout = chrono::hours(24), atomic<bool>* abortPtr = nullptr, const optional<string>& replicationGUID = nullopt);
 
@@ -268,7 +268,22 @@ public:
     // Returns the number of WAL frames that are currently waiting to be checkpointed.
     uint64_t getOutstandingFramesToCheckpoint() const;
 
-    // Returns the latest commit's hash: a chained SHA1 or GUID:SHA1 identifying and checking that transaction only.
+    struct CommitState
+    {
+        // Highest committed journal ID, including blank entries. Zero if there are no commits.
+        uint64_t commitCount;
+
+        // ID of the latest nonblank journal entry. Zero if there are no nonblank commits.
+        uint64_t hashCommitID;
+
+        // Hash of the entry at hashCommitID. Empty when hashCommitID is zero.
+        string hash;
+    };
+
+    // Atomically returns the current CommitState.
+    CommitState getCommitState() const;
+
+    // Returns the latest nonblank commit's GUID:SHA1.
     string getCommittedHash();
 
     // Returns what the new state will be of the database if the current transaction is committed.
@@ -304,9 +319,17 @@ public:
         return _insideTransaction;
     }
 
+    bool isPrepared() const
+    {
+        return _prepared;
+    }
+
     // Get the SQL and/or hash of a particular commit to the DB.
     // Returns true on success, false on error or if the commit is not found.
     bool getCommit(uint64_t index, string* query = nullptr, string* hash = nullptr);
+
+    // Finds the latest nonblank entry at or before index. Returns ID 0 and an empty hash if none is retained.
+    void getLastNonBlankCommit(uint64_t index, uint64_t& commitID, string& hash);
 
     // Looks up a range of commits. Returns raw query data which may be compressed.
     int getCompressedCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS = 0);
@@ -387,15 +410,21 @@ public:
         // Enable or disable commits for the DB.
         void setCommitEnabled(bool enable);
 
+        // Initialize all commit metadata from the journal under _internalStateMutex.
+        void initializeCommitState(const CommitState& state);
+
         // Update the shared state of the DB to include the newest commit with the newest hash. This needs to be done
         // after completing a commit and before releasing the commit lock.
         void incrementCommit(const string& commitHash);
 
+        CommitState getCommitState() const;
+
         // This removes and returns all committed transactions.
         map<uint64_t, pair<string, string>> popCommittedTransactions();
 
-        // This is the last committed hash by *any* thread for this file.
-        atomic<string> lastCommittedHash;
+        // Identity of the latest nonblank commit, protected by _internalStateMutex.
+        string lastCommittedHash;
+        uint64_t hashCommitID = 0;
 
         // An identifier used to choose the next journal table to use with this set of DB handles. Only used to
         // initialize new objects.
@@ -450,7 +479,7 @@ private:
 
         // This mutex is locked when we need to change the state of the _shareData object. It is shared between a
         // variety of operations (i.e., updating _committedTransactions, etc).
-        recursive_mutex _internalStateMutex;
+        mutable recursive_mutex _internalStateMutex;
     };
 
     // Initializers to support RAII-style allocation in constructors.
@@ -490,6 +519,9 @@ private:
 
     // True when we have a transaction in progress.
     bool _insideTransaction = false;
+
+    // A blank journal entry is prepared even though both its query and hash are empty.
+    bool _prepared = false;
 
     // The new query and new hash to add to the journal for a transaction that's nearing completion, before we commit
     // it. During query execution _uncommittedQuery is the raw concatenated SQL; prepare() replaces it in place with
