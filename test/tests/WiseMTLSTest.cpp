@@ -10,7 +10,6 @@
 
 // From test/: WISE_SANDBOX_CREDENTIALS_FILE=../credentials.txt ./test -only WiseMTLS
 // WISE_SANDBOX_ACCESS_TOKEN optionally supplies OAuth authentication for the playground request.
-// BEDROCK_MTLS_DEBUG=true enables mbedTLS handshake diagnostics in syslog.
 struct WiseMTLSTest : tpunit::TestFixture
 {
     WiseMTLSTest() : tpunit::TestFixture("WiseMTLS", TEST(WiseMTLSTest::request))
