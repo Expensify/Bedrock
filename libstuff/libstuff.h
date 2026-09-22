@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <concepts>
 #include <functional>
 #include <iomanip>
 #include <list>
@@ -441,6 +442,29 @@ string SHexStringFromBase32(const string& buffer);
 // --------------------------------------------------------------------------
 // String stuff
 // --------------------------------------------------------------------------
+// Concatenate views into an owning string without changing overload resolution for existing string-only expressions.
+template<class L, class R>
+requires((same_as<remove_cvref_t<L>, string_view> || same_as<remove_cvref_t<R>, string_view>) &&
+              convertible_to<L, string_view> && convertible_to<R, string_view>)
+string operator+(L&& lhs, R&& rhs)
+{
+    const string_view left(lhs);
+    const string_view right(rhs);
+    if constexpr (same_as<L, string> ) {
+        lhs.append(right);
+        return move(lhs);
+    } else if constexpr (same_as<R, string> ) {
+        rhs.insert(0, left);
+        return move(rhs);
+    }
+
+    string result;
+    result.reserve(left.size() + right.size());
+    result.append(left);
+    result.append(right);
+    return result;
+}
+
 // General utility to convert non-string input to string output
 // **NOTE: Use 'ostringstream' because 'stringstream' leaks on VS2005
 template<class T> inline string SToStr(const T& t)

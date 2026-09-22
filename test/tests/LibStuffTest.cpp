@@ -50,6 +50,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testHexConversion),
                                      TEST(LibStuff::testBase32Conversion),
                                      TEST(LibStuff::testContains),
+                                     TEST(LibStuff::testStringViewConcatenation),
                                      TEST(LibStuff::testFirstOfMonth),
                                      TEST(LibStuff::SREMatchTest),
                                      TEST(LibStuff::SREReplaceTest),
@@ -762,6 +763,41 @@ struct LibStuff : tpunit::TestFixture
 
         ASSERT_TRUE(SContains(string("asdf"), "a"));
         ASSERT_TRUE(SContains(string("asdf"), string("asd")));
+    }
+
+    void testStringViewConcatenation()
+    {
+        const char buffer[] = {'a', 'b', 'c', 'd'};
+        const string_view view(buffer + 1, 2);
+        const string text = "text";
+        const SString tableValue = "table";
+        ASSERT_EQUAL(view + text, "bctext");
+        ASSERT_EQUAL(text + view, "textbc");
+        ASSERT_EQUAL(view + "literal", "bcliteral");
+        ASSERT_EQUAL("literal" + view, "literalbc");
+        ASSERT_EQUAL(view + view, "bcbc");
+        ASSERT_EQUAL(view + tableValue, "bctable");
+        ASSERT_EQUAL(tableValue + view, "tablebc");
+        ASSERT_EQUAL("prefix" + view + text + "suffix", "prefixbctextsuffix");
+        ASSERT_EQUAL(text, "text");
+        ASSERT_EQUAL(tableValue, "table");
+
+        ASSERT_EQUAL(string_view{} + view, "bc");
+        ASSERT_EQUAL(view + string_view{}, "bc");
+        ASSERT_EQUAL(string_view{} + string_view{}, "");
+        ASSERT_EQUAL("a\0b"sv + "c\0d"sv, "a\0bc\0d"s);
+
+        // A view may refer to the string whose storage is reused, even when concatenation reallocates.
+        string appendTarget(100, 'a');
+        const string_view appendView(appendTarget.data(), appendTarget.size());
+        ASSERT_EQUAL(move(appendTarget) + appendView, string(200, 'a'));
+        string prependTarget(100, 'b');
+        const string_view prependView(prependTarget.data(), prependTarget.size());
+        ASSERT_EQUAL(prependView + move(prependTarget), string(200, 'b'));
+
+        ASSERT_EQUAL(text + "literal", "textliteral");
+        ASSERT_EQUAL("literal" + text, "literaltext");
+        ASSERT_EQUAL(text + text, "texttext");
     }
 
     void testFirstOfMonth()
