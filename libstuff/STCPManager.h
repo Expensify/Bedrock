@@ -22,6 +22,10 @@ struct STCPManager
         const string hostname;
         const string certificate;
         const string privateKey;
+
+        // Temporary testing bypass: disables all server certificate verification, including hostname and expiry checks.
+        // An attacker could impersonate the server and read or modify transmitted data, including bearer tokens.
+        const bool allowUntrustedCA = false;
     };
 
     // Captures all the state for a single socket

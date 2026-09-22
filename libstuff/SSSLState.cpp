@@ -148,7 +148,8 @@ void SSSLState::_initializeMTLS(const STCPManager::MTLSConnection& connection)
         STHROW("mbedtls_ssl_config_defaults failed with error " + to_string(lastResult) + ": " + errorBuffer);
     }
 
-    mbedtls_ssl_conf_authmode(&_connectionConfig, MBEDTLS_SSL_VERIFY_REQUIRED);
+    mbedtls_ssl_conf_authmode(&_connectionConfig,
+                              connection.allowUntrustedCA ? MBEDTLS_SSL_VERIFY_NONE : MBEDTLS_SSL_VERIFY_REQUIRED);
     mbedtls_ssl_conf_rng(&_connectionConfig, mbedtls_ctr_drbg_random, &_ctr_drbg);
     mbedtls_ssl_conf_ca_chain(&_connectionConfig, &_cacert, nullptr);
 
