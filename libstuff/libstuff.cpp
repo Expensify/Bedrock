@@ -452,9 +452,9 @@ bool SIContains(const string& lhs, const string& rhs)
     return SContains(SToLower(lhs), SToLower(rhs));
 }
 
-bool SStartsWith(const string& haystack, const string& needle)
+bool SStartsWith(string_view haystack, string_view needle)
 {
-    return SStartsWith(haystack.c_str(), haystack.size(), needle.c_str(), needle.size());
+    return needle.empty() || SStartsWith(haystack.data(), haystack.size(), needle.data(), needle.size());
 }
 
 bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize)

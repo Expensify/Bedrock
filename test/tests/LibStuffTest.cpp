@@ -52,6 +52,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testContains),
                                      TEST(LibStuff::testStringViewConcatenation),
                                      TEST(LibStuff::testSIEquals),
+                                     TEST(LibStuff::testSStartsWith),
                                      TEST(LibStuff::testFirstOfMonth),
                                      TEST(LibStuff::SREMatchTest),
                                      TEST(LibStuff::SREReplaceTest),
@@ -824,6 +825,27 @@ struct LibStuff : tpunit::TestFixture
         ASSERT_TRUE(SIEquals("a\0left"sv, "A\0right"sv));
         ASSERT_TRUE(SIEquals(string_view{}, "\0suffix"sv));
         ASSERT_FALSE(SIEquals("a\0suffix"sv, "b\0suffix"sv));
+    }
+
+    void testSStartsWith()
+    {
+        const char buffer[] = {'x', 'a', 'b', 'c', 'y'};
+        const string_view view(buffer + 1, 3);
+        ASSERT_TRUE(SStartsWith(view, "ab"));
+        ASSERT_TRUE(SStartsWith(view, "abc"s));
+        ASSERT_TRUE(SStartsWith("abcd"s, view));
+        ASSERT_TRUE(SStartsWith(view, view.substr(0, 2)));
+        ASSERT_TRUE(SStartsWith("abc", "ab"));
+        ASSERT_FALSE(SStartsWith(view, "bc"));
+        ASSERT_FALSE(SStartsWith(view, "abcd"));
+        ASSERT_FALSE(SStartsWith(view, "AB"));
+        ASSERT_TRUE(SStartsWith(view, string_view{}));
+        ASSERT_TRUE(SStartsWith(string_view{}, string_view{}));
+        ASSERT_FALSE(SStartsWith(string_view{}, view));
+        ASSERT_TRUE(SStartsWith(buffer + 1, 3, buffer + 1, 2));
+
+        ASSERT_TRUE(SStartsWith("a\0left"sv, "a\0right"sv.substr(0, 3)));
+        ASSERT_FALSE(SStartsWith("a\0"sv, "a\0b"sv));
     }
 
     void testFirstOfMonth()

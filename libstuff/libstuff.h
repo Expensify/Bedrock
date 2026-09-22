@@ -507,7 +507,9 @@ bool SIsValidSQLiteDateModifier(const string& modifier);
 // Case-insensitive comparison, bounded by the views and stopping at the first NUL as strcasecmp does.
 bool SIEquals(string_view lhs, string_view rhs);
 bool SIContains(const string& haystack, const string& needle);
-bool SStartsWith(const string& haystack, const string& needle);
+
+// Prefix comparison retains the length check and strncmp semantics of the buffer overload.
+bool SStartsWith(string_view haystack, string_view needle);
 bool SStartsWith(const char* haystack, size_t haystackSize, const char* needle, size_t needleSize);
 bool SEndsWith(const string& haystack, const string& needle);
 bool SConstantTimeEquals(const string& secret, const string& userInput);
