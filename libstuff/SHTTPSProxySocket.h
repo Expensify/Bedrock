@@ -8,7 +8,7 @@ public:
     // Establishes a plaintext CONNECT tunnel before starting TLS to the target host.
     SHTTPSProxySocket(const string& proxyAddress, const string& host, const string& requestID);
 
-    // Requires a non-null connection, whose hostname is the CONNECT target.
+    // `connection` cannot be null.
     SHTTPSProxySocket(const string& proxyAddress, shared_ptr<const STCPManager::MTLSConnection> connection, const string& requestID);
     SHTTPSProxySocket(SHTTPSProxySocket&& from);
 

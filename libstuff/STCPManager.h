@@ -40,7 +40,7 @@ public:
         // Resolves `host` off-thread, which may leave the socket in the RESOLVING state.
         Socket(const string& host, bool https = false, int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
 
-        // Requires a non-null connection; HTTPS is implicit.
+        // `connection` cannot be null.
         Socket(shared_ptr<const MTLSConnection> connection, int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
 
         // Connects to an already-resolved address, so no DNS resolution is required.
@@ -102,7 +102,6 @@ protected:
         const shared_ptr<SResolution> dnsResolution;
         string hostToResolve;
 
-        // Allows proxy subclasses to retain client credentials while delaying TLS until CONNECT completes.
         Socket(const string& host, bool https, int resolveGraceMS, shared_ptr<const MTLSConnection> connection);
 
         shared_ptr<const MTLSConnection> _mtlsConnection;
