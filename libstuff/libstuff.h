@@ -620,10 +620,13 @@ string SEncodeURIComponent(const string& value, bool keepSpaces = false);
 list<int64_t> SParseIntegerList(const string& value, char separator = ',');
 set<int64_t> SParseIntegerSet(const string& value, char separator = ',');
 vector<int64_t> SParseIntegerVector(const string& value, char separator = ',');
+
+// Parse into owning strings, skipping leading spaces and empty components and stopping at the first NUL.
+// The bool overloads clear valueList and return whether the final component is nonempty, even if earlier ones exist.
 bool SParseList(const char* value, list<string>& valueList, char separator = ',');
-bool SParseList(const string& value, list<string>& valueList, char separator = ',');
+bool SParseList(string_view value, list<string>& valueList, char separator = ',');
 set<string> SParseSet(const string& value, char separator = ',');
-list<string> SParseList(const string& value, char separator = ',');
+list<string> SParseList(string_view value, char separator = ',');
 
 // Concatenates things into a string. "Things" can mean essentially any
 // standard STL container of any type of object that "stringstream" can handle.

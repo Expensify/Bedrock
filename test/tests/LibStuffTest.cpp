@@ -41,6 +41,7 @@ struct LibStuff : tpunit::TestFixture
                                      TEST(LibStuff::testGZip),
                                      TEST(LibStuff::testConstantTimeEquals),
                                      TEST(LibStuff::testParseIntegerList),
+                                     TEST(LibStuff::testSParseList),
                                      TEST(LibStuff::testSData),
                                      TEST(LibStuff::testSTable),
                                      TEST(LibStuff::testFileIO),
@@ -495,6 +496,39 @@ struct LibStuff : tpunit::TestFixture
         }
         list<int64_t> after = SParseIntegerList(SComposeList(before));
         ASSERT_TRUE(before == after);
+    }
+
+    void testSParseList()
+    {
+        const char buffer[] = {'x', 'a', ',', ' ', 'b', ',', 'c', 'y'};
+        const string_view view(buffer + 1, 6);
+        list<string> values = {"stale"};
+        ASSERT_TRUE(SParseList(view, values));
+        ASSERT_EQUAL(values, (list<string>{"a", "b", "c"}));
+        ASSERT_EQUAL(SParseList(view), values);
+        ASSERT_EQUAL(SParseList("a, b,c"), values);
+        ASSERT_EQUAL(SParseList("a, b,c"s), values);
+        ASSERT_EQUAL(SParseList("a; b;c"sv, ';'), values);
+        ASSERT_TRUE(SParseList("a; b;c", values, ';'));
+        ASSERT_EQUAL(values, (list<string>{"a", "b", "c"}));
+
+        ASSERT_EQUAL(SParseList("  a  , ,b,, \tc"sv), (list<string>{"a  ", "b", "\tc"}));
+        ASSERT_FALSE(SParseList("a,"sv, values));
+        ASSERT_EQUAL(values, list<string>{"a"});
+        ASSERT_FALSE(SParseList(string_view{}, values));
+        ASSERT_TRUE(values.empty());
+        ASSERT_TRUE(SParseList(string_view{}).empty());
+        ASSERT_TRUE(SParseList(" , , "sv).empty());
+
+        ASSERT_EQUAL(SParseList("a,b\0,c"sv), (list<string>{"a", "b"}));
+        ASSERT_EQUAL(SParseList("a,b\0,c"s), (list<string>{"a", "b"}));
+        ASSERT_FALSE(SParseList("\0ignored"sv, values));
+        ASSERT_TRUE(values.empty());
+
+        string source = "one,two";
+        ASSERT_TRUE(SParseList(string_view(source), values));
+        source.assign(source.size(), 'x');
+        ASSERT_EQUAL(values, (list<string>{"one", "two"}));
     }
 
     void testSData()
