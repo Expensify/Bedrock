@@ -251,6 +251,11 @@ STCPManager::Socket::Socket(const string& host, bool https, int resolveGraceMS)
     }
 }
 
+STCPManager::Socket::Socket(const MTLSConnection& connection, int resolveGraceMS)
+    : Socket(connection.hostname, true, resolveGraceMS)
+{
+}
+
 bool STCPManager::Socket::_openSocket()
 {
     s = S_socket(addr, true, false, false);
