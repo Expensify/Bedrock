@@ -18,7 +18,8 @@ using namespace std;
 // buffers, completing connections, performing graceful shutdowns, etc.
 struct STCPManager
 {
-    struct MTLSConnection {
+    struct MTLSConnection
+    {
         const string hostname;
         const string certificate;
         const string privateKey;
@@ -101,7 +102,7 @@ protected:
         const shared_ptr<SResolution> dnsResolution;
         string hostToResolve;
 
-private:
+        // Allows proxy subclasses to retain client credentials while delaying TLS until CONNECT completes.
         Socket(const string& host, bool https, int resolveGraceMS, shared_ptr<const MTLSConnection> connection);
 
         shared_ptr<const MTLSConnection> _mtlsConnection;
