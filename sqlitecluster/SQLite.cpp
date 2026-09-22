@@ -92,21 +92,14 @@ SQLite::SharedData& SQLite::initializeSharedData()
             SASSERT(!SQuery(_db, "PRAGMA journal_mode = WAL2;", result));
         }
 
-        // Read the highest commit count from the database, and store it in commitCount.
+        // Read the highest commit count from the database.
         string query = "SELECT MAX(maxIDs) FROM (" + _getJournalQuery(_journalNames, {"SELECT MAX(id) as maxIDs FROM"}, true) + ")";
         SASSERT(!SQuery(_db, query, result));
-        uint64_t commitCount = result.empty() ? 0 : SToUInt64(result[0][0]);
-        sharedData->commitCount = commitCount;
+        CommitState state{result.empty() ? 0 : SToUInt64(result[0][0]), 0, ""};
 
-        // And then read the hash for that transaction.
-        string lastCommittedHash;
-        getCommit(commitCount, nullptr, &lastCommittedHash);
-        sharedData->lastCommittedHash.store(lastCommittedHash);
-
-        // If we have a commit count, we should have a hash as well.
-        if (commitCount && lastCommittedHash.empty()) {
-            SERROR("Loaded commit count " << commitCount << " with empty hash.");
-        }
+        // Blank rows advance the highest (including blanks) commit ID but do not change the agreement identity.
+        getLastNonBlankCommit(state.commitCount, state.hashCommitID, state.hash);
+        sharedData->initializeCommitState(state);
 
         // Insert our SharedData object into the global map.
         sharedDataLookupMap.m.emplace(_filename, sharedData);
@@ -464,7 +457,7 @@ string SQLite::_getJournalQuery(const vector<string>& journalNames, const list<s
 SQLite::~SQLite()
 {
     // First, rollback any incomplete transaction.
-    if (!_uncommittedQuery.empty()) {
+    if (_insideTransaction) {
         SINFO("Rolling back in destructor.");
         rollback();
         SINFO("Rollback in destructor complete.");
@@ -894,8 +887,12 @@ bool SQLite::trimJournalTable(size_t journalTableIndex, int64_t batchSize)
     // If the commitCount is less than the max journal size, keep everything. Otherwise, keep everything from
     // commitCount - _maxJournalSize forward. We can't just do the last subtraction part because it overflows our
     // unsigned int.
-    const uint64_t commitCount = getCommitCount();
-    const uint64_t oldestCommitToKeep = commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize;
+    const auto state = getCommitState();
+    const uint64_t commitCount = state.commitCount;
+
+    // We wont delete the newest commit with a hash, even if it's older than the cutoff. This is not a
+    // practical concern for real databases, but can come up in test situations.
+    const uint64_t oldestCommitToKeep = min(state.hashCommitID, commitCount < _maxJournalSize ? 0 : commitCount - _maxJournalSize);
     if (!oldestCommitToKeep) {
         return true;
     }
@@ -994,11 +991,16 @@ bool SQLite::_writeIdempotent(const string& query, const map<string, Parameter>&
 bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::microseconds commitLockTimeout, atomic<bool>* abortPtr, const optional<string>& replicationGUID)
 {
     SASSERT(_insideTransaction);
+    SASSERT(!_prepared);
 
     const string guid = replicationGUID.has_value() ? replicationGUID.value() :
         SToHex(SRandom::rand64(), 16) + SToHex(SRandom::rand64(), 16);
     if (!guid.empty() && (guid.size() != 32 || guid.find_first_not_of("0123456789ABCDEFabcdef") != string::npos)) {
         SWARN("Invalid transaction GUID");
+        return false;
+    }
+    if (guid.empty() && !_uncommittedQuery.empty()) {
+        SWARN("Blank journal entry has a nonblank query");
         return false;
     }
 
@@ -1074,7 +1076,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     // We pass the journal number selected to the handler so that a caller can utilize the
     // same method bedrock does for accessing 1 table per thread, in order to attempt to
     // reduce conflicts on tables that are written to on every command
-    if (_shouldNotifyPluginsOnPrepare) {
+    if (_shouldNotifyPluginsOnPrepare && !guid.empty()) {
         (*_onPrepareHandler)(*this, journalID);
     }
 
@@ -1083,10 +1085,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     const uint64_t commitCount = _sharedData.commitCount;
 
     // Queue up the journal entry
-    if (guid.empty()) {
-        // Replaying legacy commits requires the entire previous hash, including GUID:SHA1 when present.
-        _uncommittedHash = SToHex(SHashSHA1(getCommittedHash() + _uncommittedQuery));
-    } else {
+    if (!guid.empty()) {
         _uncommittedHash = guid + ":" + SToHex(SHashSHA1(guid + _uncommittedQuery));
     }
     uint64_t before = STimeNow();
@@ -1124,6 +1123,7 @@ bool SQLite::prepare(uint64_t* transactionID, string* transactionhash, chrono::m
     }
 
     // Ready to commit
+    _prepared = true;
     SDEBUG("Prepared transaction");
 
     // We're still holding commitLock now, and will until the commit is complete.
@@ -1138,7 +1138,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
     }
 
     SASSERT(_insideTransaction);
-    SASSERT(!_uncommittedHash.empty()); // Must prepare first
+    SASSERT(_prepared);
     int result = 0;
 
     // Make sure one is ready to commit
@@ -1214,6 +1214,7 @@ int SQLite::commit(const string& description, const string& commandName, functio
         _totalTransactionElapsed = _transactionTimer.stop();
         _sharedData.incrementCommit(_uncommittedHash);
         _insideTransaction = false;
+        _prepared = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
 
@@ -1335,6 +1336,7 @@ void SQLite::rollback(const string& commandName)
 
         // Finally done with this.
         _insideTransaction = false;
+        _prepared = false;
         _uncommittedHash.clear();
         _uncommittedQuery.clear();
 
@@ -1400,9 +1402,26 @@ bool SQLite::getCommit(uint64_t id, string* query, string* hash)
     return true;
 }
 
+void SQLite::getLastNonBlankCommit(uint64_t index, uint64_t& commitID, string& hash)
+{
+    // SQLite returns the hash from the row selected by MAX(id). Read both in one snapshot so pruning cannot
+    // remove the selected row between locating it and reading its hash.
+    const string query = "SELECT id, hash FROM (" + _getJournalQuery({"SELECT MAX(id) AS id, hash FROM",
+                                                                      "WHERE id <= " + SQ(index) + " AND length(hash) > 0"}) + ") ORDER BY id DESC LIMIT 1";
+    SQResult result;
+    SASSERT(!SQuery(_db, query, result));
+    commitID = result.empty() ? 0 : SToUInt64(result[0][0]);
+    hash = commitID ? result[0][1] : "";
+}
+
+SQLite::CommitState SQLite::getCommitState() const
+{
+    return _sharedData.getCommitState();
+}
+
 string SQLite::getCommittedHash()
 {
-    return _sharedData.lastCommittedHash.load();
+    return getCommitState().hash;
 }
 
 int SQLite::getCompressedCommits(uint64_t fromIndex, uint64_t toIndex, SQResult& result, uint64_t timeoutLimitUS)
@@ -1735,12 +1754,29 @@ void SQLite::SharedData::setCommitEnabled(bool enable)
     _commitEnabled = enable;
 }
 
+void SQLite::SharedData::initializeCommitState(const CommitState& state)
+{
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    commitCount = state.commitCount;
+    hashCommitID = state.hashCommitID;
+    lastCommittedHash = state.hash;
+}
+
 void SQLite::SharedData::incrementCommit(const string& commitHash)
 {
     lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
     commitCount++;
     commitTransactionInfo(commitCount);
-    lastCommittedHash.store(commitHash);
+    if (!commitHash.empty()) {
+        hashCommitID = commitCount;
+        lastCommittedHash = commitHash;
+    }
+}
+
+SQLite::CommitState SQLite::SharedData::getCommitState() const
+{
+    lock_guard<decltype(_internalStateMutex)> lock(_internalStateMutex);
+    return {commitCount.load(), hashCommitID, lastCommittedHash};
 }
 
 void SQLite::SharedData::prepareTransactionInfo(uint64_t commitID, const string& query, const string& hash)

@@ -192,8 +192,8 @@ private:
 
     string _getLostQuorumLogMessage() const;
 
-    // Extracts the GUID from a message's transaction hash, or returns empty for a legacy hash.
-    // Throws if a hash containing a colon does not have the GUID:SHA1 lengths and separator position.
+    // Extracts the GUID from a message's transaction hash, or returns empty for a blank journal entry.
+    // Throws if a nonblank hash does not have the GUID:SHA1 lengths and separator position.
     static string _getTransactionGUID(const string& hash);
 
     // Handlers for transaction messages.
