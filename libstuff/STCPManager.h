@@ -35,9 +35,6 @@ public:
         // Resolves `host` off-thread, which may leave the socket in the RESOLVING state.
         Socket(const string& host, bool https = false, int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
 
-        // Uses HTTPS; the client certificate and private key are not yet applied.
-        Socket(const MTLSConnection& connection, int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
-
         // Connects to an already-resolved address, so no DNS resolution is required.
         Socket(const sockaddr_in& addr, bool https = false, const string& hostname = "");
         Socket(int sock = 0, State state_ = CONNECTING, bool https = false);
@@ -96,6 +93,15 @@ protected:
         // a slow DNS lookup.
         const shared_ptr<SResolution> dnsResolution;
         string hostToResolve;
+    };
+
+    class MTLSSocket : public Socket {
+public:
+        // Requires a non-null connection. Uses HTTPS; the client certificate and private key are not yet applied.
+        MTLSSocket(shared_ptr<const MTLSConnection> connection, int resolveGraceMS = DEFAULT_RESOLVE_GRACE_MS);
+
+private:
+        shared_ptr<const MTLSConnection> _connection;
     };
 
     class Port {

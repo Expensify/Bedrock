@@ -251,11 +251,6 @@ STCPManager::Socket::Socket(const string& host, bool https, int resolveGraceMS)
     }
 }
 
-STCPManager::Socket::Socket(const MTLSConnection& connection, int resolveGraceMS)
-    : Socket(connection.hostname, true, resolveGraceMS)
-{
-}
-
 bool STCPManager::Socket::_openSocket()
 {
     s = S_socket(addr, true, false, false);
@@ -421,6 +416,11 @@ bool STCPManager::Socket::recv()
         lastRecvTime = STimeNow();
     }
     return result;
+}
+
+STCPManager::MTLSSocket::MTLSSocket(shared_ptr<const MTLSConnection> connection, int resolveGraceMS)
+    : Socket(connection->hostname, true, resolveGraceMS), _connection(move(connection))
+{
 }
 
 unique_ptr<STCPManager::Port> STCPManager::openPort(const string& host)
