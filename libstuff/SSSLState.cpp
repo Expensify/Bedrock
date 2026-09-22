@@ -1,5 +1,6 @@
 #include "SSSLState.h"
 #include "mbedtls/ssl.h"
+#include <mbedtls/debug.h>
 #include <mbedtls/error.h>
 #include <mbedtls/net_sockets.h>
 #include <libstuff/libstuff.h>
@@ -181,6 +182,16 @@ void SSSLState::_initializeMTLS(const STCPManager::MTLSConnection& connection)
     if (lastResult) {
         mbedtls_strerror(lastResult, errorBuffer, sizeof(errorBuffer));
         STHROW("mbedtls_ssl_conf_own_cert failed with error " + to_string(lastResult) + ": " + errorBuffer);
+    }
+
+    const char* debug = getenv("BEDROCK_MTLS_DEBUG");
+    if (debug && SIEquals(debug, "true")) {
+        // Level 2 traces handshake stages and errors without dumping key material or application buffers.
+        mbedtls_debug_set_threshold(2);
+        mbedtls_ssl_conf_dbg(&_connectionConfig, [](void*, int level, const char* file, int line, const char* message) {
+            SINFO("mTLS debug[" << level << "] " << file << ":" << line << " " << message);
+        }, nullptr);
+        SINFO("mTLS client certificate and private key parsed and matched");
     }
 }
 
