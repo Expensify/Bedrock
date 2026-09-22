@@ -11,14 +11,28 @@
 
 // From test/: WISE_SANDBOX_CREDENTIALS_FILE=../credentials.txt ./test -only WiseMTLS
 // WISE_SANDBOX_ACCESS_TOKEN optionally supplies OAuth authentication for the playground request.
-// WISE_SANDBOX_PROXY optionally specifies a CONNECT proxy as host:port, for example 127.0.0.1:3128.
+// The proxy case uses a local Squid instance at 127.0.0.1:3128.
 struct WiseMTLSTest : tpunit::TestFixture
 {
-    WiseMTLSTest() : tpunit::TestFixture("WiseMTLS", TEST(WiseMTLSTest::request))
+    WiseMTLSTest()
+        : tpunit::TestFixture("WiseMTLS",
+                              TEST(WiseMTLSTest::directRequest),
+                              TEST(WiseMTLSTest::proxyRequest))
     {
     }
 
-    void request()
+    void directRequest()
+    {
+        request();
+    }
+
+    void proxyRequest()
+    {
+        request("127.0.0.1:3128");
+    }
+
+private:
+    void request(const string& proxy = "")
     {
         const char* credentialsPath = getenv("WISE_SANDBOX_CREDENTIALS_FILE");
         if (!credentialsPath || !*credentialsPath) {
@@ -66,8 +80,7 @@ struct WiseMTLSTest : tpunit::TestFixture
         cout << "Wise sandbox request:\n" << printableRequest.serialize() << endl;
 
         auto transaction = make_unique<SStandaloneHTTPSManager::Transaction>(manager, "WiseMTLS");
-        const char* proxy = getenv("WISE_SANDBOX_PROXY");
-        if (proxy && *proxy) {
+        if (!proxy.empty()) {
             cout << "Wise sandbox proxy: " << proxy << endl;
             transaction->s = new SHTTPSProxySocket(proxy, connection, transaction->requestID);
         } else {
